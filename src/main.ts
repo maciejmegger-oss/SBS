@@ -32,7 +32,7 @@ let clubBrowse = {top:"", group:""};
 
 const DEFAULT_SETTINGS = {
   regions: ["Dolnośląski ZPN","Kujawsko-Pomorski ZPN","Lubelski ZPN","Lubuski ZPN","Łódzki ZPN","Małopolski ZPN","Mazowiecki ZPN","Opolski ZPN","Podkarpacki ZPN","Podlaski ZPN","Pomorski ZPN","Śląski ZPN","Świętokrzyski ZPN","Warmińsko-Mazurski ZPN","Wielkopolski ZPN","Zachodniopomorski ZPN"],
-  leagues: ["II liga","III liga, gr. I","III liga, gr. II","III liga, gr. III","III liga, gr. IV","IV liga (pomorska)","IV liga (zachodniopomorska)","IV liga (dolnośląska)","IV liga (śląska)","IV liga (wielkopolska)","Klasa okręgowa","CLJ U19","CLJ U17 (zachodnia)","CLJ U17 (wschodnia)","Liga makroregionalna U16","Liga wojewódzka U15"],
+  leagues: ["II liga","III liga, gr. I","III liga, gr. II","III liga, gr. III","III liga, gr. IV","IV liga (pomorska)","IV liga (zachodniopomorska)","IV liga (dolnośląska)","IV liga (śląska)","IV liga (wielkopolska)","Klasa okręgowa","CLJ U19","CLJ U17 (zachodnia)","CLJ U17 (wschodnia)","Liga makroregionalna U16"],
   positions: ["Bramkarz","Obrońca środkowy","Obrońca boczny","Pomocnik defensywny","Pomocnik środkowy","Pomocnik ofensywny","Skrzydłowy","Napastnik"],
   statuses: ["Do Obserwacji","Na Testy","Do transferu","Z polecenia","Rekomendowany","Odrzucony"],
   recommendations: ["Kontynuować obserwację","Zaprosić na testy","(Do transferu)","Odrzucić","Zbyt wcześnie ocenić"],
@@ -1238,6 +1238,9 @@ async function loadAllInner(){
     const plain = L.indexOf('CLJ U17');
     if(plain >= 0) L.splice(plain, 1, ...variants);
     else variants.forEach(v=>L.push(v));
+    // Usuń "Liga wojewódzka U15" z listy (na życzenie) także w istniejącej bazie.
+    const woj = L.indexOf('Liga wojewódzka U15');
+    if(woj >= 0) L.splice(woj, 1);
   }
   if(quietFlagFailCount > 0){
     console.log('Uwaga (niegroźne): ' + quietFlagFailCount + ' znaczników "już to zrobione" w tle nie zapisało się — te operacje mogą się powtórzyć przy następnym otwarciu, ale to nie dotyczy Twoich danych.');
@@ -1974,14 +1977,9 @@ function viewPlayerDetail(id){
     }).join('') : `<div class="empty">Brak raportów taktycznych — dodaj w zakładce "Raporty".</div>`}
   </div>
   <div class="card">
-    <div class="toolbar" style="margin-bottom:8px;">
-      <h4 style="margin:0;color:var(--pitch);">Opis Końcowy</h4>
-      <button class="link-btn" data-action="manage-tabs" data-id="${p.id}" style="color:var(--gold-dark);">Edytuj</button>
-    </div>
-    ${p.customFields && Object.keys(p.customFields).length? `
-      <div style="display:flex;flex-wrap:wrap;gap:8px;">
-        ${Object.keys(p.customFields).map(key=>`<span class="badge tab-chip" style="cursor:pointer;" data-action="manage-tabs" data-id="${p.id}">${esc(key)}</span>`).join('')}
-      </div>` : '<div class="empty">Brak dodatkowych zakładek — kliknij "Edytuj", aby można ręcznie wprowadzić treść.</div>'}
+    <h4 style="margin-top:0;color:var(--pitch);">Opis Końcowy</h4>
+    <textarea id="opis-koncowy" rows="5" placeholder="Wpisz opis końcowy zawodnika...">${esc(p.opisKoncowy||'')}</textarea>
+    <button class="gold" data-action="save-opis" data-id="${p.id}" style="margin-top:8px;">Zapisz opis</button>
   </div>`;
 }
 
@@ -2065,12 +2063,13 @@ function viewClubs(){
   if(clubBrowse.top==='III liga' || clubBrowse.top==='IV liga' || clubBrowse.top==='Kategorie juniorskie'){
     const groups = groupsForTop(clubBrowse.top);
     groupRow = `<div class="filters" style="margin-top:8px;">` +
-      ['Wszystkie grupy', ...groups].map(g=>{
+      ['Wszystkie grupy', ...groups].map((g, i)=>{
         const val = g==='Wszystkie grupy' ? '' : g;
         // Skracaj etykietę tylko dla III/IV ligi; kategorie juniorskie (np. "CLJ U17 (zachodnia)") zostają w całości.
         let label = g;
         if(g.startsWith('III liga, ')) label = g.replace('III liga, ','');
         else if(g.startsWith('IV liga (')) label = g.replace(/^IV liga \(|\)$/g,'');
+        if(i > 0) label = i + '. ' + label;   // liczba porządkowa przy każdej grupie (poza "Wszystkie grupy")
         return pill(label, clubBrowse.group===val, 'browse-group', {val});
       }).join(' ') + `</div>`;
   }
@@ -3636,6 +3635,19 @@ function attachHandlers(){
     const ok = await savePlayers();
     b.textContent = ok ? '✓ Zapisano' : 'Błąd zapisu — spróbuj ponownie';
     setTimeout(()=>render(), 700);
+  });
+
+  // Opis końcowy — zapis prosto z pola tekstowego w profilu.
+  main.querySelectorAll('[data-action="save-opis"]').forEach(b=>b.onclick=async()=>{
+    const pl = DB.players.find(x=>x.id===b.dataset.id);
+    if(!pl) return;
+    const ta = document.getElementById('opis-koncowy');
+    pl.opisKoncowy = ta ? ta.value.trim() : '';
+    const orig = b.textContent; b.textContent = 'Zapisywanie...'; b.disabled = true;
+    const ok = await savePlayers();
+    b.textContent = ok ? '✓ Zapisano' : 'Błąd zapisu — spróbuj ponownie';
+    b.disabled = false;
+    if(ok) setTimeout(()=>{ if(b.isConnected) b.textContent = orig; }, 1500);
   });
 
   // Porównywarka zawodników

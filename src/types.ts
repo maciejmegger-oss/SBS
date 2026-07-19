@@ -44,6 +44,7 @@ export interface Player {
   kadraWojewodzka?: boolean;
   reprezentacja?: boolean;
   powolania?: number;
+  opisKoncowy?: string;
   notes?: string;
   dateAdded?: string;
   source?: string;
