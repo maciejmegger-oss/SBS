@@ -1538,7 +1538,46 @@ function render(){
       try{ el.setSelectionRange(focusRestore.start, focusRestore.end); }catch(e){ /* niektóre typy input (np. number) nie wspierają setSelectionRange */ }
     }
   }
+  syncHistory();
 }
+
+// ---------- HISTORIA / NAWIGACJA WSTECZ-DALEJ ----------
+// Integracja z historią przeglądarki: cofanie (przycisk myszy „wstecz", Alt+strzałka w lewo) i naprzód
+// (Alt+strzałka w prawo) wracają do poprzedniego/następnego widoku aplikacji. render() zgłasza aktualny
+// stan przez syncHistory(); przy zmianie widoku wpisujemy go do historii (pushState), a popstate przywraca.
+let lastNavSig = null;
+let historyInited = false;
+let restoringFromHistory = false;
+function navSignature(){
+  return JSON.stringify({v:currentView, p:viewingPlayerId, c:viewingClubId, ct:clubBrowse.top, cg:clubBrowse.group, cmp:compareIds});
+}
+function syncHistory(){
+  const sig = navSignature();
+  if(sig === lastNavSig) return;      // ten sam widok (np. render po zapisie danych) — nie dubluj wpisu
+  lastNavSig = sig;
+  if(restoringFromHistory) return;    // przywracanie z historii nie tworzy nowego wpisu
+  const state = {currentView, viewingPlayerId, viewingClubId, clubBrowseTop:clubBrowse.top, clubBrowseGroup:clubBrowse.group, compareIds:[...compareIds]};
+  if(!historyInited){ history.replaceState(state, ''); historyInited = true; }
+  else history.pushState(state, '');
+}
+window.addEventListener('popstate', (e)=>{
+  const s = e.state;
+  restoringFromHistory = true;
+  currentView = (s && s.currentView) || 'dashboard';
+  viewingPlayerId = (s && s.viewingPlayerId) || null;
+  viewingClubId = (s && s.viewingClubId) || null;
+  editingPlayerId = null;
+  if(clubBrowse){ clubBrowse.top = (s && s.clubBrowseTop) || ''; clubBrowse.group = (s && s.clubBrowseGroup) || ''; }
+  if(s && s.compareIds) compareIds = s.compareIds;
+  try{ render(); }catch(err){ console.error('render() po popstate nie powiódł się:', err); }
+  restoringFromHistory = false;
+});
+// Alt+strzałka w lewo/prawo — jawnie mapowane na wstecz/naprzód (na wypadek, gdy przeglądarka/OS tego nie robi).
+window.addEventListener('keydown', (e)=>{
+  if(!e.altKey || e.ctrlKey || e.metaKey) return;
+  if(e.key === 'ArrowLeft'){ e.preventDefault(); history.back(); }
+  else if(e.key === 'ArrowRight'){ e.preventDefault(); history.forward(); }
+});
 
 // ---------- DASHBOARD ----------
 // Środek geometryczny (bounding-box) ścieżki SVG — do umieszczenia liczby klubów na województwie.
@@ -2232,14 +2271,16 @@ function viewNewObs(){
       <div class="field-wrap"><label class="field">Mecz (gospodarz - gość)</label><input id="obs-match" placeholder="np. Mazovia Przykładowo - Rywal FC"></div>
       <div class="field-wrap">
         <label class="field">Punkt startowy (miejscowość)</label>
-        <input id="obs-start" placeholder="np. Świdnik" value="${esc(DB.settings.startLocation || 'Bydgoszcz')}">
+        <input id="obs-start" list="obs-start-list" placeholder="np. Świdnik" value="${esc(DB.settings.startLocation || 'Bydgoszcz')}">
+        <datalist id="obs-start-list">${[...new Set(DB.observations.map(o=>o.startLocation).filter(Boolean).concat(DB.settings.startLocation||[]))].map(a=>`<option value="${esc(a)}"></option>`).join('')}</datalist>
       </div>
       <div class="field-wrap">
         <label class="field">Miejsce (adres obiektu)</label>
         <div style="display:flex;gap:8px;">
-          <input id="obs-location" placeholder="np. ul. Sportowa 5, Pruszków" style="flex:1;">
+          <input id="obs-location" list="obs-location-list" placeholder="np. ul. Sportowa 5, Pruszków" style="flex:1;">
           <button type="button" class="secondary" data-action="open-obs-location-map" style="white-space:nowrap;">📍 Mapa</button>
         </div>
+        <datalist id="obs-location-list">${[...new Set(DB.observations.map(o=>o.location).filter(Boolean))].sort().map(a=>`<option value="${esc(a)}"></option>`).join('')}</datalist>
         <div id="obs-distance-info" class="note" style="margin-top:6px;min-height:16px;"></div>
       </div>
       <div class="modal-actions" style="justify-content:flex-start;">
