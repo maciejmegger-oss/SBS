@@ -33,7 +33,7 @@ let clubBrowse = {top:"", group:""};
 
 const DEFAULT_SETTINGS = {
   regions: ["Dolnośląski ZPN","Kujawsko-Pomorski ZPN","Lubelski ZPN","Lubuski ZPN","Łódzki ZPN","Małopolski ZPN","Mazowiecki ZPN","Opolski ZPN","Podkarpacki ZPN","Podlaski ZPN","Pomorski ZPN","Śląski ZPN","Świętokrzyski ZPN","Warmińsko-Mazurski ZPN","Wielkopolski ZPN","Zachodniopomorski ZPN"],
-  leagues: ["II liga","III liga, gr. I","III liga, gr. II","III liga, gr. III","III liga, gr. IV","IV liga (pomorska)","IV liga (zachodniopomorska)","IV liga (dolnośląska)","IV liga (śląska)","IV liga (wielkopolska)","Klasa okręgowa","CLJ U19","CLJ U17 (zachodnia)","CLJ U17 (wschodnia)","Liga makroregionalna U16"],
+  leagues: ["I liga","II liga","III liga, gr. I","III liga, gr. II","III liga, gr. III","III liga, gr. IV","IV liga (pomorska)","IV liga (zachodniopomorska)","IV liga (dolnośląska)","IV liga (śląska)","IV liga (wielkopolska)","Klasa okręgowa","CLJ U19","CLJ U17 (zachodnia)","CLJ U17 (wschodnia)","Liga makroregionalna U16"],
   positions: ["Bramkarz","Obrońca środkowy","Obrońca boczny","Pomocnik defensywny","Pomocnik środkowy","Pomocnik ofensywny","Skrzydłowy","Napastnik"],
   statuses: ["Do Obserwacji","Na Testy","Do transferu","Z polecenia","Rekomendowany","Odrzucony"],
   recommendations: ["Kontynuować obserwację","Zaprosić na testy","(Do transferu)","Odrzucić","Zbyt wcześnie ocenić"],
@@ -41,12 +41,13 @@ const DEFAULT_SETTINGS = {
   customFields: [],
   sponsors: []
 };
-const TOP_LEVELS = ["II liga","III liga","IV liga","Klasa okręgowa","Kategorie juniorskie"];
+const TOP_LEVELS = ["I liga","II liga","III liga","IV liga","Klasa okręgowa","Kategorie juniorskie"];
 function topLevelOf(league){
   if(!league) return "Nieprzypisane";
   if(league.startsWith("III liga")) return "III liga";
   if(league.startsWith("IV liga")) return "IV liga";
   if(league==="II liga") return "II liga";
+  if(league==="I liga") return "I liga";
   if(league==="Klasa okręgowa") return "Klasa okręgowa";
   return "Kategorie juniorskie";
 }
@@ -1234,6 +1235,7 @@ async function loadAllInner(){
   }
   if(Array.isArray(DB.settings.leagues)){
     const L = DB.settings.leagues;
+    if(!L.includes('I liga')) L.unshift('I liga');   // najwyższy z widocznych poziomów — na początek listy
     if(!L.includes('CLJ U19')) L.push('CLJ U19');
     const variants = ['CLJ U17 (zachodnia)','CLJ U17 (wschodnia)'].filter(v=>!L.includes(v));
     const plain = L.indexOf('CLJ U17');
@@ -1876,6 +1878,8 @@ function viewPlayers(){
     const q = playerFilters.search.toLowerCase();
     list = list.filter(p=> (p.firstName+" "+p.lastName).toLowerCase().includes(q));
   }
+  // Lista wg alfabetu (nazwisko, potem imię) — nie wg klubu/kolejności importu.
+  list.sort((a,b)=> (a.lastName||a.firstName||'').localeCompare(b.lastName||b.firstName||'','pl') || (a.firstName||'').localeCompare(b.firstName||'','pl'));
 
   const rows = list.map(p=>{
     const a = playerAvg(p.id);
@@ -2193,7 +2197,7 @@ function viewClubs(){
 function viewClubDetail(id){
   const c = DB.clubs.find(x=>x.id===id);
   if(!c){ viewingClubId=null; return viewClubs(); }
-  const squad = DB.players.filter(p=>p.clubId===id).sort((a,b)=>a.lastName.localeCompare(b.lastName));
+  const squad = DB.players.filter(p=>p.clubId===id).sort((a,b)=>(a.lastName||a.firstName||'').localeCompare(b.lastName||b.firstName||'','pl'));
   const squadRows = squad.map(p=>{
     const a = playerAvg(p.id);
     return `<tr>
@@ -2247,7 +2251,7 @@ let obsCalendarSelectedDay = null;
 let statystykaObsId = null;
 
 function viewNewObs(){
-  const playerOptions = DB.players.slice().sort((a,b)=>a.lastName.localeCompare(b.lastName))
+  const playerOptions = DB.players.slice().sort((a,b)=>(a.lastName||a.firstName||'').localeCompare(b.lastName||b.firstName||'','pl'))
     .map(p=>`<option value="${p.id}">${esc(p.lastName)} ${esc(p.firstName)} — ${esc(clubName(p.clubId))}</option>`).join('');
   const scoutOptions = DB.settings.scouts.map(s=>`<option value="${esc(s)}" ${s===currentScout?'selected':''}>${esc(s)}</option>`).join('');
 
@@ -2499,7 +2503,7 @@ function perspektywaBadgeReport(value){
 
 function viewReports(){
   const editing = editingReportId ? DB.reports.find(r=>r.id===editingReportId) : null;
-  const playerOptions = DB.players.slice().sort((a,b)=>a.lastName.localeCompare(b.lastName))
+  const playerOptions = DB.players.slice().sort((a,b)=>(a.lastName||a.firstName||'').localeCompare(b.lastName||b.firstName||'','pl'))
     .map(p=>`<option value="${p.id}" ${editing&&editing.playerId===p.id?'selected':''}>${esc(p.lastName)} ${esc(p.firstName)} — ${esc(clubName(p.clubId))}</option>`).join('');
 
   const recentReports = DB.reports.slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,15);
