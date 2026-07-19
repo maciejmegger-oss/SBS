@@ -1910,7 +1910,11 @@ function viewPlayerDetail(id){
         <tr><td style="color:var(--ink-soft);">Noga</td><td>${esc(p.foot||"—")}</td></tr>
         <tr><td style="color:var(--ink-soft);">Wzrost</td><td>${p.height? p.height+" cm":"—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">System gry</td><td>${p.formation? `<strong>${esc(p.formation)}</strong>`:"—"}</td></tr>
-        <tr><td style="color:var(--ink-soft);">Mecze / minuty / gole</td><td>${(p.matches!=null||p.minutes!=null||p.goals!=null) ? `${p.matches!=null?p.matches:'—'} mecze &middot; ${p.minutes!=null?p.minutes:'—'} min &middot; ${p.goals!=null?p.goals:'—'} goli` : "—"}</td></tr>
+        <tr><td style="color:var(--ink-soft);">Mecze / minuty / gole / asysty</td><td>${(p.matches!=null||p.minutes!=null||p.goals!=null||p.assists!=null) ? `${p.matches!=null?p.matches:'—'} mecze &middot; ${p.minutes!=null?p.minutes:'—'} min &middot; ${p.goals!=null?p.goals:'—'} goli &middot; ${p.assists!=null?p.assists:'—'} asyst` : "—"}</td></tr>
+        <tr><td style="color:var(--ink-soft);">Kadra wojewódzka</td><td>${p.kadraWojewodzka? '<strong style="color:var(--good);">Tak</strong>' : 'Nie'}</td></tr>
+        <tr><td style="color:var(--ink-soft);">Reprezentacja</td><td>${p.reprezentacja? `<strong style="color:var(--good);">Tak</strong>${p.powolania!=null?` &middot; ${p.powolania} ${p.powolania===1?'powołanie':'powołań'}`:''}` : 'Nie'}</td></tr>
+        <tr><td style="color:var(--ink-soft);">Instagram</td><td>${p.instagramLink? `<a class="ext-link" href="${esc(p.instagramLink)}" target="_blank" rel="noopener">📷 śledź &rarr;</a>`:"—"}</td></tr>
+        <tr><td style="color:var(--ink-soft);">Facebook</td><td>${p.facebookLink? `<a class="ext-link" href="${esc(p.facebookLink)}" target="_blank" rel="noopener">📘 śledź &rarr;</a>`:"—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">Scout odpowiedzialny</td><td>${esc(p.scout||"—")}</td></tr>
         <tr><td style="color:var(--ink-soft);">Data dodania</td><td>${esc(p.dateAdded||"—")}</td></tr>
         <tr><td style="color:var(--ink-soft);">Link wideo</td><td>${p.videoLink? `<a href="${esc(p.videoLink)}" target="_blank" rel="noopener">otwórz</a>`:"—"}</td></tr>
@@ -3235,10 +3239,11 @@ function openPlayerModal(id, presetClubId, prefillData){
         ${FORMATIONS.map(f=>`<option ${p&&p.formation===f?'selected':''}>${esc(f)}</option>`).join('')}
       </select>
     </div>
-    <div class="grid grid-3">
+    <div class="grid grid-4">
       <div class="field-wrap"><label class="field">Mecze (sezon)</label><input type="number" min="0" id="pm-matches" value="${p&&p.matches!=null?p.matches:''}"></div>
       <div class="field-wrap"><label class="field">Minuty (sezon)</label><input type="number" min="0" id="pm-minutes" value="${p&&p.minutes!=null?p.minutes:''}"></div>
       <div class="field-wrap"><label class="field">Gole (sezon)</label><input type="number" min="0" id="pm-goals" value="${p&&p.goals!=null?p.goals:''}"></div>
+      <div class="field-wrap"><label class="field">Asysty (sezon)</label><input type="number" min="0" id="pm-assists" value="${p&&p.assists!=null?p.assists:''}"></div>
     </div>
     <p class="note" style="margin-top:-6px;margin-bottom:6px;">Transfermarkt blokuje automatyczne pobieranie tych statystyk (wykrywanie botów) — wpisz je ręcznie, sprawdzając link do profilu zawodnika poniżej.</p>
     <div class="modal-actions" style="justify-content:flex-start;margin-top:0;margin-bottom:14px;">
@@ -3258,6 +3263,28 @@ function openPlayerModal(id, presetClubId, prefillData){
     <div class="grid grid-2">
       <div class="field-wrap"><label class="field">Profil Łączy Nas Piłka / mPZPN</label><input id="pm-lnp" value="${p?esc(p.lnpLink||''):''}" placeholder="https://laczynaspilka.pl/..."></div>
       <div class="field-wrap"><label class="field">Profil Transfermarkt</label><input id="pm-tm" value="${p?esc(p.tmLink||''):''}" placeholder="https://www.transfermarkt.pl/..."></div>
+    </div>
+    <div class="field-wrap" style="margin-bottom:6px;"><label class="field">Media — śledź zawodnika</label></div>
+    <div class="grid grid-2">
+      <div class="field-wrap"><label class="field">Instagram</label><input id="pm-instagram" value="${p?esc(p.instagramLink||''):''}" placeholder="https://instagram.com/..."></div>
+      <div class="field-wrap"><label class="field">Facebook</label><input id="pm-facebook" value="${p?esc(p.facebookLink||''):''}" placeholder="https://facebook.com/..."></div>
+    </div>
+    <div class="grid grid-2">
+      <div class="field-wrap">
+        <label class="field">Kadra wojewódzka</label>
+        <div class="radio-row">
+          <label><input type="radio" name="pm-kadra" value="tak" ${p&&p.kadraWojewodzka?'checked':''}> Tak</label>
+          <label><input type="radio" name="pm-kadra" value="nie" ${!(p&&p.kadraWojewodzka)?'checked':''}> Nie</label>
+        </div>
+      </div>
+      <div class="field-wrap">
+        <label class="field">Reprezentacja</label>
+        <div class="radio-row">
+          <label><input type="radio" name="pm-repr" value="tak" ${p&&p.reprezentacja?'checked':''}> Tak</label>
+          <label><input type="radio" name="pm-repr" value="nie" ${!(p&&p.reprezentacja)?'checked':''}> Nie</label>
+        </div>
+        <input type="number" min="0" id="pm-powolania" value="${p&&p.powolania!=null?p.powolania:''}" placeholder="Liczba powołań" style="margin-top:6px;">
+      </div>
     </div>
     <div class="field-wrap">
       <label class="field">Czy zawodnik posiada menedżera / agenta</label>
@@ -4447,6 +4474,12 @@ function wireLastModal(){
       matches: document.getElementById('pm-matches').value===''? null : Number(document.getElementById('pm-matches').value),
       minutes: document.getElementById('pm-minutes').value===''? null : Number(document.getElementById('pm-minutes').value),
       goals: document.getElementById('pm-goals').value===''? null : Number(document.getElementById('pm-goals').value),
+      assists: document.getElementById('pm-assists').value===''? null : Number(document.getElementById('pm-assists').value),
+      instagramLink: document.getElementById('pm-instagram').value.trim(),
+      facebookLink: document.getElementById('pm-facebook').value.trim(),
+      kadraWojewodzka: (ov.querySelector('input[name="pm-kadra"]:checked')||{}).value === 'tak',
+      reprezentacja: (ov.querySelector('input[name="pm-repr"]:checked')||{}).value === 'tak',
+      powolania: document.getElementById('pm-powolania').value===''? null : Number(document.getElementById('pm-powolania').value),
       customFields,
       notes: document.getElementById('pm-notes').value.trim()
     };

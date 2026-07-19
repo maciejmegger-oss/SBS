@@ -38,6 +38,12 @@ export interface Player {
   matches?: number;
   minutes?: number;
   goals?: number;
+  assists?: number;
+  instagramLink?: string;
+  facebookLink?: string;
+  kadraWojewodzka?: boolean;
+  reprezentacja?: boolean;
+  powolania?: number;
   notes?: string;
   dateAdded?: string;
   source?: string;
