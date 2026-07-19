@@ -45,6 +45,7 @@ export interface Player {
   reprezentacja?: boolean;
   powolania?: number;
   opisKoncowy?: string;
+  monitored?: boolean;
   notes?: string;
   dateAdded?: string;
   source?: string;

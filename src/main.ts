@@ -1890,7 +1890,10 @@ function viewPlayers(){
       <td><span class="badge ${cls}">${esc(p.status)}</span></td>
       <td>${a? fmt1(a.overall) : "—"}</td>
       <td>${a? a.count : 0}</td>
-      <td><button class="link-btn" data-action="view-player" data-id="${p.id}">Zobacz</button></td>
+      <td style="white-space:nowrap;">
+        <button class="link-btn" data-action="add-to-monitoring" data-id="${p.id}" title="${p.monitored?'W Monitoringu — kliknij, aby usunąć':'Dodaj do Monitoringu'}" style="color:${p.monitored?'#3E7D4C':'var(--gold-dark)'};">${p.monitored?'✓ Monitoring':'+ Monitoring'}</button>
+        <button class="link-btn" data-action="view-player" data-id="${p.id}">Zobacz</button>
+      </td>
     </tr>`;
   }).join('');
 
@@ -1903,7 +1906,7 @@ function viewPlayers(){
       <select id="f-league"><option value="">Wszystkie ligi</option>${DB.settings.leagues.map(r=>`<option ${playerFilters.league===r?'selected':''}>${esc(r)}</option>`).join('')}</select>
       <select id="f-position"><option value="">Wszystkie pozycje</option>${DB.settings.positions.map(r=>`<option ${playerFilters.position===r?'selected':''}>${esc(r)}</option>`).join('')}</select>
       <select id="f-status"><option value="">Wszystkie statusy</option>${DB.settings.statuses.map(r=>`<option ${playerFilters.status===r?'selected':''}>${esc(r)}</option>`).join('')}</select>
-      <input id="f-birthyear" type="number" placeholder="Rocznik np. 2005" value="${esc(playerFilters.birthYear)}" style="max-width:140px;">
+      <input id="f-birthyear" type="text" inputmode="numeric" maxlength="4" placeholder="Rocznik np. 2005" value="${esc(playerFilters.birthYear)}" style="max-width:140px;">
       <input id="f-search" placeholder="Szukaj po nazwisku..." value="${esc(playerFilters.search)}">
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -3332,7 +3335,7 @@ function openPlayerAnalysisModal(playerId){
 const MONITORING_STATUSES = ['Do Obserwacji','Na Testy','Do transferu','Z polecenia'];
 function viewMonitoring(){
   // Pokazuj zawodników dodanych ręcznie ORAZ tych z decyzją statusu z raportu (pierwsze cztery opcje).
-  let rows = DB.players.filter(p => p.source==='manual' || MONITORING_STATUSES.includes(p.status)).map(p=>{
+  let rows = DB.players.filter(p => p.monitored || p.source==='manual' || MONITORING_STATUSES.includes(p.status)).map(p=>{
     const a = playerAvg(p.id);
     const ds = a? daysSince(a.last.date) : null;
     let priority = "Brak obserwacji";
@@ -3648,6 +3651,14 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="add-player"]').forEach(b=>b.onclick=()=>openPlayerModal(null));
   main.querySelectorAll('[data-action="edit-player"]').forEach(b=>b.onclick=()=>openPlayerModal(b.dataset.id));
   main.querySelectorAll('[data-action="view-player"]').forEach(b=>b.onclick=()=>{viewingPlayerId=b.dataset.id; currentView='players'; render();});
+  // Przycisk "Monitoring" w liście zawodników — od razu dodaje/usuwa zawodnika z zakładki Monitoring.
+  main.querySelectorAll('[data-action="add-to-monitoring"]').forEach(b=>b.onclick=()=>{
+    const pl = DB.players.find(x=>x.id===b.dataset.id);
+    if(!pl) return;
+    pl.monitored = !pl.monitored;
+    render();                 // natychmiastowy feedback (etykieta ✓/+), zapis leci w tle
+    savePlayers();
+  });
   main.querySelectorAll('[data-action="back-players"]').forEach(b=>b.onclick=()=>{viewingPlayerId=null; render();});
 
   const rankingSelect = main.querySelector('#ranking-league-select');
@@ -3994,7 +4005,7 @@ function attachHandlers(){
   const fl = document.getElementById('f-league'); if(fl) fl.onchange=()=>{playerFilters.league=fl.value; render();};
   const fp = document.getElementById('f-position'); if(fp) fp.onchange=()=>{playerFilters.position=fp.value; render();};
   const fs = document.getElementById('f-status'); if(fs) fs.onchange=()=>{playerFilters.status=fs.value; render();};
-  const fby = document.getElementById('f-birthyear'); if(fby) fby.oninput=()=>{playerFilters.birthYear=fby.value; render();};
+  const fby = document.getElementById('f-birthyear'); if(fby) fby.oninput=()=>{playerFilters.birthYear=fby.value.replace(/\D/g,''); render();};
   const fq = document.getElementById('f-search'); if(fq) fq.oninput=()=>{playerFilters.search=fq.value; render();};
 
   // settings add/remove
