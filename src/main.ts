@@ -1542,13 +1542,38 @@ function render(){
 
 // ---------- DASHBOARD ----------
 // Środek geometryczny (bounding-box) ścieżki SVG — do umieszczenia liczby klubów na województwie.
-function pathBoundingCenter(d){
-  const nums = (d.match(/-?\d+\.?\d*/g) || []).map(Number);
-  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
-  for(let i=0;i<nums.length-1;i+=2){
-    const x=nums[i], y=nums[i+1];
-    if(x<minX)minX=x; if(x>maxX)maxX=x; if(y<minY)minY=y; if(y>maxY)maxY=y;
+// Zbiera absolutne punkty ścieżki SVG, poprawnie obsługując komendy WZGLĘDNE (małe litery: m,l,h,v,c,z)
+// i bezwzględne (M,L,H,V,C,Z). Wcześniejsza wersja traktowała każdą liczbę jak absolutną parę x,y — przez
+// co województwa zapisane relatywnie (Pomorskie, Zachodniopomorskie) miały środek liczony błędnie i etykieta
+// z liczbą klubów lądowała poza regionem.
+function pathAbsPoints(d){
+  const pts = [];
+  let x=0, y=0, sx=0, sy=0;
+  const chunks = d.match(/[MmLlHhVvCcSsQqTtAaZz][^MmLlHhVvCcSsQqTtAaZz]*/g) || [];
+  for(const chunk of chunks){
+    const c = chunk[0], rel = c === c.toLowerCase(), C = c.toUpperCase();
+    const a = (chunk.slice(1).match(/-?\d*\.?\d+(?:e-?\d+)?/g) || []).map(Number);
+    if(C === 'M'){
+      for(let i=0; i+1<a.length; i+=2){ x = rel? x+a[i] : a[i]; y = rel? y+a[i+1] : a[i+1]; if(i===0){ sx=x; sy=y; } pts.push([x,y]); }
+    } else if(C === 'L'){
+      for(let i=0; i+1<a.length; i+=2){ x = rel? x+a[i] : a[i]; y = rel? y+a[i+1] : a[i+1]; pts.push([x,y]); }
+    } else if(C === 'H'){
+      for(const n of a){ x = rel? x+n : n; pts.push([x,y]); }
+    } else if(C === 'V'){
+      for(const n of a){ y = rel? y+n : n; pts.push([x,y]); }
+    } else if(C === 'C'){
+      for(let i=0; i+5<a.length; i+=6){ x = rel? x+a[i+4] : a[i+4]; y = rel? y+a[i+5] : a[i+5]; pts.push([x,y]); }
+    } else if(C === 'Z'){
+      x=sx; y=sy;
+    }
   }
+  return pts;
+}
+function pathBoundingCenter(d){
+  const pts = pathAbsPoints(d);
+  if(!pts.length) return {x:0, y:0};
+  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+  for(const [px,py] of pts){ if(px<minX)minX=px; if(px>maxX)maxX=px; if(py<minY)minY=py; if(py>maxY)maxY=py; }
   return {x:(minX+maxX)/2, y:(minY+maxY)/2};
 }
 
@@ -1649,27 +1674,35 @@ function haversineKm(a, b){
   const s = Math.sin(dLat/2)**2 + Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLon/2)**2;
   return R * 2*Math.atan2(Math.sqrt(s), Math.sqrt(1-s));
 }
-// Odległość w linii prostej z Bydgoszczy (stała lokalizacja startowa) do podanego miejsca.
-// Najpierw próbuje darmowego geokodowania (OpenStreetMap Nominatim, bez klucza API); jeśli sieć zawiedzie,
-// wraca do listy większych miast. To dystans "po prostej", nie rzeczywista trasa drogowa.
-async function calcDistanceFromBydgoszcz(locationText){
-  if(!locationText) return null;
+// Geokodowanie miejscowości/adresu w Polsce -> {lat,lon}. Najpierw darmowe Nominatim (OpenStreetMap,
+// bez klucza API); jeśli sieć/limit zawiedzie, dopasowanie po rdzeniu nazwy z listy większych miast.
+async function geocodePl(text){
+  if(!text) return null;
   try{
-    const resp = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=pl&q=' + encodeURIComponent(locationText));
+    const resp = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=pl&q=' + encodeURIComponent(text));
     if(resp.ok){
       const results = await resp.json();
       if(results && results.length){
-        const dest = {lat: parseFloat(results[0].lat), lon: parseFloat(results[0].lon)};
-        if(!isNaN(dest.lat) && !isNaN(dest.lon)) return Math.round(haversineKm(BYDGOSZCZ_COORDS, dest));
+        const d = {lat: parseFloat(results[0].lat), lon: parseFloat(results[0].lon)};
+        if(!isNaN(d.lat) && !isNaN(d.lon)) return d;
       }
     }
   }catch(e){ console.error('Geokodowanie Nominatim nie powiodło się, próbuję listy miast', e); }
-  const locLower = locationText.toLowerCase();
-  // Dopasowanie po rdzeniu nazwy (polskie miasta się odmieniają — "w Warszawie" nie zawiera "Warszawa").
-  const cityStem = (name)=> name.length > 5 ? name.slice(0, name.length-2) : name;
-  const matchCity = Object.keys(KNOWN_CITY_COORDS).find(city=>locLower.includes(cityStem(city)));
-  if(matchCity) return Math.round(haversineKm(BYDGOSZCZ_COORDS, KNOWN_CITY_COORDS[matchCity]));
-  return null;
+  const low = text.toLowerCase();
+  const stem = (name)=> name.length > 5 ? name.slice(0, name.length-2) : name;
+  const city = Object.keys(KNOWN_CITY_COORDS).find(c=>low.includes(stem(c)));
+  return city ? KNOWN_CITY_COORDS[city] : null;
+}
+// Odległość w linii prostej (haversine) między punktem startowym A a miejscem obserwacji B. Oba geokodowane.
+async function calcDistanceBetween(startText, destText){
+  const [a, b] = await Promise.all([geocodePl(startText), geocodePl(destText)]);
+  if(!a || !b) return null;
+  return Math.round(haversineKm(a, b));
+}
+// Zgodność wstecz: dystans z Bydgoszczy (gdy nie podano punktu startowego).
+async function calcDistanceFromBydgoszcz(locationText){
+  const b = await geocodePl(locationText);
+  return b ? Math.round(haversineKm(BYDGOSZCZ_COORDS, b)) : null;
 }
 
 function bydgoszczDistanceWidget(){
@@ -1683,7 +1716,7 @@ function bydgoszczDistanceWidget(){
         <span style="font-size:32px;font-weight:800;color:var(--gold-dark);">${totalKm.toLocaleString('pl-PL')}</span>
         <span style="font-size:14px;color:var(--ink-soft);">km łącznie (${yearObs.length} obserwacji z lokalizacją)</span>
       </div>
-      <p class="note" style="margin-top:4px;">Suma odległości z Bydgoszczy (w linii prostej) do miejsc zaplanowanych obserwacji w 2026.</p>
+      <p class="note" style="margin-top:4px;">Suma odległości w linii prostej z punktu startowego do miejsc zaplanowanych obserwacji w 2026.</p>
     ` : `<div class="empty">Brak obserwacji 2026 z obliczonym dystansem — dystans liczy się automatycznie przy zapisywaniu obserwacji z podaną lokalizacją.</div>`}
   </div>`;
 }
@@ -2198,11 +2231,16 @@ function viewNewObs(){
       </div>
       <div class="field-wrap"><label class="field">Mecz (gospodarz - gość)</label><input id="obs-match" placeholder="np. Mazovia Przykładowo - Rywal FC"></div>
       <div class="field-wrap">
+        <label class="field">Punkt startowy (miejscowość)</label>
+        <input id="obs-start" placeholder="np. Świdnik" value="${esc(DB.settings.startLocation || 'Bydgoszcz')}">
+      </div>
+      <div class="field-wrap">
         <label class="field">Miejsce (adres obiektu)</label>
         <div style="display:flex;gap:8px;">
           <input id="obs-location" placeholder="np. ul. Sportowa 5, Pruszków" style="flex:1;">
           <button type="button" class="secondary" data-action="open-obs-location-map" style="white-space:nowrap;">📍 Mapa</button>
         </div>
+        <div id="obs-distance-info" class="note" style="margin-top:6px;min-height:16px;"></div>
       </div>
       <div class="modal-actions" style="justify-content:flex-start;">
         <button class="gold" data-action="save-obs">Zapisz plan</button>
@@ -2339,11 +2377,18 @@ async function saveNewObservation(){
     notes: '',
     statsFilledIn: false
   };
-  // Dystans z Bydgoszczy do miejsca obserwacji (geokodowanie + fallback), zasila widżet "Dystans obserwacji".
-  try{ obs.distanceKm = await calcDistanceFromBydgoszcz(obs.location); }catch(e){ obs.distanceKm = null; }
+  // Dystans w linii prostej: punkt startowy -> miejsce obserwacji (geokodowanie + fallback).
+  // Zasila sumę na dashboardzie ("Dystans obserwacji"). Zapamiętujemy też start jako domyślny.
+  const startEl = document.getElementById('obs-start');
+  const startLoc = startEl ? startEl.value.trim() : (DB.settings.startLocation || 'Bydgoszcz');
+  obs.startLocation = startLoc;
+  try{ obs.distanceKm = await calcDistanceBetween(startLoc, obs.location); }catch(e){ obs.distanceKm = null; }
   DB.observations.push(obs);
   await saveObservations();
-  if(scout && !DB.settings.scouts.includes(scout)){ DB.settings.scouts.push(scout); await saveSettings(); }
+  let settingsChanged = false;
+  if(scout && !DB.settings.scouts.includes(scout)){ DB.settings.scouts.push(scout); settingsChanged = true; }
+  if(startLoc && DB.settings.startLocation !== startLoc){ DB.settings.startLocation = startLoc; settingsChanged = true; }
+  if(settingsChanged) await saveSettings();
   render();
 }
 
@@ -3610,6 +3655,24 @@ function attachHandlers(){
     };
   }
   main.querySelectorAll('[data-action="open-obs-location-map"]').forEach(b=>b.onclick=()=>openObsLocationMap());
+
+  // Żywe liczenie dystansu A→B w planie obserwacji (po opuszczeniu pola startu lub miejsca).
+  const obsStart = main.querySelector('#obs-start');
+  const obsLoc = main.querySelector('#obs-location');
+  const obsDist = main.querySelector('#obs-distance-info');
+  if(obsStart && obsLoc && obsDist){
+    const recompute = async ()=>{
+      const start = obsStart.value.trim(), dest = obsLoc.value.trim();
+      if(!start || !dest){ obsDist.textContent = ''; return; }
+      obsDist.textContent = 'Liczę dystans…';
+      const km = await calcDistanceBetween(start, dest);
+      obsDist.innerHTML = (km!=null)
+        ? `📍 <strong>${km} km</strong> w linii prostej: „${esc(start)}" → „${esc(dest)}"`
+        : 'Nie udało się obliczyć dystansu — sprawdź nazwy miejscowości.';
+    };
+    obsStart.onblur = recompute;
+    obsLoc.onblur = recompute;
+  }
   main.querySelectorAll('[data-action="cal-prev-month"]').forEach(b=>b.onclick=()=>calShiftMonth(-1));
   main.querySelectorAll('[data-action="cal-next-month"]').forEach(b=>b.onclick=()=>calShiftMonth(1));
   main.querySelectorAll('.cal-cell[data-date]').forEach(cell=>cell.onclick=()=>calSelectDay(cell.dataset.date));

@@ -70,6 +70,7 @@ export interface Observation {
   notes?: string;
   statsFilledIn?: boolean;
   distanceKm?: number | null;
+  startLocation?: string;
 }
 
 export interface Report {
@@ -119,6 +120,7 @@ export interface Sponsor {
 export interface Settings {
   scouts: string[];
   sponsors?: Sponsor[];
+  startLocation?: string;
   [key: string]: unknown;
 }
 
