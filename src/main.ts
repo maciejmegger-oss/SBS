@@ -2839,6 +2839,34 @@ function contactRow(c, num){
   </tr>`;
 }
 
+// Wyłuskaj nazwę klubu z adresu e-mail: sprawdza część PRZED @ (local) i domenę, normalizuje i dopasowuje
+// do klubów w bazie (np. "sekretariat@zniczpruszkow.pl" -> "Znicz Pruszków", "gks.tychy@wp.pl" -> "GKS Tychy").
+function clubFromEmail(email){
+  if(!email || !email.includes('@')) return null;
+  const parts = email.toLowerCase().split('@');
+  const local = parts[0];
+  const domain = (parts[1]||'').split('.')[0]; // fragment domeny przed pierwszą kropką
+  const stripDiac = s => s.normalize('NFD').replace(/[̀-ͯ]/g,'');
+  const norm = s => stripDiac(s).replace(/[^a-z0-9]/g,'').replace(/[0-9]/g,'');
+  const clubNorm = c => norm(c.name);
+  const generic = new Set(['gmail','wp','onet','interia','o2','poczta','op','gazeta','icloud','yahoo','hotmail','outlook','vp','autograf','tlen']);
+  const cands = [];
+  if(domain && !generic.has(domain)) cands.push(norm(domain));
+  cands.push(norm(local));
+  if(!generic.has(domain)) cands.push(norm(local + domain));
+  for(const cand of cands){
+    if(!cand || cand.length < 3) continue;
+    // najpierw dokładne, potem zawieranie (klub zawiera kandydata lub odwrotnie), preferuj najbliższy długością
+    const scored = DB.clubs.map(c=>{ const cn=clubNorm(c); let rank=99;
+      if(!cn) return {c,rank};
+      if(cn===cand) rank=0; else if(cn.startsWith(cand)||cand.startsWith(cn)) rank=1; else if(cn.includes(cand)||cand.includes(cn)) rank=2;
+      return {c, cn, rank, dl:Math.abs((cn||'').length-cand.length)};
+    }).filter(x=>x.rank<99 && x.cn.length>=3).sort((a,b)=> a.rank-b.rank || a.dl-b.dl);
+    if(scored[0]) return scored[0].c.name;
+  }
+  return null;
+}
+
 function viewContacts(){
   const q = contactSearchQuery.toLowerCase();
   let list = DB.contacts.slice();
@@ -2872,6 +2900,7 @@ function viewContacts(){
   <div class="toolbar" style="margin-top:20px;flex-wrap:wrap;gap:10px;">
     <input id="contact-search" placeholder="Szukaj po nazwie klubu, imieniu, nazwisku, emailu..." value="${esc(contactSearchQuery)}" style="max-width:340px;">
     <span>
+      <button class="secondary" data-action="contacts-fill-clubs">🔗 Uzupełnij kluby z e-maili</button>
       <button class="secondary" data-action="contacts-export-excel">📊 Pobierz Excel</button>
       <button class="secondary" data-action="contacts-export-pdf">📄 Pobierz PDF</button>
     </span>
@@ -3142,6 +3171,7 @@ function viewTransferCommittee(){
       </td>
       <td><input class="committee-notes-input" data-id="${p.id}" value="${esc(p.committeeNotes||'')}" placeholder="Notatka komitetu"></td>
       <td><button class="link-btn" data-action="open-committee-reports" data-id="${p.id}">📄 Raporty (${(p.committeeReports||[]).length})</button></td>
+      <td><button class="gold" data-action="analyze-player" data-id="${p.id}" style="padding:5px 12px;font-size:12px;white-space:nowrap;">🔍 Analizuj</button></td>
     </tr>`;
   }).join('');
   return `
@@ -3149,10 +3179,107 @@ function viewTransferCommittee(){
   <p class="view-sub">Zawodnicy oznaczeni jako "Do transferu" — miejsce na finalną decyzję komitetu.</p>
   <div class="card" style="padding:0;overflow:auto;">
     <table>
-      <thead><tr><th>Zawodnik</th><th>Klub</th><th>Pozycja</th><th>Śr. ocena</th><th>Decyzja komitetu</th><th>Notatka</th><th>Raporty</th></tr></thead>
-      <tbody>${trs || `<tr><td colspan="7"><div class="empty">Brak zawodników ze statusem "Do transferu" — zmień status zawodnika w jego profilu, aby pojawił się tutaj.</div></td></tr>`}</tbody>
+      <thead><tr><th>Zawodnik</th><th>Klub</th><th>Pozycja</th><th>Śr. ocena</th><th>Decyzja komitetu</th><th>Notatka</th><th>Raporty</th><th>Analiza</th></tr></thead>
+      <tbody>${trs || `<tr><td colspan="8"><div class="empty">Brak zawodników ze statusem "Do transferu" — zmień status zawodnika w jego profilu, aby pojawił się tutaj.</div></td></tr>`}</tbody>
     </table>
   </div>`;
+}
+
+// Niezależna analiza zawodnika na podstawie DANYCH (obserwacje, oceny, statystyki, wiek, raporty). To
+// transparentna logika scoutingowa — pokazuje nie tylko wynik, ale też pewność danych i okno rozwoju,
+// żeby zminimalizować granicę błędu transferowego. (Narracyjną analizę LLM/Claude da się dopiąć po
+// podłączeniu klucza API + małego proxy — patrz opis pod przyciskiem.)
+function analyzePlayer(p){
+  const a = playerAvg(p.id);
+  const obs = playerObs(p.id);
+  const reports = playerReports(p.id);
+  const age = p.birthYear ? (new Date().getFullYear() - Number(p.birthYear)) : null;
+  const overall = a ? a.overall : null;
+
+  let strengths = [], weaknesses = [];
+  if(a){
+    const e = RATING_KEYS.map(k=>({k, v:a.avgs[k]})).sort((x,y)=>y.v-x.v);
+    strengths = e.slice(0,2);
+    weaknesses = e.slice(-2).reverse();
+  }
+  // Trend: średnia pierwszej połowy obserwacji vs druga połowa.
+  let trend = null;
+  if(obs.length >= 2){
+    const half = Math.floor(obs.length/2) || 1;
+    const mean = arr => arr.reduce((s,o)=> s + RATING_KEYS.reduce((a2,k)=>a2+(Number(o.ratings[k])||0),0)/RATING_KEYS.length, 0) / arr.length;
+    trend = mean(obs.slice(half)) - mean(obs.slice(0, half));
+  }
+  // Okno rozwoju wg wieku.
+  let devNote, devBonus;
+  if(age==null){ devNote='Brak rocznika — nie oszacowano okna rozwoju.'; devBonus=0; }
+  else if(age<=18){ devNote=`Bardzo młody (${age} l.) — duży zapas rozwoju.`; devBonus=12; }
+  else if(age<=21){ devNote=`Młody (${age} l.) — wysoki potencjał rozwoju.`; devBonus=9; }
+  else if(age<=25){ devNote=`Wiek rozwojowo-optymalny (${age} l.).`; devBonus=5; }
+  else if(age<=29){ devNote=`Szczyt formy (${age} l.) — mały zapas rozwoju.`; devBonus=1; }
+  else { devNote=`Doświadczony (${age} l.) — rozwój ograniczony, liczy się forma bieżąca.`; devBonus=0; }
+  // Pewność / granica błędu wg ilości danych.
+  const nData = (a?a.count:0) + reports.length;
+  let confidence, errorMargin, confPenalty;
+  if(nData===0){ confidence='brak danych'; errorMargin='bardzo wysoka'; confPenalty=0.55; }
+  else if(nData<3){ confidence='niska'; errorMargin='wysoka'; confPenalty=0.8; }
+  else if(nData<6){ confidence='umiarkowana'; errorMargin='średnia'; confPenalty=0.92; }
+  else { confidence='wysoka'; errorMargin='niska'; confPenalty=1; }
+  // Niezależny wskaźnik 0-100.
+  let score = null;
+  if(overall!=null){
+    let s = (overall/10)*72;                                   // baza z ocen (0-72)
+    if(trend!=null) s += Math.max(-8, Math.min(8, trend*8));   // trend +/-8
+    s += devBonus;                                             // okno rozwoju (0-12)
+    s *= confPenalty;                                          // kara za niepewność danych
+    score = Math.max(0, Math.min(100, Math.round(s)));
+  }
+  // Rekomendacja niezależna.
+  let reco, recoTone;
+  if(overall==null){ reco='Zbyt mało danych — potrzebne pierwsze obserwacje przed decyzją.'; recoTone='hold'; }
+  else if(score>=75){ reco='TRANSFER — wysoki poziom przy wiarygodnych danych.'; recoTone='go'; }
+  else if(score>=60){ reco='TESTY / dalsza obserwacja — obiecujący, potwierdzić w kolejnych meczach.'; recoTone='test'; }
+  else if(score>=45){ reco='OBSERWACJA — przeciętny profil, monitorować rozwój.'; recoTone='watch'; }
+  else { reco='NIŻSZY PRIORYTET — poziom poniżej progu transferowego.'; recoTone='no'; }
+  return {a, overall, score, strengths, weaknesses, trend, age, devNote, nData, confidence, errorMargin, reco, recoTone, obs, reports};
+}
+
+function openPlayerAnalysisModal(playerId){
+  const existing = document.querySelector('.modal-overlay[data-analysis-for]');
+  if(existing) existing.remove();
+  const p = DB.players.find(x=>x.id===playerId);
+  if(!p) return;
+  const an = analyzePlayer(p);
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.dataset.analysisFor = playerId;
+  const tone = {go:'#3E7D4C', test:'#C69B3C', watch:'#8C6C21', no:'#B6503F', hold:'#5B6560'}[an.recoTone];
+  const trendTxt = an.trend==null ? 'brak (za mało obserwacji)' : (an.trend>0.15?`↑ poprawa (+${fmt1(an.trend)})` : an.trend<-0.15?`↓ spadek (${fmt1(an.trend)})` : '→ stabilnie');
+  overlay.innerHTML = `
+  <div class="modal" style="max-width:640px;">
+    <h3>Analiza zawodnika — ${esc(p.firstName)} ${esc(p.lastName)}</h3>
+    <p class="note" style="margin-top:-6px;">Niezależna analiza na podstawie danych (obserwacje, oceny, wiek, statystyki), by minimalizować granicę błędu transferowego — nie zastępuje obserwacji na żywo.</p>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin:12px 0;">
+      <div style="text-align:center;">
+        <div style="font-size:40px;font-weight:800;color:${tone};line-height:1;">${an.score!=null?an.score:'—'}</div>
+        <div class="note">Wskaźnik /100</div>
+      </div>
+      <div style="flex:1;min-width:220px;">
+        <div style="font-weight:800;color:${tone};font-size:15px;">${esc(an.reco)}</div>
+        <div class="note" style="margin-top:4px;">Śr. ocena: <strong>${an.overall!=null?fmt1(an.overall):'—'}/10</strong> · Trend: ${trendTxt} · Pewność: <strong>${esc(an.confidence)}</strong> (granica błędu: ${esc(an.errorMargin)})</div>
+      </div>
+    </div>
+    ${an.a ? radarSvg([{label:p.lastName, avgs:an.a.avgs, count:an.a.count}]) : '<div class="empty">Brak obserwacji — dodaj oceny, aby analiza była pełna.</div>'}
+    <div class="grid grid-2" style="margin-top:12px;">
+      <div><label class="field">Mocne strony</label>${an.strengths.length? `<ul style="margin:4px 0;padding-left:18px;">${an.strengths.map(s=>`<li>${esc(RATING_LABELS[s.k]||s.k)} (${fmt1(s.v)})</li>`).join('')}</ul>` : '<div class="note">Brak danych</div>'}</div>
+      <div><label class="field">Do poprawy</label>${an.weaknesses.length? `<ul style="margin:4px 0;padding-left:18px;">${an.weaknesses.map(s=>`<li>${esc(RATING_LABELS[s.k]||s.k)} (${fmt1(s.v)})</li>`).join('')}</ul>` : '<div class="note">Brak danych</div>'}</div>
+    </div>
+    <div style="margin-top:10px;"><label class="field">Potencjał rozwoju</label><div style="font-size:13px;">${esc(an.devNote)}</div></div>
+    <div class="note" style="margin-top:10px;">Podstawa: ${an.a?an.a.count:0} obserwacji, ${an.reports.length} raportów.${an.nData<3?' ⚠️ Mała próba — oprzyj decyzję też na obserwacji na żywo.':''}</div>
+    <div class="modal-actions"><button class="secondary" data-action="close-analysis">Zamknij</button></div>
+  </div>`;
+  overlay.querySelector('[data-action="close-analysis"]').onclick = ()=>overlay.remove();
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
 }
 
 const MONITORING_STATUSES = ['Do Obserwacji','Na Testy','Do transferu','Z polecenia'];
@@ -3605,6 +3732,19 @@ function attachHandlers(){
     updateCommitteeField(inp.dataset.id, 'committeeNotes', inp.value.trim());
   });
   main.querySelectorAll('[data-action="open-committee-reports"]').forEach(b=>b.onclick=()=>openCommitteeReportsModal(b.dataset.id));
+  main.querySelectorAll('[data-action="analyze-player"]').forEach(b=>b.onclick=()=>openPlayerAnalysisModal(b.dataset.id));
+  main.querySelectorAll('[data-action="contacts-fill-clubs"]').forEach(b=>b.onclick=async()=>{
+    let filled = 0, noMatch = 0;
+    DB.contacts.forEach(c=>{
+      if(c.club && c.club.trim()) return;          // nie nadpisuj ręcznie wpisanych
+      const name = clubFromEmail(c.email);
+      if(name){ c.club = name; filled++; } else if(c.email){ noMatch++; }
+    });
+    if(filled){ await saveContacts(); }
+    render();
+    alert(`Uzupełniono klub dla ${filled} kontaktów z adresu e-mail.` + (noMatch? `\nNie dopasowano: ${noMatch} (brak klubu w bazie pasującego do adresu) — uzupełnij ręcznie.` : ''));
+  });
+
   const contactsImportInput = main.querySelector('#contacts-import-input');
   if(contactsImportInput) contactsImportInput.onchange = async ()=>{
     const file = contactsImportInput.files[0];
