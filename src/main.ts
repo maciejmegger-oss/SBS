@@ -1110,22 +1110,46 @@ async function quietFlagSet(key){
 }
 
 async function loadAllInner(){
+  // Faza 1: równoległe wczytanie WSZYSTKICH kolekcji i flag jednorazowych. Wcześniej ~16 odczytów szło
+  // sekwencyjnie (każdy to osobny round-trip do Supabase) — przy dużej bazie sumowało się do kilkunastu
+  // sekund. Promise.all robi je naraz; każdy z własnym .catch, więc pojedynczy błąd nie wywraca całości.
+  const [p, c, cc, o, rp, tl, ct, pmaRow, s,
+    seedFlag, enrichFlag, enrichAviaFlag, enrichGornikFlag, enrichAviaV2Flag, recoMigrationFlag, statusMigrationFlag] = await Promise.all([
+    storage.get('scouting:players', true).catch(()=>null),
+    storage.get('scouting:clubs', true).catch(()=>null),
+    storage.get('scouting:club_crests', true).catch(()=>null),
+    storage.get('scouting:observations', true).catch(()=>null),
+    storage.get('scouting:reports', true).catch(()=>null),
+    storage.get('scouting:talents', true).catch(()=>null),
+    storage.get('scouting:contacts', true).catch(()=>null),
+    storage.get('scouting:position_map_assignments', true).catch(()=>null),
+    storage.get('scouting:settings', true).catch(()=>null),
+    storage.get('scouting:seed_rosters_v9', true).catch(()=>null),
+    storage.get('scouting:enrich_znicz_players_v1', true).catch(()=>null),
+    storage.get('scouting:enrich_avia_v1', true).catch(()=>null),
+    storage.get('scouting:enrich_gornik_v1', true).catch(()=>null),
+    storage.get('scouting:enrich_avia_olimpia_v2', true).catch(()=>null),
+    storage.get('scouting:reco_migration_v1', true).catch(()=>null),
+    storage.get('scouting:status_migration_v1', true).catch(()=>null),
+  ]);
+  try{ DB.players = p ? JSON.parse(p.value) : []; }catch(e){ DB.players = []; }
+  try{ DB.clubs = c ? JSON.parse(c.value) : []; }catch(e){ DB.clubs = []; }
+  try{ DB.clubCrests = cc ? JSON.parse(cc.value) : {}; }catch(e){ DB.clubCrests = {}; }
+  try{ DB.observations = o ? JSON.parse(o.value) : []; }catch(e){ DB.observations = []; }
+  try{ DB.reports = rp ? JSON.parse(rp.value) : []; }catch(e){ DB.reports = []; }
+  try{ DB.talents = tl ? JSON.parse(tl.value) : []; }catch(e){ DB.talents = []; }
+  try{ DB.contacts = ct ? JSON.parse(ct.value) : []; }catch(e){ DB.contacts = []; }
+  try{ positionMapAssignments = pmaRow ? JSON.parse(pmaRow.value) : {}; }catch(e){ positionMapAssignments = {}; }
   try{
-    const p = await storage.get('scouting:players', true);
-    DB.players = p ? JSON.parse(p.value) : [];
-  }catch(e){ DB.players = []; }
-  try{
-    const c = await storage.get('scouting:clubs', true);
-    DB.clubs = c ? JSON.parse(c.value) : [];
-  }catch(e){ DB.clubs = []; }
-  try{
-    const cc = await storage.get('scouting:club_crests', true);
-    DB.clubCrests = cc ? JSON.parse(cc.value) : {};
-  }catch(e){ DB.clubCrests = {}; }
-  // Jednorazowa migracja: wgrane wcześniej herby (obrazy base64) były zapisywane wprost w polu
-  // crestUrl klubu, w tej samej tablicy co WSZYSTKIE kluby — to mogło rozdąć ten jeden klucz pamięci
-  // do rozmiaru zagrażającego zapisowi kluczowych danych (dokładnie zgłoszony problem: "scouting:clubs"
-  // konsekwentnie nie zapisywało się). Przenosimy te obrazy do osobnego, izolowanego magazynu.
+    const loaded = s ? JSON.parse(s.value) : {};
+    DB.settings = Object.assign(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), loaded);
+  }catch(e){ DB.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS)); }
+  if(DB.settings.scouts && DB.settings.scouts.length){ currentScout = DB.settings.scouts[0]; }
+  // Wczesny render — użytkownik widzi bazę natychmiast po równoległym odczycie; migracje/seed/wzbogacanie
+  // (poniżej) na istniejącej instalacji są prawie natychmiastowe i i tak wywołają końcowe render().
+  try{ render(); }catch(e){ console.error('Wczesny render() nie powiódł się (niekrytyczny):', e); }
+
+  // Jednorazowa migracja: herby (base64) zapisane wprost w polu crestUrl klubu -> osobny magazyn.
   let migratedAnyCrest = false;
   DB.clubs.forEach(club=>{
     if(club.crestUrl && club.crestUrl.startsWith('data:image')){
@@ -1140,39 +1164,23 @@ async function loadAllInner(){
   }
   let addedSeed = false;
   ALL_SEED_CLUBS.forEach(seed=>{
-    const exists = DB.clubs.some(c=>c.name===seed.name && c.league===seed.league);
+    const exists = DB.clubs.some(c2=>c2.name===seed.name && c2.league===seed.league);
     if(!exists){ DB.clubs.push(Object.assign({}, seed, {id: uid('K')})); addedSeed = true; }
   });
   if(addedSeed) await saveClubs();
-  let seedFlag = null;
-  try{ seedFlag = await storage.get('scouting:seed_rosters_v9', true); }catch(e){ seedFlag = null; }
   if(!seedFlag){
-    try{
-      await importAllKnownRosters();
-    }catch(e){ console.error('Roster seed error', e); }
+    try{ await importAllKnownRosters(); }catch(e){ console.error('Roster seed error', e); }
     await quietFlagSet('scouting:seed_rosters_v9');
   }
   let totalEnrichChanged = 0;
-  let enrichFlag = null;
-  try{ enrichFlag = await storage.get('scouting:enrich_znicz_players_v1', true); }catch(e){ enrichFlag = null; }
   if(!enrichFlag){
-    try{
-      const r = await enrichZniczRoster();
-      totalEnrichChanged += r.changed||0;
-    }catch(e){ console.error('Znicz enrich error', e); }
+    try{ const r = await enrichZniczRoster(); totalEnrichChanged += r.changed||0; }catch(e){ console.error('Znicz enrich error', e); }
     await quietFlagSet('scouting:enrich_znicz_players_v1');
   }
-  let enrichAviaFlag = null;
-  try{ enrichAviaFlag = await storage.get('scouting:enrich_avia_v1', true); }catch(e){ enrichAviaFlag = null; }
   if(!enrichAviaFlag){
-    try{
-      const r = await enrichRosterGeneric(SEED_PLAYER_ENRICHMENT_AVIA);
-      totalEnrichChanged += r.changed||0;
-    }catch(e){ console.error('Avia enrich error', e); }
+    try{ const r = await enrichRosterGeneric(SEED_PLAYER_ENRICHMENT_AVIA); totalEnrichChanged += r.changed||0; }catch(e){ console.error('Avia enrich error', e); }
     await quietFlagSet('scouting:enrich_avia_v1');
   }
-  let enrichGornikFlag = null;
-  try{ enrichGornikFlag = await storage.get('scouting:enrich_gornik_v1', true); }catch(e){ enrichGornikFlag = null; }
   if(!enrichGornikFlag){
     try{
       const r1 = await enrichRosterGeneric(SEED_PLAYER_ENRICHMENT_GORNIK);
@@ -1181,8 +1189,6 @@ async function loadAllInner(){
     }catch(e){ console.error('Gornik/Rekord enrich error', e); }
     await quietFlagSet('scouting:enrich_gornik_v1');
   }
-  let enrichAviaV2Flag = null;
-  try{ enrichAviaV2Flag = await storage.get('scouting:enrich_avia_olimpia_v2', true); }catch(e){ enrichAviaV2Flag = null; }
   if(!enrichAviaV2Flag){
     try{
       const r1 = await enrichRosterGeneric(SEED_PLAYER_ENRICHMENT_AVIA_V2);
@@ -1192,50 +1198,8 @@ async function loadAllInner(){
     }catch(e){ console.error('Avia/Olimpia V2 enrich error', e); }
     await quietFlagSet('scouting:enrich_avia_olimpia_v2');
   }
-  // Jeden zapis zawodników na koniec WSZYSTKICH bramek wzbogacania, zamiast do 7 osobnych — kluczowe
-  // dla szybkości i niezawodności ładowania (każdy nieudany zapis to do ~600ms ponawiania).
+  // Jeden zapis zawodników na koniec WSZYSTKICH bramek wzbogacania, zamiast do 7 osobnych.
   if(totalEnrichChanged > 0){ try{ await savePlayers(); }catch(e){ console.error('Batched enrichment savePlayers error', e); } }
-  try{
-    const o = await storage.get('scouting:observations', true);
-    DB.observations = o ? JSON.parse(o.value) : [];
-  }catch(e){ DB.observations = []; }
-  try{
-    const rp = await storage.get('scouting:reports', true);
-    DB.reports = rp ? JSON.parse(rp.value) : [];
-  }catch(e){ DB.reports = []; }
-  try{
-    const tl = await storage.get('scouting:talents', true);
-    DB.talents = tl ? JSON.parse(tl.value) : [];
-  }catch(e){ DB.talents = []; }
-  try{
-    const ct = await storage.get('scouting:contacts', true);
-    DB.contacts = ct ? JSON.parse(ct.value) : [];
-  }catch(e){ DB.contacts = []; }
-  try{
-    const pma = await storage.get('scouting:position_map_assignments', true);
-    positionMapAssignments = pma ? JSON.parse(pma.value) : {};
-  }catch(e){ positionMapAssignments = {}; }
-  try{
-    const s = await storage.get('scouting:settings', true);
-    const loaded = s ? JSON.parse(s.value) : {};
-    DB.settings = Object.assign(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), loaded);
-  }catch(e){ DB.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS)); }
-  // Zapewnij status "Z polecenia" na liście (dla filtra i badge) także w istniejących instalacjach — bez wymuszania zapisu.
-  if(Array.isArray(DB.settings.statuses) && !DB.settings.statuses.includes('Z polecenia')){
-    const idx = DB.settings.statuses.indexOf('Odrzucony');
-    if(idx >= 0) DB.settings.statuses.splice(idx, 0, 'Z polecenia'); else DB.settings.statuses.push('Z polecenia');
-  }
-  // Kategorie juniorskie: rozbicie CLJ U17 na grupę zachodnią i wschodnią (idempotentnie, także dla istniejącej bazy).
-  if(Array.isArray(DB.settings.leagues)){
-    const L = DB.settings.leagues;
-    if(!L.includes('CLJ U19')) L.push('CLJ U19');
-    const variants = ['CLJ U17 (zachodnia)','CLJ U17 (wschodnia)'].filter(v=>!L.includes(v));
-    const plain = L.indexOf('CLJ U17');
-    if(plain >= 0) L.splice(plain, 1, ...variants);   // zamień pojedyncze "CLJ U17" na warianty w tym miejscu
-    else variants.forEach(v=>L.push(v));
-  }
-  let recoMigrationFlag = null;
-  try{ recoMigrationFlag = await storage.get('scouting:reco_migration_v1', true); }catch(e){ recoMigrationFlag = null; }
   if(!recoMigrationFlag){
     DB.settings.recommendations = ["Kontynuować obserwację","Zaprosić na testy","(Do transferu)","Odrzucić","Zbyt wcześnie ocenić"];
     let anyObsChanged = false;
@@ -1247,8 +1211,6 @@ async function loadAllInner(){
     if(anyObsChanged){ try{ await saveObservations(); }catch(e){ console.error('Reco observations migration save error', e); } }
     await quietFlagSet('scouting:reco_migration_v1');
   }
-  let statusMigrationFlag = null;
-  try{ statusMigrationFlag = await storage.get('scouting:status_migration_v1', true); }catch(e){ statusMigrationFlag = null; }
   if(!statusMigrationFlag){
     DB.settings.statuses = ["Do Obserwacji","Rekomendowany","Na Testy","Odrzucony","Do transferu"];
     const STATUS_REMAP = {
@@ -1262,6 +1224,20 @@ async function loadAllInner(){
     try{ await saveSettings(); }catch(e){ console.error('Status settings migration save error', e); }
     if(anyPlayerChanged){ try{ await savePlayers(); }catch(e){ console.error('Status players migration save error', e); } }
     await quietFlagSet('scouting:status_migration_v1');
+  }
+  // Zapewnienia ustawień PO migracjach (żeby migracja statusów ich nie nadpisała): status "Z polecenia"
+  // oraz rozbicie CLJ U17 na grupę zachodnią/wschodnią. Idempotentne, bez wymuszania zapisu.
+  if(Array.isArray(DB.settings.statuses) && !DB.settings.statuses.includes('Z polecenia')){
+    const idx = DB.settings.statuses.indexOf('Odrzucony');
+    if(idx >= 0) DB.settings.statuses.splice(idx, 0, 'Z polecenia'); else DB.settings.statuses.push('Z polecenia');
+  }
+  if(Array.isArray(DB.settings.leagues)){
+    const L = DB.settings.leagues;
+    if(!L.includes('CLJ U19')) L.push('CLJ U19');
+    const variants = ['CLJ U17 (zachodnia)','CLJ U17 (wschodnia)'].filter(v=>!L.includes(v));
+    const plain = L.indexOf('CLJ U17');
+    if(plain >= 0) L.splice(plain, 1, ...variants);
+    else variants.forEach(v=>L.push(v));
   }
   if(quietFlagFailCount > 0){
     console.log('Uwaga (niegroźne): ' + quietFlagFailCount + ' znaczników "już to zrobione" w tle nie zapisało się — te operacje mogą się powtórzyć przy następnym otwarciu, ale to nie dotyczy Twoich danych.');
@@ -1956,6 +1932,17 @@ function viewPlayerDetail(id){
         ${o.notes? `<div style="font-size:12.5px;margin-top:4px;">${esc(o.notes)}</div>`:''}
       </div>`;
     }).join('') : `<div class="empty">Brak obserwacji dla tego zawodnika.</div>`}
+  </div>
+  <div class="card">
+    <h4 style="margin-top:0;color:var(--pitch);">⚡ Szybkie statystyki sezonu</h4>
+    <div class="grid grid-4">
+      <div class="field-wrap" style="margin-bottom:8px;"><label class="field">Mecze</label><input type="number" min="0" id="qs-matches" value="${p.matches!=null?p.matches:''}"></div>
+      <div class="field-wrap" style="margin-bottom:8px;"><label class="field">Minuty</label><input type="number" min="0" id="qs-minutes" value="${p.minutes!=null?p.minutes:''}"></div>
+      <div class="field-wrap" style="margin-bottom:8px;"><label class="field">Gole</label><input type="number" min="0" id="qs-goals" value="${p.goals!=null?p.goals:''}"></div>
+      <div class="field-wrap" style="margin-bottom:8px;"><label class="field">Asysty</label><input type="number" min="0" id="qs-assists" value="${p.assists!=null?p.assists:''}"></div>
+    </div>
+    <button class="gold" data-action="save-quick-stats" data-id="${p.id}">Zapisz statystyki</button>
+    <p class="note" style="margin-top:6px;">Szybka aktualizacja bez otwierania pełnej edycji — wpisz i zapisz.</p>
   </div>
   <div class="card">
     <h4 style="margin-top:0;color:var(--pitch);">Profil ocen — radar</h4>
@@ -3639,6 +3626,18 @@ function attachHandlers(){
     Object.keys(positionMapAssignments).forEach(k=>{ if(k.startsWith(rankingLeague+'|||')) delete positionMapAssignments[k]; });
     await savePositionMapAssignments();
     render();
+  });
+
+  // Szybkie statystyki sezonu (profil zawodnika) — zapis bez otwierania pełnej edycji.
+  main.querySelectorAll('[data-action="save-quick-stats"]').forEach(b=>b.onclick=async()=>{
+    const pl = DB.players.find(x=>x.id===b.dataset.id);
+    if(!pl) return;
+    const num = id=>{ const el=document.getElementById(id); const v=el?el.value:''; return v===''? null : Number(v); };
+    pl.matches = num('qs-matches'); pl.minutes = num('qs-minutes'); pl.goals = num('qs-goals'); pl.assists = num('qs-assists');
+    const orig = b.textContent; b.textContent = 'Zapisywanie...'; b.disabled = true;
+    const ok = await savePlayers();
+    b.textContent = ok ? '✓ Zapisano' : 'Błąd zapisu — spróbuj ponownie';
+    setTimeout(()=>render(), 700);
   });
 
   // Porównywarka zawodników
