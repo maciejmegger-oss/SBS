@@ -1371,6 +1371,101 @@ function daysSince(dateStr){
   return Math.floor((now-d)/(1000*60*60*24));
 }
 
+// ---------- RADAR / PORÓWNYWARKA ----------
+const RADAR_COLORS = ['#16302A', '#C69B3C', '#B6503F']; // pitch / gold / clay — do 3 zawodników
+// Radar (wykres pajęczy) z 5 atrybutów (RATING_KEYS, skala 1-10). entries: [{label, avgs:{k:val}, count}].
+function radarSvg(entries){
+  const keys = RATING_KEYS, N = keys.length, max = 10;
+  const cx = 150, cy = 150, R = 96;
+  const ang = i => (-90 + i*(360/N)) * Math.PI/180;
+  const pt = (i, r) => [ +(cx + r*Math.cos(ang(i))).toFixed(1), +(cy + r*Math.sin(ang(i))).toFixed(1) ];
+  let grid = '';
+  for(let ring=2; ring<=10; ring+=2){
+    const rr = R*ring/max;
+    grid += `<polygon points="${keys.map((_,i)=>pt(i,rr).join(',')).join(' ')}" fill="none" stroke="#E7E2D3" stroke-width="1"/>`;
+  }
+  let axes = '';
+  keys.forEach((k,i)=>{
+    const [x,y] = pt(i,R);
+    axes += `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="#E7E2D3" stroke-width="1"/>`;
+    const [lx,ly] = pt(i,R+20);
+    const anchor = Math.abs(lx-cx)<6 ? 'middle' : (lx>cx ? 'start' : 'end');
+    axes += `<text x="${lx}" y="${ly+3}" text-anchor="${anchor}" font-size="11" font-weight="600" fill="#5B6560">${esc(RATING_LABELS[k]||k)}</text>`;
+  });
+  let shapes = '';
+  entries.forEach((e,idx)=>{
+    const color = RADAR_COLORS[idx%3];
+    const poly = keys.map((k,i)=>{ const v = e.avgs && e.avgs[k]!=null ? e.avgs[k] : 0; return pt(i, R*v/max).join(','); }).join(' ');
+    shapes += `<polygon points="${poly}" fill="${color}" fill-opacity="0.16" stroke="${color}" stroke-width="2"/>`;
+    keys.forEach((k,i)=>{ const v = e.avgs && e.avgs[k]!=null ? e.avgs[k] : 0; const [x,y] = pt(i, R*v/max); shapes += `<circle cx="${x}" cy="${y}" r="3" fill="${color}"/>`; });
+  });
+  return `<svg viewBox="0 0 300 300" style="width:100%;max-width:340px;height:auto;display:block;margin:0 auto;">${grid}${axes}${shapes}</svg>`;
+}
+
+let compareIds = ['', '', ''];
+function compareDescriptive(entries){
+  const withAvg = entries.filter(e=>e.avg);
+  if(withAvg.length < 2) return '<div class="empty">Wybierz co najmniej dwóch zawodników z ocenami, aby zobaczyć porównanie opisowe.</div>';
+  const lines = [];
+  const bestOverall = withAvg.slice().sort((a,b)=>b.avg.overall-a.avg.overall)[0];
+  lines.push(`<li><strong>Ogólnie najwyżej:</strong> ${esc(bestOverall.p.lastName)} ${esc(bestOverall.p.firstName)} — średnia <strong>${fmt1(bestOverall.avg.overall)}</strong>/10.</li>`);
+  RATING_KEYS.forEach(k=>{
+    const sorted = withAvg.slice().sort((a,b)=> b.avg.avgs[k]-a.avg.avgs[k]);
+    const best = sorted[0], diff = best.avg.avgs[k]-sorted[sorted.length-1].avg.avgs[k];
+    lines.push(`<li><strong>${esc(RATING_LABELS[k])}:</strong> ${esc(best.p.lastName)} (${fmt1(best.avg.avgs[k])})${diff<0.3?' — porównywalnie':''}.</li>`);
+  });
+  const small = withAvg.filter(e=>e.avg.count < 3);
+  if(small.length) lines.push(`<li style="color:var(--clay-dark);"><strong>Mała próba:</strong> ${small.map(e=>esc(e.p.lastName)+' ('+e.avg.count+' obs.)').join(', ')} — wyniki mniej pewne.</li>`);
+  const none = entries.filter(e=>!e.avg);
+  if(none.length) lines.push(`<li style="color:var(--ink-soft);">Bez ocen (poza radarem): ${none.map(e=>esc(e.p.lastName)).join(', ')} — dodaj obserwacje.</li>`);
+  return `<ul style="margin:0;padding-left:18px;line-height:1.7;font-size:13.5px;">${lines.join('')}</ul>`;
+}
+function compareTable(entries){
+  const withAvg = entries.filter(e=>e.avg);
+  if(!withAvg.length) return '';
+  const head = `<tr><th>Atrybut</th>${withAvg.map(e=>`<th>${esc(e.p.lastName)}</th>`).join('')}</tr>`;
+  const rows = RATING_KEYS.map(k=>{
+    const mx = Math.max(...withAvg.map(e=>e.avg.avgs[k]));
+    return `<tr><td>${esc(RATING_LABELS[k])}</td>${withAvg.map(e=>`<td style="${e.avg.avgs[k]===mx?'font-weight:800;color:var(--pitch);':''}">${fmt1(e.avg.avgs[k])}</td>`).join('')}</tr>`;
+  }).join('');
+  const overallRow = `<tr style="border-top:2px solid #E3DECE;"><td><strong>Ogólnie</strong></td>${withAvg.map(e=>`<td><strong>${fmt1(e.avg.overall)}</strong></td>`).join('')}</tr>`;
+  const obsRow = `<tr><td style="color:var(--ink-soft);font-size:11.5px;">Liczba obserwacji</td>${withAvg.map(e=>`<td style="color:var(--ink-soft);font-size:11.5px;">${e.avg.count}</td>`).join('')}</tr>`;
+  return `<table style="width:auto;min-width:280px;">${head}${rows}${overallRow}${obsRow}</table>`;
+}
+function viewCompare(){
+  const players = DB.players.slice().sort((a,b)=>(a.lastName||'').localeCompare(b.lastName||''));
+  const opt = (sel)=> `<option value="">— wybierz zawodnika —</option>` + players.map(p=>`<option value="${p.id}" ${sel===p.id?'selected':''}>${esc(p.lastName)} ${esc(p.firstName)} — ${esc(clubName(p.clubId))}</option>`).join('');
+  const entries = compareIds.map(id => id ? {p: DB.players.find(x=>x.id===id), avg: playerAvg(id)} : null).filter(e=>e && e.p);
+  const radarEntries = entries.filter(e=>e.avg).map(e=>({label:e.p.lastName, avgs:e.avg.avgs, count:e.avg.count}));
+  const legend = entries.filter(e=>e.avg).map((e,i)=>`<span style="display:inline-flex;align-items:center;gap:6px;margin:0 12px 6px 0;font-size:13px;"><span style="width:12px;height:12px;border-radius:3px;background:${RADAR_COLORS[i%3]};display:inline-block;"></span>${esc(e.p.lastName)} ${esc(e.p.firstName)}</span>`).join('');
+  return `
+  <button class="secondary" data-action="compare-back" style="margin-bottom:14px;">&larr; Wróć do zawodników</button>
+  <h2 class="view-title">Porównywarka zawodników</h2>
+  <p class="view-sub">Wybierz 2–3 zawodników — porównanie graficzne (radar) i opisowe. Skala 1–10 ze średnich obserwacji.</p>
+  <div class="card">
+    <div class="grid grid-3">
+      <div class="field-wrap"><label class="field">Zawodnik 1</label><select id="compare-sel-0">${opt(compareIds[0])}</select></div>
+      <div class="field-wrap"><label class="field">Zawodnik 2</label><select id="compare-sel-1">${opt(compareIds[1])}</select></div>
+      <div class="field-wrap"><label class="field">Zawodnik 3 (opcjonalnie)</label><select id="compare-sel-2">${opt(compareIds[2])}</select></div>
+    </div>
+  </div>
+  ${entries.length ? `
+  <div class="grid grid-2">
+    <div class="card">
+      <h4 style="margin-top:0;color:var(--pitch);">Radar profilu</h4>
+      ${radarEntries.length ? radarSvg(radarEntries) + `<div style="text-align:center;margin-top:8px;">${legend}</div>` : '<div class="empty">Zaznaczeni zawodnicy nie mają jeszcze ocen — dodaj obserwacje.</div>'}
+    </div>
+    <div class="card">
+      <h4 style="margin-top:0;color:var(--pitch);">Porównanie opisowe</h4>
+      ${compareDescriptive(entries)}
+    </div>
+  </div>
+  <div class="card" style="overflow:auto;">
+    <h4 style="margin-top:0;color:var(--pitch);">Dane liczbowe</h4>
+    ${compareTable(entries) || '<div class="empty">Brak danych liczbowych — zawodnicy bez ocen.</div>'}
+  </div>` : '<div class="card"><div class="empty">Wybierz zawodników powyżej, aby zobaczyć porównanie.</div></div>'}`;
+}
+
 const NAV_ITEMS = [
   {id:"dashboard", label:"Dashboard"},
   {id:"clubs", label:"Kluby"},
@@ -1455,6 +1550,7 @@ function render(){
   else if(currentView==="talent") main.innerHTML = viewTalent();
   else if(currentView==="contacts") main.innerHTML = viewContacts();
   else if(currentView==="settings") main.innerHTML = viewSettings();
+  else if(currentView==="compare") main.innerHTML = viewCompare();
   attachHandlers();
   if(focusRestore){
     const el = document.getElementById(focusRestore.id);
@@ -1760,7 +1856,10 @@ function viewPlayers(){
       <input id="f-birthyear" type="number" placeholder="Rocznik np. 2005" value="${esc(playerFilters.birthYear)}" style="max-width:140px;">
       <input id="f-search" placeholder="Szukaj po nazwisku..." value="${esc(playerFilters.search)}">
     </div>
-    <button class="gold" data-action="add-player">+ Nowy zawodnik</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="gold" data-action="add-player">+ Nowy zawodnik</button>
+      <button class="secondary" data-action="compare-open">⚖️ Porównaj zawodników</button>
+    </div>
   </div>
   <div class="card" style="padding:0;overflow:auto;">
     <table>
@@ -1853,6 +1952,10 @@ function viewPlayerDetail(id){
         ${o.notes? `<div style="font-size:12.5px;margin-top:4px;">${esc(o.notes)}</div>`:''}
       </div>`;
     }).join('') : `<div class="empty">Brak obserwacji dla tego zawodnika.</div>`}
+  </div>
+  <div class="card">
+    <h4 style="margin-top:0;color:var(--pitch);">Profil ocen — radar</h4>
+    ${(()=>{ const a = playerAvg(p.id); return a ? radarSvg([{label:p.lastName, avgs:a.avgs, count:a.count}]) + `<p class="note" style="text-align:center;margin-top:6px;">Średnia z ${a.count} obserwacji (skala 1–10) &middot; ogólnie ${fmt1(a.overall)}</p>` : '<div class="empty">Brak ocen — dodaj obserwację w „Plan Obserwacji”, aby zobaczyć radar.</div>'; })()}
   </div>
   <div class="card">
     <h4 style="margin-top:0;color:var(--pitch);">Raporty taktyczne (${playerReports(p.id).length})</h4>
@@ -2007,7 +2110,12 @@ function viewClubs(){
   ${groupRow}
   <div class="toolbar" style="margin-top:14px;">
     <div class="note">${list.length} ${list.length===1?'klub':'klubów'} w widoku</div>
-    <button class="gold" data-action="add-club">+ Nowy klub</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <label class="secondary" style="cursor:pointer;padding:9px 16px;border:1px solid #C9C2AB;border-radius:6px;display:inline-flex;align-items:center;" title="Zaznacz wiele plików — dopasuję je do klubów po nazwie pliku">
+        ⭱ Wgraj wiele logo <input type="file" id="multi-logo-input" accept="image/png,image/jpeg,image/jpg,.png,.jpg,.jpeg" multiple style="display:none;">
+      </label>
+      <button class="gold" data-action="add-club">+ Nowy klub</button>
+    </div>
   </div>
   <div class="card" style="padding:0;overflow:auto;">
     <table>
@@ -3505,6 +3613,39 @@ function attachHandlers(){
     await savePositionMapAssignments();
     render();
   });
+
+  // Porównywarka zawodników
+  main.querySelectorAll('[data-action="compare-open"]').forEach(b=>b.onclick=()=>{ currentView='compare'; viewingPlayerId=null; render(); });
+  main.querySelectorAll('[data-action="compare-back"]').forEach(b=>b.onclick=()=>{ currentView='players'; viewingPlayerId=null; render(); });
+  [0,1,2].forEach(i=>{ const sel=main.querySelector('#compare-sel-'+i); if(sel) sel.onchange=()=>{ compareIds[i]=sel.value; render(); }; });
+
+  // Wgrywanie wielu logotypów naraz — dopasowanie plików do klubów po nazwie.
+  const multiLogo = main.querySelector('#multi-logo-input');
+  if(multiLogo){
+    multiLogo.onchange = async ()=>{
+      const files = Array.from(multiLogo.files||[]);
+      if(!files.length) return;
+      const normName = s => (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'');
+      const matchedPairs = []; const unmatched = [];
+      for(const file of files){
+        const fn = normName(file.name.replace(/\.[^.]+$/,''));
+        if(!fn){ unmatched.push(file.name); continue; }
+        // Ranking dopasowań: dokładne > klub zaczyna się od nazwy pliku > plik zaczyna się od klubu > zawiera.
+        const scored = DB.clubs.map(c=>{ const cn=normName(c.name); let rank=99;
+          if(cn===fn) rank=0; else if(cn.startsWith(fn)) rank=1; else if(fn.startsWith(cn)) rank=2; else if(cn.includes(fn)||fn.includes(cn)) rank=3;
+          return {c, cn, rank, dl:Math.abs(cn.length-fn.length)};
+        }).filter(x=>x.rank<99).sort((a,b)=> a.rank-b.rank || a.dl-b.dl);
+        const club = scored[0] && scored[0].c;
+        if(!club){ unmatched.push(file.name); continue; }
+        try{ DB.clubCrests[club.id] = await processCrestFile(file); matchedPairs.push(file.name+' → '+club.name); }
+        catch(e){ unmatched.push(file.name+' (błąd pliku)'); }
+      }
+      if(matchedPairs.length) await saveClubCrests();
+      render();
+      alert(`Zapisano ${matchedPairs.length} logo:\n` + matchedPairs.join('\n') +
+        (unmatched.length ? `\n\nNie dopasowano (${unmatched.length}) — wgraj je klikając w herb klubu:\n${unmatched.join('\n')}` : ''));
+    };
+  }
   main.querySelectorAll('[data-action="save-report"]').forEach(b=>b.onclick=async()=>{
     const playerId = document.getElementById('rep-player').value;
     if(!playerId){ alert('Wybierz zawodnika.'); return; }
