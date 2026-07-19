@@ -1687,19 +1687,17 @@ function bydgoszczDistanceWidget(){
 
 function sponsorsPanel(){
   const sponsors = (DB.settings && DB.settings.sponsors) || [];
-  return `<div class="card">
-    <div class="toolbar" style="margin-bottom:10px;">
-      <h4 style="margin:0;color:var(--pitch);">Sponsorzy</h4>
-      <label class="secondary" style="cursor:pointer;margin:0;padding:6px 14px;border-radius:8px;display:inline-block;">
-        + Dodaj logo <input type="file" id="sponsor-logo-input" accept="image/png,image/jpeg,image/svg+xml" style="display:none;">
-      </label>
-    </div>
-    ${sponsors.length ? `<div style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;">
-      ${sponsors.map((s,i)=>`<div style="position:relative;">
-        <img src="${s.dataUrl}" alt="${esc(s.name||'Sponsor')}" style="height:48px;max-width:140px;object-fit:contain;">
-        <button class="link-btn" data-action="remove-sponsor" data-idx="${i}" style="position:absolute;top:-8px;right:-8px;background:var(--clay-dark);color:#fff;border-radius:50%;width:18px;height:18px;font-size:10px;line-height:1;padding:0;">✕</button>
-      </div>`).join('')}
-    </div>` : '<div class="empty">Brak logo sponsorów — dodaj pierwsze powyżej.</div>'}
+  // Puste, małe okienko bez napisów — na przyszłość, do logotypów partnerów i sponsorów.
+  // Dyskretny "+" (pole pliku) pozwala dodać logo; po dodaniu logotypy pokazują się w rzędzie.
+  const logos = sponsors.map((s,i)=>`<div style="position:relative;display:inline-flex;">
+      <img src="${s.dataUrl}" alt="${esc(s.name||'')}" style="height:34px;max-width:100px;object-fit:contain;">
+      <button class="link-btn" data-action="remove-sponsor" data-idx="${i}" title="Usuń" style="position:absolute;top:-7px;right:-7px;background:var(--clay-dark);color:#fff;border-radius:50%;width:15px;height:15px;font-size:9px;line-height:1;padding:0;">✕</button>
+    </div>`).join('');
+  return `<div class="card sponsors-box">
+    ${logos}
+    <label class="sponsors-add" title="Dodaj logo partnera / sponsora">+
+      <input type="file" id="sponsor-logo-input" accept="image/png,image/jpeg,image/svg+xml" style="display:none;">
+    </label>
   </div>`;
 }
 
