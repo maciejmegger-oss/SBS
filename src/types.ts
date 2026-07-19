@@ -62,6 +62,7 @@ export interface Observation {
   recommendation?: string;
   notes?: string;
   statsFilledIn?: boolean;
+  distanceKm?: number | null;
 }
 
 export interface Report {
@@ -103,8 +104,14 @@ export interface Contact {
   dateAdded?: string;
 }
 
+export interface Sponsor {
+  name?: string;
+  dataUrl: string;
+}
+
 export interface Settings {
   scouts: string[];
+  sponsors?: Sponsor[];
   [key: string]: unknown;
 }
 

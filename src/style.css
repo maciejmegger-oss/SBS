@@ -220,6 +220,17 @@ tr:hover td{background:#FBF9F2;}
 .radio-row input[type=radio]{width:auto;}
 ::placeholder{color:#A8A190;}
 
+/* Mapa Polski 3D na dashboardzie — województwo unosi się przy najechaniu, odsłaniając wytłoczenie. */
+.poland-map .voiv-shape{transition:transform .13s ease, filter .13s ease;transform-box:fill-box;transform-origin:center;}
+.poland-map .voiv-shape:hover{transform:translateY(-5px);filter:brightness(1.14) saturate(1.05);}
+.poland-map text{user-select:none;}
+
+/* Sekcja "Kluby w bazie" na dashboardzie — karty klubów z herbem, klik → zawodnicy klubu. */
+.club-crest-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;}
+.club-crest-card{display:flex;align-items:center;gap:12px;padding:10px 12px;background:#FAF8F1;border:1px solid #ECE7D8;border-radius:10px;cursor:pointer;transition:transform .1s ease, box-shadow .1s ease, border-color .1s ease;}
+.club-crest-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(10,23,18,.10);border-color:var(--gold);}
+.club-crest-card:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
+
 @media (max-width: 780px){
   .app{flex-direction:column;min-height:0;}
   .sidebar{width:100%;flex-direction:row;align-items:center;padding:10px 14px;gap:16px;overflow-x:auto;}
