@@ -233,8 +233,9 @@ tr:hover td{background:#FBF9F2;}
 
 /* Sponsorzy — małe puste okienko na przyszłość (logotypy partnerów/sponsorów), bez napisów. */
 .sponsors-box{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 12px;min-height:52px;}
-.sponsors-add{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border:1px dashed #C9C2AB;border-radius:8px;color:var(--ink-soft);font-size:20px;line-height:1;background:#FAF8F1;cursor:pointer;transition:border-color .1s,color .1s;}
-.sponsors-add:hover{border-color:var(--gold);color:var(--gold-dark);}
+/* Niewidoczna, klikalna strefa dodawania logo (bez znaczka "+") — wypełnia puste miejsce w okienku. */
+.sponsors-add-zone{flex:1 1 40px;min-height:34px;border-radius:8px;cursor:pointer;transition:background .1s;}
+.sponsors-add-zone:hover{background:rgba(0,0,0,.02);}
 
 /* Picker decyzji/statusu na dole raportu — klik tylko zaznacza, nie przeładowuje formularza. */
 .status-picker{display:flex;flex-wrap:wrap;gap:8px;}

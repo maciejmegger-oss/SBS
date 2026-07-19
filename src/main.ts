@@ -1762,15 +1762,15 @@ function bydgoszczDistanceWidget(){
 
 function sponsorsPanel(){
   const sponsors = (DB.settings && DB.settings.sponsors) || [];
-  // Puste, małe okienko bez napisów — na przyszłość, do logotypów partnerów i sponsorów.
-  // Dyskretny "+" (pole pliku) pozwala dodać logo; po dodaniu logotypy pokazują się w rzędzie.
+  // Puste, małe okienko bez napisów i bez żadnego znaczka — na przyszłość, do logotypów partnerów i
+  // sponsorów. Dodać logo można klikając w puste pole okienka (niewidoczna, klikalna strefa).
   const logos = sponsors.map((s,i)=>`<div style="position:relative;display:inline-flex;">
       <img src="${s.dataUrl}" alt="${esc(s.name||'')}" style="height:34px;max-width:100px;object-fit:contain;">
       <button class="link-btn" data-action="remove-sponsor" data-idx="${i}" title="Usuń" style="position:absolute;top:-7px;right:-7px;background:var(--clay-dark);color:#fff;border-radius:50%;width:15px;height:15px;font-size:9px;line-height:1;padding:0;">✕</button>
     </div>`).join('');
   return `<div class="card sponsors-box">
     ${logos}
-    <label class="sponsors-add" title="Dodaj logo partnera / sponsora">+
+    <label class="sponsors-add-zone" title="Kliknij, aby dodać logo partnera / sponsora">
       <input type="file" id="sponsor-logo-input" accept="image/png,image/jpeg,image/svg+xml" style="display:none;">
     </label>
   </div>`;
