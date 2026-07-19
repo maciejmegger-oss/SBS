@@ -12,7 +12,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 const RATING_KEYS = ["technika","taktyka","motoryka","mentalnosc","potencjal"];
 const RATING_LABELS = {technika:"Technika",taktyka:"Taktyka",motoryka:"Motoryka",mentalnosc:"Mentalność",potencjal:"Potencjał"};
-const STATUS_CLASS = {"Nowy typ":"new","W obserwacji":"watching","Rekomendowany":"reco","Na testach":"trial","Podpisany":"signed","Odrzucony":"rejected","Wstrzymany":"hold"};
+const STATUS_CLASS = {"Nowy typ":"new","W obserwacji":"watching","Rekomendowany":"reco","Na testach":"trial","Podpisany":"signed","Odrzucony":"rejected","Wstrzymany":"hold","Do Obserwacji":"watching","Na Testy":"trial","Do transferu":"signed","Z polecenia":"reco"};
 const FORMATIONS = ["1-4-4-2","1-4-3-3","1-3-4-3","1-3-5-2","1-4-5-1","1-5-4-1","1-4-2-3-1"];
 
 let currentScout = "";
@@ -32,9 +32,9 @@ let clubBrowse = {top:"", group:""};
 
 const DEFAULT_SETTINGS = {
   regions: ["Dolnośląski ZPN","Kujawsko-Pomorski ZPN","Lubelski ZPN","Lubuski ZPN","Łódzki ZPN","Małopolski ZPN","Mazowiecki ZPN","Opolski ZPN","Podkarpacki ZPN","Podlaski ZPN","Pomorski ZPN","Śląski ZPN","Świętokrzyski ZPN","Warmińsko-Mazurski ZPN","Wielkopolski ZPN","Zachodniopomorski ZPN"],
-  leagues: ["II liga","III liga, gr. I","III liga, gr. II","III liga, gr. III","III liga, gr. IV","IV liga (pomorska)","IV liga (zachodniopomorska)","IV liga (dolnośląska)","IV liga (śląska)","IV liga (wielkopolska)","Klasa okręgowa","CLJ U19","CLJ U17","Liga makroregionalna U16","Liga wojewódzka U15"],
+  leagues: ["II liga","III liga, gr. I","III liga, gr. II","III liga, gr. III","III liga, gr. IV","IV liga (pomorska)","IV liga (zachodniopomorska)","IV liga (dolnośląska)","IV liga (śląska)","IV liga (wielkopolska)","Klasa okręgowa","CLJ U19","CLJ U17 (zachodnia)","CLJ U17 (wschodnia)","Liga makroregionalna U16","Liga wojewódzka U15"],
   positions: ["Bramkarz","Obrońca środkowy","Obrońca boczny","Pomocnik defensywny","Pomocnik środkowy","Pomocnik ofensywny","Skrzydłowy","Napastnik"],
-  statuses: ["Do Obserwacji","Rekomendowany","Na Testy","Odrzucony","Do transferu"],
+  statuses: ["Do Obserwacji","Na Testy","Do transferu","Z polecenia","Rekomendowany","Odrzucony"],
   recommendations: ["Kontynuować obserwację","Zaprosić na testy","(Do transferu)","Odrzucić","Zbyt wcześnie ocenić"],
   scouts: [],
   customFields: [],
@@ -52,6 +52,7 @@ function topLevelOf(league){
 function groupsForTop(top){
   if(top==="III liga") return DB.settings.leagues.filter(l=>l.startsWith("III liga, gr."));
   if(top==="IV liga") return DB.settings.leagues.filter(l=>l.startsWith("IV liga ("));
+  if(top==="Kategorie juniorskie") return DB.settings.leagues.filter(l=>topLevelOf(l)==="Kategorie juniorskie");
   return [];
 }
 const SEED_CLUBS_III_LIGA_GR1 = [
@@ -1219,6 +1220,20 @@ async function loadAllInner(){
     const loaded = s ? JSON.parse(s.value) : {};
     DB.settings = Object.assign(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), loaded);
   }catch(e){ DB.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS)); }
+  // Zapewnij status "Z polecenia" na liście (dla filtra i badge) także w istniejących instalacjach — bez wymuszania zapisu.
+  if(Array.isArray(DB.settings.statuses) && !DB.settings.statuses.includes('Z polecenia')){
+    const idx = DB.settings.statuses.indexOf('Odrzucony');
+    if(idx >= 0) DB.settings.statuses.splice(idx, 0, 'Z polecenia'); else DB.settings.statuses.push('Z polecenia');
+  }
+  // Kategorie juniorskie: rozbicie CLJ U17 na grupę zachodnią i wschodnią (idempotentnie, także dla istniejącej bazy).
+  if(Array.isArray(DB.settings.leagues)){
+    const L = DB.settings.leagues;
+    if(!L.includes('CLJ U19')) L.push('CLJ U19');
+    const variants = ['CLJ U17 (zachodnia)','CLJ U17 (wschodnia)'].filter(v=>!L.includes(v));
+    const plain = L.indexOf('CLJ U17');
+    if(plain >= 0) L.splice(plain, 1, ...variants);   // zamień pojedyncze "CLJ U17" na warianty w tym miejscu
+    else variants.forEach(v=>L.push(v));
+  }
   let recoMigrationFlag = null;
   try{ recoMigrationFlag = await storage.get('scouting:reco_migration_v1', true); }catch(e){ recoMigrationFlag = null; }
   if(!recoMigrationFlag){
@@ -1845,9 +1860,12 @@ function viewPlayerDetail(id){
       const phaseAvg = REPORT_PHASES.reduce((a2,f)=>a2+(Number(r.phases[f.key])||0),0)/REPORT_PHASES.length;
       const spAvg = REPORT_SET_PIECES.reduce((a2,f)=>a2+(Number(r.setPieces[f.key])||0),0)/REPORT_SET_PIECES.length;
       return `<div class="obs-item">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
           <strong>${esc(r.date)} &middot; ${esc(r.scout)} ${perspektywaBadge(r.perspektywa)}</strong>
-          <span class="avg-chip">fazy ${fmt1(phaseAvg)} / stałe ${fmt1(spAvg)}</span>
+          <span style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+            <span class="avg-chip">fazy ${fmt1(phaseAvg)} / stałe ${fmt1(spAvg)}</span>
+            <button class="secondary" data-action="print-player" data-id="${p.id}" style="padding:4px 10px;font-size:11.5px;">⭳ PDF</button>
+          </span>
         </div>
         ${r.description? `<div style="font-size:12.5px;margin-top:4px;">${esc(r.description)}</div>`:''}
         <div class="meta" style="margin-top:6px;font-size:11.5px;">
@@ -1952,12 +1970,15 @@ function viewClubs(){
   }).join(' ');
 
   let groupRow = '';
-  if(clubBrowse.top==='III liga' || clubBrowse.top==='IV liga'){
+  if(clubBrowse.top==='III liga' || clubBrowse.top==='IV liga' || clubBrowse.top==='Kategorie juniorskie'){
     const groups = groupsForTop(clubBrowse.top);
     groupRow = `<div class="filters" style="margin-top:8px;">` +
       ['Wszystkie grupy', ...groups].map(g=>{
         const val = g==='Wszystkie grupy' ? '' : g;
-        const label = g==='Wszystkie grupy' ? g : g.replace('III liga, ','').replace(/^IV liga \(|\)$/g,'');
+        // Skracaj etykietę tylko dla III/IV ligi; kategorie juniorskie (np. "CLJ U17 (zachodnia)") zostają w całości.
+        let label = g;
+        if(g.startsWith('III liga, ')) label = g.replace('III liga, ','');
+        else if(g.startsWith('IV liga (')) label = g.replace(/^IV liga \(|\)$/g,'');
         return pill(label, clubBrowse.group===val, 'browse-group', {val});
       }).join(' ') + `</div>`;
   }
@@ -2248,7 +2269,32 @@ const REPORT_SET_PIECES = [
 let reportPerspektywaValue = '';
 function selectPerspektywa(value){
   reportPerspektywaValue = (reportPerspektywaValue === value) ? '' : value;
-  render();
+  // WYŁĄCZNIE aktualizacja DOM — bez render(), żeby NIE skasować wpisanej treści raportu.
+  const picker = document.getElementById('rep-perspektywa-picker');
+  if(picker){
+    picker.dataset.value = reportPerspektywaValue;
+    picker.querySelectorAll('.persp-btn').forEach(b => b.classList.toggle('active', b.dataset.value === reportPerspektywaValue));
+  }
+}
+
+// Decyzja/status na dole raportu. value = docelowy status zawodnika. Pierwsze cztery => Monitoring;
+// "Do transferu" i "Na Testy" => mapa pozycji w Rankingu (Do transferu najwyżej).
+const REPORT_STATUS_OPTIONS = [
+  {value:'Do Obserwacji', label:'Do obserwacji'},
+  {value:'Na Testy',      label:'Testy'},
+  {value:'Do transferu',  label:'Do transferu'},
+  {value:'Z polecenia',   label:'Z polecenia'},
+  {value:'Odrzucony',     label:'Odrzucony'},
+];
+let reportStatusValue = '';
+function selectReportStatus(value){
+  reportStatusValue = (reportStatusValue === value) ? '' : value;
+  // Tylko DOM — bez render(), żeby żaden klik nie skasował treści raportu.
+  const picker = document.getElementById('rep-status-picker');
+  if(picker){
+    picker.dataset.value = reportStatusValue;
+    picker.querySelectorAll('.status-btn').forEach(b => b.classList.toggle('active', b.dataset.value === reportStatusValue));
+  }
 }
 
 function perspektywaBadge(value){
@@ -2275,7 +2321,10 @@ function viewReports(){
     return `<div class="obs-item">
       <div class="toolbar" style="margin-bottom:2px;">
         <strong data-action="view-player" data-id="${pl.id}" style="cursor:pointer;">${esc(pl.firstName)} ${esc(pl.lastName)}</strong>
-        <span class="meta">${esc(r.date)} ${perspektywaBadge(r.perspektywa)}</span>
+        <span style="display:flex;align-items:center;gap:10px;">
+          <span class="meta">${esc(r.date)} ${perspektywaBadge(r.perspektywa)}</span>
+          <button class="secondary" data-action="print-player" data-id="${pl.id}" style="padding:4px 10px;font-size:11.5px;">⭳ PDF</button>
+        </span>
       </div>
       <div class="meta">${esc(r.description ? r.description.slice(0,140) : 'Brak opisu głównego')}${r.description && r.description.length>140?'…':''}</div>
     </div>`;
@@ -2334,6 +2383,14 @@ function viewReports(){
         <label class="field">Komentarz do stałych fragmentów gry</label>
         <textarea id="rep-setpiece-comment" rows="2" placeholder="Uwagi o rzutach rożnych, wolnych..."></textarea>
       </div>
+    </div>
+
+    <div style="border-top:1px solid #E3DECE;margin:14px 0;padding-top:10px;">
+      <label class="field" style="display:block;margin-bottom:8px;">Decyzja / status zawodnika</label>
+      <div class="status-picker" id="rep-status-picker" data-value="${esc(reportStatusValue)}">
+        ${REPORT_STATUS_OPTIONS.map(o=>`<button type="button" class="status-btn ${reportStatusValue===o.value?'active':''}" data-value="${esc(o.value)}">${esc(o.label)}</button>`).join('')}
+      </div>
+      <p class="note" style="margin-top:6px;">Kliknięcie tylko zaznacza — <strong>nic nie kasuje</strong>. Pierwsze cztery dodają zawodnika do <strong>Monitoringu</strong>; „Do transferu" i „Testy" trafiają też na <strong>mapę pozycji</strong> w Rankingu (Do transferu najwyżej). Status zostaje przypisany po kliknięciu „Zapisz raport".</p>
     </div>
 
     <div class="modal-actions" style="justify-content:flex-start;">
@@ -2771,12 +2828,17 @@ function positionMapKey(league, formation, number){ return league+'|||'+(formati
 function buildAutoPositionCandidates(league, formation, number){
   const posDef = POSITION_NUMBERS.find(p=>p.number===number);
   if(!posDef) return [];
+  const statusRank = {'Do transferu':0, 'Na Testy':1};
   const candidates = DB.players
     .filter(p => clubLeague(p.clubId)===league && p.position===posDef.posName && (!formation || p.formation===formation)
       && (p.status==='Do transferu' || p.status==='Na Testy'))
     .map(p => ({p, a: playerAvg(p.id)}))
-    .filter(x => x.a)
-    .sort((a,b) => b.a.overall - a.a.overall);
+    // NIE wymagamy obserwacji — zawodnik z samą decyzją statusu (z raportu) też trafia na mapę.
+    .sort((a,b) => {
+      const s = statusRank[a.p.status] - statusRank[b.p.status];   // Do transferu przed Na Testy
+      if(s !== 0) return s;
+      return (b.a? b.a.overall : -1) - (a.a? a.a.overall : -1);     // potem wg średniej oceny
+    });
   const offset = posDef.rankOffset || 0;
   return candidates.slice(offset, offset+6).map(x=>x.p.id);
 }
@@ -2879,6 +2941,9 @@ function viewRanking(){
         <select id="ranking-formation-filter-select" style="width:100%;">${formationOptions}</select>
       </div>
     </div>
+    <div style="margin-top:10px;">
+      <button class="secondary" data-action="refresh-position-map" style="font-size:12.5px;padding:6px 12px;" title="Wypełnia mapę tej ligi na nowo aktualnymi zawodnikami „Do transferu” i „Na Testy” (Do transferu najwyżej).">↻ Odśwież mapę ze statusów zawodników</button>
+    </div>
   </div>
   ${viewRankingNumbersMode()}`;
 }
@@ -2949,8 +3014,10 @@ function viewTransferCommittee(){
   </div>`;
 }
 
+const MONITORING_STATUSES = ['Do Obserwacji','Na Testy','Do transferu','Z polecenia'];
 function viewMonitoring(){
-  let rows = DB.players.filter(p => p.source==='manual').map(p=>{
+  // Pokazuj zawodników dodanych ręcznie ORAZ tych z decyzją statusu z raportu (pierwsze cztery opcje).
+  let rows = DB.players.filter(p => p.source==='manual' || MONITORING_STATUSES.includes(p.status)).map(p=>{
     const a = playerAvg(p.id);
     const ds = a? daysSince(a.last.date) : null;
     let priority = "Brak obserwacji";
@@ -3431,6 +3498,13 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="open-statystyka"]').forEach(el=>el.onclick=()=>openStatystykaModal(el.dataset.id));
 
   main.querySelectorAll('.persp-btn').forEach(btn=>btn.onclick=()=>selectPerspektywa(btn.dataset.value));
+  main.querySelectorAll('.status-btn').forEach(btn=>btn.onclick=()=>selectReportStatus(btn.dataset.value));
+  main.querySelectorAll('[data-action="refresh-position-map"]').forEach(b=>b.onclick=async()=>{
+    // Skasuj przypisania mapy dla bieżącej ligi -> odświeżą się automatycznie z aktualnych statusów.
+    Object.keys(positionMapAssignments).forEach(k=>{ if(k.startsWith(rankingLeague+'|||')) delete positionMapAssignments[k]; });
+    await savePositionMapAssignments();
+    render();
+  });
   main.querySelectorAll('[data-action="save-report"]').forEach(b=>b.onclick=async()=>{
     const playerId = document.getElementById('rep-player').value;
     if(!playerId){ alert('Wybierz zawodnika.'); return; }
@@ -3454,7 +3528,14 @@ function attachHandlers(){
     REPORT_SET_PIECES.forEach(f=> rep.setPieces[f.key] = Number(document.getElementById('rep-'+f.key).value));
     DB.reports.push(rep);
     await saveReports();
+    // Przypisanie statusu z decyzji na dole raportu (jeśli wybrano). Pierwsze cztery => Monitoring,
+    // "Do transferu"/"Na Testy" => mapa pozycji w Rankingu. Zapisujemy zawodnika osobno.
+    if(reportStatusValue){
+      const pl = DB.players.find(x=>x.id===playerId);
+      if(pl){ pl.status = reportStatusValue; await savePlayers(); }
+    }
     reportPerspektywaValue = '';
+    reportStatusValue = '';
     if(scout && !DB.settings.scouts.includes(scout)){ DB.settings.scouts.push(scout); await saveSettings(); }
     currentView='dashboard'; render();
   });
