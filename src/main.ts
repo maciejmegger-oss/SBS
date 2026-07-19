@@ -21,6 +21,7 @@ let customTabNames = [];
 let DB: Database = { players: [], clubs: [], observations: [], reports: [], talents: [], contacts: [], clubCrests: {}, settings: null };
 let currentView = "dashboard";
 let editingPlayerId = null;
+let editingReportId = null;
 let promotingTalentId = null; // gdy ustawione, zapis nowego zawodnika usuwa też odpowiadający wpis z Talentu
 let viewingPlayerId = null;
 let viewingClubId = null;
@@ -2031,6 +2032,7 @@ function viewPlayerDetail(id){
           <strong>${esc(r.date)} &middot; ${esc(r.scout)} ${perspektywaBadge(r.perspektywa)}</strong>
           <span style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
             <span class="avg-chip">fazy ${fmt1(phaseAvg)} / stałe ${fmt1(spAvg)}</span>
+            <button class="secondary" data-action="edit-report" data-id="${r.id}" style="padding:4px 10px;font-size:11.5px;">✎ Edytuj</button>
             <button class="secondary" data-action="print-player" data-id="${p.id}" style="padding:4px 10px;font-size:11.5px;">⭳ PDF</button>
           </span>
         </div>
@@ -2493,8 +2495,9 @@ function perspektywaBadgeReport(value){
 }
 
 function viewReports(){
+  const editing = editingReportId ? DB.reports.find(r=>r.id===editingReportId) : null;
   const playerOptions = DB.players.slice().sort((a,b)=>a.lastName.localeCompare(b.lastName))
-    .map(p=>`<option value="${p.id}">${esc(p.lastName)} ${esc(p.firstName)} — ${esc(clubName(p.clubId))}</option>`).join('');
+    .map(p=>`<option value="${p.id}" ${editing&&editing.playerId===p.id?'selected':''}>${esc(p.lastName)} ${esc(p.firstName)} — ${esc(clubName(p.clubId))}</option>`).join('');
 
   const recentReports = DB.reports.slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,15);
   const listHtml = recentReports.length ? recentReports.map(r=>{
@@ -2505,6 +2508,7 @@ function viewReports(){
         <strong data-action="view-player" data-id="${pl.id}" style="cursor:pointer;">${esc(pl.firstName)} ${esc(pl.lastName)}</strong>
         <span style="display:flex;align-items:center;gap:10px;">
           <span class="meta">${esc(r.date)} ${perspektywaBadge(r.perspektywa)}</span>
+          <button class="secondary" data-action="edit-report" data-id="${r.id}" style="padding:4px 10px;font-size:11.5px;">✎ Edytuj</button>
           <button class="secondary" data-action="print-player" data-id="${pl.id}" style="padding:4px 10px;font-size:11.5px;">⭳ PDF</button>
         </span>
       </div>
@@ -2513,26 +2517,26 @@ function viewReports(){
   }).join('') : '<div class="empty">Brak zapisanych raportów.</div>';
 
   return `
-  <h2 class="view-title">Raporty</h2>
+  <h2 class="view-title">Raporty ${editing? '<span style="font-size:14px;color:var(--gold-dark);font-family:Inter,sans-serif;">— edycja raportu</span>':''}</h2>
   <p class="view-sub">Szczegółowy raport taktyczny — technika/taktyka/motoryka opisowo, fazy gry i stałe fragmenty w skali 1-6.</p>
-  <div class="card" style="max-width:720px;">
+  <div class="card" style="max-width:720px;${editing?'border:1px solid var(--gold);':''}">
     <div class="field-wrap">
       <label class="field">Zawodnik</label>
       <select id="rep-player">${playerOptions || '<option value="">Brak zawodników — dodaj najpierw w zakładce Zawodnicy</option>'}</select>
     </div>
     <div class="grid grid-2">
-      <div class="field-wrap"><label class="field">Data</label><input type="date" id="rep-date" value="${new Date().toISOString().slice(0,10)}"></div>
-      <div class="field-wrap"><label class="field">Scout</label><input id="rep-scout" value="${esc(currentScout)}" placeholder="Imię i nazwisko scouta"></div>
+      <div class="field-wrap"><label class="field">Data</label><input type="date" id="rep-date" value="${editing? esc(editing.date) : new Date().toISOString().slice(0,10)}"></div>
+      <div class="field-wrap"><label class="field">Scout</label><input id="rep-scout" value="${editing? esc(editing.scout||'') : esc(currentScout)}" placeholder="Imię i nazwisko scouta"></div>
     </div>
     <div class="field-wrap">
       <label class="field">Opis raportu</label>
-      <textarea id="rep-description" rows="3" placeholder="Ogólne wrażenie, kontekst obserwacji..."></textarea>
+      <textarea id="rep-description" rows="3" placeholder="Ogólne wrażenie, kontekst obserwacji...">${editing? esc(editing.description||'') : ''}</textarea>
     </div>
-    <div class="field-wrap"><label class="field">Technika (opis)</label><textarea id="rep-technika" rows="2" placeholder="Ocena techniczna opisowo..."></textarea></div>
-    <div class="field-wrap"><label class="field">Taktyka (opis)</label><textarea id="rep-taktyka" rows="2" placeholder="Ocena taktyczna opisowo..."></textarea></div>
-    <div class="field-wrap"><label class="field">Motoryka (opis)</label><textarea id="rep-motoryka" rows="2" placeholder="Ocena motoryczna opisowo..."></textarea></div>
-    <div class="field-wrap"><label class="field">Mentalność (opis)</label><textarea id="rep-mentalnosc-opis" rows="2" placeholder="Ocena mentalna opisowo..."></textarea></div>
-    <div class="field-wrap"><label class="field">Potencjał (opis)</label><textarea id="rep-potencjal-opis" rows="2" placeholder="Ocena potencjału opisowo..."></textarea></div>
+    <div class="field-wrap"><label class="field">Technika (opis)</label><textarea id="rep-technika" rows="2" placeholder="Ocena techniczna opisowo...">${editing? esc(editing.technika||'') : ''}</textarea></div>
+    <div class="field-wrap"><label class="field">Taktyka (opis)</label><textarea id="rep-taktyka" rows="2" placeholder="Ocena taktyczna opisowo...">${editing? esc(editing.taktyka||'') : ''}</textarea></div>
+    <div class="field-wrap"><label class="field">Motoryka (opis)</label><textarea id="rep-motoryka" rows="2" placeholder="Ocena motoryczna opisowo...">${editing? esc(editing.motoryka||'') : ''}</textarea></div>
+    <div class="field-wrap"><label class="field">Mentalność (opis)</label><textarea id="rep-mentalnosc-opis" rows="2" placeholder="Ocena mentalna opisowo...">${editing? esc(editing.mentalnoscOpis||'') : ''}</textarea></div>
+    <div class="field-wrap"><label class="field">Potencjał (opis)</label><textarea id="rep-potencjal-opis" rows="2" placeholder="Ocena potencjału opisowo...">${editing? esc(editing.potencjalOpis||'') : ''}</textarea></div>
 
     <div style="border-top:1px solid #E3DECE;margin:14px 0;padding-top:10px;">
       <label class="field" style="display:block;margin-bottom:8px;">Perspektywa</label>
@@ -2545,25 +2549,25 @@ function viewReports(){
 
     <div style="border-top:1px solid #E3DECE;margin:14px 0;padding-top:10px;">
       <label class="field" style="display:block;margin-bottom:8px;">Fazy gry (skala 1-6)</label>
-      ${REPORT_PHASES.map(f=>`
+      ${REPORT_PHASES.map(f=>{ const v = editing && editing.phases && editing.phases[f.key]!=null ? editing.phases[f.key] : 3; return `
         <div class="slider-row">
           <span class="lbl">${esc(f.label)}</span>
-          <input type="range" min="1" max="6" step="1" value="3" id="rep-${f.key}" oninput="document.getElementById('rep-${f.key}-val').textContent=this.value">
-          <span class="val" id="rep-${f.key}-val">3</span>
-        </div>`).join('')}
+          <input type="range" min="1" max="6" step="1" value="${v}" id="rep-${f.key}" oninput="document.getElementById('rep-${f.key}-val').textContent=this.value">
+          <span class="val" id="rep-${f.key}-val">${v}</span>
+        </div>`; }).join('')}
     </div>
 
     <div style="border-top:1px solid #E3DECE;margin:14px 0;padding-top:10px;">
       <label class="field" style="display:block;margin-bottom:8px;">Stałe fragmenty gry (skala 1-6)</label>
-      ${REPORT_SET_PIECES.map(f=>`
+      ${REPORT_SET_PIECES.map(f=>{ const v = editing && editing.setPieces && editing.setPieces[f.key]!=null ? editing.setPieces[f.key] : 3; return `
         <div class="slider-row">
           <span class="lbl">${esc(f.label)}</span>
-          <input type="range" min="1" max="6" step="1" value="3" id="rep-${f.key}" oninput="document.getElementById('rep-${f.key}-val').textContent=this.value">
-          <span class="val" id="rep-${f.key}-val">3</span>
-        </div>`).join('')}
+          <input type="range" min="1" max="6" step="1" value="${v}" id="rep-${f.key}" oninput="document.getElementById('rep-${f.key}-val').textContent=this.value">
+          <span class="val" id="rep-${f.key}-val">${v}</span>
+        </div>`; }).join('')}
       <div class="field-wrap" style="margin-top:10px;">
         <label class="field">Komentarz do stałych fragmentów gry</label>
-        <textarea id="rep-setpiece-comment" rows="2" placeholder="Uwagi o rzutach rożnych, wolnych..."></textarea>
+        <textarea id="rep-setpiece-comment" rows="2" placeholder="Uwagi o rzutach rożnych, wolnych...">${editing? esc(editing.setPieceComment||'') : ''}</textarea>
       </div>
     </div>
 
@@ -2576,11 +2580,13 @@ function viewReports(){
     </div>
 
     <div class="modal-actions" style="justify-content:flex-start;">
-      <button class="gold" data-action="save-report">Zapisz raport</button>
+      <button class="gold" data-action="save-report">${editing? 'Zapisz zmiany' : 'Zapisz raport'}</button>
+      ${editing? '<button class="secondary" data-action="cancel-edit-report">Anuluj edycję</button>' : ''}
     </div>
   </div>
 
   <h3 style="margin-top:24px;color:var(--pitch);font-family:'Barlow Condensed',sans-serif;">Ostatnie raporty</h3>
+  <p class="view-sub" style="margin-bottom:8px;">Kliknij „Edytuj", aby poprawić zapisany raport.</p>
   <div class="card" style="max-width:720px;">${listHtml}</div>`;
 }
 
@@ -3860,6 +3866,20 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="save-obs"]').forEach(b=>b.onclick=()=>saveNewObservation());
   main.querySelectorAll('[data-action="open-statystyka"]').forEach(el=>el.onclick=()=>openStatystykaModal(el.dataset.id));
 
+  // Edycja istniejącego raportu — wczytaj go do formularza (prefill w viewReports wg editingReportId).
+  main.querySelectorAll('[data-action="edit-report"]').forEach(b=>b.onclick=()=>{
+    const r = DB.reports.find(x=>x.id===b.dataset.id);
+    if(!r) return;
+    editingReportId = r.id;
+    reportPerspektywaValue = r.perspektywa || '';
+    reportStatusValue = '';
+    currentView = 'reports'; viewingPlayerId = null;
+    render();
+    const card = document.querySelector('.main .card'); if(card) card.scrollIntoView({behavior:'smooth', block:'start'});
+  });
+  main.querySelectorAll('[data-action="cancel-edit-report"]').forEach(b=>b.onclick=()=>{
+    editingReportId = null; reportPerspektywaValue = ''; reportStatusValue = ''; render();
+  });
   main.querySelectorAll('.persp-btn').forEach(btn=>btn.onclick=()=>selectPerspektywa(btn.dataset.value));
   main.querySelectorAll('.status-btn').forEach(btn=>btn.onclick=()=>selectReportStatus(btn.dataset.value));
   main.querySelectorAll('[data-action="refresh-position-map"]').forEach(b=>b.onclick=async()=>{
@@ -3931,7 +3951,7 @@ function attachHandlers(){
     if(!playerId){ alert('Wybierz zawodnika.'); return; }
     const scout = document.getElementById('rep-scout').value.trim() || currentScout || 'Nieznany';
     const rep = {
-      id: uid('R'),
+      id: editingReportId || uid('R'),
       playerId,
       date: document.getElementById('rep-date').value,
       scout,
@@ -3947,7 +3967,13 @@ function attachHandlers(){
     };
     REPORT_PHASES.forEach(f=> rep.phases[f.key] = Number(document.getElementById('rep-'+f.key).value));
     REPORT_SET_PIECES.forEach(f=> rep.setPieces[f.key] = Number(document.getElementById('rep-'+f.key).value));
-    DB.reports.push(rep);
+    const wasEditing = !!editingReportId;
+    if(wasEditing){
+      const idx = DB.reports.findIndex(r=>r.id===editingReportId);
+      if(idx>=0) DB.reports[idx] = rep; else DB.reports.push(rep);
+    } else {
+      DB.reports.push(rep);
+    }
     await saveReports();
     // Przypisanie statusu z decyzji na dole raportu (jeśli wybrano). Pierwsze cztery => Monitoring,
     // "Do transferu"/"Na Testy" => mapa pozycji w Rankingu. Zapisujemy zawodnika osobno.
@@ -3957,8 +3983,10 @@ function attachHandlers(){
     }
     reportPerspektywaValue = '';
     reportStatusValue = '';
+    editingReportId = null;
     if(scout && !DB.settings.scouts.includes(scout)){ DB.settings.scouts.push(scout); await saveSettings(); }
-    currentView='dashboard'; render();
+    currentView = wasEditing ? 'reports' : 'dashboard';
+    render();
   });
 
   // filters
@@ -4389,18 +4417,18 @@ async function generatePlayerPDF(playerId){
   <style>
     @page { margin: 16mm 14mm; }
     *{box-sizing:border-box;}
-    body{font-family:'Inter',Arial,sans-serif;color:#1B2420;background:#fff;margin:0;padding:0;font-size:13px;line-height:1.5;}
+    body{font-family:Arial,Helvetica,sans-serif;color:#1B2420;background:#fff;margin:0;padding:0;font-size:13px;line-height:1.5;}
     .report-header{display:flex;align-items:center;gap:18px;padding-bottom:16px;border-bottom:4px solid #C69B3C;margin-bottom:0;}
     .report-header img{width:52px;height:52px;border-radius:12px;flex-shrink:0;}
     .brand-block{flex:1;}
-    .brand-name{font-family:'Barlow Condensed',Arial,sans-serif;font-weight:700;font-size:22px;color:#16302A;letter-spacing:.02em;margin:0;}
+    .brand-name{font-family:Arial,'Arial Narrow',sans-serif;font-weight:700;font-size:22px;color:#16302A;letter-spacing:.02em;margin:0;}
     .brand-sub{font-size:11px;color:#8A857A;text-transform:uppercase;letter-spacing:.06em;margin:3px 0 0;}
     .brand-signature{font-size:11px;color:#3C4640;margin:4px 0 0;font-weight:600;}
     .report-date{font-size:11px;color:#8A857A;text-align:right;white-space:nowrap;}
     .title-bar{display:flex;align-items:center;gap:14px;padding:18px 20px;background:#16302A;margin:16px -14mm 0;}
     .pos-badge-lg{width:44px;height:44px;border-radius:50%;background:#C69B3C;color:#16302A;display:flex;align-items:center;justify-content:center;
-      font-family:'Barlow Condensed',Arial,sans-serif;font-weight:700;font-size:20px;flex-shrink:0;border:3px solid #F6F3EA;}
-    .title-text h1{font-family:'Barlow Condensed',Arial,sans-serif;font-weight:700;font-size:24px;color:#F6F3EA;margin:0;}
+      font-family:Arial,'Arial Narrow',sans-serif;font-weight:700;font-size:20px;flex-shrink:0;border:3px solid #F6F3EA;}
+    .title-text h1{font-family:Arial,'Arial Narrow',sans-serif;font-weight:700;font-size:24px;color:#F6F3EA;margin:0;}
     .title-text p{font-size:12px;color:#C6D9CE;margin:3px 0 0;text-transform:uppercase;letter-spacing:.03em;}
     .player-meta{display:flex;flex-wrap:wrap;padding:14px 0;background:#F6F3EA;margin:0 -14mm;padding-left:14mm;padding-right:14mm;border-bottom:1px solid #E7E2D3;}
     .meta-item{flex:1;min-width:110px;padding:4px 14px;border-left:1px solid #E7E2D3;}
@@ -4408,25 +4436,25 @@ async function generatePlayerPDF(playerId){
     .meta-item .lbl{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#8A857A;font-weight:600;}
     .meta-item .val{font-size:13px;color:#1B2420;font-weight:700;margin-top:2px;}
     .section{padding:18px 0;}
-    .section-title{font-family:'Barlow Condensed',Arial,sans-serif;font-weight:700;font-size:14px;color:#16302A;text-transform:uppercase;
+    .section-title{font-family:Arial,'Arial Narrow',sans-serif;font-weight:700;font-size:14px;color:#16302A;text-transform:uppercase;
       letter-spacing:.04em;border-left:4px solid #C69B3C;padding-left:10px;margin:0 0 12px;}
     .attr-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;}
     .attr-card{background:#F6F3EA;border-radius:8px;padding:10px 6px;text-align:center;border:1px solid #E7E2D3;}
     .attr-card .score{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;
-      font-family:'Barlow Condensed',Arial,sans-serif;font-weight:700;font-size:15px;margin:0 auto 6px;color:#fff;}
+      font-family:Arial,'Arial Narrow',sans-serif;font-weight:700;font-size:15px;margin:0 auto 6px;color:#fff;}
     .score-high{background:#3E7D4C;} .score-mid{background:#C69B3C;} .score-low{background:#B6503F;}
     .attr-card .lbl{font-size:9.5px;color:#5B6560;text-transform:uppercase;letter-spacing:.02em;font-weight:600;}
     .gauge-wrap{display:flex;flex-direction:column;align-items:center;gap:5px;}
     .gauge-ring{position:relative;}
     .gauge-ring svg{display:block;}
     .gauge-value{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-      font-family:'Barlow Condensed',Arial,sans-serif;font-weight:700;font-size:15px;color:#16302A;}
+      font-family:Arial,'Arial Narrow',sans-serif;font-weight:700;font-size:15px;color:#16302A;}
     .gauge-label{font-size:9.5px;color:#5B6560;text-transform:uppercase;letter-spacing:.02em;font-weight:600;text-align:center;}
     .gauge-desc{font-size:10.5px;color:#3C4640;text-align:center;margin-top:6px;line-height:1.35;}
-    .persp-badge-report{display:inline-block;padding:5px 14px;border-radius:6px;font-family:'Barlow Condensed',Arial,sans-serif;
+    .persp-badge-report{display:inline-block;padding:5px 14px;border-radius:6px;font-family:Arial,'Arial Narrow',sans-serif;
       font-weight:700;font-size:13px;color:#fff;letter-spacing:.03em;}
     .overall-strip{display:flex;align-items:center;gap:12px;background:#16302A;border-radius:8px;padding:12px 16px;margin-bottom:14px;}
-    .overall-strip .big-num{font-family:'Barlow Condensed',Arial,sans-serif;font-weight:700;font-size:28px;color:#C69B3C;line-height:1;}
+    .overall-strip .big-num{font-family:Arial,'Arial Narrow',sans-serif;font-weight:700;font-size:28px;color:#C69B3C;line-height:1;}
     .overall-strip .txt{color:#F6F3EA;font-size:12px;line-height:1.4;}
     .overall-strip .txt strong{display:block;font-size:13px;margin-bottom:1px;}
     .notes-box{background:#F6F3EA;border-left:4px solid #C69B3C;border-radius:0 6px 6px 0;padding:12px 14px;font-size:12.5px;color:#3C4640;}
@@ -4479,13 +4507,22 @@ async function generatePlayerPDF(playerId){
     ${a?`
     <div class="overall-strip">
       <div class="big-num">${fmt1(a.overall)}</div>
-      <div class="txt"><strong>Średnia ogólna</strong>na podstawie ${a.count} obserwacj${a.count===1?'i':'i'}, ostatnia: ${esc(lastObs?lastObs.date:'—')}</div>
+      <div class="txt"><strong>Średnia ogólna</strong> na podstawie ${a.count} ${a.count===1?'obserwacji':'obserwacji'}, ostatnia: ${esc(lastObs?lastObs.date:'—')}</div>
       ${latestReport && latestReport.perspektywa ? `<div style="margin-left:auto;">${perspektywaBadgeReport(latestReport.perspektywa)}</div>` : ''}
     </div>
     <div class="attr-grid">
       ${RATING_KEYS.map(k=>`<div class="attr-card">${gaugeRing(a.avgs[k], 56, RATING_LABELS[k])}${reportTextByKey[k]?`<div class="gauge-desc">${esc(reportTextByKey[k])}</div>`:''}</div>`).join('')}
     </div>` : `<p class="empty-note">Brak obserwacji — oceny pojawią się po pierwszej wizycie scoutingowej.</p>`}
   </div>
+
+  ${latestReport?`<div class="section" style="padding-top:0;">
+    <div class="section-title">Raport taktyczny${latestReport.date?' — '+esc(latestReport.date):''}${latestReport.perspektywa?' &middot; perspektywa '+esc(latestReport.perspektywa):''}</div>
+    ${latestReport.description?`<div class="notes-box" style="margin-bottom:10px;">${esc(latestReport.description)}</div>`:''}
+    ${[['Technika',latestReport.technika],['Taktyka',latestReport.taktyka],['Motoryka',latestReport.motoryka],['Mentalność',latestReport.mentalnoscOpis],['Potencjał',latestReport.potencjalOpis]].filter(x=>x[1]).map(x=>`<div style="display:flex;gap:12px;margin-bottom:7px;"><div style="width:96px;flex-shrink:0;font-weight:700;color:#16302A;font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;padding-top:1px;">${x[0]}</div><div style="flex:1;font-size:12px;color:#3C4640;">${esc(x[1])}</div></div>`).join('')}
+    ${(latestReport.phases&&Object.keys(latestReport.phases).length)?`<div style="margin-top:10px;font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#8A857A;font-weight:600;margin-bottom:5px;">Fazy gry (1-6)</div><div style="display:flex;flex-wrap:wrap;gap:6px;">${REPORT_PHASES.map(f=>latestReport.phases[f.key]!=null?`<span style="background:#F6F3EA;border:1px solid #E7E2D3;border-radius:6px;padding:3px 9px;font-size:11px;">${esc(f.label)}: <strong>${latestReport.phases[f.key]}</strong></span>`:'').join('')}</div>`:''}
+    ${(latestReport.setPieces&&Object.keys(latestReport.setPieces).length)?`<div style="margin-top:8px;font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#8A857A;font-weight:600;margin-bottom:5px;">Stałe fragmenty (1-6)</div><div style="display:flex;flex-wrap:wrap;gap:6px;">${REPORT_SET_PIECES.map(f=>latestReport.setPieces[f.key]!=null?`<span style="background:#F6F3EA;border:1px solid #E7E2D3;border-radius:6px;padding:3px 9px;font-size:11px;">${esc(f.label)}: <strong>${latestReport.setPieces[f.key]}</strong></span>`:'').join('')}</div>`:''}
+    ${latestReport.setPieceComment?`<div class="notes-box" style="margin-top:10px;">${esc(latestReport.setPieceComment)}</div>`:''}
+  </div>`:''}
 
   ${p.notes?`<div class="section" style="padding-top:0;">
     <div class="section-title">Notatki scouta</div>
