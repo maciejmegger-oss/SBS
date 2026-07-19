@@ -1803,6 +1803,7 @@ function clubsWithCrestsPanel(){
 }
 
 function viewDashboard(){
+  const totalClubs = DB.clubs.length;
   const totalPlayers = DB.players.length;
   const totalObs = DB.observations.length;
   const totalReports = DB.reports.length;
@@ -1813,7 +1814,8 @@ function viewDashboard(){
   return `
   <h2 class="view-title">Dashboard</h2>
   <p class="view-sub">Zalogowany scout: <strong>${esc(currentScout || 'Nieznany')}</strong></p>
-  <div class="grid grid-4" style="margin-bottom:18px;">
+  <div class="grid grid-5" style="margin-bottom:18px;">
+    <div class="stat" data-action="goto-clubs" style="cursor:pointer;" title="Wszystkie kluby w systemie (wszystkie ligi) — kliknij, aby przejść"><div class="num">${totalClubs}</div><div class="lbl">Kluby</div></div>
     <div class="stat"><div class="num">${totalPlayers}</div><div class="lbl">Zawodnicy</div></div>
     <div class="stat"><div class="num">${totalObs}</div><div class="lbl">Obserwacje</div></div>
     <div class="stat"><div class="num">${totalReports}</div><div class="lbl">Raporty</div></div>
@@ -3623,6 +3625,7 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="goto-newobs"]').forEach(b=>b.onclick=()=>{currentView='newobs';render();});
   main.querySelectorAll('[data-action="goto-addplayer"]').forEach(b=>b.onclick=()=>{currentView='players';render();openPlayerModal(null);});
   main.querySelectorAll('[data-action="goto-monitoring"]').forEach(b=>b.onclick=()=>{currentView='monitoring';render();});
+  main.querySelectorAll('[data-action="goto-clubs"]').forEach(b=>b.onclick=()=>{currentView='clubs';viewingClubId=null;render();});
 
   const sponsorInput = main.querySelector('#sponsor-logo-input');
   if(sponsorInput){

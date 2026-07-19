@@ -48,6 +48,7 @@ h2.view-title{font-family:'Barlow Condensed',sans-serif;font-size:26px;font-weig
 .card{background:var(--card);border:1px solid #E3DECE;border-radius:var(--radius);padding:18px 20px;margin-bottom:16px;}
 .grid{display:grid;gap:14px;}
 .grid-4{grid-template-columns:repeat(4,1fr);}
+.grid-5{grid-template-columns:repeat(5,1fr);}
 .grid-3{grid-template-columns:repeat(3,1fr);}
 .grid-2{grid-template-columns:repeat(2,1fr);}
 .stat{background:var(--pitch);color:var(--chalk);border-radius:var(--radius);padding:16px 18px;}
@@ -259,7 +260,7 @@ tr:hover td{background:#FBF9F2;}
   .scout-box{margin-top:0;padding:0;border-top:none;flex-shrink:0;min-width:110px;}
   .scout-box label{display:none;}
   .main{padding:16px;}
-  .grid-4{grid-template-columns:repeat(2,1fr);}
+  .grid-4,.grid-5{grid-template-columns:repeat(2,1fr);}
   .grid-3,.grid-2{grid-template-columns:1fr;}
   .filters select,.filters input{min-width:0;flex:1 1 130px;}
 }
