@@ -1786,26 +1786,6 @@ function sponsorsPanel(){
 // Odmiana "zawodnik" po liczbie (w licznikach naturalna forma: 1 zawodnik, N zawodników).
 function plZaw(n){ return n === 1 ? 'zawodnik' : 'zawodników'; }
 
-// Sekcja "Kluby w bazie" na dashboardzie — kluby z wgranym herbem; klik → zawodnicy danego klubu.
-function clubsWithCrestsPanel(){
-  const withCrest = DB.clubs
-    .filter(c => DB.clubCrests[c.id])
-    .map(c => ({ c, n: DB.players.filter(p => p.clubId === c.id).length }))
-    .sort((a, b) => b.n - a.n);
-  const cards = withCrest.map(({c, n}) => `
-    <div class="club-crest-card" data-action="dash-goto-club" data-id="${esc(c.id)}" title="Przejdź do zawodników klubu ${esc(c.name)}">
-      ${crestImg(clubCrest(c.id), null, c.name)}
-      <div style="min-width:0;">
-        <div style="font-weight:700;color:var(--pitch);font-size:14px;">${esc(c.name)}</div>
-        <div style="font-size:11.5px;color:var(--ink-soft);">${esc((c.region||'').replace(' ZPN',''))} &middot; <strong>${n}</strong> ${plZaw(n)}</div>
-      </div>
-    </div>`).join('');
-  return `<div class="card">
-    <h4 style="margin-top:0;color:var(--pitch);">Kluby w bazie <span style="font-weight:400;color:var(--ink-soft);font-size:13px;">(${withCrest.length} z herbem — kliknij, aby przejść do zawodników)</span></h4>
-    ${withCrest.length ? `<div class="club-crest-grid">${cards}</div>` : '<div class="empty">Brak klubów z wgranym herbem — dodaj herby w zakładce Kluby.</div>'}
-  </div>`;
-}
-
 // Szybki dostęp wg lig na dashboardzie — TYLKO najwyższe poziomy (reszta jest już w pełni dostępna
 // w zakładce Kluby). Logotypy w jednolitym rozmiarze, styl 3D, układ poziomy. Klik w logo rozwija w
 // miejscu rząd herbów klubów tej ligi; klik w herb przenosi od razu do listy zawodników klubu. Loga
@@ -1919,9 +1899,6 @@ function viewDashboard(){
         </div>`;
       }).join('') : `<div class="empty">Brak obserwacji — dodaj pierwszą w zakładce „Plan Obserwacji”.</div>`}
     </div>
-  </div>
-  <div style="margin-top:18px;">
-    ${clubsWithCrestsPanel()}
   </div>
   <div style="margin-top:18px;">
     ${sponsorsPanel()}
