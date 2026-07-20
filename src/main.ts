@@ -23,6 +23,7 @@ let currentView = "dashboard";
 let editingPlayerId = null;
 let editingReportId = null;
 let obsPreselectPlayerId = null;
+let editingObsId = null;
 let promotingTalentId = null; // gdy ustawione, zapis nowego zawodnika usuwa też odpowiadający wpis z Talentu
 let viewingPlayerId = null;
 let viewingClubId = null;
@@ -2318,24 +2319,25 @@ let obsCalendarSelectedDay = null;
 let statystykaObsId = null;
 
 function viewNewObs(){
+  const editing = editingObsId ? DB.observations.find(o=>o.id===editingObsId) : null;
   const playerOptions = DB.players.slice().sort((a,b)=>(a.lastName||a.firstName||'').localeCompare(b.lastName||b.firstName||'','pl'))
-    .map(p=>`<option value="${p.id}" ${obsPreselectPlayerId===p.id?'selected':''}>${esc(p.lastName)} ${esc(p.firstName)} — ${esc(clubName(p.clubId))}</option>`).join('');
-  const scoutOptions = DB.settings.scouts.map(s=>`<option value="${esc(s)}" ${s===currentScout?'selected':''}>${esc(s)}</option>`).join('');
+    .map(p=>`<option value="${p.id}" ${(editing? editing.playerId===p.id : obsPreselectPlayerId===p.id)?'selected':''}>${esc(p.lastName)} ${esc(p.firstName)} — ${esc(clubName(p.clubId))}</option>`).join('');
+  const scoutOptions = DB.settings.scouts.map(s=>`<option value="${esc(s)}" ${s===(editing?editing.scout:currentScout)?'selected':''}>${esc(s)}</option>`).join('');
   obsPreselectPlayerId = null; // jednorazowa preselekcja — po wyrenderowaniu formularza wraca do normalnego wyboru
 
   return `
-  <h2 class="view-title">Plan Obserwacji</h2>
+  <h2 class="view-title">Plan Obserwacji ${editing? '<span style="font-size:14px;color:var(--gold-dark);font-family:Inter,sans-serif;">— edycja obserwacji</span>':''}</h2>
   <p class="view-sub">Zaplanuj, kogo i kiedy obserwujesz — szczegółową ocenę wpiszesz później, klikając zaplanowaną pozycję na liście poniżej.</p>
   <div class="grid grid-2">
-    <div class="card">
-      <h4 style="margin-top:0;color:var(--pitch);">Nowy plan</h4>
+    <div class="card" style="${editing?'border:1px solid var(--gold);':''}">
+      <h4 style="margin-top:0;color:var(--pitch);">${editing? 'Edytuj plan' : 'Nowy plan'}</h4>
       <div class="field-wrap">
         <label class="field">Zawodnik</label>
         <select id="obs-player">${playerOptions || '<option value="">Brak zawodników — dodaj najpierw w zakładce Zawodnicy</option>'}</select>
       </div>
       <div class="grid grid-2">
-        <div class="field-wrap"><label class="field">Data meczu</label><input type="date" id="obs-date" value="${new Date().toISOString().slice(0,10)}"></div>
-        <div class="field-wrap"><label class="field">Godzina meczu</label><input type="time" id="obs-time" value="15:00"></div>
+        <div class="field-wrap"><label class="field">Data meczu</label><input type="date" id="obs-date" value="${editing? esc(editing.date) : new Date().toISOString().slice(0,10)}"></div>
+        <div class="field-wrap"><label class="field">Godzina meczu</label><input type="time" id="obs-time" value="${editing? esc(editing.matchTime||'15:00') : '15:00'}"></div>
       </div>
       <div class="field-wrap">
         <label class="field">Scout</label>
@@ -2343,25 +2345,26 @@ function viewNewObs(){
           ${scoutOptions}
           <option value="__new__">➕ Nowy scout...</option>
         </select>
-        <input id="obs-scout-new" placeholder="Imię i nazwisko nowego scouta" style="display:${DB.settings.scouts.length?'none':'block'};margin-top:6px;" value="${DB.settings.scouts.length?'':esc(currentScout)}">
+        <input id="obs-scout-new" placeholder="Imię i nazwisko nowego scouta" style="display:${DB.settings.scouts.length?'none':'block'};margin-top:6px;" value="${DB.settings.scouts.length?'':esc(editing?editing.scout||'':currentScout)}">
       </div>
-      <div class="field-wrap"><label class="field">Mecz (gospodarz - gość)</label><input id="obs-match" placeholder="np. Mazovia Przykładowo - Rywal FC"></div>
+      <div class="field-wrap"><label class="field">Mecz (gospodarz - gość)</label><input id="obs-match" placeholder="np. Mazovia Przykładowo - Rywal FC" value="${editing? esc(editing.match||'') : ''}"></div>
       <div class="field-wrap" style="position:relative;">
         <label class="field">Punkt startowy (miejscowość)</label>
-        <input id="obs-start" autocomplete="off" placeholder="np. Świdnik" value="${esc(DB.settings.startLocation || 'Bydgoszcz')}">
+        <input id="obs-start" autocomplete="off" placeholder="np. Świdnik" value="${editing? esc(editing.startLocation||DB.settings.startLocation||'Bydgoszcz') : esc(DB.settings.startLocation || 'Bydgoszcz')}">
         <div class="addr-suggestions" id="obs-start-suggestions"></div>
       </div>
       <div class="field-wrap" style="position:relative;">
         <label class="field">Miejsce (adres obiektu)</label>
         <div style="display:flex;gap:8px;">
-          <input id="obs-location" autocomplete="off" placeholder="np. ul. Sportowa 5, Pruszków" style="flex:1;">
+          <input id="obs-location" autocomplete="off" placeholder="np. ul. Sportowa 5, Pruszków" style="flex:1;" value="${editing? esc(editing.location||'') : ''}">
           <button type="button" class="secondary" data-action="open-obs-location-map" style="white-space:nowrap;">📍 Mapa</button>
         </div>
         <div class="addr-suggestions" id="obs-location-suggestions"></div>
         <div id="obs-distance-info" class="note" style="margin-top:6px;min-height:16px;"></div>
       </div>
       <div class="modal-actions" style="justify-content:flex-start;">
-        <button class="gold" data-action="save-obs">Zapisz plan</button>
+        <button class="gold" data-action="save-obs">${editing? 'Zapisz zmiany' : 'Zapisz plan'}</button>
+        ${editing? '<button class="secondary" data-action="cancel-edit-obs">Anuluj edycję</button>' : ''}
       </div>
     </div>
     <div class="card">
@@ -2393,7 +2396,11 @@ function obsMonthListHtml(){
     return `<div class="obs-item" style="cursor:pointer;" data-action="open-statystyka" data-id="${o.id}">
       <div class="toolbar" style="margin-bottom:2px;">
         <strong>${i+1}. ${pl?esc(pl.firstName+' '+pl.lastName):'—'}</strong>
-        <span class="meta">${esc(o.date)}${o.matchTime?' &middot; '+esc(o.matchTime):''} ${hasStats?'<span class="avg-chip">wypełniono statystykę</span>':''}</span>
+        <span style="display:flex;align-items:center;gap:8px;">
+          <span class="meta">${esc(o.date)}${o.matchTime?' &middot; '+esc(o.matchTime):''} ${hasStats?'<span class="avg-chip">wypełniono statystykę</span>':''}</span>
+          <button class="link-btn" data-action="edit-obs" data-id="${o.id}" onclick="event.stopPropagation()" style="font-size:11px;">✎ Edytuj</button>
+          <button class="link-btn" data-action="delete-obs" data-id="${o.id}" onclick="event.stopPropagation()" style="font-size:11px;color:var(--clay-dark);">Usuń</button>
+        </span>
       </div>
       <div class="meta">${esc(o.match||'brak danych meczu')}${o.location?' &middot; 📍 '+esc(o.location):''} &middot; scout: ${esc(o.scout)}</div>
     </div>`;
@@ -2446,7 +2453,13 @@ function obsCalendarHtml(){
     <strong style="font-size:13px;color:var(--pitch);">${esc(obsCalendarSelectedDay)}</strong>
     ${selectedObs.length ? selectedObs.map(o=>{
       const pl = DB.players.find(p=>p.id===o.playerId);
-      return `<div class="obs-item"><strong>${pl?esc(pl.firstName+' '+pl.lastName):'—'}</strong> — ${esc(o.match||'brak danych meczu')} <span class="meta">(${esc(o.scout)})</span></div>`;
+      return `<div class="obs-item" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <span><strong>${pl?esc(pl.firstName+' '+pl.lastName):'—'}</strong> — ${esc(o.match||'brak danych meczu')} <span class="meta">(${esc(o.scout)})</span></span>
+        <span style="flex-shrink:0;white-space:nowrap;">
+          <button class="link-btn" data-action="edit-obs" data-id="${o.id}" style="font-size:11px;">✎</button>
+          <button class="link-btn" data-action="delete-obs" data-id="${o.id}" style="font-size:11px;color:var(--clay-dark);">✕</button>
+        </span>
+      </div>`;
     }).join('') : '<div class="empty">Brak obserwacji tego dnia.</div>'}
   </div>` : ''}`;
 }
@@ -2479,14 +2492,19 @@ async function saveNewObservation(){
     scout = scoutSelectEl.value;
   }
   if(!scout) scout = currentScout || 'Nieznany';
-  const obs = {
-    id: uid('O'),
+  const editing = editingObsId ? DB.observations.find(o=>o.id===editingObsId) : null;
+  const planFields = {
     playerId,
     date: document.getElementById('obs-date').value,
     matchTime: document.getElementById('obs-time').value,
     match: document.getElementById('obs-match').value.trim(),
     location: document.getElementById('obs-location').value.trim(),
     scout,
+  };
+  // Przy edycji nadpisujemy TYLKO pola planu — oceny/statystykę (ratings, recommendation, notes,
+  // statsFilledIn) wypełnione wcześniej przez "Statystykę" zostają nietknięte.
+  const obs = editing ? Object.assign(editing, planFields) : Object.assign({
+    id: uid('O'),
     // Etap planowania nie zbiera oceny — to wypełnia się później przez "Statystykę" (kliknięcie pozycji
     // na liście poniżej), po odbyciu meczu. Neutralna wartość domyślna (5) i pusta rekomendacja
     // zachowują działanie rankingu/zegarów/PDF do czasu faktycznego wypełnienia.
@@ -2494,14 +2512,14 @@ async function saveNewObservation(){
     recommendation: '',
     notes: '',
     statsFilledIn: false
-  };
+  }, planFields);
   // Dystans w linii prostej: punkt startowy -> miejsce obserwacji (geokodowanie + fallback).
   // Zasila sumę na dashboardzie ("Dystans obserwacji"). Zapamiętujemy też start jako domyślny.
   const startEl = document.getElementById('obs-start');
   const startLoc = startEl ? startEl.value.trim() : (DB.settings.startLocation || 'Bydgoszcz');
   obs.startLocation = startLoc;
   try{ obs.distanceKm = await calcDistanceBetween(startLoc, obs.location); }catch(e){ obs.distanceKm = null; }
-  DB.observations.push(obs);
+  if(!editing) DB.observations.push(obs);
   await saveObservations();
   // Zaplanowanie obserwacji od razu stawia zawodnika na liście Monitoring.
   const obsPlayer = DB.players.find(x=>x.id===playerId);
@@ -2510,6 +2528,7 @@ async function saveNewObservation(){
   if(scout && !DB.settings.scouts.includes(scout)){ DB.settings.scouts.push(scout); settingsChanged = true; }
   if(startLoc && DB.settings.startLocation !== startLoc){ DB.settings.startLocation = startLoc; settingsChanged = true; }
   if(settingsChanged) await saveSettings();
+  editingObsId = null;
   render();
 }
 
@@ -4043,6 +4062,22 @@ function attachHandlers(){
   main.querySelectorAll('.cal-cell[data-date]').forEach(cell=>cell.onclick=()=>calSelectDay(cell.dataset.date));
   main.querySelectorAll('[data-action="save-obs"]').forEach(b=>b.onclick=()=>saveNewObservation());
   main.querySelectorAll('[data-action="open-statystyka"]').forEach(el=>el.onclick=()=>openStatystykaModal(el.dataset.id));
+
+  // Edycja/usuwanie zaplanowanej lub zrealizowanej obserwacji.
+  main.querySelectorAll('[data-action="edit-obs"]').forEach(b=>b.onclick=()=>{
+    editingObsId = b.dataset.id;
+    currentView = 'newobs';
+    render();
+    const card = document.querySelector('.main .card'); if(card) card.scrollIntoView({behavior:'smooth', block:'start'});
+  });
+  main.querySelectorAll('[data-action="cancel-edit-obs"]').forEach(b=>b.onclick=()=>{ editingObsId = null; render(); });
+  main.querySelectorAll('[data-action="delete-obs"]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Usunąć tę obserwację?')) return;
+    DB.observations = DB.observations.filter(o=>o.id!==b.dataset.id);
+    if(editingObsId===b.dataset.id) editingObsId = null;
+    await saveObservations();
+    render();
+  });
 
   // Edycja istniejącego raportu — wczytaj go do formularza (prefill w viewReports wg editingReportId).
   main.querySelectorAll('[data-action="edit-report"]').forEach(b=>b.onclick=()=>{
