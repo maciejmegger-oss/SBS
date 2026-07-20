@@ -55,6 +55,15 @@ create table if not exists sbs_players (
   custom_fields jsonb default '{}'::jsonb,
   attachments jsonb default '[]'::jsonb,
   committee_reports jsonb default '[]'::jsonb,
+  assists integer,
+  instagram_link text,
+  facebook_link text,
+  kadra_wojewodzka boolean default false,
+  reprezentacja boolean default false,
+  powolania integer,
+  opis_koncowy text,
+  monitored boolean default false,
+  transfer_history jsonb default '[]'::jsonb,
   updated_at timestamptz not null default now()
 );
 create index if not exists sbs_players_club_id_idx on sbs_players(club_id);
@@ -72,6 +81,8 @@ create table if not exists sbs_observations (
   recommendation text,
   notes text,
   stats_filled_in boolean default false,
+  start_location text,
+  distance_km integer,
   updated_at timestamptz not null default now()
 );
 create index if not exists sbs_observations_player_id_idx on sbs_observations(player_id);

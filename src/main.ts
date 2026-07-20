@@ -1934,7 +1934,7 @@ function viewPlayerDetail(id){
   if(!p){ viewingPlayerId=null; return viewPlayers(); }
   const a = playerAvg(id);
   const obs = playerObs(id).slice().reverse();
-  const radarSvg = a ? radarChart(a.avgs) : `<p class="note">Brak obserwacji — dodaj pierwszą, aby zobaczyć profil.</p>`;
+  const radarChartHtml = a ? radarChart(a.avgs) : `<p class="note">Brak obserwacji — dodaj pierwszą, aby zobaczyć profil.</p>`;
 
   return `
   <button class="secondary" data-action="back-players" style="margin-bottom:14px;">&larr; Wróć do listy</button>
@@ -1961,7 +1961,7 @@ function viewPlayerDetail(id){
       ${a? `<div class="gauge-row" style="margin-bottom:14px;">
         ${RATING_KEYS.map(k=>gaugeRing(a.avgs[k], 64, RATING_LABELS[k])).join('')}
       </div>` : ''}
-      <div class="radar-wrap">${radarSvg}</div>
+      <div class="radar-wrap">${radarChartHtml}</div>
     </div>
     <div class="card">
       <h4 style="margin-top:0;color:var(--pitch);">Informacje</h4>
