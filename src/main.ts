@@ -2289,6 +2289,7 @@ function viewClubDetail(id){
       </div>
     </div>
     <div style="display:flex;gap:8px;">
+      <button class="gold" data-action="import-squad" data-id="${c.id}">📋 Import składu</button>
       <button class="secondary" data-action="edit-club" data-id="${c.id}">Edytuj klub</button>
       <button class="danger" data-action="delete-club" data-id="${c.id}">Usuń</button>
     </div>
@@ -3942,6 +3943,7 @@ function attachHandlers(){
   });
   main.querySelectorAll('[data-action="open-committee-reports"]').forEach(b=>b.onclick=()=>openCommitteeReportsModal(b.dataset.id));
   main.querySelectorAll('[data-action="manage-transfer-history"]').forEach(b=>b.onclick=()=>openTransferHistoryModal(b.dataset.id));
+  main.querySelectorAll('[data-action="import-squad"]').forEach(b=>b.onclick=()=>openSquadImportModal(b.dataset.id));
   main.querySelectorAll('[data-action="analyze-player"]').forEach(b=>b.onclick=()=>openPlayerAnalysisModal(b.dataset.id));
   main.querySelectorAll('[data-action="contacts-fill-clubs"]').forEach(b=>b.onclick=async()=>{
     let filled = 0, noMatch = 0;
@@ -4422,6 +4424,146 @@ function openCommitteeReportsModal(playerId){
       p.committeeOpinion = overlay.querySelector('#committee-opinion-text').value.trim();
       await savePlayers();
       closeAndRefresh();
+    });
+  }
+
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) closeAndRefresh(); });
+  document.body.appendChild(overlay);
+  draw();
+}
+
+// ---------- IMPORT SKŁADU (Ty kopiujesz z Transfermarkt/90minut/ŁNP, my rozpoznajemy i wstawiamy) ----------
+// Nie pobieramy tych danych sami (scraping) — użytkownik ogląda stronę we własnej przeglądarce, zaznacza
+// i kopiuje widoczny skład, wkleja tutaj. Rozpoznajemy imię/nazwisko/pozycję/rocznik z wklejonego tekstu.
+const SQUAD_POSITION_MAP = [
+  [/bramkarz/i, 'Bramkarz'],
+  [/(środkowy obrońca|centralny obrońca)/i, 'Obrońca środkowy'],
+  [/(lewy obrońca|prawy obrońca|boczny obrońca)/i, 'Obrońca boczny'],
+  [/defensywny pomocnik/i, 'Pomocnik defensywny'],
+  [/ofensywny pomocnik/i, 'Pomocnik ofensywny'],
+  [/środkowy pomocnik/i, 'Pomocnik środkowy'],
+  [/(lewy pomocnik|prawy pomocnik|lewy wahadłowy|prawy wahadłowy|lewe skrzydło|prawe skrzydło|skrzydłowy)/i, 'Skrzydłowy'],
+  [/(lewy napastnik|prawy napastnik|środkowy napastnik|napastnik)/i, 'Napastnik'],
+  [/obrońca/i, 'Obrońca środkowy'],
+  [/pomocnik/i, 'Pomocnik środkowy'],
+];
+function mapSquadPosition(raw){
+  for(const [re, mapped] of SQUAD_POSITION_MAP) if(re.test(raw)) return mapped;
+  return null;
+}
+// Wyciąga imię/nazwisko/pozycję/rocznik z jednej wklejonej linii (np. skopiowanego wiersza tabeli
+// składu). Format bywa różny, więc rozpoznajemy po punktach orientacyjnych: numer na początku,
+// nazwa pozycji gdzieś w środku, 4-cyfrowy rok (data urodzenia) gdzieś dalej — imię/nazwisko to
+// tekst PRZED rozpoznaną pozycją, po odcięciu wiodącego numeru.
+function parseSquadLine(line){
+  let text = line.trim();
+  if(!text) return null;
+  text = text.replace(/^[-–]\s*/, '').replace(/^\d{1,2}\s+/, ''); // numer koszulki lub "-" na początku
+  const posMatch = SQUAD_POSITION_MAP.map(([re])=>{ const m = text.match(re); return m ? {index:m.index, re} : null; })
+    .filter(Boolean).sort((a,b)=>a.index-b.index)[0];
+  if(!posMatch) return { ok:false, raw: line.trim() };
+  const namePart = text.slice(0, posMatch.index).trim();
+  const positionRaw = text.slice(posMatch.index).match(posMatch.re)[0];
+  const position = mapSquadPosition(positionRaw);
+  const nameWords = namePart.split(/\s+/).filter(Boolean);
+  if(nameWords.length < 2) return { ok:false, raw: line.trim() };
+  const firstName = nameWords[0];
+  const lastName = nameWords.slice(1).join(' ');
+  // Rok urodzenia: pierwszy sensowny 4-cyfrowy rok (1985-2015) występujący PO nazwie pozycji w linii.
+  const rest = text.slice(posMatch.index + positionRaw.length);
+  const yearMatch = rest.match(/\b(19[89]\d|200\d|201[0-5])\b/);
+  const birthYear = yearMatch ? yearMatch[0] : '';
+  return { ok:true, firstName, lastName, position, birthYear, raw: line.trim() };
+}
+function openSquadImportModal(clubId){
+  const already = document.querySelector('.modal-overlay[data-squadimport-for]');
+  if(already) already.remove();
+  const club = DB.clubs.find(x=>x.id===clubId);
+  if(!club) return;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.dataset.squadimportFor = clubId;
+  let parsed = [];
+
+  function closeAndRefresh(){ overlay.remove(); render(); }
+
+  function draw(){
+    overlay.innerHTML = `
+    <div class="modal" style="max-width:680px;">
+      <h3>Import składu — ${esc(club.name)}</h3>
+      <p class="note" style="margin-top:-4px;">Otwórz skład klubu na Transfermarkt/90minut/ŁNP we własnej przeglądarce, zaznacz i skopiuj widoczną tabelę, wklej poniżej (jeden zawodnik na linię). Nie pobieramy niczego automatycznie — to Ty decydujesz, co wkleić.</p>
+      <div class="field-wrap">
+        <textarea id="squad-import-text" rows="8" placeholder="np.&#10;1 Rafał Grocholski Bramkarz 9 gru 2004 (21) Polska -&#10;3 Jonatan Straus Środkowy obrońca 30 cze 1994 (32) Polska -"></textarea>
+      </div>
+      <div class="modal-actions" style="justify-content:flex-start;margin-bottom:14px;">
+        <button class="secondary" data-action="squad-parse">Rozpoznaj zawodników</button>
+      </div>
+      ${parsed.length ? `
+        <div style="border-top:1px solid #E3DECE;padding-top:10px;margin-bottom:12px;max-height:280px;overflow:auto;">
+          <p class="note" style="margin-top:0;">Rozpoznano <strong>${parsed.filter(p=>p.ok).length}</strong> z ${parsed.length} linii. Odznacz, czego nie chcesz importować.</p>
+          <table><tbody>
+            ${parsed.map((p,i)=> p.ok ? `
+              <tr>
+                <td style="width:24px;"><input type="checkbox" class="squad-row-check" data-idx="${i}" checked></td>
+                <td><strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</td>
+                <td>${esc(p.position||'—')}</td>
+                <td>${esc(p.birthYear||'—')}</td>
+              </tr>` : `
+              <tr style="color:var(--clay-dark);">
+                <td></td>
+                <td colspan="3" style="font-size:12px;">Nie rozpoznano: „${esc(p.raw)}”</td>
+              </tr>`
+            ).join('')}
+          </tbody></table>
+        </div>
+        <div class="modal-actions" style="justify-content:flex-start;">
+          <button class="gold" data-action="squad-import-confirm">Importuj zaznaczonych zawodników</button>
+        </div>
+      ` : ''}
+      <div class="modal-actions">
+        <button class="secondary" data-action="close-modal">Zamknij</button>
+      </div>
+    </div>`;
+    wire();
+  }
+
+  function wire(){
+    overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=closeAndRefresh);
+    overlay.querySelectorAll('[data-action="squad-parse"]').forEach(b=>b.onclick=()=>{
+      const text = overlay.querySelector('#squad-import-text').value;
+      parsed = text.split('\n').map(parseSquadLine).filter(Boolean);
+      draw();
+    });
+    overlay.querySelectorAll('[data-action="squad-import-confirm"]').forEach(b=>b.onclick=async()=>{
+      const checked = Array.from(overlay.querySelectorAll('.squad-row-check:checked')).map(c=>Number(c.dataset.idx));
+      const toAdd = checked.map(i=>parsed[i]).filter(p=>p && p.ok);
+      if(!toAdd.length){ alert('Brak zaznaczonych zawodników do zaimportowania.'); return; }
+      const origLabel = b.textContent; b.disabled = true; b.textContent = 'Importowanie...';
+      let added = 0, skipped = 0;
+      toAdd.forEach(p=>{
+        const exists = DB.players.some(pl=>pl.firstName===p.firstName && pl.lastName===p.lastName && pl.clubId===club.id);
+        if(exists){ skipped++; return; }
+        DB.players.push({
+          id: uid('Z'), firstName: p.firstName, lastName: p.lastName,
+          birthDate: '', birthYear: p.birthYear || '',
+          position: p.position || DB.settings.positions[0], foot: '', height: null,
+          status: DB.settings.statuses[0], clubId: club.id, scout: currentScout || '',
+          videoLink: '', lnpLink: '', tmLink: '', hasAgent: false, agencyName: '',
+          formation: '', customFields: {}, notes: '',
+          dateAdded: new Date().toISOString().slice(0,10)
+        });
+        added++;
+      });
+      try{
+        await savePlayers();
+        alert(`Zaimportowano ${added} zawodników.` + (skipped ? ` Pominięto ${skipped} (już byli w bazie w tym klubie).` : ''));
+        closeAndRefresh();
+      }catch(e){
+        console.error('Import składu nie powiódł się:', e);
+        b.disabled = false; b.textContent = origLabel;
+        alert('Nie udało się zapisać zaimportowanych zawodników: ' + (e.message||e));
+      }
     });
   }
 
