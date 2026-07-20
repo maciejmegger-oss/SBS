@@ -102,6 +102,7 @@ create table if not exists sbs_reports (
   phases jsonb default '{}'::jsonb,
   set_pieces jsonb default '{}'::jsonb,
   set_piece_comment text,
+  obs_type text,
   updated_at timestamptz not null default now()
 );
 create index if not exists sbs_reports_player_id_idx on sbs_reports(player_id);

@@ -90,6 +90,7 @@ export interface Report {
   phases?: Record<string, unknown>;
   setPieces?: Record<string, unknown>;
   setPieceComment?: string;
+  obsType?: string;
 }
 
 export interface Talent {
@@ -133,6 +134,7 @@ export interface Settings {
   scouts: string[];
   sponsors?: Sponsor[];
   startLocation?: string;
+  leagueLogos?: Record<string, string>;
   [key: string]: unknown;
 }
 

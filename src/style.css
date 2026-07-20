@@ -239,12 +239,23 @@ tr:hover td{background:#FBF9F2;}
 .sponsors-add-zone:hover{background:rgba(0,0,0,.02);}
 
 /* Picker decyzji/statusu na dole raportu — klik tylko zaznacza, nie przeładowuje formularza. */
+/* Status/decyzja — każda opcja ma własny, żywy kolor (odróżnia wybór statusu od skali ocen czerwień→złoto). */
 .status-picker{display:flex;flex-wrap:wrap;gap:8px;}
-.status-btn{border:1px solid #C9C2AB;background:#fff;color:var(--pitch);border-radius:20px;padding:7px 16px;font-size:13px;font-weight:600;cursor:pointer;transition:background .1s,color .1s,border-color .1s;}
-.status-btn:hover{background:#EFEADA;}
-.status-btn.active{background:var(--pitch);color:var(--chalk);border-color:var(--pitch);}
-.status-btn[data-value="Do transferu"].active{background:var(--gold);border-color:var(--gold-dark);color:#3A2C0C;}
-.status-btn[data-value="Odrzucony"].active{background:var(--clay);border-color:var(--clay-dark);color:#fff;}
+.status-btn{border:2px solid var(--sc);background:#fff;color:var(--sc);border-radius:20px;padding:7px 16px;font-size:13px;font-weight:700;cursor:pointer;transition:background .12s,color .12s,transform .1s;}
+.status-btn:hover{transform:translateY(-1px);background:color-mix(in srgb, var(--sc) 12%, #fff);}
+.status-btn.active{background:var(--sc);color:#fff;box-shadow:0 2px 8px rgba(10,23,18,.18);}
+.status-btn[data-value="Do Obserwacji"]{--sc:#1F8A70;}
+.status-btn[data-value="Na Testy"]{--sc:#D97706;}
+.status-btn[data-value="Do transferu"]{--sc:#B8912E;}
+.status-btn[data-value="Do transferu"].active{color:#3A2C0C;}
+.status-btn[data-value="Z polecenia"]{--sc:#2F6FED;}
+.status-btn[data-value="Odrzucony"]{--sc:#B6503F;}
+
+/* Typ obserwacji (Live/Online/Video) — odcienie niebieskiego, wyraźnie inna paleta niż status/ocena. */
+.obstype-picker{display:flex;flex-wrap:wrap;gap:8px;}
+.obstype-btn{border:2px solid #3B6FA0;background:#fff;color:#3B6FA0;border-radius:8px;padding:8px 18px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:14px;letter-spacing:.03em;cursor:pointer;transition:background .12s,color .12s,transform .1s;}
+.obstype-btn:hover{transform:translateY(-1px);background:#EAF1FA;}
+.obstype-btn.active{background:#2F6FED;color:#fff;border-color:#1E4FA8;box-shadow:0 2px 8px rgba(10,23,18,.18);}
 
 /* Punktowe ocenianie 1-6 w raportach — skala kolorów od czerwieni (1) do złota (6). */
 .rating-points{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap;}
@@ -256,6 +267,18 @@ tr:hover td{background:#FBF9F2;}
 .addr-suggestions{display:none;position:absolute;left:0;right:0;top:100%;z-index:20;background:#fff;border:1px solid #D3CDB9;border-top:none;border-radius:0 0 8px 8px;box-shadow:0 6px 16px rgba(10,23,18,.12);max-height:220px;overflow-y:auto;}
 .addr-suggestion-item{padding:8px 12px;font-size:13px;cursor:pointer;}
 .addr-suggestion-item:hover{background:#F6F3EA;}
+
+/* Kafelki graficzne poziomów rozgrywek (Kluby) — logo (wgrane lub placeholder) + etykieta + liczba klubów. */
+.league-tiles{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:4px;}
+.league-tile{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 16px;min-width:84px;
+  background:#fff;border:1.5px solid #E3DECE;border-radius:12px;cursor:pointer;transition:border-color .12s,box-shadow .12s,transform .12s;}
+.league-tile:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(10,23,18,.10);}
+.league-tile.active{border-color:var(--gold);background:#FBF6E9;box-shadow:0 3px 10px rgba(140,108,33,.18);}
+.league-tile-logo{display:inline-flex;cursor:pointer;}
+.league-tile-logo-all{width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;background:var(--pitch);color:var(--gold);border-radius:9px;font-weight:800;font-size:14px;cursor:default;}
+.league-tile-label{font-size:12px;font-weight:700;color:var(--pitch);text-align:center;line-height:1.15;}
+.league-tile-count{font-size:11px;color:var(--ink-soft);background:#F0ECDE;border-radius:10px;padding:1px 8px;}
+.league-tile.active .league-tile-count{background:var(--gold);color:#3A2C0C;font-weight:700;}
 
 @media (max-width: 780px){
   .app{flex-direction:column;min-height:0;}

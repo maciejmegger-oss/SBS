@@ -2039,7 +2039,7 @@ function viewPlayerDetail(id){
       const spAvg = REPORT_SET_PIECES.reduce((a2,f)=>a2+(Number(r.setPieces[f.key])||0),0)/REPORT_SET_PIECES.length;
       return `<div class="obs-item">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-          <strong>${esc(r.date)} &middot; ${esc(r.scout)} ${perspektywaBadge(r.perspektywa)}</strong>
+          <strong>${esc(r.date)} &middot; ${esc(r.scout)}${r.obsType?' &middot; '+esc(r.obsType):''} ${perspektywaBadge(r.perspektywa)}</strong>
           <span style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
             <span class="avg-chip">fazy ${fmt1(phaseAvg)} / stałe ${fmt1(spAvg)}</span>
             <button class="secondary" data-action="edit-report" data-id="${r.id}" style="padding:4px 10px;font-size:11.5px;">✎ Edytuj</button>
@@ -2145,6 +2145,15 @@ function pill(label, active, action, dataAttrs){
   const attrs = Object.entries(dataAttrs||{}).map(([k,v])=>`data-${k}="${esc(v)}"`).join(' ');
   return `<button class="secondary" data-action="${action}" ${attrs} style="border-radius:20px;padding:6px 14px;font-size:12.5px;${active?'background:var(--pitch);color:var(--chalk);border-color:var(--pitch);':''}">${esc(label)}</button>`;
 }
+// Logo poziomu rozgrywek (I liga, II liga...) — wgrywane przez użytkownika (jak herby klubów), bo oficjalne
+// logotypy lig (Ekstraklasa, Betclic 1/2/3 liga) to znaki towarowe, których nie pobieramy automatycznie.
+// Do czasu wgrania pokazuje się schludny placeholder z inicjałami poziomu.
+function leagueLogoImg(topLevel, size){
+  const logo = DB.settings.leagueLogos && DB.settings.leagueLogos[topLevel];
+  if(logo) return `<img src="${esc(logo)}" alt="" style="width:${size}px;height:${size}px;object-fit:contain;">`;
+  const initials = (topLevel.match(/[A-ZĄĆĘŁŃÓŚŹŻ0-9]/g)||[]).join('').slice(0,3) || topLevel.slice(0,2).toUpperCase();
+  return `<span style="width:${size}px;height:${size}px;display:inline-flex;align-items:center;justify-content:center;background:#16302A;color:#C69B3C;border-radius:9px;font-weight:800;font-size:${Math.round(size*0.34)}px;">${esc(initials)}</span>`;
+}
 function viewClubs(){
   if(viewingClubId) return viewClubDetail(viewingClubId);
 
@@ -2154,8 +2163,18 @@ function viewClubs(){
 
   const topRow = ['Wszystkie', ...TOP_LEVELS].map(t=>{
     const val = t==='Wszystkie' ? '' : t;
-    return pill(t, clubBrowse.top===val, 'browse-top', {val});
-  }).join(' ');
+    const active = clubBrowse.top===val;
+    const count = t==='Wszystkie' ? DB.clubs.length : DB.clubs.filter(c=>topLevelOf(c.league)===t).length;
+    return `<div class="league-tile ${active?'active':''}" data-action="browse-top" data-val="${esc(val)}">
+      ${t==='Wszystkie' ? `<span class="league-tile-logo league-tile-logo-all">${count}</span>` : `
+      <label class="league-tile-logo" title="Kliknij, aby wgrać logo tego poziomu rozgrywek" onclick="event.stopPropagation()">
+        ${leagueLogoImg(t, 40)}
+        <input type="file" class="league-logo-input" data-league="${esc(t)}" accept="image/png,image/jpeg,image/jpg,.png,.jpg,.jpeg" style="display:none;">
+      </label>`}
+      <div class="league-tile-label">${esc(t)}</div>
+      ${t!=='Wszystkie' ? `<div class="league-tile-count">${count}</div>` : ''}
+    </div>`;
+  }).join('');
 
   let groupRow = '';
   if(clubBrowse.top==='III liga' || clubBrowse.top==='IV liga' || clubBrowse.top==='Kategorie juniorskie'){
@@ -2192,7 +2211,7 @@ function viewClubs(){
   return `
   <h2 class="view-title">Kluby</h2>
   <p class="view-sub">Przeglądaj wg ligi i grupy — jak w strukturze PZPN / mPZPN. Kliknij klub, aby zobaczyć skład na obecny sezon.</p>
-  <div class="filters" style="margin-bottom:0;">${topRow}</div>
+  <div class="league-tiles">${topRow}</div>
   ${groupRow}
   <div class="toolbar" style="margin-top:14px;">
     <div class="note">${list.length} ${list.length===1?'klub':'klubów'} w widoku</div>
@@ -2509,6 +2528,18 @@ function selectReportStatus(value){
   }
 }
 
+// Sposób przeprowadzenia obserwacji — Live (na stadionie) / Online (transmisja) / Video (nagranie).
+const OBSERVATION_TYPES = ['Live','Online','Video'];
+let reportObsTypeValue = '';
+function selectObsType(value){
+  reportObsTypeValue = (reportObsTypeValue === value) ? '' : value;
+  const picker = document.getElementById('rep-obstype-picker');
+  if(picker){
+    picker.dataset.value = reportObsTypeValue;
+    picker.querySelectorAll('.obstype-btn').forEach(b => b.classList.toggle('active', b.dataset.value === reportObsTypeValue));
+  }
+}
+
 function perspektywaBadge(value){
   if(!value) return '';
   const colorMap = {'WYSOKA':'#3E7D4C', 'ŚREDNIA':'#3E6FA8', 'NISKA':'#B6503F'};
@@ -2551,7 +2582,7 @@ function viewReports(){
       <div class="toolbar" style="margin-bottom:2px;">
         <strong data-action="view-player" data-id="${pl.id}" style="cursor:pointer;">${esc(pl.firstName)} ${esc(pl.lastName)}</strong>
         <span style="display:flex;align-items:center;gap:10px;">
-          <span class="meta">${esc(r.date)} ${perspektywaBadge(r.perspektywa)}</span>
+          <span class="meta">${esc(r.date)}${r.obsType?' · '+esc(r.obsType):''} ${perspektywaBadge(r.perspektywa)}</span>
           <button class="secondary" data-action="edit-report" data-id="${r.id}" style="padding:4px 10px;font-size:11.5px;">✎ Edytuj</button>
           <button class="secondary" data-action="print-player" data-id="${pl.id}" style="padding:4px 10px;font-size:11.5px;">⭳ PDF</button>
         </span>
@@ -2573,8 +2604,10 @@ function viewReports(){
       <div class="field-wrap"><label class="field">Scout</label><input id="rep-scout" value="${editing? esc(editing.scout||'') : esc(currentScout)}" placeholder="Imię i nazwisko scouta"></div>
     </div>
     <div class="field-wrap">
-      <label class="field">Opis raportu</label>
-      <textarea id="rep-description" rows="3" placeholder="Ogólne wrażenie, kontekst obserwacji...">${editing? esc(editing.description||'') : ''}</textarea>
+      <label class="field" style="display:block;margin-bottom:8px;">Obserwacja</label>
+      <div class="obstype-picker" id="rep-obstype-picker" data-value="${esc(reportObsTypeValue)}">
+        ${OBSERVATION_TYPES.map(t=>`<button type="button" class="obstype-btn ${reportObsTypeValue===t?'active':''}" data-value="${esc(t)}">${esc(t)}</button>`).join('')}
+      </div>
     </div>
     <div class="field-wrap"><label class="field">Technika (opis)</label><textarea id="rep-technika" rows="2" placeholder="Ocena techniczna opisowo...">${editing? esc(editing.technika||'') : ''}</textarea></div>
     <div class="field-wrap"><label class="field">Taktyka (opis)</label><textarea id="rep-taktyka" rows="2" placeholder="Ocena taktyczna opisowo...">${editing? esc(editing.taktyka||'') : ''}</textarea></div>
@@ -2611,6 +2644,11 @@ function viewReports(){
         <label class="field">Komentarz do stałych fragmentów gry</label>
         <textarea id="rep-setpiece-comment" rows="2" placeholder="Uwagi o rzutach rożnych, wolnych...">${editing? esc(editing.setPieceComment||'') : ''}</textarea>
       </div>
+    </div>
+
+    <div class="field-wrap" style="border-top:1px solid #E3DECE;margin:14px 0 0;padding-top:10px;">
+      <label class="field">Opis raportu</label>
+      <textarea id="rep-description" rows="3" placeholder="Ogólne wrażenie, kontekst obserwacji...">${editing? esc(editing.description||'') : ''}</textarea>
     </div>
 
     <div style="border-top:1px solid #E3DECE;margin:14px 0;padding-top:10px;">
@@ -3893,6 +3931,17 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="browse-top"]').forEach(b=>b.onclick=()=>{
     clubBrowse.top = b.dataset.val; clubBrowse.group=""; render();
   });
+  main.querySelectorAll('.league-logo-input').forEach(inp=>inp.onchange = async ()=>{
+    const file = inp.files[0];
+    if(!file) return;
+    try{
+      const dataUrl = await processCrestFile(file);
+      if(!DB.settings.leagueLogos) DB.settings.leagueLogos = {};
+      DB.settings.leagueLogos[inp.dataset.league] = dataUrl;
+      await saveSettings();
+      render();
+    }catch(e){ console.error('Nie udało się wczytać logo ligi:', e); alert('Nie udało się wczytać logo ligi.'); }
+  });
   main.querySelectorAll('[data-action="browse-group"]').forEach(b=>b.onclick=()=>{
     clubBrowse.group = b.dataset.val; render();
   });
@@ -3966,15 +4015,17 @@ function attachHandlers(){
     editingReportId = r.id;
     reportPerspektywaValue = r.perspektywa || '';
     reportStatusValue = '';
+    reportObsTypeValue = r.obsType || '';
     currentView = 'reports'; viewingPlayerId = null;
     render();
     const card = document.querySelector('.main .card'); if(card) card.scrollIntoView({behavior:'smooth', block:'start'});
   });
   main.querySelectorAll('[data-action="cancel-edit-report"]').forEach(b=>b.onclick=()=>{
-    editingReportId = null; reportPerspektywaValue = ''; reportStatusValue = ''; render();
+    editingReportId = null; reportPerspektywaValue = ''; reportStatusValue = ''; reportObsTypeValue = ''; render();
   });
   main.querySelectorAll('.persp-btn').forEach(btn=>btn.onclick=()=>selectPerspektywa(btn.dataset.value));
   main.querySelectorAll('.status-btn').forEach(btn=>btn.onclick=()=>selectReportStatus(btn.dataset.value));
+  main.querySelectorAll('.obstype-btn').forEach(btn=>btn.onclick=()=>selectObsType(btn.dataset.value));
   // Punktowe ocenianie 1-6 — ustaw wartość w ukrytym inpucie i podświetl wybrany punkt (bez render → nic nie kasuje).
   main.querySelectorAll('.rp-dot').forEach(btn=>btn.onclick=()=>{
     const target = document.getElementById(btn.dataset.target);
@@ -4061,6 +4112,7 @@ function attachHandlers(){
       mentalnoscOpis: document.getElementById('rep-mentalnosc-opis').value.trim(),
       potencjalOpis: document.getElementById('rep-potencjal-opis').value.trim(),
       perspektywa: reportPerspektywaValue,
+      obsType: reportObsTypeValue,
       phases: {}, setPieces: {},
       setPieceComment: document.getElementById('rep-setpiece-comment').value.trim()
     };
@@ -4082,6 +4134,7 @@ function attachHandlers(){
     }
     reportPerspektywaValue = '';
     reportStatusValue = '';
+    reportObsTypeValue = '';
     editingReportId = null;
     if(scout && !DB.settings.scouts.includes(scout)){ DB.settings.scouts.push(scout); await saveSettings(); }
     currentView = wasEditing ? 'reports' : 'dashboard';
@@ -4936,6 +4989,9 @@ function wireLastModal(){
     const first = document.getElementById('pm-first').value.trim();
     const last = document.getElementById('pm-last').value.trim();
     if(!first || !last){ alert('Podaj imię i nazwisko.'); return; }
+    const origLabel = b.textContent;
+    b.disabled = true; b.textContent = 'Zapisywanie...';
+    try{
     const birthDate = document.getElementById('pm-birth').value;
     const agentChecked = ov.querySelector('input[name="pm-agent"]:checked');
     const hasAgent = agentChecked ? agentChecked.value==='tak' : false;
@@ -4984,10 +5040,14 @@ function wireLastModal(){
       promotingTalentId = null;
     }
     ov.remove(); editingPlayerId=null; render();
+    }catch(e){ console.error('Zapis zawodnika nie powiódł się:', e); b.disabled=false; b.textContent=origLabel; alert('Nie udało się zapisać zawodnika: ' + (e.message||e)); }
   });
   ov.querySelectorAll('[data-action="save-club"]').forEach(b=>b.onclick=async()=>{
     const name = document.getElementById('cm-name').value.trim();
     if(!name){ alert('Podaj nazwę klubu.'); return; }
+    const origLabel = b.textContent;
+    b.disabled = true; b.textContent = 'Zapisywanie...';
+    try{
     const crestValue = document.getElementById('cm-crest').value.trim();
     // Wgrane obrazy (base64) trafiają do osobnego magazynu, izolowanego od reszty danych klubu — tylko
     // zwykłe adresy URL (małe, niegroźne dla rozmiaru) zostają wprost w rekordzie klubu.
@@ -5019,6 +5079,7 @@ function wireLastModal(){
       await saveClubCrests();
     }
     ov.remove(); render();
+    }catch(e){ console.error('Zapis klubu nie powiódł się:', e); b.disabled=false; b.textContent=origLabel; alert('Nie udało się zapisać klubu: ' + (e.message||e)); }
   });
 }
 
