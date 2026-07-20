@@ -22,6 +22,7 @@ let DB: Database = { players: [], clubs: [], observations: [], reports: [], tale
 let currentView = "dashboard";
 let editingPlayerId = null;
 let editingReportId = null;
+let obsPreselectPlayerId = null;
 let promotingTalentId = null; // gdy ustawione, zapis nowego zawodnika usuwa też odpowiadający wpis z Talentu
 let viewingPlayerId = null;
 let viewingClubId = null;
@@ -2060,6 +2061,20 @@ function viewPlayerDetail(id){
     }).join('') : `<div class="empty">Brak raportów taktycznych — dodaj w zakładce "Raporty".</div>`}
   </div>
   <div class="card">
+    <div class="toolbar" style="margin-bottom:8px;">
+      <h4 style="margin:0;color:var(--pitch);">Historia transferowa</h4>
+      <button class="link-btn" data-action="manage-transfer-history" data-id="${p.id}" style="color:var(--gold-dark);">Zarządzaj</button>
+    </div>
+    ${(p.transferHistory && p.transferHistory.length) ? `<table><tbody>
+      ${p.transferHistory.slice().sort((a,b)=>(b.from||'').localeCompare(a.from||'')).map(t=>`
+        <tr>
+          <td style="white-space:nowrap;color:var(--ink-soft);font-size:12px;">${esc(t.from||'—')} &rarr; ${esc(t.to||'obecnie')}</td>
+          <td><strong>${esc(t.club)}</strong>${t.type?` <span class="badge" style="font-size:10px;">${esc(t.type)}</span>`:''}</td>
+          <td style="color:var(--ink-soft);font-size:12px;">${esc(t.fee||'')}</td>
+        </tr>`).join('')}
+    </tbody></table>` : '<div class="empty">Brak historii transferowej — dodaj wpisy przez „Zarządzaj" (klub, okres, typ transferu).</div>'}
+  </div>
+  <div class="card">
     <h4 style="margin-top:0;color:var(--pitch);">Opis Końcowy</h4>
     <textarea id="opis-koncowy" rows="5" placeholder="Wpisz opis końcowy zawodnika...">${esc(p.opisKoncowy||'')}</textarea>
     <button class="gold" data-action="save-opis" data-id="${p.id}" style="margin-top:8px;">Zapisz opis</button>
@@ -2254,8 +2269,9 @@ let statystykaObsId = null;
 
 function viewNewObs(){
   const playerOptions = DB.players.slice().sort((a,b)=>(a.lastName||a.firstName||'').localeCompare(b.lastName||b.firstName||'','pl'))
-    .map(p=>`<option value="${p.id}">${esc(p.lastName)} ${esc(p.firstName)} — ${esc(clubName(p.clubId))}</option>`).join('');
+    .map(p=>`<option value="${p.id}" ${obsPreselectPlayerId===p.id?'selected':''}>${esc(p.lastName)} ${esc(p.firstName)} — ${esc(clubName(p.clubId))}</option>`).join('');
   const scoutOptions = DB.settings.scouts.map(s=>`<option value="${esc(s)}" ${s===currentScout?'selected':''}>${esc(s)}</option>`).join('');
+  obsPreselectPlayerId = null; // jednorazowa preselekcja — po wyrenderowaniu formularza wraca do normalnego wyboru
 
   return `
   <h2 class="view-title">Plan Obserwacji</h2>
@@ -2280,18 +2296,18 @@ function viewNewObs(){
         <input id="obs-scout-new" placeholder="Imię i nazwisko nowego scouta" style="display:${DB.settings.scouts.length?'none':'block'};margin-top:6px;" value="${DB.settings.scouts.length?'':esc(currentScout)}">
       </div>
       <div class="field-wrap"><label class="field">Mecz (gospodarz - gość)</label><input id="obs-match" placeholder="np. Mazovia Przykładowo - Rywal FC"></div>
-      <div class="field-wrap">
+      <div class="field-wrap" style="position:relative;">
         <label class="field">Punkt startowy (miejscowość)</label>
-        <input id="obs-start" list="obs-start-list" placeholder="np. Świdnik" value="${esc(DB.settings.startLocation || 'Bydgoszcz')}">
-        <datalist id="obs-start-list">${[...new Set(DB.observations.map(o=>o.startLocation).filter(Boolean).concat(DB.settings.startLocation||[]))].map(a=>`<option value="${esc(a)}"></option>`).join('')}</datalist>
+        <input id="obs-start" autocomplete="off" placeholder="np. Świdnik" value="${esc(DB.settings.startLocation || 'Bydgoszcz')}">
+        <div class="addr-suggestions" id="obs-start-suggestions"></div>
       </div>
-      <div class="field-wrap">
+      <div class="field-wrap" style="position:relative;">
         <label class="field">Miejsce (adres obiektu)</label>
         <div style="display:flex;gap:8px;">
-          <input id="obs-location" list="obs-location-list" placeholder="np. ul. Sportowa 5, Pruszków" style="flex:1;">
+          <input id="obs-location" autocomplete="off" placeholder="np. ul. Sportowa 5, Pruszków" style="flex:1;">
           <button type="button" class="secondary" data-action="open-obs-location-map" style="white-space:nowrap;">📍 Mapa</button>
         </div>
-        <datalist id="obs-location-list">${[...new Set(DB.observations.map(o=>o.location).filter(Boolean))].sort().map(a=>`<option value="${esc(a)}"></option>`).join('')}</datalist>
+        <div class="addr-suggestions" id="obs-location-suggestions"></div>
         <div id="obs-distance-info" class="note" style="margin-top:6px;min-height:16px;"></div>
       </div>
       <div class="modal-actions" style="justify-content:flex-start;">
@@ -2437,6 +2453,9 @@ async function saveNewObservation(){
   try{ obs.distanceKm = await calcDistanceBetween(startLoc, obs.location); }catch(e){ obs.distanceKm = null; }
   DB.observations.push(obs);
   await saveObservations();
+  // Zaplanowanie obserwacji od razu stawia zawodnika na liście Monitoring.
+  const obsPlayer = DB.players.find(x=>x.id===playerId);
+  if(obsPlayer && !obsPlayer.monitored){ obsPlayer.monitored = true; await savePlayers(); }
   let settingsChanged = false;
   if(scout && !DB.settings.scouts.includes(scout)){ DB.settings.scouts.push(scout); settingsChanged = true; }
   if(startLoc && DB.settings.startLocation !== startLoc){ DB.settings.startLocation = startLoc; settingsChanged = true; }
@@ -3391,7 +3410,10 @@ function viewMonitoring(){
       <td>${a? a.last.date : "—"}</td>
       <td>${ds!==null? ds+" dni" : "—"}</td>
       <td><span class="badge ${pillClass}" style="border-radius:6px;">${priority}</span></td>
-      <td><button class="link-btn" data-action="view-player" data-id="${p.id}">Zobacz</button></td>
+      <td style="white-space:nowrap;">
+        <button class="link-btn" data-action="monitoring-plan-obs" data-id="${p.id}" style="color:var(--gold-dark);">📅 Zaplanuj obserwację</button>
+        <button class="link-btn" data-action="view-player" data-id="${p.id}">Zobacz</button>
+      </td>
     </tr>`;
   }).join('');
   return `
@@ -3683,6 +3705,11 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="edit-player"]').forEach(b=>b.onclick=()=>openPlayerModal(b.dataset.id));
   main.querySelectorAll('[data-action="view-player"]').forEach(b=>b.onclick=()=>{viewingPlayerId=b.dataset.id; currentView='players'; render();});
   // Przycisk "Monitoring" w liście zawodników — od razu dodaje/usuwa zawodnika z zakładki Monitoring.
+  main.querySelectorAll('[data-action="monitoring-plan-obs"]').forEach(b=>b.onclick=()=>{
+    obsPreselectPlayerId = b.dataset.id;
+    currentView = 'newobs'; viewingPlayerId = null;
+    render();
+  });
   main.querySelectorAll('[data-action="add-to-monitoring"]').forEach(b=>b.onclick=()=>{
     const pl = DB.players.find(x=>x.id===b.dataset.id);
     if(!pl) return;
@@ -3821,6 +3848,7 @@ function attachHandlers(){
     updateCommitteeField(inp.dataset.id, 'committeeNotes', inp.value.trim());
   });
   main.querySelectorAll('[data-action="open-committee-reports"]').forEach(b=>b.onclick=()=>openCommitteeReportsModal(b.dataset.id));
+  main.querySelectorAll('[data-action="manage-transfer-history"]').forEach(b=>b.onclick=()=>openTransferHistoryModal(b.dataset.id));
   main.querySelectorAll('[data-action="analyze-player"]').forEach(b=>b.onclick=()=>openPlayerAnalysisModal(b.dataset.id));
   main.querySelectorAll('[data-action="contacts-fill-clubs"]').forEach(b=>b.onclick=async()=>{
     let filled = 0, noMatch = 0;
@@ -3899,9 +3927,32 @@ function attachHandlers(){
         ? `📍 <strong>${km} km</strong> w linii prostej: „${esc(start)}" → „${esc(dest)}"`
         : 'Nie udało się obliczyć dystansu — sprawdź nazwy miejscowości.';
     };
-    obsStart.onblur = recompute;
-    obsLoc.onblur = recompute;
+    obsStart.addEventListener('blur', ()=>setTimeout(recompute, 150)); // opóźnienie, by klik w podpowiedź zdążył wpisać wartość
+    obsLoc.addEventListener('blur', ()=>setTimeout(recompute, 150));
   }
+  // Własne podpowiedzi adresów (zamiast natywnego <datalist>, niespójnego w tym środowisku) — filtrują się
+  // po każdej wpisanej literze i pamiętają wszystkie miejscowości/adresy użyte we wcześniejszych planach.
+  function setupAddressAutocomplete(inputEl, boxEl, sourceValues){
+    if(!inputEl || !boxEl) return;
+    const values = [...new Set(sourceValues.filter(Boolean))];
+    const render = ()=>{
+      const q = inputEl.value.trim().toLowerCase();
+      const matches = q ? values.filter(v=>v.toLowerCase().includes(q) && v.toLowerCase()!==q) : values;
+      if(!matches.length){ boxEl.innerHTML=''; boxEl.style.display='none'; return; }
+      boxEl.innerHTML = matches.slice(0,8).map(v=>`<div class="addr-suggestion-item">${esc(v)}</div>`).join('');
+      boxEl.style.display = 'block';
+      boxEl.querySelectorAll('.addr-suggestion-item').forEach(item=>{
+        item.onmousedown = (e)=>{ e.preventDefault(); inputEl.value = item.textContent; boxEl.style.display='none'; inputEl.dispatchEvent(new Event('blur')); };
+      });
+    };
+    inputEl.addEventListener('input', render);
+    inputEl.addEventListener('focus', render);
+    inputEl.addEventListener('blur', ()=>setTimeout(()=>{ boxEl.style.display='none'; }, 200));
+  }
+  setupAddressAutocomplete(obsStart, main.querySelector('#obs-start-suggestions'),
+    DB.observations.map(o=>o.startLocation).concat(DB.settings.startLocation||[]));
+  setupAddressAutocomplete(obsLoc, main.querySelector('#obs-location-suggestions'),
+    DB.observations.map(o=>o.location));
   main.querySelectorAll('[data-action="cal-prev-month"]').forEach(b=>b.onclick=()=>calShiftMonth(-1));
   main.querySelectorAll('[data-action="cal-next-month"]').forEach(b=>b.onclick=()=>calShiftMonth(1));
   main.querySelectorAll('.cal-cell[data-date]').forEach(cell=>cell.onclick=()=>calSelectDay(cell.dataset.date));
@@ -4247,6 +4298,92 @@ function openCommitteeReportsModal(playerId){
       p.committeeOpinion = overlay.querySelector('#committee-opinion-text').value.trim();
       await savePlayers();
       closeAndRefresh();
+    });
+  }
+
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) closeAndRefresh(); });
+  document.body.appendChild(overlay);
+  draw();
+}
+
+const TRANSFER_HISTORY_TYPES = ['Transfer definitywny','Wypożyczenie','Wolny transfer','Debiut w klubie (juniorzy)','Powrót z wypożyczenia'];
+// Historia transferowa — wpisy dodawane ręcznie przez scouta (klub, okres, typ, kwota), na wzór układu
+// kariery znanego z Transfermarkt/90minut. To dane faktograficzne wpisywane przez użytkownika, nie import.
+function openTransferHistoryModal(playerId){
+  const already = document.querySelector('.modal-overlay[data-transferhist-for]');
+  if(already) already.remove();
+  const p = DB.players.find(x=>x.id===playerId);
+  if(!p) return;
+  if(!p.transferHistory) p.transferHistory = [];
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.dataset.transferhistFor = playerId;
+
+  function closeAndRefresh(){ overlay.remove(); render(); }
+
+  function draw(){
+    const sorted = p.transferHistory.slice().sort((a,b)=>(b.from||'').localeCompare(a.from||''));
+    overlay.innerHTML = `
+    <div class="modal" style="max-width:640px;">
+      <h3>Historia transferowa — ${esc(p.firstName)} ${esc(p.lastName)}</h3>
+      <div style="margin-bottom:16px;max-height:240px;overflow:auto;">
+        ${sorted.length ? sorted.map(t=>{
+          const idx = p.transferHistory.indexOf(t);
+          return `<div class="obs-item">
+            <div class="toolbar" style="margin-bottom:2px;">
+              <strong>${esc(t.club)}</strong>
+              <button class="link-btn th-delete-btn" data-idx="${idx}" style="color:var(--clay-dark);font-size:11px;">usuń</button>
+            </div>
+            <div class="meta">${esc(t.from||'—')} &rarr; ${esc(t.to||'obecnie')}${t.type?' &middot; '+esc(t.type):''}${t.fee?' &middot; '+esc(t.fee):''}</div>
+            ${t.note?`<div style="font-size:12px;margin-top:3px;">${esc(t.note)}</div>`:''}
+          </div>`;
+        }).join('') : '<div class="empty">Brak wpisów — dodaj pierwszy poniżej.</div>'}
+      </div>
+      <div style="border-top:1px solid #E3DECE;margin-bottom:14px;padding-top:12px;">
+        <label class="field" style="display:block;margin-bottom:8px;">Dodaj wpis</label>
+        <div class="grid grid-2">
+          <div class="field-wrap"><label class="field">Klub</label><input id="th-club" placeholder="np. Podhale Nowy Targ"></div>
+          <div class="field-wrap"><label class="field">Typ</label>
+            <select id="th-type"><option value="">— wybierz —</option>${TRANSFER_HISTORY_TYPES.map(t=>`<option>${esc(t)}</option>`).join('')}</select>
+          </div>
+        </div>
+        <div class="grid grid-2">
+          <div class="field-wrap"><label class="field">Od (np. rok/sezon)</label><input id="th-from" placeholder="np. 2022"></div>
+          <div class="field-wrap"><label class="field">Do (puste = obecnie)</label><input id="th-to" placeholder="np. 2024"></div>
+        </div>
+        <div class="field-wrap"><label class="field">Kwota transferu (opcjonalnie)</label><input id="th-fee" placeholder="np. 50 tys. € / wolny transfer"></div>
+        <div class="field-wrap"><label class="field">Notatka</label><input id="th-note" placeholder="Dodatkowe informacje"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="secondary" data-action="close-modal">Zamknij</button>
+        <button class="gold" data-action="add-transfer-history">+ Dodaj wpis</button>
+      </div>
+    </div>`;
+    wire();
+  }
+
+  function wire(){
+    overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=closeAndRefresh);
+    overlay.querySelectorAll('.th-delete-btn').forEach(b=>b.onclick=async()=>{
+      p.transferHistory.splice(Number(b.dataset.idx), 1);
+      await savePlayers();
+      draw();
+    });
+    overlay.querySelectorAll('[data-action="add-transfer-history"]').forEach(b=>b.onclick=async()=>{
+      const club = overlay.querySelector('#th-club').value.trim();
+      if(!club){ overlay.querySelector('#th-club').focus(); return; }
+      p.transferHistory.push({
+        id: uid('TH'),
+        club,
+        from: overlay.querySelector('#th-from').value.trim(),
+        to: overlay.querySelector('#th-to').value.trim(),
+        type: overlay.querySelector('#th-type').value,
+        fee: overlay.querySelector('#th-fee').value.trim(),
+        note: overlay.querySelector('#th-note').value.trim(),
+      });
+      await savePlayers();
+      draw();
     });
   }
 

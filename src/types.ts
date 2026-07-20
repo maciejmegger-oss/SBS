@@ -46,6 +46,7 @@ export interface Player {
   powolania?: number;
   opisKoncowy?: string;
   monitored?: boolean;
+  transferHistory?: TransferHistoryEntry[];
   notes?: string;
   dateAdded?: string;
   source?: string;
@@ -116,6 +117,16 @@ export interface Contact {
 export interface Sponsor {
   name?: string;
   dataUrl: string;
+}
+
+export interface TransferHistoryEntry {
+  id: string;
+  club: string;
+  from?: string;
+  to?: string;
+  type?: string;
+  fee?: string;
+  note?: string;
 }
 
 export interface Settings {
