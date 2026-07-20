@@ -1806,23 +1806,38 @@ function clubsWithCrestsPanel(){
   </div>`;
 }
 
-// Szybki dostęp wg lig na dashboardzie — logotypy poziomów rozgrywek (styl 3D, jednolity rozmiar).
-// Klik w logo rozwija w miejscu szereg/dwuszereg herbów klubów tego poziomu; klik w herb przenosi
-// od razu do listy zawodników klubu. Loga wgrywa użytkownik (jak herby klubów) — oficjalne logotypy
-// lig (Ekstraklasa, Betclic 1/2/3 liga) to znaki towarowe, których nie pobieramy automatycznie.
+// Szybki dostęp wg lig na dashboardzie — TYLKO najwyższe poziomy (reszta jest już w pełni dostępna
+// w zakładce Kluby). Logotypy w jednolitym rozmiarze, styl 3D, układ poziomy. Klik w logo rozwija w
+// miejscu rząd herbów klubów tej ligi; klik w herb przenosi od razu do listy zawodników klubu. Loga
+// wgrywa użytkownik (jak herby klubów) — oficjalne logotypy lig to znaki towarowe, których nie
+// pobieramy automatycznie. CLJ U19 dopasowana dokładnie (nie przez topLevelOf, bo ten grupuje
+// wszystkie kategorie juniorskie razem) — tu chodzi tylko o samo U19.
+const DASHBOARD_QUICK_LEAGUES = [
+  {key:'Ekstraklasa', match:c=>topLevelOf(c.league)==='Ekstraklasa'},
+  {key:'I liga',       match:c=>topLevelOf(c.league)==='I liga'},
+  {key:'II liga',      match:c=>topLevelOf(c.league)==='II liga'},
+  {key:'III liga',     match:c=>topLevelOf(c.league)==='III liga'},
+  {key:'CLJ U19',      match:c=>c.league==='CLJ U19'},
+];
 function leagueQuickAccessPanel(){
-  const logos = TOP_LEVELS.map(t=>{
-    const count = DB.clubs.filter(c=>topLevelOf(c.league)===t).length;
-    const active = dashboardLeagueSelected===t;
-    return `<div class="league-logo-3d ${active?'active':''}" data-action="dash-select-league" data-val="${esc(t)}" title="${esc(t)} — ${count} ${count===1?'klub':'klubów'} w bazie">
-      <div class="league-logo-3d-plate">${leagueLogoImg(t, 40)}</div>
-      <div class="league-logo-3d-label">${esc(t)}</div>
+  const logos = DASHBOARD_QUICK_LEAGUES.map(({key, match})=>{
+    const count = DB.clubs.filter(match).length;
+    const active = dashboardLeagueSelected===key;
+    return `<div class="league-logo-3d ${active?'active':''}" data-action="dash-select-league" data-val="${esc(key)}" title="${esc(key)} — ${count} ${count===1?'klub':'klubów'} w bazie — kliknij, aby zobaczyć kluby">
+      <div class="league-logo-3d-plate">
+        ${leagueLogoImg(key, 64)}
+        <label class="league-logo-3d-upload" title="Wgraj/zmień logo tej ligi" onclick="event.stopPropagation()">✎
+          <input type="file" class="league-logo-input" data-league="${esc(key)}" accept="image/png,image/jpeg,image/jpg,.png,.jpg,.jpeg" style="display:none;">
+        </label>
+      </div>
+      <div class="league-logo-3d-label">${esc(key)}</div>
     </div>`;
   }).join('');
 
   let clubsRow = '';
   if(dashboardLeagueSelected){
-    const clubs = DB.clubs.filter(c=>topLevelOf(c.league)===dashboardLeagueSelected).sort((a,b)=>a.name.localeCompare(b.name,'pl'));
+    const spec = DASHBOARD_QUICK_LEAGUES.find(l=>l.key===dashboardLeagueSelected);
+    const clubs = spec ? DB.clubs.filter(spec.match).sort((a,b)=>a.name.localeCompare(b.name,'pl')) : [];
     const cards = clubs.map(c=>{
       const n = DB.players.filter(p=>p.clubId===c.id).length;
       return `<div class="club-crest-card" data-action="dash-goto-club" data-id="${esc(c.id)}" title="Przejdź do zawodników klubu ${esc(c.name)}">
@@ -2197,7 +2212,9 @@ function pill(label, active, action, dataAttrs){
 // Do czasu wgrania pokazuje się schludny placeholder z inicjałami poziomu.
 function leagueLogoImg(topLevel, size){
   const logo = DB.settings.leagueLogos && DB.settings.leagueLogos[topLevel];
-  if(logo) return `<img src="${esc(logo)}" alt="" style="width:${size}px;height:${size}px;object-fit:contain;">`;
+  // max-width/max-height (nie width/height sztywne) — logo dowolnych proporcji mieści się w jednolitym
+  // "gabarycie" bez rozciągania/spłaszczania.
+  if(logo) return `<img src="${esc(logo)}" alt="" style="max-width:${size}px;max-height:${Math.round(size*0.62)}px;object-fit:contain;">`;
   const initials = (topLevel.match(/[A-ZĄĆĘŁŃÓŚŹŻ0-9]/g)||[]).join('').slice(0,3) || topLevel.slice(0,2).toUpperCase();
   return `<span style="width:${size}px;height:${size}px;display:inline-flex;align-items:center;justify-content:center;background:#16302A;color:#C69B3C;border-radius:9px;font-weight:800;font-size:${Math.round(size*0.34)}px;">${esc(initials)}</span>`;
 }
@@ -2210,18 +2227,8 @@ function viewClubs(){
 
   const topRow = ['Wszystkie', ...TOP_LEVELS].map(t=>{
     const val = t==='Wszystkie' ? '' : t;
-    const active = clubBrowse.top===val;
-    const count = t==='Wszystkie' ? DB.clubs.length : DB.clubs.filter(c=>topLevelOf(c.league)===t).length;
-    return `<div class="league-tile ${active?'active':''}" data-action="browse-top" data-val="${esc(val)}">
-      ${t==='Wszystkie' ? `<span class="league-tile-logo league-tile-logo-all">${count}</span>` : `
-      <label class="league-tile-logo" title="Kliknij, aby wgrać logo tego poziomu rozgrywek" onclick="event.stopPropagation()">
-        ${leagueLogoImg(t, 40)}
-        <input type="file" class="league-logo-input" data-league="${esc(t)}" accept="image/png,image/jpeg,image/jpg,.png,.jpg,.jpeg" style="display:none;">
-      </label>`}
-      <div class="league-tile-label">${esc(t)}</div>
-      ${t!=='Wszystkie' ? `<div class="league-tile-count">${count}</div>` : ''}
-    </div>`;
-  }).join('');
+    return pill(t, clubBrowse.top===val, 'browse-top', {val});
+  }).join(' ');
 
   let groupRow = '';
   if(clubBrowse.top==='III liga' || clubBrowse.top==='IV liga' || clubBrowse.top==='Kategorie juniorskie'){
@@ -2238,29 +2245,27 @@ function viewClubs(){
       }).join(' ') + `</div>`;
   }
 
-  // Karty z herbami zamiast tabeli — szybki wizualny dostęp: klik w kartę/herb przenosi od razu
-  // do listy zawodników klubu; edycja/usuwanie/wgranie herbu to osobne strefy ze stopPropagation.
-  const sortedList = list.slice().sort((a,b)=>a.name.localeCompare(b.name,'pl'));
-  const cards = sortedList.map(c=>{
+  const rows = list.map(c=>{
     const count = DB.players.filter(p=>p.clubId===c.id).length;
-    return `<div class="club-crest-card" data-action="view-club" data-id="${c.id}" title="Przejdź do zawodników klubu ${esc(c.name)}">
-      <label for="quick-crest-${c.id}" style="cursor:pointer;display:inline-flex;flex-shrink:0;" title="Kliknij, aby wgrać/zmienić herb" onclick="event.stopPropagation()">${crestImg(clubCrest(c.id), null, c.name)}</label>
-      <input type="file" id="quick-crest-${c.id}" class="quick-crest-input" data-club-id="${c.id}" accept="image/png,image/jpeg,image/jpg,.png,.jpg,.jpeg,application/pdf,.pdf" style="display:none;" onclick="event.stopPropagation()">
-      <div style="min-width:0;flex:1;">
-        <div style="font-weight:700;color:var(--pitch);font-size:14px;">${esc(c.name)}</div>
-        <div style="font-size:11.5px;color:var(--ink-soft);">${esc(c.region)}${c.city?' &middot; '+esc(c.city):''} &middot; <strong>${count}</strong> ${plZaw(count)}</div>
-      </div>
-      <div style="display:flex;gap:6px;flex-shrink:0;" onclick="event.stopPropagation()">
-        <button class="link-btn" data-action="edit-club" data-id="${c.id}" style="font-size:11px;">Edytuj</button>
-        <button class="link-btn" data-action="delete-club" data-id="${c.id}" style="font-size:11px;color:var(--clay-dark);">Usuń</button>
-      </div>
-    </div>`;
+    return `<tr style="cursor:pointer;" data-action="view-club" data-id="${c.id}">
+      <td onclick="event.stopPropagation()">
+        <label for="quick-crest-${c.id}" style="cursor:pointer;display:inline-flex;" title="Kliknij, aby wgrać/zmienić herb">${crestImg(clubCrest(c.id), null, c.name)}</label>
+        <input type="file" id="quick-crest-${c.id}" class="quick-crest-input" data-club-id="${c.id}" accept="image/png,image/jpeg,image/jpg,.png,.jpg,.jpeg,application/pdf,.pdf" style="display:none;">
+      </td>
+      <td><strong>${esc(c.name)}</strong></td>
+      <td>${esc(c.region)}</td>
+      <td>${esc(c.league)}${c.season?` <span class="note">(${esc(c.season)})</span>`:''}</td>
+      <td>${esc(c.city||"—")}</td>
+      <td>${count}</td>
+      <td onclick="event.stopPropagation()"><button class="link-btn" data-action="edit-club" data-id="${c.id}">Edytuj</button>
+          <button class="link-btn" data-action="delete-club" data-id="${c.id}" style="color:var(--clay-dark);">Usuń</button></td>
+    </tr>`;
   }).join('');
 
   return `
   <h2 class="view-title">Kluby</h2>
-  <p class="view-sub">Przeglądaj wg ligi i grupy — jak w strukturze PZPN / mPZPN. Kliknij herb lub kartę, aby zobaczyć skład na obecny sezon.</p>
-  <div class="league-tiles">${topRow}</div>
+  <p class="view-sub">Przeglądaj wg ligi i grupy — jak w strukturze PZPN / mPZPN. Kliknij klub, aby zobaczyć skład na obecny sezon.</p>
+  <div class="filters" style="margin-bottom:0;">${topRow}</div>
   ${groupRow}
   <div class="toolbar" style="margin-top:14px;">
     <div class="note">${list.length} ${list.length===1?'klub':'klubów'} w widoku</div>
@@ -2271,7 +2276,12 @@ function viewClubs(){
       <button class="gold" data-action="add-club">+ Nowy klub</button>
     </div>
   </div>
-  <div class="club-crest-grid" style="margin-top:12px;">${cards || '<div class="empty">Brak klubów w tym widoku.</div>'}</div>`;
+  <div class="card" style="padding:0;overflow:auto;">
+    <table>
+      <thead><tr><th>Herb</th><th>Klub</th><th>ZPN / Region</th><th>Liga (aktualna)</th><th>Miasto</th><th>Zawodnicy w bazie</th><th></th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="7"><div class="empty">Brak klubów w tym widoku.</div></td></tr>`}</tbody>
+    </table>
+  </div>`;
 }
 
 function viewClubDetail(id){
