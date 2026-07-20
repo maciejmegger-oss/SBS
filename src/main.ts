@@ -31,10 +31,11 @@ let rankingFormationFilter = ''; // '' = wszystkie systemy; inaczej jedna z wart
 let positionMapAssignments = {}; // { "league|||number": [playerId, ...] up to 6 }
 let editingClubId = null;
 let clubBrowse = {top:"", group:""};
+let dashboardLeagueSelected = null;
 
 const DEFAULT_SETTINGS = {
   regions: ["Dolnośląski ZPN","Kujawsko-Pomorski ZPN","Lubelski ZPN","Lubuski ZPN","Łódzki ZPN","Małopolski ZPN","Mazowiecki ZPN","Opolski ZPN","Podkarpacki ZPN","Podlaski ZPN","Pomorski ZPN","Śląski ZPN","Świętokrzyski ZPN","Warmińsko-Mazurski ZPN","Wielkopolski ZPN","Zachodniopomorski ZPN"],
-  leagues: ["I liga","II liga","III liga, gr. I","III liga, gr. II","III liga, gr. III","III liga, gr. IV","IV liga (pomorska)","IV liga (zachodniopomorska)","IV liga (dolnośląska)","IV liga (śląska)","IV liga (wielkopolska)","Klasa okręgowa","CLJ U19","CLJ U17 (zachodnia)","CLJ U17 (wschodnia)","Liga makroregionalna U16"],
+  leagues: ["Ekstraklasa","I liga","II liga","III liga, gr. I","III liga, gr. II","III liga, gr. III","III liga, gr. IV","IV liga (pomorska)","IV liga (zachodniopomorska)","IV liga (dolnośląska)","IV liga (śląska)","IV liga (wielkopolska)","Klasa okręgowa","CLJ U19","CLJ U17 (zachodnia)","CLJ U17 (wschodnia)","Liga makroregionalna U16"],
   positions: ["Bramkarz","Obrońca środkowy","Obrońca boczny","Pomocnik defensywny","Pomocnik środkowy","Pomocnik ofensywny","Skrzydłowy","Napastnik"],
   statuses: ["Do Obserwacji","Na Testy","Do transferu","Z polecenia","Rekomendowany","Odrzucony"],
   recommendations: ["Kontynuować obserwację","Zaprosić na testy","(Do transferu)","Odrzucić","Zbyt wcześnie ocenić"],
@@ -42,13 +43,14 @@ const DEFAULT_SETTINGS = {
   customFields: [],
   sponsors: []
 };
-const TOP_LEVELS = ["I liga","II liga","III liga","IV liga","Klasa okręgowa","Kategorie juniorskie"];
+const TOP_LEVELS = ["Ekstraklasa","I liga","II liga","III liga","IV liga","Klasa okręgowa","Kategorie juniorskie"];
 function topLevelOf(league){
   if(!league) return "Nieprzypisane";
   if(league.startsWith("III liga")) return "III liga";
   if(league.startsWith("IV liga")) return "IV liga";
   if(league==="II liga") return "II liga";
   if(league==="I liga") return "I liga";
+  if(league==="Ekstraklasa") return "Ekstraklasa";
   if(league==="Klasa okręgowa") return "Klasa okręgowa";
   return "Kategorie juniorskie";
 }
@@ -1236,7 +1238,8 @@ async function loadAllInner(){
   }
   if(Array.isArray(DB.settings.leagues)){
     const L = DB.settings.leagues;
-    if(!L.includes('I liga')) L.unshift('I liga');   // najwyższy z widocznych poziomów — na początek listy
+    if(!L.includes('I liga')) L.unshift('I liga');
+    if(!L.includes('Ekstraklasa')) L.unshift('Ekstraklasa');   // najwyższy poziom — na początek listy
     if(!L.includes('CLJ U19')) L.push('CLJ U19');
     const variants = ['CLJ U17 (zachodnia)','CLJ U17 (wschodnia)'].filter(v=>!L.includes(v));
     const plain = L.indexOf('CLJ U17');
@@ -1803,6 +1806,47 @@ function clubsWithCrestsPanel(){
   </div>`;
 }
 
+// Szybki dostęp wg lig na dashboardzie — logotypy poziomów rozgrywek (styl 3D, jednolity rozmiar).
+// Klik w logo rozwija w miejscu szereg/dwuszereg herbów klubów tego poziomu; klik w herb przenosi
+// od razu do listy zawodników klubu. Loga wgrywa użytkownik (jak herby klubów) — oficjalne logotypy
+// lig (Ekstraklasa, Betclic 1/2/3 liga) to znaki towarowe, których nie pobieramy automatycznie.
+function leagueQuickAccessPanel(){
+  const logos = TOP_LEVELS.map(t=>{
+    const count = DB.clubs.filter(c=>topLevelOf(c.league)===t).length;
+    const active = dashboardLeagueSelected===t;
+    return `<div class="league-logo-3d ${active?'active':''}" data-action="dash-select-league" data-val="${esc(t)}" title="${esc(t)} — ${count} ${count===1?'klub':'klubów'} w bazie">
+      <div class="league-logo-3d-plate">${leagueLogoImg(t, 40)}</div>
+      <div class="league-logo-3d-label">${esc(t)}</div>
+    </div>`;
+  }).join('');
+
+  let clubsRow = '';
+  if(dashboardLeagueSelected){
+    const clubs = DB.clubs.filter(c=>topLevelOf(c.league)===dashboardLeagueSelected).sort((a,b)=>a.name.localeCompare(b.name,'pl'));
+    const cards = clubs.map(c=>{
+      const n = DB.players.filter(p=>p.clubId===c.id).length;
+      return `<div class="club-crest-card" data-action="dash-goto-club" data-id="${esc(c.id)}" title="Przejdź do zawodników klubu ${esc(c.name)}">
+        ${crestImg(clubCrest(c.id), null, c.name)}
+        <div style="min-width:0;">
+          <div style="font-weight:700;color:var(--pitch);font-size:14px;">${esc(c.name)}</div>
+          <div style="font-size:11.5px;color:var(--ink-soft);">${esc((c.region||'').replace(' ZPN',''))} &middot; <strong>${n}</strong> ${plZaw(n)}</div>
+        </div>
+      </div>`;
+    }).join('');
+    clubsRow = `<div style="margin-top:16px;border-top:1px solid #E3DECE;padding-top:14px;">
+      <div class="note" style="margin-bottom:8px;">${esc(dashboardLeagueSelected)} — ${clubs.length} ${clubs.length===1?'klub':'klubów'} w bazie</div>
+      ${clubs.length ? `<div class="club-crest-grid">${cards}</div>` : `<div class="empty">Brak klubów tego poziomu w bazie — dodaj je w zakładce Kluby.</div>`}
+    </div>`;
+  }
+
+  return `<div class="card">
+    <h4 style="margin-top:0;color:var(--pitch);">Szybki dostęp wg lig</h4>
+    <p class="note" style="margin-top:-4px;margin-bottom:10px;">Kliknij logo ligi, aby zobaczyć jej kluby — kliknij herb klubu, aby przejść do zawodników.</p>
+    <div class="league-logos-row">${logos}</div>
+    ${clubsRow}
+  </div>`;
+}
+
 function viewDashboard(){
   const totalClubs = DB.clubs.length;
   const totalPlayers = DB.players.length;
@@ -1844,6 +1888,9 @@ function viewDashboard(){
       ${observationsDonut()}
     </div>
     ${bydgoszczDistanceWidget()}
+  </div>
+  <div style="margin-top:18px;">
+    ${leagueQuickAccessPanel()}
   </div>
   <div style="margin-top:18px;">
     <div class="card">
@@ -3734,6 +3781,11 @@ function attachHandlers(){
   // Szybkie przejście z dashboardu: klik w klub → widok klubu z listą jego zawodników.
   main.querySelectorAll('[data-action="dash-goto-club"]').forEach(b=>b.onclick=()=>{
     currentView='clubs'; viewingClubId=b.dataset.id; editingPlayerId=null; viewingPlayerId=null; render();
+  });
+  // Szybki dostęp wg lig (dashboard): klik w logo ligi rozwija/zwija rząd herbów klubów tej ligi.
+  main.querySelectorAll('[data-action="dash-select-league"]').forEach(b=>b.onclick=()=>{
+    dashboardLeagueSelected = (dashboardLeagueSelected===b.dataset.val) ? null : b.dataset.val;
+    render();
   });
 
   main.querySelectorAll('[data-action="add-player"]').forEach(b=>b.onclick=()=>openPlayerModal(null));
