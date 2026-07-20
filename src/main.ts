@@ -2503,6 +2503,22 @@ function perspektywaBadgeReport(value){
   return `<span class="persp-badge-report" style="background:${color};">PERSPEKTYWA: ${esc(value)}</span>`;
 }
 
+// Kolor punktu oceny 1-6 na skali od czerwieni (1, słabo) do złota (6, dobrze).
+function pointColor(n){
+  const t = (Math.max(1,Math.min(6,Number(n)||1))-1)/5;
+  const red=[182,80,63], gold=[198,155,60];
+  const c = red.map((r,i)=>Math.round(r+(gold[i]-r)*t));
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+// Punktowe ocenianie 1-6 (zamiast suwaka). Wartość trzymana w ukrytym inpucie o danym id (czytanym przy zapisie).
+function ratingPointsHtml(id, val){
+  const v = Number(val)||3;
+  return `<span class="rating-points">
+    ${[1,2,3,4,5,6].map(n=>`<button type="button" class="rp-dot ${n===v?'active':''}" data-target="${id}" data-val="${n}" style="--rp:${pointColor(n)};" title="Ocena ${n}/6">${n}</button>`).join('')}
+    <input type="hidden" id="${id}" value="${v}">
+  </span>`;
+}
+
 function viewReports(){
   const editing = editingReportId ? DB.reports.find(r=>r.id===editingReportId) : null;
   const playerOptions = DB.players.slice().sort((a,b)=>(a.lastName||a.firstName||'').localeCompare(b.lastName||b.firstName||'','pl'))
@@ -2561,8 +2577,7 @@ function viewReports(){
       ${REPORT_PHASES.map(f=>{ const v = editing && editing.phases && editing.phases[f.key]!=null ? editing.phases[f.key] : 3; return `
         <div class="slider-row">
           <span class="lbl">${esc(f.label)}</span>
-          <input type="range" min="1" max="6" step="1" value="${v}" id="rep-${f.key}" oninput="document.getElementById('rep-${f.key}-val').textContent=this.value">
-          <span class="val" id="rep-${f.key}-val">${v}</span>
+          ${ratingPointsHtml('rep-'+f.key, v)}
         </div>`; }).join('')}
     </div>
 
@@ -2571,8 +2586,7 @@ function viewReports(){
       ${REPORT_SET_PIECES.map(f=>{ const v = editing && editing.setPieces && editing.setPieces[f.key]!=null ? editing.setPieces[f.key] : 3; return `
         <div class="slider-row">
           <span class="lbl">${esc(f.label)}</span>
-          <input type="range" min="1" max="6" step="1" value="${v}" id="rep-${f.key}" oninput="document.getElementById('rep-${f.key}-val').textContent=this.value">
-          <span class="val" id="rep-${f.key}-val">${v}</span>
+          ${ratingPointsHtml('rep-'+f.key, v)}
         </div>`; }).join('')}
       <div class="field-wrap" style="margin-top:10px;">
         <label class="field">Komentarz do stałych fragmentów gry</label>
@@ -3056,7 +3070,9 @@ function buildAutoPositionCandidates(league, formation, number){
   if(!posDef) return [];
   const statusRank = {'Do transferu':0, 'Na Testy':1};
   const candidates = DB.players
-    .filter(p => clubLeague(p.clubId)===league && p.position===posDef.posName && (!formation || p.formation===formation)
+    // System gry: gdy wybrano konkretny, pokazuj zawodników z tym systemem ORAZ tych bez wpisanego systemu
+    // (są kandydatami do każdego układu) — inaczej zawodnik "Do transferu" bez systemu nie trafiał na mapę.
+    .filter(p => clubLeague(p.clubId)===league && p.position===posDef.posName && (!formation || !p.formation || p.formation===formation)
       && (p.status==='Do transferu' || p.status==='Na Testy'))
     .map(p => ({p, a: playerAvg(p.id)}))
     // NIE wymagamy obserwacji — zawodnik z samą decyzją statusu (z raportu) też trafia na mapę.
@@ -3082,20 +3098,28 @@ async function reorderPositionMapPlayer(league, formation, number, playerId, tar
 function viewRankingNumbersMode(){
   // Zbierz WSZYSTKIE automatyczne uzupełnienia w jednym przebiegu i zapisz JEDEN raz — wywoływanie zapisu
   // osobno dla każdej z 11 pozycji powodowało równoczesne zapisy do tego samego klucza i błędy magazynu.
-  let anyAutoFilled = false;
+  let anyChanged = false;
   let anyRealCandidatesFound = false;
   POSITION_NUMBERS.forEach(posDef=>{
     const key = positionMapKey(rankingLeague, rankingFormationFilter, posDef.number);
+    const auto = buildAutoPositionCandidates(rankingLeague, rankingFormationFilter, posDef.number);
     if(positionMapAssignments[key] === undefined){
-      const auto = buildAutoPositionCandidates(rankingLeague, rankingFormationFilter, posDef.number);
       positionMapAssignments[key] = auto;
-      anyAutoFilled = true;
-      if(auto.length>0) anyRealCandidatesFound = true;
-    } else if(positionMapAssignments[key].length>0){
-      anyRealCandidatesFound = true;
+      anyChanged = true;
+    } else {
+      // Dołącz automatycznie zawodników ze statusem (Do transferu/Testy), których jeszcze nie ma na tej
+      // pozycji — "Do transferu" na początek (priorytet), "Na Testy" na koniec. Cap 6 na pozycję.
+      const cur = positionMapAssignments[key];
+      auto.forEach(id=>{
+        if(cur.includes(id) || cur.length >= 6) return;
+        const pl = DB.players.find(p=>p.id===id);
+        if(pl && pl.status==='Do transferu') cur.unshift(id); else cur.push(id);
+        anyChanged = true;
+      });
     }
+    if((positionMapAssignments[key]||[]).length>0) anyRealCandidatesFound = true;
   });
-  if(anyAutoFilled) savePositionMapAssignments();
+  if(anyChanged) savePositionMapAssignments();
 
   const activeCoords = FORMATION_COORDS[rankingFormationFilter] || FORMATION_COORDS[''];
 
@@ -3107,7 +3131,7 @@ function viewRankingNumbersMode(){
     const playerRowsHtml = ids.map(id=>{
       const pl = DB.players.find(p=>p.id===id);
       if(!pl) return '';
-      return `<span class="pos-marker-row">${crestImg(clubCrest(pl.clubId),'xs',clubName(pl.clubId))}<span class="pmr-name">${esc(pl.lastName)}</span>${pl.birthYear?`<span class="pmr-year">${esc(pl.birthYear)}</span>`:''}</span>`;
+      return `<span class="pos-marker-row">${crestImg(clubCrest(pl.clubId),'xs',clubName(pl.clubId))}<span class="pmr-name">${esc(pl.lastName || pl.firstName || '—')}</span>${pl.birthYear?`<span class="pmr-year">${esc(pl.birthYear)}</span>`:''}</span>`;
     }).join('');
     return `
     <div class="pos-marker" style="left:${coord.x}%;top:${coord.y}%;" data-action="position-slot-click" data-number="${posDef.number}" title="${esc(posDef.label)} — kliknij, aby zarządzać (do 6 zawodników)">
@@ -3900,6 +3924,12 @@ function attachHandlers(){
   });
   main.querySelectorAll('.persp-btn').forEach(btn=>btn.onclick=()=>selectPerspektywa(btn.dataset.value));
   main.querySelectorAll('.status-btn').forEach(btn=>btn.onclick=()=>selectReportStatus(btn.dataset.value));
+  // Punktowe ocenianie 1-6 — ustaw wartość w ukrytym inpucie i podświetl wybrany punkt (bez render → nic nie kasuje).
+  main.querySelectorAll('.rp-dot').forEach(btn=>btn.onclick=()=>{
+    const target = document.getElementById(btn.dataset.target);
+    if(target) target.value = btn.dataset.val;
+    btn.parentElement.querySelectorAll('.rp-dot').forEach(d=>d.classList.toggle('active', d===btn));
+  });
   main.querySelectorAll('[data-action="refresh-position-map"]').forEach(b=>b.onclick=async()=>{
     // Skasuj przypisania mapy dla bieżącej ligi -> odświeżą się automatycznie z aktualnych statusów.
     Object.keys(positionMapAssignments).forEach(k=>{ if(k.startsWith(rankingLeague+'|||')) delete positionMapAssignments[k]; });
@@ -4435,7 +4465,7 @@ async function generatePlayerPDF(playerId){
   <style>
     @page { margin: 16mm 14mm; }
     *{box-sizing:border-box;}
-    body{font-family:Arial,Helvetica,sans-serif;color:#1B2420;background:#fff;margin:0;padding:0;font-size:13px;line-height:1.5;}
+    body{font-family:Arial,Helvetica,sans-serif;color:#1B2420;background:#fff;margin:0;padding:0 14mm;font-size:13px;line-height:1.5;}
     .report-header{display:flex;align-items:center;gap:18px;padding-bottom:16px;border-bottom:4px solid #C69B3C;margin-bottom:0;}
     .report-header img{width:52px;height:52px;border-radius:12px;flex-shrink:0;}
     .brand-block{flex:1;}
@@ -4462,6 +4492,14 @@ async function generatePlayerPDF(playerId){
       font-family:Arial,'Arial Narrow',sans-serif;font-weight:700;font-size:15px;margin:0 auto 6px;color:#fff;}
     .score-high{background:#3E7D4C;} .score-mid{background:#C69B3C;} .score-low{background:#B6503F;}
     .attr-card .lbl{font-size:9.5px;color:#5B6560;text-transform:uppercase;letter-spacing:.02em;font-weight:600;}
+    .attr5-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;}
+    .attr5-col{display:flex;flex-direction:column;}
+    .attr5-head{background:#16302A;color:#F6F3EA;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.02em;
+      padding:7px 6px;border-radius:6px 6px 0 0;text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px;}
+    .attr5-score{background:#C69B3C;color:#16302A;border-radius:10px;padding:1px 9px;font-size:13px;font-weight:700;}
+    .attr5-body{background:#F6F3EA;border:1px solid #E7E2D3;border-top:none;border-radius:0 0 6px 6px;
+      padding:8px 8px;font-size:10.5px;color:#3C4640;line-height:1.4;flex:1;min-height:46px;}
+    .attr5-empty{color:#B0AB9E;}
     .gauge-wrap{display:flex;flex-direction:column;align-items:center;gap:5px;}
     .gauge-ring{position:relative;}
     .gauge-ring svg{display:block;}
@@ -4525,18 +4563,20 @@ async function generatePlayerPDF(playerId){
     ${a?`
     <div class="overall-strip">
       <div class="big-num">${fmt1(a.overall)}</div>
-      <div class="txt"><strong>Średnia ogólna</strong> na podstawie ${a.count} ${a.count===1?'obserwacji':'obserwacji'}, ostatnia: ${esc(lastObs?lastObs.date:'—')}</div>
+      <div class="txt"><strong>Średnia ogólna</strong> na podstawie ${a.count} obserwacji, ostatnia: ${esc(lastObs?lastObs.date:'—')}</div>
       ${latestReport && latestReport.perspektywa ? `<div style="margin-left:auto;">${perspektywaBadgeReport(latestReport.perspektywa)}</div>` : ''}
-    </div>
-    <div class="attr-grid">
-      ${RATING_KEYS.map(k=>`<div class="attr-card">${gaugeRing(a.avgs[k], 56, RATING_LABELS[k])}${reportTextByKey[k]?`<div class="gauge-desc">${esc(reportTextByKey[k])}</div>`:''}</div>`).join('')}
-    </div>` : `<p class="empty-note">Brak obserwacji — oceny pojawią się po pierwszej wizycie scoutingowej.</p>`}
+    </div>` : ''}
+    ${(a || latestReport) ? `<div class="attr5-grid">
+      ${RATING_KEYS.map(k=>`<div class="attr5-col">
+        <div class="attr5-head"><span>${esc(RATING_LABELS[k])}</span>${a?`<span class="attr5-score">${fmt1(a.avgs[k])}</span>`:''}</div>
+        <div class="attr5-body">${reportTextByKey[k]?esc(reportTextByKey[k]):'<span class="attr5-empty">—</span>'}</div>
+      </div>`).join('')}
+    </div>` : `<p class="empty-note">Brak obserwacji i raportu — oceny oraz opisy pojawią się po pierwszej wizycie scoutingowej.</p>`}
   </div>
 
   ${latestReport?`<div class="section" style="padding-top:0;">
     <div class="section-title">Raport taktyczny${latestReport.date?' — '+esc(latestReport.date):''}${latestReport.perspektywa?' &middot; perspektywa '+esc(latestReport.perspektywa):''}</div>
     ${latestReport.description?`<div class="notes-box" style="margin-bottom:10px;">${esc(latestReport.description)}</div>`:''}
-    ${[['Technika',latestReport.technika],['Taktyka',latestReport.taktyka],['Motoryka',latestReport.motoryka],['Mentalność',latestReport.mentalnoscOpis],['Potencjał',latestReport.potencjalOpis]].filter(x=>x[1]).map(x=>`<div style="display:flex;gap:12px;margin-bottom:7px;"><div style="width:96px;flex-shrink:0;font-weight:700;color:#16302A;font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;padding-top:1px;">${x[0]}</div><div style="flex:1;font-size:12px;color:#3C4640;">${esc(x[1])}</div></div>`).join('')}
     ${(latestReport.phases&&Object.keys(latestReport.phases).length)?`<div style="margin-top:10px;font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#8A857A;font-weight:600;margin-bottom:5px;">Fazy gry (1-6)</div><div style="display:flex;flex-wrap:wrap;gap:6px;">${REPORT_PHASES.map(f=>latestReport.phases[f.key]!=null?`<span style="background:#F6F3EA;border:1px solid #E7E2D3;border-radius:6px;padding:3px 9px;font-size:11px;">${esc(f.label)}: <strong>${latestReport.phases[f.key]}</strong></span>`:'').join('')}</div>`:''}
     ${(latestReport.setPieces&&Object.keys(latestReport.setPieces).length)?`<div style="margin-top:8px;font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#8A857A;font-weight:600;margin-bottom:5px;">Stałe fragmenty (1-6)</div><div style="display:flex;flex-wrap:wrap;gap:6px;">${REPORT_SET_PIECES.map(f=>latestReport.setPieces[f.key]!=null?`<span style="background:#F6F3EA;border:1px solid #E7E2D3;border-radius:6px;padding:3px 9px;font-size:11px;">${esc(f.label)}: <strong>${latestReport.setPieces[f.key]}</strong></span>`:'').join('')}</div>`:''}
     ${latestReport.setPieceComment?`<div class="notes-box" style="margin-top:10px;">${esc(latestReport.setPieceComment)}</div>`:''}

@@ -246,6 +246,12 @@ tr:hover td{background:#FBF9F2;}
 .status-btn[data-value="Do transferu"].active{background:var(--gold);border-color:var(--gold-dark);color:#3A2C0C;}
 .status-btn[data-value="Odrzucony"].active{background:var(--clay);border-color:var(--clay-dark);color:#fff;}
 
+/* Punktowe ocenianie 1-6 w raportach — skala kolorów od czerwieni (1) do złota (6). */
+.rating-points{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap;}
+.rp-dot{width:30px;height:30px;border-radius:8px;border:2px solid var(--rp);background:#fff;color:var(--rp);font-weight:800;font-size:13px;line-height:1;cursor:pointer;padding:0;transition:transform .08s ease, background .1s ease;}
+.rp-dot:hover{transform:translateY(-1px);}
+.rp-dot.active{background:var(--rp);color:#fff;box-shadow:0 2px 6px rgba(10,23,18,.18);}
+
 @media (max-width: 780px){
   .app{flex-direction:column;min-height:0;}
   .sidebar{width:100%;flex-direction:row;align-items:center;padding:10px 14px;gap:16px;overflow-x:auto;}
