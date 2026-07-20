@@ -2191,26 +2191,28 @@ function viewClubs(){
       }).join(' ') + `</div>`;
   }
 
-  const rows = list.map(c=>{
+  // Karty z herbami zamiast tabeli — szybki wizualny dostęp: klik w kartę/herb przenosi od razu
+  // do listy zawodników klubu; edycja/usuwanie/wgranie herbu to osobne strefy ze stopPropagation.
+  const sortedList = list.slice().sort((a,b)=>a.name.localeCompare(b.name,'pl'));
+  const cards = sortedList.map(c=>{
     const count = DB.players.filter(p=>p.clubId===c.id).length;
-    return `<tr style="cursor:pointer;" data-action="view-club" data-id="${c.id}">
-      <td onclick="event.stopPropagation()">
-        <label for="quick-crest-${c.id}" style="cursor:pointer;display:inline-flex;" title="Kliknij, aby wgrać/zmienić herb">${crestImg(clubCrest(c.id), null, c.name)}</label>
-        <input type="file" id="quick-crest-${c.id}" class="quick-crest-input" data-club-id="${c.id}" accept="image/png,image/jpeg,image/jpg,.png,.jpg,.jpeg,application/pdf,.pdf" style="display:none;">
-      </td>
-      <td><strong>${esc(c.name)}</strong></td>
-      <td>${esc(c.region)}</td>
-      <td>${esc(c.league)}${c.season?` <span class="note">(${esc(c.season)})</span>`:''}</td>
-      <td>${esc(c.city||"—")}</td>
-      <td>${count}</td>
-      <td onclick="event.stopPropagation()"><button class="link-btn" data-action="edit-club" data-id="${c.id}">Edytuj</button>
-          <button class="link-btn" data-action="delete-club" data-id="${c.id}" style="color:var(--clay-dark);">Usuń</button></td>
-    </tr>`;
+    return `<div class="club-crest-card" data-action="view-club" data-id="${c.id}" title="Przejdź do zawodników klubu ${esc(c.name)}">
+      <label for="quick-crest-${c.id}" style="cursor:pointer;display:inline-flex;flex-shrink:0;" title="Kliknij, aby wgrać/zmienić herb" onclick="event.stopPropagation()">${crestImg(clubCrest(c.id), null, c.name)}</label>
+      <input type="file" id="quick-crest-${c.id}" class="quick-crest-input" data-club-id="${c.id}" accept="image/png,image/jpeg,image/jpg,.png,.jpg,.jpeg,application/pdf,.pdf" style="display:none;" onclick="event.stopPropagation()">
+      <div style="min-width:0;flex:1;">
+        <div style="font-weight:700;color:var(--pitch);font-size:14px;">${esc(c.name)}</div>
+        <div style="font-size:11.5px;color:var(--ink-soft);">${esc(c.region)}${c.city?' &middot; '+esc(c.city):''} &middot; <strong>${count}</strong> ${plZaw(count)}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0;" onclick="event.stopPropagation()">
+        <button class="link-btn" data-action="edit-club" data-id="${c.id}" style="font-size:11px;">Edytuj</button>
+        <button class="link-btn" data-action="delete-club" data-id="${c.id}" style="font-size:11px;color:var(--clay-dark);">Usuń</button>
+      </div>
+    </div>`;
   }).join('');
 
   return `
   <h2 class="view-title">Kluby</h2>
-  <p class="view-sub">Przeglądaj wg ligi i grupy — jak w strukturze PZPN / mPZPN. Kliknij klub, aby zobaczyć skład na obecny sezon.</p>
+  <p class="view-sub">Przeglądaj wg ligi i grupy — jak w strukturze PZPN / mPZPN. Kliknij herb lub kartę, aby zobaczyć skład na obecny sezon.</p>
   <div class="league-tiles">${topRow}</div>
   ${groupRow}
   <div class="toolbar" style="margin-top:14px;">
@@ -2222,12 +2224,7 @@ function viewClubs(){
       <button class="gold" data-action="add-club">+ Nowy klub</button>
     </div>
   </div>
-  <div class="card" style="padding:0;overflow:auto;">
-    <table>
-      <thead><tr><th>Herb</th><th>Klub</th><th>ZPN / Region</th><th>Liga (aktualna)</th><th>Miasto</th><th>Zawodnicy w bazie</th><th></th></tr></thead>
-      <tbody>${rows || `<tr><td colspan="7"><div class="empty">Brak klubów w tym widoku.</div></td></tr>`}</tbody>
-    </table>
-  </div>`;
+  <div class="club-crest-grid" style="margin-top:12px;">${cards || '<div class="empty">Brak klubów w tym widoku.</div>'}</div>`;
 }
 
 function viewClubDetail(id){
