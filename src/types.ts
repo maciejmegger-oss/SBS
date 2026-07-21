@@ -46,6 +46,7 @@ export interface Player {
   powolania?: number;
   opisKoncowy?: string;
   monitored?: boolean;
+  nationality?: string;
   transferHistory?: TransferHistoryEntry[];
   notes?: string;
   dateAdded?: string;

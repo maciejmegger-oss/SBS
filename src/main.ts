@@ -949,6 +949,580 @@ const SEED_PLAYERS_OLIMPIA_V2 = [
   {firstName:'Alex', lastName:'Kolasa', position:'Skrzydłowy', birthDate:'2006-10-03', notes:'Narodowość: Polska/Irlandia. Nowy transfer 2026/27: przyszedł z Resovii.'},
 ].map(p => Object.assign({clubName:'Olimpia Grudziądz'}, p));
 
+// === I liga 2026/2027 — składy 18 klubów, źródło: Transfermarkt (kader, plus/1 widok szczegółowy),
+// pobrane 2026-07-21. Numer/wartość rynkowa/narodowość (gdy nie-polska) trafiają do notatek przez
+// importClubRoster, tak jak w pozostałych blokach SEED_PLAYERS_* powyżej.
+const SEED_PLAYERS_ILIGA_LECHIA_GDANSK = [
+  {firstName:'Szymon', lastName:'Weirauch', position:'Bramkarz', birthDate:'2004-03-05', height:193, number:'1', marketValue:'250 tys. €'},
+  {firstName:'Kacper', lastName:'Gutowski', position:'Bramkarz', birthDate:'2006-06-15', height:187, number:'81', marketValue:'25 tys. €'},
+  {firstName:'Bujar', lastName:'Pllana', position:'Obrońca środkowy', birthDate:'2001-10-29', height:190, number:'4', marketValue:'600 tys. €', nationality:'Albania/Kosowo'},
+  {firstName:'Indrit', lastName:'Mavraj', position:'Obrońca środkowy', birthDate:'2006-01-23', height:195, number:'76', marketValue:'100 tys. €', nationality:'Kosowo/Szwajcaria'},
+  {firstName:'Wojciech', lastName:'Madej', position:'Obrońca środkowy', birthDate:'2007-09-24'},
+  {firstName:'Danylo', lastName:'Malov', position:'Obrońca boczny', birthDate:'2007-01-28', height:175, number:'3', marketValue:'125 tys. €', nationality:'Ukraina'},
+  {firstName:'Antoni', lastName:'Ziółkowski', position:'Obrońca boczny', birthDate:'2007-03-29', number:'22'},
+  {firstName:'Samuel', lastName:'Kopasek', position:'Obrońca boczny', birthDate:'2003-05-22', height:175, number:'19', marketValue:'600 tys. €', nationality:'Słowacja'},
+  {firstName:'Tomasz', lastName:'Wójtowicz', position:'Obrońca boczny', birthDate:'2003-12-19', height:180, number:'33', marketValue:'350 tys. €'},
+  {firstName:'Alvis', lastName:'Jaunzems', position:'Obrońca boczny', birthDate:'1999-06-16', height:179, number:'16', marketValue:'300 tys. €', nationality:'Łotwa'},
+  {firstName:'Ivan', lastName:'Zhelizko', position:'Pomocnik defensywny', birthDate:'2001-02-12', height:187, number:'5', marketValue:'4,00 mln €', nationality:'Ukraina'},
+  {firstName:'Jakub', lastName:'Adkonis', position:'Pomocnik defensywny', birthDate:'2007-06-10', height:184, number:'88', marketValue:'400 tys. €'},
+  {firstName:'Bartosz', lastName:'Szczepankiewicz', position:'Pomocnik defensywny', birthDate:'2006-12-10', height:186},
+  {firstName:'Rifet', lastName:'Kapic', position:'Pomocnik ofensywny', birthDate:'1995-07-03', height:179, number:'10', marketValue:'800 tys. €', nationality:'Bośnia i Hercegowina'},
+  {firstName:'Tomasz', lastName:'Neugebauer', position:'Pomocnik ofensywny', birthDate:'2003-05-08', height:182, number:'99', marketValue:'600 tys. €'},
+  {firstName:'Bogdan', lastName:'Viunnyk', position:'Pomocnik ofensywny', birthDate:'2002-05-21', height:189, number:'7', marketValue:'500 tys. €', nationality:'Ukraina'},
+  {firstName:'Kacper', lastName:'Sezonienko', position:'Skrzydłowy', birthDate:'2003-03-23', height:193, number:'79', marketValue:'600 tys. €'},
+  {firstName:'Igor', lastName:'Bambecki', position:'Skrzydłowy', birthDate:'2005-02-06', height:180, number:'49'},
+  {firstName:'Camilo', lastName:'Mena', position:'Skrzydłowy', birthDate:'2002-10-01', height:175, number:'11', marketValue:'4,00 mln €', nationality:'Kolumbia'},
+  {firstName:'Tomas', lastName:'Bobcek', position:'Napastnik', birthDate:'2001-09-08', height:187, number:'89', marketValue:'8,00 mln €', nationality:'Słowacja'},
+  {firstName:'Michał', lastName:'Głogowski', position:'Napastnik', birthDate:'2005-08-04', height:190, number:'21', marketValue:'150 tys. €'},
+  {firstName:'Martin', lastName:'Szczerbiński', position:'Napastnik', birthDate:'2011-01-04', height:180},
+  {firstName:'Dorian', lastName:'Sinkiewicz', position:'Napastnik', birthDate:'2009-01-31', height:197, number:'77'},
+].map(p => Object.assign({clubName:'Lechia Gdańsk'}, p));
+
+const SEED_PLAYERS_ILIGA_ARKA_GDYNIA = [
+  {firstName:'Dawid', lastName:'Arndt', position:'Bramkarz', birthDate:'2001-09-22', height:190, number:'99', marketValue:'250 tys. €'},
+  {firstName:'Jędrzej', lastName:'Grobelny', position:'Bramkarz', birthDate:'2001-06-28', height:190, number:'33', marketValue:'150 tys. €'},
+  {firstName:'Kacper', lastName:'Krzepisz', position:'Bramkarz', birthDate:'1999-12-16', height:190, number:'30', marketValue:'50 tys. €'},
+  {firstName:'Marco', lastName:'Komenda', position:'Obrońca środkowy', birthDate:'1996-11-26', height:184, number:'4', marketValue:'700 tys. €', nationality:'Niemcy/Chorwacja'},
+  {firstName:'Serafin', lastName:'Szota', position:'Obrońca środkowy', birthDate:'1999-03-04', height:187, number:'3', marketValue:'250 tys. €'},
+  {firstName:'Javi', lastName:'Domínguez', position:'Obrońca środkowy', birthDate:'2001-03-26', height:195, number:'44', marketValue:'200 tys. €', nationality:'Hiszpania'},
+  {firstName:'Kamil', lastName:'Górecki', position:'Obrońca środkowy', birthDate:'2005-05-30', height:181},
+  {firstName:'Dawid', lastName:'Gojny', position:'Obrońca boczny', birthDate:'1994-08-31', height:178, number:'94', marketValue:'200 tys. €'},
+  {firstName:'Wojciech', lastName:'Zacharewicz', position:'Obrońca boczny', birthDate:'2006-06-23', height:185, number:'80'},
+  {firstName:'Kasjan', lastName:'Lipkowski', position:'Obrońca boczny', birthDate:'2003-03-28', height:190, number:'6', marketValue:'150 tys. €'},
+  {firstName:'Konrad', lastName:'Gruszkowski', position:'Obrońca boczny', birthDate:'2001-01-27', height:183, number:'20', marketValue:'150 tys. €'},
+  {firstName:'Dominik', lastName:'Kun', position:'Pomocnik defensywny', birthDate:'1993-06-22', height:171, number:'14', marketValue:'250 tys. €'},
+  {firstName:'Szymon', lastName:'Lewkot', position:'Pomocnik defensywny', birthDate:'1999-02-18', height:187, number:'23', marketValue:'250 tys. €'},
+  {firstName:'Maksymilian', lastName:'Sznaucner', position:'Pomocnik defensywny', birthDate:'2006-03-30', height:176, number:'27', marketValue:'175 tys. €', nationality:'Polska/Grecja'},
+  {firstName:'Michał', lastName:'Rzuchowski', position:'Pomocnik defensywny', birthDate:'1993-12-27', height:175, number:'22', marketValue:'100 tys. €'},
+  {firstName:'Jakub', lastName:'Staniszewski', position:'Pomocnik defensywny', birthDate:'2005-07-11', height:178, number:'31', marketValue:'100 tys. €'},
+  {firstName:'Nikodem', lastName:'Gozdecki', position:'Pomocnik defensywny', birthDate:'2006-11-02'},
+  {firstName:'Alassane', lastName:'Sidibe', position:'Pomocnik ofensywny', birthDate:'2002-06-09', height:180, number:'8', marketValue:'250 tys. €', nationality:'Wybrzeże Kości Słoniowej'},
+  {firstName:'Hide', lastName:'Vitalucci', position:'Pomocnik ofensywny', birthDate:'2002-03-05', height:176, number:'10', marketValue:'150 tys. €', nationality:'Japonia/Włochy'},
+  {firstName:'Bartłomiej', lastName:'Pawłowski', position:'Pomocnik ofensywny', birthDate:'1992-11-13', height:178, number:'19', marketValue:'150 tys. €'},
+  {firstName:'Filip', lastName:'Waluś', position:'Pomocnik ofensywny', birthDate:'2005-02-10', height:170, number:'77'},
+  {firstName:'Dawid', lastName:'Kocyła', position:'Skrzydłowy', birthDate:'2002-07-23', height:180, number:'11', marketValue:'300 tys. €'},
+  {firstName:'Jakub', lastName:'Kowalski', position:'Skrzydłowy', birthDate:'2006-02-05', height:175, number:'71', marketValue:'75 tys. €'},
+  {firstName:'Kuba', lastName:'Solecki', position:'Skrzydłowy', birthDate:'2007-02-09', height:174, number:'16'},
+  {firstName:'Michał', lastName:'Milewski', position:'Skrzydłowy', birthDate:'2005-11-29', height:180, number:'39'},
+  {firstName:'Vladislavs', lastName:'Gutkovskis', position:'Napastnik', birthDate:'1995-04-02', height:187, number:'9', marketValue:'350 tys. €', nationality:'Łotwa'},
+  {firstName:'Elmedin', lastName:'Rama', position:'Napastnik', birthDate:'2005-03-25', height:190, number:'98', marketValue:'250 tys. €', nationality:'Albania/Kosowo'},
+].map(p => Object.assign({clubName:'Arka Gdynia'}, p));
+
+const SEED_PLAYERS_ILIGA_POLONIA_WARSCHAU = [
+  {firstName:'Mateusz', lastName:'Jeleń', position:'Bramkarz', birthDate:'2007-02-02', height:195, number:'71', marketValue:'200 tys. €'},
+  {firstName:'Mateusz', lastName:'Kuchta', position:'Bramkarz', birthDate:'1996-02-05', height:188, number:'96', marketValue:'200 tys. €'},
+  {firstName:'Adrian', lastName:'Sandach', position:'Bramkarz', birthDate:'2004-05-19', height:190, number:'1', marketValue:'25 tys. €'},
+  {firstName:'Märten', lastName:'Kuusk', position:'Obrońca środkowy', birthDate:'1996-04-05', height:182, number:'2', marketValue:'250 tys. €', nationality:'Estonia'},
+  {firstName:'Jakub', lastName:'Budnicki', position:'Obrońca środkowy', birthDate:'2001-07-19', height:190, number:'16', marketValue:'250 tys. €'},
+  {firstName:'Michał', lastName:'Marcjanik', position:'Obrońca środkowy', birthDate:'1994-12-15', height:188, number:'29', marketValue:'200 tys. €'},
+  {firstName:'Aleksander', lastName:'Golos', position:'Obrońca środkowy', birthDate:'2007-08-24', height:192},
+  {firstName:'Davíd Kristján', lastName:'Ólafsson', position:'Obrońca boczny', birthDate:'1995-05-15', height:184, number:'20', marketValue:'450 tys. €', nationality:'Islandia'},
+  {firstName:'Patryk', lastName:'Janasik', position:'Obrońca boczny', birthDate:'1997-08-25', height:178, number:'97', marketValue:'175 tys. €'},
+  {firstName:'Ernest', lastName:'Terpiłowski', position:'Obrońca boczny', birthDate:'2001-09-14', height:178, number:'24', marketValue:'150 tys. €'},
+  {firstName:'Paweł', lastName:'Olszewski', position:'Obrońca boczny', birthDate:'1999-06-07', height:178, number:'22', marketValue:'100 tys. €'},
+  {firstName:'Mikołaj', lastName:'Gorzędowski', position:'Obrońca boczny', birthDate:'2008-10-06', height:180, number:'14'},
+  {firstName:'Tomasz', lastName:'Makowski', position:'Pomocnik defensywny', birthDate:'1999-07-19', height:179, number:'36', marketValue:'250 tys. €'},
+  {firstName:'Benedykt', lastName:'Piotrowski', position:'Pomocnik defensywny', birthDate:'2005-07-09', height:173, number:'44', marketValue:'150 tys. €'},
+  {firstName:'Jakub', lastName:'Paszkowski', position:'Pomocnik defensywny', birthDate:'2006-09-16', height:178},
+  {firstName:'Antoni', lastName:'Nerek', position:'Pomocnik defensywny', birthDate:'2006-01-29'},
+  {firstName:'Krystian', lastName:'Tabara', position:'Skrzydłowy', birthDate:'2001-08-04', height:189, number:'26', marketValue:'200 tys. €'},
+  {firstName:'Oliwier', lastName:'Wojciechowski', position:'Pomocnik ofensywny', birthDate:'2005-04-05', height:172, number:'8', marketValue:'250 tys. €'},
+  {firstName:'Dave', lastName:'Gnaase', position:'Pomocnik ofensywny', birthDate:'1996-12-14', height:179, number:'6', marketValue:'200 tys. €', nationality:'Niemcy'},
+  {firstName:'Nikita', lastName:'Vasin', position:'Pomocnik ofensywny', birthDate:'2006-03-01', height:183, number:'19', marketValue:'200 tys. €', nationality:'Ukraina/Polska'},
+  {firstName:'Marek', lastName:'Mróz', position:'Pomocnik ofensywny', birthDate:'1999-02-18', height:179, number:'10', marketValue:'150 tys. €'},
+  {firstName:'Dani', lastName:'Vega', position:'Skrzydłowy', birthDate:'1997-01-11', height:176, number:'7', marketValue:'200 tys. €', nationality:'Hiszpania'},
+  {firstName:'İlkay', lastName:'Durmuş', position:'Skrzydłowy', birthDate:'1994-05-01', height:180, number:'99', marketValue:'150 tys. €', nationality:'Turcja/Niemcy'},
+  {firstName:'Mateusz', lastName:'Młyński', position:'Skrzydłowy', birthDate:'2001-01-02', height:178, number:'11', marketValue:'100 tys. €'},
+  {firstName:'Antoni', lastName:'Kapusta', position:'Skrzydłowy', birthDate:'2009-09-05', height:185, number:'21', marketValue:'25 tys. €'},
+  {firstName:'Robert', lastName:'Dadok', position:'Skrzydłowy', birthDate:'1996-12-24', height:184, number:'17', marketValue:'250 tys. €'},
+  {firstName:'Simon', lastName:'Skrabb', position:'Skrzydłowy', birthDate:'1995-01-19', height:174, number:'23', marketValue:'150 tys. €', nationality:'Finlandia'},
+  {firstName:'Kacper', lastName:'Kostorz', position:'Napastnik', birthDate:'1999-08-21', height:191, number:'9', marketValue:'150 tys. €'},
+  {firstName:'Kacper', lastName:'Ziółkowski', position:'Napastnik', birthDate:'2009-09-26', number:'18'},
+].map(p => Object.assign({clubName:'Polonia Warszawa'}, p));
+
+const SEED_PLAYERS_ILIGA_MIEDZ_LEGNICA = [
+  {firstName:'Ivan', lastName:'Lucic', position:'Bramkarz', birthDate:'1995-03-23', height:194, number:'72', marketValue:'250 tys. €', nationality:'Austria/Chorwacja'},
+  {firstName:'Vitaliy', lastName:'Dyachenko', position:'Bramkarz', birthDate:'2006-01-09', height:198, number:'78', marketValue:'25 tys. €', nationality:'Ukraina'},
+  {firstName:'Dmytro', lastName:'Sydorenko', position:'Bramkarz', birthDate:'2002-11-12', height:197, nationality:'Ukraina'},
+  {firstName:'Krzysztof', lastName:'Narożny', position:'Bramkarz', birthDate:'2010-02-27', height:193, number:'12'},
+  {firstName:'Franciszek', lastName:'Chojak', position:'Bramkarz', birthDate:'2005-01-29', height:197, number:'33'},
+  {firstName:'Myroslav', lastName:'Mazur', position:'Obrońca środkowy', birthDate:'1998-08-11', height:194, marketValue:'300 tys. €', nationality:'Ukraina'},
+  {firstName:'Karol', lastName:'Noiszewski', position:'Obrońca środkowy', birthDate:'1999-11-13', height:193, marketValue:'250 tys. €'},
+  {firstName:'Mateusz', lastName:'Grudziński', position:'Obrońca środkowy', birthDate:'2000-06-20', height:188, number:'3', marketValue:'200 tys. €'},
+  {firstName:'Milos', lastName:'Jovicic', position:'Obrońca środkowy', birthDate:'1995-01-29', height:189, number:'15', marketValue:'150 tys. €', nationality:'Serbia/Austria'},
+  {firstName:'Babacar', lastName:'Diallo', position:'Obrońca środkowy', birthDate:'2005-08-18', height:188, marketValue:'100 tys. €', nationality:'Senegal'},
+  {firstName:'Adnan', lastName:'Kovacevic', position:'Obrońca środkowy', birthDate:'1993-09-09', height:189, number:'5', marketValue:'75 tys. €', nationality:'Bośnia i Hercegowina'},
+  {firstName:'Wojciech', lastName:'Hajda', position:'Pomocnik defensywny', birthDate:'2000-05-23', height:182, marketValue:'200 tys. €'},
+  {firstName:'Jakub', lastName:'Serafin', position:'Pomocnik defensywny', birthDate:'1996-05-25', height:181, number:'8', marketValue:'200 tys. €'},
+  {firstName:'Zvonimir', lastName:'Petrovic', position:'Pomocnik defensywny', birthDate:'2000-12-11', height:182, number:'80', marketValue:'200 tys. €', nationality:'Bośnia i Hercegowina/Chorwacja'},
+  {firstName:'Juliusz', lastName:'Letniowski', position:'Pomocnik defensywny', birthDate:'1998-04-08', height:183, number:'27', marketValue:'150 tys. €'},
+  {firstName:'Filip', lastName:'Żur', position:'Pomocnik środkowy', birthDate:'2007-10-30'},
+  {firstName:'Marceli', lastName:'Żwan', position:'Pomocnik defensywny', birthDate:'2008-01-26', number:'51'},
+  {firstName:'Mateusz', lastName:'Bochnak', position:'Skrzydłowy', birthDate:'1998-02-11', height:179, number:'7', marketValue:'150 tys. €'},
+  {firstName:'Jacek', lastName:'Podgórski', position:'Skrzydłowy', birthDate:'1996-06-23', height:180, number:'6', marketValue:'75 tys. €'},
+  {firstName:'Wojciech', lastName:'Rezacz', position:'Skrzydłowy', birthDate:'2008-06-28', height:183, number:'69', marketValue:'25 tys. €'},
+  {firstName:'Oliwier', lastName:'Szymoniak', position:'Skrzydłowy', birthDate:'2006-12-15', height:180, number:'49', marketValue:'350 tys. €'},
+  {firstName:'Gustaf', lastName:'Norlin', position:'Skrzydłowy', birthDate:'1997-01-09', height:183, marketValue:'200 tys. €', nationality:'Szwecja'},
+  {firstName:'Igor', lastName:'Maliszewski', position:'Skrzydłowy', birthDate:'2007-11-06', height:186, number:'17', marketValue:'10 tys. €'},
+  {firstName:'Szymon', lastName:'Pączek', position:'Skrzydłowy', birthDate:'2008-05-13', height:174, number:'88'},
+  {firstName:'Asier', lastName:'Córdoba', position:'Pomocnik ofensywny', birthDate:'2000-03-31', height:184, number:'18', marketValue:'350 tys. €', nationality:'Hiszpania'},
+  {firstName:'Kamil', lastName:'Antonik', position:'Pomocnik ofensywny', birthDate:'1998-11-28', height:184, number:'98', marketValue:'300 tys. €'},
+  {firstName:'Jarosław', lastName:'Czerwik', position:'Pomocnik ofensywny', birthDate:'2008-06-16', height:175},
+  {firstName:'Daniel', lastName:'Stanclik', position:'Napastnik', birthDate:'2000-03-22', height:188, number:'21', marketValue:'300 tys. €'},
+  {firstName:'Kristian', lastName:'Fucak', position:'Napastnik', birthDate:'1998-11-14', height:193, marketValue:'200 tys. €', nationality:'Chorwacja'},
+  {firstName:'Marcel', lastName:'Mansfeld', position:'Napastnik', birthDate:'2001-06-23', height:194, number:'95', marketValue:'175 tys. €', nationality:'Niemcy/Polska'},
+  {firstName:'Mame Mody', lastName:'Sy', position:'Napastnik', birthDate:'2007-03-08', marketValue:'10 tys. €', nationality:'Senegal'},
+  {firstName:'Sebastian', lastName:'Herbut', position:'Napastnik', birthDate:'2008-10-18'},
+  {firstName:'Modou', lastName:'Keita', position:'Napastnik', birthDate:'2006-01-02', height:192, number:'91', nationality:'Gambia'},
+].map(p => Object.assign({clubName:'Miedź Legnica'}, p));
+
+const SEED_PLAYERS_ILIGA_LKS_LODZ = [
+  {firstName:'Damian', lastName:'Węglarz', position:'Bramkarz', birthDate:'1996-03-21', height:189, number:'77', marketValue:'250 tys. €'},
+  {firstName:'Łukasz', lastName:'Bomba', position:'Bramkarz', birthDate:'2004-04-09', height:199, number:'1', marketValue:'150 tys. €'},
+  {firstName:'Mikołaj', lastName:'Ćwikliński', position:'Bramkarz', birthDate:'2010-02-21', height:187, number:'12'},
+  {firstName:'James', lastName:'Rhodes', position:'Bramkarz', birthDate:'2007-11-05', number:'40', nationality:'Kanada/Stany Zjednoczone'},
+  {firstName:'Artur', lastName:'Crăciun', position:'Obrońca środkowy', birthDate:'1998-06-29', height:193, number:'22', marketValue:'350 tys. €', nationality:'Mołdawia/Rumunia'},
+  {firstName:'Krzysztof', lastName:'Fałowski', position:'Obrońca środkowy', birthDate:'2007-04-06', height:192, number:'3', marketValue:'300 tys. €'},
+  {firstName:'Bartosz', lastName:'Farbiszewski', position:'Obrońca środkowy', birthDate:'2002-12-17', height:194, number:'4', marketValue:'200 tys. €'},
+  {firstName:'Sebastian', lastName:'Rudol', position:'Obrońca środkowy', birthDate:'1995-02-21', height:185, number:'6', marketValue:'150 tys. €'},
+  {firstName:'Łukasz', lastName:'Wiech', position:'Obrońca środkowy', birthDate:'1997-03-25', height:194, number:'5', marketValue:'75 tys. €'},
+  {firstName:'Mateusz', lastName:'Kupczak', position:'Obrońca środkowy', birthDate:'1992-02-20', height:187, number:'21', marketValue:'50 tys. €'},
+  {firstName:'Szymon', lastName:'Frakowski', position:'Obrońca boczny', birthDate:'2007-07-25', height:186, number:'14'},
+  {firstName:'Kacper', lastName:'Terlecki', position:'Pomocnik defensywny', birthDate:'2005-07-31', height:183, number:'88', marketValue:'300 tys. €'},
+  {firstName:'Mateusz', lastName:'Wysokiński', position:'Pomocnik defensywny', birthDate:'2002-03-19', height:182, number:'20', marketValue:'200 tys. €'},
+  {firstName:'Michał', lastName:'Kaput', position:'Pomocnik defensywny', birthDate:'1998-02-18', height:185, number:'28', marketValue:'200 tys. €'},
+  {firstName:'Julian', lastName:'Keiblinger', position:'Skrzydłowy', birthDate:'2001-05-18', height:176, number:'37', marketValue:'250 tys. €', nationality:'Austria'},
+  {firstName:'Dominik', lastName:'Sokół', position:'Skrzydłowy', birthDate:'1999-05-16', height:185, number:'7', marketValue:'150 tys. €'},
+  {firstName:'Sergiy', lastName:'Krykun', position:'Skrzydłowy', birthDate:'1996-09-22', height:175, number:'27', marketValue:'125 tys. €', nationality:'Ukraina'},
+  {firstName:'Marcel', lastName:'Błachewicz', position:'Skrzydłowy', birthDate:'2003-05-06', height:187, number:'11', marketValue:'175 tys. €'},
+  {firstName:'Antoni', lastName:'Młynarczyk', position:'Skrzydłowy', birthDate:'2005-05-03', height:186, number:'15', marketValue:'150 tys. €'},
+  {firstName:'Mateusz', lastName:'Książek', position:'Skrzydłowy', birthDate:'2007-07-06', height:173, number:'26', marketValue:'75 tys. €'},
+  {firstName:'Lenard', lastName:'Szczygieł', position:'Skrzydłowy', birthDate:'2008-08-24', height:186, number:'33', marketValue:'10 tys. €'},
+  {firstName:'Kacper', lastName:'Nowakowski', position:'Pomocnik ofensywny', birthDate:'2006-06-19', height:177, number:'19', marketValue:'300 tys. €'},
+  {firstName:'Koki', lastName:'Hinokio', position:'Pomocnik ofensywny', birthDate:'2001-02-26', height:165, number:'34', marketValue:'250 tys. €', nationality:'Japonia'},
+  {firstName:'Sebastian', lastName:'Sopel', position:'Pomocnik ofensywny', birthDate:'2009-07-02', height:174, number:'9'},
+  {firstName:'Andreu', lastName:'Arasa', position:'Napastnik', birthDate:'1999-05-21', height:179, number:'13', marketValue:'200 tys. €', nationality:'Hiszpania'},
+  {firstName:'Karol', lastName:'Podliński', position:'Napastnik', birthDate:'1997-11-06', height:194, number:'99', marketValue:'150 tys. €'},
+  {firstName:'Fabian', lastName:'Piasecki', position:'Napastnik', birthDate:'1995-05-04', height:186, number:'18', marketValue:'150 tys. €'},
+  {firstName:'Alan', lastName:'Siwek', position:'Napastnik', birthDate:'2007-08-11', height:182, number:'32'},
+  {firstName:'Fabian', lastName:'Olejniczak', position:'Napastnik', birthDate:'2009-04-16', height:175, number:'77'},
+].map(p => Object.assign({clubName:'ŁKS Łódź'}, p));
+
+const SEED_PLAYERS_ILIGA_ODRA_OPOLE = [
+  {firstName:'Miłosz', lastName:'Mleczko', position:'Bramkarz', birthDate:'1999-03-01', height:191, marketValue:'150 tys. €'},
+  {firstName:'Artur', lastName:'Haluch', position:'Bramkarz', birthDate:'1995-07-23', height:192, number:'30', marketValue:'75 tys. €'},
+  {firstName:'Jan', lastName:'Druzbicki', position:'Bramkarz', birthDate:'2006-07-24', height:185},
+  {firstName:'Kacper', lastName:'Jureczko', position:'Bramkarz', birthDate:'2007-04-30'},
+  {firstName:'Cezary', lastName:'Glomb', position:'Bramkarz', birthDate:'2007-02-28', number:'12'},
+  {firstName:'Maksymilian', lastName:'Pingot', position:'Obrońca środkowy', birthDate:'2003-04-01', height:188, marketValue:'250 tys. €'},
+  {firstName:'Nemanja', lastName:'Mijušković', position:'Obrońca środkowy', birthDate:'1992-03-04', height:185, marketValue:'100 tys. €', nationality:'Czarnogóra/Serbia'},
+  {firstName:'Jiri', lastName:'Piroch', position:'Obrońca środkowy', birthDate:'1995-08-31', height:187, number:'3', marketValue:'100 tys. €', nationality:'Czechy'},
+  {firstName:'Jakub', lastName:'Pochcioł', position:'Obrońca środkowy', birthDate:'2003-08-26', height:185, number:'6', marketValue:'100 tys. €'},
+  {firstName:'Marcel', lastName:'Białowąs', position:'Obrońca środkowy', birthDate:'2006-11-13', height:190, number:'47', marketValue:'100 tys. €'},
+  {firstName:'', lastName:'Cássio', position:'Obrońca środkowy', birthDate:'1999-07-16', height:187, marketValue:'100 tys. €', nationality:'Brazylia'},
+  {firstName:'Pawel', lastName:'Krysiak', position:'Obrońca środkowy', birthDate:'2005-10-11'},
+  {firstName:'Tomasz', lastName:'Gajda', position:'Pomocnik defensywny', birthDate:'1995-12-18', height:182, marketValue:'200 tys. €'},
+  {firstName:'Jan', lastName:'Debski', position:'Pomocnik defensywny', birthDate:'2005-01-21', height:172},
+  {firstName:'Marcin', lastName:'Staś', position:'Pomocnik środkowy', birthDate:'2008-09-23', number:'22'},
+  {firstName:'Mateusz', lastName:'Spychała', position:'Skrzydłowy', birthDate:'1998-01-28', height:171, marketValue:'175 tys. €'},
+  {firstName:'Franciszek', lastName:'Franczak', position:'Skrzydłowy', birthDate:'2007-08-16', height:176, number:'7', marketValue:'125 tys. €', nationality:'Polska/Szkocja'},
+  {firstName:'Mato', lastName:'Milos', position:'Skrzydłowy', birthDate:'1993-06-30', height:175, number:'24', marketValue:'75 tys. €', nationality:'Chorwacja'},
+  {firstName:'Jakub', lastName:'Szrek', position:'Skrzydłowy', birthDate:'1997-08-25', height:177, number:'77', marketValue:'75 tys. €'},
+  {firstName:'Szymon', lastName:'Szkliński', position:'Skrzydłowy', birthDate:'2006-07-28', height:184, marketValue:'75 tys. €'},
+  {firstName:'Bartosz', lastName:'Biedrzycki', position:'Skrzydłowy', birthDate:'2003-04-16', height:180, number:'25', marketValue:'250 tys. €'},
+  {firstName:'Krystian', lastName:'Palacz', position:'Skrzydłowy', birthDate:'2003-07-19', height:180, number:'33', marketValue:'250 tys. €'},
+  {firstName:'Filip', lastName:'Kupczyk', position:'Skrzydłowy', birthDate:'2006-05-08', height:178, marketValue:'125 tys. €'},
+  {firstName:'Patryk', lastName:'Szysz', position:'Pomocnik ofensywny', birthDate:'1998-04-01', height:177, marketValue:'250 tys. €'},
+  {firstName:'Bartłomiej', lastName:'Barański', position:'Pomocnik ofensywny', birthDate:'2006-10-09', height:178, number:'16', marketValue:'250 tys. €'},
+  {firstName:'Adrian', lastName:'Liber', position:'Pomocnik ofensywny', birthDate:'2001-01-09', height:171, marketValue:'250 tys. €', nationality:'Chorwacja'},
+  {firstName:'Mathieu', lastName:'Scalet', position:'Pomocnik ofensywny', birthDate:'1997-04-01', height:186, number:'18', marketValue:'200 tys. €', nationality:'Francja/Polska'},
+  {firstName:'Szymon', lastName:'Mida', position:'Pomocnik ofensywny', birthDate:'2005-12-08', height:176, number:'11', marketValue:'200 tys. €'},
+  {firstName:'Joshua', lastName:'Pérez', position:'Pomocnik ofensywny', birthDate:'1998-01-21', height:165, marketValue:'150 tys. €', nationality:'Salwador/USA'},
+  {firstName:'Branislav', lastName:'Spacil', position:'Skrzydłowy', birthDate:'2003-09-20', height:184, number:'32', marketValue:'250 tys. €', nationality:'Słowacja'},
+  {firstName:'Michal', lastName:'Feliks', position:'Napastnik', birthDate:'1999-03-19', height:186, number:'19', marketValue:'150 tys. €'},
+  {firstName:'Kacper', lastName:'Przybylko', position:'Napastnik', birthDate:'1993-03-25', height:192, marketValue:'100 tys. €', nationality:'Polska/Niemcy'},
+].map(p => Object.assign({clubName:'Odra Opole'}, p));
+
+const SEED_PLAYERS_ILIGA_BRUK_BET_TERMALICA_NIECIECZA = [
+  {firstName:'Adrian', lastName:'Chovan', position:'Bramkarz', birthDate:'1995-10-08', height:192, number:'1', marketValue:'200 tys. €', nationality:'Słowacja'},
+  {firstName:'Eric', lastName:'Topór', position:'Bramkarz', birthDate:'2005-02-12', height:190, nationality:'Polska/Stany Zjednoczone'},
+  {firstName:'Mikołaj', lastName:'Molga', position:'Bramkarz', birthDate:'2005-12-02', height:190},
+  {firstName:'Maciej', lastName:'Janicki', position:'Bramkarz', birthDate:'2008-01-14', height:187, number:'24'},
+  {firstName:'Lucas', lastName:'Masoero', position:'Obrońca środkowy', birthDate:'1995-02-01', height:188, number:'5', marketValue:'200 tys. €', nationality:'Argentyna/Włochy'},
+  {firstName:'Albert', lastName:'Zarówny', position:'Obrońca środkowy', birthDate:'2004-10-29', height:188, number:'77', marketValue:'125 tys. €'},
+  {firstName:'Artem', lastName:'Putivtsev', position:'Obrońca środkowy', birthDate:'1988-08-29', height:188, marketValue:'50 tys. €', nationality:'Ukraina/Polska'},
+  {firstName:'Yevgen', lastName:'Opanasenko', position:'Obrońca środkowy', birthDate:'2003-06-09', height:192, nationality:'Ukraina'},
+  {firstName:'Thiago', lastName:'Dombroski', position:'Obrońca środkowy', birthDate:'2002-06-20', height:190, nationality:'Brazylia/Polska'},
+  {firstName:'Miłosz', lastName:'Kozik', position:'Obrońca środkowy', birthDate:'2004-12-18', height:195, number:'13'},
+  {firstName:'Krzysztof', lastName:'Kubica', position:'Pomocnik defensywny', birthDate:'2000-05-25', height:193, number:'28', marketValue:'400 tys. €'},
+  {firstName:'Maciej', lastName:'Ambrosiewicz', position:'Pomocnik defensywny', birthDate:'1998-05-24', height:185, marketValue:'400 tys. €'},
+  {firstName:'Jakub', lastName:'Rozycki', position:'Pomocnik defensywny', birthDate:'2005-06-24'},
+  {firstName:'Patryk', lastName:'Olejnik', position:'Pomocnik defensywny', birthDate:'2006-03-15', height:186, number:'16'},
+  {firstName:'Paweł', lastName:'Surowiec', position:'Pomocnik defensywny', birthDate:'2008-09-29', number:'35'},
+  {firstName:'Kacper', lastName:'Surowiec', position:'Pomocnik defensywny', birthDate:'2008-09-29', number:'27'},
+  {firstName:'Radu', lastName:'Boboc', position:'Skrzydłowy', birthDate:'1999-04-24', height:180, marketValue:'300 tys. €', nationality:'Rumunia'},
+  {firstName:'Maciej', lastName:'Jaroszewski', position:'Skrzydłowy', birthDate:'2007-08-15', height:184, number:'21'},
+  {firstName:'Damian', lastName:'Hilbrycht', position:'Skrzydłowy', birthDate:'1998-05-19', height:182, number:'26', marketValue:'400 tys. €'},
+  {firstName:'Wojciech', lastName:'Jakubik', position:'Skrzydłowy', birthDate:'2005-01-23', height:186, marketValue:'200 tys. €'},
+  {firstName:'Jakub', lastName:'Marcinkowski', position:'Skrzydłowy', birthDate:'2003-12-11', height:178, number:'23'},
+  {firstName:'Sergio', lastName:'Guerrero', position:'Pomocnik ofensywny', birthDate:'1999-04-10', height:174, marketValue:'300 tys. €', nationality:'Hiszpania'},
+  {firstName:'Oliwier', lastName:'Sławiński', position:'Pomocnik ofensywny', birthDate:'2005-04-15', height:186, number:'8', marketValue:'250 tys. €'},
+  {firstName:'Rafał', lastName:'Kurzawa', position:'Pomocnik ofensywny', birthDate:'1993-01-29', height:182, number:'17', marketValue:'150 tys. €'},
+  {firstName:'Dominik', lastName:'Biniek', position:'Pomocnik ofensywny', birthDate:'2004-09-05', height:173, number:'19', marketValue:'100 tys. €', nationality:'Polska/Anglia'},
+  {firstName:'Ivan', lastName:'Durdov', position:'Napastnik', birthDate:'2000-07-17', height:194, number:'7', marketValue:'350 tys. €', nationality:'Chorwacja'},
+  {firstName:'Morgan', lastName:'Faßbender', position:'Napastnik', birthDate:'1998-10-18', height:188, number:'9', marketValue:'300 tys. €', nationality:'Niemcy/Ghana'},
+  {firstName:'Jesús', lastName:'Jiménez', position:'Napastnik', birthDate:'1993-11-05', height:183, number:'25', marketValue:'200 tys. €', nationality:'Hiszpania'},
+  {firstName:'Kamil', lastName:'Zapolnik', position:'Napastnik', birthDate:'1992-09-09', height:182, marketValue:'150 tys. €'},
+].map(p => Object.assign({clubName:'Bruk-Bet Termalica Nieciecza'}, p));
+
+const SEED_PLAYERS_ILIGA_RUCH_CHORZOW = [
+  {firstName:'Jakub', lastName:'Bielecki', position:'Bramkarz', birthDate:'2000-10-28', height:192, number:'82', marketValue:'150 tys. €'},
+  {firstName:'Jakub', lastName:'Wrąbel', position:'Bramkarz', birthDate:'1996-06-08', height:196, number:'44', marketValue:'100 tys. €'},
+  {firstName:'Marcel', lastName:'Potoczny', position:'Bramkarz', birthDate:'2006-06-29', height:187, number:'1'},
+  {firstName:'Nikodem', lastName:'Proczek', position:'Bramkarz', birthDate:'2007-09-05', height:195, number:'70'},
+  {firstName:'Filip', lastName:'Kędziera', position:'Obrońca środkowy', birthDate:'2008-02-09', height:181, number:'4'},
+  {firstName:'Nikodem', lastName:'Leśniak-Paduch', position:'Obrońca środkowy', birthDate:'2006-01-12', height:188, number:'28', marketValue:'400 tys. €'},
+  {firstName:'Abraham', lastName:'del Moral', position:'Obrońca środkowy', birthDate:'2001-07-05', height:183, number:'3', marketValue:'150 tys. €', nationality:'Hiszpania'},
+  {firstName:'Andrej', lastName:'Lukic', position:'Obrońca środkowy', birthDate:'1994-04-02', height:190, number:'17', marketValue:'100 tys. €', nationality:'Chorwacja'},
+  {firstName:'Aleksander', lastName:'Komor', position:'Obrońca środkowy', birthDate:'1994-06-24', height:190, number:'24', marketValue:'100 tys. €'},
+  {firstName:'Kajetan', lastName:'Klaja', position:'Obrońca środkowy', birthDate:'2008-03-02', height:183},
+  {firstName:'Maciej', lastName:'Krzempek', position:'Obrońca środkowy', birthDate:'2007-03-04', height:179},
+  {firstName:'Jakub', lastName:'Domagała', position:'Obrońca środkowy', birthDate:'2004-08-25', height:183, number:'19'},
+  {firstName:'Mateusz', lastName:'Bąk', position:'Obrońca boczny', birthDate:'2001-09-17', height:181, number:'26'},
+  {firstName:'Filip', lastName:'Wójcik', position:'Obrońca boczny', birthDate:'1997-04-11', height:174, number:'14', marketValue:'250 tys. €'},
+  {firstName:'Martin', lastName:'Konczkowski', position:'Obrońca boczny', birthDate:'1993-09-14', height:181, number:'15', marketValue:'100 tys. €'},
+  {firstName:'Szymon', lastName:'Szymański', position:'Pomocnik defensywny', birthDate:'1996-04-13', height:185, number:'20', marketValue:'200 tys. €'},
+  {firstName:'Denis', lastName:'Ventura', position:'Pomocnik defensywny', birthDate:'1995-08-01', height:182, number:'25', marketValue:'200 tys. €', nationality:'Słowacja'},
+  {firstName:'Patryk', lastName:'Sikora', position:'Pomocnik defensywny', birthDate:'1999-11-20', height:187, number:'8', marketValue:'125 tys. €'},
+  {firstName:'Mateusz', lastName:'Rosół', position:'Pomocnik defensywny', birthDate:'2008-06-11', height:186, number:'5', marketValue:'100 tys. €'},
+  {firstName:'Kamil', lastName:'Lipiński', position:'Pomocnik defensywny', birthDate:'2005-01-14', height:181, number:'22'},
+  {firstName:'Shuma', lastName:'Nagamatsu', position:'Pomocnik ofensywny', birthDate:'1995-08-29', height:170, number:'18', marketValue:'200 tys. €', nationality:'Japonia'},
+  {firstName:'Michał', lastName:'Chrapek', position:'Pomocnik ofensywny', birthDate:'1992-04-03', height:177, number:'6', marketValue:'150 tys. €'},
+  {firstName:'Krystian', lastName:'Wachowiak', position:'Skrzydłowy', birthDate:'2001-10-19', height:182, number:'2', marketValue:'200 tys. €'},
+  {firstName:'Filip', lastName:'Lachendro', position:'Skrzydłowy', birthDate:'2006-06-28', height:182, number:'29', marketValue:'50 tys. €'},
+  {firstName:'Patryk', lastName:'Szwedzik', position:'Skrzydłowy', birthDate:'2001-12-02', height:185, number:'21', marketValue:'350 tys. €'},
+  {firstName:'Kacper', lastName:'Laskowski', position:'Skrzydłowy', birthDate:'2001-10-04', height:175, number:'27', marketValue:'250 tys. €'},
+  {firstName:'Jakub', lastName:'Sobeczko', position:'Skrzydłowy', birthDate:'2006-10-14', height:178},
+  {firstName:'Krystian', lastName:'Rostek', position:'Skrzydłowy', birthDate:'2008-03-08', height:178, number:'88'},
+  {firstName:'Daniel', lastName:'Szczepan', position:'Napastnik', birthDate:'1995-06-05', height:179, number:'95', marketValue:'150 tys. €'},
+  {firstName:'Robert', lastName:'Łukowiak', position:'Napastnik', birthDate:'2007-06-13', height:190},
+  {firstName:'Kacper', lastName:'Dyduch', position:'Napastnik', birthDate:'2008-08-22', height:186},
+  {firstName:'Dawid', lastName:'Magusiak', position:'Napastnik', birthDate:'2006-12-13', height:188},
+  {firstName:'Max', lastName:'Pawłowski', position:'Napastnik', birthDate:'2007-01-07', height:192, number:'9'},
+  {firstName:'Seweryn', lastName:'Cieślak', position:'Napastnik', birthDate:'2008-04-21', height:187, number:'11'},
+].map(p => Object.assign({clubName:'Ruch Chorzów'}, p));
+
+const SEED_PLAYERS_ILIGA_PUSZCZA_NIEPOLOMICE = [
+  {firstName:'Wiktor', lastName:'Kowal', position:'Bramkarz', birthDate:'2006-01-25', height:190, number:'97', marketValue:'75 tys. €'},
+  {firstName:'Filip', lastName:'Andrzejczak', position:'Bramkarz', birthDate:'2008-06-01', height:194},
+  {firstName:'Kacper', lastName:'Smok', position:'Bramkarz', birthDate:'2007-04-02', height:192, number:'41'},
+  {firstName:'Kacper', lastName:'Przybyłko', position:'Obrońca środkowy', birthDate:'2005-02-05', height:190, number:'23', marketValue:'300 tys. €'},
+  {firstName:'Konrad', lastName:'Kasolik', position:'Obrońca środkowy', birthDate:'1997-09-29', height:193, number:'2', marketValue:'150 tys. €'},
+  {firstName:'Adrian', lastName:'Piekarski', position:'Obrońca środkowy', birthDate:'1998-05-24', height:193, number:'34', marketValue:'150 tys. €'},
+  {firstName:'Filip', lastName:'Szabaciuk', position:'Obrońca środkowy', birthDate:'2003-04-08', height:185, marketValue:'125 tys. €'},
+  {firstName:'Kacper', lastName:'Wołowiec', position:'Obrońca środkowy', birthDate:'2007-10-15', height:191},
+  {firstName:'Mark', lastName:'Strajnar', position:'Obrońca boczny', birthDate:'2003-12-19', height:187, marketValue:'200 tys. €', nationality:'Słowenia'},
+  {firstName:'Omar', lastName:'Kocar', position:'Pomocnik defensywny', birthDate:'2001-06-06', height:187, marketValue:'200 tys. €', nationality:'Słowenia'},
+  {firstName:'Filipe', lastName:'Nascimento', position:'Pomocnik defensywny', birthDate:'1995-01-07', height:175, number:'88', marketValue:'125 tys. €', nationality:'Portugalia'},
+  {firstName:'Konrad', lastName:'Stępień', position:'Pomocnik defensywny', birthDate:'1993-03-07', height:185, number:'5', marketValue:'100 tys. €'},
+  {firstName:'Igor', lastName:'Pieprzyca', position:'Pomocnik defensywny', birthDate:'2008-10-08', height:180, number:'28', marketValue:'25 tys. €'},
+  {firstName:'Adam', lastName:'Sendor', position:'Pomocnik defensywny', birthDate:'2006-11-21', height:186},
+  {firstName:'Filip', lastName:'Jaworski', position:'Pomocnik środkowy', birthDate:'2007-10-06'},
+  {firstName:'Szymon', lastName:'Fielek', position:'Pomocnik środkowy', birthDate:'2008-08-01'},
+  {firstName:'Antoni', lastName:'Klimek', position:'Skrzydłowy', birthDate:'2002-08-04', height:176, marketValue:'150 tys. €'},
+  {firstName:'Andrzej', lastName:'Trubeha', position:'Pomocnik ofensywny', birthDate:'1997-11-22', height:186, marketValue:'150 tys. €'},
+  {firstName:'Przemyslaw', lastName:'Sajdak', position:'Pomocnik ofensywny', birthDate:'2000-02-07', height:182},
+  {firstName:'Olaf', lastName:'Korczakowski', position:'Skrzydłowy', birthDate:'2003-11-11', height:183, number:'11', marketValue:'150 tys. €'},
+  {firstName:'Mateusz', lastName:'Cholewiak', position:'Skrzydłowy', birthDate:'1990-02-05', height:184, number:'10', marketValue:'75 tys. €'},
+  {firstName:'Dawid', lastName:'Kogut', position:'Skrzydłowy', birthDate:'2008-08-05', height:183, number:'17'},
+  {firstName:'Kosei', lastName:'Iwao', position:'Skrzydłowy', birthDate:'1997-07-24', height:188, number:'17', marketValue:'200 tys. €', nationality:'Japonia'},
+  {firstName:'German', lastName:'Barkovskiy', position:'Napastnik', birthDate:'2002-06-25', height:191, marketValue:'450 tys. €', nationality:'Białoruś'},
+  {firstName:'Amarildo', lastName:'Gjoni', position:'Napastnik', birthDate:'1999-07-25', height:185, number:'14', marketValue:'350 tys. €', nationality:'Albania'},
+  {firstName:'Oskar', lastName:'Gerstenstein', position:'Napastnik', birthDate:'2007-01-16', height:183},
+].map(p => Object.assign({clubName:'Puszcza Niepołomice'}, p));
+
+const SEED_PLAYERS_ILIGA_POLONIA_BYTOM = [
+  {firstName:'Wojciech', lastName:'Banasik', position:'Bramkarz', birthDate:'2006-05-08', height:191, number:'1', marketValue:'75 tys. €'},
+  {firstName:'Klaudiusz', lastName:'Mazur', position:'Bramkarz', birthDate:'2002-10-29', height:187},
+  {firstName:'Kamil', lastName:'Hajduk', position:'Bramkarz', birthDate:'2005-06-26', height:188},
+  {firstName:'Filip', lastName:'Zwoliński', position:'Bramkarz', birthDate:'2006-09-03', height:190},
+  {firstName:'Pawel', lastName:'Zagorski', position:'Bramkarz', birthDate:'2006-10-21', height:187},
+  {firstName:'Artur', lastName:'Flak', position:'Bramkarz', birthDate:'2008-05-29', height:191, number:'40'},
+  {firstName:'Aleksander', lastName:'Gajgier', position:'Obrońca środkowy', birthDate:'2003-08-10', height:193, marketValue:'200 tys. €'},
+  {firstName:'Jakub', lastName:'Szymański', position:'Obrońca środkowy', birthDate:'2002-07-05', height:189, number:'30', marketValue:'200 tys. €'},
+  {firstName:'Oskar', lastName:'Krzyżak', position:'Obrońca środkowy', birthDate:'2002-01-24', height:190, marketValue:'150 tys. €'},
+  {firstName:'Dominik', lastName:'Konieczny', position:'Obrońca środkowy', birthDate:'1997-05-08', height:180, number:'8', marketValue:'75 tys. €'},
+  {firstName:'Mikołaj', lastName:'Łabojko', position:'Pomocnik defensywny', birthDate:'2001-03-12', height:176, marketValue:'250 tys. €'},
+  {firstName:'Mateusz', lastName:'Anklewicz', position:'Pomocnik defensywny', birthDate:'2005-05-11', height:175},
+  {firstName:'Piotr', lastName:'Topolewski', position:'Pomocnik defensywny', birthDate:'2005-10-05', height:173, number:'32'},
+  {firstName:'Artur', lastName:'Winkler', position:'Pomocnik defensywny', birthDate:'2009-06-24', number:'10'},
+  {firstName:'Kacper', lastName:'Michalski', position:'Skrzydłowy', birthDate:'2000-01-03', height:187, number:'14', marketValue:'150 tys. €'},
+  {firstName:'Grzegorz', lastName:'Szymusik', position:'Skrzydłowy', birthDate:'1998-06-04', height:182, number:'16', marketValue:'150 tys. €'},
+  {firstName:'Patryk', lastName:'Stefański', position:'Skrzydłowy', birthDate:'1990-03-12', height:178, marketValue:'25 tys. €'},
+  {firstName:'Daniel', lastName:'Zielinski', position:'Skrzydłowy', birthDate:'2005-09-01', height:188},
+  {firstName:'Maciej', lastName:'Wolski', position:'Skrzydłowy', birthDate:'1997-03-29', height:176, number:'7', marketValue:'200 tys. €'},
+  {firstName:'Lucjan', lastName:'Zieliński', position:'Skrzydłowy', birthDate:'1997-12-04', height:172, number:'17', marketValue:'125 tys. €'},
+  {firstName:'Krzysztof', lastName:'Wołkowicz', position:'Skrzydłowy', birthDate:'1994-09-12', height:180, marketValue:'75 tys. €'},
+  {firstName:'Szymon', lastName:'Kądziołka', position:'Pomocnik ofensywny', birthDate:'2006-01-29', height:178, marketValue:'250 tys. €'},
+  {firstName:'Kamil', lastName:'Orlik', position:'Pomocnik ofensywny', birthDate:'1999-08-03', height:179, number:'11', marketValue:'200 tys. €'},
+  {firstName:'Konrad', lastName:'Andrzejczak', position:'Pomocnik ofensywny', birthDate:'1996-06-08', height:183, number:'20', marketValue:'175 tys. €'},
+  {firstName:'Jan', lastName:'Łabędzki', position:'Pomocnik ofensywny', birthDate:'2006-02-11', height:186, marketValue:'150 tys. €'},
+  {firstName:'Benedik', lastName:'Mioc', position:'Pomocnik ofensywny', birthDate:'1994-10-06', height:173, marketValue:'100 tys. €', nationality:'Chorwacja'},
+  {firstName:'Jakub Jordan', lastName:'Jokel', position:'Pomocnik ofensywny', birthDate:'2004-08-11', height:182, marketValue:'50 tys. €', nationality:'Słowacja'},
+  {firstName:'Mateusz', lastName:'Wzięch', position:'Pomocnik ofensywny', birthDate:'2002-05-20', height:186, marketValue:'50 tys. €'},
+  {firstName:'Lukasz', lastName:'Piontek', position:'Pomocnik ofensywny', birthDate:'2005-08-11', height:173, number:'9'},
+  {firstName:'Kamil', lastName:'Wojtyra', position:'Napastnik', birthDate:'1997-09-06', height:190, number:'23', marketValue:'150 tys. €'},
+  {firstName:'Jakub', lastName:'Arak', position:'Napastnik', birthDate:'1995-04-02', height:183, marketValue:'150 tys. €'},
+  {firstName:'Kamil', lastName:'Siudak', position:'Napastnik', birthDate:'2008-10-03', height:180, number:'34'},
+  {firstName:'Dylan', lastName:'Harwin', position:'Napastnik', birthDate:'2008-11-30'},
+].map(p => Object.assign({clubName:'Polonia Bytom'}, p));
+
+const SEED_PLAYERS_ILIGA_POGON_GRODZISK_MAZOWIECKI = [
+  {firstName:'Krzysztof', lastName:'Kamiński', position:'Bramkarz', birthDate:'1990-11-26', height:191, marketValue:'75 tys. €'},
+  {firstName:'Mikołaj', lastName:'Glacel', position:'Bramkarz', birthDate:'2004-12-27', height:193, number:'25'},
+  {firstName:'Bartosz', lastName:'Dembek', position:'Obrońca środkowy', birthDate:'2006-01-03', height:196, marketValue:'250 tys. €'},
+  {firstName:'Oskar', lastName:'Koprowski', position:'Obrońca środkowy', birthDate:'1999-03-18', height:185, marketValue:'100 tys. €'},
+  {firstName:'Kamil', lastName:'Głogowski', position:'Obrońca środkowy', birthDate:'2004-07-22', height:186, number:'8', marketValue:'100 tys. €'},
+  {firstName:'Grzegorz', lastName:'Gulczyński', position:'Obrońca środkowy', birthDate:'1996-01-26', height:184},
+  {firstName:'Jan', lastName:'Krupa', position:'Obrońca środkowy', birthDate:'2006-04-02', height:188, number:'21'},
+  {firstName:'Kacper', lastName:'Łoś', position:'Pomocnik defensywny', birthDate:'2000-03-29', height:184, number:'5', marketValue:'250 tys. €'},
+  {firstName:'Matheus', lastName:'Dias', position:'Pomocnik defensywny', birthDate:'1997-07-16', height:183, nationality:'Brazylia/Włochy'},
+  {firstName:'Henry', lastName:'Uzoigwe', position:'Pomocnik defensywny', birthDate:'2004-07-14', nationality:'Nigeria'},
+  {firstName:'Filip', lastName:'Mączka', position:'Pomocnik środkowy', birthDate:'2009-10-11'},
+  {firstName:'Jakub', lastName:'Miazgowski', position:'Pomocnik środkowy', birthDate:'2006-03-03'},
+  {firstName:'Jakub', lastName:'Jędrasik', position:'Skrzydłowy', birthDate:'2005-04-07', height:179, number:'11', marketValue:'250 tys. €'},
+  {firstName:'Kamil', lastName:'Kargulewicz', position:'Skrzydłowy', birthDate:'2000-09-15', height:172, marketValue:'100 tys. €'},
+  {firstName:'Nikodem', lastName:'Niski', position:'Skrzydłowy', birthDate:'2002-04-14', height:182, number:'27', marketValue:'250 tys. €'},
+  {firstName:'Jakub', lastName:'Konstantyn', position:'Skrzydłowy', birthDate:'2002-06-26', height:175, number:'17', marketValue:'250 tys. €'},
+  {firstName:'Jakub', lastName:'Niewiadomski', position:'Skrzydłowy', birthDate:'2002-04-09', height:184, number:'20', marketValue:'125 tys. €'},
+  {firstName:'Olivier', lastName:'Wypart', position:'Skrzydłowy', birthDate:'2001-01-16', height:182, number:'13', marketValue:'75 tys. €'},
+  {firstName:'Jakub', lastName:'Lis', position:'Pomocnik ofensywny', birthDate:'2004-10-14', height:185, marketValue:'150 tys. €'},
+  {firstName:'Bartłomiej', lastName:'Ciepiela', position:'Pomocnik ofensywny', birthDate:'2001-05-24', height:182, number:'4', marketValue:'125 tys. €'},
+  {firstName:'Igor', lastName:'Korczakowski', position:'Pomocnik ofensywny', birthDate:'1998-09-26', height:186, marketValue:'125 tys. €'},
+  {firstName:'Radosław', lastName:'Majewski', position:'Pomocnik ofensywny', birthDate:'1986-12-15', height:170, number:'10', marketValue:'50 tys. €'},
+  {firstName:'Damian', lastName:'Jaroń', position:'Pomocnik ofensywny', birthDate:'1990-04-09', height:184, marketValue:'25 tys. €'},
+  {firstName:'Jakub', lastName:'Zbróg', position:'Skrzydłowy', birthDate:'2007-07-15', height:183, marketValue:'250 tys. €'},
+  {firstName:'Aldrit', lastName:'Oshafi', position:'Napastnik', birthDate:'2000-03-26', height:193, marketValue:'150 tys. €', nationality:'Albania/Bułgaria'},
+  {firstName:'Hubert', lastName:'Turski', position:'Napastnik', birthDate:'2003-01-31', height:192},
+].map(p => Object.assign({clubName:'Pogoń Grodzisk Mazowiecki'}, p));
+
+const SEED_PLAYERS_ILIGA_CHROBRY_GLOGOW = [
+  {firstName:'Krzysztof', lastName:'Bąkowski', position:'Bramkarz', birthDate:'2003-01-04', height:192, number:'22', marketValue:'350 tys. €'},
+  {firstName:'Krzysztof', lastName:'Wróblewski', position:'Bramkarz', birthDate:'2002-01-23', height:188, number:'1'},
+  {firstName:'Marcel', lastName:'Gawłowski', position:'Bramkarz', birthDate:'2007-05-15', height:190},
+  {firstName:'Jakub', lastName:'Gric', position:'Obrońca środkowy', birthDate:'1996-07-05', height:180, number:'8', marketValue:'200 tys. €', nationality:'Słowacja'},
+  {firstName:'Michał', lastName:'Kozajda', position:'Obrońca środkowy', birthDate:'1999-04-03', height:185, number:'21', marketValue:'175 tys. €'},
+  {firstName:'Krzysztof', lastName:'Janiszewski', position:'Obrońca środkowy', birthDate:'2005-02-15', height:195},
+  {firstName:'Beniamin', lastName:'Czajka', position:'Obrońca środkowy', birthDate:'2000-03-31', height:192, number:'6'},
+  {firstName:'Wiktor', lastName:'Łaszyński', position:'Obrońca środkowy', birthDate:'2008-03-14', height:191, number:'14'},
+  {firstName:'Kacper', lastName:'Tabiś', position:'Obrońca boczny', birthDate:'2000-01-31', height:175, number:'80', marketValue:'250 tys. €'},
+  {firstName:'Mateusz', lastName:'Bartolewski', position:'Obrońca boczny', birthDate:'1998-01-12', height:187, number:'77', marketValue:'75 tys. €'},
+  {firstName:'Jakub', lastName:'Lis', position:'Obrońca boczny', birthDate:'2002-01-14', height:175, number:'28', marketValue:'200 tys. €'},
+  {firstName:'Kamil', lastName:'Grzelak', position:'Pomocnik defensywny', birthDate:'2007-08-25', height:178, number:'24', marketValue:'150 tys. €'},
+  {firstName:'Radosław', lastName:'Bąk', position:'Pomocnik defensywny', birthDate:'2004-08-26', height:187, number:'5', marketValue:'100 tys. €'},
+  {firstName:'Robert', lastName:'Mandrysz', position:'Pomocnik defensywny', birthDate:'1991-01-06', height:180, number:'16', marketValue:'75 tys. €'},
+  {firstName:'Adrian', lastName:'Bukowski', position:'Pomocnik defensywny', birthDate:'2003-03-18', height:188, number:'33', marketValue:'75 tys. €'},
+  {firstName:'Krystian', lastName:'Tworzydło', position:'Pomocnik defensywny', birthDate:'2007-06-26', height:172, number:'31', marketValue:'10 tys. €'},
+  {firstName:'Szymon', lastName:'Manijak', position:'Pomocnik defensywny', birthDate:'2008-03-04', height:179},
+  {firstName:'Yegor', lastName:'Sharabura', position:'Skrzydłowy', birthDate:'2004-03-24', height:179, number:'10', marketValue:'150 tys. €', nationality:'Ukraina'},
+  {firstName:'Ziemowit', lastName:'Witczak', position:'Pomocnik ofensywny', birthDate:'2006-06-10', height:173, number:'91'},
+  {firstName:'Mateusz', lastName:'Ozimek', position:'Skrzydłowy', birthDate:'2000-06-21', height:179, number:'9', marketValue:'175 tys. €'},
+  {firstName:'Kelechukwu', lastName:'Ibe-Torti', position:'Skrzydłowy', birthDate:'2002-01-26', height:174, number:'17', marketValue:'250 tys. €', nationality:'Polska/Nigeria'},
+  {firstName:'Agon', lastName:'Sadiku', position:'Napastnik', birthDate:'2003-03-10', height:184, marketValue:'225 tys. €', nationality:'Finlandia/Kosowo'},
+  {firstName:'Sebastian', lastName:'Strózik', position:'Napastnik', birthDate:'1999-05-15', height:192, number:'11', marketValue:'125 tys. €'},
+  {firstName:'Alan', lastName:'Rybak', position:'Napastnik', birthDate:'2006-12-01', height:185, number:'51', marketValue:'100 tys. €'},
+  {firstName:'Kuba', lastName:'Szabłowski', position:'Napastnik', birthDate:'2006-05-24', height:203, number:'72', marketValue:'10 tys. €'},
+].map(p => Object.assign({clubName:'Chrobry Głogów'}, p));
+
+const SEED_PLAYERS_ILIGA_STAL_RZESZOW = [
+  {firstName:'Svyatoslav', lastName:'Vanivskyi', position:'Bramkarz', birthDate:'2005-02-27', height:193, number:'1', marketValue:'100 tys. €', nationality:'Ukraina'},
+  {firstName:'Marek', lastName:'Kozioł', position:'Bramkarz', birthDate:'1988-06-01', height:199, number:'88', marketValue:'25 tys. €'},
+  {firstName:'Mateusz', lastName:'Sokół', position:'Bramkarz', birthDate:'2008-03-17'},
+  {firstName:'Wojciech', lastName:'Witkowski', position:'Bramkarz', birthDate:'2008-03-14'},
+  {firstName:'Frederick', lastName:'Wolff', position:'Bramkarz', birthDate:'2006-11-08', height:195, number:'50', nationality:'Słowacja/Niemcy'},
+  {firstName:'Vladislav', lastName:'Krasovskiy', position:'Obrońca środkowy', birthDate:'2004-02-02', height:198, number:'3', marketValue:'300 tys. €', nationality:'Białoruś'},
+  {firstName:'Marcin', lastName:'Kaczor', position:'Obrońca środkowy', birthDate:'2004-09-18', height:188, marketValue:'250 tys. €'},
+  {firstName:'Kacper', lastName:'Pasko', position:'Obrońca środkowy', birthDate:'2004-07-29', height:182, number:'29'},
+  {firstName:'Filip', lastName:'Sonntag', position:'Obrońca środkowy', birthDate:'2008-06-09', height:188},
+  {firstName:'Fabian', lastName:'Blejwas', position:'Obrońca środkowy', birthDate:'2008-04-28', height:182, number:'45'},
+  {firstName:'Daniel', lastName:'Zieja', position:'Obrońca środkowy', birthDate:'2008-01-23', height:190},
+  {firstName:'Ksawery', lastName:'Kukułka', position:'Obrońca boczny', birthDate:'2004-01-31', height:181, number:'77', marketValue:'200 tys. €'},
+  {firstName:'Antoni', lastName:'Perduta', position:'Obrońca boczny', birthDate:'2009-11-25', height:183, number:'42'},
+  {firstName:'Łukasz', lastName:'Piwnicki', position:'Obrońca boczny', birthDate:'2007-09-17', height:177},
+  {firstName:'Marco', lastName:'Thiede', position:'Obrońca boczny', birthDate:'1992-05-20', height:178, marketValue:'150 tys. €', nationality:'Niemcy'},
+  {firstName:'Sean', lastName:'Goss', position:'Pomocnik defensywny', birthDate:'1995-10-01', height:191, number:'27', marketValue:'200 tys. €', nationality:'Irlandia Północna/Anglia'},
+  {firstName:'Dominik', lastName:'Gujda', position:'Pomocnik defensywny', birthDate:'2007-08-03', height:177, marketValue:'150 tys. €'},
+  {firstName:'Wojciech', lastName:'Machura', position:'Pomocnik defensywny', birthDate:'2008-03-03', height:185},
+  {firstName:'Mateusz', lastName:'Leniart', position:'Pomocnik defensywny', birthDate:'2008-03-09', height:170, number:'5'},
+  {firstName:'Mikołaj', lastName:'Jaskot', position:'Pomocnik środkowy', birthDate:'2007-03-29', number:'13'},
+  {firstName:'Wojciech', lastName:'Brzęk', position:'Pomocnik środkowy', birthDate:'2008-08-11', number:'41'},
+  {firstName:'Oliwier', lastName:'Madej', position:'Pomocnik defensywny', birthDate:'2010-07-09', number:'42'},
+  {firstName:'Jakub', lastName:'Sadowski', position:'Skrzydłowy', birthDate:'2007-07-22'},
+  {firstName:'Jakub', lastName:'Kucharski', position:'Pomocnik ofensywny', birthDate:'2008-11-03', height:175, number:'20', marketValue:'300 tys. €'},
+  {firstName:'Marcin', lastName:'Listkowski', position:'Pomocnik ofensywny', birthDate:'1998-02-10', height:178, marketValue:'100 tys. €'},
+  {firstName:'Arsen', lastName:'Grosu', position:'Pomocnik ofensywny', birthDate:'2001-04-13', height:175, number:'9', marketValue:'75 tys. €', nationality:'Ukraina'},
+  {firstName:'Kacper', lastName:'Masiak', position:'Skrzydłowy', birthDate:'2005-01-11', height:175, number:'25', marketValue:'200 tys. €'},
+  {firstName:'Filip', lastName:'Wolski', position:'Skrzydłowy', birthDate:'2006-04-09', height:178, number:'10', marketValue:'150 tys. €'},
+  {firstName:'Jonathan', lastName:'Júnior', position:'Napastnik', birthDate:'1999-04-28', height:178, marketValue:'250 tys. €', nationality:'Brazylia'},
+  {firstName:'Michał', lastName:'Musik', position:'Napastnik', birthDate:'2004-04-19', height:193, number:'55', marketValue:'100 tys. €'},
+  {firstName:'Jakub', lastName:'Kaczówka', position:'Napastnik', birthDate:'2008-03-29', height:190, number:'44', marketValue:'75 tys. €'},
+  {firstName:'Szymon', lastName:'Pukała', position:'Napastnik', birthDate:'2007-08-13', marketValue:'25 tys. €'},
+  {firstName:'Szymon', lastName:'Salamon', position:'Napastnik', birthDate:'2006-03-22', height:186, number:'45'},
+  {firstName:'Radosław', lastName:'Bieniaszewski', position:'Napastnik', birthDate:'2006-06-06'},
+].map(p => Object.assign({clubName:'Stal Rzeszów'}, p));
+
+const SEED_PLAYERS_ILIGA_POGON_SIEDLCE = [
+  {firstName:'Jakub', lastName:'Lemanowicz', position:'Bramkarz', birthDate:'1999-03-27', height:190, number:'57', marketValue:'150 tys. €'},
+  {firstName:'Jakub', lastName:'Tomkiel', position:'Bramkarz', birthDate:'2005-02-19', height:190, number:'1'},
+  {firstName:'Szymon', lastName:'Mucha', position:'Obrońca środkowy', birthDate:'2004-08-16'},
+  {firstName:'Filip', lastName:'Kendzia', position:'Obrońca środkowy', birthDate:'1997-02-20', height:189, marketValue:'150 tys. €'},
+  {firstName:'Przemysław', lastName:'Szur', position:'Obrońca środkowy', birthDate:'1996-03-24', height:186, marketValue:'75 tys. €'},
+  {firstName:'Krystian', lastName:'Miś', position:'Obrońca boczny', birthDate:'1996-04-12', height:182, number:'2', marketValue:'100 tys. €'},
+  {firstName:'Sebastian', lastName:'Szczytniewski', position:'Obrońca boczny', birthDate:'2003-03-19', height:183, number:'72', marketValue:'75 tys. €'},
+  {firstName:'Damian', lastName:'Jakubik', position:'Obrońca boczny', birthDate:'1990-03-25', height:183, number:'14', marketValue:'50 tys. €'},
+  {firstName:'Franciszek', lastName:'Saganowski', position:'Obrońca boczny', birthDate:'2006-03-27', height:175},
+  {firstName:'Jakub', lastName:'Barczak', position:'Obrońca boczny', birthDate:'2007-07-10'},
+  {firstName:'Ernest', lastName:'Dzięcioł', position:'Pomocnik defensywny', birthDate:'1998-02-11', height:184, number:'31', marketValue:'150 tys. €'},
+  {firstName:'Bartłomiej', lastName:'Poczobut', position:'Pomocnik defensywny', birthDate:'1993-07-11', height:180, number:'16', marketValue:'100 tys. €'},
+  {firstName:'Jakub', lastName:'Sinior', position:'Pomocnik defensywny', birthDate:'2000-07-07', height:185, number:'8', marketValue:'75 tys. €'},
+  {firstName:'Bartosz', lastName:'Borkowski', position:'Pomocnik defensywny', birthDate:'2007-02-25', height:174, number:'28', marketValue:'10 tys. €'},
+  {firstName:'Mateusz', lastName:'Kizyma', position:'Pomocnik defensywny', birthDate:'2002-07-08', height:186},
+  {firstName:'Krystian', lastName:'Gryglak', position:'Pomocnik defensywny', birthDate:'2005-02-14', height:173, number:'25'},
+  {firstName:'Bolesław', lastName:'Świerczewski', position:'Pomocnik defensywny', birthDate:'2007-05-16', height:186, number:'47'},
+  {firstName:'Rafał', lastName:'Makowski', position:'Pomocnik ofensywny', birthDate:'1996-08-05', height:191, marketValue:'75 tys. €'},
+  {firstName:'Mateusz', lastName:'Marzec', position:'Pomocnik ofensywny', birthDate:'1994-08-13', height:178, marketValue:'50 tys. €'},
+  {firstName:'Damian', lastName:'Szuprytowski', position:'Pomocnik ofensywny', birthDate:'1989-06-25', height:172, number:'7', marketValue:'50 tys. €'},
+  {firstName:'Nikodem', lastName:'Zielonka', position:'Skrzydłowy', birthDate:'2004-08-17', height:184, number:'95', marketValue:'150 tys. €'},
+  {firstName:'Cezary', lastName:'Demianiuk', position:'Skrzydłowy', birthDate:'1992-10-17', height:180, number:'56', marketValue:'75 tys. €'},
+  {firstName:'Olaf', lastName:'Kozłowski', position:'Skrzydłowy', birthDate:'2005-05-19', height:187, number:'19', marketValue:'50 tys. €', nationality:'Polska/Belgia'},
+  {firstName:'Maciej', lastName:'Rosołek', position:'Napastnik', birthDate:'2001-09-02', height:183, marketValue:'200 tys. €'},
+  {firstName:'Jarosław', lastName:'Niezgoda', position:'Napastnik', birthDate:'1995-03-15', height:185, number:'29', marketValue:'100 tys. €'},
+  {firstName:'Patryk', lastName:'Klimek', position:'Napastnik', birthDate:'2006-08-28', number:'22'},
+].map(p => Object.assign({clubName:'Pogoń Siedlce'}, p));
+
+const SEED_PLAYERS_ILIGA_STAL_MIELEC = [
+  {firstName:'Maciej', lastName:'Gostomski', position:'Bramkarz', birthDate:'1988-09-27', height:196, number:'99', marketValue:'25 tys. €'},
+  {firstName:'Piotr', lastName:'Chrapusta', position:'Bramkarz', birthDate:'2007-05-28', height:195, number:'41'},
+  {firstName:'Israel', lastName:'Puerto', position:'Obrońca środkowy', birthDate:'1993-06-15', height:187, number:'44', marketValue:'100 tys. €', nationality:'Hiszpania'},
+  {firstName:'Bartosz', lastName:'Kwiecień', position:'Obrońca środkowy', birthDate:'1994-05-07', height:189, number:'94', marketValue:'100 tys. €'},
+  {firstName:'Kamil', lastName:'Kościelny', position:'Obrońca środkowy', birthDate:'1991-08-04', height:185, number:'14', marketValue:'50 tys. €'},
+  {firstName:'Michael', lastName:'Wyparlo', position:'Obrońca środkowy', birthDate:'2003-09-25', height:191, number:'38', nationality:'Polska/USA'},
+  {firstName:'Michał', lastName:'Stala', position:'Obrońca środkowy', birthDate:'2004-03-02', height:188, number:'26'},
+  {firstName:'Hubert', lastName:'Matynia', position:'Obrońca boczny', birthDate:'1995-11-04', height:181, number:'5', marketValue:'100 tys. €'},
+  {firstName:'Krystian', lastName:'Getinger', position:'Obrońca boczny', birthDate:'1988-08-29', height:188, number:'23'},
+  {firstName:'Bartłomiej', lastName:'Kukułowicz', position:'Obrońca boczny', birthDate:'2000-10-11', height:181, number:'2'},
+  {firstName:'Kacper', lastName:'Sommerfeld', position:'Pomocnik defensywny', birthDate:'2004-01-28', height:177, number:'6', marketValue:'100 tys. €'},
+  {firstName:'Piotr', lastName:'Wlazło', position:'Pomocnik defensywny', birthDate:'1989-06-03', height:184, number:'18', marketValue:'50 tys. €'},
+  {firstName:'Jakub', lastName:'Malek', position:'Pomocnik defensywny', birthDate:'2008-04-15'},
+  {firstName:'Nikodem', lastName:'Szady', position:'Pomocnik defensywny', birthDate:'2009-01-17', height:171, number:'16'},
+  {firstName:'Dawid', lastName:'Zieba', position:'Skrzydłowy', birthDate:'2005-01-25', height:184},
+  {firstName:'Marcin', lastName:'Cebula', position:'Pomocnik ofensywny', birthDate:'1995-12-06', height:177, number:'32', marketValue:'150 tys. €'},
+  {firstName:'Fryderyk', lastName:'Gerbowski', position:'Pomocnik ofensywny', birthDate:'2003-01-17', height:181, number:'77', marketValue:'150 tys. €'},
+  {firstName:'Kacper', lastName:'Sadłocha', position:'Pomocnik ofensywny', birthDate:'2002-12-01', height:172, number:'47', marketValue:'75 tys. €'},
+  {firstName:'Maciej', lastName:'Domanski', position:'Pomocnik ofensywny', birthDate:'1990-09-05', height:168, number:'10', marketValue:'50 tys. €'},
+  {firstName:'Natan', lastName:'Niedźwiedź', position:'Pomocnik ofensywny', birthDate:'2006-06-27', height:184, number:'8'},
+  {firstName:'Siméon', lastName:'Oure', position:'Pomocnik ofensywny', birthDate:'1999-10-22', height:175, number:'19', nationality:'Francja'},
+  {firstName:'Tymoteusz', lastName:'Gmur', position:'Pomocnik ofensywny', birthDate:'2008-01-02', height:174, number:'90'},
+  {firstName:'Paweł', lastName:'Kruszelnicki', position:'Skrzydłowy', birthDate:'2003-01-22', height:177, marketValue:'300 tys. €'},
+  {firstName:'Seif', lastName:'Darwish', position:'Skrzydłowy', birthDate:'2003-05-05', height:166, number:'11', marketValue:'150 tys. €', nationality:'Jordania'},
+  {firstName:'Kamil', lastName:'Odolak', position:'Napastnik', birthDate:'2002-04-01', height:186, marketValue:'75 tys. €'},
+].map(p => Object.assign({clubName:'Stal Mielec'}, p));
+
+const SEED_PLAYERS_ILIGA_WARTA_POSEN = [
+  {firstName:'Leo', lastName:'Przybylak', position:'Bramkarz', birthDate:'2004-05-28', height:194, number:'42'},
+  {firstName:'Arkadiusz', lastName:'Najemski', position:'Obrońca środkowy', birthDate:'1996-01-12', height:182, marketValue:'250 tys. €'},
+  {firstName:'Oleksandr', lastName:'Azatskyi', position:'Obrońca środkowy', birthDate:'1994-01-13', height:192, marketValue:'75 tys. €', nationality:'Ukraina'},
+  {firstName:'Kacper', lastName:'Lepczyński', position:'Obrońca środkowy', birthDate:'2001-07-18', height:191, number:'2'},
+  {firstName:'Tomasz', lastName:'Wojcinowicz', position:'Obrońca środkowy', birthDate:'1996-04-12', height:186, number:'4'},
+  {firstName:'Filip', lastName:'Jakubowski', position:'Obrońca środkowy', birthDate:'2004-09-14', height:188, number:'35'},
+  {firstName:'Dmytro', lastName:'Avdeev', position:'Obrońca środkowy', birthDate:'2002-02-26', height:180, number:'24', nationality:'Ukraina'},
+  {firstName:'Karol', lastName:'Łysiak', position:'Pomocnik defensywny', birthDate:'2004-02-25', height:178, marketValue:'300 tys. €'},
+  {firstName:'Aleksander', lastName:'Wołczek', position:'Pomocnik defensywny', birthDate:'2005-05-31', height:185},
+  {firstName:'Kamil', lastName:'Kumoch', position:'Pomocnik defensywny', birthDate:'2000-11-10', height:176, number:'8'},
+  {firstName:'Bartosz', lastName:'Lelito', position:'Pomocnik defensywny', birthDate:'2004-11-10', height:186},
+  {firstName:'Jan', lastName:'Niedzielski', position:'Pomocnik defensywny', birthDate:'2005-05-26', height:172, number:'13'},
+  {firstName:'Oskar', lastName:'Mazurkiewicz', position:'Pomocnik środkowy', birthDate:'2007-05-29', number:'27'},
+  {firstName:'Jakub', lastName:'Apolinarski', position:'Skrzydłowy', birthDate:'1999-05-04', height:178, marketValue:'150 tys. €'},
+  {firstName:'Igor', lastName:'Stańczak', position:'Skrzydłowy', birthDate:'2006-10-17', height:175},
+  {firstName:'Kacper', lastName:'Rychert', position:'Skrzydłowy', birthDate:'2004-09-29', height:181, number:'29'},
+  {firstName:'Igor', lastName:'Kornobis', position:'Skrzydłowy', birthDate:'2004-12-11', height:176, number:'16'},
+  {firstName:'Marcel', lastName:'Stefaniak', position:'Skrzydłowy', birthDate:'2000-02-22', height:181, number:'17'},
+  {firstName:'Szymon', lastName:'Zalewski', position:'Skrzydłowy', birthDate:'2000-04-17', height:180, number:'74'},
+  {firstName:'Marcel', lastName:'Zylla', position:'Pomocnik ofensywny', birthDate:'2000-01-14', height:178, number:'21', nationality:'Polska/Niemcy'},
+  {firstName:'Patryk', lastName:'Kusztal', position:'Pomocnik ofensywny', birthDate:'2003-03-28', height:176, number:'23'},
+  {firstName:'Jędrzej', lastName:'Hanuszczak', position:'Pomocnik ofensywny', birthDate:'2008-03-23', height:176},
+  {firstName:'Sebastian', lastName:'Steblecki', position:'Pomocnik ofensywny', birthDate:'1992-01-16', height:187, number:'71'},
+  {firstName:'Adrian', lastName:'Wnuk', position:'Pomocnik ofensywny', birthDate:'2006-04-24', height:184},
+  {firstName:'Jakub', lastName:'Kendzia', position:'Skrzydłowy', birthDate:'2006-07-13', height:182},
+  {firstName:'Mateusz', lastName:'Stanek', position:'Napastnik', birthDate:'2005-03-02', height:190, number:'9'},
+  {firstName:'Iwo', lastName:'Wojciechowski', position:'Napastnik', birthDate:'2008-07-28'},
+  {firstName:'Michał', lastName:'Smoczyński', position:'Napastnik', birthDate:'2007-07-07', height:190, number:'99'},
+].map(p => Object.assign({clubName:'Warta Poznań'}, p));
+
+const SEED_PLAYERS_ILIGA_PODBESKIDZIE_BIELSKO_BIALA = [
+  {firstName:'Konrad', lastName:'Forenc', position:'Bramkarz', birthDate:'1992-07-17', height:191, number:'1'},
+  {firstName:'Szymon', lastName:'Brańczyk', position:'Bramkarz', birthDate:'2006-08-13', height:191, number:'99'},
+  {firstName:'Piotr', lastName:'Twardosz', position:'Obrońca środkowy', birthDate:'2007-06-02', number:'47'},
+  {firstName:'Arkadiusz', lastName:'Kasperkiewicz', position:'Obrońca środkowy', birthDate:'1994-09-29', height:187, number:'3', marketValue:'150 tys. €'},
+  {firstName:'Marcin', lastName:'Biernat', position:'Obrońca środkowy', birthDate:'1992-05-28', height:190, number:'4'},
+  {firstName:'Jan', lastName:'Majsterek', position:'Obrońca środkowy', birthDate:'2000-06-09', height:187, number:'17'},
+  {firstName:'Lukasz', lastName:'Kabaj', position:'Obrońca środkowy', birthDate:'2006-02-13', height:183},
+  {firstName:'Maksymilian', lastName:'Świta', position:'Obrońca środkowy', birthDate:'2006-04-19', height:185, number:'2'},
+  {firstName:'Kamil', lastName:'Sochań', position:'Obrońca środkowy', birthDate:'2004-02-04', height:186},
+  {firstName:'Nikodem', lastName:'Gancarczyk', position:'Obrońca boczny', birthDate:'2006-03-06', height:183, number:'27'},
+  {firstName:'Aleksander', lastName:'Iwańczyk', position:'Pomocnik defensywny', birthDate:'2007-02-12', height:181, number:'8', marketValue:'75 tys. €'},
+  {firstName:'Dalibor', lastName:'Takac', position:'Pomocnik defensywny', birthDate:'1997-10-11', height:178, number:'14', nationality:'Słowacja'},
+  {firstName:'Marcin', lastName:'Urynowicz', position:'Pomocnik defensywny', birthDate:'1996-03-16', height:187, number:'26'},
+  {firstName:'Oskar', lastName:'Sewerzyński', position:'Pomocnik defensywny', birthDate:'2001-08-12', height:186},
+  {firstName:'Piotr', lastName:'Szumiński', position:'Pomocnik defensywny', birthDate:'2006-07-13', height:187, number:'7'},
+  {firstName:'Maksymilian', lastName:'Sitek', position:'Skrzydłowy', birthDate:'2000-12-04', height:174, number:'22'},
+  {firstName:'Kacper', lastName:'Gach', position:'Skrzydłowy', birthDate:'1998-07-11', height:178, number:'16'},
+  {firstName:'Kacper', lastName:'Smoliński', position:'Pomocnik ofensywny', birthDate:'2001-02-07', height:177, number:'10', marketValue:'200 tys. €'},
+  {firstName:'Daniel', lastName:'Pietraszkiewicz', position:'Pomocnik ofensywny', birthDate:'2001-09-12', height:178, number:'98'},
+  {firstName:'Wojciech', lastName:'Słomka', position:'Pomocnik ofensywny', birthDate:'1998-11-04', height:181},
+  {firstName:'Krzysztof', lastName:'Wiesner', position:'Pomocnik ofensywny', birthDate:'2009-10-13', height:180, number:'84'},
+  {firstName:'Bartosz', lastName:'Martosz', position:'Pomocnik ofensywny', birthDate:'2006-11-11', height:182, number:'11'},
+  {firstName:'Toki', lastName:'Hirosawa', position:'Skrzydłowy', birthDate:'2002-10-21', height:170, number:'21', nationality:'Japonia'},
+  {firstName:'Krzysztof', lastName:'Kolanko', position:'Skrzydłowy', birthDate:'2006-08-03', height:169, number:'9', marketValue:'200 tys. €'},
+  {firstName:'Evgeniy', lastName:'Shikavka', position:'Napastnik', birthDate:'1992-10-15', height:185, number:'37', nationality:'Białoruś'},
+  {firstName:'Oskar', lastName:'Tomczyk', position:'Napastnik', birthDate:'2006-01-25', height:181, number:'90'},
+  {firstName:'Lucjan', lastName:'Klisiewicz', position:'Napastnik', birthDate:'2002-04-20', height:193},
+  {firstName:'Grzegorz', lastName:'Janusz', position:'Napastnik', birthDate:'2006-05-08', height:193},
+].map(p => Object.assign({clubName:'Podbeskidzie Bielsko-Biała'}, p));
+
+const SEED_PLAYERS_ILIGA_UNIA_SKIERNIEWICE = [
+  {firstName:'Antoni', lastName:'Wodzicki', position:'Bramkarz', birthDate:'2005-02-13', height:199, marketValue:'100 tys. €'},
+  {firstName:'Rafał', lastName:'Grocholski', position:'Bramkarz', birthDate:'2004-12-09', height:191, number:'1'},
+  {firstName:'Stanisław', lastName:'Pruszkowski', position:'Bramkarz', birthDate:'2004-07-22', height:198, number:'3'},
+  {firstName:'Jonatan', lastName:'Straus', position:'Obrońca środkowy', birthDate:'1994-06-30', height:187, number:'15'},
+  {firstName:'Eryk', lastName:'Woliński', position:'Obrońca środkowy', birthDate:'2000-04-10', height:188, number:'28'},
+  {firstName:'Mateusz', lastName:'Stępień', position:'Obrońca środkowy', birthDate:'1996-06-10', height:186, number:'3'},
+  {firstName:'Oleksandr', lastName:'Gavrylenko', position:'Obrońca środkowy', birthDate:'2006-08-22', height:192, number:'14', nationality:'Ukraina'},
+  {firstName:'Igor', lastName:'Antosik', position:'Obrońca środkowy', birthDate:'2007-04-21', height:191, number:'17'},
+  {firstName:'Julian', lastName:'Kamiński', position:'Obrońca środkowy', birthDate:'2005-04-15', height:193},
+  {firstName:'Bartłomiej', lastName:'Eizenchart', position:'Obrońca boczny', birthDate:'2001-08-23', height:182},
+  {firstName:'Jakub', lastName:'Murat', position:'Obrońca boczny', birthDate:'2005-07-22', height:190},
+  {firstName:'Sammy', lastName:'Dudek', position:'Pomocnik defensywny', birthDate:'2008-04-18', height:175, marketValue:'200 tys. €', nationality:'Polska/Niemcy'},
+  {firstName:'Jakub', lastName:'Bieroński', position:'Pomocnik defensywny', birthDate:'2003-04-18', height:188, number:'6', marketValue:'125 tys. €'},
+  {firstName:'Damian', lastName:'Makuch', position:'Pomocnik defensywny', birthDate:'2002-08-16', height:188, number:'20'},
+  {firstName:'Maksymilian', lastName:'Kosior', position:'Pomocnik defensywny', birthDate:'2003-03-10', height:185, number:'42'},
+  {firstName:'Jan', lastName:'Kozdryk', position:'Pomocnik defensywny', birthDate:'2007-04-17', height:184},
+  {firstName:'Patryk', lastName:'Walicki', position:'Pomocnik środkowy', birthDate:'2003-05-29', height:182, number:'7', nationality:'Polska/Belgia'},
+  {firstName:'Jakub', lastName:'Czarnecki', position:'Skrzydłowy', birthDate:'2003-09-19', height:178, number:'18'},
+  {firstName:'Jan', lastName:'Mierzwa', position:'Skrzydłowy', birthDate:'2005-01-28', height:172},
+  {firstName:'Szymon', lastName:'Wrona', position:'Skrzydłowy', birthDate:'2006-08-22', height:172, number:'21'},
+  {firstName:'Mateusz', lastName:'Szmyd', position:'Skrzydłowy', birthDate:'2003-06-28', height:175, number:'99'},
+  {firstName:'Igor', lastName:'Zyntek', position:'Skrzydłowy', birthDate:'2008-02-07', height:181, number:'10'},
+  {firstName:'Krzysztof', lastName:'Toporkiewicz', position:'Pomocnik ofensywny', birthDate:'2002-04-21', height:176, number:'52'},
+  {firstName:'Damian', lastName:'Gąska', position:'Pomocnik ofensywny', birthDate:'1996-11-24', height:176},
+  {firstName:'Antoni', lastName:'Burkiewicz', position:'Pomocnik ofensywny', birthDate:'2008-04-21', height:183, number:'25'},
+  {firstName:'Jakub', lastName:'Jaroch', position:'Pomocnik ofensywny', birthDate:'2007-08-25', height:180, number:'26'},
+  {firstName:'Oskar', lastName:'Melich', position:'Pomocnik ofensywny', birthDate:'2006-01-26', height:176},
+  {firstName:'Kacper', lastName:'Kalisz', position:'Skrzydłowy', birthDate:'2005-02-24', height:180, number:'9'},
+  {firstName:'Kamil', lastName:'Sabiłło', position:'Napastnik', birthDate:'1994-03-24', height:175, number:'11'},
+  {firstName:'Bartosz', lastName:'Bida', position:'Napastnik', birthDate:'2001-02-21', height:175},
+].map(p => Object.assign({clubName:'Unia Skierniewice'}, p));
+
 // Individually-verified data found via real Transfermarkt search results (not fabricated).
 // Only fills currently-blank fields on matching existing players — never overwrites anything already set.
 const SEED_PLAYER_ENRICHMENT_ZNICZ = [
@@ -1071,6 +1645,26 @@ async function importClubRoster(clubName, seedArray, profileTmUrl){
   // własnym cyklem ponawiania w razie problemów z pamięcią. Wywołujący zbiera zmiany i zapisuje raz.
   return {ok:true, added:addedPlayers, total:seedArray.length, clubChanged};
 }
+const CLUB_ROSTER_IMPORTS_ILIGA = [
+  {clubName:'Lechia Gdańsk', players: SEED_PLAYERS_ILIGA_LECHIA_GDANSK, profileTm:'https://www.transfermarkt.pl/lechia-gdansk/startseite/verein/4000'},
+  {clubName:'Arka Gdynia', players: SEED_PLAYERS_ILIGA_ARKA_GDYNIA, profileTm:'https://www.transfermarkt.pl/arka-gdynia/startseite/verein/6107'},
+  {clubName:'Polonia Warszawa', players: SEED_PLAYERS_ILIGA_POLONIA_WARSCHAU, profileTm:'https://www.transfermarkt.pl/polonia-warschau/startseite/verein/2745'},
+  {clubName:'Miedź Legnica', players: SEED_PLAYERS_ILIGA_MIEDZ_LEGNICA, profileTm:'https://www.transfermarkt.pl/miedz-legnica/startseite/verein/8936'},
+  {clubName:'ŁKS Łódź', players: SEED_PLAYERS_ILIGA_LKS_LODZ, profileTm:'https://www.transfermarkt.pl/lks-lodz/startseite/verein/256'},
+  {clubName:'Odra Opole', players: SEED_PLAYERS_ILIGA_ODRA_OPOLE, profileTm:'https://www.transfermarkt.pl/odra-opole/startseite/verein/5699'},
+  {clubName:'Bruk-Bet Termalica Nieciecza', players: SEED_PLAYERS_ILIGA_BRUK_BET_TERMALICA_NIECIECZA, profileTm:'https://www.transfermarkt.pl/bruk-bet-termalica-nieciecza/startseite/verein/15906'},
+  {clubName:'Ruch Chorzów', players: SEED_PLAYERS_ILIGA_RUCH_CHORZOW, profileTm:'https://www.transfermarkt.pl/ruch-chorzow/startseite/verein/318'},
+  {clubName:'Puszcza Niepołomice', players: SEED_PLAYERS_ILIGA_PUSZCZA_NIEPOLOMICE, profileTm:'https://www.transfermarkt.pl/puszcza-niepolomice/startseite/verein/28893'},
+  {clubName:'Polonia Bytom', players: SEED_PLAYERS_ILIGA_POLONIA_BYTOM, profileTm:'https://www.transfermarkt.pl/polonia-bytom/startseite/verein/7976'},
+  {clubName:'Pogoń Grodzisk Mazowiecki', players: SEED_PLAYERS_ILIGA_POGON_GRODZISK_MAZOWIECKI, profileTm:'https://www.transfermarkt.pl/pogon-grodzisk-mazowiecki/startseite/verein/30998'},
+  {clubName:'Chrobry Głogów', players: SEED_PLAYERS_ILIGA_CHROBRY_GLOGOW, profileTm:'https://www.transfermarkt.pl/chrobry-glogow/startseite/verein/8377'},
+  {clubName:'Stal Rzeszów', players: SEED_PLAYERS_ILIGA_STAL_RZESZOW, profileTm:'https://www.transfermarkt.pl/stal-rzeszow/startseite/verein/9510'},
+  {clubName:'Pogoń Siedlce', players: SEED_PLAYERS_ILIGA_POGON_SIEDLCE, profileTm:'https://www.transfermarkt.pl/pogon-siedlce/startseite/verein/4896'},
+  {clubName:'Stal Mielec', players: SEED_PLAYERS_ILIGA_STAL_MIELEC, profileTm:'https://www.transfermarkt.pl/stal-mielec/startseite/verein/22431'},
+  {clubName:'Warta Poznań', players: SEED_PLAYERS_ILIGA_WARTA_POSEN, profileTm:'https://www.transfermarkt.pl/warta-posen/startseite/verein/7146'},
+  {clubName:'Podbeskidzie Bielsko-Biała', players: SEED_PLAYERS_ILIGA_PODBESKIDZIE_BIELSKO_BIALA, profileTm:'https://www.transfermarkt.pl/podbeskidzie-bielsko-biala/startseite/verein/6361'},
+  {clubName:'Unia Skierniewice', players: SEED_PLAYERS_ILIGA_UNIA_SKIERNIEWICE, profileTm:'https://www.transfermarkt.pl/unia-skierniewice/startseite/verein/30753'},
+];
 const CLUB_ROSTER_IMPORTS = [
   {clubName:'Znicz Pruszków', players: SEED_PLAYERS_ZNICZ, profileTm:'https://www.transfermarkt.pl/znicz-pruszkow/startseite/verein/9109'},
   {clubName:'Legia II Warszawa', players: SEED_PLAYERS_LEGIA_II, profileTm:'https://www.transfermarkt.pl/legia-warschau-ii/startseite/verein/6628'},
@@ -1092,6 +1686,7 @@ const CLUB_ROSTER_IMPORTS = [
   {clubName:'Sokół Kleczew', players: SEED_PLAYERS_SOKOL_KLECZEW},
   {clubName:'Avia Świdnik', players: SEED_PLAYERS_AVIA_V2, profileTm:'https://www.transfermarkt.pl/avia-swidnik/startseite/verein/10768'},
   {clubName:'Olimpia Grudziądz', players: SEED_PLAYERS_OLIMPIA_V2, profileTm:'https://www.transfermarkt.pl/olimpia-grudziadz/startseite/verein/26564'},
+  ...CLUB_ROSTER_IMPORTS_ILIGA,
 ];
 async function importAllKnownRosters(){
   let totalAdded = 0, totalPlayers = 0, anyClubChanged = false;
@@ -1928,7 +2523,7 @@ function viewPlayers(){
     const a = playerAvg(p.id);
     const cls = STATUS_CLASS[p.status]||"new";
     return `<tr>
-      <td><strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</td>
+      <td>${p.nationality?`<span title="${esc(p.nationality)}">${nationalityFlag(p.nationality)}</span> `:''}<strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</td>
       <td>${p.birthYear||"—"}</td>
       <td>${esc(p.position)}</td>
       <td><div class="club-cell">${crestImg(clubCrest(p.clubId))}<span>${esc(clubName(p.clubId))}</span></div></td>
@@ -2007,6 +2602,7 @@ function viewPlayerDetail(id){
       <h4 style="margin-top:0;color:var(--pitch);">Informacje</h4>
       <table>
         <tr><td style="color:var(--ink-soft);">Status</td><td><span class="badge ${STATUS_CLASS[p.status]||'new'}">${esc(p.status)}</span></td></tr>
+        <tr><td style="color:var(--ink-soft);">Narodowość</td><td>${p.nationality? nationalityFlag(p.nationality)+' '+esc(p.nationality) : "—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">Noga</td><td>${esc(p.foot||"—")}</td></tr>
         <tr><td style="color:var(--ink-soft);">Wzrost</td><td>${p.height? p.height+" cm":"—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">System gry</td><td>${p.formation? `<strong>${esc(p.formation)}</strong>`:"—"}</td></tr>
@@ -2269,7 +2865,7 @@ function viewClubDetail(id){
   const squadRows = squad.map(p=>{
     const a = playerAvg(p.id);
     return `<tr>
-      <td><strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</td>
+      <td>${p.nationality?`<span title="${esc(p.nationality)}">${nationalityFlag(p.nationality)}</span> `:''}<strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</td>
       <td>${p.birthYear||"—"}</td>
       <td>${esc(p.position)}</td>
       <td><span class="badge ${STATUS_CLASS[p.status]||'new'}">${esc(p.status)}</span></td>
@@ -3574,10 +4170,11 @@ function openPlayerModal(id, presetClubId, prefillData){
       <div class="field-wrap"><label class="field">Data urodzenia</label><input type="date" id="pm-birth" value="${p&&p.birthDate?p.birthDate:''}"></div>
       <div class="field-wrap"><label class="field">Pozycja</label><select id="pm-position">${DB.settings.positions.map(x=>`<option ${p&&p.position===x?'selected':''}>${esc(x)}</option>`).join('')}</select></div>
     </div>
-    <div class="grid grid-3">
+    <div class="grid grid-4">
       <div class="field-wrap"><label class="field">Noga</label><select id="pm-foot"><option ${p&&p.foot==='Prawa'?'selected':''}>Prawa</option><option ${p&&p.foot==='Lewa'?'selected':''}>Lewa</option><option ${p&&p.foot==='Obie'?'selected':''}>Obie</option></select></div>
       <div class="field-wrap"><label class="field">Wzrost (cm)</label><input type="number" id="pm-height" value="${p&&p.height?p.height:''}"></div>
       <div class="field-wrap"><label class="field">Status</label><select id="pm-status">${DB.settings.statuses.map(x=>`<option ${p&&p.status===x?'selected':''}>${esc(x)}</option>`).join('')}</select></div>
+      <div class="field-wrap"><label class="field">Narodowość</label><input id="pm-nationality" value="${p&&p.nationality?esc(p.nationality):''}" placeholder="np. Polska"></div>
     </div>
     <div class="field-wrap">
       <label class="field">System gry (formacja)</label>
@@ -4447,6 +5044,29 @@ const SQUAD_POSITION_MAP = [
   [/obrońca/i, 'Obrońca środkowy'],
   [/pomocnik/i, 'Pomocnik środkowy'],
 ];
+// Flaga narodowości — emoji Unicode (nie obrazy), więc bez żadnych kwestii praw autorskich: flagi
+// państwowe to symbole urzędowe, nie znaki towarowe/utwory. Klucze po polsku (jak w źródłach typu
+// Transfermarkt/90minut), wartość to flaga renderowana natywnie przez przeglądarkę.
+const COUNTRY_FLAGS = {
+  'polska':'🇵🇱','niemcy':'🇩🇪','portugalia':'🇵🇹','hiszpania':'🇪🇸','francja':'🇫🇷','włochy':'🇮🇹',
+  'anglia':'🏴','wielka brytania':'🇬🇧','szkocja':'🏴','walia':'🏴','irlandia':'🇮🇪',
+  'holandia':'🇳🇱','belgia':'🇧🇪','austria':'🇦🇹','szwajcaria':'🇨🇭','dania':'🇩🇰','szwecja':'🇸🇪',
+  'norwegia':'🇳🇴','finlandia':'🇫🇮','islandia':'🇮🇸','ukraina':'🇺🇦','białoruś':'🇧🇾','rosja':'🇷🇺',
+  'czechy':'🇨🇿','słowacja':'🇸🇰','węgry':'🇭🇺','rumunia':'🇷🇴','bułgaria':'🇧🇬','serbia':'🇷🇸',
+  'chorwacja':'🇭🇷','słowenia':'🇸🇮','bośnia i hercegowina':'🇧🇦','czarnogóra':'🇲🇪','macedonia północna':'🇲🇰',
+  'albania':'🇦🇱','kosowo':'🇽🇰','grecja':'🇬🇷','turcja':'🇹🇷','cypr':'🇨🇾','gruzja':'🇬🇪','armenia':'🇦🇲',
+  'litwa':'🇱🇹','łotwa':'🇱🇻','estonia':'🇪🇪','mołdawia':'🇲🇩',
+  'brazylia':'🇧🇷','argentyna':'🇦🇷','urugwaj':'🇺🇾','kolumbia':'🇨🇴','chile':'🇨🇱','peru':'🇵🇪',
+  'meksyk':'🇲🇽','usa':'🇺🇸','stany zjednoczone':'🇺🇸','kanada':'🇨🇦','paragwaj':'🇵🇾','wenezuela':'🇻🇪','ekwador':'🇪🇨',
+  'nigeria':'🇳🇬','ghana':'🇬🇭','senegal':'🇸🇳','kamerun':'🇨🇲','wybrzeże kości słoniowej':'🇨🇮','mali':'🇲🇱',
+  'algieria':'🇩🇿','maroko':'🇲🇦','tunezja':'🇹🇳','egipt':'🇪🇬','rpa':'🇿🇦','demokratyczna republika konga':'🇨🇩',
+  'iran':'🇮🇷','irak':'🇮🇶','izrael':'🇮🇱','arabia saudyjska':'🇸🇦','japonia':'🇯🇵','korea południowa':'🇰🇷',
+  'chiny':'🇨🇳','australia':'🇦🇺','nowa zelandia':'🇳🇿',
+};
+function nationalityFlag(nat){
+  if(!nat) return '';
+  return COUNTRY_FLAGS[nat.trim().toLowerCase()] || '';
+}
 function mapSquadPosition(raw){
   for(const [re, mapped] of SQUAD_POSITION_MAP) if(re.test(raw)) return mapped;
   return null;
@@ -4473,7 +5093,13 @@ function parseSquadLine(line){
   const rest = text.slice(posMatch.index + positionRaw.length);
   const yearMatch = rest.match(/\b(19[89]\d|200\d|201[0-5])\b/);
   const birthYear = yearMatch ? yearMatch[0] : '';
-  return { ok:true, firstName, lastName, position, birthYear, raw: line.trim() };
+  // Narodowość: pierwsza rozpoznana nazwa kraju (z COUNTRY_FLAGS) występująca w linii po pozycji.
+  const restLower = rest.toLowerCase();
+  let nationality = '';
+  for(const key of Object.keys(COUNTRY_FLAGS)){
+    if(restLower.includes(key)){ nationality = key.charAt(0).toUpperCase()+key.slice(1); break; }
+  }
+  return { ok:true, firstName, lastName, position, birthYear, nationality, raw: line.trim() };
 }
 function openSquadImportModal(clubId){
   const already = document.querySelector('.modal-overlay[data-squadimport-for]');
@@ -4509,10 +5135,11 @@ function openSquadImportModal(clubId){
                 <td><strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</td>
                 <td>${esc(p.position||'—')}</td>
                 <td>${esc(p.birthYear||'—')}</td>
+                <td>${p.nationality? nationalityFlag(p.nationality)+' '+esc(p.nationality) : '—'}</td>
               </tr>` : `
               <tr style="color:var(--clay-dark);">
                 <td></td>
-                <td colspan="3" style="font-size:12px;">Nie rozpoznano: „${esc(p.raw)}”</td>
+                <td colspan="4" style="font-size:12px;">Nie rozpoznano: „${esc(p.raw)}”</td>
               </tr>`
             ).join('')}
           </tbody></table>
@@ -4546,7 +5173,7 @@ function openSquadImportModal(clubId){
         if(exists){ skipped++; return; }
         DB.players.push({
           id: uid('Z'), firstName: p.firstName, lastName: p.lastName,
-          birthDate: '', birthYear: p.birthYear || '',
+          birthDate: '', birthYear: p.birthYear || '', nationality: p.nationality || '',
           position: p.position || DB.settings.positions[0], foot: '', height: null,
           status: DB.settings.statuses[0], clubId: club.id, scout: currentScout || '',
           videoLink: '', lnpLink: '', tmLink: '', hasAgent: false, agencyName: '',
@@ -5216,6 +5843,7 @@ function wireLastModal(){
       position: document.getElementById('pm-position').value,
       foot: document.getElementById('pm-foot').value,
       height: Number(document.getElementById('pm-height').value)||null,
+      nationality: document.getElementById('pm-nationality').value.trim(),
       status: document.getElementById('pm-status').value,
       clubId: document.getElementById('pm-club').value,
       scout: document.getElementById('pm-scout').value.trim(),

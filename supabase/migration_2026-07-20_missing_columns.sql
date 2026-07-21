@@ -20,5 +20,6 @@ alter table sbs_players add column if not exists powolania integer;
 alter table sbs_players add column if not exists opis_koncowy text;
 alter table sbs_players add column if not exists monitored boolean default false;
 alter table sbs_players add column if not exists transfer_history jsonb default '[]'::jsonb;
+alter table sbs_players add column if not exists nationality text;
 
 alter table sbs_reports add column if not exists obs_type text;

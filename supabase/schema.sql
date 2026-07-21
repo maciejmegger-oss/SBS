@@ -33,6 +33,7 @@ create table if not exists sbs_players (
   position text,
   foot text,
   height integer,
+  nationality text,
   status text,
   club_id text references sbs_clubs(id) on delete set null,
   scout text,
