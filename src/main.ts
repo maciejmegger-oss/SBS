@@ -2529,7 +2529,7 @@ function viewPlayers(){
       <td><div class="club-cell">${crestImg(clubCrest(p.clubId))}<span>${esc(clubName(p.clubId))}</span></div></td>
       <td>${esc(clubRegion(p.clubId))}</td>
       <td>${esc(clubLeague(p.clubId))}</td>
-      <td><span class="badge ${cls}">${esc(p.status)}</span></td>
+      <td>${p.status? `<span class="badge ${cls}">${esc(p.status)}</span>` : '—'}</td>
       <td>${a? fmt1(a.overall) : "—"}</td>
       <td>${a? a.count : 0}</td>
       <td style="white-space:nowrap;">
@@ -2601,7 +2601,7 @@ function viewPlayerDetail(id){
     <div class="card">
       <h4 style="margin-top:0;color:var(--pitch);">Informacje</h4>
       <table>
-        <tr><td style="color:var(--ink-soft);">Status</td><td><span class="badge ${STATUS_CLASS[p.status]||'new'}">${esc(p.status)}</span></td></tr>
+        <tr><td style="color:var(--ink-soft);">Status</td><td>${p.status? `<span class="badge ${STATUS_CLASS[p.status]||'new'}">${esc(p.status)}</span>` : '—'}</td></tr>
         <tr><td style="color:var(--ink-soft);">Narodowość</td><td>${p.nationality? nationalityFlag(p.nationality)+' '+esc(p.nationality) : "—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">Noga</td><td>${esc(p.foot||"—")}</td></tr>
         <tr><td style="color:var(--ink-soft);">Wzrost</td><td>${p.height? p.height+" cm":"—"}</td></tr>
@@ -2868,7 +2868,7 @@ function viewClubDetail(id){
       <td>${p.nationality?`<span title="${esc(p.nationality)}">${nationalityFlag(p.nationality)}</span> `:''}<strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</td>
       <td>${p.birthYear||"—"}</td>
       <td>${esc(p.position)}</td>
-      <td><span class="badge ${STATUS_CLASS[p.status]||'new'}">${esc(p.status)}</span></td>
+      <td>${p.status? `<span class="badge ${STATUS_CLASS[p.status]||'new'}">${esc(p.status)}</span>` : '—'}</td>
       <td>${a? fmt1(a.overall):"—"}</td>
       <td><button class="link-btn" data-action="view-player" data-id="${p.id}">Zobacz</button></td>
     </tr>`;
@@ -3118,9 +3118,16 @@ async function saveNewObservation(){
   try{ obs.distanceKm = await calcDistanceBetween(startLoc, obs.location); }catch(e){ obs.distanceKm = null; }
   if(!editing) DB.observations.push(obs);
   await saveObservations();
-  // Zaplanowanie obserwacji od razu stawia zawodnika na liście Monitoring.
+  // Zaplanowanie obserwacji od razu stawia zawodnika na liście Monitoring i nadaje status
+  // "Do Obserwacji" — ale tylko jeśli zawodnik nie ma jeszcze żadnego statusu (import składu
+  // zostawia status pusty; nie chcemy nadpisywać np. "Do transferu" ustawionego przez raport).
   const obsPlayer = DB.players.find(x=>x.id===playerId);
-  if(obsPlayer && !obsPlayer.monitored){ obsPlayer.monitored = true; await savePlayers(); }
+  if(obsPlayer){
+    let playerChanged = false;
+    if(!obsPlayer.monitored){ obsPlayer.monitored = true; playerChanged = true; }
+    if(!obsPlayer.status){ obsPlayer.status = 'Do Obserwacji'; playerChanged = true; }
+    if(playerChanged) await savePlayers();
+  }
   let settingsChanged = false;
   if(scout && !DB.settings.scouts.includes(scout)){ DB.settings.scouts.push(scout); settingsChanged = true; }
   if(startLoc && DB.settings.startLocation !== startLoc){ DB.settings.startLocation = startLoc; settingsChanged = true; }
@@ -4173,7 +4180,7 @@ function openPlayerModal(id, presetClubId, prefillData){
     <div class="grid grid-4">
       <div class="field-wrap"><label class="field">Noga</label><select id="pm-foot"><option ${p&&p.foot==='Prawa'?'selected':''}>Prawa</option><option ${p&&p.foot==='Lewa'?'selected':''}>Lewa</option><option ${p&&p.foot==='Obie'?'selected':''}>Obie</option></select></div>
       <div class="field-wrap"><label class="field">Wzrost (cm)</label><input type="number" id="pm-height" value="${p&&p.height?p.height:''}"></div>
-      <div class="field-wrap"><label class="field">Status</label><select id="pm-status">${DB.settings.statuses.map(x=>`<option ${p&&p.status===x?'selected':''}>${esc(x)}</option>`).join('')}</select></div>
+      <div class="field-wrap"><label class="field">Status</label><select id="pm-status"><option value="" ${p&&!p.status?'selected':''}>— brak —</option>${DB.settings.statuses.map(x=>`<option ${p&&p.status===x?'selected':''}>${esc(x)}</option>`).join('')}</select></div>
       <div class="field-wrap"><label class="field">Narodowość</label><input id="pm-nationality" value="${p&&p.nationality?esc(p.nationality):''}" placeholder="np. Polska"></div>
     </div>
     <div class="field-wrap">
@@ -5062,6 +5069,7 @@ const COUNTRY_FLAGS = {
   'algieria':'🇩🇿','maroko':'🇲🇦','tunezja':'🇹🇳','egipt':'🇪🇬','rpa':'🇿🇦','demokratyczna republika konga':'🇨🇩',
   'iran':'🇮🇷','irak':'🇮🇶','izrael':'🇮🇱','arabia saudyjska':'🇸🇦','japonia':'🇯🇵','korea południowa':'🇰🇷',
   'chiny':'🇨🇳','australia':'🇦🇺','nowa zelandia':'🇳🇿',
+  'gwinea':'🇬🇳','gwinea bissau':'🇬🇼','komory':'🇰🇲','burkina faso':'🇧🇫','kongo':'🇨🇬','azerbejdżan':'🇦🇿',
 };
 function nationalityFlag(nat){
   if(!nat) return '';
@@ -5163,6 +5171,10 @@ function openSquadImportModal(clubId){
   overlay.className = 'modal-overlay';
   overlay.dataset.squadimportFor = clubId;
   let parsed = [];
+  let pastedText = '';
+  // Zrzut ekranu tylko jako WIZUALNY podgląd do porównania obok wklejonego tekstu — nie jest
+  // analizowany automatycznie (brak OCR/AI w aplikacji), dane zawsze biorą się z wklejonego tekstu.
+  let referenceImage = null;
 
   function closeAndRefresh(){ overlay.remove(); render(); }
 
@@ -5171,8 +5183,22 @@ function openSquadImportModal(clubId){
     <div class="modal" style="max-width:680px;">
       <h3>Import składu — ${esc(club.name)}</h3>
       <p class="note" style="margin-top:-4px;">Otwórz skład klubu na Transfermarkt/90minut/ŁNP we własnej przeglądarce, zaznacz i skopiuj widoczną tabelę, wklej poniżej (jeden zawodnik na linię). Nie pobieramy niczego automatycznie — to Ty decydujesz, co wkleić.</p>
-      <div class="field-wrap">
-        <textarea id="squad-import-text" rows="8" placeholder="np.&#10;1 Rafał Grocholski Bramkarz 9 gru 2004 (21) Polska -&#10;3 Jonatan Straus Środkowy obrońca 30 cze 1994 (32) Polska -"></textarea>
+      <div class="grid grid-2" style="align-items:start;">
+        <div class="field-wrap">
+          <textarea id="squad-import-text" rows="8" placeholder="np.&#10;1 Rafał Grocholski Bramkarz 9 gru 2004 (21) Polska -&#10;3 Jonatan Straus Środkowy obrońca 30 cze 1994 (32) Polska -">${esc(pastedText)}</textarea>
+        </div>
+        <div class="field-wrap">
+          <label class="field">Podgląd zrzutu ekranu (opcjonalnie, do porównania — nie jest odczytywany automatycznie)</label>
+          ${referenceImage ? `
+            <div style="position:relative;">
+              <img src="${referenceImage}" style="max-width:100%;max-height:260px;object-fit:contain;border:1px solid #E3DECE;border-radius:6px;display:block;">
+              <button class="secondary" data-action="squad-image-remove" style="position:absolute;top:6px;right:6px;padding:2px 8px;">✕</button>
+            </div>
+          ` : `
+            <label for="squad-import-image" style="display:flex;align-items:center;justify-content:center;height:120px;border:1px dashed #C9C2AE;border-radius:6px;cursor:pointer;color:var(--ink-soft);font-size:13px;text-align:center;padding:8px;">📋 Wklej (Ctrl+V) lub kliknij, aby wgrać zrzut</label>
+            <input type="file" id="squad-import-image" accept="image/*" style="display:none;">
+          `}
+        </div>
       </div>
       <div class="modal-actions" style="justify-content:flex-start;margin-bottom:14px;">
         <button class="secondary" data-action="squad-parse">Rozpoznaj zawodników</button>
@@ -5207,13 +5233,32 @@ function openSquadImportModal(clubId){
     wire();
   }
 
+  function loadReferenceImageFile(file){
+    if(!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = ()=>{ referenceImage = reader.result; draw(); };
+    reader.readAsDataURL(file);
+  }
+
   function wire(){
     overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=closeAndRefresh);
     overlay.querySelectorAll('[data-action="squad-parse"]').forEach(b=>b.onclick=()=>{
       const text = overlay.querySelector('#squad-import-text').value;
+      pastedText = text;
       parsed = parseSquadText(text);
       draw();
     });
+    const imageInput = overlay.querySelector('#squad-import-image');
+    if(imageInput) imageInput.onchange = ()=> loadReferenceImageFile(imageInput.files[0]);
+    overlay.querySelectorAll('[data-action="squad-image-remove"]').forEach(b=>b.onclick=()=>{ referenceImage = null; draw(); });
+    // Wklejenie zrzutu ekranu ze schowka (Ctrl+V) w dowolnym miejscu okna — samo tylko jako
+    // podgląd obok wklejanego tekstu, żeby łatwiej porównać skopiowane nazwiska ze zrzutem.
+    overlay.onpaste = (e)=>{
+      const item = Array.from(e.clipboardData?.items||[]).find(i=>i.type.startsWith('image/'));
+      if(item) loadReferenceImageFile(item.getAsFile());
+    };
+    const textarea = overlay.querySelector('#squad-import-text');
+    if(textarea) textarea.oninput = ()=>{ pastedText = textarea.value; };
     overlay.querySelectorAll('[data-action="squad-import-confirm"]').forEach(b=>b.onclick=async()=>{
       const checked = Array.from(overlay.querySelectorAll('.squad-row-check:checked')).map(c=>Number(c.dataset.idx));
       const toAdd = checked.map(i=>parsed[i]).filter(p=>p && p.ok);
@@ -5227,7 +5272,9 @@ function openSquadImportModal(clubId){
           id: uid('Z'), firstName: p.firstName, lastName: p.lastName,
           birthDate: '', birthYear: p.birthYear || '', nationality: p.nationality || '',
           position: p.position || DB.settings.positions[0], foot: '', height: null,
-          status: DB.settings.statuses[0], clubId: club.id, scout: currentScout || '',
+          // Bez statusu przy imporcie — status "Do Obserwacji" pojawia się dopiero, gdy dla
+          // zawodnika faktycznie zaplanujemy obserwację (patrz saveNewObservation()).
+          status: '', clubId: club.id, scout: currentScout || '',
           videoLink: '', lnpLink: '', tmLink: '', hasAgent: false, agencyName: '',
           formation: '', customFields: {}, notes: '',
           dateAdded: new Date().toISOString().slice(0,10)
