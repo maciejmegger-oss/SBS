@@ -5067,6 +5067,24 @@ function nationalityFlag(nat){
   if(!nat) return '';
   return COUNTRY_FLAGS[nat.trim().toLowerCase()] || '';
 }
+// Literówki/warianty pisowni napotykane w realnych wklejeniach (np. "Stany Zjednaczone" zamiast
+// "Zjednoczone") — mapowane na klucz kanoniczny z COUNTRY_FLAGS, żeby flaga i nazwa zawsze się zgadzały.
+const NATIONALITY_ALIASES = { 'stany zjednaczone': 'stany zjednoczone' };
+function titleCasePl(s){ return s.split(' ').map(w=>w? w.charAt(0).toUpperCase()+w.slice(1) : w).join(' '); }
+// Szuka NAJWCZEŚNIEJSZEGO (wg pozycji w tekście, nie kolejności w słowniku) rozpoznanego kraju —
+// istotne przy podwójnym obywatelstwie ("Dominikana\nHiszpania"), gdzie liczy się kolejność źródłowa.
+function detectNationality(text){
+  const low = text.toLowerCase();
+  const keys = [...Object.keys(COUNTRY_FLAGS), ...Object.keys(NATIONALITY_ALIASES)];
+  let best = null;
+  for(const key of keys){
+    const idx = low.indexOf(key);
+    if(idx>=0 && (best===null || idx<best.idx)) best = {idx, key};
+  }
+  if(!best) return '';
+  const canonical = NATIONALITY_ALIASES[best.key] || best.key;
+  return titleCasePl(canonical);
+}
 function mapSquadPosition(raw){
   for(const [re, mapped] of SQUAD_POSITION_MAP) if(re.test(raw)) return mapped;
   return null;
@@ -5093,13 +5111,47 @@ function parseSquadLine(line){
   const rest = text.slice(posMatch.index + positionRaw.length);
   const yearMatch = rest.match(/\b(19[89]\d|200\d|201[0-5])\b/);
   const birthYear = yearMatch ? yearMatch[0] : '';
-  // Narodowość: pierwsza rozpoznana nazwa kraju (z COUNTRY_FLAGS) występująca w linii po pozycji.
-  const restLower = rest.toLowerCase();
-  let nationality = '';
-  for(const key of Object.keys(COUNTRY_FLAGS)){
-    if(restLower.includes(key)){ nationality = key.charAt(0).toUpperCase()+key.slice(1); break; }
-  }
+  const nationality = detectNationality(rest);
   return { ok:true, firstName, lastName, position, birthYear, nationality, raw: line.trim() };
+}
+// Wykrywa, czy pozycja to nazwa pozycji (krótka linia pasująca do słownika) — punkt orientacyjny do
+// wykrywania bloków w formacie wieloliniowym (patrz parseSquadBlocks).
+function isSquadPositionLine(line){
+  const t = line.trim();
+  return t.length>0 && t.length<40 && SQUAD_POSITION_MAP.some(([re])=>re.test(t));
+}
+// Prawdziwy format wklejenia z Transfermarkt to zwykle NIE "jeden zawodnik = jedna linia", tylko blok
+// kilku linii na zawodnika (nazwa, potem pozycja w osobnej linii, potem data/narodowość/wartość — a przy
+// podwójnym obywatelstwie narodowość sama zajmuje dodatkową linię, więc liczba linii na blok jest
+// zmienna). Wykrywamy start każdego bloku po sąsiadującej parze linii: "coś, co nie jest pozycją" tuż
+// przed linią, która JEST pozycją — to zawsze odpowiada parze (nazwisko, pozycja).
+function parseSquadBlocks(rawText){
+  const lines = rawText.split('\n');
+  const starts = [];
+  for(let i=0;i<lines.length-1;i++){
+    const cur = lines[i].trim(), next = lines[i+1].trim();
+    if(cur && !isSquadPositionLine(cur) && isSquadPositionLine(next)) starts.push(i);
+  }
+  if(!starts.length) return null; // brak wykrytych bloków — wywołujący spróbuje trybu "linia = zawodnik"
+  return starts.map((s,i)=>{
+    const block = lines.slice(s, i+1<starts.length ? starts[i+1] : lines.length);
+    const nameText = block[0].trim().split('\t')[0].trim(); // nazwa bywa zdublowana tabulatorem
+    const words = nameText.split(/\s+/).filter(Boolean);
+    if(!words.length) return { ok:false, raw: block.join(' | ').slice(0,140) };
+    const position = mapSquadPosition(block[1].trim());
+    const rest = block.slice(2).join(' ');
+    const yearMatch = rest.match(/\b(19[89]\d|200\d|201[0-5])\b/);
+    return {
+      ok:true, firstName: words[0], lastName: words.length>1 ? words.slice(1).join(' ') : '',
+      position, birthYear: yearMatch ? yearMatch[0] : '', nationality: detectNationality(rest),
+      raw: block.join(' | ').slice(0,140)
+    };
+  });
+}
+// Punkt wejścia używany przez importer: najpierw próbuje formatu blokowego (prawdziwe kopiowanie z
+// Transfermarkt), a jeśli nic nie wykryje, spada do prostszego trybu "jedna linia = jeden zawodnik".
+function parseSquadText(rawText){
+  return parseSquadBlocks(rawText) || rawText.split('\n').map(parseSquadLine).filter(Boolean);
 }
 function openSquadImportModal(clubId){
   const already = document.querySelector('.modal-overlay[data-squadimport-for]');
@@ -5159,7 +5211,7 @@ function openSquadImportModal(clubId){
     overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=closeAndRefresh);
     overlay.querySelectorAll('[data-action="squad-parse"]').forEach(b=>b.onclick=()=>{
       const text = overlay.querySelector('#squad-import-text').value;
-      parsed = text.split('\n').map(parseSquadLine).filter(Boolean);
+      parsed = parseSquadText(text);
       draw();
     });
     overlay.querySelectorAll('[data-action="squad-import-confirm"]').forEach(b=>b.onclick=async()=>{
@@ -5183,9 +5235,17 @@ function openSquadImportModal(clubId){
         added++;
       });
       try{
-        await savePlayers();
-        alert(`Zaimportowano ${added} zawodników.` + (skipped ? ` Pominięto ${skipped} (już byli w bazie w tym klubie).` : ''));
-        closeAndRefresh();
+        // savePlayers() (robustStorageSet) NIE rzuca wyjątku przy porażce — zwraca false i pokazuje
+        // baner ostrzegawczy. Trzeba sprawdzić wynik wprost, inaczej pokazalibyśmy "zaimportowano"
+        // nawet gdyby zapis się nie powiódł (np. brakująca kolumna w bazie przed migracją).
+        const ok = await savePlayers();
+        if(ok){
+          alert(`Zaimportowano ${added} zawodników.` + (skipped ? ` Pominięto ${skipped} (już byli w bazie w tym klubie).` : ''));
+          closeAndRefresh();
+        } else {
+          b.disabled = false; b.textContent = origLabel;
+          alert('Nie udało się zapisać zaimportowanych zawodników — sprawdź baner ostrzegawczy u góry strony. Dane zostaną utracone po odświeżeniu, dopóki zapis się nie powiedzie.');
+        }
       }catch(e){
         console.error('Import składu nie powiódł się:', e);
         b.disabled = false; b.textContent = origLabel;
