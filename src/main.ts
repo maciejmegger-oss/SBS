@@ -33,6 +33,7 @@ let positionMapAssignments = {}; // { "league|||number": [playerId, ...] up to 6
 let editingClubId = null;
 let clubBrowse = {top:"", group:""};
 let dashboardLeagueSelected = null;
+let dashboardGroupSelected = null; // wybrana grupa (np. "III liga, gr. II") po rozwinięciu ligi z grupami
 
 const DEFAULT_SETTINGS = {
   regions: ["Dolnośląski ZPN","Kujawsko-Pomorski ZPN","Lubelski ZPN","Lubuski ZPN","Łódzki ZPN","Małopolski ZPN","Mazowiecki ZPN","Opolski ZPN","Podkarpacki ZPN","Podlaski ZPN","Pomorski ZPN","Śląski ZPN","Świętokrzyski ZPN","Warmińsko-Mazurski ZPN","Wielkopolski ZPN","Zachodniopomorski ZPN"],
@@ -2412,22 +2413,59 @@ function leagueQuickAccessPanel(){
 
   let clubsRow = '';
   if(dashboardLeagueSelected){
-    const spec = DASHBOARD_QUICK_LEAGUES.find(l=>l.key===dashboardLeagueSelected);
-    const clubs = spec ? DB.clubs.filter(spec.match).sort((a,b)=>a.name.localeCompare(b.name,'pl')) : [];
-    const cards = clubs.map(c=>{
-      const n = DB.players.filter(p=>p.clubId===c.id).length;
-      return `<div class="club-crest-card" data-action="dash-goto-club" data-id="${esc(c.id)}" title="Przejdź do zawodników klubu ${esc(c.name)}">
-        ${crestImg(clubCrest(c.id), null, c.name)}
-        <div style="min-width:0;">
-          <div style="font-weight:700;color:var(--pitch);font-size:14px;">${esc(c.name)}</div>
-          <div style="font-size:11.5px;color:var(--ink-soft);">${esc((c.region||'').replace(' ZPN',''))} &middot; <strong>${n}</strong> ${plZaw(n)}</div>
-        </div>
+    // Ligi z podziałem na grupy (np. III liga: gr. I-IV) — najpierw wybór grupy, dopiero
+    // potem lista klubów tej konkretnej grupy, zamiast wrzucania wszystkich grup naraz.
+    const groups = groupsForTop(dashboardLeagueSelected);
+    if(groups.length){
+      const groupTiles = groups.map(g=>{
+        const label = g.replace(dashboardLeagueSelected+', ', '');
+        const count = DB.clubs.filter(c=>c.league===g).length;
+        const active = dashboardGroupSelected===g;
+        return `<div class="league-logo-3d league-logo-3d-small ${active?'active':''}" data-action="dash-select-group" data-val="${esc(g)}" title="${esc(g)} — ${count} ${count===1?'klub':'klubów'}">
+          <div class="league-logo-3d-plate league-logo-3d-plate-small">${esc(label)}</div>
+        </div>`;
+      }).join('');
+      let groupClubsRow = '';
+      if(dashboardGroupSelected){
+        const clubs = DB.clubs.filter(c=>c.league===dashboardGroupSelected).sort((a,b)=>a.name.localeCompare(b.name,'pl'));
+        const cards = clubs.map(c=>{
+          const n = DB.players.filter(p=>p.clubId===c.id).length;
+          return `<div class="club-crest-card" data-action="dash-goto-club" data-id="${esc(c.id)}" title="Przejdź do zawodników klubu ${esc(c.name)}">
+            ${crestImg(clubCrest(c.id), null, c.name)}
+            <div style="min-width:0;">
+              <div style="font-weight:700;color:var(--pitch);font-size:14px;">${esc(c.name)}</div>
+              <div style="font-size:11.5px;color:var(--ink-soft);">${esc((c.region||'').replace(' ZPN',''))} &middot; <strong>${n}</strong> ${plZaw(n)}</div>
+            </div>
+          </div>`;
+        }).join('');
+        groupClubsRow = `<div style="margin-top:14px;">
+          <div class="note" style="margin-bottom:8px;">${esc(dashboardGroupSelected)} — ${clubs.length} ${clubs.length===1?'klub':'klubów'} w bazie</div>
+          ${clubs.length ? `<div class="club-crest-grid">${cards}</div>` : `<div class="empty">Brak klubów tej grupy w bazie.</div>`}
+        </div>`;
+      }
+      clubsRow = `<div style="margin-top:16px;border-top:1px solid #E3DECE;padding-top:14px;">
+        <div class="note" style="margin-bottom:8px;">${esc(dashboardLeagueSelected)} — wybierz grupę</div>
+        <div class="league-logos-row">${groupTiles}</div>
+        ${groupClubsRow}
       </div>`;
-    }).join('');
-    clubsRow = `<div style="margin-top:16px;border-top:1px solid #E3DECE;padding-top:14px;">
-      <div class="note" style="margin-bottom:8px;">${esc(dashboardLeagueSelected)} — ${clubs.length} ${clubs.length===1?'klub':'klubów'} w bazie</div>
-      ${clubs.length ? `<div class="club-crest-grid">${cards}</div>` : `<div class="empty">Brak klubów tego poziomu w bazie — dodaj je w zakładce Kluby.</div>`}
-    </div>`;
+    } else {
+      const spec = DASHBOARD_QUICK_LEAGUES.find(l=>l.key===dashboardLeagueSelected);
+      const clubs = spec ? DB.clubs.filter(spec.match).sort((a,b)=>a.name.localeCompare(b.name,'pl')) : [];
+      const cards = clubs.map(c=>{
+        const n = DB.players.filter(p=>p.clubId===c.id).length;
+        return `<div class="club-crest-card" data-action="dash-goto-club" data-id="${esc(c.id)}" title="Przejdź do zawodników klubu ${esc(c.name)}">
+          ${crestImg(clubCrest(c.id), null, c.name)}
+          <div style="min-width:0;">
+            <div style="font-weight:700;color:var(--pitch);font-size:14px;">${esc(c.name)}</div>
+            <div style="font-size:11.5px;color:var(--ink-soft);">${esc((c.region||'').replace(' ZPN',''))} &middot; <strong>${n}</strong> ${plZaw(n)}</div>
+          </div>
+        </div>`;
+      }).join('');
+      clubsRow = `<div style="margin-top:16px;border-top:1px solid #E3DECE;padding-top:14px;">
+        <div class="note" style="margin-bottom:8px;">${esc(dashboardLeagueSelected)} — ${clubs.length} ${clubs.length===1?'klub':'klubów'} w bazie</div>
+        ${clubs.length ? `<div class="club-crest-grid">${cards}</div>` : `<div class="empty">Brak klubów tego poziomu w bazie — dodaj je w zakładce Kluby.</div>`}
+      </div>`;
+    }
   }
 
   return `<div class="card">
@@ -2524,7 +2562,7 @@ function viewPlayers(){
     const cls = STATUS_CLASS[p.status]||"new";
     return `<tr>
       <td>${p.nationality?`<span title="${esc(p.nationality)}">${nationalityFlag(p.nationality)}</span> `:''}<strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</td>
-      <td>${p.birthYear||"—"}</td>
+      <td>${p.birthYear||"—"}${isYouthPlayer(p)?youthBadge():''}</td>
       <td>${esc(p.position)}</td>
       <td><div class="club-cell">${crestImg(clubCrest(p.clubId))}<span>${esc(clubName(p.clubId))}</span></div></td>
       <td>${esc(clubRegion(p.clubId))}</td>
@@ -2866,7 +2904,7 @@ function viewClubDetail(id){
     const a = playerAvg(p.id);
     return `<tr>
       <td>${p.nationality?`<span title="${esc(p.nationality)}">${nationalityFlag(p.nationality)}</span> `:''}<strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</td>
-      <td>${p.birthYear||"—"}</td>
+      <td>${p.birthYear||"—"}${isYouthPlayer(p)?youthBadge():''}</td>
       <td>${esc(p.position)}</td>
       <td>${p.status? `<span class="badge ${STATUS_CLASS[p.status]||'new'}">${esc(p.status)}</span>` : '—'}</td>
       <td>${a? fmt1(a.overall):"—"}</td>
@@ -3150,6 +3188,16 @@ const REPORT_SET_PIECES = [
   {key:'rzutWolnyAtak', label:'Rzut wolny — atak'},
   {key:'rzutWolnyObrona', label:'Rzut wolny — obrona'},
 ];
+
+// Młodzieżowiec — rocznik 2006 i młodszy, we wszystkich ligach. Odznaka w stylu "3D" (gradient +
+// warstwowy cień), spójna z kafelkami lig na dashboardzie, a nie zwykła płaska plakietka.
+function isYouthPlayer(p){
+  const y = Number(p.birthYear);
+  return Number.isFinite(y) && y >= 2006;
+}
+function youthBadge(){
+  return `<span class="youth-badge-3d" title="Młodzieżowiec — rocznik 2006 i młodszy">MŁ</span>`;
+}
 
 let reportPerspektywaValue = '';
 function selectPerspektywa(value){
@@ -3610,8 +3658,8 @@ async function updateCommitteeField(playerId, field, value){
 function contactRow(c, num){
   return `<tr data-id="${c.id}">
     <td class="contact-num">${num}</td>
-    <td><strong>${esc(c.club||'—')}</strong></td>
-    <td>${esc(c.email||'—')}</td>
+    <td><input class="contact-inline-input contact-field-klub" data-id="${c.id}" data-field="club" value="${esc(c.club||'')}" placeholder="Klub" style="font-weight:700;"></td>
+    <td><input class="contact-inline-input contact-field-email" data-id="${c.id}" data-field="email" value="${esc(c.email||'')}" placeholder="Email"></td>
     <td><input class="contact-inline-input contact-field-imie" data-id="${c.id}" data-field="firstName" value="${esc(c.firstName||'')}" placeholder="Imię"></td>
     <td><input class="contact-inline-input contact-field-nazwisko" data-id="${c.id}" data-field="lastName" value="${esc(c.lastName||'')}" placeholder="Nazwisko"></td>
     <td><input class="contact-inline-input contact-field-telefon" data-id="${c.id}" data-field="phone" value="${esc(c.phone||'')}" placeholder="Telefon"></td>
@@ -4396,6 +4444,12 @@ function attachHandlers(){
   // Szybki dostęp wg lig (dashboard): klik w logo ligi rozwija/zwija rząd herbów klubów tej ligi.
   main.querySelectorAll('[data-action="dash-select-league"]').forEach(b=>b.onclick=()=>{
     dashboardLeagueSelected = (dashboardLeagueSelected===b.dataset.val) ? null : b.dataset.val;
+    dashboardGroupSelected = null;
+    render();
+  });
+  // Ligi z podziałem na grupy (III liga) na dashboardzie: klik w grupę rozwija/zwija jej kluby.
+  main.querySelectorAll('[data-action="dash-select-group"]').forEach(b=>b.onclick=()=>{
+    dashboardGroupSelected = (dashboardGroupSelected===b.dataset.val) ? null : b.dataset.val;
     render();
   });
 
@@ -5212,7 +5266,7 @@ function openSquadImportModal(clubId){
                 <td style="width:24px;"><input type="checkbox" class="squad-row-check" data-idx="${i}" checked></td>
                 <td><strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</td>
                 <td>${esc(p.position||'—')}</td>
-                <td>${esc(p.birthYear||'—')}</td>
+                <td>${esc(p.birthYear||'—')}${isYouthPlayer(p)?youthBadge():''}</td>
                 <td>${p.nationality? nationalityFlag(p.nationality)+' '+esc(p.nationality) : '—'}</td>
               </tr>` : `
               <tr style="color:var(--clay-dark);">
@@ -5687,7 +5741,7 @@ async function generatePlayerPDF(playerId){
   </div>
 
   <div class="player-meta">
-    <div class="meta-item"><div class="lbl">Rocznik</div><div class="val">${esc(p.birthYear||"—")}</div></div>
+    <div class="meta-item"><div class="lbl">Rocznik</div><div class="val">${esc(p.birthYear||"—")}${isYouthPlayer(p)?youthBadge():''}</div></div>
     <div class="meta-item"><div class="lbl">Wzrost</div><div class="val">${p.height?p.height+" cm":"—"}</div></div>
     <div class="meta-item"><div class="lbl">Noga</div><div class="val">${esc(p.foot||"—")}</div></div>
     <div class="meta-item"><div class="lbl">System gry</div><div class="val">${esc(p.formation||"—")}</div></div>

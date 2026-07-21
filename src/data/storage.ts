@@ -52,10 +52,28 @@ async function setCollection(table: string, jsonValue: string): Promise<void> {
   const items: Record<string, unknown>[] = JSON.parse(jsonValue || "[]");
   const rows = items.map(rowFromObj);
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-    const chunk = rows.slice(i, i + BATCH_SIZE);
+    let chunk = rows.slice(i, i + BATCH_SIZE);
     if (!chunk.length) continue;
-    const { error } = await sb.from(table).upsert(chunk, { onConflict: "id" });
-    if (error) throw new Error("Wsad " + (i / BATCH_SIZE + 1) + ": " + error.message);
+    // To jeden wsad obejmujący WSZYSTKICH zawodników (całościowy upsert) — jedno pole spoza
+    // aktualnego schematu Supabase (np. `nationality` przed uruchomieniem migracji) nie może
+    // blokować zapisu reszty. Supabase-js zgłasza brakującą kolumnę na dwa różne sposoby zależnie
+    // od ścieżki (surowy Postgres 42703 "column X.Y does not exist", albo PostgREST z cache schematu
+    // "Could not find the 'Y' column of 'X' in the schema cache") — sprawdzamy oba warianty.
+    for (;;) {
+      const { error } = await sb.from(table).upsert(chunk, { onConflict: "id" });
+      if (!error) break;
+      const missing =
+        error.message.match(/column [\w".]*\.(\w+) does not exist/) ||
+        error.message.match(/Could not find the '(\w+)' column/);
+      if (!missing) throw new Error("Wsad " + (i / BATCH_SIZE + 1) + ": " + error.message);
+      const col = missing[1];
+      console.warn(`Kolumna "${col}" nie istnieje jeszcze w ${table} (migracja niewykonana) — pomijam to pole w tym zapisie.`);
+      chunk = chunk.map((r) => {
+        const rest = { ...r };
+        delete rest[col];
+        return rest;
+      });
+    }
   }
   // Usuń z bazy rekordy, których już nie ma w bieżącej tablicy (np. usunięty zawodnik).
   const currentIds = items.map((it) => it.id).filter(Boolean);

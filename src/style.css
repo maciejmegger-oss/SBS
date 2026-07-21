@@ -287,6 +287,27 @@ tr:hover td{background:#FBF9F2;}
   background:var(--gold);color:#3A2C0C;border-radius:50%;font-size:11px;cursor:pointer;box-shadow:0 2px 5px rgba(10,23,18,.25);border:2px solid #fff;}
 .league-logo-3d-upload:hover{background:var(--gold-dark);color:#fff;}
 
+/* Wariant mniejszy — kafelki grup w obrębie ligi (np. III liga: gr. I-IV), sam tekst bez logo.
+   Bardziej podłużne i płaskie niż główne kafelki lig (niższe, delikatniejszy cień). */
+.league-logo-3d-plate-small{
+  width:118px;height:38px;font-weight:800;font-size:14px;color:var(--pitch);border-radius:9px;
+  box-shadow:0 1px 0 rgba(255,255,255,.8) inset, 0 -3px 5px rgba(0,0,0,.04) inset, 0 2px 0 rgba(10,23,18,.06), 0 5px 9px rgba(10,23,18,.10);
+}
+.league-logo-3d-small:hover .league-logo-3d-plate-small{transform:translateY(-2px);box-shadow:0 1px 0 rgba(255,255,255,.8) inset, 0 -3px 5px rgba(0,0,0,.04) inset, 0 3px 0 rgba(10,23,18,.08), 0 8px 14px rgba(10,23,18,.14);}
+.league-logo-3d-small.active .league-logo-3d-plate-small{transform:translateY(-1px);box-shadow:0 0 0 2px var(--gold), 0 1px 0 rgba(255,255,255,.8) inset, 0 2px 0 rgba(140,108,33,.30), 0 6px 10px rgba(10,23,18,.12);}
+.league-logo-3d-small:hover .league-logo-3d-plate-small,
+.league-logo-3d-small.active .league-logo-3d-plate-small{color:var(--gold-dark);}
+
+/* Odznaka "młodzieżowiec" (rocznik 2006 i młodszy) — mały "3D" znaczek: gradient + warstwowy
+   cień jak przy kafelkach lig, żeby wyraźnie odróżniał się od płaskich plakietek statusu. */
+.youth-badge-3d{
+  display:inline-flex;align-items:center;justify-content:center;margin-left:6px;
+  width:20px;height:20px;border-radius:50%;font-size:9px;font-weight:800;letter-spacing:.2px;
+  color:#3A2C0C;background:linear-gradient(180deg,#FFE9A8 0%,var(--gold) 100%);
+  box-shadow:0 1px 0 rgba(255,255,255,.7) inset, 0 -2px 3px rgba(140,108,33,.25) inset, 0 2px 0 rgba(140,108,33,.35), 0 3px 6px rgba(10,23,18,.22);
+  vertical-align:middle;
+}
+
 /* Kafelki graficzne poziomów rozgrywek (Kluby) — logo (wgrane lub placeholder) + etykieta + liczba klubów. */
 .league-tiles{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:4px;}
 .league-tile{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 16px;min-width:84px;
