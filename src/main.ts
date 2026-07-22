@@ -2780,11 +2780,11 @@ function viewPlayerDetail(id){
     ${(p.transferHistory && p.transferHistory.length) ? `<table><tbody>
       ${p.transferHistory.slice().sort((a,b)=>(b.from||'').localeCompare(a.from||'')).map(t=>`
         <tr>
-          <td style="white-space:nowrap;color:var(--ink-soft);font-size:12px;">${esc(t.from||'—')} &rarr; ${esc(t.to||'obecnie')}</td>
-          <td><strong>${esc(t.club)}</strong>${t.type?` <span class="badge" style="font-size:10px;">${esc(t.type)}</span>`:''}</td>
+          <td style="white-space:nowrap;color:var(--ink-soft);font-size:12px;">${esc(t.from||'—')}</td>
+          <td><strong>${esc(t.fromClub||t.club||'—')}</strong> <span style="color:var(--ink-soft);">&rarr;</span> <strong>${esc(t.toClub||'—')}</strong>${t.type?` <span class="badge" style="font-size:10px;">${esc(t.type)}</span>`:''}</td>
           <td style="color:var(--ink-soft);font-size:12px;">${esc(t.fee||'')}</td>
         </tr>`).join('')}
-    </tbody></table>` : '<div class="empty">Brak historii transferowej — dodaj wpisy przez „Zarządzaj" (klub, okres, typ transferu).</div>'}
+    </tbody></table>` : '<div class="empty">Brak historii transferowej — dodaj wpisy przez „Zarządzaj" (Z klubu → Do klubu, rok, typ transferu).</div>'}
   </div>
   <div class="card">
     <h4 style="margin-top:0;color:var(--pitch);">Opis Końcowy</h4>
@@ -3950,7 +3950,9 @@ function viewRankingNumbersMode(){
     const playerRowsHtml = ids.map(id=>{
       const pl = DB.players.find(p=>p.id===id);
       if(!pl) return '';
-      return `<span class="pos-marker-row">${crestImg(clubCrest(pl.clubId),'xs',clubName(pl.clubId))}<span class="pmr-name">${esc(pl.lastName || pl.firstName || '—')}</span>${pl.birthYear?`<span class="pmr-year">${esc(pl.birthYear)}</span>`:''}</span>`;
+      // Kolor wg statusu: „Do transferu" = złoto; „Na Testy" i pozostałe = bez koloru (neutralnie).
+      const statusCls = pl.status==='Do transferu' ? ' pmr-transfer' : '';
+      return `<span class="pos-marker-row${statusCls}" title="${esc(pl.status||'')}">${crestImg(clubCrest(pl.clubId),'xs',clubName(pl.clubId))}<span class="pmr-name">${esc(pl.lastName || pl.firstName || '—')}</span>${pl.birthYear?`<span class="pmr-year">${esc(pl.birthYear)}</span>`:''}</span>`;
     }).join('');
     return `
     <div class="pos-marker" style="left:${coord.x}%;top:${coord.y}%;" data-action="position-slot-click" data-number="${posDef.number}" title="${esc(posDef.label)} — kliknij, aby zarządzać (do 6 zawodników)">
@@ -5452,43 +5454,49 @@ function openTransferHistoryModal(playerId){
   overlay.dataset.transferhistFor = playerId;
 
   function closeAndRefresh(){ overlay.remove(); render(); }
+  let editIdx = null; // indeks edytowanego wpisu (null = dodawanie nowego)
 
   function draw(){
-    const sorted = p.transferHistory.slice().sort((a,b)=>(b.from||'').localeCompare(a.from||''));
+    // starsze wpisy miały jedno pole „club" — pokazujemy je jako „Z klubu" (fallback wstecz).
+    const sorted = p.transferHistory.map((t,i)=>({t,i})).sort((a,b)=>(b.t.from||'').localeCompare(a.t.from||''));
+    const editing = editIdx!=null ? p.transferHistory[editIdx] : null;
+    const typeOpts = TRANSFER_HISTORY_TYPES.map(t=>`<option ${editing&&editing.type===t?'selected':''}>${esc(t)}</option>`).join('');
     overlay.innerHTML = `
     <div class="modal" style="max-width:640px;">
       <h3>Historia transferowa — ${esc(p.firstName)} ${esc(p.lastName)}</h3>
       <div style="margin-bottom:16px;max-height:240px;overflow:auto;">
-        ${sorted.length ? sorted.map(t=>{
-          const idx = p.transferHistory.indexOf(t);
-          return `<div class="obs-item">
+        ${sorted.length ? sorted.map(({t,i})=>`
+          <div class="obs-item"${editIdx===i?' style="background:#FBF6E9;border-radius:8px;"':''}>
             <div class="toolbar" style="margin-bottom:2px;">
-              <strong>${esc(t.club)}</strong>
-              <button class="link-btn th-delete-btn" data-idx="${idx}" style="color:var(--clay-dark);font-size:11px;">usuń</button>
+              <strong>${esc(t.fromClub||t.club||'—')} &rarr; ${esc(t.toClub||'—')}</strong>
+              <span style="display:flex;gap:8px;">
+                <button class="link-btn th-edit-btn" data-idx="${i}" style="color:var(--gold-dark);font-size:11px;">✎ edytuj</button>
+                <button class="link-btn th-delete-btn" data-idx="${i}" style="color:var(--clay-dark);font-size:11px;">usuń</button>
+              </span>
             </div>
-            <div class="meta">${esc(t.from||'—')} &rarr; ${esc(t.to||'obecnie')}${t.type?' &middot; '+esc(t.type):''}${t.fee?' &middot; '+esc(t.fee):''}</div>
+            <div class="meta">${esc(t.from||'—')}${t.type?' &middot; '+esc(t.type):''}${t.fee?' &middot; '+esc(t.fee):''}</div>
             ${t.note?`<div style="font-size:12px;margin-top:3px;">${esc(t.note)}</div>`:''}
-          </div>`;
-        }).join('') : '<div class="empty">Brak wpisów — dodaj pierwszy poniżej.</div>'}
+          </div>`).join('') : '<div class="empty">Brak wpisów — dodaj pierwszy poniżej.</div>'}
       </div>
-      <div style="border-top:1px solid #E3DECE;margin-bottom:14px;padding-top:12px;">
-        <label class="field" style="display:block;margin-bottom:8px;">Dodaj wpis</label>
+      <div style="border-top:1px solid #E3DECE;margin-bottom:14px;padding-top:12px;${editing?'background:#FBF6E9;border-radius:8px;padding:12px;':''}">
+        <label class="field" style="display:block;margin-bottom:8px;">${editing?'✎ Edytuj wpis':'Dodaj wpis'}</label>
         <div class="grid grid-2">
-          <div class="field-wrap"><label class="field">Klub</label><input id="th-club" placeholder="np. Podhale Nowy Targ"></div>
-          <div class="field-wrap"><label class="field">Typ</label>
-            <select id="th-type"><option value="">— wybierz —</option>${TRANSFER_HISTORY_TYPES.map(t=>`<option>${esc(t)}</option>`).join('')}</select>
+          <div class="field-wrap"><label class="field">Z klubu</label><input id="th-from-club" placeholder="np. Podhale Nowy Targ" value="${editing?esc(editing.fromClub||editing.club||''):''}"></div>
+          <div class="field-wrap"><label class="field">Do klubu</label><input id="th-to-club" placeholder="np. Cracovia" value="${editing?esc(editing.toClub||''):''}"></div>
+        </div>
+        <div class="grid grid-2">
+          <div class="field-wrap"><label class="field">Typ transferu</label>
+            <select id="th-type"><option value="">— wybierz —</option>${typeOpts}</select>
           </div>
+          <div class="field-wrap"><label class="field">Rok / sezon</label><input id="th-from" placeholder="np. 2024 / 2023-24" value="${editing?esc(editing.from||''):''}"></div>
         </div>
-        <div class="grid grid-2">
-          <div class="field-wrap"><label class="field">Od (np. rok/sezon)</label><input id="th-from" placeholder="np. 2022"></div>
-          <div class="field-wrap"><label class="field">Do (puste = obecnie)</label><input id="th-to" placeholder="np. 2024"></div>
-        </div>
-        <div class="field-wrap"><label class="field">Kwota transferu (opcjonalnie)</label><input id="th-fee" placeholder="np. 50 tys. € / wolny transfer"></div>
-        <div class="field-wrap"><label class="field">Notatka</label><input id="th-note" placeholder="Dodatkowe informacje"></div>
+        <div class="field-wrap"><label class="field">Kwota transferu (opcjonalnie)</label><input id="th-fee" placeholder="np. 50 tys. € / wolny transfer" value="${editing?esc(editing.fee||''):''}"></div>
+        <div class="field-wrap"><label class="field">Notatka</label><input id="th-note" placeholder="Dodatkowe informacje" value="${editing?esc(editing.note||''):''}"></div>
       </div>
       <div class="modal-actions">
         <button class="secondary" data-action="close-modal">Zamknij</button>
-        <button class="gold" data-action="add-transfer-history">+ Dodaj wpis</button>
+        ${editing?'<button class="secondary" data-action="th-cancel-edit">Anuluj edycję</button>':''}
+        <button class="gold" data-action="save-transfer-history">${editing?'Zapisz zmiany':'+ Dodaj wpis'}</button>
       </div>
     </div>`;
     wire();
@@ -5496,24 +5504,30 @@ function openTransferHistoryModal(playerId){
 
   function wire(){
     overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=closeAndRefresh);
+    overlay.querySelectorAll('.th-edit-btn').forEach(b=>b.onclick=()=>{ editIdx = Number(b.dataset.idx); draw(); });
+    overlay.querySelectorAll('[data-action="th-cancel-edit"]').forEach(b=>b.onclick=()=>{ editIdx = null; draw(); });
     overlay.querySelectorAll('.th-delete-btn').forEach(b=>b.onclick=async()=>{
-      p.transferHistory.splice(Number(b.dataset.idx), 1);
+      const idx = Number(b.dataset.idx);
+      p.transferHistory.splice(idx, 1);
+      if(editIdx===idx) editIdx = null; else if(editIdx!=null && editIdx>idx) editIdx--;
       await savePlayers();
       draw();
     });
-    overlay.querySelectorAll('[data-action="add-transfer-history"]').forEach(b=>b.onclick=async()=>{
-      const club = overlay.querySelector('#th-club').value.trim();
-      if(!club){ overlay.querySelector('#th-club').focus(); return; }
-      p.transferHistory.push({
-        id: uid('TH'),
-        club,
+    overlay.querySelectorAll('[data-action="save-transfer-history"]').forEach(b=>b.onclick=async()=>{
+      const fromClub = overlay.querySelector('#th-from-club').value.trim();
+      const toClub = overlay.querySelector('#th-to-club').value.trim();
+      if(!fromClub && !toClub){ overlay.querySelector('#th-from-club').focus(); return; }
+      const entry = {
+        fromClub, toClub,
         from: overlay.querySelector('#th-from').value.trim(),
-        to: overlay.querySelector('#th-to').value.trim(),
         type: overlay.querySelector('#th-type').value,
         fee: overlay.querySelector('#th-fee').value.trim(),
         note: overlay.querySelector('#th-note').value.trim(),
-      });
-      await savePlayers();
+      };
+      if(editIdx!=null){ Object.assign(p.transferHistory[editIdx], entry); editIdx = null; }
+      else { p.transferHistory.push(Object.assign({id: uid('TH')}, entry)); }
+      const ok = await savePlayers();
+      if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
       draw();
     });
   }

@@ -203,6 +203,10 @@ tr:hover td{background:#FBF9F2;}
 .pmr-name{font-size:9px;font-weight:700;color:var(--ink);overflow:hidden;text-overflow:ellipsis;}
 .pmr-year{font-size:7.5px;color:var(--ink-soft);font-weight:600;margin-left:auto;padding-left:2px;}
 .pmr-empty{justify-content:center;color:var(--ink-soft);font-size:10px;padding:3px;}
+/* Status na mapie rankingowej: „Do transferu" = złote podświetlenie; „Na Testy"/inne = bez koloru. */
+.pos-marker-row.pmr-transfer{background:linear-gradient(180deg,#FBF0CE 0%,#F3E1A6 100%);border-radius:4px;box-shadow:inset 0 0 0 1px var(--gold);}
+.pos-marker-row.pmr-transfer .pmr-name{color:#6B5312;font-weight:800;}
+.pos-marker-row.pmr-transfer .pmr-year{color:#8A6D1E;}
 .pitch-wrap-outer{width:100%;}
 @media (max-width:780px){
   .pitch-wrap-outer{width:calc(100% + 32px);margin-left:-16px;padding:0 6px;box-sizing:border-box;}
