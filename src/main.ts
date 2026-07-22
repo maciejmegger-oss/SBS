@@ -1922,6 +1922,33 @@ async function saveContacts(){ return robustStorageSet('scouting:contacts', JSON
 async function saveSettings(){ return robustStorageSet('scouting:settings', JSON.stringify(DB.settings)); }
 async function savePositionMapAssignments(){ return robustStorageSet('scouting:position_map_assignments', JSON.stringify(positionMapAssignments)); }
 
+// JAWNE, punktowe usunięcie jednego rekordu z bazy. Zapisy (save*) NIGDY nie kasują — kasujemy tylko
+// tutaj, gdy użytkownik świadomie kliknie "usuń". Ponawiamy do 3 razy; przy porażce pokazujemy baner
+// (jak przy zapisach) i zwracamy false, żeby wołający mógł cofnąć zmianę w UI zamiast udawać sukces.
+async function robustStorageDelete(key, id){
+  let lastError = null;
+  for(let attempt = 1; attempt <= 3; attempt++){
+    try{
+      await storage.deleteItem(key, id);
+      if(lastSaveFailure && lastSaveFailure.key === key){
+        lastSaveFailure = null;
+        try{ renderNav(); }catch(e){ console.error('renderNav after delete-success failed (non-fatal):', e); }
+      }
+      return true;
+    }catch(e){ lastError = e; }
+    if(attempt < 3) await new Promise(r=>setTimeout(r, 200 * attempt));
+  }
+  console.error('Usunięcie "' + key + '/' + id + '" nie powiodło się po 3 próbach:', lastError);
+  lastSaveFailure = {key, time: new Date().toLocaleTimeString('pl-PL')};
+  try{ renderNav(); }catch(e){ console.error('renderNav after delete-failure failed (non-fatal):', e); }
+  return false;
+}
+async function deletePlayerRecord(id){ return robustStorageDelete('scouting:players', id); }
+async function deleteClubRecord(id){ return robustStorageDelete('scouting:clubs', id); }
+async function deleteObservationRecord(id){ return robustStorageDelete('scouting:observations', id); }
+async function deleteTalentRecord(id){ return robustStorageDelete('scouting:talents', id); }
+async function deleteContactRecord(id){ return robustStorageDelete('scouting:contacts', id); }
+
 function clubName(id){ const c = DB.clubs.find(x=>x.id===id); return c? c.name : "—"; }
 function clubRegion(id){ const c = DB.clubs.find(x=>x.id===id); return c? c.region : ""; }
 function clubLeague(id){ const c = DB.clubs.find(x=>x.id===id); return c? c.league : ""; }
@@ -4484,9 +4511,11 @@ function attachHandlers(){
   });
   main.querySelectorAll('[data-action="delete-player"]').forEach(b=>b.onclick=async()=>{
     if(confirm('Usunąć tego zawodnika i jego obserwacje?')){
-      DB.players = DB.players.filter(p=>p.id!==b.dataset.id);
-      DB.observations = DB.observations.filter(o=>o.playerId!==b.dataset.id);
-      await savePlayers(); await saveObservations();
+      const id = b.dataset.id;
+      const ok = await deletePlayerRecord(id);   // usuwa też obserwacje w bazie (kaskada FK)
+      if(!ok){ alert('Nie udało się usunąć zawodnika — sprawdź baner u góry strony. Nic nie usunięto.'); return; }
+      DB.players = DB.players.filter(p=>p.id!==id);
+      DB.observations = DB.observations.filter(o=>o.playerId!==id);
       viewingPlayerId=null; render();
     }
   });
@@ -4540,8 +4569,9 @@ function attachHandlers(){
     }
   });
   main.querySelectorAll('.talent-remove-btn').forEach(b=>b.onclick=async()=>{
+    const ok = await deleteTalentRecord(b.dataset.id);
+    if(!ok){ alert('Nie udało się usunąć — sprawdź baner u góry strony. Nic nie usunięto.'); return; }
     DB.talents = DB.talents.filter(t=>t.id!==b.dataset.id);
-    await saveTalents();
     render();
   });
   main.querySelectorAll('[data-action="talent-promote"]').forEach(b=>b.onclick=()=>{
@@ -4572,8 +4602,9 @@ function attachHandlers(){
     }
   };
   main.querySelectorAll('.contact-remove-btn').forEach(b=>b.onclick=async()=>{
+    const ok = await deleteContactRecord(b.dataset.id);
+    if(!ok){ alert('Nie udało się usunąć — sprawdź baner u góry strony. Nic nie usunięto.'); return; }
     DB.contacts = DB.contacts.filter(c=>c.id!==b.dataset.id);
-    await saveContacts();
     render();
   });
   main.querySelectorAll('[data-action="contacts-download-template"]').forEach(b=>b.onclick=()=>{
@@ -4638,9 +4669,11 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="edit-club"]').forEach(b=>b.onclick=()=>openClubModal(b.dataset.id));
   main.querySelectorAll('[data-action="delete-club"]').forEach(b=>b.onclick=async()=>{
     if(confirm('Usunąć ten klub?')){
+      const ok = await deleteClubRecord(b.dataset.id);
+      if(!ok){ alert('Nie udało się usunąć klubu — sprawdź baner u góry strony. Nic nie usunięto.'); return; }
       DB.clubs = DB.clubs.filter(c=>c.id!==b.dataset.id);
       viewingClubId = null;
-      await saveClubs(); render();
+      render();
     }
   });
   main.querySelectorAll('[data-action="browse-top"]').forEach(b=>b.onclick=()=>{
@@ -4733,9 +4766,10 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="cancel-edit-obs"]').forEach(b=>b.onclick=()=>{ editingObsId = null; render(); });
   main.querySelectorAll('[data-action="delete-obs"]').forEach(b=>b.onclick=async()=>{
     if(!confirm('Usunąć tę obserwację?')) return;
+    const ok = await deleteObservationRecord(b.dataset.id);
+    if(!ok){ alert('Nie udało się usunąć obserwacji — sprawdź baner u góry strony. Nic nie usunięto.'); return; }
     DB.observations = DB.observations.filter(o=>o.id!==b.dataset.id);
     if(editingObsId===b.dataset.id) editingObsId = null;
-    await saveObservations();
     render();
   });
 
@@ -6037,8 +6071,10 @@ function wireLastModal(){
     }
     await savePlayers();
     if(promotingTalentId){
-      DB.talents = DB.talents.filter(t=>t.id!==promotingTalentId);
-      await saveTalents();
+      const talentId = promotingTalentId;
+      if(await deleteTalentRecord(talentId)){
+        DB.talents = DB.talents.filter(t=>t.id!==talentId);
+      }
       promotingTalentId = null;
     }
     ov.remove(); editingPlayerId=null; render();

@@ -42,10 +42,21 @@ const objFromRow = (row: Record<string, unknown>): Record<string, unknown> => {
   return obj;
 };
 
+// Supabase/PostgREST zwraca maksymalnie 1000 wierszy na żądanie. Przy >1000 zawodników brakująca
+// paginacja powodowała, że aplikacja wczytywała tylko część bazy (migawka niepełna) — a to, w parze
+// z dawnym "usuwaniem różnicy" w setCollection, kasowało nadmiarowych zawodników przy kolejnym zapisie.
+// Dlatego wczytujemy WSZYSTKIE wiersze stronami po 1000, aż strona wróci niepełna.
 async function getCollection(table: string): Promise<string> {
-  const { data, error } = await sb.from(table).select("*");
-  if (error) throw new Error(error.message);
-  return JSON.stringify((data || []).map(objFromRow));
+  const PAGE = 1000;
+  const all: Record<string, unknown>[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await sb.from(table).select("*").range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    const batch = data || [];
+    all.push(...batch);
+    if (batch.length < PAGE) break;
+  }
+  return JSON.stringify(all.map(objFromRow));
 }
 
 async function setCollection(table: string, jsonValue: string): Promise<void> {
@@ -75,18 +86,20 @@ async function setCollection(table: string, jsonValue: string): Promise<void> {
       });
     }
   }
-  // Usuń z bazy rekordy, których już nie ma w bieżącej tablicy (np. usunięty zawodnik).
-  const currentIds = items.map((it) => it.id).filter(Boolean);
-  const { data: existing, error: exErr } = await sb.from(table).select("id");
-  if (exErr) throw new Error(exErr.message);
-  const toDelete = (existing || [])
-    .map((r: { id: string }) => r.id)
-    .filter((id: string) => !currentIds.includes(id));
-  for (let i = 0; i < toDelete.length; i += BATCH_SIZE) {
-    const chunk = toDelete.slice(i, i + BATCH_SIZE);
-    const { error } = await sb.from(table).delete().in("id", chunk);
-    if (error) throw new Error("Usuwanie: " + error.message);
-  }
+  // UWAGA: setCollection TYLKO dopisuje/aktualizuje (upsert) — nigdy nie usuwa rekordów, których
+  // nie ma w przekazanej tablicy. Wcześniej robiła to przez "różnicę" (usuń z bazy to, czego nie
+  // ma w bieżącym stanie), co jest ZASADNICZO niebezpieczne: stan w pamięci przeglądarki (DB.*)
+  // to migawka z chwili wczytania strony. Jeśli w międzyczasie ktokolwiek inny (drugi scout,
+  // inna karta, import zrobiony bezpośrednio w Supabase) dopisał rekordy do tej samej tabeli,
+  // to każdy KOLEJNY zapis z tej "starej" karty — nawet dodanie jednego nowego zawodnika czy
+  // zmiana jednego pola — kasował WSZYSTKO, czego nie było w tej starej migawce. Dokładnie to
+  // ucięło zawodników z Ekstraklasy/II ligi/Korony Kielce. Usuwanie pojedynczego rekordu musi
+  // być JAWNE — patrz deleteCollectionItem() / storage.deleteItem() poniżej.
+}
+
+async function deleteCollectionItem(table: string, id: string): Promise<void> {
+  const { error } = await sb.from(table).delete().eq("id", id);
+  if (error) throw new Error(error.message);
 }
 
 async function getClubCrests(): Promise<string> {
@@ -149,5 +162,14 @@ export const storage = {
     const { error } = await sb.from("sbs_kv").delete().eq("key", key);
     if (error) throw new Error(error.message);
     return { key, deleted: true, shared };
+  },
+
+  // JAWNE usunięcie POJEDYNCZEGO rekordu z kolekcji (np. gdy użytkownik kliknie "usuń" przy
+  // zawodniku/klubie/obserwacji). To jedyna droga usuwania rekordów — zapisy (set) nigdy nie kasują.
+  async deleteItem(key: string, id: string): Promise<{ key: string; id: string; deleted: true }> {
+    const table = COLLECTION_TABLES[key];
+    if (!table) throw new Error("Kolekcja bez tabeli: " + key);
+    await deleteCollectionItem(table, id);
+    return { key, id, deleted: true };
   },
 };
