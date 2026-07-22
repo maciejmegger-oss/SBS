@@ -2144,6 +2144,14 @@ function renderNav(){
 }
 
 // ---------- RENDER ROOT ----------
+// Przewiń widok na samą górę (np. po otwarciu profilu zawodnika — żeby widok zaczynał się od góry,
+// a nie od miejsca, w którym była lista). Czyścimy wszystkie prawdopodobne kontenery przewijania.
+function scrollViewTop(){
+  try{ window.scrollTo(0,0); }catch(e){}
+  try{ document.documentElement.scrollTop = 0; document.body.scrollTop = 0; }catch(e){}
+  const m = document.getElementById('main');
+  if(m){ m.scrollTop = 0; let el = m.parentElement; while(el){ el.scrollTop = 0; el = el.parentElement; } }
+}
 function render(){
   const main = document.getElementById('main');
   // Zachowaj pozycję kursora w polu tekstowym, jeśli jakieś jest aktywne — pełne przebudowanie innerHTML
@@ -2946,7 +2954,10 @@ function viewClubDetail(id){
       <td>${esc(p.position)}</td>
       <td>${p.status? `<span class="badge ${STATUS_CLASS[p.status]||'new'}">${esc(p.status)}</span>` : '—'}</td>
       <td>${a? fmt1(a.overall):"—"}</td>
-      <td><button class="link-btn" data-action="view-player" data-id="${p.id}">Zobacz</button></td>
+      <td style="white-space:nowrap;">
+        <button class="link-btn" data-action="add-to-monitoring" data-id="${p.id}" style="color:var(--gold-dark);">${p.monitored?'✓ Monitoring':'+ Monitoring'}</button>
+        <button class="link-btn" data-action="view-player" data-id="${p.id}" style="margin-left:10px;">Zobacz</button>
+      </td>
     </tr>`;
   }).join('');
 
@@ -3668,35 +3679,41 @@ function viewTalent(){
   <h2 class="view-title">Talent</h2>
   <p class="view-sub">Lista młodych zawodników do szybkiego dodania — zaimportuj z arkusza, wpisz ręcznie, a potem kliknij "pełny profil", żeby uzupełnić wszystkie dane i dodać do głównej bazy.</p>
 
-  <div class="card" style="max-width:560px;">
-    <h4 style="margin-top:0;color:var(--pitch);">Import z Excela / CSV</h4>
-    <p class="note" style="margin-top:-4px;">Wyślij mi zdjęcie artykułu na czacie — odczytam z niego dane i przygotuję plik Excel gotowy do zaimportowania tutaj. Oczekiwane kolumny: <strong>Imię, Nazwisko, Rocznik, Klub</strong> (kolejność dowolna).</p>
-    <div class="modal-actions" style="justify-content:flex-start;margin-top:0;margin-bottom:12px;">
-      <button class="secondary" data-action="talent-download-template">Pobierz szablon Excel</button>
-    </div>
-    <div class="field-wrap">
-      <input type="file" id="talent-import-input" accept=".xlsx,.xls,.csv">
-      <div id="talent-import-status" class="note" style="margin-top:6px;"></div>
-    </div>
-  </div>
+  <div class="reports-layout">
+    <div>
+      <div class="card">
+        <h4 style="margin-top:0;color:var(--pitch);">Import z Excela / CSV</h4>
+        <p class="note" style="margin-top:-4px;">Wyślij mi zdjęcie artykułu na czacie — odczytam z niego dane i przygotuję plik Excel gotowy do zaimportowania tutaj. Oczekiwane kolumny: <strong>Imię, Nazwisko, Rocznik, Klub</strong> (kolejność dowolna).</p>
+        <div class="modal-actions" style="justify-content:flex-start;margin-top:0;margin-bottom:12px;">
+          <button class="secondary" data-action="talent-download-template">Pobierz szablon Excel</button>
+        </div>
+        <div class="field-wrap">
+          <input type="file" id="talent-import-input" accept=".xlsx,.xls,.csv">
+          <div id="talent-import-status" class="note" style="margin-top:6px;"></div>
+        </div>
+      </div>
 
-  <h3 style="margin-top:20px;color:var(--pitch);font-family:'Barlow Condensed',sans-serif;">Dodaj ręcznie</h3>
-  <div class="card" style="max-width:560px;">
-    <div class="grid grid-2">
-      <div class="field-wrap"><label class="field">Imię</label><input id="talent-manual-first"></div>
-      <div class="field-wrap"><label class="field">Nazwisko</label><input id="talent-manual-last"></div>
-    </div>
-    <div class="grid grid-2">
-      <div class="field-wrap"><label class="field">Rocznik</label><input type="number" id="talent-manual-year" placeholder="np. 2010"></div>
-      <div class="field-wrap"><label class="field">Klub</label><input id="talent-manual-club"></div>
+      <h3 style="margin-top:20px;color:var(--pitch);font-family:'Barlow Condensed',sans-serif;">Dodaj ręcznie</h3>
+      <div class="card">
+        <div class="grid grid-2">
+          <div class="field-wrap"><label class="field">Imię</label><input id="talent-manual-first"></div>
+          <div class="field-wrap"><label class="field">Nazwisko</label><input id="talent-manual-last"></div>
+        </div>
+        <div class="grid grid-2">
+          <div class="field-wrap"><label class="field">Rocznik</label><input type="number" id="talent-manual-year" placeholder="np. 2010"></div>
+          <div class="field-wrap"><label class="field">Klub</label><input id="talent-manual-club"></div>
+        </div>
+        <div class="modal-actions" style="justify-content:flex-start;">
+          <button class="gold" data-action="talent-add-manual">Dodaj do listy</button>
+        </div>
+      </div>
     </div>
 
-    <div class="modal-actions" style="justify-content:flex-start;">
-      <button class="gold" data-action="talent-add-manual">Dodaj do listy</button>
-    </div>
-  </div>
-  <h3 style="margin-top:20px;color:var(--pitch);font-family:'Barlow Condensed',sans-serif;">Lista talentów (${rows.length})</h3>
-  <div class="card" style="max-width:640px;">${rowsHtml}</div>`;
+    <aside class="reports-aside">
+      <h3 class="reports-aside-title">Lista talentów <span class="reports-count">${rows.length}</span></h3>
+      <div class="card reports-list">${rowsHtml}</div>
+    </aside>
+  </div>`;
 }
 
 let contactSearchQuery = '';
@@ -3768,7 +3785,14 @@ function viewContacts(){
       (c.email||'').toLowerCase().includes(q)
     );
   }
-  list.sort((a,b)=> (a.club||a.name||'').localeCompare(b.club||b.name||''));
+  // Sortuj alfabetycznie wg nazwy klubu; kontakty BEZ nazwy klubu lądują na końcu listy.
+  list.sort((a,b)=>{
+    const ca = (a.club||a.name||'').trim(), cb = (b.club||b.name||'').trim();
+    if(!ca && !cb) return (a.email||'').localeCompare(b.email||'');
+    if(!ca) return 1;   // a bez klubu -> niżej
+    if(!cb) return -1;  // b bez klubu -> niżej
+    return ca.localeCompare(cb, 'pl');
+  });
 
   return `
   <h2 class="view-title">Kontakty</h2>
@@ -4053,14 +4077,27 @@ function viewObservedList(){
   </div>`;
 }
 
+// Kolor wiersza wg statusu (jak w raporcie): Do transferu = złoto, reszta wg statusu.
+const COMMITTEE_ROW_CLASS = {
+  'Do transferu':'crow-transfer', 'Na Testy':'crow-trial', 'Rekomendowany':'crow-reco',
+  'Z polecenia':'crow-reco', 'Do Obserwacji':'crow-watching', 'Odrzucony':'crow-rejected'
+};
 function viewTransferCommittee(){
-  const rows = DB.players.filter(p => p.status === 'Do transferu');
+  // Pokazuj wszystkich zawodników z nadanym statusem. „Do transferu" zawsze na górze i alfabetycznie,
+  // każdy inny status niżej (też alfabetycznie). Sort działa na każdym renderze, więc po zmianie
+  // statusu lista sama się przekłada.
+  const rows = DB.players.filter(p => p.status && p.status.trim())
+    .sort((a,b)=> ((a.status==='Do transferu'?0:1)-(b.status==='Do transferu'?0:1))
+      || (a.lastName||'').localeCompare(b.lastName||'','pl')
+      || (a.firstName||'').localeCompare(b.firstName||'','pl'));
   const trs = rows.map(p=>{
     const a = playerAvg(p.id);
-    return `<tr data-id="${p.id}">
+    const rowCls = COMMITTEE_ROW_CLASS[p.status] || '';
+    return `<tr data-id="${p.id}" class="${rowCls}">
       <td><strong data-action="view-player" data-id="${p.id}" style="cursor:pointer;">${esc(p.lastName)} ${esc(p.firstName)}</strong></td>
       <td>${esc(clubName(p.clubId))}</td>
       <td>${esc(p.position||'—')}</td>
+      <td><span class="badge ${STATUS_CLASS[p.status]||'new'}">${esc(p.status)}</span></td>
       <td>${a? fmt1(a.overall) : "—"}</td>
       <td>
         <select class="committee-decision-select" data-id="${p.id}">
@@ -4077,11 +4114,11 @@ function viewTransferCommittee(){
   }).join('');
   return `
   <h2 class="view-title">Komitet Transferowy</h2>
-  <p class="view-sub">Zawodnicy oznaczeni jako "Do transferu" — miejsce na finalną decyzję komitetu.</p>
+  <p class="view-sub">Zawodnicy z nadanym statusem — „Do transferu" (złoto) na górze, reszta niżej; wszystko alfabetycznie. Miejsce na finalną decyzję komitetu.</p>
   <div class="card" style="padding:0;overflow:auto;">
     <table>
-      <thead><tr><th>Zawodnik</th><th>Klub</th><th>Pozycja</th><th>Śr. ocena</th><th>Decyzja komitetu</th><th>Notatka</th><th>Raporty</th><th>Analiza</th></tr></thead>
-      <tbody>${trs || `<tr><td colspan="8"><div class="empty">Brak zawodników ze statusem "Do transferu" — zmień status zawodnika w jego profilu, aby pojawił się tutaj.</div></td></tr>`}</tbody>
+      <thead><tr><th>Zawodnik</th><th>Klub</th><th>Pozycja</th><th>Status</th><th>Śr. ocena</th><th>Decyzja komitetu</th><th>Notatka</th><th>Raporty</th><th>Analiza</th></tr></thead>
+      <tbody>${trs || `<tr><td colspan="9"><div class="empty">Brak zawodników z nadanym statusem — ustaw status zawodnika w jego profilu, aby pojawił się tutaj.</div></td></tr>`}</tbody>
     </table>
   </div>`;
 }
@@ -4186,7 +4223,7 @@ function openPlayerAnalysisModal(playerId){
 const MONITORING_STATUSES = ['Do Obserwacji','Na Testy','Do transferu','Z polecenia'];
 function viewMonitoring(){
   // Pokazuj zawodników dodanych ręcznie ORAZ tych z decyzją statusu z raportu (pierwsze cztery opcje).
-  let rows = DB.players.filter(p => p.monitored || p.source==='manual' || MONITORING_STATUSES.includes(p.status)).map(p=>{
+  let rows = DB.players.filter(p => (p.monitored || p.source==='manual' || MONITORING_STATUSES.includes(p.status)) && !p.watchlistRemoved).map(p=>{
     const a = playerAvg(p.id);
     const ds = a? daysSince(a.last.date) : null;
     let priority = "Brak obserwacji";
@@ -4205,6 +4242,7 @@ function viewMonitoring(){
     const pillClass = priority==="Pilne"?"pill-urgent": priority==="Top talent"?"pill-top":"pill-ok";
     return `<tr>
       <td><strong>${esc(p.lastName)} ${esc(p.firstName)}</strong></td>
+      <td>${p.birthYear||"—"}${isYouthPlayer(p)?youthBadge():''}</td>
       <td>${esc(clubName(p.clubId))}</td>
       <td>${esc(clubRegion(p.clubId))}</td>
       <td>${a? a.count : 0}</td>
@@ -4214,7 +4252,8 @@ function viewMonitoring(){
       <td><span class="badge ${pillClass}" style="border-radius:6px;">${priority}</span></td>
       <td style="white-space:nowrap;">
         <button class="link-btn" data-action="monitoring-plan-obs" data-id="${p.id}" style="color:var(--gold-dark);">📅 Zaplanuj obserwację</button>
-        <button class="link-btn" data-action="view-player" data-id="${p.id}">Zobacz</button>
+        <button class="link-btn" data-action="view-player" data-id="${p.id}" style="margin-left:8px;">Zobacz</button>
+        <button class="link-btn" data-action="monitoring-remove" data-id="${p.id}" style="color:var(--clay-dark);margin-left:8px;">Usuń</button>
       </td>
     </tr>`;
   }).join('');
@@ -4223,8 +4262,8 @@ function viewMonitoring(){
   <p class="view-sub">Automatyczne zestawienie — kto wymaga ponownej obserwacji, kto jest top talentem. Pokazuje tylko zawodników dodanych ręcznie przez Ciebie (nie masowe importy składów).</p>
   <div class="card" style="padding:0;overflow:auto;">
     <table>
-      <thead><tr><th>Zawodnik</th><th>Klub</th><th>Region</th><th>Obs.</th><th>Śr. ocena</th><th>Ostatnia obs.</th><th>Dni temu</th><th>Priorytet</th><th></th></tr></thead>
-      <tbody>${trs || `<tr><td colspan="9"><div class="empty">Brak ręcznie dodanych zawodników — ci z masowych importów składów tu się nie pokazują. Dodaj zawodnika przez "Zawodnicy → Dodaj zawodnika", aby pojawił się na tej liście.</div></td></tr>`}</tbody>
+      <thead><tr><th>Zawodnik</th><th>Rocznik</th><th>Klub</th><th>Region</th><th>Obs.</th><th>Śr. ocena</th><th>Ostatnia obs.</th><th>Dni temu</th><th>Priorytet</th><th></th></tr></thead>
+      <tbody>${trs || `<tr><td colspan="10"><div class="empty">Brak ręcznie dodanych zawodników — ci z masowych importów składów tu się nie pokazują. Dodaj zawodnika przez "Zawodnicy → Dodaj zawodnika", aby pojawił się na tej liście.</div></td></tr>`}</tbody>
     </table>
   </div>`;
 }
@@ -4273,7 +4312,6 @@ function openPlayerModal(id, presetClubId, prefillData){
   const p = id ? DB.players.find(x=>x.id===id) : (prefillData || null);
   const isNew = !id;
   const selectedClubId = (id && p) ? p.clubId : (presetClubId||"");
-  const clubOptions = DB.clubs.map(c=>`<option value="${c.id}" ${selectedClubId===c.id?'selected':''}>${esc(c.name)}</option>`).join('');
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
@@ -4311,10 +4349,14 @@ function openPlayerModal(id, presetClubId, prefillData){
       <button type="button" class="secondary" data-action="open-tm-profile">↗ Otwórz profil Transfermarkt (sprawdź aktualne statystyki)</button>
     </div>
     <div class="field-wrap">
-      <label class="field">Klub (III liga i niżej)</label>
+      <label class="field">Klub</label>
       <div style="display:flex;align-items:center;gap:10px;">
         <span id="pm-crest-preview">${crestImg(selectedClubId?clubCrest(selectedClubId):null,'lg')}</span>
-        <select id="pm-club" style="flex:1;"><option value="">— brak —</option>${clubOptions}</select>
+        <div class="club-combo" style="flex:1;">
+          <input type="hidden" id="pm-club" value="${esc(selectedClubId||'')}">
+          <input type="text" id="pm-club-search" class="club-combo-input" autocomplete="off" placeholder="Zacznij pisać nazwę klubu…" value="${selectedClubId?esc(clubName(selectedClubId)):''}">
+          <div class="club-combo-list" id="pm-club-list"></div>
+        </div>
       </div>
     </div>
     <div class="grid grid-2">
@@ -4517,7 +4559,7 @@ function attachHandlers(){
 
   main.querySelectorAll('[data-action="add-player"]').forEach(b=>b.onclick=()=>openPlayerModal(null));
   main.querySelectorAll('[data-action="edit-player"]').forEach(b=>b.onclick=()=>openPlayerModal(b.dataset.id));
-  main.querySelectorAll('[data-action="view-player"]').forEach(b=>b.onclick=()=>{viewingPlayerId=b.dataset.id; currentView='players'; render();});
+  main.querySelectorAll('[data-action="view-player"]').forEach(b=>b.onclick=()=>{viewingPlayerId=b.dataset.id; currentView='players'; render(); scrollViewTop();});
   // Przycisk "Monitoring" w liście zawodników — od razu dodaje/usuwa zawodnika z zakładki Monitoring.
   main.querySelectorAll('[data-action="monitoring-plan-obs"]').forEach(b=>b.onclick=()=>{
     obsPreselectPlayerId = b.dataset.id;
@@ -4528,7 +4570,18 @@ function attachHandlers(){
     const pl = DB.players.find(x=>x.id===b.dataset.id);
     if(!pl) return;
     pl.monitored = !pl.monitored;
+    if(pl.monitored) pl.watchlistRemoved = false;  // ponowne dodanie cofa wcześniejsze "Usuń"
     render();                 // natychmiastowy feedback (etykieta ✓/+), zapis leci w tle
+    savePlayers();
+  });
+  // Usunięcie zawodnika z listy Monitoring (nie kasuje zawodnika z bazy — tylko z watchlisty).
+  main.querySelectorAll('[data-action="monitoring-remove"]').forEach(b=>b.onclick=async()=>{
+    const pl = DB.players.find(x=>x.id===b.dataset.id);
+    if(!pl) return;
+    if(!confirm('Usunąć tego zawodnika z listy Monitoring? (zawodnik zostaje w bazie)')) return;
+    pl.watchlistRemoved = true;
+    pl.monitored = false;
+    render();
     savePlayers();
   });
   main.querySelectorAll('[data-action="back-players"]').forEach(b=>b.onclick=()=>{viewingPlayerId=null; render();});
@@ -4656,8 +4709,10 @@ function attachHandlers(){
   });
   const contactSearchInput = main.querySelector('#contact-search');
   if(contactSearchInput) contactSearchInput.oninput = ()=>{ contactSearchQuery = contactSearchInput.value; render(); };
-  main.querySelectorAll('.contact-inline-input').forEach(inp=>inp.onchange = ()=>{
-    updateContactField(inp.dataset.id, inp.dataset.field, inp.value.trim());
+  main.querySelectorAll('.contact-inline-input').forEach(inp=>inp.onchange = async ()=>{
+    await updateContactField(inp.dataset.id, inp.dataset.field, inp.value.trim());
+    // Po zmianie nazwy klubu przebuduj listę, żeby wiersz od razu trafił na właściwe miejsce (alfabet).
+    if(inp.dataset.field === 'club') render();
   });
   main.querySelectorAll('.committee-decision-select').forEach(sel=>sel.onchange = ()=>{
     updateCommitteeField(sel.dataset.id, 'committeeDecision', sel.value);
@@ -5686,7 +5741,7 @@ function openPositionSlotModal(league, formation, number){
     overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=closeAndRefresh);
     overlay.querySelectorAll('[data-action="posmodal-view-profile"]').forEach(b=>b.onclick=()=>{
       viewingPlayerId = b.dataset.id; currentView = 'players';
-      overlay.remove(); render();
+      overlay.remove(); render(); scrollViewTop();
     });
     overlay.querySelectorAll('.posmodal-remove-btn').forEach(b=>b.onclick=async()=>{
       positionMapAssignments[key] = currentIds().filter(id => id !== b.dataset.id);
@@ -5785,6 +5840,11 @@ async function generatePlayerPDF(playerId){
     .attr5-body{background:#F6F3EA;border:1px solid #E7E2D3;border-top:none;border-radius:0 0 6px 6px;
       padding:8px 8px;font-size:10.5px;color:#3C4640;line-height:1.4;flex:1;min-height:46px;}
     .attr5-empty{color:#B0AB9E;}
+    .metric-section-label{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#8A857A;font-weight:600;margin:10px 0 5px;}
+    .attr5-grid.metric4{grid-template-columns:repeat(4,1fr);}
+    .metric-num-body{background:#F6F3EA;border:1px solid #E7E2D3;border-top:none;border-radius:0 0 6px 6px;
+      padding:9px 8px;text-align:center;font-size:22px;font-weight:800;color:#16302A;line-height:1;
+      flex:1;display:flex;align-items:center;justify-content:center;min-height:30px;}
     .gauge-wrap{display:flex;flex-direction:column;align-items:center;gap:5px;}
     .gauge-ring{position:relative;}
     .gauge-ring svg{display:block;}
@@ -5863,8 +5923,8 @@ async function generatePlayerPDF(playerId){
   ${latestReport?`<div class="section" style="padding-top:0;">
     <div class="section-title">Raport taktyczny${latestReport.date?' — '+esc(latestReport.date):''}${latestReport.perspektywa?' &middot; perspektywa '+esc(latestReport.perspektywa):''}</div>
     ${latestReport.description?`<div class="notes-box" style="margin-bottom:10px;">${esc(latestReport.description)}</div>`:''}
-    ${(latestReport.phases&&Object.keys(latestReport.phases).length)?`<div style="margin-top:10px;font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#8A857A;font-weight:600;margin-bottom:5px;">Fazy gry (1-6)</div><div class="report-metric-grid">${REPORT_PHASES.map(f=>`<span class="report-metric-box"><span class="rmb-label">${esc(f.label)}</span><strong>${latestReport.phases[f.key]!=null?latestReport.phases[f.key]:'—'}</strong></span>`).join('')}</div>`:''}
-    ${(latestReport.setPieces&&Object.keys(latestReport.setPieces).length)?`<div style="margin-top:8px;font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#8A857A;font-weight:600;margin-bottom:5px;">Stałe fragmenty (1-6)</div><div class="report-metric-grid">${REPORT_SET_PIECES.map(f=>`<span class="report-metric-box"><span class="rmb-label">${esc(f.label)}</span><strong>${latestReport.setPieces[f.key]!=null?latestReport.setPieces[f.key]:'—'}</strong></span>`).join('')}</div>`:''}
+    ${(latestReport.phases&&Object.keys(latestReport.phases).length)?`<div class="metric-section-label">Fazy gry (1-6)</div><div class="attr5-grid metric4">${REPORT_PHASES.map(f=>`<div class="attr5-col"><div class="attr5-head"><span>${esc(f.label)}</span></div><div class="metric-num-body">${latestReport.phases[f.key]!=null?latestReport.phases[f.key]:'—'}</div></div>`).join('')}</div>`:''}
+    ${(latestReport.setPieces&&Object.keys(latestReport.setPieces).length)?`<div class="metric-section-label">Stałe fragmenty (1-6)</div><div class="attr5-grid metric4">${REPORT_SET_PIECES.map(f=>`<div class="attr5-col"><div class="attr5-head"><span>${esc(f.label)}</span></div><div class="metric-num-body">${latestReport.setPieces[f.key]!=null?latestReport.setPieces[f.key]:'—'}</div></div>`).join('')}</div>`:''}
     ${latestReport.setPieceComment?`<div class="notes-box" style="margin-top:10px;">${esc(latestReport.setPieceComment)}</div>`:''}
   </div>`:''}
 
@@ -6032,13 +6092,45 @@ function wireLastModal(){
   ov.addEventListener('click', e=>{ if(e.target===ov){ promotingTalentId=null; ov.remove(); } });
   ov.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=()=>{ promotingTalentId=null; ov.remove(); });
 
-  const clubSel = ov.querySelector('#pm-club');
-  if(clubSel){
-    clubSel.onchange = ()=>{
-      const wrap = ov.querySelector('#pm-crest-preview');
-      if(!wrap) return;
-      wrap.innerHTML = crestImg(clubCrest(clubSel.value),'lg');
-    };
+  // Wybór klubu jako pole z wyszukiwaniem: lista alfabetyczna, a wpisywanie kolejnych liter zawęża
+  // ją do pasujących klubów (bez uwzględniania wielkości liter i polskich znaków). Ukryte pole
+  // #pm-club trzyma wybrane id klubu (odczytywane przy zapisie — bez zmian w handlerze zapisu).
+  const clubHidden = ov.querySelector('#pm-club');
+  const clubSearch = ov.querySelector('#pm-club-search');
+  const clubList = ov.querySelector('#pm-club-list');
+  const crestWrap = ov.querySelector('#pm-crest-preview');
+  if(clubHidden && clubSearch && clubList){
+    const norm = s => (s||'').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+    const clubs = DB.clubs.slice().sort((a,b)=> (a.name||'').localeCompare(b.name||'','pl'));
+    function setClub(c){
+      clubHidden.value = c ? c.id : '';
+      clubSearch.value = c ? c.name : '';
+      if(crestWrap) crestWrap.innerHTML = crestImg(c?clubCrest(c.id):null,'lg');
+    }
+    function renderList(q){
+      const nq = norm(q);
+      const matches = (nq ? clubs.filter(c=>norm(c.name).includes(nq)) : clubs).slice(0,80);
+      clubList.innerHTML = matches.length ? matches.map(c=>{
+        const reg = (c.region||'').replace(' ZPN','');
+        const sub = [c.league, reg].filter(Boolean).join(' · ');
+        return `<div class="club-combo-item" data-id="${esc(c.id)}"><strong>${esc(c.name)}</strong>${sub?`<span class="club-combo-reg">${esc(sub)}</span>`:''}</div>`;
+      }).join('') : '<div class="club-combo-empty">Brak klubu pasującego do frazy.</div>';
+      clubList.style.display = 'block';
+      clubList.querySelectorAll('.club-combo-item').forEach(it=>it.onmousedown=(e)=>{
+        e.preventDefault(); // wybór przed zdarzeniem blur pola tekstowego
+        setClub(clubs.find(x=>x.id===it.dataset.id));
+        clubList.style.display = 'none';
+      });
+    }
+    clubSearch.oninput = ()=>renderList(clubSearch.value);
+    clubSearch.onfocus = ()=>renderList(clubSearch.value);
+    clubSearch.onblur = ()=>setTimeout(()=>{
+      clubList.style.display = 'none';
+      // uzgodnienie: dokładne trafienie w nazwę = wybór; inaczej przywróć aktualnie wybrany klub.
+      const exact = clubs.find(c=>norm(c.name)===norm(clubSearch.value));
+      if(exact) setClub(exact);
+      else setClub(clubs.find(c=>c.id===clubHidden.value) || null);
+    }, 150);
   }
 
   const openTmBtn = ov.querySelector('[data-action="open-tm-profile"]');

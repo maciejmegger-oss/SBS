@@ -50,7 +50,7 @@ const objFromRow = (row: Record<string, unknown>): Record<string, unknown> => {
 const PLAYER_EXT_FIELDS = [
   "assists", "instagramLink", "facebookLink", "kadraWojewodzka", "reprezentacja",
   "powolania", "opisKoncowy", "monitored", "transferHistory", "nationality",
-  "yellowCards", "redCards",
+  "yellowCards", "redCards", "watchlistRemoved",
 ];
 
 function packPlayerExt(item: Record<string, unknown>): Record<string, unknown> {

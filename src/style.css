@@ -314,18 +314,18 @@ tr:hover td{background:#FBF9F2;}
 @media(max-width:700px){ .report-metric-grid{grid-template-columns:repeat(2,1fr);} }
 
 /* Zakładka Raporty — formularz po lewej, boczna lista „Raporty" po prawej. */
-.reports-layout{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:22px;align-items:start;}
+.reports-layout{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:26px;align-items:start;}
 .reports-form-card{max-width:720px;}
-.reports-aside{position:sticky;top:12px;}
-.reports-aside-title{margin:0 0 2px;color:var(--pitch);font-family:'Barlow Condensed',sans-serif;font-size:22px;display:flex;align-items:center;gap:8px;}
+.reports-aside{position:sticky;top:12px;margin-top:-56px;}
+.reports-aside-title{margin:0 0 2px;color:var(--pitch);font-family:'Barlow Condensed',sans-serif;font-size:24px;display:flex;align-items:center;gap:8px;}
 .reports-count{background:var(--pitch);color:var(--gold);font-size:12px;font-weight:800;font-family:Inter,sans-serif;border-radius:20px;padding:1px 9px;}
 .reports-list{max-height:70vh;overflow:auto;padding:6px 10px;}
-.report-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 2px;border-bottom:1px solid #EFEADD;}
+.report-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:11px;align-items:center;padding:11px 4px;border-bottom:1px solid #EFEADD;}
 .report-row:last-child{border-bottom:none;}
 .report-row.editing{background:#FBF6E9;border-radius:8px;padding-left:6px;padding-right:6px;}
 .report-num{width:26px;height:26px;flex:0 0 auto;border-radius:50%;background:var(--pitch);color:var(--gold);font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center;}
 .report-row-body{min-width:0;}
-.report-row-body strong{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.report-row-body strong{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .report-row-body [data-action="view-player"]{cursor:pointer;}
 .report-row-body [data-action="view-player"]:hover{color:var(--gold-dark);text-decoration:underline;}
 .report-row-body .meta{font-size:11px;}
@@ -333,7 +333,15 @@ tr:hover td{background:#FBF9F2;}
 .report-row-actions button{padding:3px 7px;font-size:11px;line-height:1;}
 .danger-btn{background:#fff;border:1px solid #E3C9C2;color:var(--clay-dark);border-radius:7px;cursor:pointer;}
 .danger-btn:hover{background:var(--clay-dark);color:#fff;border-color:var(--clay-dark);}
-@media(max-width:1000px){ .reports-layout{grid-template-columns:1fr;} .reports-aside{position:static;} .reports-list{max-height:none;} }
+@media(max-width:1000px){ .reports-layout{grid-template-columns:1fr;} .reports-aside{position:static;margin-top:0;} .reports-list{max-height:none;} }
+
+/* Kolory wierszy w Komitecie Transferowym (jak w raporcie): Do transferu = złoto, reszta wg statusu. */
+tr.crow-transfer{background:linear-gradient(90deg,#FBEFC9 0%,#FCF8EC 55%);}
+tr.crow-transfer td:first-child{box-shadow:inset 4px 0 0 var(--gold);}
+tr.crow-trial{background:#EEF3FA;}
+tr.crow-reco{background:#EDF5EE;}
+tr.crow-rejected{background:#F8EEEA;}
+tr.crow-watching{background:#FAF7EF;}
 
 /* Miniatury załączników (JPG/PDF) — czytelny mały podgląd zamiast samej nazwy pliku. */
 .attach-grid{display:flex;flex-wrap:wrap;gap:12px;}
@@ -345,6 +353,17 @@ tr:hover td{background:#FBF9F2;}
 .attach-thumb-icon{font-size:40px;line-height:1;}
 .attach-card-name{font-size:11px;padding:6px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-top:1px solid #EFEADD;color:var(--pitch);}
 .attach-thumb-sm{width:84px;height:84px;flex:0 0 auto;border:1px solid #E7E2D3;border-radius:8px;display:block;}
+
+/* Pole wyboru klubu z wyszukiwaniem (alfabetycznie + zawężanie przy pisaniu). */
+.club-combo{position:relative;}
+.club-combo-input{width:100%;}
+.club-combo-list{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:60;background:#fff;border:1px solid #D9D3C4;border-radius:10px;box-shadow:0 10px 26px rgba(10,23,18,.18);max-height:280px;overflow:auto;display:none;}
+.club-combo-item{display:flex;flex-direction:column;gap:1px;padding:7px 12px;cursor:pointer;border-bottom:1px solid #F2EEE3;}
+.club-combo-item:last-child{border-bottom:none;}
+.club-combo-item:hover{background:#FBF6E9;}
+.club-combo-item strong{font-size:13px;color:var(--pitch);}
+.club-combo-reg{font-size:11px;color:var(--ink-soft);}
+.club-combo-empty{padding:10px 12px;color:var(--ink-soft);font-size:12px;}
 
 .youth-badge-3d{
   display:inline-flex;align-items:center;justify-content:center;margin-left:6px;
