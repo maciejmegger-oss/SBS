@@ -38,7 +38,7 @@ let dashboardGroupSelected = null; // wybrana grupa (np. "III liga, gr. II") po 
 const DEFAULT_SETTINGS = {
   regions: ["Dolnośląski ZPN","Kujawsko-Pomorski ZPN","Lubelski ZPN","Lubuski ZPN","Łódzki ZPN","Małopolski ZPN","Mazowiecki ZPN","Opolski ZPN","Podkarpacki ZPN","Podlaski ZPN","Pomorski ZPN","Śląski ZPN","Świętokrzyski ZPN","Warmińsko-Mazurski ZPN","Wielkopolski ZPN","Zachodniopomorski ZPN"],
   leagues: ["Ekstraklasa","I liga","II liga","III liga, gr. I","III liga, gr. II","III liga, gr. III","III liga, gr. IV","IV liga (pomorska)","IV liga (zachodniopomorska)","IV liga (dolnośląska)","IV liga (śląska)","IV liga (wielkopolska)","Klasa okręgowa","CLJ U19","CLJ U17 (zachodnia)","CLJ U17 (wschodnia)","Liga makroregionalna U16"],
-  positions: ["Bramkarz","Obrońca środkowy","Obrońca boczny","Pomocnik defensywny","Pomocnik środkowy","Pomocnik ofensywny","Skrzydłowy","Napastnik"],
+  positions: ["Bramkarz","Obrońca prawy","Obrońca lewy","Obrońca środkowy","Obrońca środkowy prawy","Obrońca środkowy centralny","Obrońca środkowy lewy","Obrońca boczny","Wahadłowy prawy","Wahadłowy lewy","Pomocnik defensywny","Pomocnik środkowy","Pomocnik ofensywny","Skrzydłowy","Skrzydłowy prawy","Skrzydłowy lewy","Napastnik"],
   statuses: ["Do Obserwacji","Na Testy","Do transferu","Z polecenia","Rekomendowany","Odrzucony"],
   recommendations: ["Kontynuować obserwację","Zaprosić na testy","(Do transferu)","Odrzucić","Zbyt wcześnie ocenić"],
   scouts: [],
@@ -1846,6 +1846,11 @@ async function loadAllInner(){
     const woj = L.indexOf('Liga wojewódzka U15');
     if(woj >= 0) L.splice(woj, 1);
   }
+  // Rozszerzona lista pozycji (skrzydłowy P/L, wahadłowy P/L, obrońcy P/L/środkowi) także w istniejących
+  // instalacjach. Zastępujemy całą listę kanoniczną — stare wartości pozycji zawodników nadal w niej są.
+  if(Array.isArray(DB.settings.positions) && !DB.settings.positions.includes('Skrzydłowy prawy')){
+    DB.settings.positions = ["Bramkarz","Obrońca prawy","Obrońca lewy","Obrońca środkowy","Obrońca środkowy prawy","Obrońca środkowy centralny","Obrońca środkowy lewy","Obrońca boczny","Wahadłowy prawy","Wahadłowy lewy","Pomocnik defensywny","Pomocnik środkowy","Pomocnik ofensywny","Skrzydłowy","Skrzydłowy prawy","Skrzydłowy lewy","Napastnik"];
+  }
   if(quietFlagFailCount > 0){
     console.log('Uwaga (niegroźne): ' + quietFlagFailCount + ' znaczników "już to zrobione" w tle nie zapisało się — te operacje mogą się powtórzyć przy następnym otwarciu, ale to nie dotyczy Twoich danych.');
   }
@@ -1946,6 +1951,7 @@ async function robustStorageDelete(key, id){
 async function deletePlayerRecord(id){ return robustStorageDelete('scouting:players', id); }
 async function deleteClubRecord(id){ return robustStorageDelete('scouting:clubs', id); }
 async function deleteObservationRecord(id){ return robustStorageDelete('scouting:observations', id); }
+async function deleteReportRecord(id){ return robustStorageDelete('scouting:reports', id); }
 async function deleteTalentRecord(id){ return robustStorageDelete('scouting:talents', id); }
 async function deleteContactRecord(id){ return robustStorageDelete('scouting:contacts', id); }
 
@@ -2681,7 +2687,7 @@ function viewPlayerDetail(id){
         <tr><td style="color:var(--ink-soft);">Link wideo</td><td>${p.videoLink? `<a href="${esc(p.videoLink)}" target="_blank" rel="noopener">otwórz</a>`:"—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">mPZPN / 90minut.pl</td><td>${p.lnpLink? `<a class="ext-link" href="${esc(p.lnpLink)}" target="_blank" rel="noopener">profil / statystyki &rarr;</a>`:"—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">Transfermarkt</td><td>${p.tmLink? `<a class="ext-link" href="${esc(p.tmLink)}" target="_blank" rel="noopener">profil &rarr;</a>`:"—"}</td></tr>
-        <tr><td style="color:var(--ink-soft);">Menedżer / agent</td><td>${p.hasAgent? `Tak — <strong>${esc(p.agencyName||"nazwa nieznana")}</strong>` : "Nie"}</td></tr>
+        <tr><td style="color:var(--ink-soft);">Menedżer / agent</td><td>${p.hasAgent? agencyDisplayHtml(p) : "Nie"}</td></tr>
       </table>
       ${p.notes? `<p style="margin-top:10px;font-size:13px;">${esc(p.notes)}</p>`:''}
     </div>
@@ -2692,8 +2698,11 @@ function viewPlayerDetail(id){
       <button class="link-btn" data-action="manage-attachments" data-id="${p.id}" style="color:var(--gold-dark);">Zarządzaj załącznikami</button>
     </div>
     ${p.attachments && p.attachments.length? `
-      <div style="display:flex;flex-wrap:wrap;gap:8px;">
-        ${p.attachments.map(a=>`<span class="badge tab-chip" style="cursor:pointer;" data-action="manage-attachments" data-id="${p.id}">📎 ${esc(a.name)}</span>`).join('')}
+      <div class="attach-grid">
+        ${p.attachments.map(a=>`<div class="attach-card" data-action="manage-attachments" data-id="${p.id}" title="${esc(a.name)}">
+          <div class="attach-thumb">${attachmentThumbInner(a)}</div>
+          <div class="attach-card-name">📎 ${esc(a.name)}</div>
+        </div>`).join('')}
       </div>` : '<div class="empty">Brak załączników — kliknij "Zarządzaj załącznikami", aby dodać plik PDF, JPG lub PNG.</div>'}
   </div>
   <div class="card">
@@ -2720,11 +2729,13 @@ function viewPlayerDetail(id){
   </div>
   <div class="card">
     <h4 style="margin-top:0;color:var(--pitch);">⚡ Szybkie statystyki sezonu</h4>
-    <div class="grid grid-4">
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;">
       <div class="field-wrap" style="margin-bottom:8px;"><label class="field">Mecze</label><input type="number" min="0" id="qs-matches" value="${p.matches!=null?p.matches:''}"></div>
       <div class="field-wrap" style="margin-bottom:8px;"><label class="field">Minuty</label><input type="number" min="0" id="qs-minutes" value="${p.minutes!=null?p.minutes:''}"></div>
       <div class="field-wrap" style="margin-bottom:8px;"><label class="field">Gole</label><input type="number" min="0" id="qs-goals" value="${p.goals!=null?p.goals:''}"></div>
       <div class="field-wrap" style="margin-bottom:8px;"><label class="field">Asysty</label><input type="number" min="0" id="qs-assists" value="${p.assists!=null?p.assists:''}"></div>
+      <div class="field-wrap" style="margin-bottom:8px;"><label class="field">Żółte kartki</label><input type="number" min="0" id="qs-yellow" value="${p.yellowCards!=null?p.yellowCards:''}"></div>
+      <div class="field-wrap" style="margin-bottom:8px;"><label class="field">Czerwone kartki</label><input type="number" min="0" id="qs-red" value="${p.redCards!=null?p.redCards:''}"></div>
     </div>
     <button class="gold" data-action="save-quick-stats" data-id="${p.id}">Zapisz statystyki</button>
     <p class="note" style="margin-top:6px;">Szybka aktualizacja bez otwierania pełnej edycji — wpisz i zapisz.</p>
@@ -3223,7 +3234,19 @@ function isYouthPlayer(p){
   return Number.isFinite(y) && y >= 2006;
 }
 function youthBadge(){
-  return `<span class="youth-badge-3d" title="Młodzieżowiec — rocznik 2006 i młodszy">MŁ</span>`;
+  // Wiodący odstęp (nbsp) + margines w CSS — żeby odznaka nie zlewała się z rokiem/datą obok.
+  return `&nbsp;<span class="youth-badge-3d" title="Młodzieżowiec — rocznik 2006 i młodszy">MŁ</span>`;
+}
+// Agent/agencja: jeśli w nazwie jest link (http…), rozdziel nazwę od linku i zrób go klikalnym
+// (przekierowanie do strony agencji, np. Transfermarkt). Bez linku — sama nazwa.
+function agencyDisplayHtml(p){
+  const raw = (p && p.agencyName ? String(p.agencyName) : '').trim();
+  if(!raw) return 'Tak';
+  const m = raw.match(/(https?:\/\/[^\s]+)/i);
+  if(!m) return esc(raw);
+  const link = m[1];
+  const name = raw.replace(link, '').replace(/[\s\-–—:]+$/,'').trim();
+  return `${name?`<strong>${esc(name)}</strong> `:''}<a class="ext-link" href="${esc(link)}" target="_blank" rel="noopener">strona agencji &rarr;</a>`;
 }
 
 let reportPerspektywaValue = '';
@@ -3303,27 +3326,34 @@ function viewReports(){
   const playerOptions = DB.players.slice().sort((a,b)=>(a.lastName||a.firstName||'').localeCompare(b.lastName||b.firstName||'','pl'))
     .map(p=>`<option value="${p.id}" ${editing&&editing.playerId===p.id?'selected':''}>${esc(p.lastName)} ${esc(p.firstName)} — ${esc(clubName(p.clubId))}</option>`).join('');
 
-  const recentReports = DB.reports.slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,15);
-  const listHtml = recentReports.length ? recentReports.map(r=>{
+  // Liczba porządkowa wg kolejności TWORZENIA: DB.reports jest w kolejności dodawania (push),
+  // więc index+1 = numer porządkowy raportu. Lista pokazana od najnowszego, ale każdy raport ma
+  // swój stały numer z chwili utworzenia. Lista boczna „Raporty" — z przyciskiem usuwania.
+  const ordinalOf = {};
+  DB.reports.forEach((r,i)=> ordinalOf[r.id] = i+1);
+  const allReports = DB.reports.slice().sort((a,b)=> (b.date||'').localeCompare(a.date||'') || (ordinalOf[b.id]-ordinalOf[a.id]));
+  const listHtml = allReports.length ? allReports.map(r=>{
     const pl = DB.players.find(p=>p.id===r.playerId);
-    if(!pl) return '';
-    return `<div class="obs-item">
-      <div class="toolbar" style="margin-bottom:2px;">
-        <strong data-action="view-player" data-id="${pl.id}" style="cursor:pointer;">${esc(pl.firstName)} ${esc(pl.lastName)}</strong>
-        <span style="display:flex;align-items:center;gap:10px;">
-          <span class="meta">${esc(r.date)}${r.obsType?' · '+esc(r.obsType):''} ${perspektywaBadge(r.perspektywa)}</span>
-          <button class="secondary" data-action="edit-report" data-id="${r.id}" style="padding:4px 10px;font-size:11.5px;">✎ Edytuj</button>
-          <button class="secondary" data-action="print-player" data-id="${pl.id}" style="padding:4px 10px;font-size:11.5px;">⭳ PDF</button>
-        </span>
+    const name = pl ? (esc(pl.lastName)+' '+esc(pl.firstName)) : '<span style="color:var(--clay-dark);">(zawodnik usunięty)</span>';
+    return `<div class="report-row${editingReportId===r.id?' editing':''}">
+      <span class="report-num" title="Numer porządkowy (kolejność utworzenia)">${ordinalOf[r.id]}</span>
+      <div class="report-row-body">
+        ${pl?`<strong data-action="view-player" data-id="${pl.id}">${name}</strong>`:`<strong>${name}</strong>`}
+        <span class="meta">${esc(r.date||'')}${r.perspektywa?' · '+esc(r.perspektywa):''}</span>
       </div>
-      <div class="meta">${esc(r.description ? r.description.slice(0,140) : 'Brak opisu głównego')}${r.description && r.description.length>140?'…':''}</div>
+      <div class="report-row-actions">
+        <button class="secondary" data-action="edit-report" data-id="${r.id}" title="Edytuj">✎</button>
+        ${pl?`<button class="secondary" data-action="print-player" data-id="${pl.id}" title="Pobierz PDF">⭳</button>`:''}
+        <button class="danger-btn" data-action="delete-report" data-id="${r.id}" title="Usuń raport">✕</button>
+      </div>
     </div>`;
   }).join('') : '<div class="empty">Brak zapisanych raportów.</div>';
 
   return `
   <h2 class="view-title">Raporty ${editing? '<span style="font-size:14px;color:var(--gold-dark);font-family:Inter,sans-serif;">— edycja raportu</span>':''}</h2>
   <p class="view-sub">Szczegółowy raport taktyczny — technika/taktyka/motoryka opisowo, fazy gry i stałe fragmenty w skali 1-6.</p>
-  <div class="card" style="max-width:720px;${editing?'border:1px solid var(--gold);':''}">
+  <div class="reports-layout">
+  <div class="card reports-form-card" style="${editing?'border:1px solid var(--gold);':''}">
     <div class="field-wrap">
       <label class="field">Zawodnik</label>
       <select id="rep-player">${playerOptions || '<option value="">Brak zawodników — dodaj najpierw w zakładce Zawodnicy</option>'}</select>
@@ -3394,9 +3424,12 @@ function viewReports(){
     </div>
   </div>
 
-  <h3 style="margin-top:24px;color:var(--pitch);font-family:'Barlow Condensed',sans-serif;">Ostatnie raporty</h3>
-  <p class="view-sub" style="margin-bottom:8px;">Kliknij „Edytuj", aby poprawić zapisany raport.</p>
-  <div class="card" style="max-width:720px;">${listHtml}</div>`;
+  <aside class="reports-aside">
+    <h3 class="reports-aside-title">Raporty <span class="reports-count">${allReports.length}</span></h3>
+    <p class="view-sub" style="margin:0 0 8px;">Wg kolejności utworzenia. „✎" edytuj · „⭳" PDF · „✕" usuń.</p>
+    <div class="card reports-list">${listHtml}</div>
+  </aside>
+  </div>`;
 }
 
 // ---------- TALENT ----------
@@ -4788,6 +4821,15 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="cancel-edit-report"]').forEach(b=>b.onclick=()=>{
     editingReportId = null; reportPerspektywaValue = ''; reportStatusValue = ''; reportObsTypeValue = ''; render();
   });
+  main.querySelectorAll('[data-action="delete-report"]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Usunąć ten raport?')) return;
+    const id = b.dataset.id;
+    const ok = await deleteReportRecord(id);
+    if(!ok){ alert('Nie udało się usunąć raportu — sprawdź baner u góry strony. Nic nie usunięto.'); return; }
+    DB.reports = DB.reports.filter(r=>r.id!==id);
+    if(editingReportId===id){ editingReportId = null; reportPerspektywaValue=''; reportStatusValue=''; reportObsTypeValue=''; }
+    render();
+  });
   main.querySelectorAll('.persp-btn').forEach(btn=>btn.onclick=()=>selectPerspektywa(btn.dataset.value));
   main.querySelectorAll('.status-btn').forEach(btn=>btn.onclick=()=>selectReportStatus(btn.dataset.value));
   main.querySelectorAll('.obstype-btn').forEach(btn=>btn.onclick=()=>selectObsType(btn.dataset.value));
@@ -4810,6 +4852,7 @@ function attachHandlers(){
     if(!pl) return;
     const num = id=>{ const el=document.getElementById(id); const v=el?el.value:''; return v===''? null : Number(v); };
     pl.matches = num('qs-matches'); pl.minutes = num('qs-minutes'); pl.goals = num('qs-goals'); pl.assists = num('qs-assists');
+    pl.yellowCards = num('qs-yellow'); pl.redCards = num('qs-red');
     const orig = b.textContent; b.textContent = 'Zapisywanie...'; b.disabled = true;
     const ok = await savePlayers();
     b.textContent = ok ? '✓ Zapisano' : 'Błąd zapisu — spróbuj ponownie';
@@ -5504,12 +5547,15 @@ function openPlayerAttachmentsModal(playerId){
       <h3>Załączniki — ${esc(p.firstName)} ${esc(p.lastName)}</h3>
       <div style="margin-bottom:16px;max-height:280px;overflow:auto;">
         ${p.attachments.length ? p.attachments.map((a,i)=>`
-          <div class="obs-item">
-            <div class="toolbar" style="margin-bottom:2px;">
-              <a href="${a.dataUrl}" download="${esc(a.name)}" style="font-weight:700;color:var(--pitch);text-decoration:none;">📎 ${esc(a.name)}</a>
-              <button class="link-btn attach-delete-btn" data-idx="${i}" style="color:var(--clay-dark);font-size:11px;">usuń</button>
+          <div class="obs-item" style="display:flex;gap:12px;align-items:flex-start;">
+            <a href="${a.dataUrl}" download="${esc(a.name)}" class="attach-thumb attach-thumb-sm" title="Pobierz ${esc(a.name)}">${attachmentThumbInner(a)}</a>
+            <div style="flex:1;min-width:0;">
+              <div class="toolbar" style="margin-bottom:2px;">
+                <a href="${a.dataUrl}" download="${esc(a.name)}" style="font-weight:700;color:var(--pitch);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📎 ${esc(a.name)}</a>
+                <button class="link-btn attach-delete-btn" data-idx="${i}" style="color:var(--clay-dark);font-size:11px;">usuń</button>
+              </div>
+              <div class="meta">${fmtSize(a.size)} &middot; dodano ${esc(a.uploadedAt)}</div>
             </div>
-            <div class="meta">${fmtSize(a.size)} &middot; dodano ${esc(a.uploadedAt)}</div>
           </div>
         `).join('') : '<div class="empty">Brak załączników — dodaj pierwszy poniżej.</div>'}
       </div>
@@ -5780,7 +5826,8 @@ async function generatePlayerPDF(playerId){
     <div class="meta-item"><div class="lbl">Noga</div><div class="val">${esc(p.foot||"—")}</div></div>
     <div class="meta-item"><div class="lbl">System gry</div><div class="val">${esc(p.formation||"—")}</div></div>
     <div class="meta-item"><div class="lbl">Status</div><div class="val">${esc(p.status||"—")}</div></div>
-    <div class="meta-item"><div class="lbl">Mecze / gole</div><div class="val">${p.matches!=null?p.matches:"—"} / ${p.goals!=null?p.goals:"—"}</div></div>
+    <div class="meta-item"><div class="lbl">Mecze / gole / asysty</div><div class="val">${p.matches!=null?p.matches:"—"} / ${p.goals!=null?p.goals:"—"} / ${p.assists!=null?p.assists:"—"}</div></div>
+    <div class="meta-item"><div class="lbl">Kartki żółte / czerwone</div><div class="val"><span style="color:#B8860B;">▮</span> ${p.yellowCards!=null?p.yellowCards:"—"} / <span style="color:#B6503F;">▮</span> ${p.redCards!=null?p.redCards:"—"}</div></div>
   </div>
 
   <div class="section">
@@ -5802,8 +5849,8 @@ async function generatePlayerPDF(playerId){
   ${latestReport?`<div class="section" style="padding-top:0;">
     <div class="section-title">Raport taktyczny${latestReport.date?' — '+esc(latestReport.date):''}${latestReport.perspektywa?' &middot; perspektywa '+esc(latestReport.perspektywa):''}</div>
     ${latestReport.description?`<div class="notes-box" style="margin-bottom:10px;">${esc(latestReport.description)}</div>`:''}
-    ${(latestReport.phases&&Object.keys(latestReport.phases).length)?`<div style="margin-top:10px;font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#8A857A;font-weight:600;margin-bottom:5px;">Fazy gry (1-6)</div><div style="display:flex;flex-wrap:wrap;gap:6px;">${REPORT_PHASES.map(f=>latestReport.phases[f.key]!=null?`<span style="background:#F6F3EA;border:1px solid #E7E2D3;border-radius:6px;padding:3px 9px;font-size:11px;">${esc(f.label)}: <strong>${latestReport.phases[f.key]}</strong></span>`:'').join('')}</div>`:''}
-    ${(latestReport.setPieces&&Object.keys(latestReport.setPieces).length)?`<div style="margin-top:8px;font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#8A857A;font-weight:600;margin-bottom:5px;">Stałe fragmenty (1-6)</div><div style="display:flex;flex-wrap:wrap;gap:6px;">${REPORT_SET_PIECES.map(f=>latestReport.setPieces[f.key]!=null?`<span style="background:#F6F3EA;border:1px solid #E7E2D3;border-radius:6px;padding:3px 9px;font-size:11px;">${esc(f.label)}: <strong>${latestReport.setPieces[f.key]}</strong></span>`:'').join('')}</div>`:''}
+    ${(latestReport.phases&&Object.keys(latestReport.phases).length)?`<div style="margin-top:10px;font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#8A857A;font-weight:600;margin-bottom:5px;">Fazy gry (1-6)</div><div class="report-metric-grid">${REPORT_PHASES.map(f=>`<span class="report-metric-box"><span class="rmb-label">${esc(f.label)}</span><strong>${latestReport.phases[f.key]!=null?latestReport.phases[f.key]:'—'}</strong></span>`).join('')}</div>`:''}
+    ${(latestReport.setPieces&&Object.keys(latestReport.setPieces).length)?`<div style="margin-top:8px;font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#8A857A;font-weight:600;margin-bottom:5px;">Stałe fragmenty (1-6)</div><div class="report-metric-grid">${REPORT_SET_PIECES.map(f=>`<span class="report-metric-box"><span class="rmb-label">${esc(f.label)}</span><strong>${latestReport.setPieces[f.key]!=null?latestReport.setPieces[f.key]:'—'}</strong></span>`).join('')}</div>`:''}
     ${latestReport.setPieceComment?`<div class="notes-box" style="margin-top:10px;">${esc(latestReport.setPieceComment)}</div>`:''}
   </div>`:''}
 
@@ -5830,7 +5877,7 @@ async function generatePlayerPDF(playerId){
     </div>
     ${p.hasAgent?`<div class="agent-box">
       <div class="lbl">Menedżer / agent</div>
-      <div class="val">${esc(p.agencyName||'Tak')}</div>
+      <div class="val">${agencyDisplayHtml(p)}</div>
     </div>`:''}
   </div>
 
@@ -5945,6 +5992,16 @@ async function processAttachmentFile(file){
     reader.readAsDataURL(file);
   });
   return {name: file.name, dataUrl, mime: file.type || 'application/octet-stream', size: file.size, uploadedAt: new Date().toISOString().slice(0,10)};
+}
+
+// Miniatura załącznika: obrazek (JPG/PNG) renderowany wprost, PDF przez natywny podgląd przeglądarki
+// (pierwsza strona, dopasowana do szerokości, bez pasków narzędzi). pointer-events:none w CSS, żeby
+// klik przechodził do karty (otwarcie „Zarządzaj załącznikami"). Inne typy — ikona zastępcza.
+function attachmentThumbInner(a){
+  const mime = (a && a.mime) || '';
+  if(mime.startsWith('image/')) return `<img src="${a.dataUrl}" alt="${esc(a.name)}">`;
+  if(mime === 'application/pdf') return `<embed src="${a.dataUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH" type="application/pdf">`;
+  return `<span class="attach-thumb-icon">📄</span>`;
 }
 
 function openTmProfileFromModal(){

@@ -42,6 +42,39 @@ const objFromRow = (row: Record<string, unknown>): Record<string, unknown> => {
   return obj;
 };
 
+// Pola zawodnika, dla których kolumny w Supabase mogą jeszcze nie istnieć (migracja niewykonana).
+// Zamiast tracić te dane przy zapisie, chowamy je w ISTNIEJĄCEJ kolumnie jsonb `custom_fields`
+// pod kluczem `__ext`. Dzięki temu profil (Opis końcowy, asysty, narodowość, historia transferowa,
+// monitoring, kadra/reprezentacja, media) zapisuje się OD RAZU, bez żadnej migracji ani działań
+// użytkownika. Przy odczycie wyciągamy je z powrotem na wierzch obiektu.
+const PLAYER_EXT_FIELDS = [
+  "assists", "instagramLink", "facebookLink", "kadraWojewodzka", "reprezentacja",
+  "powolania", "opisKoncowy", "monitored", "transferHistory", "nationality",
+  "yellowCards", "redCards",
+];
+
+function packPlayerExt(item: Record<string, unknown>): Record<string, unknown> {
+  const clone: Record<string, unknown> = { ...item };
+  const ext: Record<string, unknown> = {};
+  for (const f of PLAYER_EXT_FIELDS) {
+    if (f in clone && clone[f] !== undefined) ext[f] = clone[f];
+    delete clone[f];
+  }
+  const cf: Record<string, unknown> = { ...((clone.customFields as Record<string, unknown>) || {}) };
+  if (Object.keys(ext).length) cf.__ext = ext; else delete cf.__ext;
+  clone.customFields = cf;
+  return clone;
+}
+
+function liftPlayerExt(obj: Record<string, unknown>): void {
+  const cf = obj.customFields as Record<string, unknown> | undefined;
+  if (cf && cf.__ext) {
+    const ext = cf.__ext as Record<string, unknown>;
+    for (const k in ext) if (obj[k] === undefined || obj[k] === null) obj[k] = ext[k];
+    delete cf.__ext;
+  }
+}
+
 // Supabase/PostgREST zwraca maksymalnie 1000 wierszy na żądanie. Przy >1000 zawodników brakująca
 // paginacja powodowała, że aplikacja wczytywała tylko część bazy (migawka niepełna) — a to, w parze
 // z dawnym "usuwaniem różnicy" w setCollection, kasowało nadmiarowych zawodników przy kolejnym zapisie.
@@ -56,12 +89,15 @@ async function getCollection(table: string): Promise<string> {
     all.push(...batch);
     if (batch.length < PAGE) break;
   }
-  return JSON.stringify(all.map(objFromRow));
+  const objs = all.map(objFromRow);
+  if (table === "sbs_players") objs.forEach(liftPlayerExt);
+  return JSON.stringify(objs);
 }
 
 async function setCollection(table: string, jsonValue: string): Promise<void> {
   const items: Record<string, unknown>[] = JSON.parse(jsonValue || "[]");
-  const rows = items.map(rowFromObj);
+  const prepared = table === "sbs_players" ? items.map(packPlayerExt) : items;
+  const rows = prepared.map(rowFromObj);
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
     let chunk = rows.slice(i, i + BATCH_SIZE);
     if (!chunk.length) continue;

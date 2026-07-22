@@ -300,6 +300,48 @@ tr:hover td{background:#FBF9F2;}
 
 /* Odznaka "młodzieżowiec" (rocznik 2006 i młodszy) — mały "3D" znaczek: gradient + warstwowy
    cień jak przy kafelkach lig, żeby wyraźnie odróżniał się od płaskich plakietek statusu. */
+/* Fazy gry / Stałe fragmenty na profilu zawodnika — 4 równe kafelki wypełniające całą szerokość
+   (zamiast pigułek o różnej szerokości). Etykieta u góry, ocena u dołu; na wąskim ekranie 2 kolumny. */
+.report-metric-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+.report-metric-box{display:flex;flex-direction:column;align-items:center;justify-content:space-between;gap:4px;
+  background:#F6F3EA;border:1px solid #E7E2D3;border-radius:8px;padding:8px 6px;text-align:center;min-height:52px;}
+.report-metric-box .rmb-label{font-size:10.5px;line-height:1.2;color:var(--ink-soft);}
+.report-metric-box strong{font-size:16px;color:var(--pitch);line-height:1;}
+@media(max-width:700px){ .report-metric-grid{grid-template-columns:repeat(2,1fr);} }
+
+/* Zakładka Raporty — formularz po lewej, boczna lista „Raporty" po prawej. */
+.reports-layout{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:22px;align-items:start;}
+.reports-form-card{max-width:720px;}
+.reports-aside{position:sticky;top:12px;}
+.reports-aside-title{margin:0 0 2px;color:var(--pitch);font-family:'Barlow Condensed',sans-serif;font-size:22px;display:flex;align-items:center;gap:8px;}
+.reports-count{background:var(--pitch);color:var(--gold);font-size:12px;font-weight:800;font-family:Inter,sans-serif;border-radius:20px;padding:1px 9px;}
+.reports-list{max-height:70vh;overflow:auto;padding:6px 10px;}
+.report-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 2px;border-bottom:1px solid #EFEADD;}
+.report-row:last-child{border-bottom:none;}
+.report-row.editing{background:#FBF6E9;border-radius:8px;padding-left:6px;padding-right:6px;}
+.report-num{width:26px;height:26px;flex:0 0 auto;border-radius:50%;background:var(--pitch);color:var(--gold);font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center;}
+.report-row-body{min-width:0;}
+.report-row-body strong{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.report-row-body [data-action="view-player"]{cursor:pointer;}
+.report-row-body [data-action="view-player"]:hover{color:var(--gold-dark);text-decoration:underline;}
+.report-row-body .meta{font-size:11px;}
+.report-row-actions{display:flex;gap:4px;flex:0 0 auto;}
+.report-row-actions button{padding:3px 7px;font-size:11px;line-height:1;}
+.danger-btn{background:#fff;border:1px solid #E3C9C2;color:var(--clay-dark);border-radius:7px;cursor:pointer;}
+.danger-btn:hover{background:var(--clay-dark);color:#fff;border-color:var(--clay-dark);}
+@media(max-width:1000px){ .reports-layout{grid-template-columns:1fr;} .reports-aside{position:static;} .reports-list{max-height:none;} }
+
+/* Miniatury załączników (JPG/PDF) — czytelny mały podgląd zamiast samej nazwy pliku. */
+.attach-grid{display:flex;flex-wrap:wrap;gap:12px;}
+.attach-card{width:150px;cursor:pointer;border:1px solid #E7E2D3;border-radius:10px;overflow:hidden;background:#fff;transition:box-shadow .12s,transform .12s;}
+.attach-card:hover{box-shadow:0 4px 12px rgba(10,23,18,.12);transform:translateY(-2px);}
+.attach-thumb{height:120px;background:#F6F3EA;display:flex;align-items:center;justify-content:center;overflow:hidden;}
+.attach-thumb img{width:100%;height:100%;object-fit:cover;pointer-events:none;display:block;}
+.attach-thumb embed{width:100%;height:100%;pointer-events:none;border:0;}
+.attach-thumb-icon{font-size:40px;line-height:1;}
+.attach-card-name{font-size:11px;padding:6px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-top:1px solid #EFEADD;color:var(--pitch);}
+.attach-thumb-sm{width:84px;height:84px;flex:0 0 auto;border:1px solid #E7E2D3;border-radius:8px;display:block;}
+
 .youth-badge-3d{
   display:inline-flex;align-items:center;justify-content:center;margin-left:6px;
   width:20px;height:20px;border-radius:50%;font-size:9px;font-weight:800;letter-spacing:.2px;
