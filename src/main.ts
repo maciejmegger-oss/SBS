@@ -25,6 +25,8 @@ let editingReportId = null;
 let obsPreselectPlayerId = null;
 let editingObsId = null;
 let promotingTalentId = null; // gdy ustawione, zapis nowego zawodnika usuwa też odpowiadający wpis z Talentu
+let talentPasteText = '';   // treść wklejona w Talent -> "Wklej tekst" (zachowana między re-renderami)
+let talentPasteParsed = null; // wynik rozpoznania (null = jeszcze nie kliknięto "Rozpoznaj")
 let viewingPlayerId = null;
 let viewingClubId = null;
 let rankingLeague = null;
@@ -3620,6 +3622,40 @@ function parseTalentRowsObject(rows){
   };
 }
 
+// Wklejenie tekstu (np. skopiowana tabela z Transfermarkt/Wikipedii/arkusza) zamiast pliku Excel —
+// ten sam format co szablon (Imię, Nazwisko, Rocznik, Klub), rozdzielony tabulatorem, przecinkiem,
+// średnikiem albo dwiema+ spacjami. Jeśli pierwsza linia wygląda jak nagłówek — używamy jej do
+// dopasowania kolumn; jeśli nie, zakładamy stałą kolejność Imię/Nazwisko/Rocznik/Klub.
+function splitTalentLine(line){
+  if(line.includes('\t')) return line.split('\t');
+  if(line.includes(';')) return line.split(';');
+  if(line.includes(',')) return line.split(',');
+  return line.split(/\s{2,}/);
+}
+function parseTalentPastedText(text){
+  const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  if(!lines.length) throw new Error('Wklej przynajmniej jedną linię z danymi.');
+  const norm = (s)=> String(s||'').toLowerCase().replace(/[ąćęłńóśźż]/g, c=>({ą:'a',ć:'c',ę:'e',ł:'l',ń:'n',ó:'o',ś:'s',ź:'z',ż:'z'}[c])).replace(/[^a-z0-9]/g,'');
+  const HEADER_WORDS = ['imie','nazwisko','rocznik','klub','firstname','lastname','birthyear','club','rokurodzenia'];
+  const firstCells = splitTalentLine(lines[0]).map(c=>c.trim());
+  const looksLikeHeader = firstCells.some(c => HEADER_WORDS.includes(norm(c)));
+  let rows;
+  if(looksLikeHeader){
+    rows = lines.slice(1).map(line=>{
+      const cells = splitTalentLine(line);
+      const obj = {};
+      firstCells.forEach((h,i)=> obj[h] = cells[i]!=null ? cells[i].trim() : '');
+      return obj;
+    });
+  } else {
+    rows = lines.map(line=>{
+      const cells = splitTalentLine(line).map(c=>c.trim());
+      return {'Imię': cells[0]||'', 'Nazwisko': cells[1]||'', 'Rocznik': cells[2]||'', 'Klub': cells[3]||''};
+    });
+  }
+  return parseTalentRowsObject(rows);
+}
+
 async function parseTalentSpreadsheet(file){
   if(!XLSX) throw new Error('Biblioteka do odczytu arkuszy nie jest dostępna (brak połączenia z internetem przy wczytywaniu strony?).');
   const buffer = await new Promise((resolve,reject)=>{
@@ -3694,6 +3730,33 @@ function viewTalent(){
           <input type="file" id="talent-import-input" accept=".xlsx,.xls,.csv">
           <div id="talent-import-status" class="note" style="margin-top:6px;"></div>
         </div>
+      </div>
+
+      <h3 style="margin-top:20px;color:var(--pitch);font-family:'Barlow Condensed',sans-serif;">Wklej tekst</h3>
+      <div class="card">
+        <p class="note" style="margin-top:-4px;">Skopiuj tabelę zawodników (np. z Transfermarkt/Wikipedii/arkusza) i wklej poniżej — jedna osoba na linię, kolumny <strong>Imię, Nazwisko, Rocznik, Klub</strong> rozdzielone tabulatorem, przecinkiem albo dwiema spacjami. Nagłówek opcjonalny.</p>
+        <div class="field-wrap">
+          <textarea id="talent-paste-text" rows="6" placeholder="np.&#10;Kacper	Kowalkowski	2007	Zawisza Bydgoszcz&#10;Jan	Nowak	2008	Lech Poznań">${esc(talentPasteText)}</textarea>
+        </div>
+        <div class="modal-actions" style="justify-content:flex-start;margin-bottom:0;">
+          <button class="secondary" data-action="talent-paste-parse">Rozpoznaj zawodników</button>
+        </div>
+        ${talentPasteParsed ? `
+          <div style="border-top:1px solid #E3DECE;margin-top:14px;padding-top:10px;max-height:260px;overflow:auto;">
+            <p class="note" style="margin-top:0;">Rozpoznano <strong>${talentPasteParsed.length}</strong> ${plZaw(talentPasteParsed.length)}. Odznacz, czego nie chcesz dodać.</p>
+            <table><tbody>
+              ${talentPasteParsed.map((t,i)=>`<tr>
+                <td style="width:24px;"><input type="checkbox" class="talent-paste-check" data-idx="${i}" checked></td>
+                <td><strong>${esc(t.firstName)} ${esc(t.lastName)}</strong></td>
+                <td>${t.birthYear?esc(String(t.birthYear)):'—'}</td>
+                <td>${esc(t.club||'—')}</td>
+              </tr>`).join('')}
+            </tbody></table>
+          </div>
+          <div class="modal-actions" style="justify-content:flex-start;">
+            <button class="gold" data-action="talent-paste-import">+ Dodaj zaznaczonych do listy</button>
+          </div>
+        ` : ''}
       </div>
 
       <h3 style="margin-top:20px;color:var(--pitch);font-family:'Barlow Condensed',sans-serif;">Dodaj ręcznie</h3>
@@ -4670,6 +4733,27 @@ function attachHandlers(){
     promoteTalentToPlayer(b.dataset.id);
   });
   main.querySelectorAll('[data-action="talent-add-manual"]').forEach(b=>b.onclick=()=>addTalentManually());
+  main.querySelectorAll('[data-action="talent-paste-parse"]').forEach(b=>b.onclick=()=>{
+    const ta = main.querySelector('#talent-paste-text');
+    talentPasteText = ta ? ta.value : '';
+    try{
+      talentPasteParsed = parseTalentPastedText(talentPasteText).talents;
+    }catch(e){
+      alert(e.message || 'Nie udało się rozpoznać wklejonego tekstu.');
+      talentPasteParsed = null;
+    }
+    render();
+  });
+  main.querySelectorAll('[data-action="talent-paste-import"]').forEach(b=>b.onclick=async()=>{
+    const checked = Array.from(main.querySelectorAll('.talent-paste-check:checked')).map(c=>Number(c.dataset.idx));
+    const toAdd = checked.map(i=>talentPasteParsed[i]).filter(Boolean);
+    if(!toAdd.length){ alert('Brak zaznaczonych zawodników do dodania.'); return; }
+    DB.talents.push(...toAdd);
+    const ok = await saveTalents();
+    if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
+    talentPasteText = ''; talentPasteParsed = null;
+    render();
+  });
   main.querySelectorAll('[data-action="talent-download-template"]').forEach(b=>b.onclick=()=>{
     try{ downloadTalentTemplate(); }
     catch(e){ console.error(e); alert('Nie udało się pobrać szablonu: ' + (e.message||e)); }
