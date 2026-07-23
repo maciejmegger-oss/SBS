@@ -349,6 +349,10 @@ tr:hover td{background:#FBF9F2;}
 .talent-row-actions button{font-size:12.5px;}
 @media(max-width:1000px){ .talent-layout{grid-template-columns:1fr;} .talent-aside{position:static;} .talent-list{max-height:none;} }
 
+/* Monitoring — czytelny wskaźnik "ma agenta" (Tak/Nie). */
+.agent-yes{color:#3E7D4C;font-weight:800;}
+.agent-no{color:var(--ink-soft);font-weight:600;}
+
 /* Kolory wierszy w Komitecie Transferowym (jak w raporcie): Do transferu = złoto, reszta wg statusu. */
 tr.crow-transfer{background:linear-gradient(90deg,#FBEFC9 0%,#FCF8EC 55%);}
 tr.crow-transfer td:first-child{box-shadow:inset 4px 0 0 var(--gold);}

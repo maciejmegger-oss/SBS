@@ -2152,8 +2152,12 @@ function scrollViewTop(){
   const m = document.getElementById('main');
   if(m){ m.scrollTop = 0; let el = m.parentElement; while(el){ el.scrollTop = 0; el = el.parentElement; } }
 }
+let lastRenderedPageKey = null; // wykrywa zmianę "strony" (zakładka / otwarty profil / otwarty klub), żeby przewinąć na górę tylko wtedy, a nie przy każdym re-renderze (np. po zapisie pola)
 function render(){
   const main = document.getElementById('main');
+  const pageKey = currentView + '|' + (viewingPlayerId||'') + '|' + (viewingClubId||'');
+  const pageChanged = pageKey !== lastRenderedPageKey;
+  lastRenderedPageKey = pageKey;
   // Zachowaj pozycję kursora w polu tekstowym, jeśli jakieś jest aktywne — pełne przebudowanie innerHTML
   // niszczy i tworzy elementy na nowo, co bez tego resetowałoby kursor na koniec tekstu przy każdym znaku.
   const active = document.activeElement;
@@ -2184,6 +2188,7 @@ function render(){
     }
   }
   syncHistory();
+  if(pageChanged) scrollViewTop();
 }
 
 // ---------- HISTORIA / NAWIGACJA WSTECZ-DALEJ ----------
@@ -4247,6 +4252,7 @@ function viewMonitoring(){
       <td>${a? fmt1(a.overall) : "—"}</td>
       <td>${a? a.last.date : "—"}</td>
       <td>${ds!==null? ds+" dni" : "—"}</td>
+      <td>${p.hasAgent? `<span class="agent-yes">Tak</span>` : `<span class="agent-no">Nie</span>`}</td>
       <td><span class="badge ${pillClass}" style="border-radius:6px;">${priority}</span></td>
       <td style="white-space:nowrap;">
         <button class="link-btn" data-action="monitoring-plan-obs" data-id="${p.id}" style="color:var(--gold-dark);">📅 Zaplanuj obserwację</button>
@@ -4260,8 +4266,8 @@ function viewMonitoring(){
   <p class="view-sub">Automatyczne zestawienie — kto wymaga ponownej obserwacji, kto jest top talentem. Pokazuje tylko zawodników dodanych ręcznie przez Ciebie (nie masowe importy składów).</p>
   <div class="card" style="padding:0;overflow:auto;">
     <table>
-      <thead><tr><th>Zawodnik</th><th>Rocznik</th><th>Klub</th><th>Region</th><th>Obs.</th><th>Śr. ocena</th><th>Ostatnia obs.</th><th>Dni temu</th><th>Priorytet</th><th></th></tr></thead>
-      <tbody>${trs || `<tr><td colspan="10"><div class="empty">Brak ręcznie dodanych zawodników — ci z masowych importów składów tu się nie pokazują. Dodaj zawodnika przez "Zawodnicy → Dodaj zawodnika", aby pojawił się na tej liście.</div></td></tr>`}</tbody>
+      <thead><tr><th>Zawodnik</th><th>Rocznik</th><th>Klub</th><th>Region</th><th>Obs.</th><th>Śr. ocena</th><th>Ostatnia obs.</th><th>Dni temu</th><th>Agent</th><th>Priorytet</th><th></th></tr></thead>
+      <tbody>${trs || `<tr><td colspan="11"><div class="empty">Brak ręcznie dodanych zawodników — ci z masowych importów składów tu się nie pokazują. Dodaj zawodnika przez "Zawodnicy → Dodaj zawodnika", aby pojawił się na tej liście.</div></td></tr>`}</tbody>
     </table>
   </div>`;
 }
@@ -4557,7 +4563,7 @@ function attachHandlers(){
 
   main.querySelectorAll('[data-action="add-player"]').forEach(b=>b.onclick=()=>openPlayerModal(null));
   main.querySelectorAll('[data-action="edit-player"]').forEach(b=>b.onclick=()=>openPlayerModal(b.dataset.id));
-  main.querySelectorAll('[data-action="view-player"]').forEach(b=>b.onclick=()=>{viewingPlayerId=b.dataset.id; currentView='players'; render(); scrollViewTop();});
+  main.querySelectorAll('[data-action="view-player"]').forEach(b=>b.onclick=()=>{viewingPlayerId=b.dataset.id; currentView='players'; render();});
   // Przycisk "Monitoring" w liście zawodników — od razu dodaje/usuwa zawodnika z zakładki Monitoring.
   main.querySelectorAll('[data-action="monitoring-plan-obs"]').forEach(b=>b.onclick=()=>{
     obsPreselectPlayerId = b.dataset.id;
@@ -5739,7 +5745,7 @@ function openPositionSlotModal(league, formation, number){
     overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=closeAndRefresh);
     overlay.querySelectorAll('[data-action="posmodal-view-profile"]').forEach(b=>b.onclick=()=>{
       viewingPlayerId = b.dataset.id; currentView = 'players';
-      overlay.remove(); render(); scrollViewTop();
+      overlay.remove(); render();
     });
     overlay.querySelectorAll('.posmodal-remove-btn').forEach(b=>b.onclick=async()=>{
       positionMapAssignments[key] = currentIds().filter(id => id !== b.dataset.id);
