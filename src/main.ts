@@ -3664,22 +3664,20 @@ async function addTalentManually(){
 function viewTalent(){
   const rows = DB.talents.slice().sort((a,b)=>(b.dateAdded||'').localeCompare(a.dateAdded||''));
   const rowsHtml = rows.length ? rows.map(t=>`
-    <div class="obs-item">
-      <div class="toolbar" style="margin-bottom:2px;">
-        <strong>${esc(t.firstName)} ${esc(t.lastName)}</strong>
-        <span>
-          <button class="link-btn" data-action="talent-promote" data-id="${t.id}" style="color:var(--gold-dark);font-size:11px;">pełny profil / dodaj do bazy</button>
-          <button class="link-btn talent-remove-btn" data-id="${t.id}" style="color:var(--clay-dark);font-size:11px;margin-left:8px;">usuń</button>
-        </span>
-      </div>
-      <div class="meta">${t.birthYear?('rocznik '+esc(t.birthYear)+' &middot; '):''}${esc(t.club||'klub nieznany')}</div>
+    <div class="talent-row">
+      <span class="talent-row-name">${esc(t.firstName)} ${esc(t.lastName)}</span>
+      <span class="talent-row-actions">
+        <button class="link-btn" data-action="talent-promote" data-id="${t.id}" style="color:var(--gold-dark);">pełny profil / dodaj do bazy</button>
+        <button class="link-btn talent-remove-btn" data-id="${t.id}" style="color:var(--clay-dark);">usuń</button>
+      </span>
+      <span class="talent-row-meta">${t.birthYear?('rocznik '+esc(t.birthYear)+' &middot; '):''}${esc(t.club||'klub nieznany')}</span>
     </div>`).join('') : '<div class="empty">Brak jeszcze dodanych talentów — użyj importu lub formularza poniżej.</div>';
 
   return `
   <h2 class="view-title">Talent</h2>
   <p class="view-sub">Lista młodych zawodników do szybkiego dodania — zaimportuj z arkusza, wpisz ręcznie, a potem kliknij "pełny profil", żeby uzupełnić wszystkie dane i dodać do głównej bazy.</p>
 
-  <div class="reports-layout">
+  <div class="talent-layout">
     <div>
       <div class="card">
         <h4 style="margin-top:0;color:var(--pitch);">Import z Excela / CSV</h4>
@@ -3709,9 +3707,9 @@ function viewTalent(){
       </div>
     </div>
 
-    <aside class="reports-aside">
+    <aside class="talent-aside">
       <h3 class="reports-aside-title">Lista talentów <span class="reports-count">${rows.length}</span></h3>
-      <div class="card reports-list">${rowsHtml}</div>
+      <div class="card talent-list">${rowsHtml}</div>
     </aside>
   </div>`;
 }

@@ -335,6 +335,20 @@ tr:hover td{background:#FBF9F2;}
 .danger-btn:hover{background:var(--clay-dark);color:#fff;border-color:var(--clay-dark);}
 @media(max-width:1000px){ .reports-layout{grid-template-columns:1fr;} .reports-aside{position:static;margin-top:0;} .reports-list{max-height:none;} }
 
+/* Zakładka Talent — formularze i lista w RÓWNYCH połowach strony (w odróżnieniu od Raportów,
+   gdzie boczna lista jest węższa) i większe, czytelniejsze wiersze listy talentów. */
+.talent-layout{display:grid;grid-template-columns:1fr 1fr;gap:26px;align-items:start;}
+.talent-aside{position:sticky;top:12px;}
+.talent-list{max-height:76vh;overflow:auto;padding:8px 12px;}
+.talent-row{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 14px;
+  padding:12px 4px;border-bottom:1px solid #EFEADD;}
+.talent-row:last-child{border-bottom:none;}
+.talent-row-name{font-size:15px;font-weight:700;color:var(--pitch);}
+.talent-row-meta{flex:1 1 100%;font-size:12px;color:var(--ink-soft);}
+.talent-row-actions{display:flex;gap:14px;flex:0 0 auto;white-space:nowrap;}
+.talent-row-actions button{font-size:12.5px;}
+@media(max-width:1000px){ .talent-layout{grid-template-columns:1fr;} .talent-aside{position:static;} .talent-list{max-height:none;} }
+
 /* Kolory wierszy w Komitecie Transferowym (jak w raporcie): Do transferu = złoto, reszta wg statusu. */
 tr.crow-transfer{background:linear-gradient(90deg,#FBEFC9 0%,#FCF8EC 55%);}
 tr.crow-transfer td:first-child{box-shadow:inset 4px 0 0 var(--gold);}
