@@ -3451,19 +3451,6 @@ function viewReports(){
 }
 
 // ---------- TALENT ----------
-function downloadTalentTemplate(){
-  if(!XLSX) throw new Error('Biblioteka do arkuszy nie jest dostępna (brak połączenia z internetem przy wczytywaniu strony?).');
-  const data = [
-    ['Imię', 'Nazwisko', 'Rocznik', 'Klub'],
-    ['Jan', 'Kowalski', 2010, 'Przykładowy Klub (usuń ten wiersz)'],
-  ];
-  const ws = XLSX.utils.aoa_to_sheet(data);
-  ws['!cols'] = [{wch:14},{wch:18},{wch:10},{wch:28}];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Talent');
-  XLSX.writeFile(wb, 'szablon_talent.xlsx');
-}
-
 function downloadContactsTemplate(){
   if(!XLSX) throw new Error('Biblioteka do arkuszy nie jest dostępna (brak połączenia z internetem przy wczytywaniu strony?).');
   const data = [
@@ -3656,21 +3643,6 @@ function parseTalentPastedText(text){
   return parseTalentRowsObject(rows);
 }
 
-async function parseTalentSpreadsheet(file){
-  if(!XLSX) throw new Error('Biblioteka do odczytu arkuszy nie jest dostępna (brak połączenia z internetem przy wczytywaniu strony?).');
-  const buffer = await new Promise((resolve,reject)=>{
-    const reader = new FileReader();
-    reader.onload = ()=>resolve(reader.result);
-    reader.onerror = ()=>reject(new Error('Nie udało się odczytać pliku.'));
-    reader.readAsArrayBuffer(file);
-  });
-  const workbook = XLSX.read(buffer, {type:'array'});
-  const firstSheetName = workbook.SheetNames[0];
-  if(!firstSheetName) throw new Error('Plik nie zawiera żadnego arkusza.');
-  const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheetName], {defval:''});
-  return parseTalentRowsObject(rows);
-}
-
 function promoteTalentToPlayer(talentId){
   const t = DB.talents.find(x=>x.id===talentId);
   if(!t) return;
@@ -3720,19 +3692,7 @@ function viewTalent(){
 
   <div class="talent-layout">
     <div>
-      <div class="card">
-        <h4 style="margin-top:0;color:var(--pitch);">Import z Excela / CSV</h4>
-        <p class="note" style="margin-top:-4px;">Wyślij mi zdjęcie artykułu na czacie — odczytam z niego dane i przygotuję plik Excel gotowy do zaimportowania tutaj. Oczekiwane kolumny: <strong>Imię, Nazwisko, Rocznik, Klub</strong> (kolejność dowolna).</p>
-        <div class="modal-actions" style="justify-content:flex-start;margin-top:0;margin-bottom:12px;">
-          <button class="secondary" data-action="talent-download-template">Pobierz szablon Excel</button>
-        </div>
-        <div class="field-wrap">
-          <input type="file" id="talent-import-input" accept=".xlsx,.xls,.csv">
-          <div id="talent-import-status" class="note" style="margin-top:6px;"></div>
-        </div>
-      </div>
-
-      <h3 style="margin-top:20px;color:var(--pitch);font-family:'Barlow Condensed',sans-serif;">Wklej tekst</h3>
+      <h3 style="margin-top:0;color:var(--pitch);font-family:'Barlow Condensed',sans-serif;">Wklej tekst</h3>
       <div class="card">
         <p class="note" style="margin-top:-4px;">Skopiuj tabelę zawodników (np. z Transfermarkt/Wikipedii/arkusza) i wklej poniżej — jedna osoba na linię, kolumny <strong>Imię, Nazwisko, Rocznik, Klub</strong> rozdzielone tabulatorem, przecinkiem albo dwiema spacjami. Nagłówek opcjonalny.</p>
         <div class="field-wrap">
@@ -4754,29 +4714,6 @@ function attachHandlers(){
     talentPasteText = ''; talentPasteParsed = null;
     render();
   });
-  main.querySelectorAll('[data-action="talent-download-template"]').forEach(b=>b.onclick=()=>{
-    try{ downloadTalentTemplate(); }
-    catch(e){ console.error(e); alert('Nie udało się pobrać szablonu: ' + (e.message||e)); }
-  });
-  const talentImportInput = main.querySelector('#talent-import-input');
-  if(talentImportInput) talentImportInput.onchange = async ()=>{
-    const file = talentImportInput.files[0];
-    if(!file) return;
-    const status = main.querySelector('#talent-import-status');
-    if(status){ status.textContent = 'Wczytuję arkusz…'; status.style.color = 'var(--ink-soft)'; }
-    try{
-      const result = await parseTalentSpreadsheet(file);
-      DB.talents.push(...result.talents);
-      await saveTalents();
-      render();
-      if(result.skippedCount > 0){
-        alert('Zaimportowano ' + result.talents.length + ' zawodników. Pominięto ' + result.skippedCount + ' wiersz(y), które wyglądały na notatkę/legendę, a nie prawdziwego zawodnika (zbyt długi tekst w polu imienia/nazwiska).');
-      }
-    }catch(e){
-      console.error(e);
-      if(status){ status.textContent = 'Błąd importu: ' + (e.message||e); status.style.color='var(--clay-dark)'; }
-    }
-  };
   main.querySelectorAll('.contact-remove-btn').forEach(b=>b.onclick=async()=>{
     const ok = await deleteContactRecord(b.dataset.id);
     if(!ok){ alert('Nie udało się usunąć — sprawdź baner u góry strony. Nic nie usunięto.'); return; }

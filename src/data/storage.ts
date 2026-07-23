@@ -42,36 +42,51 @@ const objFromRow = (row: Record<string, unknown>): Record<string, unknown> => {
   return obj;
 };
 
-// Pola zawodnika, dla których kolumny w Supabase mogą jeszcze nie istnieć (migracja niewykonana).
-// Zamiast tracić te dane przy zapisie, chowamy je w ISTNIEJĄCEJ kolumnie jsonb `custom_fields`
-// pod kluczem `__ext`. Dzięki temu profil (Opis końcowy, asysty, narodowość, historia transferowa,
-// monitoring, kadra/reprezentacja, media) zapisuje się OD RAZU, bez żadnej migracji ani działań
-// użytkownika. Przy odczycie wyciągamy je z powrotem na wierzch obiektu.
-const PLAYER_EXT_FIELDS = [
-  "assists", "instagramLink", "facebookLink", "kadraWojewodzka", "reprezentacja",
-  "powolania", "opisKoncowy", "monitored", "transferHistory", "nationality",
-  "yellowCards", "redCards", "watchlistRemoved",
-];
+// Pola, dla których kolumny w Supabase mogą jeszcze nie istnieć (migracja niewykonana). Zamiast
+// tracić te dane przy zapisie, chowamy je w ISTNIEJĄCEJ kolumnie jsonb danej tabeli pod kluczem
+// `__ext`. Dzięki temu np. profil zawodnika (opis końcowy, asysty, narodowość, historia
+// transferowa, monitoring, kartki) i dystans obserwacji zapisują się OD RAZU, bez żadnej migracji
+// ani działań użytkownika. Przy odczycie wyciągamy je z powrotem na wierzch obiektu.
+// hostField = nazwa (camelCase) jsonb-owego pola w tej tabeli, do którego chowamy `__ext`.
+const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }> = {
+  sbs_players: {
+    hostField: "customFields",
+    fields: [
+      "assists", "instagramLink", "facebookLink", "kadraWojewodzka", "reprezentacja",
+      "powolania", "opisKoncowy", "monitored", "transferHistory", "nationality",
+      "yellowCards", "redCards", "watchlistRemoved",
+    ],
+  },
+  sbs_observations: {
+    // sbs_observations nie ma osobnej kolumny custom_fields — używamy istniejącej `ratings` (jsonb).
+    hostField: "ratings",
+    fields: ["startLocation", "distanceKm"],
+  },
+};
 
-function packPlayerExt(item: Record<string, unknown>): Record<string, unknown> {
+function packExt(table: string, item: Record<string, unknown>): Record<string, unknown> {
+  const cfg = EXT_CONFIG[table];
+  if (!cfg) return item;
   const clone: Record<string, unknown> = { ...item };
   const ext: Record<string, unknown> = {};
-  for (const f of PLAYER_EXT_FIELDS) {
+  for (const f of cfg.fields) {
     if (f in clone && clone[f] !== undefined) ext[f] = clone[f];
     delete clone[f];
   }
-  const cf: Record<string, unknown> = { ...((clone.customFields as Record<string, unknown>) || {}) };
-  if (Object.keys(ext).length) cf.__ext = ext; else delete cf.__ext;
-  clone.customFields = cf;
+  const host: Record<string, unknown> = { ...((clone[cfg.hostField] as Record<string, unknown>) || {}) };
+  if (Object.keys(ext).length) host.__ext = ext; else delete host.__ext;
+  clone[cfg.hostField] = host;
   return clone;
 }
 
-function liftPlayerExt(obj: Record<string, unknown>): void {
-  const cf = obj.customFields as Record<string, unknown> | undefined;
-  if (cf && cf.__ext) {
-    const ext = cf.__ext as Record<string, unknown>;
+function liftExt(table: string, obj: Record<string, unknown>): void {
+  const cfg = EXT_CONFIG[table];
+  if (!cfg) return;
+  const host = obj[cfg.hostField] as Record<string, unknown> | undefined;
+  if (host && host.__ext) {
+    const ext = host.__ext as Record<string, unknown>;
     for (const k in ext) if (obj[k] === undefined || obj[k] === null) obj[k] = ext[k];
-    delete cf.__ext;
+    delete host.__ext;
   }
 }
 
@@ -90,13 +105,13 @@ async function getCollection(table: string): Promise<string> {
     if (batch.length < PAGE) break;
   }
   const objs = all.map(objFromRow);
-  if (table === "sbs_players") objs.forEach(liftPlayerExt);
+  objs.forEach((o) => liftExt(table, o));
   return JSON.stringify(objs);
 }
 
 async function setCollection(table: string, jsonValue: string): Promise<void> {
   const items: Record<string, unknown>[] = JSON.parse(jsonValue || "[]");
-  const prepared = table === "sbs_players" ? items.map(packPlayerExt) : items;
+  const prepared = items.map((it) => packExt(table, it));
   const rows = prepared.map(rowFromObj);
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
     let chunk = rows.slice(i, i + BATCH_SIZE);
