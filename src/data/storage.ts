@@ -54,7 +54,7 @@ const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }> = {
     fields: [
       "assists", "instagramLink", "facebookLink", "kadraWojewodzka", "reprezentacja",
       "powolania", "opisKoncowy", "monitored", "transferHistory", "nationality",
-      "yellowCards", "redCards", "watchlistRemoved",
+      "yellowCards", "redCards", "watchlistRemoved", "hasContract", "contractUntil",
     ],
   },
   sbs_observations: {

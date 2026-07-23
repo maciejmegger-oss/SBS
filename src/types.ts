@@ -47,6 +47,11 @@ export interface Player {
   opisKoncowy?: string;
   monitored?: boolean;
   nationality?: string;
+  yellowCards?: number | null;
+  redCards?: number | null;
+  watchlistRemoved?: boolean;
+  hasContract?: boolean;
+  contractUntil?: string;
   transferHistory?: TransferHistoryEntry[];
   notes?: string;
   dateAdded?: string;

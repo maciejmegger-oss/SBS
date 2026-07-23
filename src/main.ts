@@ -27,6 +27,7 @@ let editingObsId = null;
 let promotingTalentId = null; // gdy ustawione, zapis nowego zawodnika usuwa też odpowiadający wpis z Talentu
 let talentPasteText = '';   // treść wklejona w Talent -> "Wklej tekst" (zachowana między re-renderami)
 let talentPasteParsed = null; // wynik rozpoznania (null = jeszcze nie kliknięto "Rozpoznaj")
+let monitoringSearchQuery = ''; // wyszukiwarka słów w zakładce Monitoring
 let viewingPlayerId = null;
 let viewingClubId = null;
 let rankingLeague = null;
@@ -1973,15 +1974,40 @@ function crestImg(url, size, name){
   </svg>`;
 }
 function playerObs(playerId){ return DB.observations.filter(o=>o.playerId===playerId).sort((a,b)=> a.date.localeCompare(b.date)); }
+// Ocena zawodnika: obserwacje to już TYLKO plan/odbycie wizyty (bez suwaków ocen) — średnią
+// ("śr. ocena", skala 1-6) liczymy wyłącznie z WYPEŁNIONYCH RAPORTÓW (fazy gry + stałe fragmenty).
+// overall === null, dopóki zawodnik nie ma żadnego raportu z ocenami. Radar (avgs, 5 atrybutów 1-10)
+// zostaje zasilany historycznymi ocenami z obserwacji, w których statystykę wypełniono ZANIM
+// usunęliśmy to okno — dla nowych zawodników radar po prostu się nie pokaże.
 function playerAvg(playerId){
   const obs = playerObs(playerId);
-  if(!obs.length) return null;
-  const sums = {}; RATING_KEYS.forEach(k=>sums[k]=0);
-  obs.forEach(o=> RATING_KEYS.forEach(k=> sums[k]+= (Number(o.ratings[k])||0) ));
-  const avgs = {}; RATING_KEYS.forEach(k=> avgs[k]= sums[k]/obs.length );
-  const overall = RATING_KEYS.reduce((a,k)=>a+avgs[k],0)/RATING_KEYS.length;
-  return {avgs, overall, count: obs.length, last: obs[obs.length-1]};
+  const reps = DB.reports.filter(r=>r.playerId===playerId);
+  let overall = null;
+  let ratedReports = 0;
+  if(reps.length){
+    let sum = 0;
+    reps.forEach(r=>{
+      const vals = [...Object.values(r.phases||{}), ...Object.values(r.setPieces||{})]
+        .map(Number).filter(v=>Number.isFinite(v) && v>0);
+      if(vals.length){ sum += vals.reduce((a,b)=>a+b,0)/vals.length; ratedReports++; }
+    });
+    if(ratedReports) overall = sum/ratedReports;
+  }
+  // Radar tylko z obserwacji z faktycznie wypełnioną (historycznie) statystyką.
+  const rated = obs.filter(o=> o.statsFilledIn && o.ratings && RATING_KEYS.some(k=>Number(o.ratings[k])>0));
+  let avgs = null;
+  if(rated.length){
+    const sums = {}; RATING_KEYS.forEach(k=>sums[k]=0);
+    rated.forEach(o=> RATING_KEYS.forEach(k=> sums[k]+= (Number(o.ratings[k])||0) ));
+    avgs = {}; RATING_KEYS.forEach(k=> avgs[k]= sums[k]/rated.length );
+  }
+  if(!obs.length && overall===null && !avgs) return null;
+  const last = obs.length ? obs[obs.length-1]
+    : {date: reps.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||'')).map(r=>r.date).pop() || ''};
+  return {avgs, overall, count: obs.length, reportCount: ratedReports, last};
 }
+// "śr. ocena" w listach: kreska, dopóki nie ma żadnego raportu z ocenami.
+function fmtAvg(a){ return a && a.overall!=null ? fmt1(a.overall) : "—"; }
 function daysSince(dateStr){
   if(!dateStr) return null;
   const d = new Date(dateStr+"T00:00:00");
@@ -2022,11 +2048,16 @@ function radarSvg(entries){
 
 let compareIds = ['', '', ''];
 function compareDescriptive(entries){
-  const withAvg = entries.filter(e=>e.avg);
+  // Porównanie liczbowe wymaga zawodników z radarem (historyczne oceny obserwacji) — nowy model
+  // ocen opiera się na raportach, więc overall może istnieć bez avgs i odwrotnie.
+  const withAvg = entries.filter(e=>e.avg && e.avg.avgs);
   if(withAvg.length < 2) return '<div class="empty">Wybierz co najmniej dwóch zawodników z ocenami, aby zobaczyć porównanie opisowe.</div>';
   const lines = [];
-  const bestOverall = withAvg.slice().sort((a,b)=>b.avg.overall-a.avg.overall)[0];
-  lines.push(`<li><strong>Ogólnie najwyżej:</strong> ${esc(bestOverall.p.lastName)} ${esc(bestOverall.p.firstName)} — średnia <strong>${fmt1(bestOverall.avg.overall)}</strong>/10.</li>`);
+  const withOverall = withAvg.filter(e=>e.avg.overall!=null);
+  if(withOverall.length){
+    const bestOverall = withOverall.slice().sort((a,b)=>b.avg.overall-a.avg.overall)[0];
+    lines.push(`<li><strong>Ogólnie najwyżej (śr. z raportów):</strong> ${esc(bestOverall.p.lastName)} ${esc(bestOverall.p.firstName)} — średnia <strong>${fmt1(bestOverall.avg.overall)}</strong>/6.</li>`);
+  }
   RATING_KEYS.forEach(k=>{
     const sorted = withAvg.slice().sort((a,b)=> b.avg.avgs[k]-a.avg.avgs[k]);
     const best = sorted[0], diff = best.avg.avgs[k]-sorted[sorted.length-1].avg.avgs[k];
@@ -2039,14 +2070,14 @@ function compareDescriptive(entries){
   return `<ul style="margin:0;padding-left:18px;line-height:1.7;font-size:13.5px;">${lines.join('')}</ul>`;
 }
 function compareTable(entries){
-  const withAvg = entries.filter(e=>e.avg);
+  const withAvg = entries.filter(e=>e.avg && e.avg.avgs);
   if(!withAvg.length) return '';
   const head = `<tr><th>Atrybut</th>${withAvg.map(e=>`<th>${esc(e.p.lastName)}</th>`).join('')}</tr>`;
   const rows = RATING_KEYS.map(k=>{
     const mx = Math.max(...withAvg.map(e=>e.avg.avgs[k]));
     return `<tr><td>${esc(RATING_LABELS[k])}</td>${withAvg.map(e=>`<td style="${e.avg.avgs[k]===mx?'font-weight:800;color:var(--pitch);':''}">${fmt1(e.avg.avgs[k])}</td>`).join('')}</tr>`;
   }).join('');
-  const overallRow = `<tr style="border-top:2px solid #E3DECE;"><td><strong>Ogólnie</strong></td>${withAvg.map(e=>`<td><strong>${fmt1(e.avg.overall)}</strong></td>`).join('')}</tr>`;
+  const overallRow = `<tr style="border-top:2px solid #E3DECE;"><td><strong>Śr. z raportów</strong></td>${withAvg.map(e=>`<td><strong>${e.avg.overall!=null?fmt1(e.avg.overall):'—'}</strong></td>`).join('')}</tr>`;
   const obsRow = `<tr><td style="color:var(--ink-soft);font-size:11.5px;">Liczba obserwacji</td>${withAvg.map(e=>`<td style="color:var(--ink-soft);font-size:11.5px;">${e.avg.count}</td>`).join('')}</tr>`;
   return `<table style="width:auto;min-width:280px;">${head}${rows}${overallRow}${obsRow}</table>`;
 }
@@ -2054,8 +2085,8 @@ function viewCompare(){
   const players = DB.players.slice().sort((a,b)=>(a.lastName||'').localeCompare(b.lastName||''));
   const opt = (sel)=> `<option value="">— wybierz zawodnika —</option>` + players.map(p=>`<option value="${p.id}" ${sel===p.id?'selected':''}>${esc(p.lastName)} ${esc(p.firstName)} — ${esc(clubName(p.clubId))}</option>`).join('');
   const entries = compareIds.map(id => id ? {p: DB.players.find(x=>x.id===id), avg: playerAvg(id)} : null).filter(e=>e && e.p);
-  const radarEntries = entries.filter(e=>e.avg).map(e=>({label:e.p.lastName, avgs:e.avg.avgs, count:e.avg.count}));
-  const legend = entries.filter(e=>e.avg).map((e,i)=>`<span style="display:inline-flex;align-items:center;gap:6px;margin:0 12px 6px 0;font-size:13px;"><span style="width:12px;height:12px;border-radius:3px;background:${RADAR_COLORS[i%3]};display:inline-block;"></span>${esc(e.p.lastName)} ${esc(e.p.firstName)}</span>`).join('');
+  const radarEntries = entries.filter(e=>e.avg && e.avg.avgs).map(e=>({label:e.p.lastName, avgs:e.avg.avgs, count:e.avg.count}));
+  const legend = entries.filter(e=>e.avg && e.avg.avgs).map((e,i)=>`<span style="display:inline-flex;align-items:center;gap:6px;margin:0 12px 6px 0;font-size:13px;"><span style="width:12px;height:12px;border-radius:3px;background:${RADAR_COLORS[i%3]};display:inline-block;"></span>${esc(e.p.lastName)} ${esc(e.p.firstName)}</span>`).join('');
   return `
   <button class="secondary" data-action="compare-back" style="margin-bottom:14px;">&larr; Wróć do zawodników</button>
   <h2 class="view-title">Porównywarka zawodników</h2>
@@ -2616,7 +2647,7 @@ function viewPlayers(){
       <td>${esc(clubRegion(p.clubId))}</td>
       <td>${esc(clubLeague(p.clubId))}</td>
       <td>${p.status? `<span class="badge ${cls}">${esc(p.status)}</span>` : '—'}</td>
-      <td>${a? fmt1(a.overall) : "—"}</td>
+      <td>${fmtAvg(a)}</td>
       <td>${a? a.count : 0}</td>
       <td style="white-space:nowrap;">
         <button class="link-btn" data-action="add-to-monitoring" data-id="${p.id}" title="${p.monitored?'W Monitoringu — kliknij, aby usunąć':'Dodaj do Monitoringu'}" style="color:${p.monitored?'#3E7D4C':'var(--gold-dark)'};">${p.monitored?'✓ Monitoring':'+ Monitoring'}</button>
@@ -2655,7 +2686,7 @@ function viewPlayerDetail(id){
   if(!p){ viewingPlayerId=null; return viewPlayers(); }
   const a = playerAvg(id);
   const obs = playerObs(id).slice().reverse();
-  const radarChartHtml = a ? radarChart(a.avgs) : `<p class="note">Brak obserwacji — dodaj pierwszą, aby zobaczyć profil.</p>`;
+  const radarChartHtml = (a && a.avgs) ? radarChart(a.avgs) : `<p class="note">Brak ocen — średnia i profil pojawią się po wypełnieniu raportu w zakładce „Raporty".</p>`;
 
   return `
   <button class="secondary" data-action="back-players" style="margin-bottom:14px;">&larr; Wróć do listy</button>
@@ -2678,8 +2709,8 @@ function viewPlayerDetail(id){
   </div>
   <div class="grid grid-2">
     <div class="card">
-      <h4 style="margin-top:0;color:var(--pitch);">Profil ocen ${a? '&middot; średnia '+fmt1(a.overall) : ''}</h4>
-      ${a? `<div class="gauge-row" style="margin-bottom:14px;">
+      <h4 style="margin-top:0;color:var(--pitch);">Profil ocen ${a && a.overall!=null? '&middot; średnia '+fmt1(a.overall)+' <span class="note" style="font-weight:400;">(z '+a.reportCount+' rap.)</span>' : ''}</h4>
+      ${a && a.avgs? `<div class="gauge-row" style="margin-bottom:14px;">
         ${RATING_KEYS.map(k=>gaugeRing(a.avgs[k], 64, RATING_LABELS[k])).join('')}
       </div>` : ''}
       <div class="radar-wrap">${radarChartHtml}</div>
@@ -2703,6 +2734,7 @@ function viewPlayerDetail(id){
         <tr><td style="color:var(--ink-soft);">mPZPN / 90minut.pl</td><td>${p.lnpLink? `<a class="ext-link" href="${esc(p.lnpLink)}" target="_blank" rel="noopener">profil / statystyki &rarr;</a>`:"—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">Transfermarkt</td><td>${p.tmLink? `<a class="ext-link" href="${esc(p.tmLink)}" target="_blank" rel="noopener">profil &rarr;</a>`:"—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">Menedżer / agent</td><td>${p.hasAgent? agencyDisplayHtml(p) : "Nie"}</td></tr>
+        <tr><td style="color:var(--ink-soft);">Kontrakt</td><td>${p.hasContract? `<span class="agent-yes">Tak</span>${p.contractUntil?` — do <strong>${esc(p.contractUntil)}</strong>`:''}` : '<span class="agent-no">Nie</span>'}</td></tr>
       </table>
       ${p.notes? `<p style="margin-top:10px;font-size:13px;">${esc(p.notes)}</p>`:''}
     </div>
@@ -2730,14 +2762,16 @@ function viewPlayerDetail(id){
   <div class="card">
     <h4 style="margin-top:0;color:var(--pitch);">Historia obserwacji (${obs.length})</h4>
     ${obs.length? obs.map(o=>{
-      const avg = RATING_KEYS.reduce((a2,k)=>a2+(Number(o.ratings[k])||0),0)/RATING_KEYS.length;
+      // Oceny liczbowe przy obserwacji to już tylko dane historyczne (okno "Statystyka" usunięte).
+      const hasHistRatings = o.statsFilledIn && o.ratings && RATING_KEYS.some(k=>Number(o.ratings[k])>0);
+      const avg = hasHistRatings ? RATING_KEYS.reduce((a2,k)=>a2+(Number(o.ratings[k])||0),0)/RATING_KEYS.length : null;
       return `<div class="obs-item">
         <div style="display:flex;justify-content:space-between;align-items:center;">
-          <strong>${esc(o.date)} &middot; ${esc(o.match)}</strong>
-          <span class="avg-chip">${fmt1(avg)}</span>
+          <strong>${esc(o.date)} &middot; ${esc(o.match||'—')}</strong>
+          ${avg!=null?`<span class="avg-chip">${fmt1(avg)}</span>`:''}
         </div>
-        <div class="meta">Scout: ${esc(o.scout)} &middot; ${RATING_KEYS.map(k=>RATING_LABELS[k]+": "+o.ratings[k]).join(' &middot; ')}</div>
-        <div class="meta">Rekomendacja: <strong>${esc(o.recommendation)}</strong></div>
+        <div class="meta">Scout: ${esc(o.scout)}${hasHistRatings?' &middot; '+RATING_KEYS.map(k=>RATING_LABELS[k]+": "+o.ratings[k]).join(' &middot; '):''}</div>
+        ${o.recommendation?`<div class="meta">Rekomendacja: <strong>${esc(o.recommendation)}</strong></div>`:''}
         ${o.notes? `<div style="font-size:12.5px;margin-top:4px;">${esc(o.notes)}</div>`:''}
       </div>`;
     }).join('') : `<div class="empty">Brak obserwacji dla tego zawodnika.</div>`}
@@ -2757,7 +2791,7 @@ function viewPlayerDetail(id){
   </div>
   <div class="card">
     <h4 style="margin-top:0;color:var(--pitch);">Profil ocen — radar</h4>
-    ${(()=>{ const a = playerAvg(p.id); return a ? radarSvg([{label:p.lastName, avgs:a.avgs, count:a.count}]) + `<p class="note" style="text-align:center;margin-top:6px;">Średnia z ${a.count} obserwacji (skala 1–10) &middot; ogólnie ${fmt1(a.overall)}</p>` : '<div class="empty">Brak ocen — dodaj obserwację w „Plan Obserwacji”, aby zobaczyć radar.</div>'; })()}
+    ${(()=>{ const a = playerAvg(p.id); return (a && a.avgs) ? radarSvg([{label:p.lastName, avgs:a.avgs, count:a.count}]) + `<p class="note" style="text-align:center;margin-top:6px;">Radar z historycznych ocen obserwacji (skala 1–10)${a.overall!=null?` &middot; śr. ocena z raportów: ${fmt1(a.overall)}`:''}</p>` : '<div class="empty">Brak ocen — średnia pojawi się po wypełnieniu raportu w zakładce „Raporty".</div>'; })()}
   </div>
   <div class="card">
     <h4 style="margin-top:0;color:var(--pitch);">Raporty taktyczne (${playerReports(p.id).length})</h4>
@@ -2960,7 +2994,7 @@ function viewClubDetail(id){
       <td>${p.birthYear||"—"}${isYouthPlayer(p)?youthBadge():''}</td>
       <td>${esc(p.position)}</td>
       <td>${p.status? `<span class="badge ${STATUS_CLASS[p.status]||'new'}">${esc(p.status)}</span>` : '—'}</td>
-      <td>${a? fmt1(a.overall):"—"}</td>
+      <td>${fmtAvg(a)}</td>
       <td style="white-space:nowrap;">
         <button class="link-btn" data-action="add-to-monitoring" data-id="${p.id}" style="color:var(--gold-dark);">${p.monitored?'✓ Monitoring':'+ Monitoring'}</button>
         <button class="link-btn" data-action="view-player" data-id="${p.id}" style="margin-left:10px;">Zobacz</button>
@@ -3007,7 +3041,6 @@ function viewClubDetail(id){
 // ---------- NEW OBSERVATION ----------
 let obsCalendarDate = new Date();
 let obsCalendarSelectedDay = null;
-let statystykaObsId = null;
 
 function viewNewObs(){
   const editing = editingObsId ? DB.observations.find(o=>o.id===editingObsId) : null;
@@ -3081,16 +3114,17 @@ function obsMonthListHtml(){
 
   if(!monthObs.length) return '<div class="empty">Brak zaplanowanych ani zrealizowanych obserwacji w tym miesiącu.</div>';
 
+  // Kliknięcie pozycji NIE otwiera już okna ocen (usunięte na życzenie — ocena powstaje w Raporcie).
+  // "✎ Edytuj" otwiera formularz edycji planu obserwacji (ten sam co "Nowy plan").
   return monthObs.map((o,i)=>{
     const pl = DB.players.find(p=>p.id===o.playerId);
-    const hasStats = o.statsFilledIn;
-    return `<div class="obs-item" style="cursor:pointer;" data-action="open-statystyka" data-id="${o.id}">
+    return `<div class="obs-item">
       <div class="toolbar" style="margin-bottom:2px;">
         <strong>${i+1}. ${pl?esc(pl.firstName+' '+pl.lastName):'—'}</strong>
         <span style="display:flex;align-items:center;gap:8px;">
-          <span class="meta">${esc(o.date)}${o.matchTime?' &middot; '+esc(o.matchTime):''} ${hasStats?'<span class="avg-chip">wypełniono statystykę</span>':''}</span>
-          <button class="link-btn" data-action="edit-obs" data-id="${o.id}" onclick="event.stopPropagation()" style="font-size:11px;">✎ Edytuj</button>
-          <button class="link-btn" data-action="delete-obs" data-id="${o.id}" onclick="event.stopPropagation()" style="font-size:11px;color:var(--clay-dark);">Usuń</button>
+          <span class="meta">${esc(o.date)}${o.matchTime?' &middot; '+esc(o.matchTime):''}</span>
+          <button class="link-btn" data-action="edit-obs" data-id="${o.id}" style="font-size:11px;">✎ Edytuj</button>
+          <button class="link-btn" data-action="delete-obs" data-id="${o.id}" style="font-size:11px;color:var(--clay-dark);">Usuń</button>
         </span>
       </div>
       <div class="meta">${esc(o.match||'brak danych meczu')}${o.location?' &middot; 📍 '+esc(o.location):''} &middot; scout: ${esc(o.scout)}</div>
@@ -3192,14 +3226,11 @@ async function saveNewObservation(){
     location: document.getElementById('obs-location').value.trim(),
     scout,
   };
-  // Przy edycji nadpisujemy TYLKO pola planu — oceny/statystykę (ratings, recommendation, notes,
-  // statsFilledIn) wypełnione wcześniej przez "Statystykę" zostają nietknięte.
+  // Przy edycji nadpisujemy TYLKO pola planu — ewentualne historyczne oceny/notatki zostają nietknięte.
   const obs = editing ? Object.assign(editing, planFields) : Object.assign({
     id: uid('O'),
-    // Etap planowania nie zbiera oceny — to wypełnia się później przez "Statystykę" (kliknięcie pozycji
-    // na liście poniżej), po odbyciu meczu. Neutralna wartość domyślna (5) i pusta rekomendacja
-    // zachowują działanie rankingu/zegarów/PDF do czasu faktycznego wypełnienia.
-    ratings: {technika:5, taktyka:5, motoryka:5, mentalnosc:5, potencjal:5},
+    // Obserwacja to wyłącznie plan/odbycie wizyty — ocena zawodnika powstaje w zakładce Raporty.
+    ratings: {},
     recommendation: '',
     notes: '',
     statsFilledIn: false
@@ -3948,7 +3979,7 @@ function buildAutoPositionCandidates(league, formation, number){
     .sort((a,b) => {
       const s = statusRank[a.p.status] - statusRank[b.p.status];   // Do transferu przed Na Testy
       if(s !== 0) return s;
-      return (b.a? b.a.overall : -1) - (a.a? a.a.overall : -1);     // potem wg średniej oceny
+      return ((b.a&&b.a.overall!=null)? b.a.overall : -1) - ((a.a&&a.a.overall!=null)? a.a.overall : -1);     // potem wg średniej oceny (z raportów)
     });
   const offset = posDef.rankOffset || 0;
   return candidates.slice(offset, offset+6).map(x=>x.p.id);
@@ -4080,7 +4111,7 @@ function viewObservedList(){
     const rankA = STATUS_ORDER[a.p.status] !== undefined ? STATUS_ORDER[a.p.status] : 9;
     const rankB = STATUS_ORDER[b.p.status] !== undefined ? STATUS_ORDER[b.p.status] : 9;
     if(rankA !== rankB) return rankA - rankB;
-    return (b.a?b.a.overall:0) - (a.a?a.a.overall:0);
+    return ((b.a&&b.a.overall!=null)?b.a.overall:0) - ((a.a&&a.a.overall!=null)?a.a.overall:0);
   });
   const trs = rows.map(({p,a})=>{
     return `<tr>
@@ -4088,7 +4119,7 @@ function viewObservedList(){
       <td>${esc(clubName(p.clubId))}</td>
       <td>${esc(p.position||'—')}</td>
       <td><span class="badge">${esc(p.status||'—')}</span></td>
-      <td>${a? fmt1(a.overall) : "—"}</td>
+      <td>${fmtAvg(a)}</td>
       <td><button class="link-btn" data-action="view-player" data-id="${p.id}">Zobacz</button></td>
     </tr>`;
   }).join('');
@@ -4124,7 +4155,7 @@ function viewTransferCommittee(){
       <td>${esc(clubName(p.clubId))}</td>
       <td>${esc(p.position||'—')}</td>
       <td><span class="badge ${STATUS_CLASS[p.status]||'new'}">${esc(p.status)}</span></td>
-      <td>${a? fmt1(a.overall) : "—"}</td>
+      <td>${fmtAvg(a)}</td>
       <td>
         <select class="committee-decision-select" data-id="${p.id}">
           <option value="" ${!p.committeeDecision?'selected':''}>Do rozpatrzenia</option>
@@ -4161,7 +4192,7 @@ function analyzePlayer(p){
   const overall = a ? a.overall : null;
 
   let strengths = [], weaknesses = [];
-  if(a){
+  if(a && a.avgs){
     const e = RATING_KEYS.map(k=>({k, v:a.avgs[k]})).sort((x,y)=>y.v-x.v);
     strengths = e.slice(0,2);
     weaknesses = e.slice(-2).reverse();
@@ -4229,10 +4260,10 @@ function openPlayerAnalysisModal(playerId){
       </div>
       <div style="flex:1;min-width:220px;">
         <div style="font-weight:800;color:${tone};font-size:15px;">${esc(an.reco)}</div>
-        <div class="note" style="margin-top:4px;">Śr. ocena: <strong>${an.overall!=null?fmt1(an.overall):'—'}/10</strong> · Trend: ${trendTxt} · Pewność: <strong>${esc(an.confidence)}</strong> (granica błędu: ${esc(an.errorMargin)})</div>
+        <div class="note" style="margin-top:4px;">Śr. ocena (z raportów): <strong>${an.overall!=null?fmt1(an.overall):'—'}/6</strong> · Trend: ${trendTxt} · Pewność: <strong>${esc(an.confidence)}</strong> (granica błędu: ${esc(an.errorMargin)})</div>
       </div>
     </div>
-    ${an.a ? radarSvg([{label:p.lastName, avgs:an.a.avgs, count:an.a.count}]) : '<div class="empty">Brak obserwacji — dodaj oceny, aby analiza była pełna.</div>'}
+    ${(an.a && an.a.avgs) ? radarSvg([{label:p.lastName, avgs:an.a.avgs, count:an.a.count}]) : '<div class="empty">Brak ocen liczbowych — wypełnij raport, aby analiza była pełna.</div>'}
     <div class="grid grid-2" style="margin-top:12px;">
       <div><label class="field">Mocne strony</label>${an.strengths.length? `<ul style="margin:4px 0;padding-left:18px;">${an.strengths.map(s=>`<li>${esc(RATING_LABELS[s.k]||s.k)} (${fmt1(s.v)})</li>`).join('')}</ul>` : '<div class="note">Brak danych</div>'}</div>
       <div><label class="field">Do poprawy</label>${an.weaknesses.length? `<ul style="margin:4px 0;padding-left:18px;">${an.weaknesses.map(s=>`<li>${esc(RATING_LABELS[s.k]||s.k)} (${fmt1(s.v)})</li>`).join('')}</ul>` : '<div class="note">Brak danych</div>'}</div>
@@ -4249,13 +4280,22 @@ function openPlayerAnalysisModal(playerId){
 const MONITORING_STATUSES = ['Do Obserwacji','Na Testy','Do transferu','Z polecenia'];
 function viewMonitoring(){
   // Pokazuj zawodników dodanych ręcznie ORAZ tych z decyzją statusu z raportu (pierwsze cztery opcje).
-  let rows = DB.players.filter(p => (p.monitored || p.source==='manual' || MONITORING_STATUSES.includes(p.status)) && !p.watchlistRemoved).map(p=>{
+  let base = DB.players.filter(p => (p.monitored || p.source==='manual' || MONITORING_STATUSES.includes(p.status)) && !p.watchlistRemoved);
+  // Wyszukiwanie według słów: każde wpisane słowo musi pasować do nazwiska/imienia/klubu/regionu/pozycji.
+  if(monitoringSearchQuery.trim()){
+    const words = monitoringSearchQuery.toLowerCase().split(/\s+/).filter(Boolean);
+    base = base.filter(p=>{
+      const hay = [p.firstName, p.lastName, clubName(p.clubId), clubRegion(p.clubId), p.position, p.status, p.birthYear].join(' ').toLowerCase();
+      return words.every(w=>hay.includes(w));
+    });
+  }
+  let rows = base.map(p=>{
     const a = playerAvg(p.id);
     const ds = a? daysSince(a.last.date) : null;
     let priority = "Brak obserwacji";
     if(a){
       if(ds>45) priority="Pilne";
-      else if(a.overall>=8) priority="Top talent";
+      else if(a.overall!=null && a.overall>=5) priority="Top talent";   // skala 1-6 (śr. z raportów)
       else priority="Standardowy";
     }
     return {p,a,ds,priority};
@@ -4272,7 +4312,7 @@ function viewMonitoring(){
       <td>${esc(clubName(p.clubId))}</td>
       <td>${esc(clubRegion(p.clubId))}</td>
       <td>${a? a.count : 0}</td>
-      <td>${a? fmt1(a.overall) : "—"}</td>
+      <td>${fmtAvg(a)}</td>
       <td>${a? a.last.date : "—"}</td>
       <td>${ds!==null? ds+" dni" : "—"}</td>
       <td>${p.hasAgent? `<span class="agent-yes">Tak</span>` : `<span class="agent-no">Nie</span>`}</td>
@@ -4287,6 +4327,9 @@ function viewMonitoring(){
   return `
   <h2 class="view-title">Monitoring / Watchlist</h2>
   <p class="view-sub">Automatyczne zestawienie — kto wymaga ponownej obserwacji, kto jest top talentem. Pokazuje tylko zawodników dodanych ręcznie przez Ciebie (nie masowe importy składów).</p>
+  <div class="toolbar" style="margin-bottom:10px;">
+    <input id="monitoring-search" placeholder="Szukaj po nazwisku, klubie, regionie, pozycji…" value="${esc(monitoringSearchQuery)}" style="max-width:360px;">
+  </div>
   <div class="card" style="padding:0;overflow:auto;">
     <table>
       <thead><tr><th>Zawodnik</th><th>Rocznik</th><th>Klub</th><th>Region</th><th>Obs.</th><th>Śr. ocena</th><th>Ostatnia obs.</th><th>Dni temu</th><th>Agent</th><th>Priorytet</th><th></th></tr></thead>
@@ -4426,6 +4469,17 @@ function openPlayerModal(id, presetClubId, prefillData){
         <input id="pm-agency" placeholder="Nazwa agencji" value="${p?esc(p.agencyName||''):''}">
       </div>
     </div>
+    <div class="field-wrap">
+      <label class="field">Czy zawodnik ma kontrakt</label>
+      <div class="radio-row">
+        <label><input type="radio" name="pm-contract" value="tak" ${p&&p.hasContract?'checked':''}> Tak</label>
+        <label><input type="radio" name="pm-contract" value="nie" ${!(p&&p.hasContract)?'checked':''}> Nie</label>
+      </div>
+      <div id="pm-contract-wrap" style="${p&&p.hasContract?'':'display:none;'}">
+        <label class="field" style="margin-top:6px;">Kontrakt do (data)</label>
+        <input type="date" id="pm-contract-until" value="${p?esc(p.contractUntil||''):''}">
+      </div>
+    </div>
     ${DB.settings.customFields && DB.settings.customFields.length ? `
     <div class="field-wrap">
       <label class="field">Dodatkowe pola</label>
@@ -4442,52 +4496,9 @@ function openPlayerModal(id, presetClubId, prefillData){
   document.body.appendChild(overlay);
 }
 
-function openStatystykaModal(obsId){
-  const o = DB.observations.find(x=>x.id===obsId);
-  if(!o) return;
-  statystykaObsId = obsId;
-  const pl = DB.players.find(p=>p.id===o.playerId);
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
-  overlay.innerHTML = `
-  <div class="modal">
-    <h3>Statystyka — ${pl?esc(pl.firstName+' '+pl.lastName):'zawodnik'}</h3>
-    <p class="note" style="margin-top:-8px;">${esc(o.date)}${o.matchTime?' &middot; '+esc(o.matchTime):''} &middot; ${esc(o.match||'brak danych meczu')}</p>
-    ${RATING_KEYS.map(k=>`
-      <div class="slider-row">
-        <span class="lbl">${RATING_LABELS[k]}</span>
-        <input type="range" min="1" max="10" step="1" value="${o.ratings&&o.ratings[k]!=null?o.ratings[k]:5}" id="stat-${k}" oninput="document.getElementById('stat-${k}-val').textContent=this.value">
-        <span class="val" id="stat-${k}-val">${o.ratings&&o.ratings[k]!=null?o.ratings[k]:5}</span>
-      </div>`).join('')}
-    <div class="field-wrap">
-      <label class="field">Rekomendacja</label>
-      <select id="stat-reco">${DB.settings.recommendations.map(r=>`<option ${o.recommendation===r?'selected':''}>${esc(r)}</option>`).join('')}</select>
-    </div>
-    <div class="field-wrap">
-      <label class="field">Notatki z meczu</label>
-      <textarea id="stat-notes" rows="3" placeholder="Co rzuciło się w oczy? Mocne/słabe strony, kontekst meczu...">${esc(o.notes||'')}</textarea>
-    </div>
-    <div class="modal-actions">
-      <button class="secondary" data-action="close-modal">Anuluj</button>
-      <button class="gold" data-action="save-statystyka">Zapisz statystykę</button>
-    </div>
-  </div>`;
-  document.body.appendChild(overlay);
-  wireLastModal();
-}
-
-async function saveStatystyka(){
-  const o = DB.observations.find(x=>x.id===statystykaObsId);
-  if(!o) return;
-  RATING_KEYS.forEach(k=> o.ratings[k] = Number(document.getElementById('stat-'+k).value));
-  o.recommendation = document.getElementById('stat-reco').value;
-  o.notes = document.getElementById('stat-notes').value.trim();
-  o.statsFilledIn = true;
-  await saveObservations();
-  statystykaObsId = null;
-  document.querySelectorAll('.modal-overlay').forEach(ov=>ov.remove());
-  render();
-}
+// Okno "Statystyka" (suwaki ocen przy obserwacji) USUNIĘTE na życzenie użytkownika — obserwacja to
+// wyłącznie plan/odbycie wizyty; ocena zawodnika powstaje w zakładce Raporty (fazy gry + stałe
+// fragmenty), z której liczona jest średnia. Historyczne oceny z obserwacji nadal zasilają radar.
 
 function openClubModal(id){
   const c = id ? DB.clubs.find(x=>x.id===id) : null;
@@ -4734,6 +4745,8 @@ function attachHandlers(){
   });
   const contactSearchInput = main.querySelector('#contact-search');
   if(contactSearchInput) contactSearchInput.oninput = ()=>{ contactSearchQuery = contactSearchInput.value; render(); };
+  const monitoringSearchInput = main.querySelector('#monitoring-search');
+  if(monitoringSearchInput) monitoringSearchInput.oninput = ()=>{ monitoringSearchQuery = monitoringSearchInput.value; render(); };
   main.querySelectorAll('.contact-inline-input').forEach(inp=>inp.onchange = async ()=>{
     await updateContactField(inp.dataset.id, inp.dataset.field, inp.value.trim());
     // Po zmianie nazwy klubu przebuduj listę, żeby wiersz od razu trafił na właściwe miejsce (alfabet).
@@ -4869,7 +4882,6 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="cal-next-month"]').forEach(b=>b.onclick=()=>calShiftMonth(1));
   main.querySelectorAll('.cal-cell[data-date]').forEach(cell=>cell.onclick=()=>calSelectDay(cell.dataset.date));
   main.querySelectorAll('[data-action="save-obs"]').forEach(b=>b.onclick=()=>saveNewObservation());
-  main.querySelectorAll('[data-action="open-statystyka"]').forEach(el=>el.onclick=()=>openStatystykaModal(el.dataset.id));
 
   // Edycja/usuwanie zaplanowanej lub zrealizowanej obserwacji.
   main.querySelectorAll('[data-action="edit-obs"]').forEach(b=>b.onclick=()=>{
@@ -5736,7 +5748,7 @@ function openPositionSlotModal(league, formation, number){
                 <button class="link-btn posmodal-remove-btn" data-id="${pl.id}" style="color:var(--clay-dark);font-size:11px;">usuń</button>
               </span>
             </div>
-            <div class="meta">${esc(pl.position)} &middot; ${esc(clubName(pl.clubId))} &middot; ${av?fmt1(av.overall):'brak ocen'}</div>
+            <div class="meta">${esc(pl.position)} &middot; ${esc(clubName(pl.clubId))} &middot; ${av&&av.overall!=null?fmt1(av.overall):'brak ocen'}</div>
           </div>`;
         }).join('') : '<div class="empty">Brak przypisanych zawodników — dodaj poniżej.</div>'}
       </div>
@@ -5751,7 +5763,7 @@ function openPositionSlotModal(league, formation, number){
             const av = playerAvg(pl.id);
             return `<div class="obs-item picker-result" data-player-id="${pl.id}" style="cursor:pointer;">
               <strong>${esc(pl.firstName)} ${esc(pl.lastName)}</strong>
-              <div class="meta">${esc(pl.position)} &middot; ${esc(clubName(pl.clubId))} &middot; ${av?fmt1(av.overall):'brak ocen'}</div>
+              <div class="meta">${esc(pl.position)} &middot; ${esc(clubName(pl.clubId))} &middot; ${av&&av.overall!=null?fmt1(av.overall):'brak ocen'}</div>
             </div>`;
           }).join('') : '<p class="note">Brak wyników.</p>'}
       </div>`}
@@ -5925,21 +5937,22 @@ async function generatePlayerPDF(playerId){
     <div class="meta-item"><div class="lbl">Noga</div><div class="val">${esc(p.foot||"—")}</div></div>
     <div class="meta-item"><div class="lbl">System gry</div><div class="val">${esc(p.formation||"—")}</div></div>
     <div class="meta-item"><div class="lbl">Status</div><div class="val">${esc(p.status||"—")}</div></div>
+    <div class="meta-item"><div class="lbl">Kontrakt</div><div class="val">${p.hasContract? ('Tak'+(p.contractUntil?' — do '+esc(p.contractUntil):'')) : 'Nie'}</div></div>
     <div class="meta-item"><div class="lbl">Mecze / gole / asysty</div><div class="val">${p.matches!=null?p.matches:"—"} / ${p.goals!=null?p.goals:"—"} / ${p.assists!=null?p.assists:"—"}</div></div>
     <div class="meta-item"><div class="lbl">Kartki żółte / czerwone</div><div class="val"><span style="color:#B8860B;">▮</span> ${p.yellowCards!=null?p.yellowCards:"—"} / <span style="color:#B6503F;">▮</span> ${p.redCards!=null?p.redCards:"—"}</div></div>
   </div>
 
   <div class="section">
     <div class="section-title">Oceny scoutingowe</div>
-    ${a?`
+    ${a && a.overall!=null?`
     <div class="overall-strip">
       <div class="big-num">${fmt1(a.overall)}</div>
-      <div class="txt"><strong>Średnia ogólna</strong> na podstawie ${a.count} obserwacji, ostatnia: ${esc(lastObs?lastObs.date:'—')}</div>
+      <div class="txt"><strong>Średnia ogólna (z ${a.reportCount} raportów, skala 1-6)</strong> obserwacje: ${a.count}, ostatnia: ${esc(lastObs?lastObs.date:'—')}</div>
       ${latestReport && latestReport.perspektywa ? `<div style="margin-left:auto;">${perspektywaBadgeReport(latestReport.perspektywa)}</div>` : ''}
     </div>` : ''}
     ${(a || latestReport) ? `<div class="attr5-grid">
       ${RATING_KEYS.map(k=>`<div class="attr5-col">
-        <div class="attr5-head"><span>${esc(RATING_LABELS[k])}</span>${a?`<span class="attr5-score">${fmt1(a.avgs[k])}</span>`:''}</div>
+        <div class="attr5-head"><span>${esc(RATING_LABELS[k])}</span>${a&&a.avgs?`<span class="attr5-score">${fmt1(a.avgs[k])}</span>`:''}</div>
         <div class="attr5-body">${reportTextByKey[k]?esc(reportTextByKey[k]):'<span class="attr5-empty">—</span>'}</div>
       </div>`).join('')}
     </div>` : `<p class="empty-note">Brak obserwacji i raportu — oceny oraz opisy pojawią się po pierwszej wizycie scoutingowej.</p>`}
@@ -5963,8 +5976,9 @@ async function generatePlayerPDF(playerId){
     ${obs.length?`<table class="obs-table">
       <tr><th>Data</th><th>Mecz</th><th>Scout</th><th>Ocena</th><th>Rekomendacja</th></tr>
       ${obs.map(o=>{
-        const rowAvg = RATING_KEYS.reduce((s,k)=>s+(Number(o.ratings[k])||0),0)/RATING_KEYS.length;
-        return `<tr><td>${esc(o.date)}</td><td>${esc(o.match)}</td><td>${esc(o.scout)}</td><td>${fmt1(rowAvg)}</td><td>${esc(o.recommendation)}</td></tr>`;
+        const hasHist = o.statsFilledIn && o.ratings && RATING_KEYS.some(k=>Number(o.ratings[k])>0);
+        const rowAvg = hasHist ? RATING_KEYS.reduce((s,k)=>s+(Number(o.ratings[k])||0),0)/RATING_KEYS.length : null;
+        return `<tr><td>${esc(o.date)}</td><td>${esc(o.match||'—')}</td><td>${esc(o.scout)}</td><td>${rowAvg!=null?fmt1(rowAvg):'—'}</td><td>${esc(o.recommendation||'—')}</td></tr>`;
       }).join('')}
     </table>`:`<p class="empty-note">Brak zarejestrowanych obserwacji.</p>`}
   </div>
@@ -6163,10 +6177,6 @@ function wireLastModal(){
     openTmBtn.onclick = ()=>openTmProfileFromModal();
   }
 
-  const saveStatBtn = ov.querySelector('[data-action="save-statystyka"]');
-  if(saveStatBtn){
-    saveStatBtn.onclick = ()=>saveStatystyka();
-  }
 
   const crestFileInput = ov.querySelector('#cm-crest-file');
   if(crestFileInput){
@@ -6207,6 +6217,12 @@ function wireLastModal(){
     const checked = ov.querySelector('input[name="pm-agent"]:checked');
     wrap.style.display = (checked && checked.value==='tak') ? '' : 'none';
   });
+  const contractRadios = ov.querySelectorAll('input[name="pm-contract"]');
+  contractRadios.forEach(r=> r.onchange = ()=>{
+    const wrap = ov.querySelector('#pm-contract-wrap');
+    const checked = ov.querySelector('input[name="pm-contract"]:checked');
+    wrap.style.display = (checked && checked.value==='tak') ? '' : 'none';
+  });
 
   ov.querySelectorAll('[data-action="save-player"]').forEach(b=>b.onclick=async()=>{
     const first = document.getElementById('pm-first').value.trim();
@@ -6235,6 +6251,8 @@ function wireLastModal(){
       tmLink: document.getElementById('pm-tm').value.trim(),
       hasAgent,
       agencyName: hasAgent ? document.getElementById('pm-agency').value.trim() : '',
+      hasContract: (ov.querySelector('input[name="pm-contract"]:checked')||{}).value === 'tak',
+      contractUntil: ((ov.querySelector('input[name="pm-contract"]:checked')||{}).value === 'tak') ? document.getElementById('pm-contract-until').value : '',
       formation: document.getElementById('pm-formation').value,
       matches: document.getElementById('pm-matches').value===''? null : Number(document.getElementById('pm-matches').value),
       minutes: document.getElementById('pm-minutes').value===''? null : Number(document.getElementById('pm-minutes').value),
