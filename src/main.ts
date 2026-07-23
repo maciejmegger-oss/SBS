@@ -40,7 +40,7 @@ let dashboardGroupSelected = null; // wybrana grupa (np. "III liga, gr. II") po 
 
 const DEFAULT_SETTINGS = {
   regions: ["Dolnośląski ZPN","Kujawsko-Pomorski ZPN","Lubelski ZPN","Lubuski ZPN","Łódzki ZPN","Małopolski ZPN","Mazowiecki ZPN","Opolski ZPN","Podkarpacki ZPN","Podlaski ZPN","Pomorski ZPN","Śląski ZPN","Świętokrzyski ZPN","Warmińsko-Mazurski ZPN","Wielkopolski ZPN","Zachodniopomorski ZPN"],
-  leagues: ["Ekstraklasa","I liga","II liga","III liga, gr. I","III liga, gr. II","III liga, gr. III","III liga, gr. IV","IV liga (pomorska)","IV liga (zachodniopomorska)","IV liga (dolnośląska)","IV liga (śląska)","IV liga (wielkopolska)","Klasa okręgowa","CLJ U19","CLJ U17 (zachodnia)","CLJ U17 (wschodnia)","Liga makroregionalna U16"],
+  leagues: ["Ekstraklasa","I liga","II liga","III liga, gr. I","III liga, gr. II","III liga, gr. III","III liga, gr. IV","IV liga (pomorska)","IV liga (zachodniopomorska)","IV liga (dolnośląska)","IV liga (śląska)","IV liga (wielkopolska)","Klasa okręgowa","CLJ U19","CLJ U17 (zachodnia)","CLJ U17 (wschodnia)","Liga makroregionalna U16","Rocznik 2011","Rocznik 2012","Rocznik 2013","Rocznik 2014"],
   positions: ["Bramkarz","Obrońca prawy","Obrońca lewy","Obrońca środkowy","Obrońca środkowy prawy","Obrońca środkowy centralny","Obrońca środkowy lewy","Obrońca boczny","Wahadłowy prawy","Wahadłowy lewy","Pomocnik defensywny","Pomocnik środkowy","Pomocnik ofensywny","Skrzydłowy","Skrzydłowy prawy","Skrzydłowy lewy","Napastnik"],
   statuses: ["Do Obserwacji","Na Testy","Do transferu","Z polecenia","Rekomendowany","Odrzucony"],
   recommendations: ["Kontynuować obserwację","Zaprosić na testy","(Do transferu)","Odrzucić","Zbyt wcześnie ocenić"],
@@ -1849,6 +1849,14 @@ async function loadAllInner(){
     const woj = L.indexOf('Liga wojewódzka U15');
     if(woj >= 0) L.splice(woj, 1);
   }
+  // Kategorie juniorskie wg ROCZNIKA (2011-2014) — osobne "grupy" pod Kategoriami juniorskimi,
+  // do zakładania klubów/drużyn rocznikowych i wgrywania ich zawodników. Idempotentnie dla
+  // istniejących instalacji (dopisujemy brakujące na koniec listy lig).
+  if(Array.isArray(DB.settings.leagues)){
+    ['Rocznik 2011','Rocznik 2012','Rocznik 2013','Rocznik 2014'].forEach(r=>{
+      if(!DB.settings.leagues.includes(r)) DB.settings.leagues.push(r);
+    });
+  }
   // Rozszerzona lista pozycji (skrzydłowy P/L, wahadłowy P/L, obrońcy P/L/środkowi) także w istniejących
   // instalacjach. Zastępujemy całą listę kanoniczną — stare wartości pozycji zawodników nadal w niej są.
   if(Array.isArray(DB.settings.positions) && !DB.settings.positions.includes('Skrzydłowy prawy')){
@@ -2931,17 +2939,30 @@ function viewClubs(){
 
   let groupRow = '';
   if(clubBrowse.top==='III liga' || clubBrowse.top==='IV liga' || clubBrowse.top==='Kategorie juniorskie'){
-    const groups = groupsForTop(clubBrowse.top);
+    const allGroups = groupsForTop(clubBrowse.top);
+    // Kategorie juniorskie: roczniki (Rocznik 2011-2014) w OSOBNYM rzędzie pod ligami juniorskimi.
+    const yearGroups = allGroups.filter(g=>/^Rocznik \d{4}$/.test(g));
+    const groups = allGroups.filter(g=>!yearGroups.includes(g));
+    const groupPill = (g, i)=>{
+      const val = g==='Wszystkie grupy' ? '' : g;
+      // Skracaj etykietę tylko dla III/IV ligi; kategorie juniorskie (np. "CLJ U17 (zachodnia)") zostają w całości.
+      let label = g;
+      if(g.startsWith('III liga, ')) label = g.replace('III liga, ','');
+      else if(g.startsWith('IV liga (')) label = g.replace(/^IV liga \(|\)$/g,'');
+      if(i > 0) label = i + '. ' + label;   // liczba porządkowa przy każdej grupie (poza "Wszystkie grupy")
+      return pill(label, clubBrowse.group===val, 'browse-group', {val});
+    };
     groupRow = `<div class="filters" style="margin-top:8px;">` +
-      ['Wszystkie grupy', ...groups].map((g, i)=>{
-        const val = g==='Wszystkie grupy' ? '' : g;
-        // Skracaj etykietę tylko dla III/IV ligi; kategorie juniorskie (np. "CLJ U17 (zachodnia)") zostają w całości.
-        let label = g;
-        if(g.startsWith('III liga, ')) label = g.replace('III liga, ','');
-        else if(g.startsWith('IV liga (')) label = g.replace(/^IV liga \(|\)$/g,'');
-        if(i > 0) label = i + '. ' + label;   // liczba porządkowa przy każdej grupie (poza "Wszystkie grupy")
-        return pill(label, clubBrowse.group===val, 'browse-group', {val});
-      }).join(' ') + `</div>`;
+      ['Wszystkie grupy', ...groups].map(groupPill).join(' ') + `</div>` +
+      (yearGroups.length ? `<div class="filters" style="margin-top:8px;">` +
+        yearGroups.map(g=>pill(g, clubBrowse.group===g, 'browse-group', {val:g})).join(' ') + `</div>` : '');
+    // Wybrany rocznik: bezpośrednie wgrywanie zawodników (plik Excel/CSV albo wklejona treść) —
+    // trafiają do automatycznie tworzonej zbiorczej "drużyny rocznika" widocznej w tym filtrze.
+    if(/^Rocznik \d{4}$/.test(clubBrowse.group)){
+      groupRow += `<div style="margin-top:10px;">
+        <button class="gold" data-action="rocznik-import" data-group="${esc(clubBrowse.group)}">📋 Wgraj zawodników do: ${esc(clubBrowse.group)} (Excel / wklej treść)</button>
+      </div>`;
+    }
   }
 
   const rows = list.map(c=>{
@@ -5386,6 +5407,41 @@ function parseSquadBlocks(rawText){
 function parseSquadText(rawText){
   return parseSquadBlocks(rawText) || rawText.split('\n').map(parseSquadLine).filter(Boolean);
 }
+// Import składu z pliku Excel/CSV — np. listy rocznikowe do rozgrywek juniorskich (Rocznik 2011-2014),
+// gdzie nie ma strony na Transfermarkt do skopiowania. Kolumny: Imię, Nazwisko (albo jedna kolumna
+// "Zawodnik"/"Imię i nazwisko"), opcjonalnie Rocznik, Pozycja, Narodowość — kolejność dowolna.
+function parseSquadWorkbookRows(rows){
+  if(!rows.length) throw new Error('Arkusz jest pusty (brak wierszy danych pod nagłówkiem).');
+  const norm = (s)=> String(s||'').toLowerCase().replace(/[ąćęłńóśźż]/g, c=>({ą:'a',ć:'c',ę:'e',ł:'l',ń:'n',ó:'o',ś:'s',ź:'z',ż:'z'}[c])).replace(/[^a-z0-9]/g,'');
+  const headerMap = {};
+  Object.keys(rows[0]).forEach(h=>{ headerMap[norm(h)] = h; });
+  const findCol = (...cands)=>{ for(const c of cands){ if(headerMap[norm(c)]) return headerMap[norm(c)]; } return null; };
+  const colFirst = findCol('Imię','Imie','FirstName');
+  const colLast  = findCol('Nazwisko','LastName');
+  const colFull  = findCol('Imię i nazwisko','Zawodnik','Imie i nazwisko');
+  const colYear  = findCol('Rocznik','Rok urodzenia','Rok','BirthYear');
+  const colPos   = findCol('Pozycja','Position');
+  const colNat   = findCol('Narodowość','Narodowosc','Nationality');
+  if(!colFirst && !colLast && !colFull) throw new Error('Nie znaleziono kolumny z imieniem/nazwiskiem — oczekiwane nagłówki: Imię, Nazwisko (albo Zawodnik).');
+  return rows.map(row=>{
+    let firstName = colFirst ? String(row[colFirst]||'').trim() : '';
+    let lastName  = colLast ? String(row[colLast]||'').trim() : '';
+    if(!firstName && !lastName && colFull){
+      const parts = String(row[colFull]||'').trim().split(/\s+/).filter(Boolean);
+      firstName = parts[0]||''; lastName = parts.slice(1).join(' ');
+    }
+    if(!firstName && !lastName) return null;
+    const yearRaw = colYear ? String(row[colYear]||'').trim() : '';
+    const posRaw  = colPos ? String(row[colPos]||'').trim() : '';
+    return {
+      ok: true, firstName, lastName,
+      position: posRaw ? (mapSquadPosition(posRaw) || posRaw) : '',
+      birthYear: /^\d{4}$/.test(yearRaw) ? yearRaw : '',
+      nationality: colNat ? String(row[colNat]||'').trim() : '',
+      raw: [firstName, lastName, yearRaw].filter(Boolean).join(' ')
+    };
+  }).filter(Boolean);
+}
 function openSquadImportModal(clubId){
   const already = document.querySelector('.modal-overlay[data-squadimport-for]');
   if(already) already.remove();
@@ -5425,8 +5481,12 @@ function openSquadImportModal(clubId){
           `}
         </div>
       </div>
-      <div class="modal-actions" style="justify-content:flex-start;margin-bottom:14px;">
+      <div class="modal-actions" style="justify-content:flex-start;margin-bottom:10px;">
         <button class="secondary" data-action="squad-parse">Rozpoznaj zawodników</button>
+      </div>
+      <div class="field-wrap" style="border-top:1px dashed #D9D3C4;padding-top:10px;margin-bottom:14px;">
+        <label class="field">…albo wgraj plik Excel / CSV (np. lista rocznika do rozgrywek juniorskich) — kolumny: <strong>Imię, Nazwisko</strong> (albo „Zawodnik"), opcjonalnie Rocznik, Pozycja, Narodowość</label>
+        <input type="file" id="squad-import-file" accept=".xlsx,.xls,.csv">
       </div>
       ${parsed.length ? `
         <div style="border-top:1px solid #E3DECE;padding-top:10px;margin-bottom:12px;max-height:280px;overflow:auto;">
@@ -5473,6 +5533,21 @@ function openSquadImportModal(clubId){
       parsed = parseSquadText(text);
       draw();
     });
+    const squadFileInput = overlay.querySelector('#squad-import-file');
+    if(squadFileInput) squadFileInput.onchange = async ()=>{
+      const file = squadFileInput.files[0];
+      if(!file) return;
+      try{
+        if(!XLSX) throw new Error('Biblioteka do odczytu arkuszy nie jest dostępna.');
+        const buf = await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(new Error('Nie udało się odczytać pliku.')); r.readAsArrayBuffer(file); });
+        const wb = XLSX.read(buf, {type:'array'});
+        const firstSheet = wb.SheetNames[0];
+        if(!firstSheet) throw new Error('Plik nie zawiera żadnego arkusza.');
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[firstSheet], {defval:''});
+        parsed = parseSquadWorkbookRows(rows);
+        draw();
+      }catch(e){ alert('Błąd importu pliku: ' + (e.message||e)); }
+    };
     const imageInput = overlay.querySelector('#squad-import-image');
     if(imageInput) imageInput.onchange = ()=> loadReferenceImageFile(imageInput.files[0]);
     overlay.querySelectorAll('[data-action="squad-image-remove"]').forEach(b=>b.onclick=()=>{ referenceImage = null; draw(); });
@@ -5496,7 +5571,7 @@ function openSquadImportModal(clubId){
         DB.players.push({
           id: uid('Z'), firstName: p.firstName, lastName: p.lastName,
           birthDate: '', birthYear: p.birthYear || '', nationality: p.nationality || '',
-          position: p.position || DB.settings.positions[0], foot: '', height: null,
+          position: p.position || '', foot: '', height: null,   // brak pozycji w źródle = puste (uzupełnisz później), nie "Bramkarz"
           // Bez statusu przy imporcie — status "Do Obserwacji" pojawia się dopiero, gdy dla
           // zawodnika faktycznie zaplanujemy obserwację (patrz saveNewObservation()).
           status: '', clubId: club.id, scout: currentScout || '',
