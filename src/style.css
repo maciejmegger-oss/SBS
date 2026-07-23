@@ -349,6 +349,16 @@ tr:hover td{background:#FBF9F2;}
 .talent-row-actions button{font-size:12.5px;}
 @media(max-width:1000px){ .talent-layout{grid-template-columns:1fr;} .talent-aside{position:static;} .talent-list{max-height:none;} }
 
+/* Kontakty — szerokości pól inline tak, żeby CAŁE adresy e-mail były widoczne (nie ucięte).
+   E-mail dostaje najwięcej miejsca, imię/nazwisko/telefon mniej; tabela i tak przewija się w kartcie. */
+.contact-inline-input{width:100%;box-sizing:border-box;}
+.contact-field-email{min-width:310px;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;}
+.contact-field-klub{min-width:190px;}
+.contact-field-imie{min-width:90px;max-width:120px;}
+.contact-field-nazwisko{min-width:110px;max-width:140px;}
+.contact-field-telefon{min-width:120px;max-width:150px;}
+.contact-field-notatka{min-width:150px;}
+
 /* Monitoring — czytelny wskaźnik "ma agenta" (Tak/Nie). */
 .agent-yes{color:#3E7D4C;font-weight:800;}
 .agent-no{color:var(--ink-soft);font-weight:600;}
