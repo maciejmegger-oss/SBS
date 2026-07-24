@@ -5628,32 +5628,140 @@ function openSquadImportModal(clubId){
   draw();
 }
 
+function parseRocznikTextLines(text){
+  const lines = text.split('\n').map(l=>l.trim()).filter(Boolean);
+  const results = [];
+  let current = {};
+  const norm = (s)=> String(s||'').toLowerCase().replace(/[ąćęłńóśźż]/g, c=>({ą:'a',ć:'c',ę:'e',ł:'l',ń:'n',ó:'o',ś:'s',ź:'z',ż:'z'}[c])).replace(/[^a-z0-9]/g,'');
+
+  for(const line of lines){
+    const clean = line.replace(/^\d+\.?\s*/, '').trim();
+    if(!clean) continue;
+    if(/^\d{4}$/.test(clean)){ current.birthYear = clean; }
+    else if(/(bramkarz|obron|pomocnik|napastnik|bramka|def|mid|for|forward|back|defender)/i.test(clean)){
+      current.position = mapSquadPosition(clean) || clean;
+    }
+    else if(clean.length > 2 && !/\s/.test(clean) && !current.firstName){
+      current.firstName = clean;
+    }
+    else if(clean.length > 2 && !current.lastName && current.firstName){
+      current.lastName = clean;
+      if(current.firstName && current.lastName){
+        results.push({ ok: true, firstName: current.firstName, lastName: current.lastName, position: current.position||'', nationality: '' });
+        current = {};
+      }
+    }
+  }
+
+  // Parsuj też format tabelaryczny (Lp, Nazwisko, Imię...)
+  const headerLine = lines[0];
+  if(headerLine && (headerLine.includes('Nazwisko') || headerLine.includes('Imię'))){
+    results.length = 0;
+    const lines2 = text.split('\n').map(l=>l.trim()).filter(Boolean);
+    for(let i=1; i<lines2.length; i++){
+      const parts = lines2[i].split(/\t+|\s{2,}/);
+      if(parts.length >= 3){
+        let nameIdx=0, firstIdx=1, yearIdx=2, posIdx=-1;
+        // Spróbuj znaleźć poprawny porządek
+        const header = lines2[0].toLowerCase();
+        if(header.includes('nazwisko') && header.includes('imię')){
+          nameIdx = header.indexOf('nazwisko') > header.indexOf('imię') ? 1 : 0;
+          firstIdx = nameIdx===0 ? 1 : 0;
+        }
+        const lastName = (parts[nameIdx]||'').replace(/^\d+\.?\s*/,'').trim();
+        const firstName = (parts[firstIdx]||'').trim();
+        const year = (parts[yearIdx]||'').match(/\d{4}/)?.[0]||'';
+        const pos = posIdx>=0 ? (parts[posIdx]||'').trim() : '';
+        if(firstName && lastName){
+          results.push({ ok: true, firstName, lastName, position: pos || '', nationality: '' });
+        }
+      }
+    }
+  }
+
+  return results.length ? results : [];
+}
+
 function openRocznikExcelImport(rocznikGroup){
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   const year = rocznikGroup.match(/\d{4}/)[0];
+  let importMode = 'file';
 
   function closeAndRefresh(){ overlay.remove(); render(); }
 
   function draw(){
     overlay.innerHTML = `
-    <div class="modal" style="max-width:600px;">
+    <div class="modal" style="max-width:700px;">
       <h3>Import zawodników — ${esc(rocznikGroup)}</h3>
-      <p class="note">Wgraj plik Excel/CSV z zawodnikami. Wymagane kolumny: <strong>Imię, Nazwisko</strong>. Opcjonalnie: Pozycja, Narodowość</p>
-      <div class="field-wrap" style="margin-bottom:14px;">
-        <label class="field">Wgraj plik Excel / CSV</label>
-        <input type="file" id="rocznik-file" accept=".xlsx,.xls,.csv">
+      <div style="display:flex;gap:8px;margin-bottom:14px;">
+        <button class="gold" data-action="mode-file" style="${importMode==='file'?'':'opacity:0.6;'}">📋 Plik Excel/CSV</button>
+        <button class="gold" data-action="mode-text" style="${importMode==='text'?'':'opacity:0.6;'}">📝 Wklej tekst</button>
       </div>
-      <div class="modal-actions">
-        <button class="gold" data-action="rocznik-import-go">Importuj</button>
-        <button class="secondary" data-action="close-modal">Anuluj</button>
-      </div>
+      ${importMode==='file' ? `
+        <div class="field-wrap" style="margin-bottom:14px;">
+          <label class="field">Wgraj plik Excel / CSV</label>
+          <input type="file" id="rocznik-file" accept=".xlsx,.xls,.csv">
+        </div>
+        <div class="modal-actions">
+          <button class="gold" data-action="rocznik-import-go">Importuj z pliku</button>
+          <button class="secondary" data-action="close-modal">Anuluj</button>
+        </div>
+      ` : `
+        <div class="field-wrap" style="margin-bottom:14px;">
+          <label class="field">Wklej listę zawodników (Lp. Nazwisko Imię Rok...)</label>
+          <textarea id="rocznik-paste" rows="12" placeholder="1.&#10;NOWICKI&#10;KAROL&#10;2013&#10;Bramkarz&#10;AF BRZOZA&#10;&#10;2.&#10;BIAŁKOWSKI&#10;DAWID&#10;2013..." style="font-size:12px;font-family:monospace;"></textarea>
+        </div>
+        <div class="modal-actions">
+          <button class="gold" data-action="rocznik-paste-go">Importuj z tekstu</button>
+          <button class="secondary" data-action="close-modal">Anuluj</button>
+        </div>
+      `}
     </div>`;
     wire();
   }
 
   function wire(){
     overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=closeAndRefresh);
+    overlay.querySelectorAll('[data-action="mode-file"]').forEach(b=>b.onclick=()=>{ importMode='file'; draw(); });
+    overlay.querySelectorAll('[data-action="mode-text"]').forEach(b=>b.onclick=()=>{ importMode='text'; draw(); });
+    overlay.querySelectorAll('[data-action="rocznik-paste-go"]').forEach(b=>b.onclick=async()=>{
+      const textarea = overlay.querySelector('#rocznik-paste') as any;
+      const text = textarea.value.trim();
+      if(!text){ alert('Wklej listę zawodników!'); return; }
+      try{
+        const parsed = parseRocznikTextLines(text);
+        const toAdd = parsed.filter(p=>p.firstName && p.lastName);
+        if(!toAdd.length){ alert('Brak prawidłowych zawodników.'); return; }
+        const orig = b.textContent; b.disabled = true; b.textContent = 'Importowanie...';
+        let added = 0;
+        toAdd.forEach(p=>{
+          const exists = DB.players.some(pl=>pl.firstName===p.firstName && pl.lastName===p.lastName && pl.birthYear===year);
+          if(exists) return;
+          DB.players.push({
+            id: uid('Z'), firstName: p.firstName, lastName: p.lastName,
+            birthDate: '', birthYear: year, nationality: p.nationality || '',
+            position: p.position || '', foot: '', height: null,
+            status: '', clubId: null, scout: currentScout || '',
+            videoLink: '', lnpLink: '', tmLink: '', hasAgent: false, agencyName: '',
+            formation: '', customFields: {}, notes: '',
+            dateAdded: new Date().toISOString().slice(0,10)
+          });
+          added++;
+        });
+        const ok = await savePlayers();
+        if(ok){
+          alert(`Zaimportowano ${added} zawodników.`);
+          closeAndRefresh();
+        } else {
+          b.disabled = false; b.textContent = orig;
+          alert('Nie udało się zapisać.');
+        }
+      }catch(e){
+        b.disabled = false; b.textContent = 'Importuj z tekstu';
+        alert('Błąd: ' + ((e as any).message||e));
+      }
+    });
     overlay.querySelectorAll('[data-action="rocznik-import-go"]').forEach(b=>b.onclick=async()=>{
       const fileInput = overlay.querySelector('#rocznik-file') as any;
       if(!fileInput.files[0]){ alert('Wybierz plik!'); return; }
