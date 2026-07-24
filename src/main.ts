@@ -2964,13 +2964,6 @@ function viewClubs(){
       ['Wszystkie grupy', ...groups].map(groupPill).join(' ') + `</div>` +
       (yearGroups.length ? `<div class="filters" style="margin-top:8px;">` +
         yearGroups.map(g=>pill(g, clubBrowse.group===g, 'browse-group', {val:g})).join(' ') + `</div>` : '');
-    // Wybrany rocznik: bezpośrednie wgrywanie zawodników (plik Excel/CSV albo wklejona treść) —
-    // trafiają do automatycznie tworzonej zbiorczej "drużyny rocznika" widocznej w tym filtrze.
-    if(/^Rocznik \d{4}$/.test(clubBrowse.group)){
-      groupRow += `<div style="margin-top:10px;">
-        <button class="gold" data-action="rocznik-import" data-group="${esc(clubBrowse.group)}">📋 Wgraj zawodników do: ${esc(clubBrowse.group)} (Excel / wklej treść)</button>
-      </div>`;
-    }
   }
 
   const rows = list.map(c=>{
@@ -4850,7 +4843,6 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="browse-group"]').forEach(b=>b.onclick=()=>{
     clubBrowse.group = b.dataset.val; render();
   });
-  main.querySelectorAll('[data-action="rocznik-import"]').forEach(b=>b.onclick=()=>openRocznikImportModal(b.dataset.group));
   main.querySelectorAll('[data-action="view-club"]').forEach(b=>b.onclick=()=>{
     viewingClubId = b.dataset.id; render();
   });
@@ -5606,155 +5598,6 @@ function openSquadImportModal(clubId){
         console.error('Import składu nie powiódł się:', e);
         b.disabled = false; b.textContent = origLabel;
         alert('Nie udało się zapisać zaimportowanych zawodników: ' + (e.message||e));
-      }
-    });
-  }
-
-  overlay.addEventListener('click', e=>{ if(e.target===overlay) closeAndRefresh(); });
-  document.body.appendChild(overlay);
-  draw();
-}
-
-function openRocznikImportModal(rocznikGroup){
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
-  let parsed = [];
-  let pastedText = '';
-  let referenceImage = null;
-
-  function closeAndRefresh(){ overlay.remove(); render(); }
-
-  function draw(){
-    overlay.innerHTML = `
-    <div class="modal" style="max-width:680px;">
-      <h3>Import zawodników — ${esc(rocznikGroup)}</h3>
-      <p class="note" style="margin-top:-4px;">Wklej listę zawodników (jeden na linię) lub wgraj plik Excel/CSV. Kolumny: <strong>Imię, Nazwisko</strong>, opcjonalnie Rocznik, Pozycja, Narodowość</p>
-      <div class="grid grid-2" style="align-items:start;">
-        <div class="field-wrap">
-          <textarea id="rocznik-import-text" rows="8" placeholder="np.&#10;Rafał Grocholski Bramkarz 2004 Polska&#10;Jonatan Straus Obrońca 2004 Polska">${esc(pastedText)}</textarea>
-        </div>
-        <div class="field-wrap">
-          <label class="field">Podgląd zrzutu ekranu (opcjonalnie)</label>
-          ${referenceImage ? `
-            <div style="position:relative;">
-              <img src="${referenceImage}" style="max-width:100%;max-height:260px;object-fit:contain;border:1px solid #E3DECE;border-radius:6px;display:block;">
-              <button class="secondary" data-action="rocznik-image-remove" style="position:absolute;top:6px;right:6px;padding:2px 8px;">✕</button>
-            </div>
-          ` : `
-            <label for="rocznik-import-image" style="display:flex;align-items:center;justify-content:center;height:120px;border:1px dashed #C9C2AE;border-radius:6px;cursor:pointer;color:var(--ink-soft);font-size:13px;text-align:center;padding:8px;">📋 Wklej (Ctrl+V) lub kliknij</label>
-            <input type="file" id="rocznik-import-image" accept="image/*" style="display:none;">
-          `}
-        </div>
-      </div>
-      <div class="modal-actions" style="justify-content:flex-start;margin-bottom:10px;">
-        <button class="secondary" data-action="rocznik-parse">Rozpoznaj zawodników</button>
-      </div>
-      <div class="field-wrap" style="border-top:1px dashed #D9D3C4;padding-top:10px;margin-bottom:14px;">
-        <label class="field">…albo wgraj plik Excel / CSV</label>
-        <input type="file" id="rocznik-import-file" accept=".xlsx,.xls,.csv">
-      </div>
-      ${parsed.length ? `
-        <div style="border-top:1px solid #E3DECE;padding-top:10px;margin-bottom:12px;max-height:280px;overflow:auto;">
-          <p class="note" style="margin-top:0;">Rozpoznano <strong>${parsed.filter(p=>p.ok).length}</strong> z ${parsed.length} linii.</p>
-          <table><tbody>
-            ${parsed.map((p,i)=> p.ok ? `
-              <tr>
-                <td style="width:24px;"><input type="checkbox" class="rocznik-row-check" data-idx="${i}" checked></td>
-                <td><strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</td>
-                <td>${esc(p.position||'—')}</td>
-                <td>${esc(p.birthYear||'—')}</td>
-                <td>${p.nationality? esc(p.nationality) : '—'}</td>
-              </tr>` : `
-              <tr style="color:var(--clay-dark);">
-                <td></td>
-                <td colspan="4" style="font-size:12px;">Nie rozpoznano: „${esc(p.raw)}"</td>
-              </tr>`
-            ).join('')}
-          </tbody></table>
-        </div>
-        <div class="modal-actions" style="justify-content:flex-start;">
-          <button class="gold" data-action="rocznik-import-confirm">Importuj zaznaczonych zawodników</button>
-        </div>
-      ` : ''}
-      <div class="modal-actions">
-        <button class="secondary" data-action="close-modal">Zamknij</button>
-      </div>
-    </div>`;
-    wire();
-  }
-
-  function loadReferenceImageFile(file){
-    if(!file || !file.type.startsWith('image/')) return;
-    const reader = new FileReader();
-    reader.onload = ()=>{ referenceImage = reader.result; draw(); };
-    reader.readAsDataURL(file);
-  }
-
-  function wire(){
-    overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=closeAndRefresh);
-    overlay.querySelectorAll('[data-action="rocznik-parse"]').forEach(b=>b.onclick=()=>{
-      const text = (overlay.querySelector('#rocznik-import-text') as any).value;
-      pastedText = text;
-      parsed = parseSquadText(text);
-      draw();
-    });
-    const fileInput = overlay.querySelector('#rocznik-import-file') as any;
-    if(fileInput) fileInput.onchange = async ()=>{
-      const file = fileInput.files[0];
-      if(!file) return;
-      try{
-        if(!XLSX) throw new Error('Biblioteka do odczytu arkuszy nie jest dostępna.');
-        const buf = await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(new Error('Nie udało się odczytać pliku.')); r.readAsArrayBuffer(file); });
-        const wb = XLSX.read(buf, {type:'array'});
-        const firstSheet = wb.SheetNames[0];
-        if(!firstSheet) throw new Error('Plik nie zawiera żadnego arkusza.');
-        const rows = XLSX.utils.sheet_to_json(wb.Sheets[firstSheet], {defval:''});
-        parsed = parseSquadWorkbookRows(rows);
-        draw();
-      }catch(e){ alert('Błąd importu pliku: ' + ((e as any).message||e)); }
-    };
-    const imageInput = overlay.querySelector('#rocznik-import-image') as any;
-    if(imageInput) imageInput.onchange = ()=> loadReferenceImageFile(imageInput.files[0]);
-    overlay.querySelectorAll('[data-action="rocznik-image-remove"]').forEach(b=>b.onclick=()=>{ referenceImage = null; draw(); });
-    overlay.onpaste = (e)=>{
-      const item = Array.from(e.clipboardData?.items||[]).find(i=>i.type.startsWith('image/'));
-      if(item) loadReferenceImageFile((item as any).getAsFile());
-    };
-    const textarea = overlay.querySelector('#rocznik-import-text') as any;
-    if(textarea) textarea.oninput = ()=>{ pastedText = textarea.value; };
-    overlay.querySelectorAll('[data-action="rocznik-import-confirm"]').forEach(b=>b.onclick=async()=>{
-      const checked = Array.from(overlay.querySelectorAll('.rocznik-row-check:checked')).map(c=>Number((c as any).dataset.idx));
-      const toAdd = checked.map(i=>parsed[i]).filter(p=>p && p.ok);
-      if(!toAdd.length){ alert('Brak zaznaczonych zawodników do zaimportowania.'); return; }
-      const origLabel = b.textContent; b.disabled = true; b.textContent = 'Importowanie...';
-      let added = 0, skipped = 0;
-      toAdd.forEach(p=>{
-        const exists = DB.players.some(pl=>pl.firstName===p.firstName && pl.lastName===p.lastName && pl.clubId===null);
-        if(exists){ skipped++; return; }
-        DB.players.push({
-          id: uid('Z'), firstName: p.firstName, lastName: p.lastName,
-          birthDate: '', birthYear: p.birthYear || '', nationality: p.nationality || '',
-          position: p.position || '', foot: '', height: null,
-          status: '', clubId: null, scout: currentScout || '',
-          videoLink: '', lnpLink: '', tmLink: '', hasAgent: false, agencyName: '',
-          formation: '', customFields: {}, notes: '',
-          dateAdded: new Date().toISOString().slice(0,10)
-        });
-        added++;
-      });
-      try{
-        const ok = await savePlayers();
-        if(ok){
-          alert(`Zaimportowano ${added} zawodników.` + (skipped ? ` Pominięto ${skipped} (już byli w bazie).` : ''));
-          closeAndRefresh();
-        } else {
-          b.disabled = false; b.textContent = origLabel;
-          alert('Nie udało się zapisać zaimportowanych zawodników — sprawdź baner ostrzegawczy u góry strony.');
-        }
-      }catch(e){
-        console.error('Import rocznika nie powiódł się:', e);
-        b.disabled = false; b.textContent = origLabel;
-        alert('Nie udało się zapisać zaimportowanych zawodników: ' + ((e as any).message||e));
       }
     });
   }
