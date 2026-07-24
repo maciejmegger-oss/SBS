@@ -2099,7 +2099,11 @@ function compareTable(entries){
   return `<table style="width:auto;min-width:280px;">${head}${rows}${overallRow}${obsRow}</table>`;
 }
 function viewCompare(){
-  const players = DB.players.slice().sort((a,b)=>(a.lastName||'').localeCompare(b.lastName||''));
+  const allPlayers = DB.players.slice().sort((a,b)=>(a.lastName||'').localeCompare(b.lastName||''));
+  const firstPlayer = compareIds[0] ? DB.players.find(x=>x.id===compareIds[0]) : null;
+  const players = firstPlayer && firstPlayer.birthYear ?
+    allPlayers.filter(p => p.birthYear === firstPlayer.birthYear || p.birthYear === String(Number(firstPlayer.birthYear) + 1)) :
+    allPlayers;
   const opt = (sel)=> `<option value="">— wybierz zawodnika —</option>` + players.map(p=>`<option value="${p.id}" ${sel===p.id?'selected':''}>${esc(p.lastName)} ${esc(p.firstName)} — ${esc(clubName(p.clubId))}</option>`).join('');
   const entries = compareIds.map(id => id ? {p: DB.players.find(x=>x.id===id), avg: playerAvg(id)} : null).filter(e=>e && e.p);
   const radarEntries = entries.filter(e=>e.avg && e.avg.avgs).map(e=>({label:e.p.lastName, avgs:e.avg.avgs, count:e.avg.count}));
