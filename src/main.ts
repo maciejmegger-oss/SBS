@@ -37,6 +37,7 @@ let talentPasteParsed = null; // wynik rozpoznania (null = jeszcze nie kliknięt
 let monitoringSearchQuery = ''; // wyszukiwarka słów w zakładce Monitoring
 let viewingPlayerId = null;
 let viewingClubId = null;
+let viewingRocznikGroup = null;
 let rankingLeague = null;
 let rankingFormationFilter = ''; // '' = wszystkie systemy; inaczej jedna z wartości FORMATIONS
 let positionMapAssignments = {}; // { "league|||number": [playerId, ...] up to 6 }
@@ -2640,6 +2641,10 @@ function viewPlayers(){
   if(viewingPlayerId) return viewPlayerDetail(viewingPlayerId);
 
   let list = DB.players.slice();
+  if(viewingRocznikGroup){
+    const year = viewingRocznikGroup.match(/\d{4}/)[0];
+    list = list.filter(p => p.birthYear === year);
+  }
   if(playerFilters.region) list = list.filter(p=>clubRegion(p.clubId)===playerFilters.region);
   if(playerFilters.league) list = list.filter(p=>clubLeague(p.clubId)===playerFilters.league);
   if(playerFilters.status) list = list.filter(p=>p.status===playerFilters.status);
@@ -2673,8 +2678,9 @@ function viewPlayers(){
   }).join('');
 
   return `
-  <h2 class="view-title">Zawodnicy</h2>
-  <p class="view-sub">Kartoteka wszystkich obserwowanych zawodników.</p>
+  <h2 class="view-title">${viewingRocznikGroup ? esc(viewingRocznikGroup) : 'Zawodnicy'}</h2>
+  <p class="view-sub">${viewingRocznikGroup ? 'Zawodnicy z tego rocznika.' : 'Kartoteka wszystkich obserwowanych zawodników.'}</p>
+  ${viewingRocznikGroup ? `<button class="secondary" data-action="back-rocznik" style="margin-bottom:12px;">← Wróć do roczników</button>` : ''}
   <div class="toolbar">
     <div class="filters">
       <select id="f-region"><option value="">Wszystkie regiony</option>${DB.settings.regions.map(r=>`<option ${playerFilters.region===r?'selected':''}>${esc(r)}</option>`).join('')}</select>
@@ -4645,6 +4651,7 @@ function attachHandlers(){
     savePlayers();
   });
   main.querySelectorAll('[data-action="back-players"]').forEach(b=>b.onclick=()=>{viewingPlayerId=null; render();});
+  main.querySelectorAll('[data-action="back-rocznik"]').forEach(b=>b.onclick=()=>{viewingRocznikGroup=null; currentView='clubs'; render();});
 
   const rankingSelect = main.querySelector('#ranking-league-select');
   if(rankingSelect){
@@ -4841,7 +4848,13 @@ function attachHandlers(){
     }catch(e){ console.error('Nie udało się wczytać logo ligi:', e); alert('Nie udało się wczytać logo ligi.'); }
   });
   main.querySelectorAll('[data-action="browse-group"]').forEach(b=>b.onclick=()=>{
-    clubBrowse.group = b.dataset.val; render();
+    clubBrowse.group = b.dataset.val;
+    if(/^Rocznik \d{4}$/.test(b.dataset.val)){
+      viewingRocznikGroup = b.dataset.val;
+      currentView = 'players';
+      viewingPlayerId = null;
+    }
+    render();
   });
   main.querySelectorAll('[data-action="view-club"]').forEach(b=>b.onclick=()=>{
     viewingClubId = b.dataset.id; render();
