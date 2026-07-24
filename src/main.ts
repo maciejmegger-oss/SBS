@@ -2692,6 +2692,7 @@ function viewPlayers(){
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <button class="gold" data-action="add-player">+ Nowy zawodnik</button>
+      ${viewingRocznikGroup ? `<button class="gold" data-action="rocznik-excel-import">📋 Wgraj z Excela</button>` : ''}
       <button class="secondary" data-action="compare-open">⚖️ Porównaj zawodników</button>
     </div>
   </div>
@@ -4652,6 +4653,9 @@ function attachHandlers(){
   });
   main.querySelectorAll('[data-action="back-players"]').forEach(b=>b.onclick=()=>{viewingPlayerId=null; render();});
   main.querySelectorAll('[data-action="back-rocznik"]').forEach(b=>b.onclick=()=>{viewingRocznikGroup=null; currentView='clubs'; render();});
+  main.querySelectorAll('[data-action="rocznik-excel-import"]').forEach(b=>b.onclick=()=>{
+    if(viewingRocznikGroup) openRocznikExcelImport(viewingRocznikGroup);
+  });
 
   const rankingSelect = main.querySelector('#ranking-league-select');
   if(rankingSelect){
@@ -5611,6 +5615,82 @@ function openSquadImportModal(clubId){
         console.error('Import składu nie powiódł się:', e);
         b.disabled = false; b.textContent = origLabel;
         alert('Nie udało się zapisać zaimportowanych zawodników: ' + (e.message||e));
+      }
+    });
+  }
+
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) closeAndRefresh(); });
+  document.body.appendChild(overlay);
+  draw();
+}
+
+function openRocznikExcelImport(rocznikGroup){
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  const year = rocznikGroup.match(/\d{4}/)[0];
+
+  function closeAndRefresh(){ overlay.remove(); render(); }
+
+  function draw(){
+    overlay.innerHTML = `
+    <div class="modal" style="max-width:600px;">
+      <h3>Import zawodników — ${esc(rocznikGroup)}</h3>
+      <p class="note">Wgraj plik Excel/CSV z zawodnikami. Wymagane kolumny: <strong>Imię, Nazwisko</strong>. Opcjonalnie: Pozycja, Narodowość</p>
+      <div class="field-wrap" style="margin-bottom:14px;">
+        <label class="field">Wgraj plik Excel / CSV</label>
+        <input type="file" id="rocznik-file" accept=".xlsx,.xls,.csv">
+      </div>
+      <div class="modal-actions">
+        <button class="gold" data-action="rocznik-import-go">Importuj</button>
+        <button class="secondary" data-action="close-modal">Anuluj</button>
+      </div>
+    </div>`;
+    wire();
+  }
+
+  function wire(){
+    overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=closeAndRefresh);
+    overlay.querySelectorAll('[data-action="rocznik-import-go"]').forEach(b=>b.onclick=async()=>{
+      const fileInput = overlay.querySelector('#rocznik-file') as any;
+      if(!fileInput.files[0]){ alert('Wybierz plik!'); return; }
+      const file = fileInput.files[0];
+      try{
+        if(!XLSX) throw new Error('Biblioteka nie dostępna.');
+        const buf = await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(new Error('Nie udało się wczytać.')); r.readAsArrayBuffer(file); });
+        const wb = XLSX.read(buf, {type:'array'});
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        if(!sheet) throw new Error('Brak arkusza.');
+        const rows = XLSX.utils.sheet_to_json(sheet, {defval:''});
+        const parsed = parseSquadWorkbookRows(rows);
+        const toAdd = parsed.filter(p=>p.ok);
+        if(!toAdd.length){ alert('Brak prawidłowych zawodników.'); return; }
+        const orig = b.textContent; b.disabled = true; b.textContent = 'Importowanie...';
+        let added = 0;
+        toAdd.forEach(p=>{
+          const exists = DB.players.some(pl=>pl.firstName===p.firstName && pl.lastName===p.lastName && pl.birthYear===year);
+          if(exists) return;
+          DB.players.push({
+            id: uid('Z'), firstName: p.firstName, lastName: p.lastName,
+            birthDate: '', birthYear: year, nationality: p.nationality || '',
+            position: p.position || '', foot: '', height: null,
+            status: '', clubId: null, scout: currentScout || '',
+            videoLink: '', lnpLink: '', tmLink: '', hasAgent: false, agencyName: '',
+            formation: '', customFields: {}, notes: '',
+            dateAdded: new Date().toISOString().slice(0,10)
+          });
+          added++;
+        });
+        const ok = await savePlayers();
+        if(ok){
+          alert(`Zaimportowano ${added} zawodników.`);
+          closeAndRefresh();
+        } else {
+          b.disabled = false; b.textContent = orig;
+          alert('Nie udało się zapisać.');
+        }
+      }catch(e){
+        b.disabled = false; b.textContent = 'Importuj';
+        alert('Błąd: ' + ((e as any).message||e));
       }
     });
   }
