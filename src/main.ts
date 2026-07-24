@@ -2687,7 +2687,7 @@ function viewPlayers(){
   <p class="view-sub">${viewingRocznikGroup ? 'Zawodnicy z tego rocznika.' : 'Kartoteka wszystkich obserwowanych zawodników.'}</p>
   ${viewingRocznikGroup ? `<div style="display:flex;gap:8px;margin-bottom:12px;">
     <button class="secondary" data-action="back-rocznik">← Wróć do roczników</button>
-    <button class="danger" data-action="delete-rocznik" data-year="${viewingRocznikGroup.match(/\\d{4}/)[0]}" title="Usuń wszystkich zawodników z tego rocznika">🗑️ Usuń cały rocznik</button>
+    <button class="danger" data-action="delete-rocznik" data-year="${viewingRocznikGroup.match(/\d{4}/)[0]}" title="Usuń wszystkich zawodników z tego rocznika">🗑️ Usuń cały rocznik</button>
   </div>` : ''}
   <div class="toolbar">
     <div class="filters">
