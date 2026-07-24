@@ -2677,6 +2677,7 @@ function viewPlayers(){
       <td style="white-space:nowrap;">
         <button class="link-btn" data-action="add-to-monitoring" data-id="${p.id}" title="${p.monitored?'W Monitoringu — kliknij, aby usunąć':'Dodaj do Monitoringu'}" style="color:${p.monitored?'#3E7D4C':'var(--gold-dark)'};">${p.monitored?'✓ Monitoring':'+ Monitoring'}</button>
         <button class="link-btn" data-action="view-player" data-id="${p.id}">Zobacz</button>
+        <button class="link-btn" data-action="delete-player" data-id="${p.id}" title="Usuń zawodnika" style="color:var(--clay-dark);font-size:11px;">✕</button>
       </td>
     </tr>`;
   }).join('');
@@ -2684,7 +2685,10 @@ function viewPlayers(){
   return `
   <h2 class="view-title">${viewingRocznikGroup ? esc(viewingRocznikGroup) : 'Zawodnicy'}</h2>
   <p class="view-sub">${viewingRocznikGroup ? 'Zawodnicy z tego rocznika.' : 'Kartoteka wszystkich obserwowanych zawodników.'}</p>
-  ${viewingRocznikGroup ? `<button class="secondary" data-action="back-rocznik" style="margin-bottom:12px;">← Wróć do roczników</button>` : ''}
+  ${viewingRocznikGroup ? `<div style="display:flex;gap:8px;margin-bottom:12px;">
+    <button class="secondary" data-action="back-rocznik">← Wróć do roczników</button>
+    <button class="danger" data-action="delete-rocznik" data-year="${viewingRocznikGroup.match(/\\d{4}/)[0]}" title="Usuń wszystkich zawodników z tego rocznika">🗑️ Usuń cały rocznik</button>
+  </div>` : ''}
   <div class="toolbar">
     <div class="filters">
       <select id="f-region"><option value="">Wszystkie regiony</option>${DB.settings.regions.map(r=>`<option ${playerFilters.region===r?'selected':''}>${esc(r)}</option>`).join('')}</select>
@@ -4657,6 +4661,22 @@ function attachHandlers(){
   });
   main.querySelectorAll('[data-action="back-players"]').forEach(b=>b.onclick=()=>{viewingPlayerId=null; render();});
   main.querySelectorAll('[data-action="back-rocznik"]').forEach(b=>b.onclick=()=>{viewingRocznikGroup=null; currentView='clubs'; render();});
+  main.querySelectorAll('[data-action="delete-rocznik"]').forEach(b=>b.onclick=async()=>{
+    const year = b.dataset.year;
+    if(confirm(`Usunąć wszystkich zawodników z rocznika ${year}? To działanie nie może być cofnięte.`)){
+      const toDelete = DB.players.filter(p=>p.birthYear===year);
+      for(const p of toDelete){ DB.players = DB.players.filter(x=>x.id!==p.id); }
+      const ok = await savePlayers();
+      if(ok){
+        alert(`Usunięto ${toDelete.length} zawodników.`);
+        viewingRocznikGroup = null;
+        currentView = 'clubs';
+        render();
+      } else {
+        alert('Nie udało się usunąć zawodników.');
+      }
+    }
+  });
   main.querySelectorAll('[data-action="rocznik-excel-import"]').forEach(b=>b.onclick=()=>{
     if(viewingRocznikGroup) openRocznikExcelImport(viewingRocznikGroup);
   });
