@@ -10,6 +10,13 @@ import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.js?url";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
+// DOM helpers for type safety
+const el = (sel: string) => document.querySelector(sel) as HTMLElement;
+const inp = (sel: string) => document.querySelector(sel) as HTMLInputElement;
+const btn = (sel: string) => document.querySelector(sel) as HTMLButtonElement;
+const div = (sel: string) => document.querySelector(sel) as HTMLDivElement;
+const sel_el = (sel: string) => document.querySelector(sel) as HTMLSelectElement;
+
 const RATING_KEYS = ["technika","taktyka","motoryka","mentalnosc","potencjal"];
 const RATING_LABELS = {technika:"Technika",taktyka:"Taktyka",motoryka:"Motoryka",mentalnosc:"Mentalność",potencjal:"Potencjał"};
 const STATUS_CLASS = {"Nowy typ":"new","W obserwacji":"watching","Rekomendowany":"reco","Na testach":"trial","Podpisany":"signed","Odrzucony":"rejected","Wstrzymany":"hold","Do Obserwacji":"watching","Na Testy":"trial","Do transferu":"signed","Z polecenia":"reco"};
@@ -60,9 +67,10 @@ function topLevelOf(league){
   return "Kategorie juniorskie";
 }
 function groupsForTop(top){
-  if(top==="III liga") return DB.settings.leagues.filter(l=>l.startsWith("III liga, gr."));
-  if(top==="IV liga") return DB.settings.leagues.filter(l=>l.startsWith("IV liga ("));
-  if(top==="Kategorie juniorskie") return DB.settings.leagues.filter(l=>topLevelOf(l)==="Kategorie juniorskie");
+  const settings = DB.settings as any;
+  if(top==="III liga") return settings.leagues.filter((l:any)=>l.startsWith("III liga, gr."));
+  if(top==="IV liga") return settings.leagues.filter((l:any)=>l.startsWith("IV liga ("));
+  if(top==="Kategorie juniorskie") return settings.leagues.filter((l:any)=>topLevelOf(l)==="Kategorie juniorskie");
   return [];
 }
 const SEED_CLUBS_III_LIGA_GR1 = [
