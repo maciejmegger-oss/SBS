@@ -2743,6 +2743,7 @@ function viewPlayerDetail(id){
     </div>
     <div style="display:flex;gap:8px;">
       <button class="secondary" data-action="edit-player" data-id="${p.id}">Edytuj</button>
+      <button class="gold" data-action="paste-stats" data-id="${p.id}">📊 Wklej statystyki</button>
       <button class="danger" data-action="delete-player" data-id="${p.id}">Usuń</button>
     </div>
   </div>
@@ -4642,6 +4643,7 @@ function attachHandlers(){
 
   main.querySelectorAll('[data-action="add-player"]').forEach(b=>b.onclick=()=>openPlayerModal(null));
   main.querySelectorAll('[data-action="edit-player"]').forEach(b=>b.onclick=()=>openPlayerModal(b.dataset.id));
+  main.querySelectorAll('[data-action="paste-stats"]').forEach(b=>b.onclick=()=>openPasteStatsModal(b.dataset.id));
   main.querySelectorAll('[data-action="view-player"]').forEach(b=>b.onclick=()=>{viewingPlayerId=b.dataset.id; currentView='players'; render();});
   // Przycisk "Monitoring" w liście zawodników — od razu dodaje/usuwa zawodnika z zakładki Monitoring.
   main.querySelectorAll('[data-action="monitoring-plan-obs"]').forEach(b=>b.onclick=()=>{
@@ -5710,6 +5712,89 @@ function openSquadImportModal(clubId){
   overlay.addEventListener('click', e=>{ if(e.target===overlay) closeAndRefresh(); });
   document.body.appendChild(overlay);
   draw();
+}
+
+function openPasteStatsModal(playerId){
+  const p = DB.players.find(x=>x.id===playerId);
+  if(!p) return;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+
+  function closeAndRefresh(){ overlay.remove(); render(); }
+
+  function draw(){
+    overlay.innerHTML = `
+    <div class="modal" style="max-width:600px;">
+      <h3>Wklej statystyki — ${esc(p.firstName)} ${esc(p.lastName)}</h3>
+      <p class="note">Otwórz profil na Transfermarkt/90minut, zaznacz i skopiuj dane statystyk zawodnika, wklej poniżej.</p>
+      <p class="note" style="font-size:11px;color:var(--ink-soft);">Parser wyciąga: Mecze, Minuty, Gole, Asysty z każdego formatu tekstu.</p>
+      <div class="field-wrap" style="margin-bottom:14px;">
+        <label class="field">Wklej statystyki (np. z Transfermarkt, 90minut, ŁNP)</label>
+        <textarea id="stats-paste" rows="10" placeholder="Appearances 15&#10;Minutes played 1350&#10;Goals 5&#10;Assists 3&#10;&#10;lub:&#10;15 mecze 1350 minut 5 goli 3 asysty&#10;&#10;lub jakolwiek inny format — parser się domyśli" style="font-size:12px;font-family:monospace;"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button class="gold" data-action="parse-stats">✓ Wczytaj statystyki</button>
+        <button class="secondary" data-action="close-modal">Anuluj</button>
+      </div>
+    </div>`;
+    wire();
+  }
+
+  function wire(){
+    overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=closeAndRefresh);
+    overlay.querySelectorAll('[data-action="parse-stats"]').forEach(b=>b.onclick=()=>{
+      const textarea = overlay.querySelector('#stats-paste') as HTMLTextAreaElement;
+      const text = textarea.value.trim();
+      if(!text){ alert('Wklej dane statystyk!'); return; }
+
+      const parsed = parseStatsText(text);
+      if(!Object.keys(parsed).length){ alert('Nie udało się wyciągnąć statystyk. Spróbuj innego formatu.'); return; }
+
+      if(parsed.matches !== undefined) p.matches = parsed.matches;
+      if(parsed.minutes !== undefined) p.minutes = parsed.minutes;
+      if(parsed.goals !== undefined) p.goals = parsed.goals;
+      if(parsed.assists !== undefined) p.assists = parsed.assists;
+
+      savePlayers().then(ok=>{
+        if(ok){
+          alert(`✓ Wczytano statystyki!\nMecze: ${parsed.matches||p.matches||'—'}\nMinuty: ${parsed.minutes||p.minutes||'—'}\nGole: ${parsed.goals||p.goals||'—'}\nAsysty: ${parsed.assists||p.assists||'—'}`);
+          closeAndRefresh();
+        } else {
+          alert('Nie udało się zapisać statystyk.');
+        }
+      });
+    });
+  }
+
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) closeAndRefresh(); });
+  document.body.appendChild(overlay);
+  draw();
+}
+
+function parseStatsText(text){
+  const result: any = {};
+  const lines = text.toUpperCase().split(/[\n,;]+/).map(l=>l.trim()).filter(Boolean);
+
+  const statNames = {
+    'matches|mecze|appearances|spotkania': 'matches',
+    'minutes|minuty|minutach|min': 'minutes',
+    'goals|gole|bramki': 'goals',
+    'assists|asysty|asysty|podania': 'assists'
+  };
+
+  for(const line of lines){
+    for(const [pattern, key] of Object.entries(statNames)){
+      const regex = new RegExp(`(?:${pattern})\\s*(\\d+)`, 'i');
+      const match = line.match(regex) || text.match(new RegExp(`(\\d+)\\s*(?:${pattern})`, 'i'));
+      if(match){
+        const num = parseInt(match[1]);
+        if(!isNaN(num)) result[key] = num;
+      }
+    }
+  }
+
+  return result;
 }
 
 function parseRocznikTextLines(text){
