@@ -2665,6 +2665,7 @@ function viewPlayers(){
     const a = playerAvg(p.id);
     const cls = STATUS_CLASS[p.status]||"new";
     return `<tr>
+      <td><input type="checkbox" class="player-checkbox" data-id="${p.id}"></td>
       <td>${p.nationality?`<span title="${esc(p.nationality)}">${nationalityFlag(p.nationality)}</span> `:''}<strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</td>
       <td>${p.birthYear||"—"}${isYouthPlayer(p)?youthBadge():''}</td>
       <td>${esc(p.position)}</td>
@@ -2704,10 +2705,17 @@ function viewPlayers(){
       <button class="secondary" data-action="compare-open">⚖️ Porównaj zawodników</button>
     </div>
   </div>
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+    <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
+      <input type="checkbox" id="select-all-players">
+      <span style="font-size:13px;">Zaznacz wszystkie</span>
+    </label>
+    <button class="danger" id="delete-selected-btn" style="display:none;" data-action="delete-selected-players">🗑️ Usuń zaznaczonych (0)</button>
+  </div>
   <div class="card" style="padding:0;overflow:auto;">
     <table>
-      <thead><tr><th>Zawodnik</th><th>Rocznik</th><th>Pozycja</th><th>Klub</th><th>Region</th><th>Liga</th><th>Status</th><th>Śr. ocena</th><th>Obserw.</th><th></th></tr></thead>
-      <tbody>${rows || `<tr><td colspan="10"><div class="empty">Brak zawodników spełniających filtry.</div></td></tr>`}</tbody>
+      <thead><tr><th style="width:24px;"><input type="checkbox" class="header-checkbox"></th><th>Zawodnik</th><th>Rocznik</th><th>Pozycja</th><th>Klub</th><th>Region</th><th>Liga</th><th>Status</th><th>Śr. ocena</th><th>Obserw.</th><th></th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="12"><div class="empty">Brak zawodników spełniających filtry.</div></td></tr>`}</tbody>
     </table>
   </div>`;
 }
@@ -4702,6 +4710,62 @@ function attachHandlers(){
       viewingPlayerId=null; render();
     }
   });
+
+  // Checkboxy do zaznaczania zawodników
+  const selectAllCheckbox = main.querySelector('#select-all-players') as HTMLInputElement;
+  const deleteSelectedBtn = main.querySelector('#delete-selected-btn');
+  const playerCheckboxes = main.querySelectorAll('.player-checkbox') as NodeListOf<HTMLInputElement>;
+
+  function updateDeleteButton(){
+    const checked = Array.from(playerCheckboxes).filter(c=>c.checked).length;
+    if(!deleteSelectedBtn) return;
+    if(checked > 0){
+      deleteSelectedBtn.style.display = 'inline-block';
+      deleteSelectedBtn.textContent = `🗑️ Usuń zaznaczonych (${checked})`;
+    } else {
+      deleteSelectedBtn.style.display = 'none';
+    }
+  }
+
+  if(selectAllCheckbox){
+    selectAllCheckbox.onchange = ()=>{
+      playerCheckboxes.forEach(c=>c.checked = selectAllCheckbox.checked);
+      updateDeleteButton();
+    };
+  }
+
+  playerCheckboxes.forEach(c=>{
+    c.onchange = ()=>{
+      const allChecked = Array.from(playerCheckboxes).every(x=>x.checked);
+      const anyChecked = Array.from(playerCheckboxes).some(x=>x.checked);
+      if(selectAllCheckbox){
+        selectAllCheckbox.checked = allChecked;
+        selectAllCheckbox.indeterminate = anyChecked && !allChecked;
+      }
+      updateDeleteButton();
+    };
+  });
+
+  if(deleteSelectedBtn){
+    deleteSelectedBtn.onclick = async()=>{
+      const checked = Array.from(playerCheckboxes).filter(c=>c.checked);
+      if(!checked.length) return;
+      if(confirm(`Usunąć ${checked.length} zaznaczonych zawodników? To działanie nie może być cofnięte.`)){
+        let deleted = 0;
+        for(const chk of checked){
+          const id = chk.dataset.id;
+          const ok = await deletePlayerRecord(id);
+          if(ok){
+            DB.players = DB.players.filter(p=>p.id!==id);
+            DB.observations = DB.observations.filter(o=>o.playerId!==id);
+            deleted++;
+          }
+        }
+        alert(`Usunięto ${deleted} zawodników.`);
+        render();
+      }
+    };
+  }
 
   main.querySelectorAll('[data-action="manage-tabs"]').forEach(b=>b.onclick=()=>openPlayerTabsModal(b.dataset.id));
   main.querySelectorAll('[data-action="manage-attachments"]').forEach(b=>b.onclick=()=>openPlayerAttachmentsModal(b.dataset.id));
