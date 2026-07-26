@@ -2676,6 +2676,9 @@ function viewPlayers(){
       <td>${esc(clubRegion(p.clubId))}</td>
       <td>${esc(clubLeague(p.clubId))}</td>
       <td>${p.status? `<span class="badge ${cls}">${esc(p.status)}</span>` : '—'}</td>
+      <td style="text-align:right;">${p.matches!=null?p.matches:'—'}</td>
+      <td style="text-align:right;">${p.minutes!=null?p.minutes:'—'}</td>
+      <td style="text-align:right;">${p.goals!=null?p.goals:'—'}</td>
       <td>${fmtAvg(a)}</td>
       <td>${a? a.count : 0}</td>
       <td style="white-space:nowrap;">
@@ -2717,8 +2720,8 @@ function viewPlayers(){
   </div>
   <div class="card" style="padding:0;overflow:auto;">
     <table>
-      <thead><tr><th style="width:24px;"><input type="checkbox" class="header-checkbox"></th><th>Zawodnik</th><th>Rocznik</th><th>Pozycja</th><th>Klub</th><th>Region</th><th>Liga</th><th>Status</th><th>Śr. ocena</th><th>Obserw.</th><th></th></tr></thead>
-      <tbody>${rows || `<tr><td colspan="12"><div class="empty">Brak zawodników spełniających filtry.</div></td></tr>`}</tbody>
+      <thead><tr><th style="width:24px;"><input type="checkbox" class="header-checkbox"></th><th>Zawodnik</th><th>Rocznik</th><th>Pozycja</th><th>Klub</th><th>Region</th><th>Liga</th><th>Status</th><th style="text-align:right;" title="Rozegrane mecze w sezonie">Mecze</th><th style="text-align:right;" title="Rozegrane minuty w sezonie">Minuty</th><th style="text-align:right;" title="Gole w sezonie">Gole</th><th>Śr. ocena</th><th>Obserw.</th><th></th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="14"><div class="empty">Brak zawodników spełniających filtry.</div></td></tr>`}</tbody>
     </table>
   </div>`;
 }
