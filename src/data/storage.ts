@@ -23,6 +23,7 @@ const COLLECTION_TABLES: Record<string, string> = {
   "scouting:reports": "sbs_reports",
   "scouting:talents": "sbs_talents",
   "scouting:contacts": "sbs_contacts",
+  "scouting:matches": "sbs_matches",
 };
 
 const BATCH_SIZE = 200; // wsad zapisu na jedno zapytanie — unika przekroczenia limitu czasu

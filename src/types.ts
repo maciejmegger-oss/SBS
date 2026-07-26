@@ -144,6 +144,17 @@ export interface Settings {
   [key: string]: unknown;
 }
 
+export interface Match {
+  id: string;
+  league?: string;
+  date?: string;
+  time?: string;
+  homeTeam?: string;
+  awayTeam?: string;
+  stadium?: string;
+  city?: string;
+}
+
 export interface Database {
   players: Player[];
   clubs: Club[];
@@ -151,6 +162,7 @@ export interface Database {
   reports: Report[];
   talents: Talent[];
   contacts: Contact[];
+  matches: Match[];
   clubCrests: ClubCrestMap;
   settings: Settings | null;
 }

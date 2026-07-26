@@ -132,6 +132,19 @@ create table if not exists sbs_contacts (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists sbs_matches (
+  id text primary key,
+  league text,
+  date text,
+  time text,
+  home_team text,
+  away_team text,
+  stadium text,
+  city text,
+  updated_at timestamptz not null default now()
+);
+create index if not exists sbs_matches_date_idx on sbs_matches(date);
+
 -- Wszystko, co NIE jest kolekcją pojedynczych obiektów (ustawienia, przypisania na mapie
 -- rankingowej, wewnętrzne znaczniki "już zrobione") — zostaje jako proste klucz-wartość,
 -- bo to pojedyncze, całościowe struktury, a nie zbiory wielu rekordów tego samego typu.

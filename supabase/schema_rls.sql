@@ -8,6 +8,7 @@ alter table sbs_observations enable row level security;
 alter table sbs_reports enable row level security;
 alter table sbs_talents enable row level security;
 alter table sbs_contacts enable row level security;
+alter table sbs_matches enable row level security;
 alter table sbs_kv enable row level security;
 
 create policy "Tymczasowy pełny dostęp" on sbs_clubs for all to anon using (true) with check (true);
@@ -17,4 +18,5 @@ create policy "Tymczasowy pełny dostęp" on sbs_observations for all to anon us
 create policy "Tymczasowy pełny dostęp" on sbs_reports for all to anon using (true) with check (true);
 create policy "Tymczasowy pełny dostęp" on sbs_talents for all to anon using (true) with check (true);
 create policy "Tymczasowy pełny dostęp" on sbs_contacts for all to anon using (true) with check (true);
+create policy "Tymczasowy pełny dostęp" on sbs_matches for all to anon using (true) with check (true);
 create policy "Tymczasowy pełny dostęp" on sbs_kv for all to anon using (true) with check (true);

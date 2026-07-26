@@ -25,7 +25,7 @@ const FORMATIONS = ["1-4-4-2","1-4-3-3","1-3-4-3","1-3-5-2","1-4-5-1","1-5-4-1",
 let currentScout = "";
 let customTabNames = [];
 
-let DB: Database = { players: [], clubs: [], observations: [], reports: [], talents: [], contacts: [], clubCrests: {}, settings: null };
+let DB: Database = { players: [], clubs: [], observations: [], reports: [], talents: [], contacts: [], matches: [], clubCrests: {}, settings: null };
 let currentView = "dashboard";
 let editingPlayerId = null;
 let editingReportId = null;
@@ -1727,7 +1727,7 @@ async function loadAllInner(){
   // Faza 1: równoległe wczytanie WSZYSTKICH kolekcji i flag jednorazowych. Wcześniej ~16 odczytów szło
   // sekwencyjnie (każdy to osobny round-trip do Supabase) — przy dużej bazie sumowało się do kilkunastu
   // sekund. Promise.all robi je naraz; każdy z własnym .catch, więc pojedynczy błąd nie wywraca całości.
-  const [p, c, cc, o, rp, tl, ct, pmaRow, s,
+  const [p, c, cc, o, rp, tl, ct, mt, pmaRow, s,
     seedFlag, enrichFlag, enrichAviaFlag, enrichGornikFlag, enrichAviaV2Flag, recoMigrationFlag, statusMigrationFlag] = await Promise.all([
     storage.get('scouting:players', true).catch(()=>null),
     storage.get('scouting:clubs', true).catch(()=>null),
@@ -1736,6 +1736,7 @@ async function loadAllInner(){
     storage.get('scouting:reports', true).catch(()=>null),
     storage.get('scouting:talents', true).catch(()=>null),
     storage.get('scouting:contacts', true).catch(()=>null),
+    storage.get('scouting:matches', true).catch(()=>null),
     storage.get('scouting:position_map_assignments', true).catch(()=>null),
     storage.get('scouting:settings', true).catch(()=>null),
     storage.get('scouting:seed_rosters_v9', true).catch(()=>null),
@@ -1753,6 +1754,7 @@ async function loadAllInner(){
   try{ DB.reports = rp ? JSON.parse(rp.value) : []; }catch(e){ DB.reports = []; }
   try{ DB.talents = tl ? JSON.parse(tl.value) : []; }catch(e){ DB.talents = []; }
   try{ DB.contacts = ct ? JSON.parse(ct.value) : []; }catch(e){ DB.contacts = []; }
+  try{ DB.matches = mt ? JSON.parse(mt.value) : []; }catch(e){ DB.matches = []; }
   try{ positionMapAssignments = pmaRow ? JSON.parse(pmaRow.value) : {}; }catch(e){ positionMapAssignments = {}; }
   try{
     const loaded = s ? JSON.parse(s.value) : {};
@@ -1944,6 +1946,7 @@ async function saveObservations(){ return robustStorageSet('scouting:observation
 async function saveReports(){ return robustStorageSet('scouting:reports', JSON.stringify(DB.reports)); }
 async function saveTalents(){ return robustStorageSet('scouting:talents', JSON.stringify(DB.talents)); }
 async function saveContacts(){ return robustStorageSet('scouting:contacts', JSON.stringify(DB.contacts)); }
+async function saveMatches(){ return robustStorageSet('scouting:matches', JSON.stringify(DB.matches)); }
 async function saveSettings(){ return robustStorageSet('scouting:settings', JSON.stringify(DB.settings)); }
 async function savePositionMapAssignments(){ return robustStorageSet('scouting:position_map_assignments', JSON.stringify(positionMapAssignments)); }
 
@@ -3117,7 +3120,13 @@ function viewNewObs(){
         </select>
         <input id="obs-scout-new" placeholder="Imię i nazwisko nowego scouta" style="display:${DB.settings.scouts.length?'none':'block'};margin-top:6px;" value="${DB.settings.scouts.length?'':esc(editing?editing.scout||'':currentScout)}">
       </div>
-      <div class="field-wrap"><label class="field">Mecz (gospodarz - gość)</label><input id="obs-match" placeholder="np. Mazovia Przykładowo - Rywal FC" value="${editing? esc(editing.match||'') : ''}"></div>
+      <div class="field-wrap">
+        <label class="field">Mecz (gospodarz - gość)</label>
+        <div style="display:flex;gap:8px;">
+          <input id="obs-match" placeholder="np. Mazovia Przykładowo - Rywal FC" style="flex:1;" value="${editing? esc(editing.match||'') : ''}">
+          <button type="button" class="gold" data-action="open-match-schedule" style="white-space:nowrap;">📅 Terminarz</button>
+        </div>
+      </div>
       <div class="field-wrap" style="position:relative;">
         <label class="field">Punkt startowy (miejscowość)</label>
         <input id="obs-start" autocomplete="off" placeholder="np. Świdnik" value="${editing? esc(editing.startLocation||DB.settings.startLocation||'Bydgoszcz') : esc(DB.settings.startLocation || 'Bydgoszcz')}">
@@ -4644,6 +4653,7 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="add-player"]').forEach(b=>b.onclick=()=>openPlayerModal(null));
   main.querySelectorAll('[data-action="edit-player"]').forEach(b=>b.onclick=()=>openPlayerModal(b.dataset.id));
   main.querySelectorAll('[data-action="paste-stats"]').forEach(b=>b.onclick=()=>openPasteStatsModal(b.dataset.id));
+  main.querySelectorAll('[data-action="open-match-schedule"]').forEach(b=>b.onclick=()=>openMatchScheduleModal());
   main.querySelectorAll('[data-action="view-player"]').forEach(b=>b.onclick=()=>{viewingPlayerId=b.dataset.id; currentView='players'; render();});
   // Przycisk "Monitoring" w liście zawodników — od razu dodaje/usuwa zawodnika z zakładki Monitoring.
   main.querySelectorAll('[data-action="monitoring-plan-obs"]').forEach(b=>b.onclick=()=>{
@@ -5712,6 +5722,338 @@ function openSquadImportModal(clubId){
   overlay.addEventListener('click', e=>{ if(e.target===overlay) closeAndRefresh(); });
   document.body.appendChild(overlay);
   draw();
+}
+
+function openMatchScheduleModal(){
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  let selectedLeague = '';
+  let selectedMatch = null;
+
+  function closeModal(){ overlay.remove(); }
+
+  function playersForClub(clubName){
+    if(!clubName) return [];
+    const normalized = clubName.toLowerCase().trim();
+    return DB.players.filter(p=>{
+      const club = DB.clubs.find(c=>c.id===p.clubId);
+      if(!club) return false;
+      return club.name.toLowerCase().includes(normalized) || normalized.includes(club.name.toLowerCase());
+    }).sort((a,b)=>{
+      const ya = Number(a.birthYear)||0, yb = Number(b.birthYear)||0;
+      return yb - ya;
+    });
+  }
+
+  function upcomingMatches(){
+    const today = new Date();
+    const twoWeeks = new Date(today.getTime() + 14*24*60*60*1000);
+    return DB.matches
+      .filter(m=>{
+        if(selectedLeague && m.league !== selectedLeague) return false;
+        if(!m.date) return false;
+        const d = new Date(m.date + 'T00:00:00');
+        return d >= today && d <= twoWeeks;
+      })
+      .sort((a,b)=> (a.date+' '+(a.time||'')).localeCompare(b.date+' '+(b.time||'')));
+  }
+
+  function draw(){
+    const matches = upcomingMatches();
+    const leagues = [...new Set(DB.matches.map(m=>m.league).filter(Boolean))].sort();
+
+    overlay.innerHTML = `
+    <div class="modal" style="max-width:900px;max-height:85vh;overflow:auto;">
+      <h3>📅 Terminarz meczów — najbliższe 2 tygodnie</h3>
+      <p class="note">Kliknij mecz, aby wybrać zawodnika do obserwacji.</p>
+
+      <div class="field-wrap" style="margin-bottom:16px;">
+        <label class="field">Poziom rozgrywek</label>
+        <select id="schedule-league-filter">
+          <option value="">Wszystkie ligi</option>
+          ${leagues.map(l=>`<option value="${esc(l)}" ${selectedLeague===l?'selected':''}>${esc(l)}</option>`).join('')}
+        </select>
+      </div>
+
+      ${!DB.matches.length ? `
+        <div class="empty" style="padding:24px;text-align:center;">
+          <p style="margin-bottom:12px;">Brak meczów w bazie.</p>
+          <button class="gold" data-action="import-matches">📋 Wgraj terminarz z pliku</button>
+          <button class="secondary" data-action="download-match-template" style="margin-left:8px;">⭳ Pobierz szablon CSV</button>
+        </div>
+      ` : matches.length ? `
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;">
+          ${matches.map(m=>{
+            const homePlayers = playersForClub(m.homeTeam);
+            const awayPlayers = playersForClub(m.awayTeam);
+            const totalPlayers = homePlayers.length + awayPlayers.length;
+            const youth = [...homePlayers, ...awayPlayers].filter(p=>Number(p.birthYear) >= 2005).length;
+            const dateObj = new Date(m.date + 'T00:00:00');
+            const dayName = ['Nd','Pon','Wt','Śr','Czw','Pt','Sob'][dateObj.getDay()];
+
+            return `<div class="match-row" data-match-id="${m.id}" style="border:1px solid #E3DECE;border-radius:8px;padding:12px;cursor:pointer;transition:all 0.2s;background:${selectedMatch===m.id?'#FBF6E9':'#fff'};" onmouseover="this.style.background='#FBF6E9'" onmouseout="this.style.background='${selectedMatch===m.id?'#FBF6E9':'#fff'}'">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                  <div style="font-weight:600;color:var(--pitch);">${esc(m.homeTeam||'—')} — ${esc(m.awayTeam||'—')}</div>
+                  <div class="meta" style="font-size:12px;">${dayName} ${esc(m.date)}${m.time?' • '+esc(m.time):''}${m.stadium?' • 📍 '+esc(m.stadium):''}</div>
+                  ${m.league?`<div class="meta" style="font-size:11px;color:var(--gold-dark);">${esc(m.league)}</div>`:''}
+                </div>
+                <div style="text-align:right;">
+                  ${totalPlayers ? `<div style="font-size:12px;color:var(--good);">👥 ${totalPlayers} zawodników w bazie</div>` : '<div style="font-size:12px;color:var(--ink-soft);">Brak zawodników</div>'}
+                  ${youth ? `<div style="font-size:11px;color:var(--gold-dark);">⭐ ${youth} młodzieżowców</div>` : ''}
+                </div>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      ` : '<div class="empty">Brak meczów w wybranej lidze w najbliższych 2 tygodniach.</div>'}
+
+      <div class="modal-actions">
+        ${DB.matches.length ? `<button class="secondary" data-action="import-matches">📋 Wgraj więcej meczów</button>` : ''}
+        <button class="secondary" data-action="close-modal">Zamknij</button>
+      </div>
+    </div>`;
+    wire();
+  }
+
+  function drawPlayerSelection(matchId){
+    const m = DB.matches.find(x=>x.id===matchId);
+    if(!m) return;
+
+    const homePlayers = playersForClub(m.homeTeam);
+    const awayPlayers = playersForClub(m.awayTeam);
+
+    const renderPlayerList = (players, teamName) => {
+      if(!players.length) return `<div class="empty" style="padding:12px;font-size:12px;">Brak zawodników z ${esc(teamName)} w bazie</div>`;
+      return players.map(p=>{
+        const isYouth = Number(p.birthYear) >= 2005;
+        return `<div class="player-option" data-player-id="${p.id}" style="padding:8px 12px;border:1px solid #E3DECE;border-radius:6px;margin-bottom:6px;cursor:pointer;background:#fff;" onmouseover="this.style.background='#FBF6E9'" onmouseout="this.style.background='#fff'">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}
+              ${isYouth?'<span style="color:var(--gold-dark);font-size:11px;margin-left:6px;">⭐ MŁODZIEŻ</span>':''}
+            </div>
+            <div class="meta" style="font-size:11px;">${esc(p.position||'—')} • ${esc(p.birthYear||'—')}</div>
+          </div>
+        </div>`;
+      }).join('');
+    };
+
+    overlay.innerHTML = `
+    <div class="modal" style="max-width:700px;max-height:85vh;overflow:auto;">
+      <h3>Wybierz zawodnika do obserwacji</h3>
+      <div style="background:#FBF6E9;padding:12px;border-radius:8px;margin-bottom:16px;">
+        <div style="font-weight:600;color:var(--pitch);">${esc(m.homeTeam||'—')} — ${esc(m.awayTeam||'—')}</div>
+        <div class="meta">${esc(m.date)}${m.time?' • '+esc(m.time):''}${m.stadium?' • 📍 '+esc(m.stadium):''}</div>
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <h4 style="color:var(--pitch);margin-bottom:8px;">🏠 ${esc(m.homeTeam||'Gospodarz')}</h4>
+        ${renderPlayerList(homePlayers, m.homeTeam)}
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <h4 style="color:var(--pitch);margin-bottom:8px;">✈️ ${esc(m.awayTeam||'Gość')}</h4>
+        ${renderPlayerList(awayPlayers, m.awayTeam)}
+      </div>
+
+      <div class="modal-actions">
+        <button class="gold" data-action="select-no-player">Bez zawodnika (obserwuję zespół)</button>
+        <button class="secondary" data-action="back-to-schedule">← Wróć do terminarza</button>
+      </div>
+    </div>`;
+
+    overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=closeModal);
+    overlay.querySelectorAll('[data-action="back-to-schedule"]').forEach(b=>b.onclick=()=>{ selectedMatch=null; draw(); });
+    overlay.querySelectorAll('.player-option').forEach(b=>b.onclick=()=>{
+      fillObsForm(m, (b as HTMLElement).dataset.playerId);
+      closeModal();
+    });
+    overlay.querySelectorAll('[data-action="select-no-player"]').forEach(b=>b.onclick=()=>{
+      fillObsForm(m, null);
+      closeModal();
+    });
+  }
+
+  function fillObsForm(match, playerId){
+    const matchInput = document.querySelector('#obs-match') as HTMLInputElement;
+    const dateInput = document.querySelector('#obs-date') as HTMLInputElement;
+    const timeInput = document.querySelector('#obs-time') as HTMLInputElement;
+    const locationInput = document.querySelector('#obs-location') as HTMLInputElement;
+    const playerSelect = document.querySelector('#obs-player') as HTMLSelectElement;
+
+    if(matchInput) matchInput.value = `${match.homeTeam||''} - ${match.awayTeam||''}`;
+    if(dateInput && match.date) dateInput.value = match.date;
+    if(timeInput && match.time) timeInput.value = match.time;
+    if(locationInput && match.stadium) locationInput.value = match.stadium;
+    if(playerSelect && playerId) playerSelect.value = playerId;
+  }
+
+  function wire(){
+    overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=closeModal);
+    overlay.querySelectorAll('[data-action="import-matches"]').forEach(b=>b.onclick=()=>{ closeModal(); openMatchImportModal(); });
+    overlay.querySelectorAll('[data-action="download-match-template"]').forEach(b=>b.onclick=()=>downloadMatchTemplate());
+
+    const leagueFilter = overlay.querySelector('#schedule-league-filter') as HTMLSelectElement;
+    if(leagueFilter) leagueFilter.onchange = ()=>{ selectedLeague = leagueFilter.value; draw(); };
+
+    overlay.querySelectorAll('.match-row').forEach(row=>{
+      row.addEventListener('click', ()=>{
+        const matchId = (row as HTMLElement).dataset.matchId;
+        selectedMatch = matchId;
+        drawPlayerSelection(matchId);
+      });
+    });
+  }
+
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) closeModal(); });
+  document.body.appendChild(overlay);
+  draw();
+}
+
+function downloadMatchTemplate(){
+  const rows = [
+    ['Liga','Data','Godzina','Gospodarz','Gość','Stadion'],
+    ['Ekstraklasa','2026-08-01','17:00','Legia Warszawa','Lech Poznań','Stadion Wojska Polskiego'],
+    ['Ekstraklasa','2026-08-02','20:00','Raków Częstochowa','Pogoń Szczecin','Stadion Miejski'],
+    ['I liga','2026-08-03','15:00','Widzew Łódź','Arka Gdynia','Stadion Widzewa'],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Terminarz');
+  XLSX.writeFile(wb, 'terminarz_szablon.xlsx');
+}
+
+function openMatchImportModal(){
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+
+  function closeModal(){ overlay.remove(); render(); }
+
+  overlay.innerHTML = `
+  <div class="modal" style="max-width:650px;">
+    <h3>📋 Wgraj terminarz meczów</h3>
+    <p class="note">Wgraj plik Excel/CSV z meczami. Kolumny: <strong>Liga, Data, Godzina, Gospodarz, Gość</strong>, opcjonalnie Stadion.</p>
+
+    <div class="field-wrap" style="margin-bottom:14px;">
+      <label class="field">Plik Excel / CSV</label>
+      <input type="file" id="match-file" accept=".xlsx,.xls,.csv">
+    </div>
+
+    <div style="border-top:1px dashed #D9D3C4;padding-top:12px;margin-bottom:14px;">
+      <label class="field">…albo wklej terminarz (jeden mecz na linię)</label>
+      <textarea id="match-paste" rows="8" placeholder="Ekstraklasa	2026-08-01	17:00	Legia Warszawa	Lech Poznań&#10;Ekstraklasa	2026-08-02	20:00	Raków	Pogoń" style="font-size:12px;font-family:monospace;"></textarea>
+    </div>
+
+    <div class="modal-actions">
+      <button class="gold" data-action="do-import">Importuj</button>
+      <button class="secondary" data-action="get-template">⭳ Szablon</button>
+      <button class="secondary" data-action="close-modal">Anuluj</button>
+    </div>
+  </div>`;
+
+  overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=closeModal);
+  overlay.querySelectorAll('[data-action="get-template"]').forEach(b=>b.onclick=()=>downloadMatchTemplate());
+  overlay.querySelectorAll('[data-action="do-import"]').forEach(b=>b.onclick=async()=>{
+    const fileInput = overlay.querySelector('#match-file') as HTMLInputElement;
+    const textarea = overlay.querySelector('#match-paste') as HTMLTextAreaElement;
+
+    let newMatches = [];
+
+    if(fileInput.files && fileInput.files[0]){
+      try{
+        const buf = await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(new Error('Nie udało się wczytać.')); r.readAsArrayBuffer(fileInput.files[0]); });
+        const wb = XLSX.read(buf, {type:'array'});
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet, {defval:''});
+        newMatches = parseMatchRows(rows);
+      }catch(e){ alert('Błąd odczytu pliku: '+((e as any).message||e)); return; }
+    } else if(textarea.value.trim()){
+      newMatches = parseMatchText(textarea.value.trim());
+    } else {
+      alert('Wybierz plik albo wklej terminarz!'); return;
+    }
+
+    if(!newMatches.length){ alert('Nie rozpoznano żadnych meczów.'); return; }
+
+    const orig = (b as HTMLElement).textContent;
+    (b as HTMLButtonElement).disabled = true;
+    (b as HTMLElement).textContent = 'Importowanie...';
+
+    newMatches.forEach(m=>{
+      const exists = DB.matches.some(x=>x.date===m.date && x.homeTeam===m.homeTeam && x.awayTeam===m.awayTeam);
+      if(!exists) DB.matches.push({id: uid('M'), ...m});
+    });
+
+    const ok = await saveMatches();
+    if(ok){
+      alert(`Zaimportowano ${newMatches.length} meczów.`);
+      closeModal();
+    } else {
+      (b as HTMLButtonElement).disabled = false;
+      (b as HTMLElement).textContent = orig;
+      alert('Nie udało się zapisać meczów.');
+    }
+  });
+
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) closeModal(); });
+  document.body.appendChild(overlay);
+}
+
+function parseMatchRows(rows){
+  if(!rows.length) return [];
+  const norm = (s)=> String(s||'').toLowerCase().replace(/[ąćęłńóśźż]/g, c=>({ą:'a',ć:'c',ę:'e',ł:'l',ń:'n',ó:'o',ś:'s',ź:'z',ż:'z'}[c])).replace(/[^a-z0-9]/g,'');
+  const headerMap = {};
+  Object.keys(rows[0]).forEach(h=>{ headerMap[norm(h)] = h; });
+  const findCol = (...cands)=>{ for(const c of cands){ if(headerMap[norm(c)]) return headerMap[norm(c)]; } return null; };
+
+  const colLeague = findCol('Liga','League','Rozgrywki');
+  const colDate = findCol('Data','Date');
+  const colTime = findCol('Godzina','Time','Godz');
+  const colHome = findCol('Gospodarz','Home','Gospodarze');
+  const colAway = findCol('Gość','Gosc','Away','Goście');
+  const colStadium = findCol('Stadion','Stadium','Obiekt');
+
+  return rows.map(row=>{
+    const homeTeam = colHome ? String(row[colHome]||'').trim() : '';
+    const awayTeam = colAway ? String(row[colAway]||'').trim() : '';
+    if(!homeTeam || !awayTeam) return null;
+
+    let date = colDate ? String(row[colDate]||'').trim() : '';
+    if(date && !/^\d{4}-\d{2}-\d{2}$/.test(date)){
+      const parts = date.match(/(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4})/);
+      if(parts) date = `${parts[3]}-${parts[2].padStart(2,'0')}-${parts[1].padStart(2,'0')}`;
+    }
+
+    return {
+      league: colLeague ? String(row[colLeague]||'').trim() : '',
+      date,
+      time: colTime ? String(row[colTime]||'').trim() : '',
+      homeTeam, awayTeam,
+      stadium: colStadium ? String(row[colStadium]||'').trim() : '',
+    };
+  }).filter(Boolean);
+}
+
+function parseMatchText(text){
+  return text.split('\n').map(line=>{
+    const parts = line.split(/\t+|\s{2,}/).map(p=>p.trim()).filter(Boolean);
+    if(parts.length < 4) return null;
+
+    let league='', date='', time='', homeTeam='', awayTeam='', stadium='';
+
+    for(const part of parts){
+      if(/^\d{4}-\d{2}-\d{2}$/.test(part)) date = part;
+      else if(/^\d{1,2}:\d{2}$/.test(part)) time = part;
+      else if(/liga|ekstraklasa|klasa/i.test(part) && !league) league = part;
+      else if(!homeTeam) homeTeam = part;
+      else if(!awayTeam) awayTeam = part;
+      else if(!stadium) stadium = part;
+    }
+
+    if(!homeTeam || !awayTeam) return null;
+    return {league, date, time, homeTeam, awayTeam, stadium};
+  }).filter(Boolean);
 }
 
 function openPasteStatsModal(playerId){
