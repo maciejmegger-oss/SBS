@@ -4469,9 +4469,13 @@ function openPlayerModal(id, presetClubId, prefillData){
       <div class="field-wrap"><label class="field">Gole (sezon)</label><input type="number" min="0" id="pm-goals" value="${p&&p.goals!=null?p.goals:''}"></div>
       <div class="field-wrap"><label class="field">Asysty (sezon)</label><input type="number" min="0" id="pm-assists" value="${p&&p.assists!=null?p.assists:''}"></div>
     </div>
-    <p class="note" style="margin-top:-6px;margin-bottom:6px;">Transfermarkt blokuje automatyczne pobieranie tych statystyk (wykrywanie botów) — wpisz je ręcznie, sprawdzając link do profilu zawodnika poniżej.</p>
+    <p class="note" style="margin-top:-6px;margin-bottom:6px;">Wpisz ręcznie albo skopiuj statystyki ze strony (Transfermarkt / 90minut / ŁNP) i wklej poniżej — liczby same trafią do pól.</p>
+    <div class="field-wrap" style="margin-bottom:8px;">
+      <textarea id="pm-stats-paste" rows="3" placeholder="Wklej tu skopiowane statystyki, np.: Appearances 15  Minutes played 1350  Goals 5  Assists 3" style="font-size:12px;font-family:monospace;"></textarea>
+    </div>
     <div class="modal-actions" style="justify-content:flex-start;margin-top:0;margin-bottom:14px;">
-      <button type="button" class="secondary" data-action="open-tm-profile">↗ Otwórz profil Transfermarkt (sprawdź aktualne statystyki)</button>
+      <button type="button" class="gold" data-action="pm-parse-stats">📊 Wczytaj z wklejonego tekstu</button>
+      <button type="button" class="secondary" data-action="open-tm-profile">↗ Otwórz profil Transfermarkt</button>
     </div>
     <div class="field-wrap">
       <label class="field">Klub</label>
@@ -6114,24 +6118,41 @@ function openPasteStatsModal(playerId){
   draw();
 }
 
+// Rozpoznaje statystyki sezonowe w tekście skopiowanym ze strony (Transfermarkt, 90minut, ŁNP).
+// Obsługuje trzy układy: "Etykieta 15", "15 etykieta" oraz etykieta i liczba w osobnych liniach
+// (tak wychodzi kopiowanie tabeli z Transfermarktu). Liczby bywają z separatorem tysięcy i
+// apostrofem minut — "1.350'" / "1 350" — więc separatory usuwamy przed parsowaniem.
+const STATS_PATTERNS: [string, string][] = [
+  ['appearances|matches|mecze|mecz(?:ow|y)|spotkania|wystepy|występy', 'matches'],
+  ['minutes played|minutes|minuty|minut|rozegrane minuty', 'minutes'],
+  ['goals scored|goals|gole|goli|bramki|bramek', 'goals'],
+  ['assists|asysty|asyst|podania kluczowe', 'assists'],
+];
+
+function statsNumber(raw){
+  const n = parseInt(String(raw).replace(/[.\s'’]/g, ''), 10);
+  return isNaN(n) ? undefined : n;
+}
+
 function parseStatsText(text){
   const result: any = {};
-  const lines = text.toUpperCase().split(/[\n,;]+/).map(l=>l.trim()).filter(Boolean);
+  const lines = text.split(/[\n;]+/).map(l=>l.trim()).filter(Boolean);
 
-  const statNames = {
-    'matches|mecze|appearances|spotkania': 'matches',
-    'minutes|minuty|minutach|min': 'minutes',
-    'goals|gole|bramki': 'goals',
-    'assists|asysty|asysty|podania': 'assists'
-  };
+  for(const [pattern, key] of STATS_PATTERNS){
+    // 1) etykieta i liczba w tej samej linii — w dowolnej kolejności
+    for(const line of lines){
+      const after = line.match(new RegExp(`(?:${pattern})\\D{0,12}?([\\d.\\s']+)`, 'i'));
+      const before = line.match(new RegExp(`([\\d.\\s']+?)\\s*(?:${pattern})`, 'i'));
+      const num = statsNumber((after && after[1]) || (before && before[1]) || '');
+      if(num !== undefined){ result[key] = num; break; }
+    }
+    if(result[key] !== undefined) continue;
 
-  for(const line of lines){
-    for(const [pattern, key] of Object.entries(statNames)){
-      const regex = new RegExp(`(?:${pattern})\\s*(\\d+)`, 'i');
-      const match = line.match(regex) || text.match(new RegExp(`(\\d+)\\s*(?:${pattern})`, 'i'));
-      if(match){
-        const num = parseInt(match[1]);
-        if(!isNaN(num)) result[key] = num;
+    // 2) etykieta w jednej linii, liczba w następnej (kopiowana tabela)
+    for(let i = 0; i < lines.length - 1; i++){
+      if(new RegExp(`^\\s*(?:${pattern})\\s*:?\\s*$`, 'i').test(lines[i])){
+        const num = statsNumber(lines[i+1]);
+        if(num !== undefined){ result[key] = num; break; }
       }
     }
   }
@@ -6967,6 +6988,29 @@ function wireLastModal(){
   const openTmBtn = ov.querySelector('[data-action="open-tm-profile"]');
   if(openTmBtn){
     openTmBtn.onclick = ()=>openTmProfileFromModal();
+  }
+
+  // "Wczytaj z wklejonego tekstu" — parsuje statystyki wklejone ze strony i wpisuje do pól liczbowych.
+  const parseStatsBtn = ov.querySelector('[data-action="pm-parse-stats"]');
+  if(parseStatsBtn){
+    parseStatsBtn.onclick = ()=>{
+      const ta = ov.querySelector('#pm-stats-paste') as HTMLTextAreaElement;
+      const text = ta ? ta.value.trim() : '';
+      if(!text){ alert('Najpierw wklej skopiowane statystyki do pola powyżej.'); return; }
+      const parsed = parseStatsText(text);
+      if(!Object.keys(parsed).length){ alert('Nie udało się rozpoznać statystyk w tym tekście. Sprawdź, czy widać liczby przy nazwach: mecze / minuty / gole / asysty.'); return; }
+      const setVal = (id, v)=>{ if(v===undefined) return; const el2 = ov.querySelector(id) as HTMLInputElement; if(el2) el2.value = String(v); };
+      setVal('#pm-matches', parsed.matches);
+      setVal('#pm-minutes', parsed.minutes);
+      setVal('#pm-goals', parsed.goals);
+      setVal('#pm-assists', parsed.assists);
+      const found = [];
+      if(parsed.matches!==undefined) found.push('mecze: '+parsed.matches);
+      if(parsed.minutes!==undefined) found.push('minuty: '+parsed.minutes);
+      if(parsed.goals!==undefined) found.push('gole: '+parsed.goals);
+      if(parsed.assists!==undefined) found.push('asysty: '+parsed.assists);
+      alert('Wczytano — ' + found.join(', ') + '.\nSprawdź pola i kliknij „Zapisz".');
+    };
   }
 
 
