@@ -1979,6 +1979,11 @@ function statsAreStale(p){
 // Zwraca true, jeśli którakolwiek liczba faktycznie się zmieniła (żeby nie zapisywać bez potrzeby).
 async function fetchStatsFor(player){
   const res = await fetch('/api/stats?url=' + encodeURIComponent(player.lnpLink));
+  // Poza wdrożeniem /api nie istnieje — serwer deweloperski oddaje wtedy HTML aplikacji, a nie JSON.
+  const ctype = res.headers.get('content-type') || '';
+  if(!ctype.includes('application/json')){
+    throw new Error('pobieranie statystyk działa tylko na wdrożonej stronie (lokalnie nie ma /api).');
+  }
   if(!res.ok){
     const body = await res.json().catch(()=>({}));
     throw new Error(body.error || ('Serwer odpowiedział kodem ' + res.status));
@@ -5847,6 +5852,9 @@ function openMatchScheduleModal(){
   overlay.className = 'modal-overlay';
   let selectedLeague = '';
   let selectedMatch = null;
+  // Ligi, dla których próbowaliśmy już pobrać terminarz w tym otwarciu okna — bez tego
+  // nieudane pobranie (np. brak sieci) zapętliłoby się przy każdym przerysowaniu.
+  const autoTried = new Set();
 
   function closeModal(){ overlay.remove(); }
 
@@ -5911,6 +5919,13 @@ function openMatchScheduleModal(){
       let added = 0, seen = 0;
       for(const url of urls){
         const res = await fetch('/api/schedule?url=' + encodeURIComponent(url));
+        // Serwer deweloperski nie obsługuje /api (to funkcje Vercela) i na każdy adres oddaje
+        // stronę aplikacji. Bez tej kontroli użytkownik dostawał surowy błąd parsera JSON
+        // ("Unexpected token '<'"), z którego nic nie wynika.
+        const ctype = res.headers.get('content-type') || '';
+        if(!ctype.includes('application/json')){
+          throw new Error('pobieranie terminarza działa tylko na wdrożonej stronie — lokalny serwer deweloperski nie obsługuje /api.');
+        }
         if(!res.ok){
           const body = await res.json().catch(()=>({}));
           throw new Error(body.error || ('serwer odpowiedział kodem ' + res.status));
@@ -5926,8 +5941,12 @@ function openMatchScheduleModal(){
           added++;
         }
       }
+      // Znacznik czasu pobrania trzymamy per liga — na nim opiera się dobowe odświeżanie.
+      if(!DB.settings.scheduleFetchedAt) DB.settings.scheduleFetchedAt = {};
+      DB.settings.scheduleFetchedAt[selectedLeague] = new Date().toISOString();
       const ok = await saveMatches();
       if(!ok) throw new Error('nie udało się zapisać meczów w bazie.');
+      await saveSettings();
       status.innerHTML = `✓ Pobrano ${seen} meczów, dodano nowych: <strong>${added}</strong>.` +
         (added < seen ? ` Resztę już miałeś w bazie.` : '');
       draw();
@@ -5935,6 +5954,27 @@ function openMatchScheduleModal(){
       status.innerHTML = `<span style="color:var(--clay-dark);">Nie udało się pobrać: ${esc(e.message)}</span>`;
       btn.disabled = false; btn.textContent = prev;
     }
+  }
+
+  // Automatyczne wczytanie terminarza po wyborze ligi — bez klikania. Pobieramy, gdy dla danej
+  // ligi nie mamy jeszcze żadnego nadchodzącego meczu ALBO gdy ostatnie pobranie było ponad dobę
+  // temu (dochodzą przełożenia i godziny kolejnych kolejek). Przycisk zostaje do wymuszenia
+  // odświeżenia w dowolnym momencie.
+  const SCHEDULE_REFRESH_MS = 24 * 60 * 60 * 1000;
+  function scheduleIsStale(league){
+    const at = DB.settings.scheduleFetchedAt && DB.settings.scheduleFetchedAt[league];
+    if(!at) return true;
+    const ts = new Date(at).getTime();
+    return isNaN(ts) || (Date.now() - ts) > SCHEDULE_REFRESH_MS;
+  }
+  function maybeAutoFetch(){
+    if(!selectedLeague || autoTried.has(selectedLeague)) return;
+    if(!scheduleUrlsFor(selectedLeague).length) return;      // np. IV liga — adres podaje użytkownik
+    const haveUpcoming = futureMatches().length > 0;
+    if(haveUpcoming && !scheduleIsStale(selectedLeague)) return;
+    autoTried.add(selectedLeague);
+    const btn = overlay.querySelector('[data-action="fetch-schedule"]');
+    if(btn) fetchScheduleFor90minut(btn);
   }
 
   function draw(){
@@ -6092,7 +6132,7 @@ function openMatchScheduleModal(){
     overlay.querySelectorAll('[data-action="download-match-template"]').forEach(b=>b.onclick=()=>downloadMatchTemplate());
 
     const leagueFilter = overlay.querySelector('#schedule-league-filter') as HTMLSelectElement;
-    if(leagueFilter) leagueFilter.onchange = ()=>{ selectedLeague = leagueFilter.value; draw(); };
+    if(leagueFilter) leagueFilter.onchange = ()=>{ selectedLeague = leagueFilter.value; draw(); maybeAutoFetch(); };
     overlay.querySelectorAll('[data-action="fetch-schedule"]').forEach(b=>b.onclick=()=>fetchScheduleFor90minut(b));
 
     overlay.querySelectorAll('.match-row').forEach(row=>{
@@ -6107,6 +6147,7 @@ function openMatchScheduleModal(){
   overlay.addEventListener('click', e=>{ if(e.target===overlay) closeModal(); });
   document.body.appendChild(overlay);
   draw();
+  maybeAutoFetch();
 }
 
 function downloadMatchTemplate(){
