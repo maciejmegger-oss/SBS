@@ -6174,6 +6174,19 @@ function parseMatchText(text){
   }).filter(Boolean);
 }
 
+// Rozpoznanie serwisu po adresie. Tylko 90minut da się pobrać automatycznie: Transfermarkt i ŁNP
+// serwują pustą powłokę JS (sprawdzone — w HTML nie ma ani jednego wiersza tabeli), a API ŁNP
+// dodatkowo wymaga tokenu wydawanego po reCAPTCHA. Dlatego dla nich zapisujemy sam link.
+function detectStatsSource(raw){
+  let host;
+  try{ host = new URL(raw.trim()).hostname.replace(/^www\./,'').toLowerCase(); }
+  catch{ return {kind:'invalid'}; }
+  if(/(^|\.)90minut\.pl$/.test(host)) return {kind:'90minut', field:'lnpLink'};
+  if(/(^|\.)transfermarkt\.[a-z.]+$/.test(host)) return {kind:'transfermarkt', field:'tmLink', label:'Transfermarkt'};
+  if(/(^|\.)laczynaspilka\.pl$/.test(host)) return {kind:'lnp', field:'lnpLink', label:'Łączy nas piłką'};
+  return {kind:'unknown', host};
+}
+
 function openPasteStatsModal(playerId){
   const p = DB.players.find(x=>x.id===playerId);
   if(!p) return;
@@ -6183,12 +6196,72 @@ function openPasteStatsModal(playerId){
 
   function closeAndRefresh(){ overlay.remove(); render(); }
 
+  // Krok 1: import po wklejeniu linku. Zapisuje adres w odpowiednim polu profilu, a dla 90minut
+  // od razu ściąga liczby przez /api/stats (ten sam pośrednik, co odświeżanie cykliczne).
+  async function importStatsFromLink(btn){
+    const input = overlay.querySelector('#stats-link');
+    const status = overlay.querySelector('#link-status');
+    const raw = (input.value||'').trim();
+    if(!raw){ alert('Wklej najpierw link do profilu zawodnika.'); return; }
+
+    const src = detectStatsSource(raw);
+    if(src.kind === 'invalid'){ alert('To nie wygląda na poprawny adres URL.'); return; }
+    if(src.kind === 'unknown'){
+      alert(`Nieobsługiwany serwis: ${src.host}\n\nObsługiwane: 90minut.pl (automatycznie), Transfermarkt i Łączy nas piłką (zapis linku).`);
+      return;
+    }
+
+    // Transfermarkt / ŁNP — zapisujemy sam link, bez udawania, że pobraliśmy liczby.
+    if(src.kind !== '90minut'){
+      p[src.field] = raw;
+      const ok = await savePlayers();
+      status.innerHTML = ok
+        ? `✓ Zapisano link do <strong>${esc(src.label)}</strong> w profilu.<br>
+           <span style="color:var(--clay-dark);">Statystyk z tego serwisu nie da się pobrać automatycznie — liczby wklej w kroku 2 poniżej.</span>`
+        : '<span style="color:var(--clay-dark);">Nie udało się zapisać linku.</span>';
+      return;
+    }
+
+    const prevLabel = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Pobieram…';
+    status.textContent = 'Łączę się z 90minut.pl…';
+    try{
+      p.lnpLink = raw;                       // zapis linku włącza też odświeżanie cykliczne co 6 h
+      const { data } = await fetchStatsFor(p);
+      const ok = await savePlayers();
+      if(!ok) throw new Error('Nie udało się zapisać danych w bazie.');
+      status.innerHTML = `✓ Pobrano z 90minut.pl (sezon ${esc(data.season||'—')}):
+        <strong>${data.matches!=null?data.matches:'—'}</strong> mecze,
+        <strong>${data.goals!=null?data.goals:'—'}</strong> goli.<br>
+        <span style="color:var(--ink-soft);">90minut nie publikuje minut, asyst ani kartek — te uzupełnij w kroku 2.</span>`;
+      render();
+    }catch(e){
+      status.innerHTML = `<span style="color:var(--clay-dark);">Nie udało się pobrać: ${esc(e.message)}</span>`;
+    }finally{
+      btn.disabled = false; btn.textContent = prevLabel;
+    }
+  }
+
   function draw(){
     overlay.innerHTML = `
     <div class="modal" style="max-width:600px;">
-      <h3>Wklej statystyki — ${esc(p.firstName)} ${esc(p.lastName)}</h3>
-      <p class="note">Otwórz profil na Transfermarkt/90minut, zaznacz i skopiuj dane statystyk zawodnika, wklej poniżej.</p>
-      <p class="note" style="font-size:11px;color:var(--ink-soft);">Parser wyciąga: Mecze, Minuty, Gole, Asysty z każdego formatu tekstu.</p>
+      <h3>Statystyki — ${esc(p.firstName)} ${esc(p.lastName)}</h3>
+
+      <div style="border:1px solid #E3DECE;border-radius:8px;padding:12px;margin-bottom:16px;background:#FBF9F3;">
+        <label class="field" style="display:block;margin-bottom:6px;">1. Wklej link do profilu zawodnika</label>
+        <div style="display:flex;gap:8px;">
+          <input id="stats-link" placeholder="https://www.90minut.pl/kariera.php?id=..." value="${esc(p.lnpLink||p.tmLink||'')}" style="flex:1;font-size:12px;">
+          <button class="gold" data-action="fetch-from-link" style="white-space:nowrap;">⬇ Pobierz</button>
+        </div>
+        <div id="link-status" class="note" style="margin-top:8px;font-size:11.5px;">
+          <strong>90minut.pl</strong> — pobiera mecze i bramki automatycznie i zapisuje link do odświeżania co 6 h.<br>
+          <strong>Transfermarkt</strong> i <strong>Łączy nas piłką</strong> — liczb nie ma w kodzie strony (dorysowuje je JavaScript),
+          więc link zostaje zapisany w profilu, ale same statystyki wklej w kroku 2.
+        </div>
+      </div>
+
+      <label class="field" style="display:block;margin-bottom:6px;">2. Albo wklej statystyki tekstem</label>
+      <p class="note" style="font-size:11px;color:var(--ink-soft);margin-top:0;">Parser wyciąga: Mecze, Minuty, Gole, Asysty, Kartki żółte i czerwone — z dowolnego formatu.</p>
       <div class="field-wrap" style="margin-bottom:14px;">
         <label class="field">Wklej statystyki (np. z Transfermarkt, 90minut, ŁNP)</label>
         <textarea id="stats-paste" rows="10" placeholder="Appearances 15&#10;Minutes played 1350&#10;Goals 5&#10;Assists 3&#10;&#10;lub:&#10;15 mecze 1350 minut 5 goli 3 asysty&#10;&#10;lub jakolwiek inny format — parser się domyśli" style="font-size:12px;font-family:monospace;"></textarea>
@@ -6203,6 +6276,7 @@ function openPasteStatsModal(playerId){
 
   function wire(){
     overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=closeAndRefresh);
+    overlay.querySelectorAll('[data-action="fetch-from-link"]').forEach(b=>b.onclick=()=>importStatsFromLink(b));
     overlay.querySelectorAll('[data-action="parse-stats"]').forEach(b=>b.onclick=()=>{
       const textarea = overlay.querySelector('#stats-paste') as HTMLTextAreaElement;
       const text = textarea.value.trim();
@@ -6215,6 +6289,8 @@ function openPasteStatsModal(playerId){
       if(parsed.minutes !== undefined) p.minutes = parsed.minutes;
       if(parsed.goals !== undefined) p.goals = parsed.goals;
       if(parsed.assists !== undefined) p.assists = parsed.assists;
+      if(parsed.yellowCards !== undefined) p.yellowCards = parsed.yellowCards;
+      if(parsed.redCards !== undefined) p.redCards = parsed.redCards;
 
       savePlayers().then(ok=>{
         if(ok){
@@ -6236,7 +6312,11 @@ function openPasteStatsModal(playerId){
 // Obsługuje trzy układy: "Etykieta 15", "15 etykieta" oraz etykieta i liczba w osobnych liniach
 // (tak wychodzi kopiowanie tabeli z Transfermarktu). Liczby bywają z separatorem tysięcy i
 // apostrofem minut — "1.350'" / "1 350" — więc separatory usuwamy przed parsowaniem.
+// Kartki idą PRZED golami: "żółte kartki" zawiera słowo, które przy luźniejszym wzorcu potrafiłoby
+// wpaść w inną kategorię — dopasowujemy najbardziej szczegółowe etykiety najpierw.
 const STATS_PATTERNS: [string, string][] = [
+  ['(?:żółte|zolte|zółte) kartki|kartki (?:żółte|zolte)|yellow cards|żółtych kartek|kartek żółtych', 'yellowCards'],
+  ['czerwone kartki|kartki czerwone|red cards|czerwonych kartek|kartek czerwonych', 'redCards'],
   ['appearances|matches|mecze|mecz(?:ow|y)|spotkania|wystepy|występy', 'matches'],
   ['minutes played|minutes|minuty|minut|rozegrane minuty', 'minutes'],
   ['goals scored|goals|gole|goli|bramki|bramek', 'goals'],
