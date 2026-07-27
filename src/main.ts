@@ -5890,6 +5890,53 @@ function openMatchScheduleModal(){
     return futureMatches().filter(m=> m.date <= twoWeeksStr);
   }
 
+  // Pobranie terminarza wybranej ligi z 90minut przez /api/schedule (90minut nie wysyła CORS,
+  // więc idzie to przez naszego pośrednika). Dopisujemy tylko mecze, których jeszcze nie ma —
+  // powtórne pobranie nie tworzy duplikatów i nie kasuje niczego, co już jest w bazie.
+  async function fetchScheduleFor90minut(btn){
+    const status = overlay.querySelector('#schedule-status');
+    if(!selectedLeague){ status.textContent = 'Najpierw wybierz poziom rozgrywek.'; return; }
+
+    const urls = scheduleUrlsFor(selectedLeague);
+    if(!urls.length){
+      status.innerHTML = `<span style="color:var(--clay-dark);">Dla „${esc(selectedLeague)}" nie mam adresu terminarza
+        (IV liga dzieli się na grupy regionalne). Wgraj terminarz z pliku albo podaj adres strony ligi na 90minut.</span>`;
+      return;
+    }
+
+    const prev = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Pobieram…';
+    status.textContent = `Pobieram ${urls.length>1?urls.length+' grup':'terminarz'} z 90minut.pl…`;
+    try{
+      let added = 0, seen = 0;
+      for(const url of urls){
+        const res = await fetch('/api/schedule?url=' + encodeURIComponent(url));
+        if(!res.ok){
+          const body = await res.json().catch(()=>({}));
+          throw new Error(body.error || ('serwer odpowiedział kodem ' + res.status));
+        }
+        const data = await res.json();
+        for(const m of data.matches){
+          seen++;
+          const exists = DB.matches.some(x=>x.date===m.date && x.homeTeam===m.homeTeam && x.awayTeam===m.awayTeam);
+          if(exists) continue;
+          DB.matches.push({id: uid('M'), league: selectedLeague, competition: data.league,
+            date: m.date, time: m.time, homeTeam: m.homeTeam, awayTeam: m.awayTeam,
+            round: m.round, dateApprox: !!m.dateApprox, stadium: ''});
+          added++;
+        }
+      }
+      const ok = await saveMatches();
+      if(!ok) throw new Error('nie udało się zapisać meczów w bazie.');
+      status.innerHTML = `✓ Pobrano ${seen} meczów, dodano nowych: <strong>${added}</strong>.` +
+        (added < seen ? ` Resztę już miałeś w bazie.` : '');
+      draw();
+    }catch(e){
+      status.innerHTML = `<span style="color:var(--clay-dark);">Nie udało się pobrać: ${esc(e.message)}</span>`;
+      btn.disabled = false; btn.textContent = prev;
+    }
+  }
+
   function draw(){
     const matches = upcomingMatches();
     const rounds = currentRounds();
@@ -5913,12 +5960,16 @@ function openMatchScheduleModal(){
       <h3>📅 Terminarz meczów — ${rounds.length ? 'kolejki '+rounds.join(' i ') : 'najbliższe 2 tygodnie'}</h3>
       <p class="note">Wybierz ligę — pokazują się dwie bieżące kolejki. Kliknij mecz, aby wybrać zawodnika do obserwacji.</p>
 
-      <div class="field-wrap" style="margin-bottom:16px;">
+      <div class="field-wrap" style="margin-bottom:10px;">
         <label class="field">Poziom rozgrywek</label>
-        <select id="schedule-league-filter">
-          <option value="">Wszystkie ligi</option>
-          ${leagues.map(l=>`<option value="${esc(l)}" ${selectedLeague===l?'selected':''}>${esc(l)}</option>`).join('')}
-        </select>
+        <div style="display:flex;gap:8px;">
+          <select id="schedule-league-filter" style="flex:1;">
+            <option value="">Wszystkie ligi</option>
+            ${leagues.map(l=>`<option value="${esc(l)}" ${selectedLeague===l?'selected':''}>${esc(l)}</option>`).join('')}
+          </select>
+          <button class="gold" data-action="fetch-schedule" style="white-space:nowrap;" ${selectedLeague?'':'disabled title="Najpierw wybierz ligę"'}>⬇ Pobierz z 90minut</button>
+        </div>
+        <div id="schedule-status" class="note" style="margin-top:6px;font-size:11.5px;"></div>
       </div>
 
       ${!DB.matches.length ? `
@@ -5941,7 +5992,7 @@ function openMatchScheduleModal(){
               <div style="display:flex;justify-content:space-between;align-items:center;">
                 <div>
                   <div style="font-weight:600;color:var(--pitch);">${esc(m.homeTeam||'—')} — ${esc(m.awayTeam||'—')}</div>
-                  <div class="meta" style="font-size:12px;">${dayName} ${esc(m.date)}${m.time?' • '+esc(m.time):''}${m.stadium?' • 📍 '+esc(m.stadium):''}</div>
+                  <div class="meta" style="font-size:12px;">${m.dateApprox?'~ ':''}${dayName} ${esc(m.date)}${m.time?' • '+esc(m.time):''}${m.stadium?' • 📍 '+esc(m.stadium):''}${m.dateApprox?' <span title="90minut podaje na razie tylko zakres dat tej kolejki">(termin orientacyjny)</span>':''}</div>
                   ${m.league?`<div class="meta" style="font-size:11px;color:var(--gold-dark);">${esc(m.league)}</div>`:''}
                 </div>
                 <div style="text-align:right;">
@@ -6042,6 +6093,7 @@ function openMatchScheduleModal(){
 
     const leagueFilter = overlay.querySelector('#schedule-league-filter') as HTMLSelectElement;
     if(leagueFilter) leagueFilter.onchange = ()=>{ selectedLeague = leagueFilter.value; draw(); };
+    overlay.querySelectorAll('[data-action="fetch-schedule"]').forEach(b=>b.onclick=()=>fetchScheduleFor90minut(b));
 
     overlay.querySelectorAll('.match-row').forEach(row=>{
       row.addEventListener('click', ()=>{
@@ -6215,6 +6267,25 @@ function parseMatchText(text){
     if(!homeTeam || !awayTeam) return null;
     return {league, date, time, homeTeam, awayTeam, stadium, round};
   }).filter(Boolean);
+}
+
+// Strony terminarzy na 90minut dla poszczególnych poziomów rozgrywek (sezon 2026/2027).
+// III liga ma cztery grupy — pobieramy wszystkie naraz. IV liga jest podzielona regionalnie i nie
+// da się jej sprowadzić do jednego adresu, więc jej adres(y) wskazuje użytkownik: wpis w
+// DB.settings.scheduleUrls[liga] nadpisuje tę mapę i przeżywa zmianę sezonu bez zmiany kodu.
+const SCHEDULE_SOURCES = {
+  'Ekstraklasa': ['http://www.90minut.pl/liga/1/liga14675.html'],
+  'I liga':      ['http://www.90minut.pl/liga/1/liga14676.html'],
+  'II liga':     ['http://www.90minut.pl/liga/1/liga14677.html'],
+  'III liga':    ['http://www.90minut.pl/liga/1/liga14742.html',
+                  'http://www.90minut.pl/liga/1/liga14743.html',
+                  'http://www.90minut.pl/liga/1/liga14744.html',
+                  'http://www.90minut.pl/liga/1/liga14745.html'],
+};
+function scheduleUrlsFor(league){
+  const override = DB.settings.scheduleUrls && DB.settings.scheduleUrls[league];
+  if(override) return Array.isArray(override) ? override : [override];
+  return SCHEDULE_SOURCES[league] || [];
 }
 
 // Rozpoznanie serwisu po adresie. Tylko 90minut da się pobrać automatycznie: Transfermarkt i ŁNP
