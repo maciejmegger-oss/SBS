@@ -3066,12 +3066,6 @@ function viewClubs(){
       ['Wszystkie grupy', ...groups].map(groupPill).join(' ') + `</div>` +
       (yearGroups.length ? `<div class="filters" style="margin-top:8px;">` +
         yearGroups.map(g=>pill(g, clubBrowse.group===g, 'browse-group', {val:g})).join(' ') + `</div>` : '');
-    // Wybrany rocznik: wgraj zawodników (Excel/CSV albo wklejona treść)
-    if(/^Rocznik \d{4}$/.test(clubBrowse.group)){
-      groupRow += `<div style="margin-top:10px;">
-        <button class="gold" data-action="rocznik-import" data-group="${esc(clubBrowse.group)}">📋 Wgraj zawodników do: ${esc(clubBrowse.group)}</button>
-      </div>`;
-    }
   }
 
   const rows = list.map(c=>{
