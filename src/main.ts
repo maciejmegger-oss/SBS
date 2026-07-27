@@ -1909,6 +1909,9 @@ async function loadAll(){
     settled = true;
   })();
   await Promise.race([loadPromise, timeoutGuard]);
+  // Odświeżanie statystyk celowo POZA wyścigiem z limitem czasu — to praca w tle, która nie może
+  // opóźnić pokazania bazy. Błędy tu nie mogą przewrócić startu aplikacji.
+  refreshStatsInBackground().catch(e=>console.warn('Odświeżanie statystyk w tle nie powiodło się:', e));
 }
 let lastSaveFailure = null; // {key, time} gdy zapis ostatecznie się nie powiódł — pokazywane w trwałym banerze
 // Zapis do pamięci (storage.set) może się czasem nie powieść - to udokumentowana cecha tego API,
@@ -1947,6 +1950,74 @@ async function saveReports(){ return robustStorageSet('scouting:reports', JSON.s
 async function saveTalents(){ return robustStorageSet('scouting:talents', JSON.stringify(DB.talents)); }
 async function saveContacts(){ return robustStorageSet('scouting:contacts', JSON.stringify(DB.contacts)); }
 async function saveMatches(){ return robustStorageSet('scouting:matches', JSON.stringify(DB.matches)); }
+
+// ---- Automatyczne statystyki z 90minut.pl -------------------------------------------------
+// Źródłem jest link w polu "mPZPN / 90minut.pl" (p.lnpLink). Pobieranie idzie przez naszą
+// funkcję /api/stats, bo 90minut nie wysyła nagłówka CORS i przeglądarka nie odpyta go wprost.
+// Transfermarkt jest tu nieprzydatny — dorysowuje statystyki JavaScriptem, w HTML-u ich nie ma.
+//
+// 90minut publikuje TYLKO mecze i bramki — minuty i asysty zostają wpisywane ręcznie i nigdy
+// nie są tu nadpisywane.
+const STATS_MAX_AGE_MS = 24 * 60 * 60 * 1000;  // odświeżamy najwyżej raz na dobę
+const STATS_STARTUP_LIMIT = 25;                // ile profili maksymalnie odświeżamy przy starcie
+
+function has90minutLink(p){ return !!(p.lnpLink && /90minut\.pl/i.test(p.lnpLink)); }
+
+function statsAreStale(p){
+  if(!p.statsUpdatedAt) return true;
+  const ts = new Date(p.statsUpdatedAt).getTime();
+  if(isNaN(ts)) return true;
+  return (Date.now() - ts) > STATS_MAX_AGE_MS;
+}
+
+// Zwraca true, jeśli którakolwiek liczba faktycznie się zmieniła (żeby nie zapisywać bez potrzeby).
+async function fetchStatsFor(player){
+  const res = await fetch('/api/stats?url=' + encodeURIComponent(player.lnpLink));
+  if(!res.ok){
+    const body = await res.json().catch(()=>({}));
+    throw new Error(body.error || ('Serwer odpowiedział kodem ' + res.status));
+  }
+  const data = await res.json();
+  let changed = false;
+  if(typeof data.matches === 'number' && data.matches !== player.matches){ player.matches = data.matches; changed = true; }
+  if(typeof data.goals === 'number' && data.goals !== player.goals){ player.goals = data.goals; changed = true; }
+  player.statsUpdatedAt = new Date().toISOString();
+  player.statsSource = data.source || '90minut.pl';
+  player.statsSeason = data.season || '';
+  return { changed, data };
+}
+
+// Odświeżanie w tle po starcie. Świadomie ograniczone: najwyżej raz na dobę na zawodnika i
+// najwyżej STATS_STARTUP_LIMIT profili na jedno uruchomienie — przy kilkuset zawodnikach
+// odpytywanie wszystkich naraz obciążyłoby źródło i grozi blokadą. Pominięte doczekają
+// kolejnego uruchomienia; ile ich zostało, wypisujemy w konsoli (bez cichego ucinania).
+async function refreshStatsInBackground(){
+  const candidates = DB.players.filter(p=>has90minutLink(p) && statsAreStale(p));
+  if(!candidates.length) return;
+
+  const batch = candidates.slice(0, STATS_STARTUP_LIMIT);
+  const skipped = candidates.length - batch.length;
+  console.info(`Statystyki: odświeżam ${batch.length} z ${candidates.length} profili 90minut.` +
+    (skipped ? ` Pozostałe ${skipped} przy następnym uruchomieniu.` : ''));
+
+  let changedAny = false, failed = 0;
+  for(const p of batch){
+    try{
+      const { changed } = await fetchStatsFor(p);
+      if(changed) changedAny = true;
+    }catch(e){
+      failed++;
+      console.warn(`Statystyki: nie udało się odświeżyć ${p.lastName} ${p.firstName} —`, e.message);
+    }
+  }
+
+  if(failed) console.warn(`Statystyki: ${failed} z ${batch.length} profili nie odpowiedziało.`);
+  // Zapisujemy raz, po całej partii — nie po każdym zawodniku.
+  if(changedAny || batch.length){
+    await savePlayers();
+    if(changedAny) render();
+  }
+}
 async function saveSettings(){ return robustStorageSet('scouting:settings', JSON.stringify(DB.settings)); }
 async function savePositionMapAssignments(){ return robustStorageSet('scouting:position_map_assignments', JSON.stringify(positionMapAssignments)); }
 
@@ -2749,6 +2820,7 @@ function viewPlayerDetail(id){
     </div>
     <div style="display:flex;gap:8px;">
       <button class="secondary" data-action="edit-player" data-id="${p.id}">Edytuj</button>
+      ${has90minutLink(p) ? `<button class="secondary" data-action="refresh-stats" data-id="${p.id}" title="Pobierz mecze i bramki z 90minut.pl">🔄 Odśwież statystyki</button>` : ''}
       <button class="gold" data-action="paste-stats" data-id="${p.id}">📊 Wklej statystyki</button>
       <button class="danger" data-action="delete-player" data-id="${p.id}">Usuń</button>
     </div>
@@ -2769,7 +2841,7 @@ function viewPlayerDetail(id){
         <tr><td style="color:var(--ink-soft);">Noga</td><td>${esc(p.foot||"—")}</td></tr>
         <tr><td style="color:var(--ink-soft);">Wzrost</td><td>${p.height? p.height+" cm":"—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">System gry</td><td>${p.formation? `<strong>${esc(p.formation)}</strong>`:"—"}</td></tr>
-        <tr><td style="color:var(--ink-soft);">Mecze / minuty / gole / asysty</td><td>${(p.matches!=null||p.minutes!=null||p.goals!=null||p.assists!=null) ? `${p.matches!=null?p.matches:'—'} mecze &middot; ${p.minutes!=null?p.minutes:'—'} min &middot; ${p.goals!=null?p.goals:'—'} goli &middot; ${p.assists!=null?p.assists:'—'} asyst` : "—"}</td></tr>
+        <tr><td style="color:var(--ink-soft);">Mecze / minuty / gole / asysty</td><td>${(p.matches!=null||p.minutes!=null||p.goals!=null||p.assists!=null) ? `${p.matches!=null?p.matches:'—'} mecze &middot; ${p.minutes!=null?p.minutes:'—'} min &middot; ${p.goals!=null?p.goals:'—'} goli &middot; ${p.assists!=null?p.assists:'—'} asyst` : "—"}${p.statsUpdatedAt?`<div class="note" style="font-size:11px;margin-top:2px;">Mecze i bramki z ${esc(p.statsSource||'90minut.pl')}${p.statsSeason?' (sezon '+esc(p.statsSeason)+')':''}, odświeżone ${esc(String(p.statsUpdatedAt).slice(0,10))}. Minuty i asysty wpisujesz ręcznie.</div>`:''}</td></tr>
         <tr><td style="color:var(--ink-soft);">Kadra wojewódzka</td><td>${p.kadraWojewodzka? '<strong style="color:var(--good);">Tak</strong>' : 'Nie'}</td></tr>
         <tr><td style="color:var(--ink-soft);">Reprezentacja</td><td>${p.reprezentacja? `<strong style="color:var(--good);">Tak</strong>${p.powolania!=null?` &middot; ${p.powolania} ${p.powolania===1?'powołanie':'powołań'}`:''}` : 'Nie'}</td></tr>
         <tr><td style="color:var(--ink-soft);">Instagram</td><td>${p.instagramLink? `<a class="ext-link" href="${esc(p.instagramLink)}" target="_blank" rel="noopener">📷 śledź &rarr;</a>`:"—"}</td></tr>
@@ -4660,6 +4732,25 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="add-player"]').forEach(b=>b.onclick=()=>openPlayerModal(null));
   main.querySelectorAll('[data-action="edit-player"]').forEach(b=>b.onclick=()=>openPlayerModal(b.dataset.id));
   main.querySelectorAll('[data-action="paste-stats"]').forEach(b=>b.onclick=()=>openPasteStatsModal(b.dataset.id));
+  main.querySelectorAll('[data-action="refresh-stats"]').forEach(b=>b.onclick=async()=>{
+    const p = DB.players.find(x=>x.id===b.dataset.id);
+    if(!p) return;
+    const orig = b.textContent;
+    b.disabled = true; b.textContent = '⏳ Pobieram...';
+    try{
+      const { data } = await fetchStatsFor(p);
+      const ok = await savePlayers();
+      if(!ok){ alert('Pobrano statystyki, ale nie udało się ich zapisać — sprawdź baner u góry strony.'); return; }
+      alert(`Sezon ${data.season}: ${data.matches} meczów, ${data.goals} bramek.\n` +
+        `Źródło: ${data.source}${data.clubs && data.clubs.length ? ' — ' + data.clubs.join(', ') : ''}.\n\n` +
+        '90minut nie publikuje minut ani asyst — te pola pozostają bez zmian.');
+      render();
+    }catch(e){
+      alert('Nie udało się pobrać statystyk: ' + (e.message||e));
+    }finally{
+      b.disabled = false; b.textContent = orig;
+    }
+  });
   main.querySelectorAll('[data-action="open-match-schedule"]').forEach(b=>b.onclick=()=>openMatchScheduleModal());
   main.querySelectorAll('[data-action="view-player"]').forEach(b=>b.onclick=()=>{viewingPlayerId=b.dataset.id; currentView='players'; render();});
   // Przycisk "Monitoring" w liście zawodników — od razu dodaje/usuwa zawodnika z zakładki Monitoring.

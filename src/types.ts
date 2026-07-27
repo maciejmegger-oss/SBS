@@ -39,6 +39,9 @@ export interface Player {
   minutes?: number;
   goals?: number;
   assists?: number;
+  statsUpdatedAt?: string;
+  statsSource?: string;
+  statsSeason?: string;
   instagramLink?: string;
   facebookLink?: string;
   kadraWojewodzka?: boolean;
