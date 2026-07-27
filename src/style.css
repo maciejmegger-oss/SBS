@@ -359,6 +359,12 @@ tr:hover td{background:#FBF9F2;}
 .contact-field-telefon{min-width:120px;max-width:150px;}
 .contact-field-notatka{min-width:150px;}
 
+/* Kartki w listach (żółte / czerwone) — małe znaczniki w kolorach kartek. */
+.card-chip{display:inline-block;min-width:18px;padding:1px 5px;border-radius:3px;font-size:11px;
+  font-weight:800;line-height:1.5;text-align:center;}
+.card-chip.card-y{background:#F2C94C;color:#5A4400;}
+.card-chip.card-r{background:#C0392B;color:#FFF;}
+
 /* Monitoring — czytelny wskaźnik "ma agenta" (Tak/Nie). */
 .agent-yes{color:#3E7D4C;font-weight:800;}
 .agent-no{color:var(--ink-soft);font-weight:600;}

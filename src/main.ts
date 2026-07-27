@@ -1912,6 +1912,11 @@ async function loadAll(){
   // Odświeżanie statystyk celowo POZA wyścigiem z limitem czasu — to praca w tle, która nie może
   // opóźnić pokazania bazy. Błędy tu nie mogą przewrócić startu aplikacji.
   refreshStatsInBackground().catch(e=>console.warn('Odświeżanie statystyk w tle nie powiodło się:', e));
+  // Powtarzamy cyklicznie co 6 h, żeby długo otwarta karta też miała świeże liczby — sam start
+  // aplikacji nie wystarcza, gdy system chodzi cały dzień bez przeładowania.
+  setInterval(()=>{
+    refreshStatsInBackground().catch(e=>console.warn('Cykliczne odświeżanie statystyk nie powiodło się:', e));
+  }, STATS_INTERVAL_MS);
 }
 let lastSaveFailure = null; // {key, time} gdy zapis ostatecznie się nie powiódł — pokazywane w trwałym banerze
 // Zapis do pamięci (storage.set) może się czasem nie powieść - to udokumentowana cecha tego API,
@@ -1958,8 +1963,9 @@ async function saveMatches(){ return robustStorageSet('scouting:matches', JSON.s
 //
 // 90minut publikuje TYLKO mecze i bramki — minuty i asysty zostają wpisywane ręcznie i nigdy
 // nie są tu nadpisywane.
-const STATS_MAX_AGE_MS = 24 * 60 * 60 * 1000;  // odświeżamy najwyżej raz na dobę
-const STATS_STARTUP_LIMIT = 25;                // ile profili maksymalnie odświeżamy przy starcie
+const STATS_MAX_AGE_MS = 6 * 60 * 60 * 1000;   // odświeżamy najwyżej raz na 6 h
+const STATS_STARTUP_LIMIT = 25;                // ile profili maksymalnie odświeżamy przy jednym przebiegu
+const STATS_INTERVAL_MS = 6 * 60 * 60 * 1000;  // powtarzamy cyklicznie, gdy karta zostaje otwarta
 
 function has90minutLink(p){ return !!(p.lnpLink && /90minut\.pl/i.test(p.lnpLink)); }
 
@@ -2099,6 +2105,16 @@ function playerAvg(playerId){
 }
 // "śr. ocena" w listach: kreska, dopóki nie ma żadnego raportu z ocenami.
 function fmtAvg(a){ return a && a.overall!=null ? fmt1(a.overall) : "—"; }
+// Kartki w listach: żółte/czerwone jako kolorowe znaczniki. Kreska, gdy obu brak — zero pokazujemy
+// tylko wtedy, gdy druga wartość jest uzupełniona (żeby "0/1" było czytelne).
+function cardsCell(p){
+  const y = p.yellowCards, r = p.redCards;
+  if(y==null && r==null) return '—';
+  const parts = [];
+  if(y!=null) parts.push(`<span class="card-chip card-y" title="Żółte kartki">${y}</span>`);
+  if(r!=null) parts.push(`<span class="card-chip card-r" title="Czerwone kartki">${r}</span>`);
+  return parts.join(' ');
+}
 function daysSince(dateStr){
   if(!dateStr) return null;
   const d = new Date(dateStr+"T00:00:00");
@@ -3118,6 +3134,10 @@ function viewClubDetail(id){
       <td>${p.birthYear||"—"}${isYouthPlayer(p)?youthBadge():''}</td>
       <td>${esc(p.position)}</td>
       <td>${p.status? `<span class="badge ${STATUS_CLASS[p.status]||'new'}">${esc(p.status)}</span>` : '—'}</td>
+      <td style="text-align:right;">${p.matches!=null?p.matches:'—'}</td>
+      <td style="text-align:right;">${p.minutes!=null?p.minutes:'—'}</td>
+      <td style="text-align:right;">${p.goals!=null?p.goals:'—'}</td>
+      <td style="text-align:right;white-space:nowrap;">${cardsCell(p)}</td>
       <td>${fmtAvg(a)}</td>
       <td style="white-space:nowrap;">
         <button class="link-btn" data-action="add-to-monitoring" data-id="${p.id}" style="color:var(--gold-dark);">${p.monitored?'✓ Monitoring':'+ Monitoring'}</button>
@@ -3156,8 +3176,8 @@ function viewClubDetail(id){
       <button class="gold" data-action="add-player-to-club" data-id="${c.id}">+ Dodaj zawodnika do tego klubu</button>
     </div>
     <table>
-      <thead><tr><th>Zawodnik</th><th>Rocznik</th><th>Pozycja</th><th>Status</th><th>Śr. ocena</th><th></th></tr></thead>
-      <tbody>${squadRows || `<tr><td colspan="6"><div class="empty">Jeszcze nikogo tu nie scoutujecie — pełny skład sprawdzisz w linkach powyżej.</div></td></tr>`}</tbody>
+      <thead><tr><th>Zawodnik</th><th>Rocznik</th><th>Pozycja</th><th>Status</th><th style="text-align:right;" title="Rozegrane mecze w sezonie">Mecze</th><th style="text-align:right;" title="Rozegrane minuty w sezonie">Min</th><th style="text-align:right;" title="Gole w sezonie">Gole</th><th style="text-align:right;" title="Kartki żółte / czerwone">Kartki</th><th>Śr. ocena</th><th></th></tr></thead>
+      <tbody>${squadRows || `<tr><td colspan="10"><div class="empty">Jeszcze nikogo tu nie scoutujecie — pełny skład sprawdzisz w linkach powyżej.</div></td></tr>`}</tbody>
     </table>
   </div>`;
 }
