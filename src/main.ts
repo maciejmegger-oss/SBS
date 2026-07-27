@@ -5863,27 +5863,55 @@ function openMatchScheduleModal(){
     });
   }
 
-  function upcomingMatches(){
-    const today = new Date();
-    const twoWeeks = new Date(today.getTime() + 14*24*60*60*1000);
+  // Mecze jeszcze nierozegrane w wybranej lidze (od dziś w przód), po dacie i godzinie.
+  function futureMatches(){
+    const todayStr = new Date().toISOString().slice(0,10);
+    // Dopasowanie po POZIOMIE rozgrywek: wybór "III liga" ma łapać też "III liga, gr. II" itd.
+    const matchesLeague = (m)=> !selectedLeague || m.league === selectedLeague
+      || topLevelOf(m.league) === selectedLeague;
     return DB.matches
-      .filter(m=>{
-        if(selectedLeague && m.league !== selectedLeague) return false;
-        if(!m.date) return false;
-        const d = new Date(m.date + 'T00:00:00');
-        return d >= today && d <= twoWeeks;
-      })
+      .filter(m=> m.date && m.date >= todayStr && matchesLeague(m))
       .sort((a,b)=> (a.date+' '+(a.time||'')).localeCompare(b.date+' '+(b.time||'')));
+  }
+
+  // Dwie BIEŻĄCE kolejki: dwa najbliższe numery kolejek wśród nadchodzących meczów. Terminarz
+  // rzadko układa się równo w 14 dni — kolejka potrafi być rozciągnięta albo przełożona — więc
+  // grupujemy po numerze kolejki, a nie po oknie czasowym. Gdy w danych nie ma kolejek
+  // (starszy import bez tej kolumny), wracamy do dotychczasowego okna 14 dni.
+  function currentRounds(){
+    const rounds = [...new Set(futureMatches().map(m=>m.round).filter(r=>r!=null))].sort((a,b)=>a-b);
+    return rounds.slice(0,2);
+  }
+
+  function upcomingMatches(){
+    const rounds = currentRounds();
+    if(rounds.length) return futureMatches().filter(m=> rounds.includes(m.round));
+    const twoWeeksStr = new Date(Date.now() + 14*24*60*60*1000).toISOString().slice(0,10);
+    return futureMatches().filter(m=> m.date <= twoWeeksStr);
   }
 
   function draw(){
     const matches = upcomingMatches();
-    const leagues = [...new Set(DB.matches.map(m=>m.league).filter(Boolean))].sort();
+    const rounds = currentRounds();
+    // Poziomy rozgrywek pokazujemy ZAWSZE (Ekstraklasa → IV liga), niezależnie od tego, czy jakiś
+    // mecz jest już zaimportowany. Wcześniej lista powstawała z DB.matches, więc przy pustym
+    // terminarzu zostawało samo "Wszystkie ligi" i nie było czego wybrać.
+    const SCHEDULE_LEAGUES = ["Ekstraklasa","I liga","II liga","III liga","IV liga"];
+    const extra = [...new Set(DB.matches.map(m=>m.league).filter(Boolean))]
+      .filter(l=> !SCHEDULE_LEAGUES.includes(l)).sort();
+    const leagues = [...SCHEDULE_LEAGUES, ...extra];
+    // Nagłówek grupy nad pierwszym meczem każdej kolejki — przy braku kolejek nie pokazujemy nic.
+    let lastRound;
+    const roundHeader = (m)=>{
+      if(!rounds.length || m.round === lastRound) return '';
+      lastRound = m.round;
+      return `<div style="margin:6px 0 2px;font-weight:800;color:var(--pitch);font-size:13px;">Kolejka ${m.round}</div>`;
+    };
 
     overlay.innerHTML = `
     <div class="modal" style="max-width:900px;max-height:85vh;overflow:auto;">
-      <h3>📅 Terminarz meczów — najbliższe 2 tygodnie</h3>
-      <p class="note">Kliknij mecz, aby wybrać zawodnika do obserwacji.</p>
+      <h3>📅 Terminarz meczów — ${rounds.length ? 'kolejki '+rounds.join(' i ') : 'najbliższe 2 tygodnie'}</h3>
+      <p class="note">Wybierz ligę — pokazują się dwie bieżące kolejki. Kliknij mecz, aby wybrać zawodnika do obserwacji.</p>
 
       <div class="field-wrap" style="margin-bottom:16px;">
         <label class="field">Poziom rozgrywek</label>
@@ -5909,7 +5937,7 @@ function openMatchScheduleModal(){
             const dateObj = new Date(m.date + 'T00:00:00');
             const dayName = ['Nd','Pon','Wt','Śr','Czw','Pt','Sob'][dateObj.getDay()];
 
-            return `<div class="match-row" data-match-id="${m.id}" style="border:1px solid #E3DECE;border-radius:8px;padding:12px;cursor:pointer;transition:all 0.2s;background:${selectedMatch===m.id?'#FBF6E9':'#fff'};" onmouseover="this.style.background='#FBF6E9'" onmouseout="this.style.background='${selectedMatch===m.id?'#FBF6E9':'#fff'}'">
+            return roundHeader(m) + `<div class="match-row" data-match-id="${m.id}" style="border:1px solid #E3DECE;border-radius:8px;padding:12px;cursor:pointer;transition:all 0.2s;background:${selectedMatch===m.id?'#FBF6E9':'#fff'};" onmouseover="this.style.background='#FBF6E9'" onmouseout="this.style.background='${selectedMatch===m.id?'#FBF6E9':'#fff'}'">
               <div style="display:flex;justify-content:space-between;align-items:center;">
                 <div>
                   <div style="font-weight:600;color:var(--pitch);">${esc(m.homeTeam||'—')} — ${esc(m.awayTeam||'—')}</div>
@@ -6031,10 +6059,11 @@ function openMatchScheduleModal(){
 
 function downloadMatchTemplate(){
   const rows = [
-    ['Liga','Data','Godzina','Gospodarz','Gość','Stadion'],
-    ['Ekstraklasa','2026-08-01','17:00','Legia Warszawa','Lech Poznań','Stadion Wojska Polskiego'],
-    ['Ekstraklasa','2026-08-02','20:00','Raków Częstochowa','Pogoń Szczecin','Stadion Miejski'],
-    ['I liga','2026-08-03','15:00','Widzew Łódź','Arka Gdynia','Stadion Widzewa'],
+    ['Liga','Kolejka','Data','Godzina','Gospodarz','Gość','Stadion'],
+    ['Ekstraklasa',2,'2026-08-01','17:00','Legia Warszawa','Lech Poznań','Stadion Wojska Polskiego'],
+    ['Ekstraklasa',2,'2026-08-02','20:00','Raków Częstochowa','Pogoń Szczecin','Stadion Miejski'],
+    ['Ekstraklasa',3,'2026-08-08','17:30','Lech Poznań','Cracovia','Enea Stadion'],
+    ['I liga',2,'2026-08-03','15:00','Widzew Łódź','Arka Gdynia','Stadion Widzewa'],
   ];
   const ws = XLSX.utils.aoa_to_sheet(rows);
   const wb = XLSX.utils.book_new();
@@ -6051,7 +6080,8 @@ function openMatchImportModal(){
   overlay.innerHTML = `
   <div class="modal" style="max-width:650px;">
     <h3>📋 Wgraj terminarz meczów</h3>
-    <p class="note">Wgraj plik Excel/CSV z meczami. Kolumny: <strong>Liga, Data, Godzina, Gospodarz, Gość</strong>, opcjonalnie Stadion.</p>
+    <p class="note">Wgraj plik Excel/CSV z meczami. Kolumny: <strong>Liga, Kolejka, Data, Godzina, Gospodarz, Gość</strong>, opcjonalnie Stadion.<br>
+    <span style="font-size:11px;">Kolejka decyduje o tym, które mecze pokażą się w planowaniu — bez niej wracamy do okna 14 dni.</span></p>
 
     <div class="field-wrap" style="margin-bottom:14px;">
       <label class="field">Plik Excel / CSV</label>
@@ -6131,6 +6161,7 @@ function parseMatchRows(rows){
   const colHome = findCol('Gospodarz','Home','Gospodarze');
   const colAway = findCol('Gość','Gosc','Away','Goście');
   const colStadium = findCol('Stadion','Stadium','Obiekt');
+  const colRound = findCol('Kolejka','Round','Queue','Nr kolejki','Kolejka nr');
 
   return rows.map(row=>{
     const homeTeam = colHome ? String(row[colHome]||'').trim() : '';
@@ -6149,8 +6180,17 @@ function parseMatchRows(rows){
       time: colTime ? String(row[colTime]||'').trim() : '',
       homeTeam, awayTeam,
       stadium: colStadium ? String(row[colStadium]||'').trim() : '',
+      // Kolejka jako liczba — z "2", "kolejka 2", "2. kolejka" itd. Brak = pusty (mecz trafi do
+      // grupy "bez kolejki", zamiast udawać kolejkę 0).
+      round: colRound ? roundNumber(row[colRound]) : null,
     };
   }).filter(Boolean);
+}
+
+// Wyciąga numer kolejki z dowolnego zapisu ("3", "kolejka 3", "3. kolejka", "K3").
+function roundNumber(raw){
+  const m = String(raw==null?'':raw).match(/\d+/);
+  return m ? parseInt(m[0], 10) : null;
 }
 
 function parseMatchText(text){
@@ -6158,11 +6198,14 @@ function parseMatchText(text){
     const parts = line.split(/\t+|\s{2,}/).map(p=>p.trim()).filter(Boolean);
     if(parts.length < 4) return null;
 
-    let league='', date='', time='', homeTeam='', awayTeam='', stadium='';
+    let league='', date='', time='', homeTeam='', awayTeam='', stadium='', round=null;
 
     for(const part of parts){
       if(/^\d{4}-\d{2}-\d{2}$/.test(part)) date = part;
       else if(/^\d{1,2}:\d{2}$/.test(part)) time = part;
+      // "kolejka 3" / "3. kolejka" — rozpoznajemy po słowie, żeby nie pomylić z samą liczbą,
+      // która w tej samej linii mogłaby być czymkolwiek innym.
+      else if(/kolejk/i.test(part) && round==null) round = roundNumber(part);
       else if(/liga|ekstraklasa|klasa/i.test(part) && !league) league = part;
       else if(!homeTeam) homeTeam = part;
       else if(!awayTeam) awayTeam = part;
@@ -6170,7 +6213,7 @@ function parseMatchText(text){
     }
 
     if(!homeTeam || !awayTeam) return null;
-    return {league, date, time, homeTeam, awayTeam, stadium};
+    return {league, date, time, homeTeam, awayTeam, stadium, round};
   }).filter(Boolean);
 }
 
