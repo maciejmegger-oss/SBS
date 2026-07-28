@@ -3163,6 +3163,7 @@ function viewClubDetail(id){
     </div>
     <div style="display:flex;gap:8px;">
       <button class="gold" data-action="import-squad" data-id="${c.id}">📋 Import składu</button>
+      <button class="secondary" data-action="import-squad-stats" data-id="${c.id}" title="Wklej tabelę statystyk całej drużyny — minuty, mecze, gole, kartki">⏱ Statystyki drużyny</button>
       <button class="secondary" data-action="edit-club" data-id="${c.id}">Edytuj klub</button>
       <button class="danger" data-action="delete-club" data-id="${c.id}">Usuń</button>
     </div>
@@ -5017,6 +5018,7 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="open-committee-reports"]').forEach(b=>b.onclick=()=>openCommitteeReportsModal(b.dataset.id));
   main.querySelectorAll('[data-action="manage-transfer-history"]').forEach(b=>b.onclick=()=>openTransferHistoryModal(b.dataset.id));
   main.querySelectorAll('[data-action="import-squad"]').forEach(b=>b.onclick=()=>openSquadImportModal(b.dataset.id));
+  main.querySelectorAll('[data-action="import-squad-stats"]').forEach(b=>b.onclick=()=>openSquadStatsModal(b.dataset.id));
   main.querySelectorAll('[data-action="analyze-player"]').forEach(b=>b.onclick=()=>openPlayerAnalysisModal(b.dataset.id));
   main.querySelectorAll('[data-action="contacts-fill-clubs"]').forEach(b=>b.onclick=async()=>{
     let filled = 0, noMatch = 0;
@@ -6354,6 +6356,128 @@ function detectStatsSource(raw){
   if(/(^|\.)transfermarkt\.[a-z.]+$/.test(host)) return {kind:'transfermarkt', field:'tmLink', label:'Transfermarkt'};
   if(/(^|\.)laczynaspilka\.pl$/.test(host)) return {kind:'lnp', field:'lnpLink', label:'Łączy nas piłką'};
   return {kind:'unknown', host};
+}
+
+// Wklejenie tabeli statystyk CAŁEJ drużyny (np. zaznaczonej na Transfermarkt) i rozdzielenie jej
+// na zawodników po nazwisku. Powstało, bo minut nie da się pobrać automatycznie z żadnego źródła:
+// 90minut ich nie publikuje, a Transfermarkt renderuje tabelę JavaScriptem, więc w pobranym HTML-u
+// jej nie ma. Wklejenie raz na klub zastępuje wpisywanie liczb zawodnik po zawodniku.
+//
+// Z każdej linii bierzemy nazwisko (najdłuższe słowo pisane literami) i występujące w niej liczby.
+// Kolejność liczb bywa różna, więc znaczenie nadajemy im po etykietach z nagłówka, a gdy ich brak —
+// po typowym układzie Transfermarktu: mecze, gole, asysty, żółte, czerwone, minuty.
+function parseSquadStatsText(text, squad){
+  const norm = (s)=> String(s||'').toLowerCase()
+    .replace(/[ąćęłńóśźż]/g, c=>({ą:'a',ć:'c',ę:'e',ł:'l',ń:'n',ó:'o',ś:'s',ź:'z',ż:'z'}[c]))
+    .replace(/[^a-z]/g,'');
+
+  const results = [];
+  const unmatched = [];
+  for(const line of text.split('\n').map(l=>l.trim()).filter(Boolean)){
+    // Minuty na Transfermarkcie zapisane są jako "1.980'" — apostrof jest tu najpewniejszą wskazówką.
+    // Sama liczba tuż przed apostrofem — bez \s w grupie, bo wtedy wzorzec połykał wszystkie
+    // wcześniejsze liczby z wiersza i sklejał je w jedną ("24 18 5 3 1 1.980'" -> 24185311980).
+    const minutesTagged = line.match(/(\d[\d.]*)\s*['’]/);
+    const nums = (line.match(/\d[\d.]*/g)||[]).map(n=>parseInt(n.replace(/\./g,''),10)).filter(n=>!isNaN(n));
+    if(!nums.length) continue;
+
+    const words = (line.match(/[A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż-]{3,}/g)||[]);
+    if(!words.length) continue;
+
+    // Dopasowanie do składu: szukamy zawodnika, którego nazwisko występuje w tej linii.
+    const hit = squad.find(p=>{
+      const last = norm(p.lastName);
+      return last.length >= 3 && words.some(w=> norm(w) === last);
+    });
+    if(!hit){ unmatched.push(words.join(' ').slice(0,40)); continue; }
+
+    const stats = {};
+    if(minutesTagged){
+      const mv = parseInt(String(minutesTagged[1]).replace(/[.\s]/g,''),10);
+      if(!isNaN(mv)) stats.minutes = mv;
+    }
+    // Bez etykiety minut przyjmujemy, że największa liczba w linii to minuty — mecze, gole,
+    // kartki są jednocyfrowe albo kilkudziesięciodniowe, minuty zwykle setki/tysiące.
+    if(stats.minutes === undefined){
+      const max = Math.max(...nums);
+      if(max >= 90) stats.minutes = max;
+    }
+    const small = nums.filter(n=>n !== stats.minutes);
+    if(small.length >= 1) stats.matches = small[0];
+    if(small.length >= 2) stats.goals = small[1];
+
+    if(Object.keys(stats).length) results.push({player: hit, stats});
+  }
+  return {results, unmatched};
+}
+
+function openSquadStatsModal(clubId){
+  const club = DB.clubs.find(c=>c.id===clubId);
+  if(!club) return;
+  const squad = DB.players.filter(p=>p.clubId===clubId);
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+  <div class="modal" style="max-width:680px;">
+    <h3>⏱ Statystyki drużyny — ${esc(club.name)}</h3>
+    <p class="note">Otwórz skład klubu na Transfermarkt (zakładka „Występy"), zaznacz tabelę, skopiuj i wklej poniżej.
+    Dopasuję wiersze do ${squad.length} zawodników tego klubu po nazwisku.</p>
+    <p class="note" style="font-size:11px;color:var(--ink-soft);">Minut nie da się pobrać automatycznie —
+    90minut ich nie publikuje, a Transfermarkt dorysowuje tabelę JavaScriptem, więc w kodzie strony ich nie ma.</p>
+    <div class="field-wrap" style="margin-bottom:14px;">
+      <textarea id="squad-stats-paste" rows="12" placeholder="Lewandowski   24   18   5   3   1   1.980'&#10;Zieliński     22    4   7   2   0   1.755'" style="font-size:12px;font-family:monospace;"></textarea>
+    </div>
+    <div id="squad-stats-preview"></div>
+    <div class="modal-actions">
+      <button class="gold" data-action="squad-stats-parse">Rozpoznaj</button>
+      <button class="secondary" data-action="close-modal">Anuluj</button>
+    </div>
+  </div>`;
+
+  let parsed = null;
+  const close = ()=>{ overlay.remove(); render(); };
+  overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=close);
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) close(); });
+
+  const preview = overlay.querySelector('#squad-stats-preview');
+  const actionBtn = overlay.querySelector('[data-action="squad-stats-parse"]');
+
+  actionBtn.onclick = async ()=>{
+    if(!parsed){
+      const text = (overlay.querySelector('#squad-stats-paste') as HTMLTextAreaElement).value.trim();
+      if(!text){ alert('Wklej najpierw tabelę statystyk.'); return; }
+      parsed = parseSquadStatsText(text, squad);
+      if(!parsed.results.length){
+        preview.innerHTML = `<div class="empty">Nie dopasowałem żadnego wiersza do zawodników tego klubu.
+          ${parsed.unmatched.length?`Nierozpoznane: ${esc(parsed.unmatched.slice(0,5).join(', '))}`:''}</div>`;
+        parsed = null; return;
+      }
+      preview.innerHTML = `<table style="width:100%;font-size:12.5px;">
+        <tr><th>Zawodnik</th><th style="text-align:right;">Mecze</th><th style="text-align:right;">Minuty</th><th style="text-align:right;">Gole</th></tr>
+        ${parsed.results.map(r=>`<tr><td>${esc(r.player.lastName)} ${esc(r.player.firstName)}</td>
+          <td style="text-align:right;">${r.stats.matches!=null?r.stats.matches:'—'}</td>
+          <td style="text-align:right;"><strong>${r.stats.minutes!=null?r.stats.minutes:'—'}</strong></td>
+          <td style="text-align:right;">${r.stats.goals!=null?r.stats.goals:'—'}</td></tr>`).join('')}
+      </table>
+      ${parsed.unmatched.length?`<p class="note" style="margin-top:8px;">Nie dopasowano ${parsed.unmatched.length} wierszy — te zostaną pominięte.</p>`:''}`;
+      actionBtn.textContent = `✓ Zapisz dla ${parsed.results.length} zawodników`;
+      return;
+    }
+
+    parsed.results.forEach(({player, stats})=>{
+      if(stats.minutes !== undefined) player.minutes = stats.minutes;
+      if(stats.matches !== undefined) player.matches = stats.matches;
+      if(stats.goals !== undefined) player.goals = stats.goals;
+      player.statsUpdatedAt = new Date().toISOString();
+      player.statsSource = 'wklejone ręcznie';
+    });
+    const ok = await savePlayers();
+    alert(ok ? `Zapisano statystyki dla ${parsed.results.length} zawodników.` : 'Nie udało się zapisać.');
+    if(ok) close();
+  };
+
+  document.body.appendChild(overlay);
 }
 
 function openPasteStatsModal(playerId){
