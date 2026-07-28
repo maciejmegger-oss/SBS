@@ -26,6 +26,24 @@ function vercelApiDevPlugin() {
         if (typeof handler !== "function") return next();
 
         const query = Object.fromEntries(url.searchParams.entries());
+
+        // Vercel podaje funkcji gotowe `req.body` (rozpakowany JSON). Serwer Vite
+        // tego nie robi — bez tego funkcje przyjmujące POST-a (np. admin-users)
+        // widziałyby pustą treść i działały wyłącznie po wdrożeniu.
+        let body = undefined;
+        if (req.method !== "GET" && req.method !== "HEAD") {
+          const chunks = [];
+          for await (const chunk of req) chunks.push(chunk);
+          const raw = Buffer.concat(chunks).toString("utf8");
+          if (raw) {
+            try {
+              body = JSON.parse(raw);
+            } catch {
+              body = raw;   // nie-JSON zostawiamy surowy, tak jak robi to Vercel
+            }
+          }
+        }
+
         const shim = {
           status(code) { res.statusCode = code; return this; },
           setHeader(k, v) { res.setHeader(k, v); return this; },
@@ -37,7 +55,7 @@ function vercelApiDevPlugin() {
         };
 
         try {
-          await handler({ query, method: req.method, headers: req.headers }, shim);
+          await handler({ query, body, method: req.method, headers: req.headers }, shim);
         } catch (e) {
           res.statusCode = 500;
           res.setHeader("Content-Type", "application/json");

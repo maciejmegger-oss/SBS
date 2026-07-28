@@ -13,7 +13,49 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
-<body>
+<body class="sbs-locked">
+
+<!-- Strona publiczna. Widoczna dla każdego, kto wejdzie na adres — celowo bez
+     żadnych danych zawodników, klubów czy obserwacji. Panel z danymi pojawia
+     się dopiero po zalogowaniu. -->
+<div id="landing">
+  <header class="landing-top">
+    <div class="landing-brand">
+      <div>
+        <strong>SCOUT BASE SYSTEM</strong>
+        <span>Future &amp; Intelligent</span>
+      </div>
+    </div>
+    <button class="sbs-btn sbs-btn-ghost" data-auth-open>Zaloguj się</button>
+  </header>
+
+  <main class="landing-hero">
+    <div class="landing-hero-inner">
+      <h2>System skautingu<br>dla klubów, które<br><em>szukają sami</em>.</h2>
+      <p>
+        Baza zawodników, plan obserwacji, raporty skautów i ranking pozycyjny —
+        w jednym miejscu, zamiast w arkuszach i notatkach. Zbudowany na potrzeby
+        polskich rozgrywek: od Ekstraklasy po klasę okręgową i roczniki juniorskie.
+      </p>
+      <ul class="landing-points">
+        <li>Baza zawodników</li>
+        <li>Plan obserwacji</li>
+        <li>Raporty skautingowe</li>
+        <li>Ranking pozycyjny</li>
+        <li>Terminarze rozgrywek</li>
+      </ul>
+      <button class="sbs-btn sbs-btn-primary" data-auth-open>Zaloguj się do panelu</button>
+    </div>
+  </main>
+
+  <footer class="landing-foot">
+    Dostęp wyłącznie dla zaproszonych użytkowników &middot; kontakt w sprawie dostępu: administrator systemu
+  </footer>
+</div>
+
+<!-- Ekrany logowania renderuje src/auth-ui.ts -->
+<div id="auth-root"></div>
+
 <div id="save-failure-banner"></div>
 <div class="app">
   <div class="sidebar">

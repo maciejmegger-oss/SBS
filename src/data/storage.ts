@@ -8,13 +8,12 @@
 // kodu (przeniesiona do src/main.ts) mogła zostać bez zmian: value to zawsze string JSON,
 // serializację/deserializację robi wywołujący (loadAll/save* w main.ts), tak jak wcześniej.
 
-import { createClient } from "@supabase/supabase-js";
+// UWAGA: klient Supabase pochodzi teraz ze wspólnego modułu (./supabase). Wcześniej
+// ten plik tworzył własny przez createClient() — po dodaniu logowania byłyby to dwie
+// niezależne sesje i zapytania o dane szłyby bez tokenu zalogowanego użytkownika.
+import { sb } from "./supabase";
+import { getOrgId } from "./session";
 import type { ClubCrestMap } from "../types";
-
-const sb = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY,
-);
 
 const COLLECTION_TABLES: Record<string, string> = {
   "scouting:players": "sbs_players",
@@ -45,7 +44,10 @@ const rowFromObj = (obj: Record<string, unknown>): Record<string, unknown> => {
 
 const objFromRow = (row: Record<string, unknown>): Record<string, unknown> => {
   const obj: Record<string, unknown> = {};
-  for (const k in row) if (k !== "updated_at") obj[snakeToCamel(k)] = row[k];
+  // org_id pomijamy tak samo jak updated_at — to kolumna techniczna (do której
+  // organizacji należy wiersz), a nie pole zawodnika czy obserwacji. Przy zapisie
+  // stemplujemy ją na nowo z profilu zalogowanego użytkownika.
+  for (const k in row) if (k !== "updated_at" && k !== "org_id") obj[snakeToCamel(k)] = row[k];
   return obj;
 };
 
@@ -104,9 +106,15 @@ function liftExt(table: string, obj: Record<string, unknown>): void {
 // Dlatego wczytujemy WSZYSTKIE wiersze stronami po 1000, aż strona wróci niepełna.
 async function getCollection(table: string): Promise<string> {
   const PAGE = 1000;
+  const orgId = getOrgId();
   const all: Record<string, unknown>[] = [];
   for (let from = 0; ; from += PAGE) {
-    const { data, error } = await sb.from(table).select("*").range(from, from + PAGE - 1);
+    // Filtr po organizacji jest tu jawnie, mimo że po zamknięciu reguł dostępu
+    // (rls_authenticated.sql) baza i tak nie odda cudzych wierszy. Dublowanie jest
+    // celowe: dopóki reguły są otwarte, to jedyne, co rozdziela dane klientów.
+    let q = sb.from(table).select("*").range(from, from + PAGE - 1);
+    if (orgId) q = q.eq("org_id", orgId);
+    const { data, error } = await q;
     if (error) throw new Error(error.message);
     const batch = data || [];
     all.push(...batch);
@@ -120,7 +128,14 @@ async function getCollection(table: string): Promise<string> {
 async function setCollection(table: string, jsonValue: string): Promise<void> {
   const items: Record<string, unknown>[] = JSON.parse(jsonValue || "[]");
   const prepared = items.map((it) => packExt(table, it));
-  const rows = prepared.map(rowFromObj);
+  const orgId = getOrgId();
+  const rows = prepared.map((it) => {
+    const row = rowFromObj(it);
+    // Każdy zapisywany wiersz dostaje org_id zalogowanego użytkownika. Bez tego
+    // reguła `with check` odrzuciłaby zapis jako próbę dopisania do cudzej organizacji.
+    if (orgId) row.org_id = orgId;
+    return row;
+  });
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
     let chunk = rows.slice(i, i + BATCH_SIZE);
     if (!chunk.length) continue;
@@ -157,12 +172,18 @@ async function setCollection(table: string, jsonValue: string): Promise<void> {
 }
 
 async function deleteCollectionItem(table: string, id: string): Promise<void> {
-  const { error } = await sb.from(table).delete().eq("id", id);
+  const orgId = getOrgId();
+  let q = sb.from(table).delete().eq("id", id);
+  if (orgId) q = q.eq("org_id", orgId);
+  const { error } = await q;
   if (error) throw new Error(error.message);
 }
 
 async function getClubCrests(): Promise<string> {
-  const { data, error } = await sb.from("sbs_club_crests").select("club_id, data_url");
+  const orgId = getOrgId();
+  let q = sb.from("sbs_club_crests").select("club_id, data_url");
+  if (orgId) q = q.eq("org_id", orgId);
+  const { data, error } = await q;
   if (error) throw new Error(error.message);
   const map: ClubCrestMap = {};
   (data || []).forEach((r: { club_id: string; data_url: string }) => {
@@ -173,7 +194,12 @@ async function getClubCrests(): Promise<string> {
 
 async function setClubCrests(jsonValue: string): Promise<void> {
   const map: ClubCrestMap = JSON.parse(jsonValue || "{}");
-  const rows = Object.keys(map).map((clubId) => ({ club_id: clubId, data_url: map[clubId] }));
+  const orgId = getOrgId();
+  const rows = Object.keys(map).map((clubId) => ({
+    club_id: clubId,
+    data_url: map[clubId],
+    ...(orgId ? { org_id: orgId } : {}),
+  }));
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
     const chunk = rows.slice(i, i + BATCH_SIZE);
     if (!chunk.length) continue;
@@ -197,7 +223,12 @@ export const storage = {
     if (table) {
       return { key, value: await getCollection(table), shared };
     }
-    const { data, error } = await sb.from("sbs_kv").select("value").eq("key", key).maybeSingle();
+    // Klucz główny sbs_kv to teraz para (org_id, key) — dwie organizacje mogą mieć
+    // własne ustawienia pod tą samą nazwą klucza, bez nadpisywania się nawzajem.
+    const orgId = getOrgId();
+    let q = sb.from("sbs_kv").select("value").eq("key", key);
+    if (orgId) q = q.eq("org_id", orgId);
+    const { data, error } = await q.maybeSingle();
     if (error) throw new Error(error.message);
     return data ? { key, value: data.value, shared } : null;
   },
@@ -212,13 +243,21 @@ export const storage = {
       await setCollection(table, value);
       return { key, value, shared };
     }
-    const { error } = await sb.from("sbs_kv").upsert({ key, value }, { onConflict: "key" });
+    const orgId = getOrgId();
+    const row: Record<string, string> = { key, value };
+    if (orgId) row.org_id = orgId;
+    const { error } = await sb
+      .from("sbs_kv")
+      .upsert(row, { onConflict: orgId ? "org_id,key" : "key" });
     if (error) throw new Error(error.message);
     return { key, value, shared };
   },
 
   async delete(key: string, shared?: boolean): Promise<{ key: string; deleted: true; shared?: boolean }> {
-    const { error } = await sb.from("sbs_kv").delete().eq("key", key);
+    const orgId = getOrgId();
+    let q = sb.from("sbs_kv").delete().eq("key", key);
+    if (orgId) q = q.eq("org_id", orgId);
+    const { error } = await q;
     if (error) throw new Error(error.message);
     return { key, deleted: true, shared };
   },

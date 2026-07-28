@@ -1,5 +1,11 @@
 import "./style.css";
 import { storage } from "./data/storage";
+import { requireLogin, performLogout } from "./auth-ui";
+import { getProfile, isAdmin, canWrite } from "./data/session";
+import {
+  adminListUsers, adminInviteUser, adminSetRole, adminSetActive,
+  adminDeleteUser, adminResendInvite, type AdminUser,
+} from "./data/auth";
 import { VOIVODESHIP_PATHS } from "./data/voivodeships";
 import type { Database } from "./types";
 import * as XLSX from "xlsx";
@@ -1760,7 +1766,10 @@ async function loadAllInner(){
     const loaded = s ? JSON.parse(s.value) : {};
     DB.settings = Object.assign(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), loaded);
   }catch(e){ DB.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS)); }
-  if(DB.settings.scouts && DB.settings.scouts.length){ currentScout = DB.settings.scouts[0]; }
+  // Dawniej „zalogowanym scoutem" była po prostu pierwsza osoba z listy w Ustawieniach —
+  // każdy mógł podpisać obserwację dowolnym nazwiskiem. Teraz podpisuje ją konto, na
+  // które ktoś jest zalogowany; lista z Ustawień służy już tylko jako podpowiedź.
+  if(!currentScout && DB.settings.scouts && DB.settings.scouts.length){ currentScout = DB.settings.scouts[0]; }
   // Wczesny render — użytkownik widzi bazę natychmiast po równoległym odczycie; migracje/seed/wzbogacanie
   // (poniżej) na istniejącej instalacji są prawie natychmiastowe i i tak wywołają końcowe render().
   try{ render(); }catch(e){ console.error('Wczesny render() nie powiódł się (niekrytyczny):', e); }
@@ -1876,7 +1885,7 @@ async function loadAllInner(){
   if(quietFlagFailCount > 0){
     console.log('Uwaga (niegroźne): ' + quietFlagFailCount + ' znaczników "już to zrobione" w tle nie zapisało się — te operacje mogą się powtórzyć przy następnym otwarciu, ale to nie dotyczy Twoich danych.');
   }
-  if(DB.settings.scouts.length){ currentScout = DB.settings.scouts[0]; }
+  if(!currentScout && DB.settings.scouts.length){ currentScout = DB.settings.scouts[0]; }
   render();
 }
 // loadAllInner() ma dziesiątki sekwencyjnych kroków (import składów, wzbogacanie danych, migracje) i nie
@@ -2243,6 +2252,7 @@ const NAV_ITEMS = [
   {id:"committee", label:"Scout Transfer"},
   {id:"contacts", label:"Kontakty"},
   {id:"settings", label:"Ustawienia"},
+  {id:"users", label:"Użytkownicy", adminOnly:true},
 ];
 const SAVE_FN_BY_KEY = {
   'scouting:players': ()=>savePlayers(), 'scouting:clubs': ()=>saveClubs(), 'scouting:observations': ()=>saveObservations(),
@@ -2270,13 +2280,34 @@ function renderNav(){
     brand.onclick = ()=>{ currentView='dashboard'; editingPlayerId=null; viewingPlayerId=null; render(); };
   }
   const nav = document.getElementById('nav');
-  nav.innerHTML = NAV_ITEMS.map(it => `
+  // Zakładka „Użytkownicy" jest widoczna tylko dla administratora. To ukrycie
+  // interfejsu, nie zabezpieczenie — samą operację i tak sprawdza funkcja
+  // serwerowa api/admin-users.js, która nie ufa temu, co przyszło z przeglądarki.
+  nav.innerHTML = NAV_ITEMS.filter(it => !it.adminOnly || isAdmin()).map(it => `
     <div class="nav-item ${currentView===it.id?'active':''}" data-view="${it.id}">
       <span class="nav-dot"></span>${it.label}
     </div>`).join('');
   nav.querySelectorAll('.nav-item').forEach(el=>{
     el.addEventListener('click', ()=>{ currentView = el.dataset.view; editingPlayerId=null; viewingPlayerId=null; render(); });
   });
+  // Kto jest zalogowany — widoczne na stałe w bocznym pasku. Wcześniej była tu
+  // sama nazwa scouta z listy w Ustawieniach, teraz to konkretne konto.
+  const scoutBox = document.querySelector('.scout-box');
+  const profile = getProfile();
+  if(scoutBox && profile){
+    const roleLabel = profile.role==='admin' ? 'Administrator' : profile.role==='scout' ? 'Scout' : 'Podgląd';
+    scoutBox.innerHTML = `
+      <div style="padding:10px 20px 4px;color:#CBD9D1;font-size:11px;line-height:1.5">
+        <div style="font-weight:600">${esc(profile.fullName || profile.email)}</div>
+        <div style="opacity:.6">${esc(roleLabel)}</div>
+        ${canWrite() ? '' : `<div style="margin-top:6px;color:#E8C46A">Konto tylko do odczytu —
+          próba zapisu zostanie odrzucona przez bazę.</div>`}
+      </div>
+      <button class="link-btn" data-action="logout" style="color:#CBD9D1;width:100%;text-align:left;font-size:11px;border:none;background:none;cursor:pointer;padding:8px 20px;">Wyloguj się →</button>`;
+    const out = scoutBox.querySelector('[data-action="logout"]');
+    if(out) out.onclick = ()=>performLogout();
+  }
+
   const banner = document.getElementById('save-failure-banner');
   if(banner){
     if(lastSaveFailure){
@@ -2328,7 +2359,9 @@ function render(){
   else if(currentView==="contacts") main.innerHTML = viewContacts();
   else if(currentView==="settings") main.innerHTML = viewSettings();
   else if(currentView==="compare") main.innerHTML = viewCompare();
+  else if(currentView==="users") main.innerHTML = viewUsers();
   attachHandlers();
+  if(currentView==="users") attachUsersHandlers();
   if(focusRestore){
     const el = document.getElementById(focusRestore.id);
     if(el && (el.tagName==='INPUT' || el.tagName==='TEXTAREA')){
@@ -4495,6 +4528,208 @@ function viewMonitoring(){
 }
 
 // ---------- SETTINGS ----------
+// ---------------------------------------------------------------------------
+// UŻYTKOWNICY (panel administratora)
+// ---------------------------------------------------------------------------
+// Widok istnieje wyłącznie dla roli `admin`. Wszystkie operacje idą przez
+// funkcję serwerową /api/admin-users — zakładanie i usuwanie kont wymaga klucza
+// `service_role`, którego nie wolno umieścić w kodzie wysyłanym do przeglądarki.
+
+let usersList = null;    // null = jeszcze nie wczytano; [] = wczytano, brak wyników
+let usersError = null;
+let usersLoading = false;
+
+const ROLE_LABELS = {
+  admin:  'Administrator — zarządza kontami, może usuwać dane',
+  scout:  'Scout — dodaje i edytuje zawodników, obserwacje, raporty',
+  viewer: 'Podgląd — tylko odczyt, bez prawa zapisu',
+};
+
+async function reloadUsers(){
+  usersLoading = true; usersError = null;
+  try{
+    usersList = await adminListUsers();
+  }catch(e){
+    usersError = e.message || String(e);
+    usersList = [];
+  }finally{
+    usersLoading = false;
+    if(currentView === 'users') render();
+  }
+}
+
+function fmtDate(iso){
+  if(!iso) return '—';
+  try{ return new Date(iso).toLocaleDateString('pl-PL', {day:'2-digit', month:'2-digit', year:'numeric'}); }
+  catch(e){ return '—'; }
+}
+
+function viewUsers(){
+  if(!isAdmin()){
+    return `<div class="view-head"><h2>Użytkownicy</h2>
+      <p class="view-sub">Ta sekcja jest dostępna wyłącznie dla administratora.</p></div>`;
+  }
+
+  if(usersList === null){
+    if(!usersLoading) reloadUsers();
+    return `<div class="view-head"><h2>Użytkownicy</h2>
+      <p class="view-sub">Wczytywanie listy kont…</p></div>`;
+  }
+
+  const me = getProfile();
+  const err = usersError
+    ? `<div class="save-fail-bar" style="margin-bottom:18px">⚠️ ${esc(usersError)}</div>` : '';
+
+  const rows = usersList.map(u => {
+    const self = me && u.id === me.id;
+    const status = !u.active
+      ? '<span class="tag" style="background:#F3D9D4;color:#8C2F22">Zablokowane</span>'
+      : u.invited
+        ? '<span class="tag" style="background:#EAEFF5;color:#34495E">Zaproszenie wysłane</span>'
+        : '<span class="tag" style="background:#E7F4EC;color:#1E5C39">Aktywne</span>';
+
+    const roleOptions = Object.keys(ROLE_LABELS).map(r =>
+      `<option value="${r}" ${u.role===r?'selected':''}>${esc(r==='admin'?'Administrator':r==='scout'?'Scout':'Podgląd')}</option>`).join('');
+
+    return `<tr>
+      <td>
+        <strong>${esc(u.full_name || '—')}</strong>${self?' <span class="note">(to Ty)</span>':''}
+        <div class="note">${esc(u.email)}</div>
+      </td>
+      <td>
+        <select class="user-role" data-user-id="${esc(u.id)}" ${self?'disabled title="Nie możesz zmienić własnej roli"':''}>
+          ${roleOptions}
+        </select>
+      </td>
+      <td>${status}</td>
+      <td class="note">${fmtDate(u.last_seen_at)}</td>
+      <td style="white-space:nowrap">
+        ${u.invited ? `<button class="link-btn" data-action="user-resend" data-email="${esc(u.email)}">Wyślij ponownie</button>` : ''}
+        ${self ? '' : `
+          <button class="link-btn" data-action="user-toggle" data-user-id="${esc(u.id)}" data-active="${u.active?'0':'1'}">
+            ${u.active?'Zablokuj':'Odblokuj'}
+          </button>
+          <button class="link-btn" data-action="user-delete" data-user-id="${esc(u.id)}" data-email="${esc(u.email)}" style="color:#8C2F22">Usuń</button>`}
+      </td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div class="view-head">
+      <h2>Użytkownicy</h2>
+      <p class="view-sub">Dostęp do systemu mają wyłącznie osoby z tej listy. Nikt nie założy konta sam.</p>
+    </div>
+    ${err}
+
+    <div class="settings-block">
+      <h4>Zaproś nową osobę</h4>
+      <p class="note">Na podany adres pójdzie wiadomość z linkiem do ustawienia hasła.
+        Konto powstaje dopiero po kliknięciu tego linku.</p>
+      <div class="add-row" style="flex-wrap:wrap;gap:8px">
+        <input id="invite-name" placeholder="Imię i nazwisko" style="flex:1 1 180px">
+        <input id="invite-email" type="email" placeholder="adres@e-mail.pl" style="flex:1 1 200px">
+        <select id="invite-role" style="flex:0 0 150px">
+          <option value="scout">Scout</option>
+          <option value="viewer">Podgląd</option>
+          <option value="admin">Administrator</option>
+        </select>
+        <button class="secondary" data-action="user-invite">Wyślij zaproszenie</button>
+      </div>
+      <p class="note" id="invite-feedback" style="margin-top:8px"></p>
+    </div>
+
+    <div class="settings-block">
+      <h4>Konta (${usersList.length})</h4>
+      <table class="data-table" style="width:100%">
+        <thead><tr>
+          <th>Osoba</th><th>Rola</th><th>Status</th><th>Ostatnie logowanie</th><th></th>
+        </tr></thead>
+        <tbody>${rows || '<tr><td colspan="5" class="note">Brak kont.</td></tr>'}</tbody>
+      </table>
+      <p class="note" style="margin-top:14px">
+        <strong>Zablokowanie</strong> odcina dostęp, ale zostawia konto i historię —
+        to bezpieczniejszy wybór niż usunięcie. <strong>Usunięcie</strong> kasuje konto
+        nieodwracalnie; wprowadzone przez tę osobę dane (zawodnicy, obserwacje, raporty)
+        zostają w bazie nienaruszone.
+      </p>
+    </div>`;
+}
+
+function attachUsersHandlers(){
+  const main = document.getElementById('main');
+  const feedback = (text, ok) => {
+    const el = document.getElementById('invite-feedback');
+    if(el){ el.textContent = text; el.style.color = ok ? '#1E5C39' : '#8C2F22'; }
+  };
+
+  const inviteBtn = main.querySelector('[data-action="user-invite"]');
+  if(inviteBtn) inviteBtn.onclick = async ()=>{
+    const name = document.getElementById('invite-name').value.trim();
+    const email = document.getElementById('invite-email').value.trim();
+    const role = document.getElementById('invite-role').value;
+    if(!email){ feedback('Podaj adres e-mail.', false); return; }
+    inviteBtn.disabled = true; feedback('Wysyłanie…', true);
+    try{
+      await adminInviteUser(email, name, role);
+      feedback('Zaproszenie wysłane na ' + email + '.', true);
+      usersList = null; render();
+    }catch(e){
+      inviteBtn.disabled = false;
+      feedback(e.message || String(e), false);
+    }
+  };
+
+  main.querySelectorAll('.user-role').forEach(sel=>{
+    sel.onchange = async ()=>{
+      sel.disabled = true;
+      try{
+        await adminSetRole(sel.dataset.userId, sel.value);
+        usersList = null; render();
+      }catch(e){
+        alert(e.message || String(e));
+        sel.disabled = false;
+        usersList = null; render();   // przywraca poprzednią wartość z bazy
+      }
+    };
+  });
+
+  main.querySelectorAll('[data-action="user-toggle"]').forEach(b=>{
+    b.onclick = async ()=>{
+      b.disabled = true;
+      try{
+        await adminSetActive(b.dataset.userId, b.dataset.active === '1');
+        usersList = null; render();
+      }catch(e){ alert(e.message || String(e)); b.disabled = false; }
+    };
+  });
+
+  main.querySelectorAll('[data-action="user-resend"]').forEach(b=>{
+    b.onclick = async ()=>{
+      b.disabled = true; const orig = b.textContent; b.textContent = 'Wysyłanie…';
+      try{
+        await adminResendInvite(b.dataset.email);
+        b.textContent = 'Wysłano';
+      }catch(e){ alert(e.message || String(e)); b.disabled = false; b.textContent = orig; }
+    };
+  });
+
+  main.querySelectorAll('[data-action="user-delete"]').forEach(b=>{
+    b.onclick = async ()=>{
+      // Usunięcie konta jest nieodwracalne — pytamy o potwierdzenie z wpisaniem adresu,
+      // żeby nie dało się skasować kogoś jednym omyłkowym kliknięciem.
+      const email = b.dataset.email;
+      const answer = prompt('Trwałe usunięcie konta ' + email + '.\n\nTej operacji nie da się cofnąć.\nWpisz adres e-mail, żeby potwierdzić:');
+      if(answer === null) return;
+      if(answer.trim().toLowerCase() !== email.toLowerCase()){ alert('Adres się nie zgadza — nic nie usunięto.'); return; }
+      b.disabled = true;
+      try{
+        await adminDeleteUser(b.dataset.userId);
+        usersList = null; render();
+      }catch(e){ alert(e.message || String(e)); b.disabled = false; }
+    };
+  });
+}
+
 function viewSettings(){
   function block(key,title,hint){
     const items = DB.settings[key];
@@ -7694,4 +7929,16 @@ function wireLastModal(){
   });
 }
 
-loadAll();
+// ---------------------------------------------------------------------------
+// START APLIKACJI
+// ---------------------------------------------------------------------------
+// Wcześniej było tu po prostu `loadAll()` — aplikacja pobierała całą bazę
+// natychmiast po otwarciu strony, bez pytania kogokolwiek o tożsamość.
+// Teraz najpierw czekamy na zalogowanie: requireLogin() pokazuje stronę
+// publiczną i formularz, a zwraca dopiero, gdy mamy potwierdzoną sesję
+// i wczytany profil (organizacja + rola). Bez tego org_id byłby pusty
+// i pierwszy zapis trafiłby w próżnię albo zostałby odrzucony przez bazę.
+requireLogin().then((profile) => {
+  currentScout = profile.fullName || profile.email;
+  loadAll();
+});
