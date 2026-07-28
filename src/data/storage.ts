@@ -23,7 +23,13 @@ const COLLECTION_TABLES: Record<string, string> = {
   "scouting:reports": "sbs_reports",
   "scouting:talents": "sbs_talents",
   "scouting:contacts": "sbs_contacts",
-  "scouting:matches": "sbs_matches",
+  // UWAGA: "scouting:matches" celowo NIE ma tu wpisu. Tabela sbs_matches figuruje w
+  // supabase/schema.sql, ale w bazie nie istnieje — migracji nigdy nie uruchomiono, więc każdy
+  // zapis terminarza kończył się błędem "Could not find the table 'public.sbs_matches'" i mecze
+  // przepadały. Bez wpisu terminarz idzie ścieżką sbs_kv (jeden rekord JSON), tak samo jak
+  // ustawienia czy mapa pozycji — działa od razu, bez migracji.
+  // Gdy tabela zostanie kiedyś założona (wykonanie schema.sql), wystarczy przywrócić tu linię
+  // "scouting:matches": "sbs_matches" — reszta kodu jest na to gotowa.
 };
 
 const BATCH_SIZE = 200; // wsad zapisu na jedno zapytanie — unika przekroczenia limitu czasu
