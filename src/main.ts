@@ -6432,10 +6432,20 @@ function openSquadStatsModal(clubId){
   overlay.innerHTML = `
   <div class="modal" style="max-width:680px;">
     <h3>⏱ Statystyki drużyny — ${esc(club.name)}</h3>
+    ${club.profileTm ? '' : `
+    <div style="border:1px solid #E3DECE;border-radius:8px;padding:10px;margin-bottom:10px;background:#FBF9F3;">
+      <label class="field" style="display:block;margin-bottom:5px;">Jednorazowo: wklej adres tego klubu z Transfermarktu</label>
+      <div style="display:flex;gap:8px;">
+        <input id="tm-club-url" placeholder="https://www.transfermarkt.pl/lech-posen/startseite/verein/238" style="flex:1;font-size:11.5px;">
+        <button class="secondary" data-action="save-tm-url" style="white-space:nowrap;">Zapisz</button>
+      </div>
+      <div class="note" style="margin-top:5px;font-size:11px;">Skopiuj adres z paska przeglądarki, będąc na stronie klubu.
+      Zapiszę go i od tej pory link poniżej będzie prowadził prosto do statystyk — bez szukania w menu.</div>
+    </div>`}
     <ol style="font-size:12.5px;line-height:1.8;padding-left:18px;margin:6px 0 10px;">
-      <li><a class="ext-link" href="${esc(tmStatsLink(club))}" target="_blank" rel="noopener">Otwórz Transfermarkt &rarr;</a>${club.profileTm?'':' <span style="color:var(--ink-soft);">(wyszukiwarka — kliknij swój klub w wynikach)</span>'}</li>
-      <li>Na stronie klubu wejdź w zakładkę <strong>„Statystyki drużynowe"</strong>
-        <span style="color:var(--ink-soft);">— adres kończy się na <code>/leistungsdaten/verein/…</code></span></li>
+      <li><a class="ext-link" href="${esc(tmStatsLink(club))}" target="_blank" rel="noopener">${club.profileTm?'Otwórz statystyki drużynowe':'Znajdź klub na Transfermarkt'} &rarr;</a></li>
+      ${club.profileTm ? '' : `<li>Wejdź w klub, a potem w dolnym menu w <strong>STATYSTYKI</strong>
+        <span style="color:var(--ink-soft);">— albo w adresie zamień <code>startseite</code> na <code>leistungsdaten</code></span></li>`}
       <li>Zaznacz myszą tabelę zawodników: od pierwszego nazwiska do ostatniego wiersza</li>
       <li><strong>Ctrl+C</strong>, a potem <strong>Ctrl+V</strong> w polu poniżej</li>
     </ol>
@@ -6461,6 +6471,21 @@ function openSquadStatsModal(clubId){
 
   const preview = overlay.querySelector('#squad-stats-preview');
   const actionBtn = overlay.querySelector('[data-action="squad-stats-parse"]');
+
+  // Zapis adresu klubu z Transfermarktu — jednorazowo, żeby kolejne wejścia prowadziły od razu
+  // do zakładki ze statystykami zamiast do wyszukiwarki.
+  overlay.querySelectorAll('[data-action="save-tm-url"]').forEach(b=>b.onclick=async()=>{
+    const val = (overlay.querySelector('#tm-club-url') as HTMLInputElement).value.trim();
+    if(!/transfermarkt\.[a-z.]+\/.+\/verein\/\d+/i.test(val)){
+      alert('To nie wygląda na adres klubu z Transfermarktu.\n\nPowinien zawierać „/verein/" i numer, np.\nhttps://www.transfermarkt.pl/lech-posen/startseite/verein/238');
+      return;
+    }
+    club.profileTm = val;
+    const ok = await saveClubs();
+    if(!ok){ alert('Nie udało się zapisać adresu.'); return; }
+    overlay.remove();
+    openSquadStatsModal(clubId);   // przerysuj z aktywnym linkiem bezpośrednim
+  });
 
   actionBtn.onclick = async ()=>{
     if(!parsed){
