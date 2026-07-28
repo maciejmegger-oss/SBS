@@ -6411,6 +6411,17 @@ function parseSquadStatsText(text, squad){
   return {results, unmatched};
 }
 
+// Link do strony ze statystykami drużyny na Transfermarkt. Gdy klub ma zapisany profil, zamieniamy
+// w nim zakładkę na „Statystyki drużynowe" (/leistungsdaten/) — to jedyna, która podaje minuty.
+// Bez zapisanego profilu kierujemy do wyszukiwarki po nazwie klubu.
+function tmStatsLink(club){
+  const tm = club.profileTm || '';
+  if(/transfermarkt\.[a-z.]+\/.+\/verein\/\d+/i.test(tm)){
+    return tm.replace(/\/(startseite|kader|spielplan)\/verein\//i, '/leistungsdaten/verein/');
+  }
+  return 'https://www.transfermarkt.pl/schnellsuche/ergebnis/schnellsuche?query=' + encodeURIComponent(club.name||'');
+}
+
 function openSquadStatsModal(clubId){
   const club = DB.clubs.find(c=>c.id===clubId);
   if(!club) return;
@@ -6421,10 +6432,18 @@ function openSquadStatsModal(clubId){
   overlay.innerHTML = `
   <div class="modal" style="max-width:680px;">
     <h3>⏱ Statystyki drużyny — ${esc(club.name)}</h3>
-    <p class="note">Otwórz skład klubu na Transfermarkt (zakładka „Występy"), zaznacz tabelę, skopiuj i wklej poniżej.
-    Dopasuję wiersze do ${squad.length} zawodników tego klubu po nazwisku.</p>
-    <p class="note" style="font-size:11px;color:var(--ink-soft);">Minut nie da się pobrać automatycznie —
-    90minut ich nie publikuje, a Transfermarkt dorysowuje tabelę JavaScriptem, więc w kodzie strony ich nie ma.</p>
+    <ol style="font-size:12.5px;line-height:1.8;padding-left:18px;margin:6px 0 10px;">
+      <li><a class="ext-link" href="${esc(tmStatsLink(club))}" target="_blank" rel="noopener">Otwórz Transfermarkt &rarr;</a>${club.profileTm?'':' <span style="color:var(--ink-soft);">(wyszukiwarka — kliknij swój klub w wynikach)</span>'}</li>
+      <li>Na stronie klubu wejdź w zakładkę <strong>„Statystyki drużynowe"</strong>
+        <span style="color:var(--ink-soft);">— adres kończy się na <code>/leistungsdaten/verein/…</code></span></li>
+      <li>Zaznacz myszą tabelę zawodników: od pierwszego nazwiska do ostatniego wiersza</li>
+      <li><strong>Ctrl+C</strong>, a potem <strong>Ctrl+V</strong> w polu poniżej</li>
+    </ol>
+    <p class="note" style="font-size:11.5px;">Potrzebne kolumny to <strong>Mecze</strong>, <strong>Bramki</strong> i
+    <strong>Minuty</strong> (liczby z apostrofem, np. <code>1.980'</code>). Nagłówków nie musisz zaznaczać —
+    wiersze dopasowuję po nazwisku do ${squad.length} zawodników tego klubu, a czego nie rozpoznam, to pominę i wypiszę.</p>
+    <p class="note" style="font-size:11px;color:var(--ink-soft);">Dlaczego ręcznie: 90minut nie publikuje minut,
+    a Transfermarkt rysuje tę tabelę JavaScriptem — w kodzie strony jej nie ma, więc serwer nie ma czego pobrać.</p>
     <div class="field-wrap" style="margin-bottom:14px;">
       <textarea id="squad-stats-paste" rows="12" placeholder="Lewandowski   24   18   5   3   1   1.980'&#10;Zieliński     22    4   7   2   0   1.755'" style="font-size:12px;font-family:monospace;"></textarea>
     </div>
