@@ -5882,31 +5882,33 @@ function openMatchScheduleModal(){
       .sort((a,b)=> (a.date+' '+(a.time||'')).localeCompare(b.date+' '+(b.time||'')));
   }
 
-  // Dwie BIEŻĄCE kolejki: dwa najbliższe numery kolejek wśród nadchodzących meczów. Terminarz
-  // rzadko układa się równo w 14 dni — kolejka potrafi być rozciągnięta albo przełożona — więc
-  // grupujemy po numerze kolejki, a nie po oknie czasowym. Gdy w danych nie ma kolejek
-  // (starszy import bez tej kolumny), wracamy do dotychczasowego okna 14 dni.
-  function currentRounds(){
-    const rounds = [...new Set(futureMatches().map(m=>m.round).filter(r=>r!=null))].sort((a,b)=>a-b);
-    return rounds.slice(0,2);
+  // Okno miesięczne: pokazujemy wszystkie mecze od dziś przez najbliższe 30 dni. Liczymy dni,
+  // a nie „do końca miesiąca kalendarzowego" — pod koniec miesiąca to drugie zostawiałoby
+  // praktycznie pustą listę.
+  const SCHEDULE_WINDOW_DAYS = 30;
+  function upcomingMatches(){
+    const endStr = new Date(Date.now() + SCHEDULE_WINDOW_DAYS*24*60*60*1000).toISOString().slice(0,10);
+    return futureMatches().filter(m=> m.date <= endStr);
   }
 
-  function upcomingMatches(){
-    const rounds = currentRounds();
-    if(rounds.length) return futureMatches().filter(m=> rounds.includes(m.round));
-    const twoWeeksStr = new Date(Date.now() + 14*24*60*60*1000).toISOString().slice(0,10);
-    return futureMatches().filter(m=> m.date <= twoWeeksStr);
+  // Kolejki obecne w wyświetlanym oknie — służą tylko do nagłówków grup i podpisu w tytule.
+  function visibleRounds(){
+    return [...new Set(upcomingMatches().map(m=>m.round).filter(r=>r!=null))].sort((a,b)=>a-b);
   }
 
   // Pobranie terminarza wybranej ligi z 90minut przez /api/schedule (90minut nie wysyła CORS,
   // więc idzie to przez naszego pośrednika). Dopisujemy tylko mecze, których jeszcze nie ma —
   // powtórne pobranie nie tworzy duplikatów i nie kasuje niczego, co już jest w bazie.
+  // Bez wybranej ligi pobieramy WSZYSTKIE znane poziomy rozgrywek — po to, żeby zaraz po wejściu
+  // w terminarz był komplet meczów, bez klikania po ligach.
   async function fetchScheduleFor90minut(btn){
     const status = overlay.querySelector('#schedule-status');
-    if(!selectedLeague){ status.textContent = 'Najpierw wybierz poziom rozgrywek.'; return; }
+    const targets = selectedLeague ? [selectedLeague] : Object.keys(SCHEDULE_SOURCES);
+    const jobs = targets
+      .map(lg => ({ league: lg, urls: scheduleUrlsFor(lg) }))
+      .filter(j => j.urls.length);
 
-    const urls = scheduleUrlsFor(selectedLeague);
-    if(!urls.length){
+    if(!jobs.length){
       status.innerHTML = `<span style="color:var(--clay-dark);">Dla „${esc(selectedLeague)}" nie mam adresu terminarza
         (IV liga dzieli się na grupy regionalne). Wgraj terminarz z pliku albo podaj adres strony ligi na 90minut.</span>`;
       return;
@@ -5914,10 +5916,15 @@ function openMatchScheduleModal(){
 
     const prev = btn.textContent;
     btn.disabled = true; btn.textContent = 'Pobieram…';
-    status.textContent = `Pobieram ${urls.length>1?urls.length+' grup':'terminarz'} z 90minut.pl…`;
+    const totalUrls = jobs.reduce((n,j)=>n+j.urls.length, 0);
+    let doneUrls = 0;
     try{
       let added = 0, seen = 0;
-      for(const url of urls){
+      for(const job of jobs){
+      const leagueForRows = job.league;
+      for(const url of job.urls){
+        doneUrls++;
+        status.textContent = `Pobieram z 90minut.pl — ${leagueForRows} (${doneUrls}/${totalUrls})…`;
         const res = await fetch('/api/schedule?url=' + encodeURIComponent(url));
         // Serwer deweloperski nie obsługuje /api (to funkcje Vercela) i na każdy adres oddaje
         // stronę aplikacji. Bez tej kontroli użytkownik dostawał surowy błąd parsera JSON
@@ -5935,15 +5942,17 @@ function openMatchScheduleModal(){
           seen++;
           const exists = DB.matches.some(x=>x.date===m.date && x.homeTeam===m.homeTeam && x.awayTeam===m.awayTeam);
           if(exists) continue;
-          DB.matches.push({id: uid('M'), league: selectedLeague, competition: data.league,
+          DB.matches.push({id: uid('M'), league: leagueForRows, competition: data.league,
             date: m.date, time: m.time, homeTeam: m.homeTeam, awayTeam: m.awayTeam,
             round: m.round, dateApprox: !!m.dateApprox, stadium: ''});
           added++;
         }
       }
+      }
       // Znacznik czasu pobrania trzymamy per liga — na nim opiera się dobowe odświeżanie.
       if(!DB.settings.scheduleFetchedAt) DB.settings.scheduleFetchedAt = {};
-      DB.settings.scheduleFetchedAt[selectedLeague] = new Date().toISOString();
+      const stamp = new Date().toISOString();
+      jobs.forEach(j=>{ DB.settings.scheduleFetchedAt[j.league] = stamp; });
       const ok = await saveMatches();
       if(!ok) throw new Error('nie udało się zapisać meczów w bazie.');
       await saveSettings();
@@ -5968,18 +5977,23 @@ function openMatchScheduleModal(){
     return isNaN(ts) || (Date.now() - ts) > SCHEDULE_REFRESH_MS;
   }
   function maybeAutoFetch(){
-    if(!selectedLeague || autoTried.has(selectedLeague)) return;
-    if(!scheduleUrlsFor(selectedLeague).length) return;      // np. IV liga — adres podaje użytkownik
-    const haveUpcoming = futureMatches().length > 0;
-    if(haveUpcoming && !scheduleIsStale(selectedLeague)) return;
-    autoTried.add(selectedLeague);
+    // Klucz "" oznacza wejście bez wybranej ligi — wtedy ciągniemy wszystkie poziomy rozgrywek.
+    const key = selectedLeague || '';
+    if(autoTried.has(key)) return;
+    const targets = selectedLeague ? [selectedLeague] : Object.keys(SCHEDULE_SOURCES);
+    const usable = targets.filter(lg => scheduleUrlsFor(lg).length);   // IV liga bez adresu odpada
+    if(!usable.length) return;
+    // Pobieramy, gdy czegoś brakuje albo gdy którykolwiek terminarz jest starszy niż doba.
+    const nothingToShow = upcomingMatches().length === 0;
+    if(!nothingToShow && !usable.some(scheduleIsStale)) return;
+    autoTried.add(key);
     const btn = overlay.querySelector('[data-action="fetch-schedule"]');
     if(btn) fetchScheduleFor90minut(btn);
   }
 
   function draw(){
     const matches = upcomingMatches();
-    const rounds = currentRounds();
+    const rounds = visibleRounds();
     // Poziomy rozgrywek pokazujemy ZAWSZE (Ekstraklasa → IV liga), niezależnie od tego, czy jakiś
     // mecz jest już zaimportowany. Wcześniej lista powstawała z DB.matches, więc przy pustym
     // terminarzu zostawało samo "Wszystkie ligi" i nie było czego wybrać.
@@ -5997,8 +6011,8 @@ function openMatchScheduleModal(){
 
     overlay.innerHTML = `
     <div class="modal" style="max-width:900px;max-height:85vh;overflow:auto;">
-      <h3>📅 Terminarz meczów — ${rounds.length ? 'kolejki '+rounds.join(' i ') : 'najbliższe 2 tygodnie'}</h3>
-      <p class="note">Wybierz ligę — pokazują się dwie bieżące kolejki. Kliknij mecz, aby wybrać zawodnika do obserwacji.</p>
+      <h3>📅 Terminarz meczów — najbliższy miesiąc${matches.length?` <span style="font-weight:400;font-size:13px;color:var(--ink-soft);">(${matches.length} meczów${rounds.length?', kolejki '+rounds.join(', '):''})</span>`:''}</h3>
+      <p class="note">Mecze z najbliższych 30 dni pobierają się same przy wejściu. Zawęź listę wyborem ligi. Kliknij mecz, aby wybrać zawodnika do obserwacji.</p>
 
       <div class="field-wrap" style="margin-bottom:10px;">
         <label class="field">Poziom rozgrywek</label>
@@ -6007,7 +6021,7 @@ function openMatchScheduleModal(){
             <option value="">Wszystkie ligi</option>
             ${leagues.map(l=>`<option value="${esc(l)}" ${selectedLeague===l?'selected':''}>${esc(l)}</option>`).join('')}
           </select>
-          <button class="gold" data-action="fetch-schedule" style="white-space:nowrap;" ${selectedLeague?'':'disabled title="Najpierw wybierz ligę"'}>⬇ Pobierz z 90minut</button>
+          <button class="gold" data-action="fetch-schedule" style="white-space:nowrap;" title="${selectedLeague?'Odśwież terminarz tej ligi':'Pobierz terminarze wszystkich lig'}">⬇ ${selectedLeague?'Pobierz z 90minut':'Pobierz wszystkie ligi'}</button>
         </div>
         <div id="schedule-status" class="note" style="margin-top:6px;font-size:11.5px;"></div>
       </div>
@@ -6043,7 +6057,7 @@ function openMatchScheduleModal(){
             </div>`;
           }).join('')}
         </div>
-      ` : '<div class="empty">Brak meczów w wybranej lidze w najbliższych 2 tygodniach.</div>'}
+      ` : '<div class="empty">Brak meczów w najbliższych 30 dniach. Kliknij „Pobierz", aby zaciągnąć terminarz z 90minut.</div>'}
 
       <div class="modal-actions">
         ${DB.matches.length ? `<button class="secondary" data-action="import-matches">📋 Wgraj więcej meczów</button>` : ''}
