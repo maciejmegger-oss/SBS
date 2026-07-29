@@ -377,6 +377,12 @@ tr:hover td{background:#FBF9F2;}
 .cal-dots{position:absolute;right:5px;bottom:5px;display:flex;gap:3px;}
 .cal-dots .cal-dot{position:static;}
 
+/* Pasek porównawczy w porównywarce: długość = udział względem najlepszego wyniku,
+   kolor = jakość na skali chłodny błękit → ciepłe złoto. */
+.stat-bar{height:6px;background:#EFEADD;border-radius:3px;overflow:hidden;margin-top:4px;
+  margin-left:auto;width:100%;max-width:150px;}
+.stat-bar-fill{height:100%;border-radius:3px;transition:width .25s ease;}
+
 /* Lista zawodników — podświetlenie wiersza, żeby było widać, że cały otwiera profil. */
 tr.player-row:hover{background:#FBF6E9;}
 

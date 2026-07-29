@@ -2199,6 +2199,21 @@ function compareTable(entries){
   const obsRow = `<tr><td style="color:var(--ink-soft);font-size:11.5px;">Liczba obserwacji</td>${withAvg.map(e=>`<td style="color:var(--ink-soft);font-size:11.5px;">${e.avg.count}</td>`).join('')}</tr>`;
   return `<table style="width:auto;min-width:280px;">${head}${rows}${overallRow}${obsRow}</table>`;
 }
+// Pasek porównawczy pod liczbą. DŁUGOŚĆ = udział względem najwyższego wyniku (wielkość),
+// KOLOR = jakość wyniku na skali chłodny → ciepły. Rozdzielenie tych dwóch rzeczy ma znaczenie
+// przy kartkach: pasek pokazuje, ile ich jest, a kolor — że im mniej, tym lepiej.
+function statBar(dlugoscProc, jakosc){
+  const t = Math.max(0, Math.min(1, jakosc));
+  // Chłodny błękit → morska zieleń → ciepłe złoto. Punkt pośredni trzyma środek skali w zieleni
+  // zamiast przechodzić przez szarość, którą daje mieszanie błękitu ze złotem wprost.
+  const zimny = [62,110,142], sredni = [90,140,110], cieply = [201,155,60];
+  const lerp = (a,b,u)=> a.map((c,i)=> Math.round(c + (b[i]-c)*u));
+  const rgb = t <= 0.5 ? lerp(zimny, sredni, t/0.5) : lerp(sredni, cieply, (t-0.5)/0.5);
+  const kolor = `rgb(${rgb.join(',')})`;
+  const w = Math.max(3, Math.round(Math.max(0, Math.min(100, dlugoscProc))));
+  return `<div class="stat-bar"><div class="stat-bar-fill" style="width:${w}%;background:${kolor};"></div></div>`;
+}
+
 // Porównanie STATYSTYK SEZONU: wartości bezwzględne i udział procentowy względem najlepszego
 // w zestawieniu. Dochodzą przeliczenia na mecz (minuty, gole), bo sama suma faworyzuje tego,
 // kto rozegrał więcej spotkań — przy ocenie zawodnika liczy się wydajność, nie tylko wolumen.
@@ -2224,14 +2239,19 @@ function compareSeasonStats(entries){
     // Odniesienie: przy kartkach najlepszy jest najmniejszy wynik, przy reszcie największy.
     const najlepszy = f.odwrotne ? Math.min(...konkretne) : Math.max(...konkretne);
     const odniesienie = Math.max(...konkretne) || 1;
+    const najmniej = Math.min(...konkretne), rozstep = Math.max(...konkretne) - najmniej;
     return `<tr>
       <td><strong>${esc(f.label)}</strong><div class="note" style="font-size:10.5px;">${esc(f.opis)}</div></td>
       ${wartosci.map(v=>{
         if(v==null) return '<td style="text-align:right;color:var(--ink-soft);">—</td>';
         const proc = Math.round((v / odniesienie) * 100);
         const czyNaj = v === najlepszy && konkretne.length > 1;
+        // Jakość: przy kartkach im mniej, tym lepiej — dlatego skalę odwracamy.
+        const jakosc = rozstep === 0 ? 1
+          : (f.odwrotne ? (Math.max(...konkretne) - v) / rozstep : (v - najmniej) / rozstep);
         return `<td style="text-align:right;${czyNaj?'font-weight:800;color:var(--pitch);':''}">
-          ${v}<div class="note" style="font-size:10.5px;">${proc}%</div></td>`;
+          ${v}<div class="note" style="font-size:10.5px;">${proc}%</div>
+          ${statBar(proc, jakosc)}</td>`;
       }).join('')}
     </tr>`;
   };
@@ -2252,8 +2272,11 @@ function compareSeasonStats(entries){
       ${wartosci.map(v=>{
         if(v==null) return '<td style="text-align:right;color:var(--ink-soft);">—</td>';
         const czyNaj = v === Math.max(...konkretne) && konkretne.length > 1;
+        const najm = Math.min(...konkretne), rozs = max - najm;
+        const proc = Math.round(v/max*100);
         return `<td style="text-align:right;${czyNaj?'font-weight:800;color:var(--pitch);':''}">
-          ${v.toFixed(cyfry)}<div class="note" style="font-size:10.5px;">${Math.round(v/max*100)}%</div></td>`;
+          ${v.toFixed(cyfry)}<div class="note" style="font-size:10.5px;">${proc}%</div>
+          ${statBar(proc, rozs===0 ? 1 : (v-najm)/rozs)}</td>`;
       }).join('')}
     </tr>`;
   };
@@ -2298,7 +2321,8 @@ function compareReports(entries){
       ${wartosci.map(v=> v==null
         ? '<td style="text-align:right;color:var(--ink-soft);">—</td>'
         : `<td style="text-align:right;${v===max&&konkretne.length>1?'font-weight:800;color:var(--pitch);':''}">
-            ${fmt1(v)}<div class="note" style="font-size:10.5px;">${Math.round(v/6*100)}%</div></td>`).join('')}
+            ${fmt1(v)}<div class="note" style="font-size:10.5px;">${Math.round(v/6*100)}%</div>
+            ${statBar(v/6*100, v/6)}</td>`).join('')}
     </tr>`;
   };
 
