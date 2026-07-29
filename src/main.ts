@@ -2756,13 +2756,14 @@ function viewPlayers(){
   // Lista wg alfabetu (nazwisko, potem imię) — nie wg klubu/kolejności importu.
   list.sort((a,b)=> (a.lastName||a.firstName||'').localeCompare(b.lastName||b.firstName||'','pl') || (a.firstName||'').localeCompare(b.firstName||'','pl'));
 
-  const rows = list.map(p=>{
+  const rows = list.map((p, idx)=>{
     const a = playerAvg(p.id);
     const cls = STATUS_CLASS[p.status]||"new";
     // Cały wiersz otwiera profil — tabela jest szeroka i przy węższym ekranie kolumna z przyciskami
     // („Zobacz", „✕") bywa poza kadrem, więc samo kliknięcie w nazwisko musi wystarczyć.
     return `<tr class="player-row" data-action="row-open-player" data-id="${p.id}" style="cursor:pointer;" title="Kliknij, aby otworzyć profil">
       <td><input type="checkbox" class="player-checkbox" data-id="${p.id}"></td>
+      <td style="color:var(--ink-soft);font-size:12px;text-align:right;">${idx+1}</td>
       <td>${p.nationality?`<span title="${esc(p.nationality)}">${nationalityFlag(p.nationality)}</span> `:''}<strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</td>
       <td>${p.birthYear||"—"}${isYouthPlayer(p)?youthBadge():''}</td>
       <td>${esc(p.position)}</td>
@@ -2814,7 +2815,7 @@ function viewPlayers(){
   </div>
   <div class="card" style="padding:0;overflow:auto;">
     <table>
-      <thead><tr><th style="width:24px;"><input type="checkbox" class="header-checkbox"></th><th>Zawodnik</th><th>Rocznik</th><th>Pozycja</th><th>Klub</th><th>Region</th><th>Liga</th><th>Status</th><th style="text-align:right;" title="Rozegrane mecze w sezonie">Mecze</th><th style="text-align:right;" title="Rozegrane minuty w sezonie">Minuty</th><th style="text-align:right;" title="Gole w sezonie">Gole</th><th>Śr. ocena</th><th>Obserw.</th><th></th></tr></thead>
+      <thead><tr><th style="width:24px;"><input type="checkbox" class="header-checkbox"></th><th style="width:34px;text-align:right;" title="Liczba porządkowa">Lp.</th><th>Zawodnik</th><th>Rocznik</th><th>Pozycja</th><th>Klub</th><th>Region</th><th>Liga</th><th>Status</th><th style="text-align:right;" title="Rozegrane mecze w sezonie">Mecze</th><th style="text-align:right;" title="Rozegrane minuty w sezonie">Minuty</th><th style="text-align:right;" title="Gole w sezonie">Gole</th><th>Śr. ocena</th><th>Obserw.</th><th></th></tr></thead>
       <tbody>${rows || `<tr><td colspan="14"><div class="empty">Brak zawodników spełniających filtry.</div></td></tr>`}</tbody>
     </table>
   </div>`;
@@ -5663,18 +5664,68 @@ function parseSquadText(rawText){
 // Import składu z pliku Excel/CSV — np. listy rocznikowe do rozgrywek juniorskich (Rocznik 2011-2014),
 // gdzie nie ma strony na Transfermarkt do skopiowania. Kolumny: Imię, Nazwisko (albo jedna kolumna
 // "Zawodnik"/"Imię i nazwisko"), opcjonalnie Rocznik, Pozycja, Narodowość — kolejność dowolna.
+// Arkusze z ZPN mają nad tabelą blok tytułowy (logo, „Poziom rozgrywkowy", „Wojewódzka liga"),
+// więc pierwszy wiersz arkusza NIE jest nagłówkiem. Szukamy wiersza, w którym są jednocześnie
+// „Nazwisko" i „Imię", i dopiero od niego czytamy dane.
+// "DO TRANSFERU" w arkuszu a "Do transferu" w systemie to ten sam status — dopasowujemy luźno,
+// żeby import nie tworzył nowych, nieznanych wartości.
+function matchKnownStatus(raw){
+  const v = String(raw||'').trim();
+  if(!v) return '';
+  const norm = (s)=> String(s||'').toLowerCase()
+    .replace(/[łøđ]/g, c=>({'ł':'l','ø':'o','đ':'d'}[c]))
+    .normalize('NFD').replace(/\p{M}/gu,'').replace(/[^a-z]/g,'');
+  const key = norm(v);
+  return (DB.settings.statuses||[]).find(s=> norm(s) === key) || '';
+}
+
+function sheetToRows(sheet){
+  const grid = XLSX.utils.sheet_to_json(sheet, {header:1, defval:''});
+  const norm = (s)=> String(s||'').toLowerCase()
+    .replace(/[łøđ]/g, c=>({'ł':'l','ø':'o','đ':'d'}[c]))
+    .normalize('NFD').replace(/\p{M}/gu,'').replace(/[^a-z0-9]/g,'');
+  let headerIdx = grid.findIndex(r => {
+    const cells = (r||[]).map(norm);
+    return cells.includes('nazwisko') && cells.some(c=>c==='imie');
+  });
+  if(headerIdx < 0) headerIdx = 0;           // brak wyraźnego nagłówka — czytaj jak dotąd
+  const header = (grid[headerIdx]||[]).map(h=>String(h||'').trim());
+  return grid.slice(headerIdx+1)
+    .filter(r => (r||[]).some(c => String(c||'').trim() !== ''))
+    .map(r => {
+      const obj = {};
+      header.forEach((h,i)=>{ if(h) obj[h] = r[i]!==undefined ? r[i] : ''; });
+      return obj;
+    });
+}
+
 function parseSquadWorkbookRows(rows){
   if(!rows.length) throw new Error('Arkusz jest pusty (brak wierszy danych pod nagłówkiem).');
-  const norm = (s)=> String(s||'').toLowerCase().replace(/[ąćęłńóśźż]/g, c=>({ą:'a',ć:'c',ę:'e',ł:'l',ń:'n',ó:'o',ś:'s',ź:'z',ż:'z'}[c])).replace(/[^a-z0-9]/g,'');
+  const norm = (s)=> String(s||'').toLowerCase()
+    .replace(/[łøđ]/g, c=>({'ł':'l','ø':'o','đ':'d'}[c]))
+    .normalize('NFD').replace(/\p{M}/gu,'').replace(/[^a-z0-9]/g,'');
   const headerMap = {};
   Object.keys(rows[0]).forEach(h=>{ headerMap[norm(h)] = h; });
-  const findCol = (...cands)=>{ for(const c of cands){ if(headerMap[norm(c)]) return headerMap[norm(c)]; } return null; };
+  // Najpierw trafienie dokładne, potem „nagłówek zawiera szukane słowo" — inaczej „Aktualny klub"
+  // czy „Pozycja boiskowa" z arkuszy ZPN nie zostałyby rozpoznane.
+  const findCol = (...cands)=>{
+    for(const c of cands){ if(headerMap[norm(c)]) return headerMap[norm(c)]; }
+    for(const c of cands){
+      const key = Object.keys(headerMap).find(h=> h.includes(norm(c)));
+      if(key) return headerMap[key];
+    }
+    return null;
+  };
   const colFirst = findCol('Imię','Imie','FirstName');
   const colLast  = findCol('Nazwisko','LastName');
   const colFull  = findCol('Imię i nazwisko','Zawodnik','Imie i nazwisko');
   const colYear  = findCol('Rocznik','Rok urodzenia','Rok','BirthYear');
   const colPos   = findCol('Pozycja','Position');
   const colNat   = findCol('Narodowość','Narodowosc','Nationality');
+  const colClub  = findCol('Aktualny klub','Klub','Club','Drużyna','Druzyna','Zespół','Zespol','Team');
+  const colStatus = findCol('Status');
+  const colPowolania = findCol('Ilość powołań','Ilosc powolan','Powołania','Powolania');
+  const colInfo  = findCol('Dodatkowe informacje','Uwagi','Notatka');
   if(!colFirst && !colLast && !colFull) throw new Error('Nie znaleziono kolumny z imieniem/nazwiskiem — oczekiwane nagłówki: Imię, Nazwisko (albo Zawodnik).');
   return rows.map(row=>{
     let firstName = colFirst ? String(row[colFirst]||'').trim() : '';
@@ -5691,6 +5742,11 @@ function parseSquadWorkbookRows(rows){
       position: posRaw ? (mapSquadPosition(posRaw) || posRaw) : '',
       birthYear: /^\d{4}$/.test(yearRaw) ? yearRaw : '',
       nationality: colNat ? String(row[colNat]||'').trim() : '',
+      club: colClub ? String(row[colClub]||'').trim() : '',
+      // "DO TRANSFERU" / "DO OBSERWACJI" z arkusza sprowadzamy do statusów używanych w systemie.
+      status: colStatus ? matchKnownStatus(String(row[colStatus]||'').trim()) : '',
+      powolania: colPowolania ? (parseInt(String(row[colPowolania]||''),10) || null) : null,
+      info: colInfo ? String(row[colInfo]||'').trim() : '',
       raw: [firstName, lastName, yearRaw].filter(Boolean).join(' ')
     };
   }).filter(Boolean);
@@ -5796,7 +5852,7 @@ function openSquadImportModal(clubId){
         const wb = XLSX.read(buf, {type:'array'});
         const firstSheet = wb.SheetNames[0];
         if(!firstSheet) throw new Error('Plik nie zawiera żadnego arkusza.');
-        const rows = XLSX.utils.sheet_to_json(wb.Sheets[firstSheet], {defval:''});
+        const rows = sheetToRows(wb.Sheets[firstSheet]);
         parsed = parseSquadWorkbookRows(rows);
         draw();
       }catch(e){ alert('Błąd importu pliku: ' + (e.message||e)); }
@@ -5932,34 +5988,49 @@ function openMatchScheduleModal(){
     let doneUrls = 0;
     try{
       let added = 0, seen = 0;
-      for(const job of jobs){
-      const leagueForRows = job.league;
-      for(const url of job.urls){
-        doneUrls++;
-        status.textContent = `Pobieram z 90minut.pl — ${leagueForRows} (${doneUrls}/${totalUrls})…`;
-        const res = await fetch('/api/schedule?url=' + encodeURIComponent(url));
-        // Serwer deweloperski nie obsługuje /api (to funkcje Vercela) i na każdy adres oddaje
-        // stronę aplikacji. Bez tej kontroli użytkownik dostawał surowy błąd parsera JSON
-        // ("Unexpected token '<'"), z którego nic nie wynika.
-        const ctype = res.headers.get('content-type') || '';
-        if(!ctype.includes('application/json')){
-          throw new Error('pobieranie terminarza działa tylko na wdrożonej stronie — lokalny serwer deweloperski nie obsługuje /api.');
-        }
-        if(!res.ok){
-          const body = await res.json().catch(()=>({}));
-          throw new Error(body.error || ('serwer odpowiedział kodem ' + res.status));
-        }
-        const data = await res.json();
-        for(const m of data.matches){
+      // Wszystkie strony naraz, nie jedna po drugiej. Przy 7 adresach (Ekstraklasa, I, II liga
+      // i cztery grupy III ligi) czekanie w kolejce oznaczało sumę wszystkich pobrań; równolegle
+      // trwa to tyle, co najwolniejsze pojedyncze.
+      const tasks = jobs.flatMap(job => job.urls.map(url => ({league: job.league, url})));
+      const settled = await Promise.all(tasks.map(async (t)=>{
+        try{
+          const res = await fetch('/api/schedule?url=' + encodeURIComponent(t.url));
+          // Serwer deweloperski nie obsługuje /api (to funkcje Vercela) i na każdy adres oddaje
+          // stronę aplikacji — bez tej kontroli użytkownik dostawał surowy błąd parsera JSON.
+          const ctype = res.headers.get('content-type') || '';
+          if(!ctype.includes('application/json')){
+            throw new Error('pobieranie terminarza działa tylko na wdrożonej stronie — lokalny serwer deweloperski nie obsługuje /api.');
+          }
+          if(!res.ok){
+            const body = await res.json().catch(()=>({}));
+            throw new Error(body.error || ('serwer odpowiedział kodem ' + res.status));
+          }
+          const data = await res.json();
+          doneUrls++;
+          status.textContent = `Pobieram z 90minut.pl… (${doneUrls}/${totalUrls})`;
+          return {league: t.league, data};
+        }catch(e){ return {league: t.league, error: e.message}; }
+      }));
+
+      // Jedna liga może paść (np. zmieniony adres) — reszta i tak wchodzi. Zgłaszamy, które.
+      const failed = settled.filter(s=>s.error);
+      if(failed.length === settled.length) throw new Error(failed[0].error);
+
+      // Klucze już obecnych meczów liczymy RAZ; wcześniej dla każdego z 2000+ meczów
+      // przechodziliśmy całą tablicę, co przy pełnym sezonie zajmowało zauważalnie długo.
+      const known = new Set(DB.matches.map(x=>`${x.date}|${x.homeTeam}|${x.awayTeam}`));
+      for(const s of settled){
+        if(s.error) continue;
+        for(const m of s.data.matches){
           seen++;
-          const exists = DB.matches.some(x=>x.date===m.date && x.homeTeam===m.homeTeam && x.awayTeam===m.awayTeam);
-          if(exists) continue;
-          DB.matches.push({id: uid('M'), league: leagueForRows, competition: data.league,
+          const key = `${m.date}|${m.homeTeam}|${m.awayTeam}`;
+          if(known.has(key)) continue;
+          known.add(key);
+          DB.matches.push({id: uid('M'), league: s.league, competition: s.data.league,
             date: m.date, time: m.time, homeTeam: m.homeTeam, awayTeam: m.awayTeam,
             round: m.round, dateApprox: !!m.dateApprox, stadium: ''});
           added++;
         }
-      }
       }
       // Znacznik czasu pobrania trzymamy per liga — na nim opiera się dobowe odświeżanie.
       if(!DB.settings.scheduleFetchedAt) DB.settings.scheduleFetchedAt = {};
@@ -6013,6 +6084,14 @@ function openMatchScheduleModal(){
     const extra = [...new Set(DB.matches.map(m=>m.league).filter(Boolean))]
       .filter(l=> !SCHEDULE_LEAGUES.includes(l)).sort();
     const leagues = [...SCHEDULE_LEAGUES, ...extra];
+    // Mecze porządkujemy WEDŁUG KOLEJKI, a dopiero wewnątrz niej po dacie. Przy sortowaniu samą
+    // datą kolejki różnych lig przeplatały się (III liga gra kolejkę 1, gdy Ekstraklasa 2), więc
+    // ten sam nagłówek „Kolejka 1" pojawiał się na liście kilka razy.
+    matches.sort((a,b)=>{
+      const ra = a.round==null ? 999 : a.round, rb = b.round==null ? 999 : b.round;
+      if(ra !== rb) return ra - rb;
+      return (a.date+' '+(a.time||'')).localeCompare(b.date+' '+(b.time||''));
+    });
     // Nagłówek grupy nad pierwszym meczem każdej kolejki — przy braku kolejek nie pokazujemy nic.
     let lastRound;
     const roundHeader = (m)=>{
@@ -6951,6 +7030,24 @@ function parseStatsText(text){
   return result;
 }
 
+// Przypisanie klubu z importu: najpierw szukamy istniejącego (po nazwie znormalizowanej, więc
+// "AF Brzoza" i "AF BRZOZA" to ten sam klub), a gdy go nie ma — zakładamy nowy w tej kategorii.
+// Bez tego zawodnicy wchodzili z pustym klubem i lista rocznika była bezużyteczna.
+function resolveClubForImport(name, league, created){
+  const clean = String(name||'').trim();
+  if(!clean) return null;
+  const norm = (s)=> String(s||'').toLowerCase()
+    .replace(/[łøđ]/g, c=>({'ł':'l','ø':'o','đ':'d'}[c]))
+    .normalize('NFD').replace(/\p{M}/gu,'').replace(/[^a-z0-9]/g,'');
+  const key = norm(clean);
+  const found = DB.clubs.find(c=> norm(c.name) === key);
+  if(found) return found.id;
+  const club = { id: uid('K'), name: clean, region: '', league: league || '', season: '', city: '' };
+  DB.clubs.push(club);
+  if(created) created.push(clean);
+  return club.id;
+}
+
 function parseRocznikTextLines(text){
   const lines = text.split('\n').map(l=>l.trim()).filter(Boolean);
   const results = [];
@@ -7095,29 +7192,39 @@ function openRocznikExcelImport(rocznikGroup){
         const wb = XLSX.read(buf, {type:'array'});
         const sheet = wb.Sheets[wb.SheetNames[0]];
         if(!sheet) throw new Error('Brak arkusza.');
-        const rows = XLSX.utils.sheet_to_json(sheet, {defval:''});
+        const rows = sheetToRows(sheet);
         const parsed = parseSquadWorkbookRows(rows);
         const toAdd = parsed.filter(p=>p.ok);
         if(!toAdd.length){ alert('Brak prawidłowych zawodników.'); return; }
         const orig = b.textContent; b.disabled = true; b.textContent = 'Importowanie...';
         let added = 0;
+        const createdClubs = [];
+        const withoutClub = [];
         toAdd.forEach(p=>{
           const exists = DB.players.some(pl=>pl.firstName===p.firstName && pl.lastName===p.lastName && pl.birthYear===year);
           if(exists) return;
+          const clubId = resolveClubForImport(p.club, rocznikGroup, createdClubs);
+          if(!clubId) withoutClub.push(p.lastName);
           DB.players.push({
             id: uid('Z'), firstName: p.firstName, lastName: p.lastName,
             birthDate: '', birthYear: year, nationality: p.nationality || '',
             position: p.position || '', foot: '', height: null,
-            status: '', clubId: null, scout: currentScout || '',
+            status: p.status || '', clubId, scout: currentScout || '',
+            powolania: p.powolania ?? null,
             videoLink: '', lnpLink: '', tmLink: '', hasAgent: false, agencyName: '',
-            formation: '', customFields: {}, notes: '',
+            formation: '', customFields: {}, notes: p.info || '',
             dateAdded: new Date().toISOString().slice(0,10)
           });
           added++;
         });
-        const ok = await savePlayers();
+        // Kluby zapisujemy PRZED zawodnikami — inaczej zawodnik wskazywałby na klub,
+        // którego nie ma jeszcze w bazie.
+        const okClubs = createdClubs.length ? await saveClubs() : true;
+        const ok = okClubs && await savePlayers();
         if(ok){
-          alert(`Zaimportowano ${added} zawodników.`);
+          alert(`Zaimportowano ${added} zawodników.` +
+            (createdClubs.length ? `\nZałożono ${createdClubs.length} nowych klubów: ${createdClubs.slice(0,6).join(', ')}${createdClubs.length>6?'…':''}` : '') +
+            (withoutClub.length ? `\nBez klubu (brak kolumny „Klub" w pliku): ${withoutClub.length}` : ''));
           closeAndRefresh();
         } else {
           b.disabled = false; b.textContent = orig;
