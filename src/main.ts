@@ -3158,6 +3158,7 @@ function viewClubDetail(id){
   const squadRows = squad.map(p=>{
     const a = playerAvg(p.id);
     return `<tr>
+      <td onclick="event.stopPropagation()"><input type="checkbox" class="squad-player-check" data-id="${p.id}"></td>
       <td>${p.nationality?`<span title="${esc(p.nationality)}">${nationalityFlag(p.nationality)}</span> `:''}<strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</td>
       <td>${p.birthYear||"—"}${isYouthPlayer(p)?youthBadge():''}</td>
       <td>${esc(p.position)}</td>
@@ -3202,23 +3203,72 @@ function viewClubDetail(id){
   <div class="card">
     <div class="toolbar" style="margin-bottom:8px;">
       <h4 style="margin:0;color:var(--pitch);">Zawodnicy scoutowani w tym klubie (${squad.length})</h4>
-      <button class="gold" data-action="add-player-to-club" data-id="${c.id}">+ Dodaj zawodnika do tego klubu</button>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="danger" id="squad-delete-btn" style="display:none;" data-action="delete-squad-selected" data-club="${c.id}">🗑️ Usuń zaznaczonych (0)</button>
+        <button class="gold" data-action="add-player-to-club" data-id="${c.id}">+ Dodaj zawodnika do tego klubu</button>
+      </div>
     </div>
     <table>
-      <thead><tr><th>Zawodnik</th><th>Rocznik</th><th>Pozycja</th><th>Status</th><th style="text-align:right;" title="Rozegrane mecze w sezonie">Mecze</th><th style="text-align:right;" title="Rozegrane minuty w sezonie">Min</th><th style="text-align:right;" title="Gole w sezonie">Gole</th><th style="text-align:right;" title="Kartki żółte / czerwone">Kartki</th><th>Śr. ocena</th><th></th></tr></thead>
-      <tbody>${squadRows || `<tr><td colspan="10"><div class="empty">Jeszcze nikogo tu nie scoutujecie — pełny skład sprawdzisz w linkach powyżej.</div></td></tr>`}</tbody>
+      <thead><tr><th style="width:24px;"><input type="checkbox" id="squad-select-all" title="Zaznacz wszystkich"></th><th>Zawodnik</th><th>Rocznik</th><th>Pozycja</th><th>Status</th><th style="text-align:right;" title="Rozegrane mecze w sezonie">Mecze</th><th style="text-align:right;" title="Rozegrane minuty w sezonie">Min</th><th style="text-align:right;" title="Gole w sezonie">Gole</th><th style="text-align:right;" title="Kartki żółte / czerwone">Kartki</th><th>Śr. ocena</th><th></th></tr></thead>
+      <tbody>${squadRows || `<tr><td colspan="11"><div class="empty">Jeszcze nikogo tu nie scoutujecie — pełny skład sprawdzisz w linkach powyżej.</div></td></tr>`}</tbody>
     </table>
   </div>`;
 }
 
 // ---------- NEW OBSERVATION ----------
+// Rodzaje obserwacji z przypisanym kolorem — ten sam kolor niesie się do kalendarza i listy,
+// żeby po samym rzucie oka było widać, co jest wyjazdem, a co oglądaniem zdalnym.
+const OBS_TYPES = [
+  { id:'live',   label:'Live',   color:'#3E7D4C' },
+  { id:'online', label:'Online', color:'#2F6FA8' },
+];
+const obsTypeOf = (o)=> (o && o.obsType) || 'live';
+const obsTypeMeta = (id)=> OBS_TYPES.find(t=>t.id===id) || OBS_TYPES[0];
+
+// Adresy stadionów zapamiętujemy PRZY KLUBIE, żeby przy kolejnej obserwacji tego gospodarza
+// podstawiły się same. Trzymamy je w ustawieniach (zwykły JSON), więc nie wymaga to zmian w bazie.
+function clubIdByName(name){
+  const n = importNorm(name);
+  if(!n) return null;
+  const c = DB.clubs.find(c=> importNorm(c.name) === n)
+    || DB.clubs.find(c=> importNorm(c.name).includes(n) || n.includes(importNorm(c.name)));
+  return c ? c.id : null;
+}
+function stadiumAddressFor(clubName){
+  const id = clubIdByName(clubName);
+  if(!id) return '';
+  const map = DB.settings.stadiumAddresses || {};
+  return map[id] || '';
+}
+// Zapamiętanie adresu po zapisaniu planu. Gospodarza bierzemy z pola "Mecz" (część przed myślnikiem).
+async function rememberStadiumAddress(matchText, address){
+  const adres = String(address||'').trim();
+  if(!adres) return;
+  const gospodarz = String(matchText||'').split(/\s+-\s+/)[0];
+  const id = clubIdByName(gospodarz);
+  if(!id) return;
+  if(!DB.settings.stadiumAddresses) DB.settings.stadiumAddresses = {};
+  if(DB.settings.stadiumAddresses[id] === adres) return;   // bez zmian — nie zapisujemy
+  DB.settings.stadiumAddresses[id] = adres;
+  await saveSettings();
+}
+
+// Wybrany rodzaj w formularzu trzymamy w stanie modułu (jak obsCalendarSelectedDay) i przerysowujemy
+// widok po kliknięciu. Ustawianie stylów bezpośrednio na przyciskach bywało gubione przy
+// przerysowaniach formularza, przez co zaznaczenie wracało do domyślnego.
+let newObsType = OBS_TYPES[0].id;
 let obsCalendarDate = new Date();
 let obsCalendarSelectedDay = null;
 
 function viewNewObs(){
   const editing = editingObsId ? DB.observations.find(o=>o.id===editingObsId) : null;
-  const playerOptions = DB.players.slice().sort((a,b)=>(a.lastName||a.firstName||'').localeCompare(b.lastName||b.firstName||'','pl'))
-    .map(p=>`<option value="${p.id}" ${(editing? editing.playerId===p.id : obsPreselectPlayerId===p.id)?'selected':''}>${esc(p.lastName)} ${esc(p.firstName)} — ${esc(clubName(p.clubId))}</option>`).join('');
+  // Pierwsza pozycja celowo PUSTA: wybór meczu z terminarza ma dawać obserwację zespołu, a nie
+  // podstawiać przypadkowego zawodnika z góry listy. Zawodnika wskazujesz sam, gdy chcesz.
+  const aktywnyTyp = editing ? (editing.obsType || OBS_TYPES[0].id) : newObsType;
+  const wybranyZawodnik = editing ? (editing.playerId||'') : (obsPreselectPlayerId||'');
+  const playerOptions = `<option value="" ${wybranyZawodnik?'':'selected'}>— obserwacja zespołu (bez wskazania zawodnika) —</option>` +
+    DB.players.slice().sort((a,b)=>(a.lastName||a.firstName||'').localeCompare(b.lastName||b.firstName||'','pl'))
+    .map(p=>`<option value="${p.id}" ${wybranyZawodnik===p.id?'selected':''}>${esc(p.lastName)} ${esc(p.firstName)} — ${esc(clubName(p.clubId))}</option>`).join('');
   const scoutOptions = DB.settings.scouts.map(s=>`<option value="${esc(s)}" ${s===(editing?editing.scout:currentScout)?'selected':''}>${esc(s)}</option>`).join('');
   obsPreselectPlayerId = null; // jednorazowa preselekcja — po wyrenderowaniu formularza wraca do normalnego wyboru
 
@@ -3243,6 +3293,20 @@ function viewNewObs(){
           <option value="__new__">➕ Nowy scout...</option>
         </select>
         <input id="obs-scout-new" placeholder="Imię i nazwisko nowego scouta" style="display:${DB.settings.scouts.length?'none':'block'};margin-top:6px;" value="${DB.settings.scouts.length?'':esc(editing?editing.scout||'':currentScout)}">
+      </div>
+      <div class="field-wrap">
+        <label class="field">Rodzaj obserwacji</label>
+        <div class="obs-type-picker">
+          ${OBS_TYPES.map(t=>{
+            // Kolor ustawiamy wprost w stylu elementu — ogólniejsze reguły dla <button> potrafiły
+            // przykryć regułę opartą na klasie i zaznaczenie nie było widać.
+            const styl = aktywnyTyp === t.id
+              ? `background:${t.color};border-color:${t.color};color:#fff;`
+              : `background:#fff;border-color:#D9D3C4;color:var(--ink-soft);`;
+            return `<button type="button" class="obs-type-btn" data-action="pick-obs-type" data-type="${t.id}" style="${styl}">${t.label}</button>`;
+          }).join('')}
+        </div>
+        <input type="hidden" id="obs-type" value="${esc(aktywnyTyp)}">
       </div>
       <div class="field-wrap">
         <label class="field">Mecz (gospodarz - gość)</label>
@@ -3301,6 +3365,7 @@ function obsMonthListHtml(){
       <div class="toolbar" style="margin-bottom:2px;">
         <strong>${i+1}. ${pl?esc(pl.firstName+' '+pl.lastName):'—'}</strong>
         <span style="display:flex;align-items:center;gap:8px;">
+          <span class="obs-type-tag" style="background:${obsTypeMeta(obsTypeOf(o)).color};">${esc(obsTypeMeta(obsTypeOf(o)).label)}</span>
           <span class="meta">${esc(o.date)}${o.matchTime?' &middot; '+esc(o.matchTime):''}</span>
           <button class="link-btn" data-action="edit-obs" data-id="${o.id}" style="font-size:11px;">✎ Edytuj</button>
           <button class="link-btn" data-action="delete-obs" data-id="${o.id}" style="font-size:11px;color:var(--clay-dark);">Usuń</button>
@@ -3334,9 +3399,19 @@ function obsCalendarHtml(){
     const dayObs = obsByDay[day] || [];
     const isToday = dateStr === todayStr;
     const isSelected = dateStr === obsCalendarSelectedDay;
+    // Kropka w kolorze rodzaju obserwacji. Gdy w jednym dniu są oba rodzaje, pokazujemy dwie —
+    // liczba sama w sobie nie powiedziałaby, czy trzeba gdzieś jechać.
+    const wgTypu = {};
+    dayObs.forEach(o=>{ const t = obsTypeOf(o); wgTypu[t] = (wgTypu[t]||0)+1; });
+    const kropki = Object.keys(wgTypu)
+      .sort((a,b)=> OBS_TYPES.findIndex(t=>t.id===a) - OBS_TYPES.findIndex(t=>t.id===b))
+      .map(t=>{
+        const meta = obsTypeMeta(t);
+        return `<span class="cal-dot" style="background:${meta.color};" title="${esc(meta.label)}: ${wgTypu[t]}">${wgTypu[t]}</span>`;
+      }).join('');
     cells += `<div class="cal-cell ${isToday?'cal-today':''} ${isSelected?'cal-selected':''} ${dayObs.length?'cal-has-obs':''}" data-date="${dateStr}">
       <span class="cal-daynum">${day}</span>
-      ${dayObs.length? `<span class="cal-dot">${dayObs.length}</span>` : ''}
+      ${dayObs.length? `<span class="cal-dots">${kropki}</span>` : ''}
     </div>`;
   }
 
@@ -3385,8 +3460,13 @@ function calSelectDay(dateStr){
 }
 
 async function saveNewObservation(){
+  // Pusty zawodnik jest DOZWOLONY — to obserwacja całego zespołu. Wymagamy wtedy podania meczu,
+  // inaczej wpis nie niósłby żadnej informacji o tym, co obserwujemy.
   const playerId = document.getElementById('obs-player').value;
-  if(!playerId){ alert('Wybierz zawodnika.'); return; }
+  if(!playerId && !document.getElementById('obs-match').value.trim()){
+    alert('Wybierz zawodnika albo wpisz mecz — obserwacja musi wskazywać, co obserwujesz.');
+    return;
+  }
   const scoutSelectEl = document.getElementById('obs-scout-select');
   const scoutNewEl = document.getElementById('obs-scout-new');
   let scout = '';
@@ -3403,6 +3483,7 @@ async function saveNewObservation(){
     matchTime: document.getElementById('obs-time').value,
     match: document.getElementById('obs-match').value.trim(),
     location: document.getElementById('obs-location').value.trim(),
+    obsType: (document.getElementById('obs-type')||{}).value || OBS_TYPES[0].id,
     scout,
   };
   // Przy edycji nadpisujemy TYLKO pola planu — ewentualne historyczne oceny/notatki zostają nietknięte.
@@ -3422,6 +3503,9 @@ async function saveNewObservation(){
   try{ obs.distanceKm = await calcDistanceBetween(startLoc, obs.location); }catch(e){ obs.distanceKm = null; }
   if(!editing) DB.observations.push(obs);
   await saveObservations();
+  // Adres obiektu zapamiętujemy przy klubie-gospodarzu — przy następnym meczu tej drużyny
+  // podstawi się sam, bez ponownego wpisywania.
+  await rememberStadiumAddress(obs.match, obs.location);
   // Zaplanowanie obserwacji od razu stawia zawodnika na liście Monitoring i nadaje status
   // "Do Obserwacji" — ale tylko jeśli zawodnik nie ma jeszcze żadnego statusu (import składu
   // zostawia status pusty; nie chcemy nadpisywać np. "Do transferu" ustawionego przez raport).
@@ -4798,6 +4882,14 @@ function attachHandlers(){
     }
   });
   main.querySelectorAll('[data-action="open-match-schedule"]').forEach(b=>b.onclick=()=>openMatchScheduleModal());
+  // Wybór rodzaju obserwacji — bez przerysowania całego widoku, żeby nie gubić wpisanych już pól.
+  // Zmiana rodzaju obserwacji przechodzi przez stan modułu i przerysowanie — dzięki temu wybór
+  // przeżywa każde odświeżenie formularza, także to wywołane przez inne akcje na widoku.
+  document.querySelectorAll('[data-action="pick-obs-type"]').forEach(b=>b.onclick=()=>{
+    const editing = editingObsId ? DB.observations.find(o=>o.id===editingObsId) : null;
+    if(editing) editing.obsType = b.dataset.type; else newObsType = b.dataset.type;
+    render();
+  });
   main.querySelectorAll('[data-action="view-player"]').forEach(b=>b.onclick=()=>{viewingPlayerId=b.dataset.id; currentView='players'; render();});
   // Kliknięcie w wiersz listy zawodników otwiera profil, ale nie może przechwytywać kliknięć
   // w zaznaczanie do usuwania ani w przyciski akcji z ostatniej kolumny.
@@ -5051,6 +5143,36 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="manage-transfer-history"]').forEach(b=>b.onclick=()=>openTransferHistoryModal(b.dataset.id));
   main.querySelectorAll('[data-action="import-squad"]').forEach(b=>b.onclick=()=>openSquadImportModal(b.dataset.id));
   main.querySelectorAll('[data-action="import-squad-stats"]').forEach(b=>b.onclick=()=>openSquadStatsModal(b.dataset.id));
+
+  // Zaznaczanie i usuwanie zawodników wprost ze składu klubu — pojedynczo lub całością.
+  const squadChecks = document.querySelectorAll('.squad-player-check');
+  const squadDelBtn = document.getElementById('squad-delete-btn');
+  const squadAll = document.getElementById('squad-select-all');
+  const odswiezPrzycisk = ()=>{
+    if(!squadDelBtn) return;
+    const n = Array.from(squadChecks).filter(c=>c.checked).length;
+    squadDelBtn.style.display = n ? 'inline-block' : 'none';
+    squadDelBtn.textContent = `🗑️ Usuń zaznaczonych (${n})`;
+  };
+  squadChecks.forEach(c=>c.onchange = odswiezPrzycisk);
+  if(squadAll) squadAll.onchange = ()=>{ squadChecks.forEach(c=>c.checked = squadAll.checked); odswiezPrzycisk(); };
+  if(squadDelBtn) squadDelBtn.onclick = async ()=>{
+    const ids = Array.from(squadChecks).filter(c=>c.checked).map(c=>c.dataset.id);
+    if(!ids.length) return;
+    if(!confirm(`Usunąć ${ids.length} zawodników z bazy? Tego nie można cofnąć.`)) return;
+    const orig = squadDelBtn.textContent;
+    squadDelBtn.disabled = true; squadDelBtn.textContent = `Usuwam ${ids.length}…`;
+    try{
+      await storage.deleteItems('scouting:players', ids);
+      const gone = new Set(ids);
+      DB.players = DB.players.filter(p=>!gone.has(p.id));
+      DB.observations = DB.observations.filter(o=>!gone.has(o.playerId));
+      render();
+    }catch(e){
+      squadDelBtn.disabled = false; squadDelBtn.textContent = orig;
+      alert('Nie udało się usunąć: ' + ((e as any).message||e));
+    }
+  };
   main.querySelectorAll('[data-action="league-stats"]').forEach(b=>b.onclick=()=>openLeagueStatsModal(b.dataset.league));
   main.querySelectorAll('[data-action="analyze-player"]').forEach(b=>b.onclick=()=>openPlayerAnalysisModal(b.dataset.id));
   main.querySelectorAll('[data-action="contacts-fill-clubs"]').forEach(b=>b.onclick=async()=>{
@@ -5620,6 +5742,19 @@ function mapSquadPosition(raw){
 // Wcześniejsze ograniczenie do 2015 ucinało najmłodszych, a rocznik zostawał pusty bez żadnego sygnału.
 const BIRTH_YEAR_RE = /\b(19[7-9]\d|20[01]\d|2020)\b/;
 
+// Część widoków Transfermarktu podaje sam WIEK, bez daty urodzenia ("Zawodnik / Wiek / Narodowość").
+// Gdy roku nie ma, wyliczamy go z wieku. To wartość przybliżona — zależnie od tego, czy zawodnik
+// miał już w tym roku urodziny, rocznik może wypaść o rok wcześniej; oznaczamy to (birthYearFromAge),
+// żeby import mógł o tym uprzedzić zamiast podawać wyliczenie jako pewnik.
+function birthYearFromAgeText(text){
+  if(!text) return null;
+  // Bierzemy pierwszą liczbę w zakresie wieku piłkarza; numery na koszulkach bywają wyższe lub niższe,
+  // ale przy braku daty to jedyna dostępna wskazówka.
+  const m = String(text).match(/\b(1[5-9]|[2-3]\d|4[0-5])\b/);
+  if(!m) return null;
+  return String(new Date().getFullYear() - parseInt(m[1], 10));
+}
+
 function parseSquadLine(line){
   let text = line.trim();
   if(!text) return null;
@@ -5638,9 +5773,11 @@ function parseSquadLine(line){
   // przed pozycją i wtedy przepadała.
   const rest = text.slice(posMatch.index + positionRaw.length) + ' ' + namePart;
   const yearMatch = rest.match(BIRTH_YEAR_RE);
-  const birthYear = yearMatch ? yearMatch[0] : '';
+  const zWieku = yearMatch ? null : birthYearFromAgeText(text.slice(posMatch.index + positionRaw.length));
+  const birthYear = yearMatch ? yearMatch[0] : (zWieku || '');
   const nationality = detectNationality(rest);
-  return { ok:true, firstName, lastName, position, birthYear, nationality, raw: line.trim() };
+  return { ok:true, firstName, lastName, position, birthYear,
+    birthYearFromAge: !yearMatch && !!zWieku, nationality, raw: line.trim() };
 }
 // Wykrywa, czy pozycja to nazwa pozycji (krótka linia pasująca do słownika) — punkt orientacyjny do
 // wykrywania bloków w formacie wieloliniowym (patrz parseSquadBlocks).
@@ -5671,9 +5808,13 @@ function parseSquadBlocks(rawText){
     // w niektórych układach data stoi tuż przy pozycji i wcześniej wypadała poza zakresem.
     const rest = block.slice(1).join(' ');
     const yearMatch = rest.match(BIRTH_YEAR_RE);
+    // Bez daty urodzenia próbujemy wyliczyć rocznik z wieku (widok „Zawodnik / Wiek / Narodowość").
+    const zWieku = yearMatch ? null : birthYearFromAgeText(rest.replace(block[1]||'', ''));
     return {
       ok:true, firstName: words[0], lastName: words.length>1 ? words.slice(1).join(' ') : '',
-      position, birthYear: yearMatch ? yearMatch[0] : '', nationality: detectNationality(rest),
+      position, birthYear: yearMatch ? yearMatch[0] : (zWieku || ''),
+      birthYearFromAge: !yearMatch && !!zWieku,
+      nationality: detectNationality(rest),
       raw: block.join(' | ').slice(0,140)
     };
   });
@@ -5925,11 +6066,12 @@ function openSquadImportModal(clubId){
       const toAdd = checked.map(i=>parsed[i]).filter(p=>p && p.ok);
       if(!toAdd.length){ alert('Brak zaznaczonych zawodników do zaimportowania.'); return; }
       const origLabel = b.textContent; b.disabled = true; b.textContent = 'Importowanie...';
-      let added = 0, skipped = 0, bezRocznika = 0;
+      let added = 0, skipped = 0, bezRocznika = 0, zWieku = 0;
       toAdd.forEach(p=>{
         const exists = DB.players.some(pl=>pl.firstName===p.firstName && pl.lastName===p.lastName && pl.clubId===club.id);
         if(exists){ skipped++; return; }
         if(!p.birthYear) bezRocznika++;
+        else if(p.birthYearFromAge) zWieku++;
         DB.players.push({
           id: uid('Z'), firstName: p.firstName, lastName: p.lastName,
           birthDate: '', birthYear: p.birthYear || '', nationality: p.nationality || '',
@@ -5951,7 +6093,9 @@ function openSquadImportModal(clubId){
         if(ok){
           alert(`Zaimportowano ${added} zawodników.` +
             (skipped ? ` Pominięto ${skipped} (już byli w bazie w tym klubie).` : '') +
-            (bezRocznika ? `\n\nUWAGA: ${bezRocznika} bez rocznika — w skopiowanym tekście nie było dat urodzenia.` +
+            (zWieku ? `\n\n${zWieku} rocznik(ów) wyliczono z wieku — mogą być o rok wcześniejsze,` +
+              ` zależnie od tego, czy zawodnik miał już urodziny. Sprawdź, jeśli to istotne.` : '') +
+            (bezRocznika ? `\n\nUWAGA: ${bezRocznika} bez rocznika — w skopiowanym tekście nie było ani daty urodzenia, ani wieku.` +
               ` Na Transfermarkcie użyj zakładki „Szczegóły składu", która pokazuje daty.` : ''));
           closeAndRefresh();
         } else {
@@ -6311,8 +6455,15 @@ function openMatchScheduleModal(){
     if(matchInput) matchInput.value = `${match.homeTeam||''} - ${match.awayTeam||''}`;
     if(dateInput && match.date) dateInput.value = match.date;
     if(timeInput && match.time) timeInput.value = match.time;
-    if(locationInput && match.stadium) locationInput.value = match.stadium;
-    if(playerSelect && playerId) playerSelect.value = playerId;
+    // Adres: z terminarza, a gdy go tam nie ma — zapamiętany wcześniej adres gospodarza.
+    if(locationInput){
+      const zapamietany = stadiumAddressFor(match.homeTeam);
+      if(match.stadium) locationInput.value = match.stadium;
+      else if(zapamietany) locationInput.value = zapamietany;
+    }
+    // Zawodnika ustawiamy TYLKO gdy został wskazany wprost. Wybór samego meczu zostawia pole puste
+    // (obserwacja zespołu) — wcześniej podstawiał się pierwszy zawodnik z listy.
+    if(playerSelect) playerSelect.value = playerId || '';
   }
 
   function wire(){
@@ -7124,7 +7275,10 @@ function resolveClubForImport(name, league, created){
     .replace(/[łøđ]/g, c=>({'ł':'l','ø':'o','đ':'d'}[c]))
     .normalize('NFD').replace(/\p{M}/gu,'').replace(/[^a-z0-9]/g,'');
   const key = norm(clean);
-  const found = DB.clubs.find(c=> norm(c.name) === key);
+  // Szukamy WYŁĄCZNIE w tej samej kategorii. Wcześniej dopasowanie szło po całej bazie, więc
+  // „CHEMIK BYDGOSZCZ" z listy rocznika 2013 trafiał do seniorskiego Chemika z III ligi i dzieci
+  // lądowały w składzie seniorów. Drużyna młodzieżowa to osobny byt, nawet przy tej samej nazwie.
+  const found = DB.clubs.find(c=> c.league === league && norm(c.name) === key);
   if(found) return found.id;
   const club = { id: uid('K'), name: clean, region: '', league: league || '', season: '', city: '' };
   DB.clubs.push(club);

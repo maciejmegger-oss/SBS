@@ -68,7 +68,7 @@ const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }> = {
   sbs_observations: {
     // sbs_observations nie ma osobnej kolumny custom_fields — używamy istniejącej `ratings` (jsonb).
     hostField: "ratings",
-    fields: ["startLocation", "distanceKm"],
+    fields: ["startLocation", "distanceKm", "obsType"],
   },
 };
 

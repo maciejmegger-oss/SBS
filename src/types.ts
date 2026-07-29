@@ -82,6 +82,7 @@ export interface Observation {
   statsFilledIn?: boolean;
   distanceKm?: number | null;
   startLocation?: string;
+  obsType?: string;
 }
 
 export interface Report {

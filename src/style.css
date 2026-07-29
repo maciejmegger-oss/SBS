@@ -359,6 +359,22 @@ tr:hover td{background:#FBF9F2;}
 .contact-field-telefon{min-width:120px;max-width:150px;}
 .contact-field-notatka{min-width:150px;}
 
+/* Rodzaj obserwacji (Live / Online) — wybór kolorem, ten sam kolor wraca na kalendarzu. */
+.obs-type-picker{display:flex;gap:8px;}
+.obs-type-btn{flex:1;padding:9px 14px;border-radius:8px;font-weight:700;font-size:13px;
+  cursor:pointer;border:2px solid #D9D3C4;background:#fff;color:var(--ink-soft);transition:all .15s;}
+.obs-type-btn:hover{border-color:#B9B2A0;}
+.obs-type-btn.obs-type-live.selected{background:#3E7D4C;border-color:#3E7D4C;color:#fff;}
+.obs-type-btn.obs-type-online.selected{background:#2F6FA8;border-color:#2F6FA8;color:#fff;}
+
+/* Znacznik rodzaju obserwacji na liście zaplanowanych. */
+.obs-type-tag{display:inline-block;padding:2px 9px;border-radius:4px;color:#fff;
+  font-size:10.5px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;}
+
+/* Kropki w kalendarzu: jedna na każdy rodzaj obserwacji w danym dniu. */
+.cal-dots{position:absolute;right:5px;bottom:5px;display:flex;gap:3px;}
+.cal-dots .cal-dot{position:static;}
+
 /* Lista zawodników — podświetlenie wiersza, żeby było widać, że cały otwiera profil. */
 tr.player-row:hover{background:#FBF6E9;}
 
