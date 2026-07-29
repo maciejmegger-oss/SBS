@@ -2445,13 +2445,20 @@ function polandVoivodeshipMap(){
     const key = (c.region||'').replace(' ZPN','');
     counts[key] = (counts[key]||0) + 1;
   });
-  const maxCount = Math.max(1, ...Object.values(counts));
+  // Skalę rozpinamy między NAJMNIEJSZĄ a największą liczbą klubów, a nie od zera. Wartości leżą
+  // blisko siebie (ok. 19-40), więc licząc od zera wszystkie województwa wychodziły niemal
+  // identyczne i mapa była jednolitą plamą.
+  const wartosci = VOIVODESHIP_PATHS.map(v=> counts[v.region] || 0).filter(n=>n>0);
+  const minCount = wartosci.length ? Math.min(...wartosci) : 0;
+  const maxCount = Math.max(1, ...wartosci);
   const items = VOIVODESHIP_PATHS.map(v=>{
     const count = counts[v.region] || 0;
-    const intensity = count / maxCount;
-    // Ręczna interpolacja RGB (nie CSS color-mix) dla zgodności ze wszystkimi przeglądarkami.
-    const pitchRgb = [22,48,42], goldRgb = [198,155,60];
-    const mixed = pitchRgb.map((cc,i)=> Math.round(cc + (goldRgb[i]-cc)*intensity*0.75));
+    const rozpietosc = Math.max(1, maxCount - minCount);
+    const intensity = count===0 ? 0 : (count - minCount) / rozpietosc;
+    // Odcienie ZIELENI: od ciemnej murawy po jasną, soczystą. Wcześniej skala szła w stronę złota,
+    // przez co środek wychodził oliwkowo-brązowy zamiast zielony.
+    const ciemnaZielen = [20,54,42], jasnaZielen = [124,176,104];
+    const mixed = ciemnaZielen.map((cc,i)=> Math.round(cc + (jasnaZielen[i]-cc)*intensity));
     const fill = count===0 ? '#17322A' : `rgb(${mixed[0]},${mixed[1]},${mixed[2]})`;
     const center = pathBoundingCenter(v.d);
     return {v, count, fill, center};
