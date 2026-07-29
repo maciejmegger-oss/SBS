@@ -48,7 +48,7 @@ let dashboardGroupSelected = null; // wybrana grupa (np. "III liga, gr. II") po 
 
 const DEFAULT_SETTINGS = {
   regions: ["Dolnośląski ZPN","Kujawsko-Pomorski ZPN","Lubelski ZPN","Lubuski ZPN","Łódzki ZPN","Małopolski ZPN","Mazowiecki ZPN","Opolski ZPN","Podkarpacki ZPN","Podlaski ZPN","Pomorski ZPN","Śląski ZPN","Świętokrzyski ZPN","Warmińsko-Mazurski ZPN","Wielkopolski ZPN","Zachodniopomorski ZPN"],
-  leagues: ["Ekstraklasa","I liga","II liga","III liga, gr. I","III liga, gr. II","III liga, gr. III","III liga, gr. IV","IV liga (pomorska)","IV liga (zachodniopomorska)","IV liga (dolnośląska)","IV liga (śląska)","IV liga (wielkopolska)","Klasa okręgowa","CLJ U19","CLJ U17 (zachodnia)","CLJ U17 (wschodnia)","Liga makroregionalna U16","Rocznik 2011","Rocznik 2012","Rocznik 2013","Rocznik 2014"],
+  leagues: ["Ekstraklasa","I liga","II liga","III liga, gr. I","III liga, gr. II","III liga, gr. III","III liga, gr. IV","IV liga (pomorska)","IV liga (zachodniopomorska)","IV liga (dolnośląska)","IV liga (śląska)","IV liga (wielkopolska)","IV liga (kujawsko-pomorska)","Klasa okręgowa","CLJ U19","CLJ U17 (zachodnia)","CLJ U17 (wschodnia)","Liga makroregionalna U16","Rocznik 2011","Rocznik 2012","Rocznik 2013","Rocznik 2014"],
   positions: ["Bramkarz","Obrońca prawy","Obrońca lewy","Obrońca środkowy","Obrońca środkowy prawy","Obrońca środkowy centralny","Obrońca środkowy lewy","Obrońca boczny","Wahadłowy prawy","Wahadłowy lewy","Pomocnik defensywny","Pomocnik środkowy","Pomocnik ofensywny","Skrzydłowy","Skrzydłowy prawy","Skrzydłowy lewy","Napastnik"],
   statuses: ["Do Obserwacji","Na Testy","Do transferu","Z polecenia","Rekomendowany","Odrzucony"],
   recommendations: ["Kontynuować obserwację","Zaprosić na testy","(Do transferu)","Odrzucić","Zbyt wcześnie ocenić"],
@@ -1867,6 +1867,12 @@ async function loadAllInner(){
     ['Rocznik 2011','Rocznik 2012','Rocznik 2013','Rocznik 2014'].forEach(r=>{
       if(!DB.settings.leagues.includes(r)) DB.settings.leagues.push(r);
     });
+    // IV liga kujawsko-pomorska doszła później — wstawiamy ją PRZY pozostałych grupach IV ligi,
+    // żeby lista nie miała jej doklejonej na końcu, za kategoriami juniorskimi.
+    if(!DB.settings.leagues.includes('IV liga (kujawsko-pomorska)')){
+      const last4 = DB.settings.leagues.map(l=>/^IV liga \(/.test(l)).lastIndexOf(true);
+      DB.settings.leagues.splice(last4 >= 0 ? last4+1 : DB.settings.leagues.length, 0, 'IV liga (kujawsko-pomorska)');
+    }
   }
   // Rozszerzona lista pozycji (skrzydłowy P/L, wahadłowy P/L, obrońcy P/L/środkowi) także w istniejących
   // instalacjach. Zastępujemy całą listę kanoniczną — stare wartości pozycji zawodników nadal w niej są.
