@@ -378,6 +378,23 @@ tr:hover td{background:#FBF9F2;}
 /* Lista zawodników — podświetlenie wiersza, żeby było widać, że cały otwiera profil. */
 tr.player-row:hover{background:#FBF6E9;}
 
+/* Szeroka tabela zawodników: przewijana w bok, z widocznym paskiem i kursorem chwytania,
+   żeby było jasne, że da się ją przesunąć. Kolumna akcji („Monitoring", usuwanie) jest
+   przyklejona do prawej krawędzi, więc nie ucieka poza ekran przy przewijaniu. */
+.table-scroll{overflow-x:auto;cursor:grab;scrollbar-width:auto;}
+.table-scroll:active{cursor:grabbing;}
+.table-scroll::-webkit-scrollbar{height:12px;}
+.table-scroll::-webkit-scrollbar-track{background:#EFEADA;border-radius:6px;}
+.table-scroll::-webkit-scrollbar-thumb{background:#C9C2AB;border-radius:6px;}
+.table-scroll::-webkit-scrollbar-thumb:hover{background:#B0A88F;}
+
+.players-table th:last-child,
+.players-table td:last-child{
+  position:sticky; right:0; background:var(--paper,#FBF9F3);
+  box-shadow:-6px 0 8px -6px rgba(0,0,0,.18); white-space:nowrap;
+}
+.players-table tr.player-row:hover td:last-child{background:#FBF6E9;}
+
 /* Kartki w listach (żółte / czerwone) — małe znaczniki w kolorach kartek. */
 .card-chip{display:inline-block;min-width:18px;padding:1px 5px;border-radius:3px;font-size:11px;
   font-weight:800;line-height:1.5;text-align:center;}

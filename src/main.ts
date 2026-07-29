@@ -2445,20 +2445,13 @@ function polandVoivodeshipMap(){
     const key = (c.region||'').replace(' ZPN','');
     counts[key] = (counts[key]||0) + 1;
   });
-  // Skalę rozpinamy między NAJMNIEJSZĄ a największą liczbą klubów, a nie od zera. Wartości leżą
-  // blisko siebie (ok. 19-40), więc licząc od zera wszystkie województwa wychodziły niemal
-  // identyczne i mapa była jednolitą plamą.
-  const wartosci = VOIVODESHIP_PATHS.map(v=> counts[v.region] || 0).filter(n=>n>0);
-  const minCount = wartosci.length ? Math.min(...wartosci) : 0;
-  const maxCount = Math.max(1, ...wartosci);
+  const maxCount = Math.max(1, ...Object.values(counts));
   const items = VOIVODESHIP_PATHS.map(v=>{
     const count = counts[v.region] || 0;
-    const rozpietosc = Math.max(1, maxCount - minCount);
-    const intensity = count===0 ? 0 : (count - minCount) / rozpietosc;
-    // Odcienie ZIELENI: od ciemnej murawy po jasną, soczystą. Wcześniej skala szła w stronę złota,
-    // przez co środek wychodził oliwkowo-brązowy zamiast zielony.
-    const ciemnaZielen = [20,54,42], jasnaZielen = [124,176,104];
-    const mixed = ciemnaZielen.map((cc,i)=> Math.round(cc + (jasnaZielen[i]-cc)*intensity));
+    const intensity = count / maxCount;
+    // Ręczna interpolacja RGB (nie CSS color-mix) dla zgodności ze wszystkimi przeglądarkami.
+    const pitchRgb = [22,48,42], goldRgb = [198,155,60];
+    const mixed = pitchRgb.map((cc,i)=> Math.round(cc + (goldRgb[i]-cc)*intensity*0.75));
     const fill = count===0 ? '#17322A' : `rgb(${mixed[0]},${mixed[1]},${mixed[2]})`;
     const center = pathBoundingCenter(v.d);
     return {v, count, fill, center};
@@ -2804,7 +2797,6 @@ function viewPlayers(){
       <td>${a? a.count : 0}</td>
       <td style="white-space:nowrap;">
         <button class="link-btn" data-action="add-to-monitoring" data-id="${p.id}" title="${p.monitored?'W Monitoringu — kliknij, aby usunąć':'Dodaj do Monitoringu'}" style="color:${p.monitored?'#3E7D4C':'var(--gold-dark)'};">${p.monitored?'✓ Monitoring':'+ Monitoring'}</button>
-        <button class="link-btn" data-action="view-player" data-id="${p.id}">Zobacz</button>
         <button class="link-btn" data-action="delete-player" data-id="${p.id}" title="Usuń zawodnika" style="color:var(--clay-dark);font-size:11px;">✕</button>
       </td>
     </tr>`;
@@ -2839,8 +2831,9 @@ function viewPlayers(){
     </label>
     <button class="danger" id="delete-selected-btn" style="display:none;" data-action="delete-selected-players">🗑️ Usuń zaznaczonych (0)</button>
   </div>
-  <div class="card" style="padding:0;overflow:auto;">
-    <table>
+  <p class="note" style="margin:0 0 6px;font-size:11.5px;">Tabela jest szeroka — przewiń ją w bok pod spodem albo przytrzymaj <strong>Shift</strong> i kręć kółkiem myszy. Kolumna akcji zostaje widoczna.</p>
+  <div class="card table-scroll" style="padding:0;overflow:auto;">
+    <table class="players-table">
       <thead><tr><th style="width:24px;"><input type="checkbox" class="header-checkbox"></th><th style="width:34px;text-align:right;" title="Liczba porządkowa">Lp.</th><th>Zawodnik</th><th>Rocznik</th><th>Pozycja</th><th>Klub</th><th>Region</th><th>Liga</th><th>Status</th><th style="text-align:right;" title="Rozegrane mecze w sezonie">Mecze</th><th style="text-align:right;" title="Rozegrane minuty w sezonie">Minuty</th><th style="text-align:right;" title="Gole w sezonie">Gole</th><th>Śr. ocena</th><th>Obserw.</th><th></th></tr></thead>
       <tbody>${rows || `<tr><td colspan="14"><div class="empty">Brak zawodników spełniających filtry.</div></td></tr>`}</tbody>
     </table>
@@ -4972,6 +4965,32 @@ function attachHandlers(){
       DB.observations = DB.observations.filter(o=>o.playerId!==id);
       viewingPlayerId=null; render();
     }
+  });
+
+  // Przewijanie szerokiej tabeli przeciąganiem myszy (kursor „łapka") oraz kółkiem z Shiftem.
+  // Sam pasek przewijania bywa przeoczony, a tabela zawodników ma 14 kolumn i nie mieści się na ekranie.
+  document.querySelectorAll('.table-scroll').forEach(box=>{
+    let ciagnie = false, startX = 0, startScroll = 0;
+    box.addEventListener('mousedown', (e)=>{
+      // Nie przechwytujemy kliknięć w elementy interaktywne — inaczej nie dałoby się nic kliknąć.
+      if((e.target as HTMLElement).closest('button, input, a, select, label')) return;
+      ciagnie = true; startX = e.pageX; startScroll = box.scrollLeft;
+    });
+    const koniec = ()=>{ ciagnie = false; };
+    box.addEventListener('mouseup', koniec);
+    box.addEventListener('mouseleave', koniec);
+    box.addEventListener('mousemove', (e)=>{
+      if(!ciagnie) return;
+      const przesuniecie = e.pageX - startX;
+      if(Math.abs(przesuniecie) > 3) e.preventDefault();   // dopiero wtedy to przeciąganie, a nie klik
+      box.scrollLeft = startScroll - przesuniecie;
+    });
+    // Kółko myszy w poziomie, gdy trzymany Shift.
+    box.addEventListener('wheel', (e)=>{
+      if(!e.shiftKey) return;
+      e.preventDefault();
+      box.scrollLeft += e.deltaY;
+    }, {passive:false});
   });
 
   // Checkboxy do zaznaczania zawodników
