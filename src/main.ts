@@ -2199,6 +2199,13 @@ function compareTable(entries){
   const obsRow = `<tr><td style="color:var(--ink-soft);font-size:11.5px;">Liczba obserwacji</td>${withAvg.map(e=>`<td style="color:var(--ink-soft);font-size:11.5px;">${e.avg.count}</td>`).join('')}</tr>`;
   return `<table style="width:auto;min-width:280px;">${head}${rows}${overallRow}${obsRow}</table>`;
 }
+// Podpis zawodnika w wyszukiwarkach: "Nazwisko Imię — Klub".
+function playerLabelFor(id){
+  const p = DB.players.find(x=>x.id===id);
+  if(!p) return '';
+  return `${p.lastName||''} ${p.firstName||''} — ${clubName(p.clubId)}`.trim();
+}
+
 function viewCompare(){
   const allPlayers = DB.players.slice().sort((a,b)=>(a.lastName||'').localeCompare(b.lastName||''));
   const firstPlayer = compareIds[0] ? DB.players.find(x=>x.id===compareIds[0]) : null;
@@ -3685,7 +3692,13 @@ function viewReports(){
   <div class="card reports-form-card" style="${editing?'border:1px solid var(--gold);':''}">
     <div class="field-wrap">
       <label class="field">Zawodnik</label>
-      <select id="rep-player">${playerOptions || '<option value="">Brak zawodników — dodaj najpierw w zakładce Zawodnicy</option>'}</select>
+      <div class="club-combo">
+        <input type="hidden" id="rep-player" value="${editing? esc(editing.playerId||'') : ''}">
+        <input type="text" id="rep-player-search" class="club-combo-input" autocomplete="off"
+          placeholder="Zacznij pisać nazwisko…"
+          value="${editing && editing.playerId ? esc(playerLabelFor(editing.playerId)) : ''}">
+        <div class="club-combo-list" id="rep-player-list"></div>
+      </div>
     </div>
     <div class="grid grid-2">
       <div class="field-wrap"><label class="field">Data</label><input type="date" id="rep-date" value="${editing? esc(editing.date) : new Date().toISOString().slice(0,10)}"></div>
@@ -5428,6 +5441,68 @@ function attachHandlers(){
   });
 
   // Porównywarka zawodników
+  // Wyszukiwarka zawodnika w Raportach: pole tekstowe zawężające listę literami. Przy ponad
+  // dwóch tysiącach zawodników zwykła lista rozwijana była nie do przejrzenia.
+  (function(){
+    const hidden = document.getElementById('rep-player');
+    const search = document.getElementById('rep-player-search');
+    const list = document.getElementById('rep-player-list');
+    if(!hidden || !search || !list) return;
+    const norm = s => (s||'').toString().toLowerCase().normalize('NFD').replace(/\p{M}/gu,'');
+    const gracze = DB.players.slice().sort((a,b)=>
+      (a.lastName||a.firstName||'').localeCompare(b.lastName||b.firstName||'','pl')
+      || (a.firstName||'').localeCompare(b.firstName||'','pl'));
+
+    const ustaw = (p)=>{
+      hidden.value = p ? p.id : '';
+      search.value = p ? playerLabelFor(p.id) : '';
+    };
+    function rysuj(q){
+      const nq = norm(q.trim());
+      // Szukamy w nazwisku, imieniu i nazwie klubu — każde słowo z osobna, więc "kowal legia" też trafi.
+      const slowa = nq ? nq.split(/\s+/) : [];
+      const pasuje = p=>{
+        if(!slowa.length) return true;
+        const hay = norm(`${p.lastName||''} ${p.firstName||''} ${clubName(p.clubId)}`);
+        return slowa.every(w=>hay.includes(w));
+      };
+      // Kolejność wyników: najpierw nazwiska ZACZYNAJĄCE się od wpisanej frazy, potem zawierające ją
+      // w nazwisku, na końcu trafienia po imieniu lub klubie. Bez tego wpisanie "k" pokazywało
+      // najpierw zawodników klubów z literą "k" w nazwie, zamiast nazwisk na "K".
+      const ranga = (p)=>{
+        if(!slowa.length) return 3;
+        const nazw = norm(p.lastName||'');
+        if(nazw.startsWith(slowa[0])) return 0;
+        if(nazw.includes(slowa[0])) return 1;
+        if(norm(p.firstName||'').startsWith(slowa[0])) return 2;
+        return 3;
+      };
+      const trafienia = gracze.filter(pasuje)
+        .sort((a,b)=> ranga(a) - ranga(b))     // sort stabilny — w obrębie rangi zostaje alfabet
+        .slice(0,60);
+      list.innerHTML = trafienia.length ? trafienia.map(p=>{
+        const rocznik = p.birthYear ? p.birthYear : '—';
+        return `<div class="club-combo-item" data-id="${esc(p.id)}">
+          <strong>${esc(p.lastName||'')} ${esc(p.firstName||'')}</strong>
+          <span class="club-combo-reg">${esc(clubName(p.clubId))} · ${esc(rocznik)}</span>
+        </div>`;
+      }).join('') : '<div class="club-combo-empty">Brak zawodnika pasującego do frazy.</div>';
+      list.style.display = 'block';
+      list.querySelectorAll('.club-combo-item').forEach(it=>it.onmousedown=(e)=>{
+        e.preventDefault();                       // wybór przed zdarzeniem blur pola
+        ustaw(gracze.find(x=>x.id===it.dataset.id));
+        list.style.display = 'none';
+      });
+    }
+    search.oninput = ()=>rysuj(search.value);
+    search.onfocus = ()=>rysuj(search.value);
+    search.onblur = ()=>setTimeout(()=>{
+      list.style.display = 'none';
+      // Po wyjściu z pola przywracamy podpis aktualnie wybranego — żeby nie zostawał urwany tekst.
+      ustaw(gracze.find(x=>x.id===hidden.value) || null);
+    }, 150);
+  })();
+
   main.querySelectorAll('[data-action="compare-open"]').forEach(b=>b.onclick=()=>{
     // Zaznaczeni na liście przechodzą wprost do porównywarki. Porównanie obsługuje trzech
     // zawodników — przy większym zaznaczeniu bierzemy trzech pierwszych i mówimy o tym wprost,
