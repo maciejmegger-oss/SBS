@@ -6495,6 +6495,64 @@ function tmStatsLink(club){
 // jeszcze III liga) otwieranie osobnego okna dla każdego klubu było najdroższą częścią pracy.
 // Nazwiska dopasowujemy do puli wszystkich zawodników ligi, więc nie trzeba wskazywać klubu —
 // wklejasz tabele jedna po drugiej, choćby wszystkie naraz.
+// Skryptozakładka ("bookmarklet") do Transfermarktu. Statystyki są tam rysowane JavaScriptem, więc
+// serwer ich nie pobierze — ale w TWOJEJ przeglądarce, na otwartej stronie, są już gotowe. Ten
+// skrypt czyta tekst strony i wrzuca do schowka, zastępując zaznaczanie myszą. To nie jest
+// obchodzenie zabezpieczeń: czyta wyłącznie to, co i tak masz przed sobą, na stronie, którą
+// normalnie odwiedzasz. Świadomie NIE chodzi po innych podstronach — automatyczne przemierzanie
+// serwisu łamałoby jego regulamin.
+//
+// Czytamy cały tekst strony, a nie konkretną tabelę: układ HTML Transfermarktu może się zmienić,
+// a parser i tak pomija wszystko, w czym nie rozpozna nazwiska ze składu.
+const TM_BOOKMARKLET = `javascript:(function(){try{
+var best=null,n=0;var ts=document.querySelectorAll('table');
+for(var i=0;i<ts.length;i++){var r=ts[i].rows.length;if(r>n){n=r;best=ts[i];}}
+var t=(best&&n>4)?best.innerText:document.body.innerText;
+navigator.clipboard.writeText(t).then(function(){
+var d=document.createElement('div');d.textContent='SBS: skopiowano '+(best&&n>4?n+' wierszy tabeli':'tekst strony')+' — wklej w systemie';
+d.style.cssText='position:fixed;top:16px;right:16px;z-index:999999;background:#16302A;color:#C69B3C;padding:12px 18px;border-radius:8px;font:600 14px sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.3)';
+document.body.appendChild(d);setTimeout(function(){d.remove()},2600);
+}).catch(function(e){alert('Nie udało się skopiować: '+e.message)})}catch(e){alert('Błąd: '+e.message)}})();`;
+
+function openBookmarkletModal(){
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+  <div class="modal" style="max-width:640px;">
+    <h3>🔖 Szybkie kopiowanie z Transfermarktu</h3>
+    <p class="note">Zamiast zaznaczać tabelę myszą — jedno kliknięcie na stronie klubu kopiuje wszystko do schowka.
+    Ustawiasz to <strong>raz</strong>.</p>
+
+    <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
+      <li>Włącz pasek zakładek w przeglądarce: <strong>Ctrl+Shift+B</strong></li>
+      <li>Przeciągnij ten przycisk na pasek zakładek:<br>
+        <a href="${esc(TM_BOOKMARKLET)}" onclick="return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:#C69B3C;color:#16302A;border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">⏱ Kopiuj do SBS</a>
+      </li>
+      <li>Wejdź na stronę klubu → <strong>Statystyki drużynowe</strong></li>
+      <li>Kliknij <strong>„⏱ Kopiuj do SBS"</strong> na pasku zakładek — pojawi się potwierdzenie</li>
+      <li>Wróć tutaj i wklej (<strong>Ctrl+V</strong>) w oknie statystyk ligi</li>
+    </ol>
+
+    <p class="note" style="font-size:11.5px;">Kolejne kluby: wchodzisz na stronę, klikasz zakładkę, wklejasz.
+    Bez zaznaczania i bez ryzyka, że urwiesz kawałek tabeli.</p>
+    <p class="note" style="font-size:11px;color:var(--ink-soft);">Skrypt czyta tylko tekst strony, którą masz otwartą —
+    nie loguje się nigdzie i nie chodzi po serwisie samodzielnie.</p>
+
+    <details style="margin-top:10px;">
+      <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Przeciąganie nie działa? Pokaż kod do wklejenia ręcznie</summary>
+      <p class="note" style="font-size:11px;margin-top:6px;">Utwórz nową zakładkę i wklej to w pole adresu:</p>
+      <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;">${esc(TM_BOOKMARKLET)}</textarea>
+    </details>
+
+    <div class="modal-actions">
+      <button class="secondary" data-action="close-modal">Zamknij</button>
+    </div>
+  </div>`;
+  overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=()=>overlay.remove());
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
+
 function openLeagueStatsModal(league){
   const clubs = DB.clubs.filter(c=> c.league === league || topLevelOf(c.league) === league);
   const clubIds = new Set(clubs.map(c=>c.id));
@@ -6536,13 +6594,17 @@ function openLeagueStatsModal(league){
       <textarea id="league-stats-paste" rows="10" placeholder="Wklej tu tabelę pierwszego klubu, potem kolejnego — wszystko może iść razem." style="font-size:12px;font-family:monospace;"></textarea>
     </div>
     <div id="league-stats-preview"></div>
-    <div class="modal-actions">
-      <button class="gold" data-action="league-stats-parse">Rozpoznaj</button>
-      <button class="secondary" data-action="close-modal">Zamknij</button>
+    <div class="modal-actions" style="justify-content:space-between;">
+      <button class="secondary" data-action="show-bookmarklet" title="Kopiowanie ze strony klubu jednym kliknięciem">🔖 Szybkie kopiowanie</button>
+      <span>
+        <button class="gold" data-action="league-stats-parse">Rozpoznaj</button>
+        <button class="secondary" data-action="close-modal">Zamknij</button>
+      </span>
     </div>
   </div>`;
 
   overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=close);
+  overlay.querySelectorAll('[data-action="show-bookmarklet"]').forEach(b=>b.onclick=()=>openBookmarkletModal());
   overlay.addEventListener('click', e=>{ if(e.target===overlay) close(); });
 
   const preview = overlay.querySelector('#league-stats-preview');
