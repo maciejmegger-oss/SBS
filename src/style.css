@@ -381,7 +381,10 @@ tr.player-row:hover{background:#FBF6E9;}
 /* Szeroka tabela zawodników: przewijana w bok, z widocznym paskiem i kursorem chwytania,
    żeby było jasne, że da się ją przesunąć. Kolumna akcji („Monitoring", usuwanie) jest
    przyklejona do prawej krawędzi, więc nie ucieka poza ekran przy przewijaniu. */
-.table-scroll{overflow-x:auto;cursor:grab;scrollbar-width:auto;}
+/* min-width:0 jest tu konieczne: bez niego element w układzie flex/grid nie chce zejść poniżej
+   szerokości swojej zawartości, więc szeroka tabela rozpychała całą stronę i to ona przewijała
+   się w bok — razem z panelem bocznym — zamiast samej tabeli. */
+.table-scroll{overflow-x:auto;cursor:grab;scrollbar-width:auto;min-width:0;max-width:100%;}
 .table-scroll:active{cursor:grabbing;}
 .table-scroll::-webkit-scrollbar{height:12px;}
 .table-scroll::-webkit-scrollbar-track{background:#EFEADA;border-radius:6px;}

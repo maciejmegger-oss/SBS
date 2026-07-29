@@ -2445,14 +2445,23 @@ function polandVoivodeshipMap(){
     const key = (c.region||'').replace(' ZPN','');
     counts[key] = (counts[key]||0) + 1;
   });
-  const maxCount = Math.max(1, ...Object.values(counts));
+  // Skalę rozpinamy między najmniejszą a największą liczbą klubów, bo wartości leżą blisko siebie
+  // (ok. 18-31) — licząc od zera wszystkie województwa wychodziły niemal identyczne.
+  const wartosci = VOIVODESHIP_PATHS.map(v=> counts[v.region] || 0).filter(n=>n>0);
+  const minCount = wartosci.length ? Math.min(...wartosci) : 0;
+  const maxCount = Math.max(1, ...wartosci);
   const items = VOIVODESHIP_PATHS.map(v=>{
     const count = counts[v.region] || 0;
-    const intensity = count / maxCount;
-    // Ręczna interpolacja RGB (nie CSS color-mix) dla zgodności ze wszystkimi przeglądarkami.
-    const pitchRgb = [22,48,42], goldRgb = [198,155,60];
-    const mixed = pitchRgb.map((cc,i)=> Math.round(cc + (goldRgb[i]-cc)*intensity*0.75));
-    const fill = count===0 ? '#17322A' : `rgb(${mixed[0]},${mixed[1]},${mixed[2]})`;
+    const intensity = count===0 ? 0 : (count - minCount) / Math.max(1, maxCount - minCount);
+    // Trójpunktowa skala zieleń → złoto: ciemna murawa, przez stonowaną oliwkę, po szlachetne złoto.
+    // Przejście przez punkt pośredni (a nie prosta interpolacja) trzyma środek zakresu w zieleni
+    // zamiast robić z niego brąz, a złoto zostaje zarezerwowane dla województw z największą liczbą klubów.
+    const ciemnaZielen = [23,52,44], srodkowa = [86,110,64], zloto = [201,164,74];
+    const lerp = (a,b,t)=> a.map((cc,i)=> cc + (b[i]-cc)*t);
+    const rgb = intensity <= 0.5
+      ? lerp(ciemnaZielen, srodkowa, intensity/0.5)
+      : lerp(srodkowa, zloto, (intensity-0.5)/0.5);
+    const fill = count===0 ? '#17322A' : `rgb(${rgb.map(Math.round).join(',')})`;
     const center = pathBoundingCenter(v.d);
     return {v, count, fill, center};
   });
@@ -2797,7 +2806,8 @@ function viewPlayers(){
       <td>${a? a.count : 0}</td>
       <td style="white-space:nowrap;">
         <button class="link-btn" data-action="add-to-monitoring" data-id="${p.id}" title="${p.monitored?'W Monitoringu — kliknij, aby usunąć':'Dodaj do Monitoringu'}" style="color:${p.monitored?'#3E7D4C':'var(--gold-dark)'};">${p.monitored?'✓ Monitoring':'+ Monitoring'}</button>
-        <button class="link-btn" data-action="delete-player" data-id="${p.id}" title="Usuń zawodnika" style="color:var(--clay-dark);font-size:11px;">✕</button>
+        <button class="link-btn" data-action="edit-player" data-id="${p.id}" title="Edytuj zawodnika" style="margin-left:8px;">✎ Edytuj</button>
+        <button class="link-btn" data-action="delete-player" data-id="${p.id}" title="Usuń zawodnika" style="margin-left:8px;color:var(--clay-dark);">Usuń</button>
       </td>
     </tr>`;
   }).join('');
