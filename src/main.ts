@@ -2759,7 +2759,9 @@ function viewPlayers(){
   const rows = list.map(p=>{
     const a = playerAvg(p.id);
     const cls = STATUS_CLASS[p.status]||"new";
-    return `<tr>
+    // Cały wiersz otwiera profil — tabela jest szeroka i przy węższym ekranie kolumna z przyciskami
+    // („Zobacz", „✕") bywa poza kadrem, więc samo kliknięcie w nazwisko musi wystarczyć.
+    return `<tr class="player-row" data-action="row-open-player" data-id="${p.id}" style="cursor:pointer;" title="Kliknij, aby otworzyć profil">
       <td><input type="checkbox" class="player-checkbox" data-id="${p.id}"></td>
       <td>${p.nationality?`<span title="${esc(p.nationality)}">${nationalityFlag(p.nationality)}</span> `:''}<strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</td>
       <td>${p.birthYear||"—"}${isYouthPlayer(p)?youthBadge():''}</td>
@@ -4779,6 +4781,12 @@ function attachHandlers(){
   });
   main.querySelectorAll('[data-action="open-match-schedule"]').forEach(b=>b.onclick=()=>openMatchScheduleModal());
   main.querySelectorAll('[data-action="view-player"]').forEach(b=>b.onclick=()=>{viewingPlayerId=b.dataset.id; currentView='players'; render();});
+  // Kliknięcie w wiersz listy zawodników otwiera profil, ale nie może przechwytywać kliknięć
+  // w zaznaczanie do usuwania ani w przyciski akcji z ostatniej kolumny.
+  main.querySelectorAll('[data-action="row-open-player"]').forEach(row=>row.addEventListener('click', (e)=>{
+    if((e.target as HTMLElement).closest('button, input, a, label')) return;
+    viewingPlayerId = (row as HTMLElement).dataset.id; currentView='players'; render();
+  }));
   // Przycisk "Monitoring" w liście zawodników — od razu dodaje/usuwa zawodnika z zakładki Monitoring.
   main.querySelectorAll('[data-action="monitoring-plan-obs"]').forEach(b=>b.onclick=()=>{
     obsPreselectPlayerId = b.dataset.id;

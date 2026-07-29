@@ -359,6 +359,9 @@ tr:hover td{background:#FBF9F2;}
 .contact-field-telefon{min-width:120px;max-width:150px;}
 .contact-field-notatka{min-width:150px;}
 
+/* Lista zawodników — podświetlenie wiersza, żeby było widać, że cały otwiera profil. */
+tr.player-row:hover{background:#FBF6E9;}
+
 /* Kartki w listach (żółte / czerwone) — małe znaczniki w kolorach kartek. */
 .card-chip{display:inline-block;min-width:18px;padding:1px 5px;border-radius:3px;font-size:11px;
   font-weight:800;line-height:1.5;text-align:center;}
