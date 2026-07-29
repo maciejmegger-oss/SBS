@@ -3157,7 +3157,9 @@ function viewClubDetail(id){
   const squad = DB.players.filter(p=>p.clubId===id).sort((a,b)=>(a.lastName||a.firstName||'').localeCompare(b.lastName||b.firstName||'','pl'));
   const squadRows = squad.map(p=>{
     const a = playerAvg(p.id);
-    return `<tr>
+    // Wiersz otwiera profil — tak samo jak na liście Zawodników, żeby podgląd działał wszędzie
+    // jednakowo, a nie tylko przez mały odnośnik „Zobacz" na końcu wiersza.
+    return `<tr class="player-row" data-action="row-open-player" data-id="${p.id}" style="cursor:pointer;" title="Kliknij, aby otworzyć profil">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="squad-player-check" data-id="${p.id}"></td>
       <td>${p.nationality?`<span title="${esc(p.nationality)}">${nationalityFlag(p.nationality)}</span> `:''}<strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</td>
       <td>${p.birthYear||"—"}${isYouthPlayer(p)?youthBadge():''}</td>
