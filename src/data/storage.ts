@@ -11,7 +11,10 @@
 import { createClient } from "@supabase/supabase-js";
 import type { ClubCrestMap } from "../types";
 
-const sb = createClient(
+// Eksportowany, żeby warstwa logowania (src/data/auth.ts) używała TEGO SAMEGO klienta.
+// To istotne: po zalogowaniu klient sam dokłada token sesji do każdego zapytania o dane,
+// więc reguły dostępu w bazie widzą zalogowanego użytkownika, a nie anonima.
+export const sb = createClient(
   import.meta.env.VITE_SUPABASE_URL,
   import.meta.env.VITE_SUPABASE_ANON_KEY,
 );

@@ -377,6 +377,20 @@ tr:hover td{background:#FBF9F2;}
 .cal-dots{position:absolute;right:5px;bottom:5px;display:flex;gap:3px;}
 .cal-dots .cal-dot{position:static;}
 
+/* Ekran logowania — pokazywany, dopóki nie ma sesji. */
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,#16302A 0%,#0E241E 100%);padding:24px;}
+.login-card{background:var(--paper,#FBF9F3);border-radius:14px;padding:32px 30px;width:100%;max-width:400px;
+  box-shadow:0 18px 50px rgba(0,0,0,.35);}
+.login-title{font-family:'Barlow Condensed',sans-serif;font-size:30px;color:var(--pitch);margin:0 0 2px;letter-spacing:.02em;}
+.login-sub{color:var(--ink-soft);font-size:13px;margin:0 0 20px;}
+.login-card .field-wrap{margin-bottom:14px;}
+.login-card input{width:100%;box-sizing:border-box;}
+.login-error{background:#FBEDEA;border:1px solid #E3C9C2;color:var(--clay-dark);
+  padding:9px 12px;border-radius:8px;font-size:12.5px;margin-bottom:14px;}
+.login-info{background:#F1F6EE;border:1px solid #CFE0C6;color:#2F5D3A;
+  padding:9px 12px;border-radius:8px;font-size:12.5px;margin-bottom:14px;}
+
 /* Pasek porównawczy w porównywarce: długość = udział względem najlepszego wyniku,
    kolor = jakość na skali chłodny błękit → ciepłe złoto. */
 .stat-bar{height:6px;background:#EFEADD;border-radius:3px;overflow:hidden;margin-top:4px;

@@ -1,5 +1,6 @@
 import "./style.css";
 import { storage } from "./data/storage";
+import { currentUser, signIn, signOut, requestPasswordReset, setNewPassword, isPasswordRecoveryLink } from "./data/auth";
 import { VOIVODESHIP_PATHS } from "./data/voivodeships";
 import type { Database } from "./types";
 import * as XLSX from "xlsx";
@@ -8671,4 +8672,128 @@ function wireLastModal(){
   });
 }
 
-loadAll();
+// ---------- BRAMKA LOGOWANIA ----------
+// Aplikacja nie startuje, dopóki nie ma sesji. Do tej pory nie było jej wcale: przycisk „Wyloguj się"
+// wołał funkcję, która nie istniała, a dane dawały się czytać i zapisywać bez żadnego uwierzytelnienia.
+function loginScreenHtml(tryb, komunikat, blad){
+  const pole = (id, typ, etykieta, autofokus)=>`
+    <div class="field-wrap">
+      <label class="field" for="${id}">${etykieta}</label>
+      <input id="${id}" type="${typ}" ${autofokus?'autofocus':''} autocomplete="${typ==='password'?'current-password':'username'}">
+    </div>`;
+  const tresc = tryb==='reset' ? `
+      <p class="note">Podaj adres e-mail konta. Wyślemy na niego link do ustawienia nowego hasła.</p>
+      ${pole('lg-email','email','Adres e-mail', true)}
+      <div class="modal-actions" style="justify-content:space-between;">
+        <button class="link-btn" data-action="lg-tryb-login">← Wróć do logowania</button>
+        <button class="gold" data-action="lg-reset">Wyślij link</button>
+      </div>`
+    : tryb==='nowe-haslo' ? `
+      <p class="note">Ustaw nowe hasło do swojego konta. Minimum 8 znaków.</p>
+      ${pole('lg-haslo1','password','Nowe hasło', true)}
+      ${pole('lg-haslo2','password','Powtórz hasło')}
+      <div class="modal-actions"><button class="gold" data-action="lg-zapisz-haslo">Zapisz nowe hasło</button></div>`
+    : `
+      ${pole('lg-email','email','Adres e-mail', true)}
+      ${pole('lg-haslo','password','Hasło')}
+      <div class="modal-actions" style="justify-content:space-between;">
+        <button class="link-btn" data-action="lg-tryb-reset">Nie pamiętam hasła</button>
+        <button class="gold" data-action="lg-login">Zaloguj się</button>
+      </div>
+      <p class="note" style="margin-top:14px;border-top:1px solid #E3DECE;padding-top:12px;font-size:11.5px;">
+        Nie masz konta? Dostęp nadaje administrator systemu — napisz na
+        <strong>system@scoutbasesystem.com</strong>, podając imię, nazwisko i klub.
+      </p>`;
+
+  return `<div class="login-wrap"><div class="login-card">
+    <h1 class="login-title">Scout Base System</h1>
+    <p class="login-sub">${tryb==='nowe-haslo' ? 'Ustawienie nowego hasła' : tryb==='reset' ? 'Odzyskiwanie hasła' : 'Zaloguj się, aby korzystać z systemu'}</p>
+    ${blad ? `<div class="login-error">${esc(blad)}</div>` : ''}
+    ${komunikat ? `<div class="login-info">${esc(komunikat)}</div>` : ''}
+    ${tresc}
+  </div></div>`;
+}
+
+let loginTryb = 'login', loginKomunikat = '', loginBlad = '';
+
+function renderLoginScreen(){
+  document.querySelector('.app').style.display = 'none';
+  let host = document.getElementById('login-host');
+  if(!host){
+    host = document.createElement('div');
+    host.id = 'login-host';
+    document.body.appendChild(host);
+  }
+  host.innerHTML = loginScreenHtml(loginTryb, loginKomunikat, loginBlad);
+
+  const przeladuj = ()=>renderLoginScreen();
+  const q = id => document.getElementById(id);
+
+  host.querySelectorAll('[data-action="lg-tryb-reset"]').forEach(b=>b.onclick=()=>{
+    loginTryb='reset'; loginBlad=''; loginKomunikat=''; przeladuj();
+  });
+  host.querySelectorAll('[data-action="lg-tryb-login"]').forEach(b=>b.onclick=()=>{
+    loginTryb='login'; loginBlad=''; loginKomunikat=''; przeladuj();
+  });
+
+  host.querySelectorAll('[data-action="lg-login"]').forEach(b=>b.onclick=async()=>{
+    const email=(q('lg-email').value||'').trim(), haslo=q('lg-haslo').value||'';
+    if(!email || !haslo){ loginBlad='Podaj adres e-mail i hasło.'; przeladuj(); return; }
+    b.disabled=true; b.textContent='Loguję…';
+    const r = await signIn(email, haslo);
+    if(r.ok){ host.remove(); document.querySelector('.app').style.display=''; loadAll(); return; }
+    loginBlad = r.error || 'Nie udało się zalogować.'; loginKomunikat=''; przeladuj();
+  });
+
+  host.querySelectorAll('[data-action="lg-reset"]').forEach(b=>b.onclick=async()=>{
+    const email=(q('lg-email').value||'').trim();
+    if(!email){ loginBlad='Podaj adres e-mail.'; przeladuj(); return; }
+    b.disabled=true; b.textContent='Wysyłam…';
+    const r = await requestPasswordReset(email);
+    loginTryb='login'; loginBlad = r.ok ? '' : (r.error||'');
+    // Komunikat celowo neutralny — nie ujawnia, czy konto o tym adresie istnieje.
+    loginKomunikat = r.ok ? 'Jeśli konto o tym adresie istnieje, wysłaliśmy na nie link do zmiany hasła. Sprawdź też folder spam.' : '';
+    przeladuj();
+  });
+
+  host.querySelectorAll('[data-action="lg-zapisz-haslo"]').forEach(b=>b.onclick=async()=>{
+    const h1=q('lg-haslo1').value||'', h2=q('lg-haslo2').value||'';
+    if(h1.length < 8){ loginBlad='Hasło musi mieć co najmniej 8 znaków.'; przeladuj(); return; }
+    if(h1 !== h2){ loginBlad='Podane hasła nie są identyczne.'; przeladuj(); return; }
+    b.disabled=true; b.textContent='Zapisuję…';
+    const r = await setNewPassword(h1);
+    if(r.ok){
+      history.replaceState(null,'',window.location.pathname);   // usuń token z adresu
+      host.remove(); document.querySelector('.app').style.display=''; loadAll(); return;
+    }
+    loginBlad = r.error || 'Nie udało się zmienić hasła.'; przeladuj();
+  });
+
+  // Enter zatwierdza formularz — bez tego trzeba celować w przycisk.
+  host.querySelectorAll('input').forEach(inp=>inp.addEventListener('keydown',(e)=>{
+    if(e.key!=='Enter') return;
+    const btn = host.querySelector('.modal-actions .gold');
+    if(btn) btn.click();
+  }));
+}
+
+async function performLogout(){
+  if(!confirm('Wylogować się z systemu?')) return;
+  await signOut();
+  window.location.reload();
+}
+
+async function startApp(){
+  // Wejście z linku resetującego: Supabase tworzy tymczasową sesję, więc zanim wpuścimy do
+  // aplikacji, prosimy o ustawienie nowego hasła.
+  if(isPasswordRecoveryLink()){
+    loginTryb='nowe-haslo';
+    renderLoginScreen();
+    return;
+  }
+  const user = await currentUser();
+  if(!user){ renderLoginScreen(); return; }
+  loadAll();
+}
+
+startApp();
