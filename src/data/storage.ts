@@ -161,6 +161,19 @@ async function deleteCollectionItem(table: string, id: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+// Usunięcie WIELU rekordów jednym zapytaniem. Kasowanie po jednym oznaczało tyle żądań, ilu
+// zaznaczonych zawodników — przy stu z górą aplikacja wyglądała na zawieszoną. Tniemy na paczki,
+// bo identyfikatory idą w adresie URL i zbyt długa lista zostałaby odrzucona.
+async function deleteCollectionItems(table: string, ids: string[]): Promise<void> {
+  const CHUNK = 100;
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const chunk = ids.slice(i, i + CHUNK);
+    if (!chunk.length) continue;
+    const { error } = await sb.from(table).delete().in("id", chunk);
+    if (error) throw new Error(error.message);
+  }
+}
+
 async function getClubCrests(): Promise<string> {
   const { data, error } = await sb.from("sbs_club_crests").select("club_id, data_url");
   if (error) throw new Error(error.message);
@@ -230,5 +243,13 @@ export const storage = {
     if (!table) throw new Error("Kolekcja bez tabeli: " + key);
     await deleteCollectionItem(table, id);
     return { key, id, deleted: true };
+  },
+
+  // Zbiorcze usunięcie zaznaczonych rekordów — jedno zapytanie na paczkę zamiast jednego na rekord.
+  async deleteItems(key: string, ids: string[]): Promise<{ key: string; count: number; deleted: true }> {
+    const table = COLLECTION_TABLES[key];
+    if (!table) throw new Error("Kolekcja bez tabeli: " + key);
+    await deleteCollectionItems(table, ids);
+    return { key, count: ids.length, deleted: true };
   },
 };

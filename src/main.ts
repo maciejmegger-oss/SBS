@@ -4896,19 +4896,25 @@ function attachHandlers(){
     deleteSelectedBtn.onclick = async()=>{
       const checked = Array.from(playerCheckboxes).filter(c=>c.checked);
       if(!checked.length) return;
-      if(confirm(`Usunąć ${checked.length} zaznaczonych zawodników? To działanie nie może być cofnięte.`)){
-        let deleted = 0;
-        for(const chk of checked){
-          const id = chk.dataset.id;
-          const ok = await deletePlayerRecord(id);
-          if(ok){
-            DB.players = DB.players.filter(p=>p.id!==id);
-            DB.observations = DB.observations.filter(o=>o.playerId!==id);
-            deleted++;
-          }
-        }
-        alert(`Usunięto ${deleted} zawodników.`);
+      if(!confirm(`Usunąć ${checked.length} zaznaczonych zawodników? To działanie nie może być cofnięte.`)) return;
+
+      const ids = checked.map(c=>c.dataset.id);
+      const orig = deleteSelectedBtn.textContent;
+      (deleteSelectedBtn as HTMLButtonElement).disabled = true;
+      deleteSelectedBtn.textContent = `Usuwam ${ids.length}…`;
+      try{
+        // Jedno zapytanie na paczkę zamiast jednego na zawodnika — przy stu zaznaczonych
+        // kasowanie po kolei trwało tak długo, że wyglądało na zawieszenie aplikacji.
+        await storage.deleteItems('scouting:players', ids);
+        const gone = new Set(ids);
+        DB.players = DB.players.filter(p=>!gone.has(p.id));
+        DB.observations = DB.observations.filter(o=>!gone.has(o.playerId));
+        alert(`Usunięto ${ids.length} zawodników.`);
         render();
+      }catch(e){
+        (deleteSelectedBtn as HTMLButtonElement).disabled = false;
+        deleteSelectedBtn.textContent = orig;
+        alert('Nie udało się usunąć: ' + ((e as any).message||e));
       }
     };
   }
@@ -5601,6 +5607,10 @@ function mapSquadPosition(raw){
 // składu). Format bywa różny, więc rozpoznajemy po punktach orientacyjnych: numer na początku,
 // nazwa pozycji gdzieś w środku, 4-cyfrowy rok (data urodzenia) gdzieś dalej — imię/nazwisko to
 // tekst PRZED rozpoznaną pozycją, po odcięciu wiodącego numeru.
+// Zakres roczników: od 1970 (weterani w niższych ligach) po 2020 (drużyny młodzieżowe i rocznikowe).
+// Wcześniejsze ograniczenie do 2015 ucinało najmłodszych, a rocznik zostawał pusty bez żadnego sygnału.
+const BIRTH_YEAR_RE = /\b(19[7-9]\d|20[01]\d|2020)\b/;
+
 function parseSquadLine(line){
   let text = line.trim();
   if(!text) return null;
@@ -5615,9 +5625,10 @@ function parseSquadLine(line){
   if(nameWords.length < 2) return { ok:false, raw: line.trim() };
   const firstName = nameWords[0];
   const lastName = nameWords.slice(1).join(' ');
-  // Rok urodzenia: pierwszy sensowny 4-cyfrowy rok (1985-2015) występujący PO nazwie pozycji w linii.
-  const rest = text.slice(posMatch.index + positionRaw.length);
-  const yearMatch = rest.match(/\b(19[89]\d|200\d|201[0-5])\b/);
+  // Rok urodzenia szukamy w CAŁEJ linii, nie tylko po nazwie pozycji — w części wklejeń data stoi
+  // przed pozycją i wtedy przepadała.
+  const rest = text.slice(posMatch.index + positionRaw.length) + ' ' + namePart;
+  const yearMatch = rest.match(BIRTH_YEAR_RE);
   const birthYear = yearMatch ? yearMatch[0] : '';
   const nationality = detectNationality(rest);
   return { ok:true, firstName, lastName, position, birthYear, nationality, raw: line.trim() };
@@ -5647,8 +5658,10 @@ function parseSquadBlocks(rawText){
     const words = nameText.split(/\s+/).filter(Boolean);
     if(!words.length) return { ok:false, raw: block.join(' | ').slice(0,140) };
     const position = mapSquadPosition(block[1].trim());
-    const rest = block.slice(2).join(' ');
-    const yearMatch = rest.match(/\b(19[89]\d|200\d|201[0-5])\b/);
+    // Rocznika szukamy w CAŁYM bloku poza linią nazwiska, a nie dopiero od trzeciej linii —
+    // w niektórych układach data stoi tuż przy pozycji i wcześniej wypadała poza zakresem.
+    const rest = block.slice(1).join(' ');
+    const yearMatch = rest.match(BIRTH_YEAR_RE);
     return {
       ok:true, firstName: words[0], lastName: words.length>1 ? words.slice(1).join(' ') : '',
       position, birthYear: yearMatch ? yearMatch[0] : '', nationality: detectNationality(rest),
@@ -5873,10 +5886,11 @@ function openSquadImportModal(clubId){
       const toAdd = checked.map(i=>parsed[i]).filter(p=>p && p.ok);
       if(!toAdd.length){ alert('Brak zaznaczonych zawodników do zaimportowania.'); return; }
       const origLabel = b.textContent; b.disabled = true; b.textContent = 'Importowanie...';
-      let added = 0, skipped = 0;
+      let added = 0, skipped = 0, bezRocznika = 0;
       toAdd.forEach(p=>{
         const exists = DB.players.some(pl=>pl.firstName===p.firstName && pl.lastName===p.lastName && pl.clubId===club.id);
         if(exists){ skipped++; return; }
+        if(!p.birthYear) bezRocznika++;
         DB.players.push({
           id: uid('Z'), firstName: p.firstName, lastName: p.lastName,
           birthDate: '', birthYear: p.birthYear || '', nationality: p.nationality || '',
@@ -5896,7 +5910,10 @@ function openSquadImportModal(clubId){
         // nawet gdyby zapis się nie powiódł (np. brakująca kolumna w bazie przed migracją).
         const ok = await savePlayers();
         if(ok){
-          alert(`Zaimportowano ${added} zawodników.` + (skipped ? ` Pominięto ${skipped} (już byli w bazie w tym klubie).` : ''));
+          alert(`Zaimportowano ${added} zawodników.` +
+            (skipped ? ` Pominięto ${skipped} (już byli w bazie w tym klubie).` : '') +
+            (bezRocznika ? `\n\nUWAGA: ${bezRocznika} bez rocznika — w skopiowanym tekście nie było dat urodzenia.` +
+              ` Na Transfermarkcie użyj zakładki „Szczegóły składu", która pokazuje daty.` : ''));
           closeAndRefresh();
         } else {
           b.disabled = false; b.textContent = origLabel;
@@ -7197,14 +7214,30 @@ function openRocznikExcelImport(rocznikGroup){
         const toAdd = parsed.filter(p=>p.ok);
         if(!toAdd.length){ alert('Brak prawidłowych zawodników.'); return; }
         const orig = b.textContent; b.disabled = true; b.textContent = 'Importowanie...';
-        let added = 0;
+        let added = 0, updated = 0;
         const createdClubs = [];
         const withoutClub = [];
+        // Nazwiska porównujemy bez względu na wielkość liter i znaki diakrytyczne — w arkuszach
+        // ZPN bywają pisane wersalikami ("BIAŁKOWSKI"), a w bazie normalnie ("Białkowski").
+        const nkey = (f,l)=> String(f||'').toLowerCase().normalize('NFD').replace(/\p{M}/gu,'').replace(/[^a-z]/g,'')
+          + '|' + String(l||'').toLowerCase().normalize('NFD').replace(/\p{M}/gu,'').replace(/[^a-z]/g,'');
         toAdd.forEach(p=>{
-          const exists = DB.players.some(pl=>pl.firstName===p.firstName && pl.lastName===p.lastName && pl.birthYear===year);
-          if(exists) return;
           const clubId = resolveClubForImport(p.club, rocznikGroup, createdClubs);
           if(!clubId) withoutClub.push(p.lastName);
+          // Zawodnik już jest? UZUPEŁNIJ brakujące pola zamiast pomijać. Wcześniej powtórne
+          // wgranie tego samego pliku nie robiło nic, więc dane z pierwszego, wadliwego importu
+          // (bez klubu) zostawały na zawsze. Wypełnionych pól nie nadpisujemy.
+          const existing = DB.players.find(pl=> pl.birthYear===year && nkey(pl.firstName,pl.lastName)===nkey(p.firstName,p.lastName));
+          if(existing){
+            let touched = false;
+            if(!existing.clubId && clubId){ existing.clubId = clubId; touched = true; }
+            if(!existing.position && p.position){ existing.position = p.position; touched = true; }
+            if(!existing.status && p.status){ existing.status = p.status; touched = true; }
+            if(existing.powolania==null && p.powolania!=null){ existing.powolania = p.powolania; touched = true; }
+            if(!existing.notes && p.info){ existing.notes = p.info; touched = true; }
+            if(touched) updated++;
+            return;
+          }
           DB.players.push({
             id: uid('Z'), firstName: p.firstName, lastName: p.lastName,
             birthDate: '', birthYear: year, nationality: p.nationality || '',
@@ -7222,9 +7255,10 @@ function openRocznikExcelImport(rocznikGroup){
         const okClubs = createdClubs.length ? await saveClubs() : true;
         const ok = okClubs && await savePlayers();
         if(ok){
-          alert(`Zaimportowano ${added} zawodników.` +
+          alert(`Dodano nowych: ${added}` +
+            (updated ? `\nUzupełniono istniejących: ${updated}` : '') +
             (createdClubs.length ? `\nZałożono ${createdClubs.length} nowych klubów: ${createdClubs.slice(0,6).join(', ')}${createdClubs.length>6?'…':''}` : '') +
-            (withoutClub.length ? `\nBez klubu (brak kolumny „Klub" w pliku): ${withoutClub.length}` : ''));
+            (withoutClub.length ? `\nBez klubu (pusta kolumna w pliku): ${withoutClub.length}` : ''));
           closeAndRefresh();
         } else {
           b.disabled = false; b.textContent = orig;
