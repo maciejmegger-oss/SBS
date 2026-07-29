@@ -8783,7 +8783,23 @@ async function performLogout(){
   window.location.reload();
 }
 
+// PRZEŁĄCZNIK LOGOWANIA.
+//
+// false = aplikacja otwarta, bez ekranu logowania (stan na życzenie właściciela, żeby móc pracować,
+//         dopóki nie ma jeszcze założonego konta).
+// true  = wymagane logowanie.
+//
+// Co trzeba zrobić, żeby włączyć logowanie na stałe:
+//   1. Supabase → Authentication → Users → Add user (e-mail + hasło, zaznacz „Auto Confirm User").
+//   2. Ustaw tu true i sprawdź, że logowanie działa oraz że widzisz dane.
+//   3. Dopiero na końcu uruchom supabase/rls_only_logged_in.sql, żeby zamknąć dostęp w bazie.
+//
+// UWAGA, dopóki jest false: dane w bazie są dostępne bez uwierzytelnienia — ten przełącznik
+// dotyczy tylko ekranu w aplikacji, nie reguł dostępu po stronie Supabase.
+const WYMAGAJ_LOGOWANIA = false;
+
 async function startApp(){
+  if(!WYMAGAJ_LOGOWANIA){ loadAll(); return; }
   // Wejście z linku resetującego: Supabase tworzy tymczasową sesję, więc zanim wpuścimy do
   // aplikacji, prosimy o ustawienie nowego hasła.
   if(isPasswordRecoveryLink()){
