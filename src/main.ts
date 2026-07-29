@@ -2202,8 +2202,15 @@ function compareTable(entries){
 function viewCompare(){
   const allPlayers = DB.players.slice().sort((a,b)=>(a.lastName||'').localeCompare(b.lastName||''));
   const firstPlayer = compareIds[0] ? DB.players.find(x=>x.id===compareIds[0]) : null;
+  // Lista podpowiada zawodników z rocznika pierwszego wybranego (±1), bo porównanie ma sens
+  // w zbliżonym wieku. Ale zawodnicy JUŻ WYBRANI muszą zostać na liście niezależnie od rocznika —
+  // inaczej wskazanie ich z listy zawodników (zaznaczeniem) nie miało jak zadziałać: ich pozycji
+  // po prostu nie było w rozwijanym wyborze.
+  const wybrani = new Set(compareIds.filter(Boolean));
   const players = firstPlayer && firstPlayer.birthYear ?
-    allPlayers.filter(p => p.birthYear === firstPlayer.birthYear || p.birthYear === String(Number(firstPlayer.birthYear) + 1)) :
+    allPlayers.filter(p => wybrani.has(p.id)
+      || p.birthYear === firstPlayer.birthYear
+      || p.birthYear === String(Number(firstPlayer.birthYear) + 1)) :
     allPlayers;
   const opt = (sel)=> `<option value="">— wybierz zawodnika —</option>` + players.map(p=>`<option value="${p.id}" ${sel===p.id?'selected':''}>${esc(p.lastName)} ${esc(p.firstName)} — ${esc(clubName(p.clubId))}</option>`).join('');
   const entries = compareIds.map(id => id ? {p: DB.players.find(x=>x.id===id), avg: playerAvg(id)} : null).filter(e=>e && e.p);
@@ -2829,7 +2836,7 @@ function viewPlayers(){
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <button class="gold" data-action="add-player">+ Nowy zawodnik</button>
       ${viewingRocznikGroup ? `<button class="gold" data-action="rocznik-excel-import">📋 Wgraj z Excela</button>` : ''}
-      <button class="secondary" data-action="compare-open">⚖️ Porównaj zawodników</button>
+      <button class="secondary" data-action="compare-open" title="Zaznacz do 3 zawodników na liście, aby porównać właśnie ich">⚖️ Porównaj zawodników</button>
     </div>
   </div>
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
@@ -3673,7 +3680,7 @@ function viewReports(){
 
   return `
   <h2 class="view-title">Raporty ${editing? '<span style="font-size:14px;color:var(--gold-dark);font-family:Inter,sans-serif;">— edycja raportu</span>':''}</h2>
-  <p class="view-sub">Szczegółowy raport taktyczny — technika/taktyka/motoryka opisowo, fazy gry i stałe fragmenty w skali 1-6.</p>
+  <p class="view-sub">Raport taktyczny — opis techniki, taktyki i motoryki, oceny faz gry i stałych fragmentów w skali 1-6.</p>
   <div class="reports-layout">
   <div class="card reports-form-card" style="${editing?'border:1px solid var(--gold);':''}">
     <div class="field-wrap">
@@ -5008,6 +5015,12 @@ function attachHandlers(){
 
   function updateDeleteButton(){
     const checked = Array.from(playerCheckboxes).filter(c=>c.checked).length;
+    // Przycisk porównania mówi, ilu zaznaczono — inaczej nie wiadomo, że zaznaczenie ma na nie wpływ.
+    const cmpBtn = main.querySelector('[data-action="compare-open"]');
+    if(cmpBtn){
+      cmpBtn.textContent = checked ? `⚖️ Porównaj zaznaczonych (${Math.min(checked,3)}${checked>3?' z '+checked:''})`
+                                   : '⚖️ Porównaj zawodników';
+    }
     if(!deleteSelectedBtn) return;
     if(checked > 0){
       deleteSelectedBtn.style.display = 'inline-block';
@@ -5415,7 +5428,21 @@ function attachHandlers(){
   });
 
   // Porównywarka zawodników
-  main.querySelectorAll('[data-action="compare-open"]').forEach(b=>b.onclick=()=>{ currentView='compare'; viewingPlayerId=null; render(); });
+  main.querySelectorAll('[data-action="compare-open"]').forEach(b=>b.onclick=()=>{
+    // Zaznaczeni na liście przechodzą wprost do porównywarki. Porównanie obsługuje trzech
+    // zawodników — przy większym zaznaczeniu bierzemy trzech pierwszych i mówimy o tym wprost,
+    // zamiast po cichu uciąć resztę.
+    const zaznaczeni = Array.from(document.querySelectorAll('.player-checkbox:checked'))
+      .map(c=>(c as HTMLInputElement).dataset.id);
+    if(zaznaczeni.length){
+      if(zaznaczeni.length > 3){
+        alert(`Zaznaczyłeś ${zaznaczeni.length} zawodników, a porównanie obejmuje najwyżej 3.\n\n` +
+          `Porównam trzech pierwszych z listy. Aby porównać innych — odznacz nadmiarowych.`);
+      }
+      compareIds = [zaznaczeni[0]||'', zaznaczeni[1]||'', zaznaczeni[2]||''];
+    }
+    currentView='compare'; viewingPlayerId=null; render();
+  });
   main.querySelectorAll('[data-action="compare-back"]').forEach(b=>b.onclick=()=>{ currentView='players'; viewingPlayerId=null; render(); });
   [0,1,2].forEach(i=>{ const sel=main.querySelector('#compare-sel-'+i); if(sel) sel.onchange=()=>{ compareIds[i]=sel.value; render(); }; });
 

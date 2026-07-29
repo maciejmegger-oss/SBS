@@ -316,7 +316,9 @@ tr:hover td{background:#FBF9F2;}
 /* Zakładka Raporty — formularz po lewej, boczna lista „Raporty" po prawej. */
 .reports-layout{display:grid;grid-template-columns:1fr 1fr;gap:26px;align-items:start;}
 .reports-form-card{max-width:none;}
-.reports-aside{position:sticky;top:12px;margin-top:-56px;}
+/* Bez ujemnego marginesu: podciąganie panelu w górę wsuwało go pod nagłówek strony i przy dłuższym
+   podtytule napisy nachodziły na siebie. Obie kolumny zaczynają się teraz na tej samej wysokości. */
+.reports-aside{position:sticky;top:12px;}
 .reports-aside-title{margin:0 0 2px;color:var(--pitch);font-family:'Barlow Condensed',sans-serif;font-size:24px;display:flex;align-items:center;gap:8px;}
 .reports-count{background:var(--pitch);color:var(--gold);font-size:12px;font-weight:800;font-family:Inter,sans-serif;border-radius:20px;padding:1px 9px;}
 .reports-list{max-height:70vh;overflow:auto;padding:6px 10px;}
