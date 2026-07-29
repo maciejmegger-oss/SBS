@@ -2199,6 +2199,147 @@ function compareTable(entries){
   const obsRow = `<tr><td style="color:var(--ink-soft);font-size:11.5px;">Liczba obserwacji</td>${withAvg.map(e=>`<td style="color:var(--ink-soft);font-size:11.5px;">${e.avg.count}</td>`).join('')}</tr>`;
   return `<table style="width:auto;min-width:280px;">${head}${rows}${overallRow}${obsRow}</table>`;
 }
+// Porównanie STATYSTYK SEZONU: wartości bezwzględne i udział procentowy względem najlepszego
+// w zestawieniu. Dochodzą przeliczenia na mecz (minuty, gole), bo sama suma faworyzuje tego,
+// kto rozegrał więcej spotkań — przy ocenie zawodnika liczy się wydajność, nie tylko wolumen.
+function compareSeasonStats(entries){
+  const POLA = [
+    {k:'matches', label:'Mecze',   opis:'rozegrane spotkania'},
+    {k:'minutes', label:'Minuty',  opis:'łączny czas gry'},
+    {k:'goals',   label:'Gole',    opis:'bramki w sezonie'},
+    {k:'assists', label:'Asysty',  opis:'asysty w sezonie'},
+    {k:'yellowCards', label:'Żółte kartki', opis:'mniej znaczy lepiej', odwrotne:true},
+    {k:'redCards',    label:'Czerwone kartki', opis:'mniej znaczy lepiej', odwrotne:true},
+  ];
+  const maDane = entries.some(e=> POLA.some(f=> e.p[f.k]!=null));
+  if(!maDane){
+    return `<div class="card"><h4 style="margin-top:0;color:var(--pitch);">Statystyki sezonu</h4>
+      <div class="empty">Brak statystyk u wybranych zawodników — uzupełnij je w profilu albo przez „Statystyki drużyny".</div></div>`;
+  }
+
+  const wiersz = (f)=>{
+    const wartosci = entries.map(e=> e.p[f.k]);
+    const konkretne = wartosci.filter(v=>v!=null);
+    if(!konkretne.length) return '';
+    // Odniesienie: przy kartkach najlepszy jest najmniejszy wynik, przy reszcie największy.
+    const najlepszy = f.odwrotne ? Math.min(...konkretne) : Math.max(...konkretne);
+    const odniesienie = Math.max(...konkretne) || 1;
+    return `<tr>
+      <td><strong>${esc(f.label)}</strong><div class="note" style="font-size:10.5px;">${esc(f.opis)}</div></td>
+      ${wartosci.map(v=>{
+        if(v==null) return '<td style="text-align:right;color:var(--ink-soft);">—</td>';
+        const proc = Math.round((v / odniesienie) * 100);
+        const czyNaj = v === najlepszy && konkretne.length > 1;
+        return `<td style="text-align:right;${czyNaj?'font-weight:800;color:var(--pitch);':''}">
+          ${v}<div class="note" style="font-size:10.5px;">${proc}%</div></td>`;
+      }).join('')}
+    </tr>`;
+  };
+
+  // Wydajność na mecz — liczona tylko tam, gdzie znamy liczbę meczów.
+  const naMecz = (e, klucz)=>{
+    const m = e.p.matches, v = e.p[klucz];
+    if(!m || v==null) return null;
+    return v / m;
+  };
+  const wierszNaMecz = (label, klucz, cyfry)=>{
+    const wartosci = entries.map(e=> naMecz(e, klucz));
+    const konkretne = wartosci.filter(v=>v!=null);
+    if(!konkretne.length) return '';
+    const max = Math.max(...konkretne) || 1;
+    return `<tr>
+      <td><strong>${esc(label)}</strong><div class="note" style="font-size:10.5px;">przelicznik na mecz</div></td>
+      ${wartosci.map(v=>{
+        if(v==null) return '<td style="text-align:right;color:var(--ink-soft);">—</td>';
+        const czyNaj = v === Math.max(...konkretne) && konkretne.length > 1;
+        return `<td style="text-align:right;${czyNaj?'font-weight:800;color:var(--pitch);':''}">
+          ${v.toFixed(cyfry)}<div class="note" style="font-size:10.5px;">${Math.round(v/max*100)}%</div></td>`;
+      }).join('')}
+    </tr>`;
+  };
+
+  return `<div class="card" style="overflow:auto;">
+    <h4 style="margin-top:0;color:var(--pitch);">Statystyki sezonu</h4>
+    <p class="note" style="margin-top:-6px;">Wartość bezwzględna, pod nią udział procentowy względem najwyższego wyniku w zestawieniu. Pogrubienie = najlepszy.</p>
+    <table style="width:100%;">
+      <tr><th style="text-align:left;">Wskaźnik</th>${entries.map(e=>`<th style="text-align:right;">${esc(e.p.lastName)} ${esc(e.p.firstName)}</th>`).join('')}</tr>
+      ${POLA.map(wiersz).join('')}
+      ${wierszNaMecz('Minuty / mecz','minutes',0)}
+      ${wierszNaMecz('Gole / mecz','goals',2)}
+    </table>
+  </div>`;
+}
+
+// Porównanie RAPORTÓW: średnie z faz gry i stałych fragmentów (skala 1-6) plus zestawienie
+// opisów obok siebie, żeby było widać różnice w ocenie tych samych obszarów.
+function compareReports(entries){
+  const zRaportami = entries.map(e=>({
+    e, raporty: DB.reports.filter(r=>r.playerId===e.p.id)
+                          .sort((a,b)=>(b.date||'').localeCompare(a.date||''))
+  }));
+  if(!zRaportami.some(x=>x.raporty.length)){
+    return `<div class="card"><h4 style="margin-top:0;color:var(--pitch);">Raporty</h4>
+      <div class="empty">Żaden z wybranych zawodników nie ma jeszcze raportu.</div></div>`;
+  }
+
+  // Średnia ocen ze wszystkich raportów zawodnika, osobno dla faz gry i stałych fragmentów.
+  const srednia = (raporty, pole)=>{
+    const v = raporty.flatMap(r=> Object.values(r[pole]||{}))
+      .map(Number).filter(n=>Number.isFinite(n) && n>0);
+    return v.length ? v.reduce((a,b)=>a+b,0)/v.length : null;
+  };
+  const wierszOcen = (label, pole)=>{
+    const wartosci = zRaportami.map(x=> srednia(x.raporty, pole));
+    const konkretne = wartosci.filter(v=>v!=null);
+    if(!konkretne.length) return '';
+    const max = Math.max(...konkretne);
+    return `<tr>
+      <td><strong>${esc(label)}</strong><div class="note" style="font-size:10.5px;">średnia, skala 1-6</div></td>
+      ${wartosci.map(v=> v==null
+        ? '<td style="text-align:right;color:var(--ink-soft);">—</td>'
+        : `<td style="text-align:right;${v===max&&konkretne.length>1?'font-weight:800;color:var(--pitch);':''}">
+            ${fmt1(v)}<div class="note" style="font-size:10.5px;">${Math.round(v/6*100)}%</div></td>`).join('')}
+    </tr>`;
+  };
+
+  // Opisy z NAJNOWSZEGO raportu każdego zawodnika, zestawione obszarami obok siebie.
+  const OBSZARY = [
+    {k:'technika', label:'Technika'},
+    {k:'taktyka', label:'Taktyka'},
+    {k:'motoryka', label:'Motoryka'},
+    {k:'mentalnoscOpis', label:'Mentalność'},
+    {k:'potencjalOpis', label:'Potencjał'},
+  ];
+  const opisy = OBSZARY.map(o=>{
+    const teksty = zRaportami.map(x=>{
+      const r = x.raporty[0];
+      return r && r[o.k] ? String(r[o.k]).trim() : '';
+    });
+    if(!teksty.some(Boolean)) return '';
+    return `<div style="margin-bottom:14px;">
+      <div style="font-weight:800;color:var(--pitch);font-size:13px;margin-bottom:5px;">${esc(o.label)}</div>
+      <div class="grid" style="grid-template-columns:repeat(${entries.length},minmax(0,1fr));gap:10px;">
+        ${teksty.map((t,i)=>`<div style="background:#FBF9F3;border:1px solid #EFEADD;border-radius:8px;padding:9px;font-size:12.5px;line-height:1.55;">
+          <div class="note" style="font-size:10.5px;margin-bottom:3px;">${esc(entries[i].p.lastName)}</div>
+          ${t ? esc(t) : '<span style="color:var(--ink-soft);">— brak opisu —</span>'}
+        </div>`).join('')}
+      </div>
+    </div>`;
+  }).filter(Boolean).join('');
+
+  return `<div class="card" style="overflow:auto;">
+    <h4 style="margin-top:0;color:var(--pitch);">Raporty</h4>
+    <p class="note" style="margin-top:-6px;">Oceny uśrednione ze wszystkich raportów zawodnika. Opisy pochodzą z najnowszego raportu każdego z nich.</p>
+    <table style="width:100%;margin-bottom:16px;">
+      <tr><th style="text-align:left;">Obszar</th>${entries.map(e=>`<th style="text-align:right;">${esc(e.p.lastName)} ${esc(e.p.firstName)}</th>`).join('')}</tr>
+      <tr><td>Liczba raportów</td>${zRaportami.map(x=>`<td style="text-align:right;">${x.raporty.length}</td>`).join('')}</tr>
+      ${wierszOcen('Fazy gry','phases')}
+      ${wierszOcen('Stałe fragmenty','setPieces')}
+    </table>
+    ${opisy || '<div class="empty">Raporty nie zawierają opisów tekstowych.</div>'}
+  </div>`;
+}
+
 // Podpis zawodnika w wyszukiwarkach: "Nazwisko Imię — Klub".
 function playerLabelFor(id){
   const p = DB.players.find(x=>x.id===id);
@@ -2245,9 +2386,11 @@ function viewCompare(){
       ${compareDescriptive(entries)}
     </div>
   </div>
+  ${compareSeasonStats(entries)}
+  ${compareReports(entries)}
   <div class="card" style="overflow:auto;">
-    <h4 style="margin-top:0;color:var(--pitch);">Dane liczbowe</h4>
-    ${compareTable(entries) || '<div class="empty">Brak danych liczbowych — zawodnicy bez ocen.</div>'}
+    <h4 style="margin-top:0;color:var(--pitch);">Dane liczbowe (radar)</h4>
+    ${compareTable(entries) || '<div class="empty">Brak ocen z obserwacji — radar pojawi się, gdy będą.</div>'}
   </div>` : '<div class="card"><div class="empty">Wybierz zawodników powyżej, aby zobaczyć porównanie.</div></div>'}`;
 }
 
