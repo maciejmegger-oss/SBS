@@ -7284,13 +7284,32 @@ function openRocznikExcelImport(rocznikGroup){
         // ZPN bywają pisane wersalikami ("BIAŁKOWSKI"), a w bazie normalnie ("Białkowski").
         const nkey = (f,l)=> String(f||'').toLowerCase().normalize('NFD').replace(/\p{M}/gu,'').replace(/[^a-z]/g,'')
           + '|' + String(l||'').toLowerCase().normalize('NFD').replace(/\p{M}/gu,'').replace(/[^a-z]/g,'');
-        toAdd.forEach(p=>{
+        // Arkusze ZPN mieszają roczniki w jednym wykazie (2012, 2013 i 2014 obok siebie). Wcześniej
+        // wszyscy dostawali rocznik z nazwy otwartej kategorii, przez co „Rocznik 2013" puchł
+        // o zawodników z innych lat. Bierzemy WYŁĄCZNIE wiersze z rocznikiem tej kategorii;
+        // wiersz bez podanego roku traktujemy jako należący do niej.
+        const innyRocznik = {};
+        const zTegoRocznika = toAdd.filter(p=>{
+          if(p.birthYear && p.birthYear !== year){
+            innyRocznik[p.birthYear] = (innyRocznik[p.birthYear]||0) + 1;
+            return false;
+          }
+          return true;
+        });
+        if(!zTegoRocznika.length){
+          b.disabled = false; b.textContent = orig;
+          alert(`W pliku nie ma nikogo z rocznika ${year}.\n\nZnalezione roczniki: ` +
+            Object.entries(innyRocznik).map(([r,n])=>`${r} (${n})`).join(', '));
+          return;
+        }
+        zTegoRocznika.forEach(p=>{
           const clubId = resolveClubForImport(p.club, rocznikGroup, createdClubs);
           if(!clubId) withoutClub.push(p.lastName);
+          const rocznikZawodnika = year;
           // Zawodnik już jest? UZUPEŁNIJ brakujące pola zamiast pomijać. Wcześniej powtórne
           // wgranie tego samego pliku nie robiło nic, więc dane z pierwszego, wadliwego importu
           // (bez klubu) zostawały na zawsze. Wypełnionych pól nie nadpisujemy.
-          const existing = DB.players.find(pl=> pl.birthYear===year && nkey(pl.firstName,pl.lastName)===nkey(p.firstName,p.lastName));
+          const existing = DB.players.find(pl=> pl.birthYear===rocznikZawodnika && nkey(pl.firstName,pl.lastName)===nkey(p.firstName,p.lastName));
           if(existing){
             let touched = false;
             if(!existing.clubId && clubId){ existing.clubId = clubId; touched = true; }
@@ -7303,7 +7322,7 @@ function openRocznikExcelImport(rocznikGroup){
           }
           DB.players.push({
             id: uid('Z'), firstName: p.firstName, lastName: p.lastName,
-            birthDate: '', birthYear: year, nationality: p.nationality || '',
+            birthDate: '', birthYear: rocznikZawodnika, nationality: p.nationality || '',
             position: p.position || '', foot: '', height: null,
             status: p.status || '', clubId, scout: currentScout || '',
             powolania: p.powolania ?? null,
@@ -7318,9 +7337,13 @@ function openRocznikExcelImport(rocznikGroup){
         const okClubs = createdClubs.length ? await saveClubs() : true;
         const ok = okClubs && await savePlayers();
         if(ok){
-          alert(`Dodano nowych: ${added}` +
+          const pominięte = Object.entries(innyRocznik);
+          alert(`Rocznik ${year} — dodano nowych: ${added}` +
             (updated ? `\nUzupełniono istniejących: ${updated}` : '') +
-            (createdClubs.length ? `\nZałożono ${createdClubs.length} nowych klubów: ${createdClubs.slice(0,6).join(', ')}${createdClubs.length>6?'…':''}` : '') +
+            (pominięte.length ? `\n\nPominięto inne roczniki z pliku: ` +
+              pominięte.sort().map(([r,n])=>`${r} — ${n}`).join(', ') +
+              `.\nWgraj je z poziomu ich własnych kategorii.` : '') +
+            (createdClubs.length ? `\n\nZałożono ${createdClubs.length} nowych klubów: ${createdClubs.slice(0,6).join(', ')}${createdClubs.length>6?'…':''}` : '') +
             (withoutClub.length ? `\nBez klubu (pusta kolumna w pliku): ${withoutClub.length}` : ''));
           closeAndRefresh();
         } else {
