@@ -5982,17 +5982,43 @@ function openMatchScheduleModal(){
 
   function closeModal(){ overlay.remove(); }
 
+  // Zawodnicy drużyny z terminarza (nazwa klubu jako tekst, nie identyfikator). Wersja wprost —
+  // filtr po wszystkich zawodnikach, a w środku szukanie klubu — kosztowała 2514 × 540 operacji
+  // NA KAŻDE wywołanie, a wołamy ją dwa razy na mecz, przy ~300 meczach. Stąd okno terminarza
+  // otwierało się z wyraźnym opóźnieniem. Teraz raz budujemy indeksy i pamiętamy wynik per nazwa.
+  let klubyWgId = null, zawodnicyWgKlubu = null;
+  const cacheDruzyn = new Map();
+  function buildSquadIndex(){
+    klubyWgId = new Map(DB.clubs.map(c=>[c.id, (c.name||'').toLowerCase()]));
+    zawodnicyWgKlubu = new Map();
+    DB.players.forEach(p=>{
+      if(!p.clubId) return;
+      let arr = zawodnicyWgKlubu.get(p.clubId);
+      if(!arr){ arr = []; zawodnicyWgKlubu.set(p.clubId, arr); }
+      arr.push(p);
+    });
+  }
   function playersForClub(clubName){
     if(!clubName) return [];
     const normalized = clubName.toLowerCase().trim();
-    return DB.players.filter(p=>{
-      const club = DB.clubs.find(c=>c.id===p.clubId);
-      if(!club) return false;
-      return club.name.toLowerCase().includes(normalized) || normalized.includes(club.name.toLowerCase());
-    }).sort((a,b)=>{
+    const hit = cacheDruzyn.get(normalized);
+    if(hit) return hit;
+    if(!klubyWgId) buildSquadIndex();
+
+    const out = [];
+    klubyWgId.forEach((nazwa, id)=>{
+      if(!nazwa) return;
+      if(nazwa.includes(normalized) || normalized.includes(nazwa)){
+        const arr = zawodnicyWgKlubu.get(id);
+        if(arr) out.push(...arr);
+      }
+    });
+    out.sort((a,b)=>{
       const ya = Number(a.birthYear)||0, yb = Number(b.birthYear)||0;
       return yb - ya;
     });
+    cacheDruzyn.set(normalized, out);
+    return out;
   }
 
   // Mecze jeszcze nierozegrane w wybranej lidze (od dziś w przód), po dacie i godzinie.
@@ -6088,6 +6114,8 @@ function openMatchScheduleModal(){
           added++;
         }
       }
+      // Doszły nowe mecze, więc podpowiedzi „ilu zawodników w bazie" trzeba policzyć od nowa.
+      klubyWgId = null; zawodnicyWgKlubu = null; cacheDruzyn.clear();
       // Znacznik czasu pobrania trzymamy per liga — na nim opiera się dobowe odświeżanie.
       if(!DB.settings.scheduleFetchedAt) DB.settings.scheduleFetchedAt = {};
       const stamp = new Date().toISOString();
