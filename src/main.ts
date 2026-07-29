@@ -2445,23 +2445,16 @@ function polandVoivodeshipMap(){
     const key = (c.region||'').replace(' ZPN','');
     counts[key] = (counts[key]||0) + 1;
   });
-  // Skalę rozpinamy między najmniejszą a największą liczbą klubów, bo wartości leżą blisko siebie
-  // (ok. 18-31) — licząc od zera wszystkie województwa wychodziły niemal identyczne.
-  const wartosci = VOIVODESHIP_PATHS.map(v=> counts[v.region] || 0).filter(n=>n>0);
-  const minCount = wartosci.length ? Math.min(...wartosci) : 0;
-  const maxCount = Math.max(1, ...wartosci);
+  const maxCount = Math.max(1, ...Object.values(counts));
   const items = VOIVODESHIP_PATHS.map(v=>{
     const count = counts[v.region] || 0;
-    const intensity = count===0 ? 0 : (count - minCount) / Math.max(1, maxCount - minCount);
-    // Trójpunktowa skala zieleń → złoto: ciemna murawa, przez stonowaną oliwkę, po szlachetne złoto.
-    // Przejście przez punkt pośredni (a nie prosta interpolacja) trzyma środek zakresu w zieleni
-    // zamiast robić z niego brąz, a złoto zostaje zarezerwowane dla województw z największą liczbą klubów.
-    const ciemnaZielen = [23,52,44], srodkowa = [86,110,64], zloto = [201,164,74];
-    const lerp = (a,b,t)=> a.map((cc,i)=> cc + (b[i]-cc)*t);
-    const rgb = intensity <= 0.5
-      ? lerp(ciemnaZielen, srodkowa, intensity/0.5)
-      : lerp(srodkowa, zloto, (intensity-0.5)/0.5);
-    const fill = count===0 ? '#17322A' : `rgb(${rgb.map(Math.round).join(',')})`;
+    const intensity = count / maxCount;
+    // Ręczna interpolacja RGB (nie CSS color-mix) dla zgodności ze wszystkimi przeglądarkami.
+    // Skala murawa → złoto, przytłumiona współczynnikiem 0,75, żeby nawet najwyższe wartości
+    // zostały stonowane — ten wariant użytkownik wybrał jako najbardziej elegancki.
+    const pitchRgb = [22,48,42], goldRgb = [198,155,60];
+    const mixed = pitchRgb.map((cc,i)=> Math.round(cc + (goldRgb[i]-cc)*intensity*0.75));
+    const fill = count===0 ? '#17322A' : `rgb(${mixed[0]},${mixed[1]},${mixed[2]})`;
     const center = pathBoundingCenter(v.d);
     return {v, count, fill, center};
   });
@@ -2795,18 +2788,17 @@ function viewPlayers(){
       <td>${p.nationality?`<span title="${esc(p.nationality)}">${nationalityFlag(p.nationality)}</span> `:''}<strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</td>
       <td>${p.birthYear||"—"}${isYouthPlayer(p)?youthBadge():''}</td>
       <td>${esc(p.position)}</td>
-      <td><div class="club-cell">${crestImg(clubCrest(p.clubId))}<span>${esc(clubName(p.clubId))}</span></div></td>
-      <td>${esc(clubRegion(p.clubId))}</td>
-      <td>${esc(clubLeague(p.clubId))}</td>
+      <td><div class="club-cell">${crestImg(clubCrest(p.clubId))}<span>
+        <span class="club-name">${esc(clubName(p.clubId))}</span>
+        <span class="club-sub">${esc((clubRegion(p.clubId)||'').replace(/\s*ZPN$/,''))}${clubLeague(p.clubId)?' · '+esc((clubLeague(p.clubId)||'').replace(/,\s*gr\./,' gr.')):''}</span>
+      </span></div></td>
       <td>${p.status? `<span class="badge ${cls}">${esc(p.status)}</span>` : '—'}</td>
       <td style="text-align:right;">${p.matches!=null?p.matches:'—'}</td>
       <td style="text-align:right;">${p.minutes!=null?p.minutes:'—'}</td>
       <td style="text-align:right;">${p.goals!=null?p.goals:'—'}</td>
-      <td>${fmtAvg(a)}</td>
-      <td>${a? a.count : 0}</td>
+      <td style="text-align:right;">${a? a.count : 0}</td>
       <td style="white-space:nowrap;">
         <button class="link-btn" data-action="add-to-monitoring" data-id="${p.id}" title="${p.monitored?'W Monitoringu — kliknij, aby usunąć':'Dodaj do Monitoringu'}" style="color:${p.monitored?'#3E7D4C':'var(--gold-dark)'};">${p.monitored?'✓ Monitoring':'+ Monitoring'}</button>
-        <button class="link-btn" data-action="edit-player" data-id="${p.id}" title="Edytuj zawodnika" style="margin-left:8px;">✎ Edytuj</button>
         <button class="link-btn" data-action="delete-player" data-id="${p.id}" title="Usuń zawodnika" style="margin-left:8px;color:var(--clay-dark);">Usuń</button>
       </td>
     </tr>`;
@@ -2844,8 +2836,8 @@ function viewPlayers(){
   <p class="note" style="margin:0 0 6px;font-size:11.5px;">Tabela jest szeroka — przewiń ją w bok pod spodem albo przytrzymaj <strong>Shift</strong> i kręć kółkiem myszy. Kolumna akcji zostaje widoczna.</p>
   <div class="card table-scroll" style="padding:0;overflow:auto;">
     <table class="players-table">
-      <thead><tr><th style="width:24px;"><input type="checkbox" class="header-checkbox"></th><th style="width:34px;text-align:right;" title="Liczba porządkowa">Lp.</th><th>Zawodnik</th><th>Rocznik</th><th>Pozycja</th><th>Klub</th><th>Region</th><th>Liga</th><th>Status</th><th style="text-align:right;" title="Rozegrane mecze w sezonie">Mecze</th><th style="text-align:right;" title="Rozegrane minuty w sezonie">Minuty</th><th style="text-align:right;" title="Gole w sezonie">Gole</th><th>Śr. ocena</th><th>Obserw.</th><th></th></tr></thead>
-      <tbody>${rows || `<tr><td colspan="14"><div class="empty">Brak zawodników spełniających filtry.</div></td></tr>`}</tbody>
+      <thead><tr><th style="width:24px;"><input type="checkbox" class="header-checkbox"></th><th style="width:34px;text-align:right;" title="Liczba porządkowa">Lp.</th><th>Zawodnik</th><th>Rocznik</th><th>Pozycja</th><th>Klub / region / liga</th><th>Status</th><th style="text-align:right;" title="Rozegrane mecze w sezonie">Mecze</th><th style="text-align:right;" title="Rozegrane minuty w sezonie">Minuty</th><th style="text-align:right;" title="Gole w sezonie">Gole</th><th style="text-align:right;" title="Liczba obserwacji">Obs.</th><th></th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="12"><div class="empty">Brak zawodników spełniających filtry.</div></td></tr>`}</tbody>
     </table>
   </div>`;
 }

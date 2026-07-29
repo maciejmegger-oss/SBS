@@ -285,7 +285,7 @@ tr:hover td{background:#FBF9F2;}
 .league-logo-3d-plate img{max-width:126px;max-height:78px;object-fit:contain;}
 .league-logo-3d:hover .league-logo-3d-plate{transform:translateY(-5px);box-shadow:0 1px 0 rgba(255,255,255,.8) inset, 0 -6px 10px rgba(0,0,0,.05) inset, 0 6px 0 rgba(10,23,18,.10), 0 16px 26px rgba(10,23,18,.22);}
 .league-logo-3d.active .league-logo-3d-plate{transform:translateY(-3px);box-shadow:0 0 0 3px var(--gold), 0 1px 0 rgba(255,255,255,.8) inset, 0 4px 0 rgba(140,108,33,.35), 0 12px 20px rgba(10,23,18,.20);}
-.league-logo-3d-label{font-size:13px;font-weight:700;color:var(--pitch);text-align:center;max-width:150px;line-height:1.2;}
+.league-logo-3d-label{font-size:13px;font-weight:700;color:var(--pitch);text-align:center;max-width:138px;line-height:1.2;}
 .league-logo-3d.active .league-logo-3d-label{color:var(--gold-dark);}
 .league-logo-3d-upload{position:absolute;bottom:-6px;right:-6px;width:22px;height:22px;display:flex;align-items:center;justify-content:center;
   background:var(--gold);color:#3A2C0C;border-radius:50%;font-size:11px;cursor:pointer;box-shadow:0 2px 5px rgba(10,23,18,.25);border:2px solid #fff;}
@@ -356,7 +356,7 @@ tr:hover td{background:#FBF9F2;}
 .contact-field-klub{min-width:190px;}
 .contact-field-imie{min-width:90px;max-width:120px;}
 .contact-field-nazwisko{min-width:110px;max-width:140px;}
-.contact-field-telefon{min-width:120px;max-width:150px;}
+.contact-field-telefon{min-width:120px;max-width:138px;}
 .contact-field-notatka{min-width:150px;}
 
 /* Rodzaj obserwacji (Live / Online) — wybór kolorem, ten sam kolor wraca na kalendarzu. */
@@ -390,6 +390,18 @@ tr.player-row:hover{background:#FBF6E9;}
 .table-scroll::-webkit-scrollbar-track{background:#EFEADA;border-radius:6px;}
 .table-scroll::-webkit-scrollbar-thumb{background:#C9C2AB;border-radius:6px;}
 .table-scroll::-webkit-scrollbar-thumb:hover{background:#B0A88F;}
+
+/* Ciasniejsze upakowanie, żeby wszystkie 15 kolumn zmieściło się bez przewijania w bok.
+   Węższa czcionka i mniejsze odstępy dają razem kilkaset pikseli. */
+.players-table{font-size:12px;}
+.players-table th,
+.players-table td{padding:7px 5px;}
+/* Klub, region i liga w jednej kolumnie: nazwa u góry, pod nią drobnym drukiem region i liga.
+   Trzy osobne kolumny zabierały ponad 200 px i przez nie tabela nie mieściła się na ekranie. */
+.players-table .club-cell{align-items:center;}
+.players-table .club-name{display:block;max-width:138px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.players-table .club-sub{display:block;font-size:10.5px;color:var(--ink-soft);max-width:138px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
 .players-table th:last-child,
 .players-table td:last-child{
