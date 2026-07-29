@@ -5692,16 +5692,22 @@ function matchKnownStatus(raw){
   return (DB.settings.statuses||[]).find(s=> norm(s) === key) || '';
 }
 
-function sheetToRows(sheet){
-  const grid = XLSX.utils.sheet_to_json(sheet, {header:1, defval:''});
-  const norm = (s)=> String(s||'').toLowerCase()
-    .replace(/[łøđ]/g, c=>({'ł':'l','ø':'o','đ':'d'}[c]))
-    .normalize('NFD').replace(/\p{M}/gu,'').replace(/[^a-z0-9]/g,'');
-  let headerIdx = grid.findIndex(r => {
-    const cells = (r||[]).map(norm);
-    return cells.includes('nazwisko') && cells.some(c=>c==='imie');
-  });
-  if(headerIdx < 0) headerIdx = 0;           // brak wyraźnego nagłówka — czytaj jak dotąd
+const importNorm = (s)=> String(s||'').toLowerCase()
+  .replace(/[łøđ]/g, c=>({'ł':'l','ø':'o','đ':'d'}[c]))
+  .normalize('NFD').replace(/\p{M}/gu,'').replace(/[^a-z0-9]/g,'');
+
+// Czy ten wiersz wygląda na nagłówek tabeli zawodników?
+function looksLikeHeaderRow(cells){
+  const c = (cells||[]).map(importNorm);
+  return (c.includes('nazwisko') && c.some(x=>x==='imie'))
+      || c.some(x=>x==='zawodnik')
+      || c.some(x=>x==='imienazwisko');
+}
+
+// Zamiana siatki (tablica tablic) na obiekty, z pominięciem bloku tytułowego nad nagłówkiem.
+function gridToRows(grid){
+  let headerIdx = grid.findIndex(looksLikeHeaderRow);
+  if(headerIdx < 0) headerIdx = 0;           // brak wyraźnego nagłówka — czytaj od pierwszego wiersza
   const header = (grid[headerIdx]||[]).map(h=>String(h||'').trim());
   return grid.slice(headerIdx+1)
     .filter(r => (r||[]).some(c => String(c||'').trim() !== ''))
@@ -5710,6 +5716,30 @@ function sheetToRows(sheet){
       header.forEach((h,i)=>{ if(h) obj[h] = r[i]!==undefined ? r[i] : ''; });
       return obj;
     });
+}
+
+function sheetToRows(sheet){
+  return gridToRows(XLSX.utils.sheet_to_json(sheet, {header:1, defval:''}));
+}
+
+// Skoroszyt potrafi mieć arkusz tytułowy albo instrukcję przed właściwą tabelą, więc zamiast brać
+// na sztywno pierwszy — szukamy pierwszego arkusza, w którym w ogóle jest nagłówek z nazwiskiem.
+function workbookToRows(wb){
+  for(const name of wb.SheetNames){
+    const grid = XLSX.utils.sheet_to_json(wb.Sheets[name], {header:1, defval:''});
+    if(grid.some(looksLikeHeaderRow)) return gridToRows(grid);
+  }
+  return sheetToRows(wb.Sheets[wb.SheetNames[0]]);
+}
+
+// Wklejenie prosto z Excela: kolumny rozdziela TABULATOR. Obsługujemy też średnik i podwójne
+// spacje, bo tak wychodzi przy kopiowaniu z niektórych widoków i z PDF-ów.
+function pastedTableToRows(text){
+  const grid = text.split('\n')
+    .filter(l => l.trim() !== '')
+    .map(l => l.includes('\t') ? l.split('\t') : l.split(/\s{2,}|;/))
+    .map(cells => cells.map(c => c.trim()));
+  return gridToRows(grid);
 }
 
 function parseSquadWorkbookRows(rows){
@@ -5865,7 +5895,7 @@ function openSquadImportModal(clubId){
         const wb = XLSX.read(buf, {type:'array'});
         const firstSheet = wb.SheetNames[0];
         if(!firstSheet) throw new Error('Plik nie zawiera żadnego arkusza.');
-        const rows = sheetToRows(wb.Sheets[firstSheet]);
+        const rows = workbookToRows(wb);
         parsed = parseSquadWorkbookRows(rows);
         draw();
       }catch(e){ alert('Błąd importu pliku: ' + (e.message||e)); }
@@ -7145,9 +7175,12 @@ function openRocznikExcelImport(rocznikGroup){
           <button class="secondary" data-action="close-modal">Anuluj</button>
         </div>
       ` : `
+        <p class="note" style="margin-top:0;">Zaznacz w Excelu tabelę <strong>razem z wierszem nagłówków</strong>
+        (Nazwisko, Imię, Aktualny klub…), skopiuj <strong>Ctrl+C</strong> i wklej poniżej.
+        Rozpoznaję te same kolumny co przy wgrywaniu pliku — to droga awaryjna, gdy plik się nie wczytuje.</p>
         <div class="field-wrap" style="margin-bottom:14px;">
-          <label class="field">Wklej listę zawodników (Lp. Nazwisko Imię Rok...)</label>
-          <textarea id="rocznik-paste" rows="12" placeholder="1.&#10;NOWICKI&#10;KAROL&#10;2013&#10;Bramkarz&#10;AF BRZOZA&#10;&#10;2.&#10;BIAŁKOWSKI&#10;DAWID&#10;2013..." style="font-size:12px;font-family:monospace;"></textarea>
+          <label class="field">Wklej zaznaczoną tabelę z Excela</label>
+          <textarea id="rocznik-paste" rows="12" placeholder="Lp.&#9;Nazwisko&#9;Imię&#9;Rok urodzenia&#9;Pozycja boiskowa&#9;Aktualny klub&#10;1&#9;NOWICKI&#9;KAROL&#9;2013&#9;Bramkarz&#9;AF BRZOZA&#10;2&#9;BIAŁKOWSKI&#9;DAWID&#9;2013&#9;&#9;CHEMIK BYDGOSZCZ" style="font-size:12px;font-family:monospace;"></textarea>
         </div>
         <div class="modal-actions">
           <button class="gold" data-action="rocznik-paste-go">Importuj z tekstu</button>
@@ -7167,28 +7200,52 @@ function openRocznikExcelImport(rocznikGroup){
       const text = textarea.value.trim();
       if(!text){ alert('Wklej listę zawodników!'); return; }
       try{
-        const parsed = parseRocznikTextLines(text);
+        // Ta sama ścieżka co przy pliku: wklejenie z Excela to po prostu tabela rozdzielona
+        // tabulatorami, więc po zamianie na wiersze idzie przez ten sam parser kolumn.
+        // Gdy nagłówków brak, wracamy do dawnego formatu pionowego (nazwisko/imię w osobnych liniach).
+        let parsed;
+        const rows = pastedTableToRows(text);
+        try{ parsed = rows.length ? parseSquadWorkbookRows(rows) : []; }
+        catch{ parsed = []; }
+        if(!parsed.length) parsed = parseRocznikTextLines(text);
+
         const toAdd = parsed.filter(p=>p.firstName && p.lastName);
-        if(!toAdd.length){ alert('Brak prawidłowych zawodników.'); return; }
+        if(!toAdd.length){ alert('Nie rozpoznałem żadnego zawodnika.\n\nUpewnij się, że zaznaczyłeś w Excelu także wiersz nagłówków (Nazwisko, Imię…).'); return; }
         const orig = b.textContent; b.disabled = true; b.textContent = 'Importowanie...';
-        let added = 0;
+        let added = 0, updated = 0;
+        const createdClubs = [];
+        const nkey = (f,l)=> importNorm(f) + '|' + importNorm(l);
         toAdd.forEach(p=>{
-          const exists = DB.players.some(pl=>pl.firstName===p.firstName && pl.lastName===p.lastName && pl.birthYear===year);
-          if(exists) return;
+          const clubId = resolveClubForImport(p.club, rocznikGroup, createdClubs);
+          const existing = DB.players.find(pl=> pl.birthYear===year && nkey(pl.firstName,pl.lastName)===nkey(p.firstName,p.lastName));
+          if(existing){
+            let touched = false;
+            if(!existing.clubId && clubId){ existing.clubId = clubId; touched = true; }
+            if(!existing.position && p.position){ existing.position = p.position; touched = true; }
+            if(!existing.status && p.status){ existing.status = p.status; touched = true; }
+            if(existing.powolania==null && p.powolania!=null){ existing.powolania = p.powolania; touched = true; }
+            if(!existing.notes && p.info){ existing.notes = p.info; touched = true; }
+            if(touched) updated++;
+            return;
+          }
           DB.players.push({
             id: uid('Z'), firstName: p.firstName, lastName: p.lastName,
-            birthDate: '', birthYear: year, nationality: p.nationality || '',
+            birthDate: '', birthYear: p.birthYear || year, nationality: p.nationality || '',
             position: p.position || '', foot: '', height: null,
-            status: '', clubId: null, scout: currentScout || '',
+            status: p.status || '', clubId, scout: currentScout || '',
+            powolania: p.powolania ?? null,
             videoLink: '', lnpLink: '', tmLink: '', hasAgent: false, agencyName: '',
-            formation: '', customFields: {}, notes: '',
+            formation: '', customFields: {}, notes: p.info || '',
             dateAdded: new Date().toISOString().slice(0,10)
           });
           added++;
         });
-        const ok = await savePlayers();
+        const okClubs = createdClubs.length ? await saveClubs() : true;
+        const ok = okClubs && await savePlayers();
         if(ok){
-          alert(`Zaimportowano ${added} zawodników.`);
+          alert(`Dodano nowych: ${added}` +
+            (updated ? `\nUzupełniono istniejących: ${updated}` : '') +
+            (createdClubs.length ? `\nZałożono ${createdClubs.length} nowych klubów: ${createdClubs.slice(0,6).join(', ')}${createdClubs.length>6?'…':''}` : ''));
           closeAndRefresh();
         } else {
           b.disabled = false; b.textContent = orig;
@@ -7209,7 +7266,7 @@ function openRocznikExcelImport(rocznikGroup){
         const wb = XLSX.read(buf, {type:'array'});
         const sheet = wb.Sheets[wb.SheetNames[0]];
         if(!sheet) throw new Error('Brak arkusza.');
-        const rows = sheetToRows(sheet);
+        const rows = workbookToRows(wb);
         const parsed = parseSquadWorkbookRows(rows);
         const toAdd = parsed.filter(p=>p.ok);
         if(!toAdd.length){ alert('Brak prawidłowych zawodników.'); return; }
