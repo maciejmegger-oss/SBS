@@ -2281,7 +2281,20 @@ function renderNav(){
       <span class="nav-dot"></span>${it.label}
     </div>`).join('');
   nav.querySelectorAll('.nav-item').forEach(el=>{
-    el.addEventListener('click', ()=>{ currentView = el.dataset.view; editingPlayerId=null; viewingPlayerId=null; render(); });
+    // Kliknięcie w zakładkę z bocznego panelu wraca na jej stronę główną. Wcześniej zerowaliśmy
+    // tylko zawodnika, więc np. Kluby otwierały się na ostatnio oglądanym klubie albo z zawężeniem
+    // do jednej ligi — a od zakładki oczekuje się widoku ogólnego ("Wszystkie").
+    el.addEventListener('click', ()=>{
+      currentView = el.dataset.view;
+      editingPlayerId = null;
+      viewingPlayerId = null;
+      viewingClubId = null;
+      clubBrowse = { top: '', group: '' };
+      viewingRocznikGroup = null;
+      compareIds = ['', '', ''];
+      dashboardLeagueSelected = null;
+      render();
+    });
   });
   const banner = document.getElementById('save-failure-banner');
   if(banner){
@@ -4259,9 +4272,6 @@ function viewRanking(){
         <select id="ranking-formation-filter-select" style="width:100%;">${formationOptions}</select>
       </div>
     </div>
-    <div style="margin-top:10px;">
-      <button class="secondary" data-action="refresh-position-map" style="font-size:12.5px;padding:6px 12px;" title="Wypełnia mapę tej ligi na nowo aktualnymi zawodnikami „Do transferu” i „Na Testy” (Do transferu najwyżej).">↻ Odśwież mapę ze statusów zawodników</button>
-    </div>
   </div>
   ${viewRankingNumbersMode()}`;
 }
@@ -5220,13 +5230,6 @@ function attachHandlers(){
     if(target) target.value = btn.dataset.val;
     btn.parentElement.querySelectorAll('.rp-dot').forEach(d=>d.classList.toggle('active', d===btn));
   });
-  main.querySelectorAll('[data-action="refresh-position-map"]').forEach(b=>b.onclick=async()=>{
-    // Skasuj przypisania mapy dla bieżącej ligi -> odświeżą się automatycznie z aktualnych statusów.
-    Object.keys(positionMapAssignments).forEach(k=>{ if(k.startsWith(rankingLeague+'|||')) delete positionMapAssignments[k]; });
-    await savePositionMapAssignments();
-    render();
-  });
-
   // Szybkie statystyki sezonu (profil zawodnika) — zapis bez otwierania pełnej edycji.
   main.querySelectorAll('[data-action="save-quick-stats"]').forEach(b=>b.onclick=async()=>{
     const pl = DB.players.find(x=>x.id===b.dataset.id);
