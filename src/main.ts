@@ -3119,6 +3119,7 @@ function viewClubs(){
       <label class="secondary" style="cursor:pointer;padding:9px 16px;border:1px solid #C9C2AB;border-radius:6px;display:inline-flex;align-items:center;" title="Zaznacz wiele plików — dopasuję je do klubów po nazwie pliku">
         ⭱ Wgraj wiele logo <input type="file" id="multi-logo-input" accept="image/png,image/jpeg,image/jpg,.png,.jpg,.jpeg" multiple style="display:none;">
       </label>
+      ${clubBrowse.top ? `<button class="secondary" data-action="league-stats" data-league="${esc(clubBrowse.top)}" title="Wklej statystyki wszystkich klubów tej ligi w jednym oknie">⏱ Statystyki ligi</button>` : ''}
       <button class="gold" data-action="add-club">+ Nowy klub</button>
     </div>
   </div>
@@ -5027,6 +5028,7 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="manage-transfer-history"]').forEach(b=>b.onclick=()=>openTransferHistoryModal(b.dataset.id));
   main.querySelectorAll('[data-action="import-squad"]').forEach(b=>b.onclick=()=>openSquadImportModal(b.dataset.id));
   main.querySelectorAll('[data-action="import-squad-stats"]').forEach(b=>b.onclick=()=>openSquadStatsModal(b.dataset.id));
+  main.querySelectorAll('[data-action="league-stats"]').forEach(b=>b.onclick=()=>openLeagueStatsModal(b.dataset.league));
   main.querySelectorAll('[data-action="analyze-player"]').forEach(b=>b.onclick=()=>openPlayerAnalysisModal(b.dataset.id));
   main.querySelectorAll('[data-action="contacts-fill-clubs"]').forEach(b=>b.onclick=async()=>{
     let filled = 0, noMatch = 0;
@@ -6394,13 +6396,26 @@ function parseSquadStatsText(text, squad){
   // się na „kans" i zawodnik nie był rozpoznawany.
   const WORDS = /[\p{L}'’-]{3,}/gu;
 
+  // Przy wklejaniu dla CAŁEJ ligi pula liczy setki nazwisk i powtórki są nieuniknione
+  // (dwóch Kowalskich w różnych klubach). Takiego wiersza nie zgadujemy — trafia do listy
+  // niejednoznacznych, bo wpisanie minut nie temu zawodnikowi jest gorsze niż ich brak.
+  const ambiguous = [];
   const playerInLine = (line)=>{
     const words = line.match(WORDS) || [];
     if(!words.length) return null;
-    return squad.find(p=>{
+    const hits = squad.filter(p=>{
       const last = norm(p.lastName);
       return last.length >= 3 && words.some(w=> norm(w) === last);
-    }) || null;
+    });
+    if(!hits.length) return null;
+    if(hits.length > 1){
+      // Spróbuj rozstrzygnąć imieniem, jeśli występuje w tej samej linii.
+      const byFirst = hits.filter(p=> p.firstName && words.some(w=> norm(w) === norm(p.firstName)));
+      if(byFirst.length === 1) return byFirst[0];
+      ambiguous.push(hits[0].lastName + ' (' + hits.length + ' zawodników o tym nazwisku)');
+      return null;
+    }
+    return hits[0];
   };
 
   // Liczby liczymy dopiero PO ostatnim słowie w linii — inaczej wiek i narodowość
@@ -6461,6 +6476,7 @@ function parseSquadStatsText(text, squad){
     results: results.filter(r=>r.stats).map(r=>({player: r.player, stats: r.stats})),
     unmatched,
     withoutStats,
+    ambiguous: [...new Set(ambiguous)],
   };
 }
 
@@ -6473,6 +6489,110 @@ function tmStatsLink(club){
     return tm.replace(/\/(startseite|kader|spielplan)\/verein\//i, '/leistungsdaten/verein/');
   }
   return 'https://www.transfermarkt.pl/schnellsuche/ergebnis/schnellsuche?query=' + encodeURIComponent(club.name||'');
+}
+
+// Wklejanie statystyk dla CAŁEJ ligi w jednym oknie. Przy 18 klubach Ekstraklasy (a dojdzie
+// jeszcze III liga) otwieranie osobnego okna dla każdego klubu było najdroższą częścią pracy.
+// Nazwiska dopasowujemy do puli wszystkich zawodników ligi, więc nie trzeba wskazywać klubu —
+// wklejasz tabele jedna po drugiej, choćby wszystkie naraz.
+function openLeagueStatsModal(league){
+  const clubs = DB.clubs.filter(c=> c.league === league || topLevelOf(c.league) === league);
+  const clubIds = new Set(clubs.map(c=>c.id));
+  const pool = DB.players.filter(p=> clubIds.has(p.clubId));
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  const close = ()=>{ overlay.remove(); render(); };
+  let parsed = null;
+
+  // Świeżość liczymy z najnowszego zapisu statystyk wśród zawodników klubu.
+  const clubFreshness = (c)=>{
+    const stamps = DB.players.filter(p=>p.clubId===c.id && p.statsUpdatedAt).map(p=>p.statsUpdatedAt).sort();
+    if(!stamps.length) return {label:'nigdy', stale:true};
+    const days = Math.floor((Date.now() - new Date(stamps[stamps.length-1]).getTime())/86400000);
+    return {label: days===0 ? 'dziś' : days===1 ? 'wczoraj' : days+' dni temu', stale: days >= 7};
+  };
+
+  overlay.innerHTML = `
+  <div class="modal" style="max-width:760px;max-height:88vh;overflow:auto;">
+    <h3>⏱ Statystyki — ${esc(league)}</h3>
+    <p class="note">Wklej tabele „Statystyki drużynowe" z Transfermarktu — możesz jedna po drugiej,
+    wszystkie kluby do tego samego pola. Nie musisz wskazywać klubu: dopasowuję po nazwisku
+    do ${pool.length} zawodników z ${clubs.length} klubów tej ligi.</p>
+
+    <div style="max-height:150px;overflow:auto;border:1px solid #E3DECE;border-radius:8px;padding:8px;margin-bottom:12px;">
+      <table style="width:100%;font-size:12px;">
+        <tr><th style="text-align:left;">Klub</th><th style="text-align:right;">Zawodników</th><th style="text-align:right;">Statystyki z</th></tr>
+        ${clubs.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'','pl')).map(c=>{
+          const f = clubFreshness(c);
+          return `<tr><td>${esc(c.name)}</td>
+            <td style="text-align:right;">${DB.players.filter(p=>p.clubId===c.id).length}</td>
+            <td style="text-align:right;color:${f.stale?'var(--clay-dark)':'var(--ink-soft)'};">${esc(f.label)}</td></tr>`;
+        }).join('')}
+      </table>
+    </div>
+
+    <div class="field-wrap" style="margin-bottom:12px;">
+      <textarea id="league-stats-paste" rows="10" placeholder="Wklej tu tabelę pierwszego klubu, potem kolejnego — wszystko może iść razem." style="font-size:12px;font-family:monospace;"></textarea>
+    </div>
+    <div id="league-stats-preview"></div>
+    <div class="modal-actions">
+      <button class="gold" data-action="league-stats-parse">Rozpoznaj</button>
+      <button class="secondary" data-action="close-modal">Zamknij</button>
+    </div>
+  </div>`;
+
+  overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=close);
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) close(); });
+
+  const preview = overlay.querySelector('#league-stats-preview');
+  const btn = overlay.querySelector('[data-action="league-stats-parse"]');
+
+  btn.onclick = async ()=>{
+    if(!parsed){
+      const text = (overlay.querySelector('#league-stats-paste') as HTMLTextAreaElement).value.trim();
+      if(!text){ alert('Wklej najpierw tabele statystyk.'); return; }
+      parsed = parseSquadStatsText(text, pool);
+      if(!parsed.results.length){
+        preview.innerHTML = `<div class="empty">Nie dopasowałem żadnego wiersza.
+          ${parsed.ambiguous.length?`Niejednoznaczne nazwiska: ${esc(parsed.ambiguous.join(', '))}.`:''}</div>`;
+        parsed = null; return;
+      }
+      const byClub = {};
+      parsed.results.forEach(r=>{ const n = clubName(r.player.clubId); (byClub[n]=byClub[n]||[]).push(r); });
+      preview.innerHTML = `
+        <p class="note" style="margin:0 0 6px;">Rozpoznano <strong>${parsed.results.length}</strong> zawodników w ${Object.keys(byClub).length} klubach:</p>
+        <div style="max-height:240px;overflow:auto;">
+        ${Object.keys(byClub).sort((a,b)=>a.localeCompare(b,'pl')).map(cn=>`
+          <div style="font-weight:700;color:var(--pitch);font-size:12.5px;margin-top:6px;">${esc(cn)} <span style="font-weight:400;color:var(--ink-soft);">(${byClub[cn].length})</span></div>
+          <table style="width:100%;font-size:12px;">
+            ${byClub[cn].map(r=>`<tr><td>${esc(r.player.lastName)} ${esc(r.player.firstName)}</td>
+              <td style="text-align:right;">${r.stats.matches??'—'} m.</td>
+              <td style="text-align:right;"><strong>${r.stats.minutes??'—'}</strong> min</td>
+              <td style="text-align:right;">${r.stats.goals??'—'} g.</td>
+              <td style="text-align:right;">${r.stats.assists??'—'} a.</td></tr>`).join('')}
+          </table>`).join('')}
+        </div>
+        ${parsed.withoutStats.length?`<p class="note" style="margin-top:8px;">Bez minut (pomijam): ${esc(parsed.withoutStats.slice(0,12).join(', '))}${parsed.withoutStats.length>12?' i '+(parsed.withoutStats.length-12)+' innych':''}.</p>`:''}
+        ${parsed.ambiguous.length?`<p class="note" style="color:var(--clay-dark);margin-top:4px;">Pominięto niejednoznaczne: ${esc(parsed.ambiguous.join(', '))} — uzupełnij ręcznie w profilu.</p>`:''}`;
+      btn.textContent = `✓ Zapisz dla ${parsed.results.length} zawodników`;
+      return;
+    }
+
+    parsed.results.forEach(({player, stats})=>{
+      if(stats.minutes !== undefined) player.minutes = stats.minutes;
+      if(stats.matches !== undefined) player.matches = stats.matches;
+      if(stats.goals !== undefined) player.goals = stats.goals;
+      if(stats.assists !== undefined) player.assists = stats.assists;
+      player.statsUpdatedAt = new Date().toISOString();
+      player.statsSource = 'Transfermarkt (wklejone)';
+    });
+    const ok = await savePlayers();
+    alert(ok ? `Zapisano statystyki dla ${parsed.results.length} zawodników.` : 'Nie udało się zapisać.');
+    if(ok) close();
+  };
+
+  document.body.appendChild(overlay);
 }
 
 function openSquadStatsModal(clubId){
