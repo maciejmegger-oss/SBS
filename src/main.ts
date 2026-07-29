@@ -2445,15 +2445,21 @@ function polandVoivodeshipMap(){
     const key = (c.region||'').replace(' ZPN','');
     counts[key] = (counts[key]||0) + 1;
   });
-  const maxCount = Math.max(1, ...Object.values(counts));
+  // Skala murawa → złoto, utrzymana w JASNEJ, stonowanej części zakresu (0,44-0,75 domieszki złota).
+  // Wcześniej jasność zależała od tego, ile klubów ma najliczniejsze województwo: przy maksimum 31
+  // mapa wychodziła jasna i elegancka, a przy 40 te same województwa robiły się ciemne i ponure.
+  // Rozpięcie między najmniejszą a największą wartością odcina tę zależność — wygląd zostaje ten sam
+  // niezależnie od tego, ilu klubów przybędzie w bazie.
+  const wartosci = VOIVODESHIP_PATHS.map(v=> counts[v.region] || 0).filter(n=>n>0);
+  const minCount = wartosci.length ? Math.min(...wartosci) : 0;
+  const maxCount = Math.max(1, ...wartosci);
   const items = VOIVODESHIP_PATHS.map(v=>{
     const count = counts[v.region] || 0;
-    const intensity = count / maxCount;
+    const t = count===0 ? 0 : (count - minCount) / Math.max(1, maxCount - minCount);
+    const intensity = (0.58 + 0.42 * t) * 0.75;   // najciemniejsze ~0,44, najjaśniejsze 0,75
     // Ręczna interpolacja RGB (nie CSS color-mix) dla zgodności ze wszystkimi przeglądarkami.
-    // Skala murawa → złoto, przytłumiona współczynnikiem 0,75, żeby nawet najwyższe wartości
-    // zostały stonowane — ten wariant użytkownik wybrał jako najbardziej elegancki.
     const pitchRgb = [22,48,42], goldRgb = [198,155,60];
-    const mixed = pitchRgb.map((cc,i)=> Math.round(cc + (goldRgb[i]-cc)*intensity*0.75));
+    const mixed = pitchRgb.map((cc,i)=> Math.round(cc + (goldRgb[i]-cc)*intensity));
     const fill = count===0 ? '#17322A' : `rgb(${mixed[0]},${mixed[1]},${mixed[2]})`;
     const center = pathBoundingCenter(v.d);
     return {v, count, fill, center};
