@@ -6505,9 +6505,15 @@ function tmStatsLink(club){
 // Czytamy cały tekst strony, a nie konkretną tabelę: układ HTML Transfermarktu może się zmienić,
 // a parser i tak pomija wszystko, w czym nie rozpozna nazwiska ze składu.
 const TM_BOOKMARKLET = `javascript:(function(){try{
+var u=location.href;
+if(/\\/verein\\/\\d+/.test(u)&&!/\\/leistungsdaten\\//.test(u)){
+location.href=u.replace(/\\/(startseite|kader|spielplan|leistungsdaten)\\/verein\\//,'/leistungsdaten/verein/').replace(/\\/verein\\//,'/leistungsdaten/verein/').replace(/\\/leistungsdaten\\/leistungsdaten\\//,'/leistungsdaten/');
+return;}
+if(!/\\/leistungsdaten\\//.test(u)){alert('SBS: to nie jest strona klubu na Transfermarkcie.\\n\\nOtworz klub, a potem kliknij te zakladke ponownie.');return;}
 var best=null,n=0;var ts=document.querySelectorAll('table');
 for(var i=0;i<ts.length;i++){var r=ts[i].rows.length;if(r>n){n=r;best=ts[i];}}
 var t=(best&&n>4)?best.innerText:document.body.innerText;
+if(!/\\d\\s*['’]/.test(t)){alert('SBS: na tej stronie nie ma minut.\\n\\nUpewnij sie, ze u gory wybrales sezon i rozgrywki (np. \\u201eLacznie 26/27\\u201d).');return;}
 navigator.clipboard.writeText(t).then(function(){
 var d=document.createElement('div');d.textContent='SBS: skopiowano '+(best&&n>4?n+' wierszy tabeli':'tekst strony')+' — wklej w systemie';
 d.style.cssText='position:fixed;top:16px;right:16px;z-index:999999;background:#16302A;color:#C69B3C;padding:12px 18px;border-radius:8px;font:600 14px sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.3)';
@@ -6614,10 +6620,26 @@ function openLeagueStatsModal(league){
     if(!parsed){
       const text = (overlay.querySelector('#league-stats-paste') as HTMLTextAreaElement).value.trim();
       if(!text){ alert('Wklej najpierw tabele statystyk.'); return; }
+      // Najczęstszy błąd: skopiowana zakładka „Kadra" zamiast „Statystyki drużynowe". Tamta ma
+      // daty urodzenia i wartości rynkowe, ale ani jednej minuty — rozpoznajemy to wprost,
+      // zamiast zostawiać użytkownika z „nie dopasowałem żadnego wiersza".
+      const maWartosciRynkowe = /(mln|tys\.)\s*€/i.test(text);
+      if(!/\d\s*['’]/.test(text)){
+        preview.innerHTML = `<div class="empty" style="text-align:left;padding:14px;">
+          <strong style="color:var(--clay-dark);">W tym tekście nie ma ani jednej liczby minut.</strong>
+          ${maWartosciRynkowe ? `<p style="margin:8px 0 0;">Widzę daty urodzenia i wartości rynkowe (np. „150 tys. €"),
+            więc to zakładka <strong>Kadra</strong>, a nie <strong>Statystyki drużynowe</strong>.</p>` : ''}
+          <p style="margin:8px 0 0;">W adresie strony musi być <code>/leistungsdaten/</code>. Jeśli jest tam
+          <code>/startseite/</code> albo <code>/kader/</code> — zamień to na <code>leistungsdaten</code> i skopiuj ponownie.</p>
+          <p style="margin:8px 0 0;color:var(--ink-soft);font-size:12px;">Minuty poznasz po apostrofie: <code>222'</code>.</p>
+        </div>`;
+        parsed = null; return;
+      }
       parsed = parseSquadStatsText(text, pool);
       if(!parsed.results.length){
-        preview.innerHTML = `<div class="empty">Nie dopasowałem żadnego wiersza.
-          ${parsed.ambiguous.length?`Niejednoznaczne nazwiska: ${esc(parsed.ambiguous.join(', '))}.`:''}</div>`;
+        preview.innerHTML = `<div class="empty">Minuty są w tekście, ale żadne nazwisko nie pasuje do zawodników tej ligi —
+          sprawdź, czy klub jest w bazie i czy nazwiska zapisane są tak samo.
+          ${parsed.ambiguous.length?`<br>Niejednoznaczne: ${esc(parsed.ambiguous.join(', '))}.`:''}</div>`;
         parsed = null; return;
       }
       const byClub = {};
