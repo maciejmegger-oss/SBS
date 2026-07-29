@@ -6363,52 +6363,97 @@ function detectStatsSource(raw){
 // 90minut ich nie publikuje, a Transfermarkt renderuje tabelę JavaScriptem, więc w pobranym HTML-u
 // jej nie ma. Wklejenie raz na klub zastępuje wpisywanie liczb zawodnik po zawodniku.
 //
-// Z każdej linii bierzemy nazwisko (najdłuższe słowo pisane literami) i występujące w niej liczby.
-// Kolejność liczb bywa różna, więc znaczenie nadajemy im po etykietach z nagłówka, a gdy ich brak —
-// po typowym układzie Transfermarktu: mecze, gole, asysty, żółte, czerwone, minuty.
+// Transfermarkt rozbija JEDNEGO zawodnika na kilka linii, a nagłówki kolumn są ikonami (zegar =
+// minuty, piłka = bramki), więc po wklejeniu nie ma żadnych etykiet tekstowych. Układ wygląda tak:
+//
+//   Mikael Ishak   Mikael Ishak      <- nazwisko (dwa razy: pełne i skrócone)
+//   Środkowy napastnik               <- pozycja
+//       33   Szwecja                 <- wiek i narodowość
+//   Syria   3   3   2   222'         <- DOPIERO TU liczby: mecze, bramki, asysty, minuty
+//
+// Dlatego czytamy blokami: linia z nazwiskiem otwiera blok zawodnika, a liczby zbieramy z
+// kolejnych linii aż do nazwiska następnego. Kotwicą minut jest apostrof ("222'", "1.980'") —
+// to jedyne pewne oznaczenie, jakie w ogóle zostaje po ikonach.
 function parseSquadStatsText(text, squad){
+  // Nazwiska w składach bywają skandynawskie, tureckie czy portugalskie (Håkans, Thórdarson,
+  // Håkans), więc zamiast wyliczać znaki, rozkładamy je Unicode'em i zdejmujemy znaki diakrytyczne.
+  // ł, ø i đ nie rozkładają się tą drogą — te trzy mapujemy ręcznie.
   const norm = (s)=> String(s||'').toLowerCase()
-    .replace(/[ąćęłńóśźż]/g, c=>({ą:'a',ć:'c',ę:'e',ł:'l',ń:'n',ó:'o',ś:'s',ź:'z',ż:'z'}[c]))
+    .replace(/[łøđ]/g, c=>({'ł':'l','ø':'o','đ':'d'}[c]))
+    .normalize('NFD').replace(/\p{M}/gu,'')
     .replace(/[^a-z]/g,'');
+  // Dowolna litera Unicode — wcześniejsza lista pomijała np. „å", przez co „Håkans" rozpadało
+  // się na „kans" i zawodnik nie był rozpoznawany.
+  const WORDS = /[\p{L}'’-]{3,}/gu;
+
+  const playerInLine = (line)=>{
+    const words = line.match(WORDS) || [];
+    if(!words.length) return null;
+    return squad.find(p=>{
+      const last = norm(p.lastName);
+      return last.length >= 3 && words.some(w=> norm(w) === last);
+    }) || null;
+  };
+
+  // Liczby liczymy dopiero PO ostatnim słowie w linii — inaczej wiek i narodowość
+  // ("25 Finlandia 2 1 - 24'") wchodziłyby do statystyk i wiek lądował w meczach.
+  const statsFromLine = (line)=>{
+    if(!/['’]/.test(line)) return null;                    // bez minut to nie jest wiersz statystyk
+    let tail = line;
+    const words = [...line.matchAll(WORDS)];
+    if(words.length){
+      const last = words[words.length-1];
+      tail = line.slice(last.index + last[0].length);
+    }
+    const minM = tail.match(/(\d[\d.]*)\s*['’]/);
+    if(!minM) return null;
+    const minutes = parseInt(minM[1].replace(/\./g,''), 10);
+    if(isNaN(minutes)) return null;
+    // Liczby przed minutami, w kolejności z Transfermarktu: mecze, bramki, asysty.
+    const before = tail.slice(0, minM.index);
+    const nums = (before.match(/\d[\d.]*/g)||[]).map(n=>parseInt(n.replace(/\./g,''),10)).filter(n=>!isNaN(n));
+    const stats = { minutes };
+    if(nums.length >= 1) stats.matches = nums[0];
+    if(nums.length >= 2) stats.goals = nums[1];
+    if(nums.length >= 3) stats.assists = nums[2];
+    return stats;
+  };
 
   const results = [];
   const unmatched = [];
-  for(const line of text.split('\n').map(l=>l.trim()).filter(Boolean)){
-    // Minuty na Transfermarkcie zapisane są jako "1.980'" — apostrof jest tu najpewniejszą wskazówką.
-    // Sama liczba tuż przed apostrofem — bez \s w grupie, bo wtedy wzorzec połykał wszystkie
-    // wcześniejsze liczby z wiersza i sklejał je w jedną ("24 18 5 3 1 1.980'" -> 24185311980).
-    const minutesTagged = line.match(/(\d[\d.]*)\s*['’]/);
-    const nums = (line.match(/\d[\d.]*/g)||[]).map(n=>parseInt(n.replace(/\./g,''),10)).filter(n=>!isNaN(n));
-    if(!nums.length) continue;
+  const withoutStats = [];
+  let current = null;
 
-    const words = (line.match(/[A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż-]{3,}/g)||[]);
-    if(!words.length) continue;
+  for(const raw of text.split('\n')){
+    const line = raw.replace(/\s+/g,' ').trim();
+    if(!line) continue;
 
-    // Dopasowanie do składu: szukamy zawodnika, którego nazwisko występuje w tej linii.
-    const hit = squad.find(p=>{
-      const last = norm(p.lastName);
-      return last.length >= 3 && words.some(w=> norm(w) === last);
-    });
-    if(!hit){ unmatched.push(words.join(' ').slice(0,40)); continue; }
-
-    const stats = {};
-    if(minutesTagged){
-      const mv = parseInt(String(minutesTagged[1]).replace(/[.\s]/g,''),10);
-      if(!isNaN(mv)) stats.minutes = mv;
+    const found = playerInLine(line);
+    if(found && (!current || current.player !== found)){
+      if(current && !current.stats) withoutStats.push(current.player.lastName);
+      current = { player: found, stats: null };
+      results.push(current);
+      // Nazwisko i liczby bywają w JEDNEJ linii (węższy układ) — sprawdzamy od razu.
+      const inline = statsFromLine(line);
+      if(inline) current.stats = inline;
+      continue;
     }
-    // Bez etykiety minut przyjmujemy, że największa liczba w linii to minuty — mecze, gole,
-    // kartki są jednocyfrowe albo kilkudziesięciodniowe, minuty zwykle setki/tysiące.
-    if(stats.minutes === undefined){
-      const max = Math.max(...nums);
-      if(max >= 90) stats.minutes = max;
-    }
-    const small = nums.filter(n=>n !== stats.minutes);
-    if(small.length >= 1) stats.matches = small[0];
-    if(small.length >= 2) stats.goals = small[1];
 
-    if(Object.keys(stats).length) results.push({player: hit, stats});
+    if(current && !current.stats){
+      const s = statsFromLine(line);
+      if(s) current.stats = s;
+      continue;
+    }
+    // Linia przed pierwszym rozpoznanym zawodnikiem albo należąca do kogoś spoza składu.
+    if(!current && /['’]/.test(line)) unmatched.push(line.slice(0,44));
   }
-  return {results, unmatched};
+  if(current && !current.stats) withoutStats.push(current.player.lastName);
+
+  return {
+    results: results.filter(r=>r.stats).map(r=>({player: r.player, stats: r.stats})),
+    unmatched,
+    withoutStats,
+  };
 }
 
 // Link do strony ze statystykami drużyny na Transfermarkt. Gdy klub ma zapisany profil, zamieniamy
@@ -6498,13 +6543,15 @@ function openSquadStatsModal(clubId){
         parsed = null; return;
       }
       preview.innerHTML = `<table style="width:100%;font-size:12.5px;">
-        <tr><th>Zawodnik</th><th style="text-align:right;">Mecze</th><th style="text-align:right;">Minuty</th><th style="text-align:right;">Gole</th></tr>
+        <tr><th>Zawodnik</th><th style="text-align:right;">Mecze</th><th style="text-align:right;">Minuty</th><th style="text-align:right;">Gole</th><th style="text-align:right;">Asysty</th></tr>
         ${parsed.results.map(r=>`<tr><td>${esc(r.player.lastName)} ${esc(r.player.firstName)}</td>
           <td style="text-align:right;">${r.stats.matches!=null?r.stats.matches:'—'}</td>
           <td style="text-align:right;"><strong>${r.stats.minutes!=null?r.stats.minutes:'—'}</strong></td>
-          <td style="text-align:right;">${r.stats.goals!=null?r.stats.goals:'—'}</td></tr>`).join('')}
+          <td style="text-align:right;">${r.stats.goals!=null?r.stats.goals:'—'}</td>
+          <td style="text-align:right;">${r.stats.assists!=null?r.stats.assists:'—'}</td></tr>`).join('')}
       </table>
-      ${parsed.unmatched.length?`<p class="note" style="margin-top:8px;">Nie dopasowano ${parsed.unmatched.length} wierszy — te zostaną pominięte.</p>`:''}`;
+      ${parsed.withoutStats.length?`<p class="note" style="margin-top:8px;">Bez minut w tym sezonie (pomijam): ${esc(parsed.withoutStats.join(', '))}.</p>`:''}
+      ${parsed.unmatched.length?`<p class="note" style="margin-top:4px;">Nie dopasowano ${parsed.unmatched.length} wierszy — te zostaną pominięte.</p>`:''}`;
       actionBtn.textContent = `✓ Zapisz dla ${parsed.results.length} zawodników`;
       return;
     }
@@ -6513,6 +6560,7 @@ function openSquadStatsModal(clubId){
       if(stats.minutes !== undefined) player.minutes = stats.minutes;
       if(stats.matches !== undefined) player.matches = stats.matches;
       if(stats.goals !== undefined) player.goals = stats.goals;
+      if(stats.assists !== undefined) player.assists = stats.assists;
       player.statsUpdatedAt = new Date().toISOString();
       player.statsSource = 'wklejone ręcznie';
     });
