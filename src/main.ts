@@ -161,7 +161,10 @@ const SEED_CLUBS_III_LIGA_GR3 = [
   {name:"Sparta Katowice", region:"Śląski ZPN", city:"Katowice", klubId:4018},
   // Skra Częstochowa i Słowianin Wolibórz NIE grają w tej grupie — usunięte z listy startowej,
   // bo wracały przy każdym uruchomieniu mimo kasowania. Zastąpione właściwymi drużynami.
+  // Sparta Katowice i Raków Częstochowa II zostają: obie widnieją w tabeli grupy III
+  // na Transfermarkcie, a lista ma się z nią zgadzać co do klubu (18 drużyn).
   {name:"Polonia Nysa", region:"Opolski ZPN", city:"Nysa", klubId:1567},
+  {name:"Raków Częstochowa II", region:"Śląski ZPN", city:"Częstochowa", klubId:7684},
   {name:"MKS Kluczbork", region:"Opolski ZPN", city:"Kluczbork", klubId:6607},
   {name:"Miedź II Legnica", region:"Dolnośląski ZPN", city:"Legnica", klubId:3397},
   {name:"Warta Gorzów Wielkopolski", region:"Lubuski ZPN", city:"Gorzów Wielkopolski", klubId:12994},
