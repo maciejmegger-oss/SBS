@@ -3413,6 +3413,7 @@ function viewClubDetail(id){
 const OBS_TYPES = [
   { id:'live',   label:'Live',   color:'#3E7D4C' },
   { id:'online', label:'Online', color:'#2F6FA8' },
+  { id:'video',  label:'Video',  color:'#8B5CF6' },
 ];
 const obsTypeOf = (o)=> (o && o.obsType) || 'live';
 const obsTypeMeta = (id)=> OBS_TYPES.find(t=>t.id===id) || OBS_TYPES[0];
