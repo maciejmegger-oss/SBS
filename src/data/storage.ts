@@ -105,6 +105,24 @@ function liftExt(table: string, obj: Record<string, unknown>): void {
 // paginacja powodowała, że aplikacja wczytywała tylko część bazy (migawka niepełna) — a to, w parze
 // z dawnym "usuwaniem różnicy" w setCollection, kasowało nadmiarowych zawodników przy kolejnym zapisie.
 // Dlatego wczytujemy WSZYSTKIE wiersze stronami po 1000, aż strona wróci niepełna.
+// Identyfikatory, które przyszły z serwera przy wczytaniu strony. Potrzebne, by odróżnić rekord
+// USUNIĘTY w międzyczasie (nie wolno go wskrzeszać) od rekordu NOWO utworzonego w tej sesji
+// (trzeba go zapisać). Patrz komentarz w setCollection.
+const loadedIds: Record<string, Set<string>> = {};
+
+async function fetchServerIds(table: string): Promise<Set<string>> {
+  const PAGE = 1000;
+  const ids = new Set<string>();
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await sb.from(table).select("id").range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    const batch = data || [];
+    batch.forEach((r: { id: string }) => ids.add(r.id));
+    if (batch.length < PAGE) break;
+  }
+  return ids;
+}
+
 async function getCollection(table: string): Promise<string> {
   const PAGE = 1000;
   const all: Record<string, unknown>[] = [];
@@ -117,11 +135,38 @@ async function getCollection(table: string): Promise<string> {
   }
   const objs = all.map(objFromRow);
   objs.forEach((o) => liftExt(table, o));
+  loadedIds[table] = new Set(objs.map((o) => String(o.id)));
   return JSON.stringify(objs);
 }
 
 async function setCollection(table: string, jsonValue: string): Promise<void> {
-  const items: Record<string, unknown>[] = JSON.parse(jsonValue || "[]");
+  const wszystkie: Record<string, unknown>[] = JSON.parse(jsonValue || "[]");
+
+  // NIE WSKRZESZAMY rekordów usuniętych w międzyczasie.
+  //
+  // Zapis wysyła całą tablicę z pamięci przeglądarki — migawkę z chwili wczytania strony. Jeśli
+  // w tym czasie ktoś (druga karta, porządki w bazie) usunął rekord, ślepy upsert wstawiał go
+  // z powrotem. Tak wracały zduplikowane kluby, skasowane statystyki i puste wpisy — za każdym
+  // razem wyglądało to jak „samo się przywróciło".
+  //
+  // Rozróżnienie jest proste: rekord, który BYŁ wczytany z serwera, a teraz go tam nie ma, został
+  // usunięty celowo — pomijamy go. Rekord, którego nie było przy wczytaniu, powstał w tej sesji —
+  // zapisujemy normalnie.
+  let items = wszystkie;
+  const znaneZWczytania = loadedIds[table];
+  if (znaneZWczytania && znaneZWczytania.size) {
+    const naSerwerze = await fetchServerIds(table);
+    const pominiete: string[] = [];
+    items = wszystkie.filter((it) => {
+      const id = String(it.id);
+      if (znaneZWczytania.has(id) && !naSerwerze.has(id)) { pominiete.push(id); return false; }
+      return true;
+    });
+    if (pominiete.length) {
+      console.info(`${table}: pomijam ${pominiete.length} rekordów usuniętych w międzyczasie — nie przywracam ich.`);
+    }
+  }
+
   const prepared = items.map((it) => packExt(table, it));
   const rows = prepared.map(rowFromObj);
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
