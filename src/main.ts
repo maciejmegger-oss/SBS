@@ -151,14 +151,17 @@ const SEED_CLUBS_III_LIGA_GR3 = [
   {name:"Barycz Sułów", region:"Dolnośląski ZPN", city:"Sułów", klubId:3552},
   {name:"Górnik Polkowice", region:"Dolnośląski ZPN", city:"Polkowice", klubId:95},
   {name:"Odra Bytom Odrzański", region:"Lubuski ZPN", city:"Bytom Odrzański", klubId:5063},
-  {name:"Zagłębie II Lubin", region:"Dolnośląski ZPN", city:"Lubin", klubId:1830},
-  {name:"KS Stilon Gorzów Wielkopolski", region:"Lubuski ZPN", city:"Gorzów Wielkopolski", klubId:15203},
+  // Nazwy zgodne z tym, co jest w bazie po scaleniu duplikatów — inaczej lista startowa
+  // wstawiałaby drugi wariant tej samej drużyny („Zagłębie II Lubin" obok „Zagłębie Lubin II").
+  {name:"Zagłębie Lubin II", region:"Dolnośląski ZPN", city:"Lubin", klubId:1830},
+  {name:"Stilon Gorzów", region:"Lubuski ZPN", city:"Gorzów Wielkopolski", klubId:15203},
   {name:"Stal Brzeg", region:"Opolski ZPN", city:"Brzeg", klubId:12983},
-  {name:"LKS Goczałkowice Zdrój", region:"Śląski ZPN", city:"Goczałkowice-Zdrój", klubId:3932},
+  {name:"Goczałkowice-Zdrój", region:"Śląski ZPN", city:"Goczałkowice-Zdrój", klubId:3932},
   {name:"Ślęza Wrocław", region:"Dolnośląski ZPN", city:"Wrocław", klubId:391},
   {name:"Sparta Katowice", region:"Śląski ZPN", city:"Katowice", klubId:4018},
-  {name:"Skra Częstochowa", region:"Śląski ZPN", city:"Częstochowa", klubId:1567},
-  {name:"Słowianin Wolibórz", region:"Opolski ZPN", city:"Wolibórz", klubId:7684},
+  // Skra Częstochowa i Słowianin Wolibórz NIE grają w tej grupie — usunięte z listy startowej,
+  // bo wracały przy każdym uruchomieniu mimo kasowania. Zastąpione właściwymi drużynami.
+  {name:"Polonia Nysa", region:"Opolski ZPN", city:"Nysa", klubId:1567},
   {name:"MKS Kluczbork", region:"Opolski ZPN", city:"Kluczbork", klubId:6607},
   {name:"Miedź II Legnica", region:"Dolnośląski ZPN", city:"Legnica", klubId:3397},
   {name:"Warta Gorzów Wielkopolski", region:"Lubuski ZPN", city:"Gorzów Wielkopolski", klubId:12994},
@@ -1779,12 +1782,22 @@ async function loadAllInner(){
     try{ await saveClubCrests(); }catch(e){ console.error('Migracja herbów (zapis) nie powiodła się', e); }
     try{ await saveClubs(); }catch(e){ console.error('Migracja herbów (czyszczenie starego pola) nie powiodła się', e); }
   }
-  let addedSeed = false;
-  ALL_SEED_CLUBS.forEach(seed=>{
-    const exists = DB.clubs.some(c2=>c2.name===seed.name && c2.league===seed.league);
-    if(!exists){ DB.clubs.push(Object.assign({}, seed, {id: uid('K')})); addedSeed = true; }
-  });
-  if(addedSeed) await saveClubs();
+  // Lista startowa klubów wstawia się TYLKO RAZ, przy pierwszym uruchomieniu na danej bazie.
+  //
+  // Wcześniej przebiegała przy każdym starcie i dokładała wszystko, czego akurat nie było — więc
+  // każdy usunięty klub wracał po odświeżeniu strony. Tak wracały „Skra Częstochowa" i „Słowianin
+  // Wolibórz" (drużyny spoza rozgrywek) oraz drugie warianty nazw po scaleniu duplikatów.
+  // Kasowanie klubu było skuteczne dokładnie do następnego wejścia na stronę.
+  const klubyZaslane = await storage.get('scouting:seed_clubs_v1', true).catch(()=>null);
+  if(!klubyZaslane){
+    let addedSeed = false;
+    ALL_SEED_CLUBS.forEach(seed=>{
+      const exists = DB.clubs.some(c2=>c2.name===seed.name && c2.league===seed.league);
+      if(!exists){ DB.clubs.push(Object.assign({}, seed, {id: uid('K')})); addedSeed = true; }
+    });
+    if(addedSeed) await saveClubs();
+    await quietFlagSet('scouting:seed_clubs_v1');
+  }
   if(!seedFlag){
     try{ await importAllKnownRosters(); }catch(e){ console.error('Roster seed error', e); }
     await quietFlagSet('scouting:seed_rosters_v9');
