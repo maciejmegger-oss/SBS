@@ -3003,6 +3003,7 @@ function viewPlayers(){
         <span class="club-sub">${esc((clubRegion(p.clubId)||'').replace(/\s*ZPN$/,''))}${clubLeague(p.clubId)?' · '+esc((clubLeague(p.clubId)||'').replace(/,\s*gr\./,' gr.')):''}</span>
       </span></div></td>
       <td>${p.status? `<span class="badge ${cls}">${esc(p.status)}</span>` : '—'}</td>
+      <td onclick="event.stopPropagation()" style="text-align:center;">${agentToggleHtml(p)}</td>
       <td style="text-align:right;">${p.matches!=null?p.matches:'—'}</td>
       <td style="text-align:right;">${p.minutes!=null?p.minutes:'—'}</td>
       <td style="text-align:right;">${p.goals!=null?p.goals:'—'}</td>
@@ -3046,10 +3047,30 @@ function viewPlayers(){
   <p class="note" style="margin:0 0 6px;font-size:11.5px;">Tabela jest szeroka — przewiń ją w bok pod spodem albo przytrzymaj <strong>Shift</strong> i kręć kółkiem myszy. Kolumna akcji zostaje widoczna.</p>
   <div class="card table-scroll" style="padding:0;overflow:auto;">
     <table class="players-table">
-      <thead><tr><th style="width:24px;"><input type="checkbox" class="header-checkbox"></th><th style="width:34px;text-align:right;" title="Liczba porządkowa">Lp.</th><th>Zawodnik</th><th>Rocznik</th><th>Pozycja</th><th>Klub / region / liga</th><th>Status</th><th style="text-align:right;" title="Rozegrane mecze w sezonie">Mecze</th><th style="text-align:right;" title="Rozegrane minuty w sezonie">Minuty</th><th style="text-align:right;" title="Gole w sezonie">Gole</th><th style="text-align:right;" title="Liczba obserwacji">Obs.</th><th></th></tr></thead>
-      <tbody>${rows || `<tr><td colspan="12"><div class="empty">Brak zawodników spełniających filtry.</div></td></tr>`}</tbody>
+      <thead><tr><th style="width:24px;"><input type="checkbox" class="header-checkbox"></th><th style="width:34px;text-align:right;" title="Liczba porządkowa">Lp.</th><th>Zawodnik</th><th>Rocznik</th><th>Pozycja</th><th>Klub / region / liga</th><th>Status</th><th style="text-align:center;" title="Czy zawodnik ma menedżera — kliknij, aby przełączyć Tak/Nie">Agent</th><th style="text-align:right;" title="Rozegrane mecze w sezonie">Mecze</th><th style="text-align:right;" title="Rozegrane minuty w sezonie">Minuty</th><th style="text-align:right;" title="Gole w sezonie">Gole</th><th style="text-align:right;" title="Liczba obserwacji">Obs.</th><th></th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="13"><div class="empty">Brak zawodników spełniających filtry.</div></td></tr>`}</tbody>
     </table>
   </div>`;
+}
+
+// Przełącznik „ma menedżera" wprost na liście — dla agencji to informacja pierwszego rzutu oka,
+// więc nie chowamy jej w profilu. Nazwę agencji (jeśli jest) pokazujemy w podpowiedzi.
+function agentToggleHtml(p){
+  const tak = !!p.hasAgent;
+  const tytul = tak
+    ? 'Ma menedżera' + (p.agencyName ? ': ' + p.agencyName : '') + ' — kliknij, aby zmienić na „Nie"'
+    : 'Bez menedżera — kliknij, aby zmienić na „Tak"';
+  return `<button class="link-btn agent-toggle ${tak?'agent-yes':'agent-no'}" data-action="toggle-agent" data-id="${p.id}" title="${esc(tytul)}">${tak?'Tak':'Nie'}</button>`;
+}
+async function toggleHasAgent(id){
+  const p = DB.players.find(x=>x.id===id);
+  if(!p) return;
+  p.hasAgent = !p.hasAgent;
+  // Zdjęcie znacznika kasuje też nazwę agencji — inaczej zostawałaby przy zawodniku
+  // opisanym jako „bez menedżera" i przy następnym eksporcie wyglądałaby na aktualną.
+  if(!p.hasAgent) p.agencyName = '';
+  await savePlayers();
+  render();
 }
 
 function viewPlayerDetail(id){
@@ -5223,6 +5244,10 @@ function attachHandlers(){
     currentView = 'newobs'; viewingPlayerId = null;
     render();
   });
+  main.querySelectorAll('[data-action="toggle-agent"]').forEach(b=>b.onclick=(e)=>{
+    e.stopPropagation();          // klik w komórkę nie może otwierać profilu zawodnika
+    toggleHasAgent(b.dataset.id);
+  });
   main.querySelectorAll('[data-action="add-to-monitoring"]').forEach(b=>b.onclick=()=>{
     const pl = DB.players.find(x=>x.id===b.dataset.id);
     if(!pl) return;
@@ -6334,6 +6359,31 @@ function pastedTableToRows(text){
   return gridToRows(grid);
 }
 
+// Odczyt odpowiedzi TAK/NIE z komórki arkusza. Zwraca null, gdy komórka jest pusta albo zawiera
+// coś, czego nie umiem jednoznacznie odczytać — wtedy niczego nie zakładamy i nie nadpisujemy
+// tego, co jest już w bazie. Lepiej zostawić pole puste, niż wpisać „Nie" na podstawie zgadywania.
+function parseTakNie(wartosc){
+  if(wartosc === true) return true;
+  if(wartosc === false) return false;
+  const s = String(wartosc ?? '').trim().toLowerCase()
+    .replace(/[łøđ]/g, c=>({'ł':'l','ø':'o','đ':'d'}[c]))
+    .normalize('NFD').replace(/\p{M}/gu,'');
+  if(!s) return null;
+  if(['tak','t','yes','y','1','x','v','✓','prawda','true','jest','ma'].includes(s)) return true;
+  if(['nie','n','no','0','-','–','—','brak','falsz','false','nie ma'].includes(s)) return false;
+  return null;
+}
+
+// Menedżer w podglądzie importu. Rozróżniamy trzy stany, bo dla agencji „nie wiadomo" znaczy
+// zupełnie co innego niż „nie ma menedżera" — pierwsze trzeba sprawdzić, drugie jest ustalone.
+function agentPreviewHtml(p){
+  if(p.hasAgent === true){
+    return `<span class="agent-yes">Menedżer: Tak</span>` + (p.agencyName? ` <span class="note">${esc(p.agencyName)}</span>` : '');
+  }
+  if(p.hasAgent === false) return `<span class="agent-no">Menedżer: Nie</span>`;
+  return `<span class="note">Menedżer: ?</span>`;
+}
+
 function parseSquadWorkbookRows(rows){
   if(!rows.length) throw new Error('Arkusz jest pusty (brak wierszy danych pod nagłówkiem).');
   const norm = (s)=> String(s||'').toLowerCase()
@@ -6361,6 +6411,11 @@ function parseSquadWorkbookRows(rows){
   const colStatus = findCol('Status');
   const colPowolania = findCol('Ilość powołań','Ilosc powolan','Powołania','Powolania');
   const colInfo  = findCol('Dodatkowe informacje','Uwagi','Notatka');
+  // Menedżer — dla agencji to jedna z ważniejszych informacji, więc czytamy ją na dwa sposoby:
+  // kolumnę TAK/NIE oraz kolumnę z nazwą agencji. Sama wpisana nazwa agencji też znaczy „ma
+  // menedżera", nawet jeśli kolumny TAK/NIE w arkuszu w ogóle nie ma.
+  const colAgent = findCol('Menedżer','Menadżer','Menedzer','Menadzer','Manager','Menager','Agent','Ma menedżera','Pełnomocnik');
+  const colAgency = findCol('Agencja','Nazwa agencji','Agencja menedżerska','Agencja menadżerska');
   if(!colFirst && !colLast && !colFull) throw new Error('Nie znaleziono kolumny z imieniem/nazwiskiem — oczekiwane nagłówki: Imię, Nazwisko (albo Zawodnik).');
   return rows.map(row=>{
     let firstName = colFirst ? String(row[colFirst]||'').trim() : '';
@@ -6382,6 +6437,15 @@ function parseSquadWorkbookRows(rows){
       status: colStatus ? matchKnownStatus(String(row[colStatus]||'').trim()) : '',
       powolania: colPowolania ? (parseInt(String(row[colPowolania]||''),10) || null) : null,
       info: colInfo ? String(row[colInfo]||'').trim() : '',
+      // null = arkusz nic o tym nie mówi (nie nadpisujemy tego, co już jest w bazie);
+      // true/false = wpisana odpowiedź. Nazwa agencji sama w sobie oznacza „ma menedżera".
+      hasAgent: (()=>{
+        const zKolumny = colAgent ? parseTakNie(row[colAgent]) : null;
+        if(zKolumny !== null) return zKolumny;
+        const agencja = colAgency ? String(row[colAgency]||'').trim() : '';
+        return agencja ? true : null;
+      })(),
+      agencyName: colAgency ? String(row[colAgency]||'').trim() : '',
       raw: [firstName, lastName, yearRaw].filter(Boolean).join(' ')
     };
   }).filter(Boolean);
@@ -6429,7 +6493,7 @@ function openSquadImportModal(clubId){
         <button class="secondary" data-action="squad-parse">Rozpoznaj zawodników</button>
       </div>
       <div class="field-wrap" style="border-top:1px dashed #D9D3C4;padding-top:10px;margin-bottom:14px;">
-        <label class="field">…albo wgraj plik Excel / CSV (np. lista rocznika do rozgrywek juniorskich) — kolumny: <strong>Imię, Nazwisko</strong> (albo „Zawodnik"), opcjonalnie Rocznik, Pozycja, Narodowość</label>
+        <label class="field">…albo wgraj plik Excel / CSV (np. lista rocznika do rozgrywek juniorskich) — kolumny: <strong>Imię, Nazwisko</strong> (albo „Zawodnik"), opcjonalnie Rocznik, Pozycja, Narodowość, <strong>Menedżer</strong> (Tak/Nie), Agencja</label>
         <input type="file" id="squad-import-file" accept=".xlsx,.xls,.csv">
       </div>
       ${parsed.length ? `
@@ -6443,10 +6507,11 @@ function openSquadImportModal(clubId){
                 <td>${esc(p.position||'—')}</td>
                 <td>${esc(p.birthYear||'—')}${isYouthPlayer(p)?youthBadge():''}</td>
                 <td>${p.nationality? nationalityFlag(p.nationality)+' '+esc(p.nationality) : '—'}</td>
+                <td style="white-space:nowrap;">${agentPreviewHtml(p)}</td>
               </tr>` : `
               <tr style="color:var(--clay-dark);">
                 <td></td>
-                <td colspan="4" style="font-size:12px;">Nie rozpoznano: „${esc(p.raw)}”</td>
+                <td colspan="5" style="font-size:12px;">Nie rozpoznano: „${esc(p.raw)}”</td>
               </tr>`
             ).join('')}
           </tbody></table>
@@ -6521,7 +6586,8 @@ function openSquadImportModal(clubId){
           // Bez statusu przy imporcie — status "Do Obserwacji" pojawia się dopiero, gdy dla
           // zawodnika faktycznie zaplanujemy obserwację (patrz saveNewObservation()).
           status: '', clubId: club.id, scout: currentScout || '',
-          videoLink: '', lnpLink: '', tmLink: '', hasAgent: false, agencyName: '',
+          videoLink: '', lnpLink: '', tmLink: '',
+          hasAgent: p.hasAgent === true, agencyName: p.agencyName || '',
           formation: '', customFields: {}, notes: '',
           dateAdded: new Date().toISOString().slice(0,10)
         });
@@ -7963,7 +8029,7 @@ function openRocznikExcelImport(rocznikGroup){
       </div>
       ${importMode==='file' ? `
         <div class="field-wrap" style="margin-bottom:14px;">
-          <label class="field">Wgraj plik Excel / CSV</label>
+          <label class="field">Wgraj plik Excel / CSV — rozpoznaję m.in. Nazwisko, Imię, Rocznik, Pozycja, Aktualny klub, <strong>Menedżer</strong> (Tak/Nie), Agencja</label>
           <input type="file" id="rocznik-file" accept=".xlsx,.xls,.csv">
         </div>
         <div class="modal-actions">
@@ -7973,7 +8039,8 @@ function openRocznikExcelImport(rocznikGroup){
       ` : `
         <p class="note" style="margin-top:0;">Zaznacz w Excelu tabelę <strong>razem z wierszem nagłówków</strong>
         (Nazwisko, Imię, Aktualny klub…), skopiuj <strong>Ctrl+C</strong> i wklej poniżej.
-        Rozpoznaję te same kolumny co przy wgrywaniu pliku — to droga awaryjna, gdy plik się nie wczytuje.</p>
+        Rozpoznaję te same kolumny co przy wgrywaniu pliku — to droga awaryjna, gdy plik się nie wczytuje.<br>
+        Jeśli w arkuszu jest kolumna <strong>Menedżer</strong> (Tak/Nie) albo <strong>Agencja</strong>, wczytam ją razem z resztą.</p>
         <div class="field-wrap" style="margin-bottom:14px;">
           <label class="field">Wklej zaznaczoną tabelę z Excela</label>
           <textarea id="rocznik-paste" rows="12" placeholder="Lp.&#9;Nazwisko&#9;Imię&#9;Rok urodzenia&#9;Pozycja boiskowa&#9;Aktualny klub&#10;1&#9;NOWICKI&#9;KAROL&#9;2013&#9;Bramkarz&#9;AF BRZOZA&#10;2&#9;BIAŁKOWSKI&#9;DAWID&#9;2013&#9;&#9;CHEMIK BYDGOSZCZ" style="font-size:12px;font-family:monospace;"></textarea>
@@ -8021,6 +8088,12 @@ function openRocznikExcelImport(rocznikGroup){
             if(!existing.status && p.status){ existing.status = p.status; touched = true; }
             if(existing.powolania==null && p.powolania!=null){ existing.powolania = p.powolania; touched = true; }
             if(!existing.notes && p.info){ existing.notes = p.info; touched = true; }
+            // Menedżer: uzupełniamy tylko wtedy, gdy arkusz coś o tym mówi (p.hasAgent !== null).
+            // Pustej kolumny nie czytamy jako „nie ma" — to zmazywałoby ustalenia z wcześniejszej pracy.
+            if(p.hasAgent !== null && p.hasAgent !== undefined && !existing.hasAgent && p.hasAgent){
+              existing.hasAgent = true; touched = true;
+            }
+            if(!existing.agencyName && p.agencyName){ existing.agencyName = p.agencyName; touched = true; }
             if(touched) updated++;
             return;
           }
@@ -8030,7 +8103,8 @@ function openRocznikExcelImport(rocznikGroup){
             position: p.position || '', foot: '', height: null,
             status: p.status || '', clubId, scout: currentScout || '',
             powolania: p.powolania ?? null,
-            videoLink: '', lnpLink: '', tmLink: '', hasAgent: false, agencyName: '',
+            videoLink: '', lnpLink: '', tmLink: '',
+            hasAgent: p.hasAgent === true, agencyName: p.agencyName || '',
             formation: '', customFields: {}, notes: p.info || '',
             dateAdded: new Date().toISOString().slice(0,10)
           });
@@ -8107,6 +8181,12 @@ function openRocznikExcelImport(rocznikGroup){
             if(!existing.status && p.status){ existing.status = p.status; touched = true; }
             if(existing.powolania==null && p.powolania!=null){ existing.powolania = p.powolania; touched = true; }
             if(!existing.notes && p.info){ existing.notes = p.info; touched = true; }
+            // Menedżer: uzupełniamy tylko wtedy, gdy arkusz coś o tym mówi (p.hasAgent !== null).
+            // Pustej kolumny nie czytamy jako „nie ma" — to zmazywałoby ustalenia z wcześniejszej pracy.
+            if(p.hasAgent !== null && p.hasAgent !== undefined && !existing.hasAgent && p.hasAgent){
+              existing.hasAgent = true; touched = true;
+            }
+            if(!existing.agencyName && p.agencyName){ existing.agencyName = p.agencyName; touched = true; }
             if(touched) updated++;
             return;
           }
@@ -8116,7 +8196,8 @@ function openRocznikExcelImport(rocznikGroup){
             position: p.position || '', foot: '', height: null,
             status: p.status || '', clubId, scout: currentScout || '',
             powolania: p.powolania ?? null,
-            videoLink: '', lnpLink: '', tmLink: '', hasAgent: false, agencyName: '',
+            videoLink: '', lnpLink: '', tmLink: '',
+            hasAgent: p.hasAgent === true, agencyName: p.agencyName || '',
             formation: '', customFields: {}, notes: p.info || '',
             dateAdded: new Date().toISOString().slice(0,10)
           });
@@ -8128,8 +8209,12 @@ function openRocznikExcelImport(rocznikGroup){
         const ok = okClubs && await savePlayers();
         if(ok){
           const pominięte = Object.entries(innyRocznik);
+          const zAgentem = zTegoRocznika.filter(p=>p.hasAgent === true).length;
+          const bezInfo = zTegoRocznika.filter(p=>p.hasAgent === null || p.hasAgent === undefined).length;
           alert(`Rocznik ${year} — dodano nowych: ${added}` +
             (updated ? `\nUzupełniono istniejących: ${updated}` : '') +
+            (zAgentem ? `\n\nZ menedżerem: ${zAgentem}` +
+              (bezInfo ? ` (u ${bezInfo} arkusz nic o tym nie mówił — zostawiam do ręcznego zaznaczenia)` : '') : '') +
             (pominięte.length ? `\n\nPominięto inne roczniki z pliku: ` +
               pominięte.sort().map(([r,n])=>`${r} — ${n}`).join(', ') +
               `.\nWgraj je z poziomu ich własnych kategorii.` : '') +

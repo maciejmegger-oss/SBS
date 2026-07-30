@@ -443,6 +443,11 @@ tr.player-row:hover{background:#FBF6E9;}
 /* Monitoring — czytelny wskaźnik "ma agenta" (Tak/Nie). */
 .agent-yes{color:#3E7D4C;font-weight:800;}
 .agent-no{color:var(--ink-soft);font-weight:600;}
+/* Przełącznik „ma menedżera" na liście zawodników — ma wyglądać na klikalny, ale nie krzyczeć
+   mocniej niż status obok. „Tak" na zielono, „Nie" wyblakłe, żeby wzrok łapał samych z agentem. */
+.agent-toggle{border:1px solid transparent;border-radius:5px;padding:2px 9px;font-size:12px;cursor:pointer;background:transparent;}
+.agent-toggle.agent-yes{background:rgba(62,125,76,0.10);border-color:rgba(62,125,76,0.35);}
+.agent-toggle:hover{border-color:var(--gold-dark);}
 
 /* Kolory wierszy w Komitecie Transferowym (jak w raporcie): Do transferu = złoto, reszta wg statusu. */
 tr.crow-transfer{background:linear-gradient(90deg,#FBEFC9 0%,#FCF8EC 55%);}
