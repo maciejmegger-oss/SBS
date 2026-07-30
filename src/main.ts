@@ -4964,6 +4964,22 @@ function openPlayerModal(id, presetClubId, prefillData){
 // wyłącznie plan/odbycie wizyty; ocena zawodnika powstaje w zakładce Raporty (fazy gry + stałe
 // fragmenty), z której liczona jest średnia. Historyczne oceny z obserwacji nadal zasilają radar.
 
+// Liga podpowiadana w oknie NOWEGO klubu: ta, którą właśnie przeglądasz. Wcześniej okno zawsze
+// startowało od pierwszej pozycji listy (Ekstraklasa), więc klub dodany podczas przeglądania
+// III ligi lądował w Ekstraklasie i znikał z widoku — wyglądało to na to, że zapis nie działa.
+function domyslnaLigaNowegoKlubu(){
+  const ligi = DB.settings.leagues || [];
+  // Wybrana grupa jest konkretną ligą („III liga, gr. III") — bierzemy ją wprost.
+  if(clubBrowse.group && ligi.includes(clubBrowse.group)) return clubBrowse.group;
+  // Sam poziom („III liga") nie jest ligą z listy — bierzemy jego pierwszą grupę.
+  if(clubBrowse.top){
+    if(ligi.includes(clubBrowse.top)) return clubBrowse.top;
+    const pierwszaGrupa = ligi.find(l=> topLevelOf(l) === clubBrowse.top);
+    if(pierwszaGrupa) return pierwszaGrupa;
+  }
+  return ligi[0] || '';
+}
+
 function openClubModal(id){
   const c = id ? DB.clubs.find(x=>x.id===id) : null;
   const overlay = document.createElement('div');
@@ -4975,7 +4991,7 @@ function openClubModal(id){
     <div class="field-wrap"><label class="field">Nazwa klubu</label><input id="cm-name" value="${c?esc(c.name):''}"></div>
     <div class="grid grid-2">
       <div class="field-wrap"><label class="field">Region</label><select id="cm-region">${DB.settings.regions.map(x=>`<option ${c&&c.region===x?'selected':''}>${esc(x)}</option>`).join('')}</select></div>
-      <div class="field-wrap"><label class="field">Liga / poziom (aktualna)</label><select id="cm-league">${DB.settings.leagues.map(x=>`<option ${c&&c.league===x?'selected':''}>${esc(x)}</option>`).join('')}</select></div>
+      <div class="field-wrap"><label class="field">Liga / poziom (aktualna)</label><select id="cm-league">${DB.settings.leagues.map(x=>`<option ${(c ? c.league===x : x===domyslnaLigaNowegoKlubu())?'selected':''}>${esc(x)}</option>`).join('')}</select></div>
     </div>
     <div class="grid grid-2">
       <div class="field-wrap"><label class="field">Sezon</label><input id="cm-season" value="${c?esc(c.season||''):''}" placeholder="np. 2025/2026"></div>
