@@ -1583,7 +1583,7 @@ async function enrichZniczRoster(){
     const pl = DB.players.find(x => x.firstName===enrich.firstName && x.lastName===enrich.lastName && x.clubId===club.id);
     if(!pl) return;
     if(!pl.tmLink && enrich.tmLink){ pl.tmLink = enrich.tmLink; changed++; }
-    if(!pl.birthDate && enrich.birthDate){ pl.birthDate = enrich.birthDate; pl.birthYear = new Date(enrich.birthDate).getFullYear(); changed++; }
+    if(!pl.birthDate && enrich.birthDate){ pl.birthDate = enrich.birthDate; pl.birthYear = String(new Date(enrich.birthDate).getFullYear()); changed++; }
     if(!pl.hasAgent && enrich.agencyName){ pl.hasAgent = true; pl.agencyName = enrich.agencyName; changed++; }
   });
   // Uwaga: zapis (savePlayers) celowo NIE dzieje się tutaj — wywołujący (loadAllInner) grupuje zmiany
@@ -1604,7 +1604,7 @@ async function enrichRosterGeneric(enrichArray){
     if(!pl) return;
     if(!pl.tmLink && enrich.tmLink){ pl.tmLink = enrich.tmLink; changed++; }
     if(!pl.height && enrich.height){ pl.height = enrich.height; changed++; }
-    if(!pl.birthDate && enrich.birthDate){ pl.birthDate = enrich.birthDate; pl.birthYear = new Date(enrich.birthDate).getFullYear(); changed++; }
+    if(!pl.birthDate && enrich.birthDate){ pl.birthDate = enrich.birthDate; pl.birthYear = String(new Date(enrich.birthDate).getFullYear()); changed++; }
     if(!pl.hasAgent && enrich.agencyName){ pl.hasAgent = true; pl.agencyName = enrich.agencyName; changed++; }
     if(enrich.correctLastName && pl.lastName===enrich.lastName){ pl.lastName = enrich.correctLastName; changed++; }
     if(enrich.correctPosition && pl.position!==enrich.correctPosition){ pl.position = enrich.correctPosition; changed++; }
@@ -1635,9 +1635,11 @@ async function importClubRoster(clubName, seedArray, profileTmUrl){
         notes = noteParts.length ? ('Transfermarkt — '+noteParts.join(', ')+'.') : '';
       }
       // Age-only source (no exact birthdate given): store an approximate birth year, clearly flagged as such.
-      let birthYear = seed.birthDate ? new Date(seed.birthDate).getFullYear() : '';
+      // Rocznik trzymamy ZAWSZE jako tekst — w bazie kolumna jest tekstowa, a mieszanie liczby
+      // z tekstem rozjeżdżało porównania w widoku roczników i przy dopasowywaniu importu.
+      let birthYear = seed.birthDate ? String(new Date(seed.birthDate).getFullYear()) : '';
       if(!seed.birthDate && seed.age){
-        birthYear = 2026 - seed.age;
+        birthYear = String(2026 - seed.age);
         notes = (notes ? notes+' ' : '') + '(Rocznik przybliżony na podstawie wieku podanego w źródle — nie dokładna data urodzenia.)';
       }
       DB.players.push({
@@ -2967,7 +2969,11 @@ function viewPlayers(){
   let list = DB.players.slice();
   if(viewingRocznikGroup){
     const year = viewingRocznikGroup.match(/\d{4}/)[0];
-    list = list.filter(p => p.birthYear === year);
+    // Rocznik porównujemy JAKO TEKST. Część ścieżek zapisu wyliczała go z daty urodzenia
+    // (new Date(...).getFullYear() — liczba), a import rocznikowy wpisuje tekst z nazwy kategorii.
+    // Przy ścisłym === liczbowy 2014 nie równał się tekstowemu "2014": zawodnik znikał z listy
+    // rocznika, a ponowny import zakładał go drugi raz, bo nie znajdował istniejącego wpisu.
+    list = list.filter(p => String(p.birthYear||'') === year);
   }
   if(playerFilters.region) list = list.filter(p=>clubRegion(p.clubId)===playerFilters.region);
   if(playerFilters.league) list = list.filter(p=>clubLeague(p.clubId)===playerFilters.league);
@@ -5240,7 +5246,7 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="delete-rocznik"]').forEach(b=>b.onclick=async()=>{
     const year = b.dataset.year;
     if(confirm(`Usunąć wszystkich zawodników z rocznika ${year}? To działanie nie może być cofnięte.`)){
-      const toDelete = DB.players.filter(p=>p.birthYear===year);
+      const toDelete = DB.players.filter(p=>String(p.birthYear||'')===String(year));
       for(const p of toDelete){ DB.players = DB.players.filter(x=>x.id!==p.id); }
       const ok = await savePlayers();
       if(ok){
@@ -8007,7 +8013,7 @@ function openRocznikExcelImport(rocznikGroup){
         const nkey = (f,l)=> importNorm(f) + '|' + importNorm(l);
         toAdd.forEach(p=>{
           const clubId = resolveClubForImport(p.club, rocznikGroup, createdClubs);
-          const existing = DB.players.find(pl=> pl.birthYear===year && nkey(pl.firstName,pl.lastName)===nkey(p.firstName,p.lastName));
+          const existing = DB.players.find(pl=> String(pl.birthYear||'')===String(year) && nkey(pl.firstName,pl.lastName)===nkey(p.firstName,p.lastName));
           if(existing){
             let touched = false;
             if(!existing.clubId && clubId){ existing.clubId = clubId; touched = true; }
@@ -8074,7 +8080,7 @@ function openRocznikExcelImport(rocznikGroup){
         // wiersz bez podanego roku traktujemy jako należący do niej.
         const innyRocznik = {};
         const zTegoRocznika = toAdd.filter(p=>{
-          if(p.birthYear && p.birthYear !== year){
+          if(p.birthYear && String(p.birthYear) !== String(year)){
             innyRocznik[p.birthYear] = (innyRocznik[p.birthYear]||0) + 1;
             return false;
           }
@@ -8093,7 +8099,7 @@ function openRocznikExcelImport(rocznikGroup){
           // Zawodnik już jest? UZUPEŁNIJ brakujące pola zamiast pomijać. Wcześniej powtórne
           // wgranie tego samego pliku nie robiło nic, więc dane z pierwszego, wadliwego importu
           // (bez klubu) zostawały na zawsze. Wypełnionych pól nie nadpisujemy.
-          const existing = DB.players.find(pl=> pl.birthYear===rocznikZawodnika && nkey(pl.firstName,pl.lastName)===nkey(p.firstName,p.lastName));
+          const existing = DB.players.find(pl=> String(pl.birthYear||'')===String(rocznikZawodnika) && nkey(pl.firstName,pl.lastName)===nkey(p.firstName,p.lastName));
           if(existing){
             let touched = false;
             if(!existing.clubId && clubId){ existing.clubId = clubId; touched = true; }
@@ -8876,7 +8882,7 @@ function wireLastModal(){
     ov.querySelectorAll('.pm-custom').forEach(inp=>{ customFields[inp.dataset.field] = inp.value.trim(); });
     const data = {
       firstName: first, lastName: last,
-      birthDate, birthYear: birthDate? new Date(birthDate).getFullYear() : '',
+      birthDate, birthYear: birthDate? String(new Date(birthDate).getFullYear()) : '',
       position: document.getElementById('pm-position').value,
       foot: document.getElementById('pm-foot').value,
       height: Number(document.getElementById('pm-height').value)||null,
