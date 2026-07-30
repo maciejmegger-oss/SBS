@@ -2962,7 +2962,7 @@ function viewDashboard(){
 }
 
 // ---------- PLAYERS ----------
-let playerFilters = {region:"",league:"",status:"",position:"",search:"",birthYear:""};
+let playerFilters = {region:"",league:"",status:"",position:"",search:"",birthYear:"",agent:""};
 function viewPlayers(){
   if(viewingPlayerId) return viewPlayerDetail(viewingPlayerId);
 
@@ -2980,6 +2980,10 @@ function viewPlayers(){
   if(playerFilters.status) list = list.filter(p=>p.status===playerFilters.status);
   if(playerFilters.position) list = list.filter(p=>p.position===playerFilters.position);
   if(playerFilters.birthYear) list = list.filter(p=>String(p.birthYear||'')===String(playerFilters.birthYear));
+  // „Niesprawdzone" to trzeci stan: ani zaznaczonego menedżera, ani śladu, że ktoś to weryfikował.
+  if(playerFilters.agent==='tak') list = list.filter(p=>!!p.hasAgent);
+  else if(playerFilters.agent==='nie') list = list.filter(p=>!p.hasAgent);
+  else if(playerFilters.agent==='niesprawdzone') list = list.filter(p=>!p.hasAgent && !p.agentCheckedAt);
   if(playerFilters.search){
     const q = playerFilters.search.toLowerCase();
     list = list.filter(p=> (p.firstName+" "+p.lastName).toLowerCase().includes(q));
@@ -3028,12 +3032,19 @@ function viewPlayers(){
       <select id="f-league"><option value="">Wszystkie ligi</option>${DB.settings.leagues.map(r=>`<option ${playerFilters.league===r?'selected':''}>${esc(r)}</option>`).join('')}</select>
       <select id="f-position"><option value="">Wszystkie pozycje</option>${DB.settings.positions.map(r=>`<option ${playerFilters.position===r?'selected':''}>${esc(r)}</option>`).join('')}</select>
       <select id="f-status"><option value="">Wszystkie statusy</option>${DB.settings.statuses.map(r=>`<option ${playerFilters.status===r?'selected':''}>${esc(r)}</option>`).join('')}</select>
+      <select id="f-agent" title="Filtruj po tym, czy zawodnik ma menedżera">
+        <option value="">Menedżer: wszyscy</option>
+        <option value="tak" ${playerFilters.agent==='tak'?'selected':''}>Menedżer: Tak</option>
+        <option value="nie" ${playerFilters.agent==='nie'?'selected':''}>Menedżer: Nie</option>
+        <option value="niesprawdzone" ${playerFilters.agent==='niesprawdzone'?'selected':''}>Menedżer: niesprawdzone</option>
+      </select>
       <input id="f-birthyear" type="text" inputmode="numeric" maxlength="4" placeholder="Rocznik np. 2005" value="${esc(playerFilters.birthYear)}" style="max-width:140px;">
       <input id="f-search" placeholder="Szukaj po nazwisku..." value="${esc(playerFilters.search)}">
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <button class="gold" data-action="add-player">+ Nowy zawodnik</button>
       ${viewingRocznikGroup ? `<button class="gold" data-action="rocznik-excel-import">📋 Wgraj z Excela</button>` : ''}
+      <button class="secondary" data-action="agent-import" title="Zbierz menedżerów z profili na Transfermarkcie">🕵 Menedżerowie</button>
       <button class="secondary" data-action="compare-open" title="Zaznacz do 3 zawodników na liście, aby porównać właśnie ich">⚖️ Porównaj zawodników</button>
     </div>
   </div>
@@ -3069,6 +3080,10 @@ async function toggleHasAgent(id){
   // Zdjęcie znacznika kasuje też nazwę agencji — inaczej zostawałaby przy zawodniku
   // opisanym jako „bez menedżera" i przy następnym eksporcie wyglądałaby na aktualną.
   if(!p.hasAgent) p.agencyName = '';
+  // Ręczne kliknięcie liczy się jako sprawdzenie — także to na „Nie". Dzięki temu zawodnik
+  // znika z kolejki „niesprawdzone", bo ktoś się nim faktycznie zajął.
+  p.agentCheckedAt = new Date().toISOString().slice(0,10);
+  p.agentSource = 'ręcznie';
   await savePlayers();
   render();
 }
@@ -3127,7 +3142,9 @@ function viewPlayerDetail(id){
         <tr><td style="color:var(--ink-soft);">Link wideo</td><td>${p.videoLink? `<a href="${esc(p.videoLink)}" target="_blank" rel="noopener">otwórz</a>`:"—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">mPZPN / 90minut.pl</td><td>${p.lnpLink? `<a class="ext-link" href="${esc(p.lnpLink)}" target="_blank" rel="noopener">profil / statystyki &rarr;</a>`:"—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">Transfermarkt</td><td>${p.tmLink? `<a class="ext-link" href="${esc(p.tmLink)}" target="_blank" rel="noopener">profil &rarr;</a>`:"—"}</td></tr>
-        <tr><td style="color:var(--ink-soft);">Menedżer / agent</td><td>${p.hasAgent? agencyDisplayHtml(p) : "Nie"}</td></tr>
+        <tr><td style="color:var(--ink-soft);">Menedżer / agent</td><td>${p.hasAgent? agencyDisplayHtml(p) : (p.agentCheckedAt ? 'Nie' : '<span class="note">niesprawdzone</span>')}${
+          p.agentCheckedAt ? `<span class="note" style="display:block;font-size:11px;">sprawdzone ${esc(p.agentCheckedAt)}${p.agentSource?' — '+esc(p.agentSource):''}</span>` : ''
+        }</td></tr>
         <tr><td style="color:var(--ink-soft);">Kontrakt</td><td>${p.hasContract? `<span class="agent-yes">Tak</span>${p.contractUntil?` — do <strong>${esc(p.contractUntil)}</strong>`:''}` : '<span class="agent-no">Nie</span>'}</td></tr>
       </table>
       ${p.notes? `<p style="margin-top:10px;font-size:13px;">${esc(p.notes)}</p>`:''}
@@ -5244,6 +5261,7 @@ function attachHandlers(){
     currentView = 'newobs'; viewingPlayerId = null;
     render();
   });
+  main.querySelectorAll('[data-action="agent-import"]').forEach(b=>b.onclick=()=>openAgentImportModal());
   main.querySelectorAll('[data-action="toggle-agent"]').forEach(b=>b.onclick=(e)=>{
     e.stopPropagation();          // klik w komórkę nie może otwierać profilu zawodnika
     toggleHasAgent(b.dataset.id);
@@ -5928,6 +5946,7 @@ function attachHandlers(){
   const fp = document.getElementById('f-position'); if(fp) fp.onchange=()=>{playerFilters.position=fp.value; render();};
   const fs = document.getElementById('f-status'); if(fs) fs.onchange=()=>{playerFilters.status=fs.value; render();};
   const fby = document.getElementById('f-birthyear'); if(fby) fby.oninput=()=>{playerFilters.birthYear=fby.value.replace(/\D/g,''); render();};
+  const fag = document.getElementById('f-agent'); if(fag) fag.onchange=()=>{playerFilters.agent=fag.value; render();};
   const fq = document.getElementById('f-search'); if(fq) fq.oninput=()=>{playerFilters.search=fq.value; render();};
 
   // settings add/remove
@@ -7374,6 +7393,77 @@ d.style.cssText='position:fixed;top:16px;right:16px;z-index:999999;background:#1
 document.body.appendChild(d);setTimeout(function(){d.remove()},3200);
 }).catch(function(e){alert('Nie udało się skopiować: '+e.message)})}catch(e){alert('Błąd: '+e.message)}})();`;
 
+// Zakładka do zbierania MENEDŻERÓW z profili zawodników na Transfermarkcie.
+//
+// Osobna od tej do statystyk, bo pole „Doradca" jest tylko na profilu pojedynczego zawodnika
+// (/profil/spieler/…), a nie na stronie klubu ze statystykami drużynowymi. Zbiera do tego samego
+// rodzaju bufora co tamta: wchodzisz na profil, klikasz, i tak przez całą listę — a na końcu
+// wklejasz wszystko naraz.
+//
+// UWAGA merytoryczna, zapisana też w oknie importu: brak doradcy na Transfermarkcie NIE znaczy,
+// że zawodnik nie ma menedżera. To pole bywa tam nieuzupełnione, zwłaszcza u młodzieży. Dlatego
+// skrypt zapisuje „AGENT: -", a aplikacja odnotowuje wtedy tylko fakt sprawdzenia — nigdy nie
+// ustawia „nie ma agenta" na tej podstawie.
+const TM_AGENT_BOOKMARKLET = `javascript:(function(){try{
+var K='sbs_agenci';
+if(window.event&&window.event.shiftKey){localStorage.removeItem(K);alert('SBS: wyczyszczono zebranych zawodnikow.');return;}
+var u=location.href;
+if(!/\\/profil\\/spieler\\/\\d+/.test(u)){alert('SBS: to nie jest profil zawodnika na Transfermarkcie.\\n\\nOtworz profil zawodnika (adres z \\u201e/profil/spieler/\\u201d) i kliknij ponownie.');return;}
+var imie=(document.title||'').split(' - ')[0].replace(/\\s+/g,' ').trim();
+if(!imie){alert('SBS: nie odczytalem nazwiska z tej strony.');return;}
+var txt=document.body.innerText.replace(/\\u00a0/g,' ');
+var L=['Doradca','Berater','Player agent','Agent'];var agent='';
+for(var i=0;i<L.length&&!agent;i++){
+var m=txt.match(new RegExp('(?:^|\\\\n)[ \\\\t]*'+L[i]+'[ \\\\t]*:?[ \\\\t]*\\\\n?[ \\\\t]*([^\\\\n]{1,60})','i'));
+if(m)agent=m[1].trim();}
+if(/^(brak|-|\\u2013|\\u2014|unknown|k\\.A\\.)$/i.test(agent))agent='';
+if(/^(Aktualny|Wzrost|Pozycja|Data|Miejsce|Narodowo|Kontrakt|Numer|Noga|Warto)/i.test(agent))agent='';
+var mR=txt.match(/(?:Data urodzenia|Geb\\.\\/Alter|Date of birth)[^\\n]*?(\\d{4})/i);
+var rok=mR?mR[1]:'';
+var wpis='### '+imie+' ###\\nROK: '+rok+'\\nAGENT: '+(agent||'-');
+var stare=localStorage.getItem(K)||'';
+if(stare.indexOf('### '+imie+' ###')>=0){alert('SBS: '+imie+' jest juz zebrany — pomijam, zeby nie dublowac.');return;}
+var caly=stare+(stare?'\\n\\n':'')+wpis;
+localStorage.setItem(K,caly);
+var ile=(caly.match(/### /g)||[]).length;
+navigator.clipboard.writeText(caly).then(function(){
+var d=document.createElement('div');
+d.innerHTML='<b>SBS: '+imie+'</b><br>menedzer: '+(agent||'Transfermarkt nie podaje')+'<br>zebranych: '+ile+' — schowek gotowy<br><span style="opacity:.75;font-weight:400">Shift+klik = wyczysc zebrane</span>';
+d.style.cssText='position:fixed;top:16px;right:16px;z-index:999999;background:#16302A;color:#C69B3C;padding:12px 18px;border-radius:8px;font:600 13px sans-serif;line-height:1.5;box-shadow:0 4px 16px rgba(0,0,0,.3)';
+document.body.appendChild(d);setTimeout(function(){d.remove()},3200);
+}).catch(function(e){alert('Nie udalo sie skopiowac: '+e.message)})}catch(e){alert('Blad: '+e.message)}})();`;
+
+// Rozbiór bufora zebranego zakładką. Jeden blok = jeden zawodnik.
+function parseAgentPaste(text){
+  return String(text||'').split(/^###\s*/m).map(s=>s.trim()).filter(Boolean).map(blok=>{
+    const linie = blok.split(/\r?\n/);
+    const naglowek = (linie.shift()||'').replace(/#+\s*$/,'').trim();
+    if(!naglowek) return null;
+    let rok = '', agent = '';
+    linie.forEach(l=>{
+      const mr = l.match(/^ROK:\s*(\d{4})/i);  if(mr) rok = mr[1];
+      const ma = l.match(/^AGENT:\s*(.*)$/i);  if(ma) agent = ma[1].trim();
+    });
+    const brak = !agent || /^[-–—]$/.test(agent) || /^(brak|nie podano|unknown)$/i.test(agent);
+    return { nazwa: naglowek, birthYear: rok, agencyName: brak ? '' : agent, maAgenta: !brak };
+  }).filter(Boolean);
+}
+
+// Dopasowanie „Imię Nazwisko" z Transfermarktu do zawodnika w bazie. Porównujemy ZBIÓR słów, bo
+// kolejność bywa odwrotna (arkusze ZPN piszą „NOWAK JAN", Transfermarkt „Jan Nowak").
+function matchPlayersByFullName(nazwa, birthYear){
+  const slowa = String(nazwa||'').split(/\s+/).map(importNorm).filter(Boolean).sort().join(' ');
+  if(!slowa) return [];
+  let kandydaci = DB.players.filter(p=>
+    [p.firstName, p.lastName].join(' ').split(/\s+/).map(importNorm).filter(Boolean).sort().join(' ') === slowa);
+  // Imiennicy: rocznik z profilu rozstrzyga, o którego chodzi.
+  if(kandydaci.length > 1 && birthYear){
+    const zRocznikiem = kandydaci.filter(p=> String(p.birthYear||'') === String(birthYear));
+    if(zRocznikiem.length) kandydaci = zRocznikiem;
+  }
+  return kandydaci;
+}
+
 function openBookmarkletModal(){
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -7411,6 +7501,169 @@ function openBookmarkletModal(){
   overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=()=>overlay.remove());
   overlay.addEventListener('click', e=>{ if(e.target===overlay) overlay.remove(); });
   document.body.appendChild(overlay);
+}
+
+// Młodzieżowcy, przy których wciąż nie wiadomo, czy mają menedżera — czyli ani zaznaczonego
+// „Tak", ani śladu wcześniejszego sprawdzenia. To jest właściwa lista roboczej kolejki.
+function mlodziezowcyBezInfoOAgencie(){
+  return DB.players
+    .filter(p=> isYouthPlayer(p) && !p.hasAgent && !p.agentCheckedAt)
+    .sort((a,b)=> (a.lastName||'').localeCompare(b.lastName||'','pl'));
+}
+function linkTmDoZawodnika(p){
+  if(p.tmLink && /transfermarkt/.test(p.tmLink)) return p.tmLink;
+  // Bez zapisanego profilu podajemy wyszukiwarkę Transfermarktu — dalej klika już użytkownik.
+  const q = encodeURIComponent([p.firstName, p.lastName].filter(Boolean).join(' '));
+  return 'https://www.transfermarkt.pl/schnellsuche/ergebnis/schnellsuche?query=' + q;
+}
+
+function openAgentImportModal(){
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  let parsed = [];
+  let pasted = '';
+
+  function dopasowania(){
+    return parsed.map(w=>{
+      const kandydaci = matchPlayersByFullName(w.nazwa, w.birthYear);
+      return { ...w, kandydaci, player: kandydaci.length === 1 ? kandydaci[0] : null };
+    });
+  }
+
+  function draw(){
+    const wynik = dopasowania();
+    const doZapisu = wynik.filter(x=>x.player);
+    const doKolejki = mlodziezowcyBezInfoOAgencie();
+    const LIMIT = 40;
+
+    overlay.innerHTML = `
+    <div class="modal" style="max-width:760px;">
+      <h3>🕵 Menedżerowie z Transfermarktu</h3>
+      <p class="note" style="margin-top:0;">Pole „Doradca" jest na profilu <strong>pojedynczego zawodnika</strong>,
+      nie na stronie klubu — dlatego to osobna zakładka niż ta do statystyk. Wchodzisz na profil, klikasz,
+      i tak przez całą listę; na końcu wklejasz wszystko naraz.</p>
+
+      <details style="margin-bottom:12px;" ${parsed.length?'':'open'}>
+        <summary style="cursor:pointer;font-weight:700;color:var(--gold-dark);">1. Ustaw zakładkę (raz)</summary>
+        <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
+          <li>Włącz pasek zakładek: <strong>Ctrl+Shift+B</strong></li>
+          <li>Przeciągnij ten przycisk na pasek zakładek:<br>
+            <a href="${esc(TM_AGENT_BOOKMARKLET)}" onclick="return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:#C69B3C;color:#16302A;border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">🕵 Menedżer do SBS</a>
+          </li>
+          <li>Wejdź na <strong>profil zawodnika</strong> na Transfermarkcie i kliknij zakładkę</li>
+          <li>Powtórz dla kolejnych — bufor się sumuje. <strong>Shift+klik</strong> czyści zebrane.</li>
+        </ol>
+        <details style="margin-top:6px;">
+          <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Przeciąganie nie działa? Kod do wklejenia ręcznie</summary>
+          <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;margin-top:6px;">${esc(TM_AGENT_BOOKMARKLET)}</textarea>
+        </details>
+      </details>
+
+      <div class="field-wrap" style="margin-bottom:10px;">
+        <label class="field">2. Wklej zebrane (Ctrl+V)</label>
+        <textarea id="agent-paste" rows="6" placeholder="### Jan Nowak ###&#10;ROK: 2007&#10;AGENT: Przykładowa Agencja" style="font-size:12px;font-family:monospace;">${esc(pasted)}</textarea>
+      </div>
+      <div class="modal-actions" style="justify-content:flex-start;margin-top:0;">
+        <button class="secondary" data-action="agent-parse">Rozpoznaj</button>
+      </div>
+
+      ${parsed.length ? `
+        <div style="border-top:1px solid #E3DECE;padding-top:10px;margin-top:12px;max-height:300px;overflow:auto;">
+          <p class="note" style="margin-top:0;">Rozpoznano <strong>${parsed.length}</strong>,
+          dopasowano do bazy <strong>${doZapisu.length}</strong>. Odznacz, czego nie chcesz zapisywać.</p>
+          <table><tbody>
+            ${wynik.map((x,i)=>{
+              if(!x.player){
+                const powod = x.kandydaci.length > 1
+                  ? `w bazie jest ${x.kandydaci.length} zawodników o tym nazwisku — popraw ręcznie`
+                  : 'nie znalazłem takiego zawodnika w bazie';
+                return `<tr style="color:var(--clay-dark);"><td></td>
+                  <td colspan="3" style="font-size:12px;">${esc(x.nazwa)} — ${esc(powod)}</td></tr>`;
+              }
+              const p = x.player;
+              return `<tr>
+                <td style="width:24px;"><input type="checkbox" class="agent-row-check" data-idx="${i}" checked></td>
+                <td><strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}${isYouthPlayer(p)?youthBadge():''}
+                  <span class="note" style="display:block;">${esc(clubName(p.clubId))}</span></td>
+                <td style="font-size:12px;">${p.hasAgent ? `<span class="agent-yes">Tak</span>${p.agencyName?' · '+esc(p.agencyName):''}` : `<span class="agent-no">Nie</span>`}</td>
+                <td style="font-size:12px;">→ ${x.maAgenta
+                  ? `<span class="agent-yes">Tak</span> · ${esc(x.agencyName)}`
+                  : `<span class="note">Transfermarkt nie podaje — zapiszę tylko datę sprawdzenia</span>`}</td>
+              </tr>`;
+            }).join('')}
+          </tbody></table>
+        </div>
+        <div class="modal-actions" style="justify-content:flex-start;">
+          <button class="gold" data-action="agent-apply">Zapisz zaznaczonych</button>
+        </div>
+      ` : ''}
+
+      <details style="margin-top:14px;border-top:1px dashed #D9D3C4;padding-top:10px;">
+        <summary style="cursor:pointer;font-weight:700;color:var(--pitch);">
+          Młodzieżowcy bez informacji o menedżerze — ${doKolejki.length}
+        </summary>
+        <p class="note" style="margin:6px 0;">Rocznik 2006 i młodsi, u których nie ma ani zaznaczonego „Tak",
+        ani śladu wcześniejszego sprawdzenia. Kliknij nazwisko, aby otworzyć go na Transfermarkcie.</p>
+        <div style="max-height:220px;overflow:auto;font-size:12.5px;line-height:1.8;">
+          ${doKolejki.slice(0,LIMIT).map(p=>
+            `<div><a href="${esc(linkTmDoZawodnika(p))}" target="_blank" rel="noopener noreferrer" style="color:var(--gold-dark);font-weight:700;">${esc(p.lastName)} ${esc(p.firstName)}</a>
+             <span class="note">${esc(p.birthYear||'')} · ${esc(clubName(p.clubId))}</span></div>`).join('')
+            || '<div class="note">Wszyscy młodzieżowcy mają już tę informację.</div>'}
+        </div>
+        ${doKolejki.length > LIMIT ? `<p class="note" style="margin-top:6px;">Pokazuję pierwszych ${LIMIT} z ${doKolejki.length} — reszta pojawi się, gdy odhaczysz tych.</p>` : ''}
+      </details>
+
+      <div class="modal-actions">
+        <button class="secondary" data-action="close-modal">Zamknij</button>
+      </div>
+    </div>`;
+    wire();
+  }
+
+  function wire(){
+    overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=()=>{ overlay.remove(); render(); });
+    const ta = overlay.querySelector('#agent-paste');
+    if(ta) ta.oninput = ()=>{ pasted = ta.value; };
+    overlay.querySelectorAll('[data-action="agent-parse"]').forEach(b=>b.onclick=()=>{
+      pasted = (overlay.querySelector('#agent-paste')||{}).value || '';
+      parsed = parseAgentPaste(pasted);
+      if(!parsed.length){ alert('Nie rozpoznałem żadnego zawodnika.\n\nWklej to, co skopiowała zakładka „🕵 Menedżer do SBS".'); return; }
+      draw();
+    });
+    overlay.querySelectorAll('[data-action="agent-apply"]').forEach(b=>b.onclick=async()=>{
+      const wynik = dopasowania();
+      const zaznaczone = Array.from(overlay.querySelectorAll('.agent-row-check:checked')).map(c=>Number(c.dataset.idx));
+      const dzis = new Date().toISOString().slice(0,10);
+      let zAgentem = 0, samoSprawdzenie = 0;
+      zaznaczone.forEach(i=>{
+        const x = wynik[i];
+        if(!x || !x.player) return;
+        const p = x.player;
+        p.agentCheckedAt = dzis;
+        p.agentSource = 'Transfermarkt';
+        if(x.maAgenta){
+          p.hasAgent = true;
+          if(x.agencyName) p.agencyName = x.agencyName;
+          zAgentem++;
+        } else {
+          // Świadomie NIE ustawiamy hasAgent=false. Brak wpisu na Transfermarkcie to brak danych,
+          // nie potwierdzenie, że zawodnik jest bez menedżera — a dla agencji to różnica zasadnicza.
+          samoSprawdzenie++;
+        }
+      });
+      const ok = await savePlayers();
+      if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
+      alert(`Zapisano.\n\nZ menedżerem: ${zAgentem}` +
+        (samoSprawdzenie ? `\nSprawdzonych, ale Transfermarkt nikogo nie podaje: ${samoSprawdzenie}` +
+          `\n(znacznik „Tak/Nie" zostaje bez zmian — brak wpisu w serwisie nie oznacza, że zawodnik nie ma menedżera)` : ''));
+      parsed = []; pasted = '';
+      draw();
+    });
+  }
+
+  overlay.addEventListener('click', e=>{ if(e.target===overlay){ overlay.remove(); render(); } });
+  document.body.appendChild(overlay);
+  draw();
 }
 
 // Scalanie klubów wpisanych dwa razy pod różnymi nazwami („Zagłębie II Lubin" i „Zagłębie Lubin II").

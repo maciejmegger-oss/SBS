@@ -66,6 +66,10 @@ const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }> = {
       "powolania", "opisKoncowy", "monitored", "transferHistory", "nationality",
       "yellowCards", "redCards", "watchlistRemoved", "hasContract", "contractUntil",
       "statsUpdatedAt", "statsSource", "statsSeason",
+      // Skąd i kiedy wzięliśmy informację o menedżerze. Bez tego nie da się odróżnić „sprawdzone,
+      // Transfermarkt nikogo nie podaje" od „nikt tego jeszcze nie sprawdzał" — a to dla agencji
+      // dwie zupełnie różne informacje.
+      "agentSource", "agentCheckedAt",
     ],
   },
   sbs_observations: {
