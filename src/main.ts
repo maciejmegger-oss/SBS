@@ -3330,6 +3330,7 @@ function viewClubs(){
         ⭱ Wgraj wiele logo <input type="file" id="multi-logo-input" accept="image/png,image/jpeg,image/jpg,.png,.jpg,.jpeg" multiple style="display:none;">
       </label>
       ${clubBrowse.top ? `<button class="secondary" data-action="league-stats" data-league="${esc(clubBrowse.top)}" title="Wklej statystyki wszystkich klubów tej ligi w jednym oknie">⏱ Statystyki ligi</button>` : ''}
+      <button class="secondary" data-action="merge-duplicates" title="Znajdź kluby wpisane dwa razy pod różnymi nazwami i połącz je w jeden">🧹 Scal duplikaty</button>
       <button class="gold" data-action="add-club">+ Nowy klub</button>
     </div>
   </div>
@@ -5405,6 +5406,7 @@ function attachHandlers(){
     }
   };
   main.querySelectorAll('[data-action="league-stats"]').forEach(b=>b.onclick=()=>openLeagueStatsModal(b.dataset.league));
+  main.querySelectorAll('[data-action="merge-duplicates"]').forEach(b=>b.onclick=()=>openMergeDuplicatesModal());
   main.querySelectorAll('[data-action="analyze-player"]').forEach(b=>b.onclick=()=>openPlayerAnalysisModal(b.dataset.id));
   main.querySelectorAll('[data-action="contacts-fill-clubs"]').forEach(b=>b.onclick=async()=>{
     let filled = 0, noMatch = 0;
@@ -7209,6 +7211,112 @@ function openBookmarkletModal(){
   </div>`;
   overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=()=>overlay.remove());
   overlay.addEventListener('click', e=>{ if(e.target===overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
+
+// Scalanie klubów wpisanych dwa razy pod różnymi nazwami („Zagłębie II Lubin" i „Zagłębie Lubin II").
+//
+// Dlaczego to działa W APLIKACJI, a nie skryptem po stronie bazy: otwarta karta trzyma w pamięci
+// migawkę danych z chwili wczytania i przy każdym zapisie odsyła ją w całości. Zmiany robione
+// w bazie „obok" aplikacji były więc cofane pierwszym zapisem — duplikaty wracały trzykrotnie.
+// Tutaj operujemy na tej samej migawce, więc zapis ją utrwala.
+//
+// Rdzeń nazwy: pomijamy „II", „KS", „LKS", „MKS" i znaki nie-literowe, bo właśnie tym różnią się
+// zapisy z 90minut i Transfermarktu.
+function rdzenNazwyKlubu(s){
+  return String(s||'').toLowerCase()
+    .replace(/[łøđ]/g, c=>({'ł':'l','ø':'o','đ':'d'}[c]))
+    .normalize('NFD').replace(/\p{M}/gu,'')
+    .replace(/\b(ii|iii|ks|lks|mks|kp|kks)\b/g,'')
+    .replace(/[^a-z0-9]/g,'');
+}
+
+function znajdzDuplikatyKlubow(){
+  const wgKlucza = {};
+  DB.clubs.forEach(c=>{
+    const klucz = topLevelOf(c.league) + '|' + rdzenNazwyKlubu(c.name);
+    if(!rdzenNazwyKlubu(c.name)) return;
+    (wgKlucza[klucz] = wgKlucza[klucz] || []).push(c);
+  });
+  return Object.values(wgKlucza).filter(g=>g.length>1).map(grupa=>{
+    // Zostaje wpis z NAJWIĘKSZĄ liczbą zawodników; przy remisie ten, który ma herb —
+    // herb jest przypisany do identyfikatora klubu i przepada, gdyby usunąć właśnie ten wpis.
+    const zLiczba = grupa.map(c=>({c, ile: DB.players.filter(p=>p.clubId===c.id).length, herb: !!DB.clubCrests[c.id]}));
+    zLiczba.sort((a,b)=> b.ile-a.ile || (b.herb?1:0)-(a.herb?1:0) || a.c.name.localeCompare(b.c.name,'pl'));
+    return { zostaje: zLiczba[0], doScalenia: zLiczba.slice(1) };
+  });
+}
+
+function openMergeDuplicatesModal(){
+  const grupy = znajdzDuplikatyKlubow();
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  const zamknij = ()=>{ overlay.remove(); render(); };
+
+  const tresc = !grupy.length
+    ? `<div class="empty">Nie znalazłem klubów wpisanych dwa razy. Wszystko wygląda w porządku.</div>`
+    : `<p class="note">Znalazłem ${grupy.length} ${grupy.length===1?'klub wpisany':'kluby wpisane'} dwa razy pod różnymi nazwami.
+       Zostaje wpis z większym składem (a przy równych — ten z herbem), reszta zostanie do niego dołączona.</p>
+       <div style="max-height:320px;overflow:auto;">
+       ${grupy.map(g=>`
+         <div style="border-bottom:1px solid #EFEADD;padding:9px 2px;font-size:12.5px;">
+           <strong style="color:var(--pitch);">${esc(g.zostaje.c.name)}</strong>
+           <span class="note">— zostaje (${g.zostaje.ile} zaw.${g.zostaje.herb?', z herbem':''})</span>
+           ${g.doScalenia.map(d=>`<div style="color:var(--clay-dark);margin-left:12px;">↳ ${esc(d.c.name)} — dołączam ${d.ile} zaw.${d.herb&&!g.zostaje.herb?' i herb':''}</div>`).join('')}
+         </div>`).join('')}
+       </div>`;
+
+  overlay.innerHTML = `<div class="modal" style="max-width:620px;">
+    <h3>🧹 Scal duplikaty klubów</h3>
+    ${tresc}
+    <p class="note" style="font-size:11.5px;margin-top:10px;">Zawodnicy nie są kasowani — przechodzą do klubu, który zostaje.
+    Jeśli ten sam zawodnik jest w obu wpisach, zostanie jedna kopia.</p>
+    <div class="modal-actions">
+      ${grupy.length?`<button class="gold" data-action="merge-go">Scal ${grupy.length} ${grupy.length===1?'klub':'kluby'}</button>`:''}
+      <button class="secondary" data-action="close-modal">Zamknij</button>
+    </div>
+  </div>`;
+
+  overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=zamknij);
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) zamknij(); });
+
+  overlay.querySelectorAll('[data-action="merge-go"]').forEach(b=>b.onclick=async()=>{
+    b.disabled = true; b.textContent = 'Scalam…';
+    const nkey = p => rdzenNazwyKlubu((p.firstName||'')+(p.lastName||''));
+    let przeniesionych = 0, usunietychKopii = 0;
+    const klubyDoUsuniecia = [];
+
+    grupy.forEach(({zostaje, doScalenia})=>{
+      const docelowy = zostaje.c;
+      const juzTam = new Set(DB.players.filter(p=>p.clubId===docelowy.id).map(nkey));
+      doScalenia.forEach(({c})=>{
+        // Herb przenosimy, jeśli docelowy go nie ma — inaczej przepadłby razem z wpisem.
+        if(!DB.clubCrests[docelowy.id] && DB.clubCrests[c.id]) DB.clubCrests[docelowy.id] = DB.clubCrests[c.id];
+        DB.players.filter(p=>p.clubId===c.id).forEach(p=>{
+          if(juzTam.has(nkey(p))){ p.__doUsuniecia = true; usunietychKopii++; }
+          else { p.clubId = docelowy.id; juzTam.add(nkey(p)); przeniesionych++; }
+        });
+        klubyDoUsuniecia.push(c.id);
+      });
+    });
+
+    const idsZawodnikow = DB.players.filter(p=>p.__doUsuniecia).map(p=>p.id);
+    DB.players = DB.players.filter(p=>!p.__doUsuniecia);
+    const zbior = new Set(klubyDoUsuniecia);
+    DB.clubs = DB.clubs.filter(c=>!zbior.has(c.id));
+
+    try{
+      if(idsZawodnikow.length) await storage.deleteItems('scouting:players', idsZawodnikow);
+      for(const id of klubyDoUsuniecia) await storage.deleteItem('scouting:clubs', id);
+      await savePlayers(); await saveClubs(); await saveClubCrests();
+      alert(`Scalono.\nPrzeniesiono zawodników: ${przeniesionych}\nUsunięto zdublowane kopie: ${usunietychKopii}\nUsunięto nadmiarowych wpisów klubowych: ${klubyDoUsuniecia.length}`);
+      zamknij();
+    }catch(e){
+      alert('Nie udało się scalić: ' + ((e as any).message||e));
+      b.disabled = false; b.textContent = 'Spróbuj ponownie';
+    }
+  });
+
   document.body.appendChild(overlay);
 }
 
