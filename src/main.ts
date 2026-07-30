@@ -3450,17 +3450,75 @@ function stadiumAddressFor(clubName){
   const map = DB.settings.stadiumAddresses || {};
   return map[id] || '';
 }
-// Zapamiętanie adresu po zapisaniu planu. Gospodarza bierzemy z pola "Mecz" (część przed myślnikiem).
+// Gospodarz z pola "Mecz" — część przed myślnikiem. Kluby bywają wpisywane z różnymi kreskami
+// (zwykły dywiz, półpauza, pauza), więc rozdzielamy po każdej z nich.
+function hostFromMatch(matchText){
+  return String(matchText||'').split(/\s+[-–—]\s+/)[0].trim();
+}
+// Adres obiektu należy do KLUBU, nie do pojedynczej osoby, dlatego trzymamy jeden adres na klub
+// (w ustawieniach) i pokazujemy go w Kontaktach. Gdyby siedział w wierszu kontaktu, klub z kilkoma
+// osobami miałby kilka kopii adresu, które od razu zaczęłyby się rozjeżdżać.
+function contactClubName(c){ return String((c && (c.club || c.name)) || '').trim(); }
+function contactAddress(c){
+  const id = clubIdByName(contactClubName(c));
+  if(!id) return '';
+  return (DB.settings.stadiumAddresses || {})[id] || '';
+}
+// Zapis adresu wpisanego wprost w Kontaktach. Bez klubu w bazie nie ma do czego go przypiąć —
+// zgłaszamy to, zamiast po cichu gubić wpisaną treść.
+async function setClubAddressByName(clubNazwa, adres){
+  const id = clubIdByName(clubNazwa);
+  if(!id) return false;
+  if(!DB.settings.stadiumAddresses) DB.settings.stadiumAddresses = {};
+  const czysty = String(adres||'').trim();
+  if(czysty) DB.settings.stadiumAddresses[id] = czysty;
+  else delete DB.settings.stadiumAddresses[id];
+  await saveSettings();
+  return true;
+}
+// Zapamiętanie adresu po zapisaniu planu obserwacji. Robi trzy rzeczy naraz:
+// 1. zakłada klub, jeśli gospodarza jeszcze nie ma w bazie (sama nazwa — resztę uzupełniasz ręcznie),
+// 2. zapisuje adres przy tym klubie, żeby przy następnym meczu podstawił się sam,
+// 3. dopisuje pusty wiersz w Kontaktach, żeby adres miał się gdzie pokazać.
+// Ligi, regionu ani miasta NIE zgadujemy — formularz obserwacji ich nie zawiera, a wpisanie
+// czegokolwiek "na oko" byłoby gorsze niż puste pole, które od razu widać na liście klubów.
 async function rememberStadiumAddress(matchText, address){
   const adres = String(address||'').trim();
-  if(!adres) return;
-  const gospodarz = String(matchText||'').split(/\s+-\s+/)[0];
-  const id = clubIdByName(gospodarz);
-  if(!id) return;
+  const gospodarz = hostFromMatch(matchText);
+  if(!adres || !gospodarz) return null;
+
+  let clubId = clubIdByName(gospodarz);
+  let utworzonoKlub = false;
+  if(!clubId){
+    const nowy = {
+      id: uid('K'), name: gospodarz, region: '', league: '', season: '',
+      city: '', crestUrl: '', juniorCategories: '', profileLnp: '', profileTm: ''
+    };
+    DB.clubs.push(nowy);
+    await saveClubs();
+    clubId = nowy.id;
+    utworzonoKlub = true;
+  }
+  const klubNazwa = (DB.clubs.find(c=>c.id===clubId) || {}).name || gospodarz;
+
   if(!DB.settings.stadiumAddresses) DB.settings.stadiumAddresses = {};
-  if(DB.settings.stadiumAddresses[id] === adres) return;   // bez zmian — nie zapisujemy
-  DB.settings.stadiumAddresses[id] = adres;
-  await saveSettings();
+  if(DB.settings.stadiumAddresses[clubId] !== adres){
+    DB.settings.stadiumAddresses[clubId] = adres;
+    await saveSettings();
+  }
+
+  const klucz = importNorm(klubNazwa);
+  const maKontakt = DB.contacts.some(c=> importNorm(contactClubName(c)) === klucz);
+  let utworzonoKontakt = false;
+  if(!maKontakt){
+    DB.contacts.push({
+      id: uid('C'), club: klubNazwa, email: '', firstName: '', lastName: '',
+      phone: '', note: '', dateAdded: new Date().toISOString().slice(0,10)
+    });
+    await saveContacts();
+    utworzonoKontakt = true;
+  }
+  return {clubId, klubNazwa, utworzonoKlub, utworzonoKontakt};
 }
 
 // Wybrany rodzaj w formularzu trzymamy w stanie modułu (jak obsCalendarSelectedDay) i przerysowujemy
@@ -3714,8 +3772,15 @@ async function saveNewObservation(){
   if(!editing) DB.observations.push(obs);
   await saveObservations();
   // Adres obiektu zapamiętujemy przy klubie-gospodarzu — przy następnym meczu tej drużyny
-  // podstawi się sam, bez ponownego wpisywania.
-  await rememberStadiumAddress(obs.match, obs.location);
+  // podstawi się sam — i pokazujemy go w Kontaktach. Gdy gospodarza nie ma jeszcze w bazie,
+  // zakładany jest klub z samą nazwą; mówimy o tym wprost, bo trzeba mu dopisać ligę i region.
+  const zapamietane = await rememberStadiumAddress(obs.match, obs.location);
+  if(zapamietane && (zapamietane.utworzonoKlub || zapamietane.utworzonoKontakt)){
+    const co = [];
+    if(zapamietane.utworzonoKlub) co.push('dodałem go do listy klubów (bez ligi, regionu i miasta — uzupełnij ręcznie)');
+    if(zapamietane.utworzonoKontakt) co.push('założyłem dla niego wiersz w Kontaktach');
+    alert(`Adres zapamiętany przy klubie „${zapamietane.klubNazwa}".\n\nPrzy okazji ` + co.join(' oraz ') + '.');
+  }
   // Zaplanowanie obserwacji od razu stawia zawodnika na liście Monitoring i nadaje status
   // "Do Obserwacji" — ale tylko jeśli zawodnik nie ma jeszcze żadnego statusu (import składu
   // zostawia status pusty; nie chcemy nadpisywać np. "Do transferu" ustawionego przez raport).
@@ -3964,11 +4029,11 @@ function viewReports(){
 function downloadContactsTemplate(){
   if(!XLSX) throw new Error('Biblioteka do arkuszy nie jest dostępna (brak połączenia z internetem przy wczytywaniu strony?).');
   const data = [
-    ['Klub', 'Email', 'Imię', 'Nazwisko', 'Telefon', 'Notatka'],
-    ['Przykładowy Klub FC', 'kontakt@przykladowyklub.pl', '', '', '', ''],
+    ['Klub', 'Adres', 'Email', 'Imię', 'Nazwisko', 'Telefon', 'Notatka'],
+    ['Przykładowy Klub FC', 'ul. Sportowa 5, 05-800 Pruszków', 'kontakt@przykladowyklub.pl', '', '', '', ''],
   ];
   const ws = XLSX.utils.aoa_to_sheet(data);
-  ws['!cols'] = [{wch:24},{wch:28},{wch:14},{wch:16},{wch:16},{wch:30}];
+  ws['!cols'] = [{wch:24},{wch:34},{wch:28},{wch:14},{wch:16},{wch:16},{wch:30}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Kontakty');
   XLSX.writeFile(wb, 'szablon_kontakty.xlsx');
@@ -3981,7 +4046,7 @@ function parseContactSheetRaw(rawRows){
   const CLUB_NAMES = ['klub','club','agencja','nazwa'];
   const EMAIL_NAMES = ['email','emailadres','email','e mail'];
 
-  let headerRowIdx = -1, colClub = -1, colEmail = -1, colFirst = -1, colLast = -1, colPhone = -1, colNote = -1;
+  let headerRowIdx = -1, colClub = -1, colEmail = -1, colFirst = -1, colLast = -1, colPhone = -1, colNote = -1, colAddress = -1;
   const scanLimit = Math.min(8, rawRows.length);
   for(let i=0; i<scanLimit; i++){
     const row = rawRows[i] || [];
@@ -3994,6 +4059,7 @@ function parseContactSheetRaw(rawRows){
       colLast = normalized.findIndex(c=>['nazwisko','lastname'].includes(c));
       colPhone = normalized.findIndex(c=>['telefon','phone','tel'].includes(c));
       colNote = normalized.findIndex(c=>['notatka','notes','uwagi','adnotacja'].includes(c));
+      colAddress = normalized.findIndex(c=>['adres','adresobiektu','adresstadionu','stadion','address'].includes(c));
       break;
     }
   }
@@ -4015,7 +4081,11 @@ function parseContactSheetRaw(rawRows){
       lastName: colLast!==-1 ? String(row[colLast]||'').trim() : '',
       phone: colPhone!==-1 ? String(row[colPhone]||'').trim() : '',
       note: colNote!==-1 ? String(row[colNote]||'').trim() : '',
-      dateAdded: nowDate
+      dateAdded: nowDate,
+      // Adres NIE jest polem kontaktu — tabela sbs_contacts nie ma takiej kolumny, a i tak należy
+      // on do klubu. Wieszamy go tymczasowo pod „_address"; import zdejmuje ten klucz przed
+      // zapisem i przepisuje adres do klubu (patrz obsługa contacts-import-input).
+      _address: colAddress!==-1 ? String(row[colAddress]||'').trim() : ''
     });
   }
   return {contacts, skippedCount};
@@ -4257,6 +4327,15 @@ let contactSearchQuery = '';
 async function updateContactField(id, field, value){
   const c = DB.contacts.find(x=>x.id===id);
   if(!c) return;
+  // Adres nie jest polem kontaktu, tylko klubu — zapisujemy go tam, żeby wszystkie osoby z tego
+  // samego klubu widziały jeden i ten sam adres (patrz komentarz przy contactAddress).
+  if(field === 'address'){
+    const ok = await setClubAddressByName(contactClubName(c), value);
+    if(!ok && String(value||'').trim()){
+      alert('Nie mam do czego przypiąć tego adresu — w polu „Klub" nie ma nazwy, którą znajdę na liście klubów.\nUzupełnij najpierw nazwę klubu.');
+    }
+    return;
+  }
   c[field] = value;
   await saveContacts();
 }
@@ -4272,6 +4351,7 @@ function contactRow(c, num){
   return `<tr data-id="${c.id}">
     <td class="contact-num">${num}</td>
     <td><input class="contact-inline-input contact-field-klub" data-id="${c.id}" data-field="club" value="${esc(c.club||'')}" placeholder="Klub" style="font-weight:700;"></td>
+    <td><input class="contact-inline-input contact-field-adres" data-id="${c.id}" data-field="address" value="${esc(contactAddress(c))}" placeholder="Adres obiektu" title="Uzupełnia się sam z planu obserwacji — jeden adres na klub"></td>
     <td><input class="contact-inline-input contact-field-email" data-id="${c.id}" data-field="email" value="${esc(c.email||'')}" placeholder="Email"></td>
     <td><input class="contact-inline-input contact-field-imie" data-id="${c.id}" data-field="firstName" value="${esc(c.firstName||'')}" placeholder="Imię"></td>
     <td><input class="contact-inline-input contact-field-nazwisko" data-id="${c.id}" data-field="lastName" value="${esc(c.lastName||'')}" placeholder="Nazwisko"></td>
@@ -4318,7 +4398,8 @@ function viewContacts(){
       (c.firstName||'').toLowerCase().includes(q) ||
       (c.lastName||'').toLowerCase().includes(q) ||
       (c.name||'').toLowerCase().includes(q) ||
-      (c.email||'').toLowerCase().includes(q)
+      (c.email||'').toLowerCase().includes(q) ||
+      contactAddress(c).toLowerCase().includes(q)
     );
   }
   // Sortuj alfabetycznie wg nazwy klubu; kontakty BEZ nazwy klubu lądują na końcu listy.
@@ -4332,11 +4413,12 @@ function viewContacts(){
 
   return `
   <h2 class="view-title">Kontakty</h2>
-  <p class="view-sub">Baza kontaktów — zaimportuj z arkusza (klub + email), a resztę uzupełnij ręcznie bezpośrednio na liście.</p>
+  <p class="view-sub">Baza kontaktów — zaimportuj z arkusza (klub + email), a resztę uzupełnij ręcznie bezpośrednio na liście.
+    Adres obiektu zapisuje się sam, gdy wpiszesz go w Planie Obserwacji: trafia do klubu-gospodarza i pokazuje się tutaj.</p>
 
   <div class="card" style="max-width:640px;">
     <h4 style="margin-top:0;color:var(--pitch);">Import z Excela / CSV</h4>
-    <p class="note" style="margin-top:-4px;">Oczekiwane kolumny: <strong>Klub, Email</strong> (dodatkowo rozpoznawane: Imię, Nazwisko, Telefon, Notatka — jeśli są w arkuszu).</p>
+    <p class="note" style="margin-top:-4px;">Oczekiwane kolumny: <strong>Klub, Email</strong> (dodatkowo rozpoznawane: Adres, Imię, Nazwisko, Telefon, Notatka — jeśli są w arkuszu).</p>
     <div class="modal-actions" style="justify-content:flex-start;margin-top:0;margin-bottom:12px;">
       <button class="secondary" data-action="contacts-download-template">Pobierz szablon Excel</button>
     </div>
@@ -4357,20 +4439,20 @@ function viewContacts(){
 
   <div class="card" style="padding:0;overflow:auto;margin-top:12px;">
     <table>
-      <thead><tr><th>#</th><th>Klub</th><th>Email</th><th>Imię</th><th>Nazwisko</th><th>Telefon</th><th>Notatka</th><th></th></tr></thead>
-      <tbody>${list.length ? list.map((c,i)=>contactRow(c,i+1)).join('') : `<tr><td colspan="8"><div class="empty">${contactSearchQuery? 'Brak kontaktów pasujących do wyszukiwania.' : 'Brak kontaktów — zaimportuj arkusz powyżej.'}</div></td></tr>`}</tbody>
+      <thead><tr><th>#</th><th>Klub</th><th>Adres obiektu</th><th>Email</th><th>Imię</th><th>Nazwisko</th><th>Telefon</th><th>Notatka</th><th></th></tr></thead>
+      <tbody>${list.length ? list.map((c,i)=>contactRow(c,i+1)).join('') : `<tr><td colspan="9"><div class="empty">${contactSearchQuery? 'Brak kontaktów pasujących do wyszukiwania.' : 'Brak kontaktów — zaimportuj arkusz powyżej.'}</div></td></tr>`}</tbody>
     </table>
   </div>`;
 }
 
 function downloadContactsExcel(){
   if(!XLSX) throw new Error('Biblioteka do arkuszy nie jest dostępna.');
-  const rows = [['Klub','Email','Imię','Nazwisko','Telefon','Notatka']];
+  const rows = [['Klub','Adres obiektu','Email','Imię','Nazwisko','Telefon','Notatka']];
   DB.contacts.slice().sort((a,b)=>(a.club||'').localeCompare(b.club||'')).forEach(c=>{
-    rows.push([c.club||'', c.email||'', c.firstName||'', c.lastName||'', c.phone||'', c.note||'']);
+    rows.push([c.club||'', contactAddress(c), c.email||'', c.firstName||'', c.lastName||'', c.phone||'', c.note||'']);
   });
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{wch:24},{wch:26},{wch:14},{wch:16},{wch:16},{wch:30}];
+  ws['!cols'] = [{wch:24},{wch:34},{wch:26},{wch:14},{wch:16},{wch:16},{wch:30}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Kontakty');
   XLSX.writeFile(wb, 'kontakty_sbs.xlsx');
@@ -4379,7 +4461,7 @@ function downloadContactsExcel(){
 function downloadContactsPdf(){
   const sorted = DB.contacts.slice().sort((a,b)=>(a.club||'').localeCompare(b.club||''));
   const rowsHtml = sorted.map((c,i)=>`<tr>
-    <td>${i+1}</td><td>${esc(c.club||'—')}</td><td>${esc(c.email||'—')}</td>
+    <td>${i+1}</td><td>${esc(c.club||'—')}</td><td>${esc(contactAddress(c)||'—')}</td><td>${esc(c.email||'—')}</td>
     <td>${esc(c.firstName||'')}</td><td>${esc(c.lastName||'')}</td><td>${esc(c.phone||'')}</td><td>${esc(c.note||'')}</td>
   </tr>`).join('');
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Kontakty SBS</title>
@@ -4393,7 +4475,7 @@ function downloadContactsPdf(){
   </style></head><body>
   <h1>Scout Base System — Kontakty</h1>
   <p>Wygenerowano: ${new Date().toLocaleString('pl-PL')}</p>
-  <table><thead><tr><th>#</th><th>Klub</th><th>Email</th><th>Imię</th><th>Nazwisko</th><th>Telefon</th><th>Notatka</th></tr></thead>
+  <table><thead><tr><th>#</th><th>Klub</th><th>Adres obiektu</th><th>Email</th><th>Imię</th><th>Nazwisko</th><th>Telefon</th><th>Notatka</th></tr></thead>
   <tbody>${rowsHtml}</tbody></table>
   </body></html>`;
   const blob = new Blob([html], {type:'text/html'});
@@ -5460,12 +5542,25 @@ function attachHandlers(){
     if(status){ status.textContent = 'Wczytuję arkusz…'; status.style.color = 'var(--ink-soft)'; }
     try{
       const result = await parseContactsSpreadsheet(file);
+      // Adresy z arkusza (kolumna „Adres") zdejmujemy z kontaktów i przypisujemy klubom — inaczej
+      // zapis do bazy padłby na nieistniejącej kolumnie, a adres by przepadł.
+      let adresow = 0;
+      const adresyDoPrzypisania = [];
+      result.contacts.forEach(c=>{
+        const adr = c._address;
+        delete c._address;
+        if(adr && c.club) adresyDoPrzypisania.push([c.club, adr]);
+      });
       DB.contacts.push(...result.contacts);
       await saveContacts();
-      render();
-      if(result.skippedCount > 0){
-        alert('Zaimportowano ' + result.contacts.length + ' kontaktów. Pominięto ' + result.skippedCount + ' wiersz(y), które wyglądały na notatkę/legendę.');
+      for(const [klub, adr] of adresyDoPrzypisania){
+        if(await setClubAddressByName(klub, adr)) adresow++;
       }
+      render();
+      const uwagi = [];
+      if(result.skippedCount > 0) uwagi.push('Pominięto ' + result.skippedCount + ' wiersz(y), które wyglądały na notatkę/legendę.');
+      if(adresyDoPrzypisania.length) uwagi.push('Adresy przypisano do ' + adresow + ' z ' + adresyDoPrzypisania.length + ' klubów (resztę pomijam — brak takiego klubu w bazie).');
+      if(uwagi.length) alert('Zaimportowano ' + result.contacts.length + ' kontaktów.\n\n' + uwagi.join('\n'));
     }catch(e){
       console.error(e);
       if(status){ status.textContent = 'Błąd importu: ' + (e.message||e); status.style.color='var(--clay-dark)'; }

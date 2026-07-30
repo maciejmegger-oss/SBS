@@ -356,6 +356,8 @@ tr:hover td{background:#FBF9F2;}
 .contact-inline-input{width:100%;box-sizing:border-box;}
 .contact-field-email{min-width:310px;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;}
 .contact-field-klub{min-width:190px;}
+/* Adres obiektu: pełna ulica z numerem i miastem musi się zmieścić bez ucinania. */
+.contact-field-adres{min-width:250px;}
 .contact-field-imie{min-width:90px;max-width:120px;}
 .contact-field-nazwisko{min-width:110px;max-width:140px;}
 .contact-field-telefon{min-width:120px;max-width:138px;}
