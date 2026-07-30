@@ -7067,9 +7067,12 @@ function parseSquadStatsText(text, squad){
       .filter(z => z !== undefined);
 
     // [0] = w kadrze (pomijamy), [1] = mecze, [2] = gole. Tej kolumny asyst ten widok nie ma.
+    // Kreska w kolumnie oznacza ZERO i zapisujemy ją jako 0, a nie jako „brak danych". Bez tego
+    // wklejenie nie nadpisywało starej wartości i przy Gumnym zostawały gole z poprzedniego,
+    // błędnego importu — mimo że na Transfermarkcie ma kreskę.
     const stats = { minutes };
-    if(zetony.length >= 2 && zetony[1] != null) stats.matches = zetony[1];
-    if(zetony.length >= 3 && zetony[2] != null) stats.goals = zetony[2];
+    if(zetony.length >= 2) stats.matches = zetony[1] == null ? 0 : zetony[1];
+    if(zetony.length >= 3) stats.goals   = zetony[2] == null ? 0 : zetony[2];
     // Gdy jest tylko jedna liczba, nie potrafimy odróżnić „w kadrze" od „mecze" — zostawiamy puste,
     // zamiast zapisywać zgadywaną wartość.
     return stats;
