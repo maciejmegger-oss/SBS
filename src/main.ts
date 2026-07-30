@@ -7038,8 +7038,16 @@ function parseSquadStatsText(text, squad){
     return hits[0];
   };
 
-  // Liczby liczymy dopiero PO ostatnim słowie w linii — inaczej wiek i narodowość
-  // ("25 Finlandia 2 1 - 24'") wchodziłyby do statystyk i wiek lądował w meczach.
+  // Układ kolumn na Transfermarkcie („Statystyki drużynowe" → Ogólnie) jest taki:
+  //
+  //   Wiek | Narodowość | W kadrze | Mecze | Gole | Minuty
+  //
+  // Pierwsza liczba po narodowości to „W KADRZE", a NIE mecze — i to był źródłem błędu: mecze
+  // lądowały w golach, a „w kadrze" w meczach. Widać to na Gumnym: w kadrze 4, mecze 3, gole „–",
+  // a system pokazywał 4 mecze i 3 gole.
+  //
+  // Czytamy pozycyjnie po ŻETONACH, nie po samych liczbach — kreska „–" oznacza zero/brak i musi
+  // zajmować swoje miejsce w kolejności. Inaczej wiersz z kreską przy golach przesuwałby się o jedno.
   const statsFromLine = (line)=>{
     if(!/['’]/.test(line)) return null;                    // bez minut to nie jest wiersz statystyk
     let tail = line;
@@ -7052,13 +7060,18 @@ function parseSquadStatsText(text, squad){
     if(!minM) return null;
     const minutes = parseInt(minM[1].replace(/\./g,''), 10);
     if(isNaN(minutes)) return null;
-    // Liczby przed minutami, w kolejności z Transfermarktu: mecze, bramki, asysty.
-    const before = tail.slice(0, minM.index);
-    const nums = (before.match(/\d[\d.]*/g)||[]).map(n=>parseInt(n.replace(/\./g,''),10)).filter(n=>!isNaN(n));
+
+    // Żetony przed minutami: liczba albo kreska (kreska = brak wartości, ale trzyma pozycję).
+    const zetony = tail.slice(0, minM.index).trim().split(/\s+/).filter(Boolean)
+      .map(z => /^[-–—]$/.test(z) ? null : (/^\d[\d.]*$/.test(z) ? parseInt(z.replace(/\./g,''),10) : undefined))
+      .filter(z => z !== undefined);
+
+    // [0] = w kadrze (pomijamy), [1] = mecze, [2] = gole. Tej kolumny asyst ten widok nie ma.
     const stats = { minutes };
-    if(nums.length >= 1) stats.matches = nums[0];
-    if(nums.length >= 2) stats.goals = nums[1];
-    if(nums.length >= 3) stats.assists = nums[2];
+    if(zetony.length >= 2 && zetony[1] != null) stats.matches = zetony[1];
+    if(zetony.length >= 3 && zetony[2] != null) stats.goals = zetony[2];
+    // Gdy jest tylko jedna liczba, nie potrafimy odróżnić „w kadrze" od „mecze" — zostawiamy puste,
+    // zamiast zapisywać zgadywaną wartość.
     return stats;
   };
 
