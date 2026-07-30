@@ -7228,17 +7228,42 @@ function rdzenNazwyKlubu(s){
     .replace(/[łøđ]/g, c=>({'ł':'l','ø':'o','đ':'d'}[c]))
     .normalize('NFD').replace(/\p{M}/gu,'')
     .replace(/\b(ii|iii|ks|lks|mks|kp|kks)\b/g,'')
+    // Usuwamy TYLKO rok w nazwie („ROW 1964 Rybnik" = „ROW Rybnik"). Oznaczeń wiekowych
+    // (U17, U19) ruszać nie wolno — to osobne drużyny tego samego klubu, a nie duplikaty.
+    .replace(/\b(19|20)\d{2}\b/g,'')
     .replace(/[^a-z0-9]/g,'');
 }
 
+// Dwie nazwy uznajemy za ten sam klub także wtedy, gdy jedna jest skróconą wersją drugiej —
+// „Warta Gorzów" wobec „Warta Gorzów Wielkopolski", „Stilon Gorzów" wobec „KS Stilon Gorzów
+// Wielkopolski". Same równe rdzenie tego nie łapały, bo portale dopisują człon regionalny.
+// Próg 6 znaków chroni przed sklejeniem różnych klubów o krótkich, podobnych nazwach.
+// Czy nazwa oznacza zespół rezerw („Legia II Warszawa", „Zagłębie Lubin II")?
+// To musi się zgadzać po obu stronach: pierwszy zespół i rezerwy to RÓŻNE drużyny, grające
+// w innych ligach. Bez tej kontroli scalanie połączyłoby Legię Warszawa z Legią II Warszawa.
+function czyRezerwy(nazwa){ return /\bII+\b/.test(String(nazwa||'')); }
+
+function tenSamKlub(a, b){
+  if(!a || !b) return false;
+  if(a === b) return true;
+  const [krotszy, dluzszy] = a.length <= b.length ? [a,b] : [b,a];
+  return krotszy.length >= 6 && dluzszy.startsWith(krotszy);
+}
+
 function znajdzDuplikatyKlubow(){
-  const wgKlucza = {};
+  const grupy = [];
   DB.clubs.forEach(c=>{
-    const klucz = topLevelOf(c.league) + '|' + rdzenNazwyKlubu(c.name);
-    if(!rdzenNazwyKlubu(c.name)) return;
-    (wgKlucza[klucz] = wgKlucza[klucz] || []).push(c);
+    const rdzen = rdzenNazwyKlubu(c.name);
+    if(!rdzen) return;
+    // Grupujemy w obrębie tej samej LIGI (nie samego poziomu) i tylko drużyny tego samego typu —
+    // pierwszy zespół osobno, rezerwy osobno.
+    const poziom = c.league || '';
+    const rez = czyRezerwy(c.name);
+    const g = grupy.find(g=> g.poziom === poziom && g.rezerwy === rez && g.warianty.some(w=> tenSamKlub(w, rdzen)));
+    if(g){ g.kluby.push(c); g.warianty.push(rdzen); }
+    else grupy.push({ poziom, rezerwy: rez, warianty:[rdzen], kluby:[c] });
   });
-  return Object.values(wgKlucza).filter(g=>g.length>1).map(grupa=>{
+  return grupy.filter(g=>g.kluby.length>1).map(g=>g.kluby).map(grupa=>{
     // Zostaje wpis z NAJWIĘKSZĄ liczbą zawodników; przy remisie ten, który ma herb —
     // herb jest przypisany do identyfikatora klubu i przepada, gdyby usunąć właśnie ten wpis.
     const zLiczba = grupa.map(c=>({c, ile: DB.players.filter(p=>p.clubId===c.id).length, herb: !!DB.clubCrests[c.id]}));
