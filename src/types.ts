@@ -159,6 +159,36 @@ export interface Match {
   city?: string;
 }
 
+// Agencja menedżerska — firma. Zawodnik jest reprezentowany przez AGENCJĘ, a w jej ramach
+// zwykle przez konkretną osobę; dlatego są to dwa osobne byty, a nie jedno pole tekstowe.
+export interface Agency {
+  id: string;
+  name: string;
+  tmLink?: string;        // strona agencji na Transfermarkcie (stamtąd wchodzi automat)
+  website?: string;
+  country?: string;
+  city?: string;
+  email?: string;
+  phone?: string;
+  notes?: string;
+  dateAdded?: string;
+}
+
+// Menedżer — konkretna osoba pracująca w agencji. To z nią się rozmawia, więc trzyma dane
+// kontaktowe i numer licencji FIFA, którego agencja jako firma nie ma.
+export interface Agent {
+  id: string;
+  agencyId: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  phone?: string;
+  licence?: string;       // numer licencji FIFA Football Agent
+  tmLink?: string;
+  notes?: string;
+  dateAdded?: string;
+}
+
 export interface Database {
   players: Player[];
   clubs: Club[];
@@ -167,6 +197,8 @@ export interface Database {
   talents: Talent[];
   contacts: Contact[];
   matches: Match[];
+  agencies: Agency[];
+  agents: Agent[];
   clubCrests: ClubCrestMap;
   settings: Settings | null;
 }

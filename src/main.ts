@@ -26,7 +26,7 @@ const FORMATIONS = ["1-4-4-2","1-4-3-3","1-3-4-3","1-3-5-2","1-4-5-1","1-5-4-1",
 let currentScout = "";
 let customTabNames = [];
 
-let DB: Database = { players: [], clubs: [], observations: [], reports: [], talents: [], contacts: [], matches: [], clubCrests: {}, settings: null };
+let DB: Database = { players: [], clubs: [], observations: [], reports: [], talents: [], contacts: [], matches: [], agencies: [], agents: [], clubCrests: {}, settings: null };
 let currentView = "dashboard";
 let editingPlayerId = null;
 let editingReportId = null;
@@ -1736,7 +1736,7 @@ async function loadAllInner(){
   // Faza 1: równoległe wczytanie WSZYSTKICH kolekcji i flag jednorazowych. Wcześniej ~16 odczytów szło
   // sekwencyjnie (każdy to osobny round-trip do Supabase) — przy dużej bazie sumowało się do kilkunastu
   // sekund. Promise.all robi je naraz; każdy z własnym .catch, więc pojedynczy błąd nie wywraca całości.
-  const [p, c, cc, o, rp, tl, ct, mt, pmaRow, s,
+  const [p, c, cc, o, rp, tl, ct, mt, ag, agt, pmaRow, s,
     seedFlag, enrichFlag, enrichAviaFlag, enrichGornikFlag, enrichAviaV2Flag, recoMigrationFlag, statusMigrationFlag] = await Promise.all([
     storage.get('scouting:players', true).catch(()=>null),
     storage.get('scouting:clubs', true).catch(()=>null),
@@ -1746,6 +1746,8 @@ async function loadAllInner(){
     storage.get('scouting:talents', true).catch(()=>null),
     storage.get('scouting:contacts', true).catch(()=>null),
     storage.get('scouting:matches', true).catch(()=>null),
+    storage.get('scouting:agencies', true).catch(()=>null),
+    storage.get('scouting:agents', true).catch(()=>null),
     storage.get('scouting:position_map_assignments', true).catch(()=>null),
     storage.get('scouting:settings', true).catch(()=>null),
     storage.get('scouting:seed_rosters_v9', true).catch(()=>null),
@@ -1764,6 +1766,8 @@ async function loadAllInner(){
   try{ DB.talents = tl ? JSON.parse(tl.value) : []; }catch(e){ DB.talents = []; }
   try{ DB.contacts = ct ? JSON.parse(ct.value) : []; }catch(e){ DB.contacts = []; }
   try{ DB.matches = mt ? JSON.parse(mt.value) : []; }catch(e){ DB.matches = []; }
+  try{ DB.agencies = ag ? JSON.parse(ag.value) : []; }catch(e){ DB.agencies = []; }
+  try{ DB.agents = agt ? JSON.parse(agt.value) : []; }catch(e){ DB.agents = []; }
   try{ positionMapAssignments = pmaRow ? JSON.parse(pmaRow.value) : {}; }catch(e){ positionMapAssignments = {}; }
   try{
     const loaded = s ? JSON.parse(s.value) : {};
@@ -1980,6 +1984,12 @@ async function saveReports(){ return robustStorageSet('scouting:reports', JSON.s
 async function saveTalents(){ return robustStorageSet('scouting:talents', JSON.stringify(DB.talents)); }
 async function saveContacts(){ return robustStorageSet('scouting:contacts', JSON.stringify(DB.contacts)); }
 async function saveMatches(){ return robustStorageSet('scouting:matches', JSON.stringify(DB.matches)); }
+// Agencje i menedżerowie idą ścieżką sbs_kv (jeden rekord JSON na kolekcję), tak jak terminarz
+// i ustawienia. Świadomie NIE zakładamy nowych tabel: migracja schematu wymaga ręcznego kroku
+// w Supabase, a ta, której nie uruchomiono przy sbs_matches, przez długi czas kasowała zapisy.
+// Zbiór jest mały (setki rekordów, nie tysiące), więc jeden JSON w zupełności wystarcza.
+async function saveAgencies(){ return robustStorageSet('scouting:agencies', JSON.stringify(DB.agencies)); }
+async function saveAgents(){ return robustStorageSet('scouting:agents', JSON.stringify(DB.agents)); }
 
 // ---- Automatyczne statystyki z 90minut.pl -------------------------------------------------
 // Źródłem jest link w polu "mPZPN / 90minut.pl" (p.lnpLink). Pobieranie idzie przez naszą
@@ -2447,6 +2457,7 @@ const NAV_ITEMS = [
   {id:"ranking", label:"Ranking"},
   {id:"talent", label:"Talent"},
   {id:"committee", label:"Scout Transfer"},
+  {id:"agencies", label:"Menedżerowie"},
   {id:"contacts", label:"Kontakty"},
   {id:"settings", label:"Ustawienia"},
 ];
@@ -2454,6 +2465,7 @@ const SAVE_FN_BY_KEY = {
   'scouting:players': ()=>savePlayers(), 'scouting:clubs': ()=>saveClubs(), 'scouting:observations': ()=>saveObservations(),
   'scouting:reports': ()=>saveReports(), 'scouting:talents': ()=>saveTalents(), 'scouting:contacts': ()=>saveContacts(),
   'scouting:settings': ()=>saveSettings(), 'scouting:position_map_assignments': ()=>savePositionMapAssignments(),
+  'scouting:agencies': ()=>saveAgencies(), 'scouting:agents': ()=>saveAgents(),
 };
 async function retryFailedSave(){
   const key = lastSaveFailure ? lastSaveFailure.key : null;
@@ -2491,6 +2503,7 @@ function renderNav(){
       viewingClubId = null;
       clubBrowse = { top: '', group: '' };
       viewingRocznikGroup = null;
+      viewingAgencyId = null;
       compareIds = ['', '', ''];
       dashboardLeagueSelected = null;
       render();
@@ -2544,6 +2557,7 @@ function render(){
   else if(currentView==="ranking") main.innerHTML = viewRanking();
   else if(currentView==="reports") main.innerHTML = viewReports();
   else if(currentView==="talent") main.innerHTML = viewTalent();
+  else if(currentView==="agencies") main.innerHTML = viewAgencies();
   else if(currentView==="contacts") main.innerHTML = viewContacts();
   else if(currentView==="settings") main.innerHTML = viewSettings();
   else if(currentView==="compare") main.innerHTML = viewCompare();
@@ -3142,7 +3156,15 @@ function viewPlayerDetail(id){
         <tr><td style="color:var(--ink-soft);">Link wideo</td><td>${p.videoLink? `<a href="${esc(p.videoLink)}" target="_blank" rel="noopener">otwórz</a>`:"—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">mPZPN / 90minut.pl</td><td>${p.lnpLink? `<a class="ext-link" href="${esc(p.lnpLink)}" target="_blank" rel="noopener">profil / statystyki &rarr;</a>`:"—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">Transfermarkt</td><td>${p.tmLink? `<a class="ext-link" href="${esc(p.tmLink)}" target="_blank" rel="noopener">profil &rarr;</a>`:"—"}</td></tr>
-        <tr><td style="color:var(--ink-soft);">Menedżer / agent</td><td>${p.hasAgent? agencyDisplayHtml(p) : (p.agentCheckedAt ? 'Nie' : '<span class="note">niesprawdzone</span>')}${
+        <tr><td style="color:var(--ink-soft);">Menedżer / agent</td><td>${
+          p.agencyId && agencyById(p.agencyId)
+            ? `<a class="ext-link" href="#" data-action="open-agency" data-id="${p.agencyId}"><strong>${esc(agencyById(p.agencyId).name)}</strong></a>` +
+              (p.agentId && agentById(p.agentId) ? `<span class="note" style="display:block;">opiekun: ${esc(agentFullName(agentById(p.agentId)))}${
+                agentById(p.agentId).phone ? ' · '+esc(agentById(p.agentId).phone) : ''}${
+                agentById(p.agentId).email ? ' · '+esc(agentById(p.agentId).email) : ''}</span>`
+                : `<span class="note" style="display:block;">opiekun niewskazany — uzupełnij w zakładce Menedżerowie</span>`)
+            : (p.hasAgent ? agencyDisplayHtml(p) : (p.agentCheckedAt ? 'Nie' : '<span class="note">niesprawdzone</span>'))
+        }${
           p.agentCheckedAt ? `<span class="note" style="display:block;font-size:11px;">sprawdzone ${esc(p.agentCheckedAt)}${p.agentSource?' — '+esc(p.agentSource):''}</span>` : ''
         }</td></tr>
         <tr><td style="color:var(--ink-soft);">Kontrakt</td><td>${p.hasContract? `<span class="agent-yes">Tak</span>${p.contractUntil?` — do <strong>${esc(p.contractUntil)}</strong>`:''}` : '<span class="agent-no">Nie</span>'}</td></tr>
@@ -5262,6 +5284,66 @@ function attachHandlers(){
     render();
   });
   main.querySelectorAll('[data-action="agent-import"]').forEach(b=>b.onclick=()=>openAgentImportModal());
+  const agencySearchInput = main.querySelector('#agency-search');
+  if(agencySearchInput) agencySearchInput.oninput = ()=>{ agencySearchQuery = agencySearchInput.value; render(); };
+  main.querySelectorAll('[data-action="open-agency"]').forEach(b=>b.onclick=(e)=>{
+    e.preventDefault();          // odnośnik w profilu zawodnika nie ma przeładowywać strony
+    viewingAgencyId = b.dataset.id;
+    currentView = 'agencies'; viewingPlayerId = null;
+    render();
+  });
+  main.querySelectorAll('[data-action="back-agencies"]').forEach(b=>b.onclick=()=>{ viewingAgencyId = null; render(); });
+  main.querySelectorAll('[data-action="add-agency"]').forEach(b=>b.onclick=()=>openAgencyModal(null));
+  main.querySelectorAll('[data-action="edit-agency"]').forEach(b=>b.onclick=()=>openAgencyModal(b.dataset.id));
+  main.querySelectorAll('[data-action="add-agent"]').forEach(b=>b.onclick=()=>openAgentModal(null, b.dataset.agency));
+  main.querySelectorAll('[data-action="edit-agent"]').forEach(b=>b.onclick=()=>openAgentModal(b.dataset.id, null));
+  main.querySelectorAll('[data-action="delete-agency"]').forEach(b=>b.onclick=async()=>{
+    const a = agencyById(b.dataset.id);
+    if(!a) return;
+    const zaw = agencyPlayers(a.id).length, men = agencyAgents(a.id).length;
+    // Mówimy wprost, co przepadnie — kasowanie agencji odłącza zawodników i usuwa jej menedżerów.
+    if(!confirm(`Usunąć agencję „${a.name}"?` +
+      (men ? `\n\nZniknie też ${men} menedżer(ów) tej agencji.` : '') +
+      (zaw ? `\n${zaw} zawodnik(ów) straci przypisanie do agencji (znacznik „ma menedżera" zostaje).` : '') +
+      `\n\nTego nie można cofnąć.`)) return;
+    DB.agents = DB.agents.filter(m=>m.agencyId!==a.id);
+    DB.players.forEach(p=>{ if(p.agencyId===a.id){ p.agencyId = ''; p.agentId = ''; } });
+    DB.agencies = DB.agencies.filter(x=>x.id!==a.id);
+    await saveAgents(); await saveAgencies(); await savePlayers();
+    viewingAgencyId = null;
+    render();
+  });
+  main.querySelectorAll('[data-action="delete-agent"]').forEach(b=>b.onclick=async()=>{
+    const m = agentById(b.dataset.id);
+    if(!m) return;
+    const ilu = agentPlayers(m.id).length;
+    if(!confirm(`Usunąć menedżera „${agentFullName(m)}"?` +
+      (ilu ? `\n\n${ilu} zawodnik(ów) zostanie przy agencji, ale bez wskazanej osoby.` : ''))) return;
+    DB.players.forEach(p=>{ if(p.agentId===m.id) p.agentId = ''; });
+    DB.agents = DB.agents.filter(x=>x.id!==m.id);
+    await saveAgents(); await savePlayers();
+    render();
+  });
+  main.querySelectorAll('[data-action="unlink-agency"]').forEach(b=>b.onclick=async()=>{
+    const p = DB.players.find(x=>x.id===b.dataset.id);
+    if(!p) return;
+    p.agencyId = ''; p.agentId = '';
+    await savePlayers();
+    render();
+  });
+  main.querySelectorAll('.agent-assign').forEach(sel=>sel.onchange=async()=>{
+    const p = DB.players.find(x=>x.id===sel.dataset.player);
+    if(!p) return;
+    p.agentId = sel.value;
+    await savePlayers();
+  });
+  main.querySelectorAll('[data-action="agency-migrate"]').forEach(b=>b.onclick=async()=>{
+    const r = await migrujAgencjeZTekstu();
+    render();
+    alert(r.powiazane
+      ? `Uporządkowano.\n\nPowiązano zawodników z agencjami: ${r.powiazane}\nZałożono nowych agencji: ${r.utworzone}`
+      : 'Nie znalazłem nic do uporządkowania — wszyscy zawodnicy z menedżerem mają już wskazaną agencję.');
+  });
   main.querySelectorAll('[data-action="toggle-agent"]').forEach(b=>b.onclick=(e)=>{
     e.stopPropagation();          // klik w komórkę nie może otwierać profilu zawodnika
     toggleHasAgent(b.dataset.id);
@@ -7530,6 +7612,93 @@ function openBookmarkletModal(){
   document.body.appendChild(overlay);
 }
 
+// ---------- AGENCJE I MENEDŻEROWIE ----------
+//
+// Model: AGENCJA (firma) --< MENEDŻER (osoba) --< ZAWODNIK.
+// Zawodnik wskazuje agencję (agencyId) i opcjonalnie konkretną osobę z niej (agentId). Osobno,
+// bo Transfermarkt podaje wyłącznie firmę — nazwisko opiekuna zdobywa się rozmową i wpisuje ręcznie.
+// Trzymanie samej nazwy w polu tekstowym przy zawodniku, jak było wcześniej, ma dwie wady:
+// po zmianie szyldu trzeba poprawiać setki rekordów, a menedżerów nie da się w ogóle zapisać.
+
+let viewingAgencyId = null;
+let agencySearchQuery = '';
+
+function agencyById(id){ return DB.agencies.find(a=>a.id===id) || null; }
+function agentById(id){ return DB.agents.find(a=>a.id===id) || null; }
+function agencyAgents(agencyId){
+  return DB.agents.filter(a=>a.agencyId===agencyId)
+    .sort((a,b)=> (a.lastName||'').localeCompare(b.lastName||'','pl'));
+}
+function agencyPlayers(agencyId){
+  return DB.players.filter(p=>p.agencyId===agencyId)
+    .sort((a,b)=> (a.lastName||'').localeCompare(b.lastName||'','pl'));
+}
+function agentPlayers(agentId){ return DB.players.filter(p=>p.agentId===agentId); }
+function agentFullName(a){
+  if(!a) return '';
+  return [a.firstName, a.lastName].filter(Boolean).join(' ').trim() || '(bez nazwiska)';
+}
+// Nazwa agencji bywa zapisana z linkiem w tym samym polu („Nazwa https://…") — to spadek po
+// wcześniejszej wersji, w której agencja była zwykłym tekstem przy zawodniku.
+function rozdzielNazweILink(raw){
+  const s = String(raw||'').trim();
+  const m = s.match(/(https?:\/\/[^\s]+)/i);
+  if(!m) return {name: s, link: ''};
+  return {name: s.replace(m[1], '').replace(/[\s\-–—:]+$/,'').trim(), link: m[1]};
+}
+// Część wpisów z poprzedniej wersji to sam adres, bez nazwy. Adres agencji na Transfermarkcie
+// ma postać /nazwa-agencji/beraterfirma/berater/123 — pierwszy człon czyta się wystarczająco
+// dobrze, żeby nie zostawiać w bazie pozycji „(agencja bez nazwy)".
+function nazwaZLinkuAgencji(link){
+  const m = String(link||'').match(/^https?:\/\/[^/]+\/([^/]+)\//);
+  if(!m) return '';
+  return m[1].replace(/-/g,' ').replace(/\s+/g,' ').trim()
+    .replace(/\b\p{Ll}/gu, c=>c.toUpperCase());
+}
+// Znajdź agencję po nazwie (bez względu na wielkość liter i znaki) albo po adresie na
+// Transfermarkcie; gdy nie ma — załóż nową. Zwraca rekord agencji.
+function znajdzLubUtworzAgencje(nazwa, link){
+  const czysta = String(nazwa||'').trim();
+  const czystyLink = String(link||'').trim();
+  if(!czysta && !czystyLink) return null;
+  let a = null;
+  if(czystyLink) a = DB.agencies.find(x=> x.tmLink && x.tmLink === czystyLink);
+  if(!a && czysta) a = DB.agencies.find(x=> importNorm(x.name) === importNorm(czysta));
+  if(a){
+    if(!a.tmLink && czystyLink){ a.tmLink = czystyLink; }
+    return a;
+  }
+  a = {
+    id: uid('AG'), name: czysta || nazwaZLinkuAgencji(czystyLink) || '(agencja bez nazwy)', tmLink: czystyLink,
+    website:'', country:'', city:'', email:'', phone:'', notes:'',
+    dateAdded: new Date().toISOString().slice(0,10)
+  };
+  DB.agencies.push(a);
+  return a;
+}
+// Jednorazowe przeniesienie tego, co siedzi w polu tekstowym agencyName, do rekordów agencji.
+// Nie kasuje agencyName — zostaje jako zapasowy opis, gdyby coś w powiązaniu poszło nie tak.
+async function migrujAgencjeZTekstu(){
+  let utworzone = 0, powiazane = 0;
+  DB.players.forEach(p=>{
+    if(p.agencyId) return;
+    if(!p.hasAgent || !p.agencyName) return;
+    const {name, link} = rozdzielNazweILink(p.agencyName);
+    if(!name && !link) return;
+    const przed = DB.agencies.length;
+    const a = znajdzLubUtworzAgencje(name, link);
+    if(!a) return;
+    if(DB.agencies.length > przed) utworzone++;
+    p.agencyId = a.id;
+    powiazane++;
+  });
+  if(powiazane){
+    await saveAgencies();
+    await savePlayers();
+  }
+  return {utworzone, powiazane};
+}
+
 // Młodzieżowcy, przy których wciąż nie wiadomo, czy mają menedżera — czyli ani zaznaczonego
 // „Tak", ani śladu wcześniejszego sprawdzenia. To jest właściwa lista roboczej kolejki.
 function mlodziezowcyBezInfoOAgencie(){
@@ -7542,6 +7711,203 @@ function linkTmDoZawodnika(p){
   // Bez zapisanego profilu podajemy wyszukiwarkę Transfermarktu — dalej klika już użytkownik.
   const q = encodeURIComponent([p.firstName, p.lastName].filter(Boolean).join(' '));
   return 'https://www.transfermarkt.pl/schnellsuche/ergebnis/schnellsuche?query=' + q;
+}
+
+function viewAgencies(){
+  if(viewingAgencyId) return viewAgencyDetail(viewingAgencyId);
+
+  const q = agencySearchQuery.toLowerCase();
+  let lista = DB.agencies.slice();
+  if(q){
+    lista = lista.filter(a=>
+      (a.name||'').toLowerCase().includes(q) ||
+      (a.country||'').toLowerCase().includes(q) ||
+      (a.city||'').toLowerCase().includes(q) ||
+      agencyAgents(a.id).some(m=> agentFullName(m).toLowerCase().includes(q))
+    );
+  }
+  lista.sort((a,b)=> (a.name||'').localeCompare(b.name||'','pl'));
+
+  // Zawodnicy oznaczeni jako „ma menedżera", ale bez wskazanej agencji — luka, którą warto widzieć.
+  const bezAgencji = DB.players.filter(p=> p.hasAgent && !p.agencyId).length;
+
+  const wiersze = lista.map((a,i)=>{
+    const menedzerowie = agencyAgents(a.id);
+    const zawodnicy = agencyPlayers(a.id);
+    const mlodziez = zawodnicy.filter(isYouthPlayer).length;
+    return `<tr style="cursor:pointer;" data-action="open-agency" data-id="${a.id}" title="Kliknij, aby zobaczyć menedżerów i zawodników">
+      <td style="color:var(--ink-soft);font-size:12px;text-align:right;">${i+1}</td>
+      <td><strong>${esc(a.name)}</strong>${a.tmLink?` <span class="note" style="font-size:11px;">TM</span>`:''}
+        <span class="club-sub" style="display:block;">${esc([a.city, a.country].filter(Boolean).join(', ')||'—')}</span></td>
+      <td style="text-align:right;">${menedzerowie.length}</td>
+      <td style="text-align:right;">${zawodnicy.length}</td>
+      <td style="text-align:right;">${mlodziez ? `<span class="agent-yes">${mlodziez}</span>` : '0'}</td>
+      <td style="font-size:12px;">${esc(a.email||'')}${a.phone?`<span class="club-sub" style="display:block;">${esc(a.phone)}</span>`:''}</td>
+      <td onclick="event.stopPropagation()" style="white-space:nowrap;">
+        <button class="link-btn" data-action="edit-agency" data-id="${a.id}">Edytuj</button>
+        <button class="link-btn" data-action="delete-agency" data-id="${a.id}" style="margin-left:8px;color:var(--clay-dark);">Usuń</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  return `
+  <h2 class="view-title">Menedżerowie</h2>
+  <p class="view-sub">Agencje i pracujący w nich menedżerowie. Zawodnik należy do <strong>agencji</strong>,
+  a w jej ramach do konkretnej <strong>osoby</strong> — bo rozmawia się z osobą, nie z firmą.</p>
+
+  <div class="toolbar" style="flex-wrap:wrap;gap:10px;">
+    <input id="agency-search" placeholder="Szukaj agencji, miasta lub nazwiska menedżera..." value="${esc(agencySearchQuery)}" style="max-width:360px;">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="secondary" data-action="agent-import" title="Zbierz agencje z profili zawodników na Transfermarkcie">🕵 Pobierz z Transfermarktu</button>
+      <button class="secondary" data-action="agency-migrate" title="Przenieś agencje wpisane wcześniej jako zwykły tekst przy zawodniku">🔗 Uporządkuj stare wpisy</button>
+      <button class="gold" data-action="add-agency">+ Nowa agencja</button>
+    </div>
+  </div>
+
+  ${bezAgencji ? `<p class="note" style="margin:0 0 10px;">${bezAgencji} zawodnik(ów) ma zaznaczonego menedżera, ale nie wskazano agencji.
+    Kliknij <strong>Uporządkuj stare wpisy</strong>, aby przenieść nazwy wpisane wcześniej tekstem.</p>` : ''}
+
+  <div class="card" style="padding:0;overflow:auto;">
+    <table>
+      <thead><tr><th style="width:34px;text-align:right;">Lp.</th><th>Agencja</th>
+        <th style="text-align:right;">Menedżerów</th><th style="text-align:right;">Zawodników</th>
+        <th style="text-align:right;" title="Rocznik 2006 i młodsi">Młodzież</th><th>Kontakt</th><th></th></tr></thead>
+      <tbody>${wiersze || `<tr><td colspan="7"><div class="empty">${agencySearchQuery
+        ? 'Brak agencji pasujących do wyszukiwania.'
+        : 'Brak agencji. Dodaj ręcznie albo pobierz z Transfermarktu przyciskiem powyżej.'}</div></td></tr>`}</tbody>
+    </table>
+  </div>`;
+}
+
+function viewAgencyDetail(id){
+  const a = agencyById(id);
+  if(!a){ viewingAgencyId = null; return viewAgencies(); }
+  const menedzerowie = agencyAgents(id);
+  const zawodnicy = agencyPlayers(id);
+
+  // Lista wyboru menedżera przy zawodniku — pusta pozycja znaczy „agencja tak, osoba nieznana".
+  const opcjeMenedzera = (wybrany)=>
+    `<option value="">— nie wskazano osoby —</option>` +
+    menedzerowie.map(m=>`<option value="${m.id}" ${wybrany===m.id?'selected':''}>${esc(agentFullName(m))}</option>`).join('');
+
+  const wierszeMenedzerow = menedzerowie.map(m=>`<tr>
+    <td><strong>${esc(agentFullName(m))}</strong>${m.licence?`<span class="club-sub" style="display:block;">licencja ${esc(m.licence)}</span>`:''}</td>
+    <td style="font-size:12px;">${esc(m.email||'—')}</td>
+    <td style="font-size:12px;">${esc(m.phone||'—')}</td>
+    <td style="text-align:right;">${agentPlayers(m.id).length}</td>
+    <td style="font-size:12px;">${esc(m.notes||'')}</td>
+    <td style="white-space:nowrap;">
+      <button class="link-btn" data-action="edit-agent" data-id="${m.id}">Edytuj</button>
+      <button class="link-btn" data-action="delete-agent" data-id="${m.id}" style="margin-left:8px;color:var(--clay-dark);">Usuń</button>
+    </td>
+  </tr>`).join('');
+
+  const wierszeZawodnikow = zawodnicy.map(p=>`<tr>
+    <td><strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}${isYouthPlayer(p)?youthBadge():''}</td>
+    <td>${esc(p.birthYear||'—')}</td>
+    <td>${esc(p.position||'—')}</td>
+    <td><div class="club-cell">${crestImg(clubCrest(p.clubId))}<span class="club-name">${esc(clubName(p.clubId))}</span></div></td>
+    <td><select class="agent-assign" data-player="${p.id}" style="min-width:190px;">${opcjeMenedzera(p.agentId||'')}</select></td>
+    <td style="white-space:nowrap;">
+      <button class="link-btn" data-action="row-open-player" data-id="${p.id}">Profil</button>
+      <button class="link-btn" data-action="unlink-agency" data-id="${p.id}" style="margin-left:8px;color:var(--clay-dark);">Odłącz</button>
+    </td>
+  </tr>`).join('');
+
+  return `
+  <button class="secondary" data-action="back-agencies" style="margin-bottom:14px;">&larr; Wróć do agencji</button>
+  <h2 class="view-title">${esc(a.name)}</h2>
+  <p class="view-sub">
+    ${esc([a.city, a.country].filter(Boolean).join(', ')||'brak lokalizacji')}
+    ${a.email?` &middot; ${esc(a.email)}`:''}${a.phone?` &middot; ${esc(a.phone)}`:''}
+    ${a.tmLink?` &middot; <a class="ext-link" href="${esc(a.tmLink)}" target="_blank" rel="noopener noreferrer">Transfermarkt &rarr;</a>`:''}
+    ${a.website?` &middot; <a class="ext-link" href="${esc(a.website)}" target="_blank" rel="noopener noreferrer">strona &rarr;</a>`:''}
+  </p>
+  ${a.notes?`<p class="note" style="margin-top:-6px;">${esc(a.notes)}</p>`:''}
+  <div style="display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;">
+    <button class="secondary" data-action="edit-agency" data-id="${a.id}">Edytuj agencję</button>
+    <button class="gold" data-action="add-agent" data-agency="${a.id}">+ Nowy menedżer</button>
+  </div>
+
+  <h3 style="color:var(--pitch);font-family:'Barlow Condensed',sans-serif;">Menedżerowie <span class="reports-count">${menedzerowie.length}</span></h3>
+  <div class="card" style="padding:0;overflow:auto;margin-bottom:24px;">
+    <table>
+      <thead><tr><th>Imię i nazwisko</th><th>E-mail</th><th>Telefon</th><th style="text-align:right;">Zawodników</th><th>Notatka</th><th></th></tr></thead>
+      <tbody>${wierszeMenedzerow || `<tr><td colspan="6"><div class="empty">Brak menedżerów — dodaj osoby, z którymi faktycznie rozmawiasz.</div></td></tr>`}</tbody>
+    </table>
+  </div>
+
+  <h3 style="color:var(--pitch);font-family:'Barlow Condensed',sans-serif;">Zawodnicy tej agencji <span class="reports-count">${zawodnicy.length}</span></h3>
+  <div class="card" style="padding:0;overflow:auto;">
+    <table>
+      <thead><tr><th>Zawodnik</th><th>Rocznik</th><th>Pozycja</th><th>Klub</th><th>Opiekun z agencji</th><th></th></tr></thead>
+      <tbody>${wierszeZawodnikow || `<tr><td colspan="6"><div class="empty">Żaden zawodnik nie jest jeszcze przypisany do tej agencji.</div></td></tr>`}</tbody>
+    </table>
+  </div>`;
+}
+
+function openAgencyModal(id){
+  const a = id ? agencyById(id) : null;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.dataset.agencyId = id || '';
+  overlay.innerHTML = `
+  <div class="modal">
+    <h3>${a? 'Edytuj agencję':'Nowa agencja'}</h3>
+    <div class="field-wrap"><label class="field">Nazwa agencji</label><input id="am-name" value="${a?esc(a.name):''}" placeholder="np. BMS Sportconsulting GmbH"></div>
+    <div class="grid grid-2">
+      <div class="field-wrap"><label class="field">Kraj</label><input id="am-country" value="${a?esc(a.country||''):''}" placeholder="np. Polska"></div>
+      <div class="field-wrap"><label class="field">Miasto</label><input id="am-city" value="${a?esc(a.city||''):''}"></div>
+    </div>
+    <div class="grid grid-2">
+      <div class="field-wrap"><label class="field">E-mail</label><input id="am-email" value="${a?esc(a.email||''):''}"></div>
+      <div class="field-wrap"><label class="field">Telefon</label><input id="am-phone" value="${a?esc(a.phone||''):''}"></div>
+    </div>
+    <div class="grid grid-2">
+      <div class="field-wrap"><label class="field">Strona agencji na Transfermarkcie</label><input id="am-tm" value="${a?esc(a.tmLink||''):''}" placeholder="https://www.transfermarkt.pl/..."></div>
+      <div class="field-wrap"><label class="field">Strona własna</label><input id="am-web" value="${a?esc(a.website||''):''}" placeholder="https://..."></div>
+    </div>
+    <div class="field-wrap"><label class="field">Notatka</label><textarea id="am-notes" rows="2">${a?esc(a.notes||''):''}</textarea></div>
+    <div class="modal-actions">
+      <button class="secondary" data-action="close-modal">Anuluj</button>
+      <button class="gold" data-action="save-agency">Zapisz</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+}
+
+function openAgentModal(agentId, agencyId){
+  const m = agentId ? agentById(agentId) : null;
+  const agId = m ? m.agencyId : agencyId;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.dataset.agentId = agentId || '';
+  overlay.dataset.agencyFor = agId || '';
+  const agencjaOpcje = DB.agencies.slice().sort((x,y)=>(x.name||'').localeCompare(y.name||'','pl'))
+    .map(x=>`<option value="${x.id}" ${x.id===agId?'selected':''}>${esc(x.name)}</option>`).join('');
+  overlay.innerHTML = `
+  <div class="modal">
+    <h3>${m? 'Edytuj menedżera':'Nowy menedżer'}</h3>
+    <div class="field-wrap"><label class="field">Agencja</label><select id="mm-agency">${agencjaOpcje}</select></div>
+    <div class="grid grid-2">
+      <div class="field-wrap"><label class="field">Imię</label><input id="mm-first" value="${m?esc(m.firstName||''):''}"></div>
+      <div class="field-wrap"><label class="field">Nazwisko</label><input id="mm-last" value="${m?esc(m.lastName||''):''}"></div>
+    </div>
+    <div class="grid grid-2">
+      <div class="field-wrap"><label class="field">E-mail</label><input id="mm-email" value="${m?esc(m.email||''):''}"></div>
+      <div class="field-wrap"><label class="field">Telefon</label><input id="mm-phone" value="${m?esc(m.phone||''):''}"></div>
+    </div>
+    <div class="grid grid-2">
+      <div class="field-wrap"><label class="field">Numer licencji FIFA</label><input id="mm-licence" value="${m?esc(m.licence||''):''}" placeholder="opcjonalnie"></div>
+      <div class="field-wrap"><label class="field">Profil na Transfermarkcie</label><input id="mm-tm" value="${m?esc(m.tmLink||''):''}" placeholder="https://..."></div>
+    </div>
+    <div class="field-wrap"><label class="field">Notatka</label><textarea id="mm-notes" rows="2">${m?esc(m.notes||''):''}</textarea></div>
+    <div class="modal-actions">
+      <button class="secondary" data-action="close-modal">Anuluj</button>
+      <button class="gold" data-action="save-agent">Zapisz</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
 }
 
 function openAgentImportModal(){
@@ -7662,7 +8028,7 @@ function openAgentImportModal(){
       const wynik = dopasowania();
       const zaznaczone = Array.from(overlay.querySelectorAll('.agent-row-check:checked')).map(c=>Number(c.dataset.idx));
       const dzis = new Date().toISOString().slice(0,10);
-      let zAgentem = 0, samoSprawdzenie = 0;
+      let zAgentem = 0, samoSprawdzenie = 0, agencjeDotkniete = false;
       zaznaczone.forEach(i=>{
         const x = wynik[i];
         if(!x || !x.player) return;
@@ -7672,6 +8038,14 @@ function openAgentImportModal(){
         if(x.maAgenta){
           p.hasAgent = true;
           if(x.agencyValue) p.agencyName = x.agencyValue;
+          // Zakładamy (albo odnajdujemy) rekord agencji i wiążemy z nim zawodnika. Konkretnej
+          // OSOBY Transfermarkt nie podaje — opiekuna wskazujesz sam w zakładce Menedżerowie.
+          const agencja = znajdzLubUtworzAgencje(x.agencyName, x.agencyLink);
+          if(agencja){
+            if(p.agencyId !== agencja.id) p.agentId = '';   // zmiana agencji unieważnia starego opiekuna
+            p.agencyId = agencja.id;
+            agencjeDotkniete = true;
+          }
           zAgentem++;
         } else {
           // Świadomie NIE ustawiamy hasAgent=false. Brak wpisu na Transfermarkcie to brak danych,
@@ -7679,9 +8053,13 @@ function openAgentImportModal(){
           samoSprawdzenie++;
         }
       });
-      const ok = await savePlayers();
+      // Agencje zapisujemy PRZED zawodnikami — inaczej zawodnik wskazywałby agencję,
+      // której nie ma jeszcze w bazie (ten sam błąd, co kiedyś przy klubach w imporcie składu).
+      const okAg = agencjeDotkniete ? await saveAgencies() : true;
+      const ok = okAg && await savePlayers();
       if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
       alert(`Zapisano.\n\nZ menedżerem: ${zAgentem}` +
+        (agencjeDotkniete ? `\nAgencje uzupełnione w zakładce „Menedżerowie" — wpisz tam osoby, z którymi rozmawiasz.` : '') +
         (samoSprawdzenie ? `\nSprawdzonych, ale Transfermarkt nikogo nie podaje: ${samoSprawdzenie}` +
           `\n(znacznik „Tak/Nie" zostaje bez zmian — brak wpisu w serwisie nie oznacza, że zawodnik nie ma menedżera)` : ''));
       parsed = []; pasted = '';
@@ -9295,6 +9673,57 @@ function wireLastModal(){
     }
     ov.remove(); editingPlayerId=null; render();
     }catch(e){ console.error('Zapis zawodnika nie powiódł się:', e); b.disabled=false; b.textContent=origLabel; alert('Nie udało się zapisać zawodnika: ' + (e.message||e)); }
+  });
+  ov.querySelectorAll('[data-action="save-agency"]').forEach(b=>b.onclick=async()=>{
+    const name = (document.getElementById('am-name') as any).value.trim();
+    if(!name){ alert('Podaj nazwę agencji.'); return; }
+    const pola = {
+      name,
+      country: (document.getElementById('am-country') as any).value.trim(),
+      city: (document.getElementById('am-city') as any).value.trim(),
+      email: (document.getElementById('am-email') as any).value.trim(),
+      phone: (document.getElementById('am-phone') as any).value.trim(),
+      tmLink: (document.getElementById('am-tm') as any).value.trim(),
+      website: (document.getElementById('am-web') as any).value.trim(),
+      notes: (document.getElementById('am-notes') as any).value.trim(),
+    };
+    const id = (ov as any).dataset.agencyId;
+    const istniejaca = id ? agencyById(id) : null;
+    if(istniejaca) Object.assign(istniejaca, pola);
+    else DB.agencies.push(Object.assign({id: uid('AG'), dateAdded: new Date().toISOString().slice(0,10)}, pola));
+    const ok = await saveAgencies();
+    if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
+    ov.remove(); render();
+  });
+  ov.querySelectorAll('[data-action="save-agent"]').forEach(b=>b.onclick=async()=>{
+    const first = (document.getElementById('mm-first') as any).value.trim();
+    const last = (document.getElementById('mm-last') as any).value.trim();
+    if(!first && !last){ alert('Podaj imię lub nazwisko menedżera.'); return; }
+    const agencyId = (document.getElementById('mm-agency') as any).value;
+    if(!agencyId){ alert('Menedżer musi należeć do agencji — najpierw dodaj agencję.'); return; }
+    const pola = {
+      agencyId, firstName: first, lastName: last,
+      email: (document.getElementById('mm-email') as any).value.trim(),
+      phone: (document.getElementById('mm-phone') as any).value.trim(),
+      licence: (document.getElementById('mm-licence') as any).value.trim(),
+      tmLink: (document.getElementById('mm-tm') as any).value.trim(),
+      notes: (document.getElementById('mm-notes') as any).value.trim(),
+    };
+    const id = (ov as any).dataset.agentId;
+    const istniejacy = id ? agentById(id) : null;
+    if(istniejacy){
+      // Przeniesienie osoby do innej agencji musi zabrać ze sobą jej zawodników — inaczej
+      // zostaliby przypisani do opiekuna, którego w ich agencji już nie ma.
+      if(istniejacy.agencyId !== agencyId){
+        DB.players.forEach(p=>{ if(p.agentId===istniejacy.id) p.agencyId = agencyId; });
+      }
+      Object.assign(istniejacy, pola);
+    } else {
+      DB.agents.push(Object.assign({id: uid('MN'), dateAdded: new Date().toISOString().slice(0,10)}, pola));
+    }
+    const ok = await saveAgents() && await savePlayers();
+    if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
+    ov.remove(); render();
   });
   ov.querySelectorAll('[data-action="save-club"]').forEach(b=>b.onclick=async()=>{
     const name = document.getElementById('cm-name').value.trim();

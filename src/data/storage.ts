@@ -70,6 +70,10 @@ const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }> = {
       // Transfermarkt nikogo nie podaje" od „nikt tego jeszcze nie sprawdzał" — a to dla agencji
       // dwie zupełnie różne informacje.
       "agentSource", "agentCheckedAt",
+      // Powiązanie z agencją i konkretnym menedżerem (zakładka Menedżerowie). Trzymamy same
+      // identyfikatory — nazwa agencji zmienia się przy fuzjach i zmianach szyldu, a wtedy
+      // wystarczy poprawić ją w JEDNYM miejscu, zamiast w każdym zawodniku z osobna.
+      "agencyId", "agentId",
     ],
   },
   sbs_observations: {
