@@ -177,7 +177,9 @@ export interface Agency {
   // tych zawodników, których mamy w bazie.
   playersTm?: number;
   marketValue?: string;
+  marketValueEur?: number;   // ta sama kwota jako liczba — do sortowania listy
   licensed?: boolean;
+  logoUrl?: string;
 }
 
 // Menedżer — konkretna osoba pracująca w agencji. To z nią się rozmawia, więc trzyma dane
