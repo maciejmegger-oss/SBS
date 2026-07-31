@@ -5290,6 +5290,50 @@ function attachHandlers(){
   const agencySortSelect = main.querySelector('#agency-sort');
   if(agencySortSelect) agencySortSelect.onchange = ()=>{ agencySort = agencySortSelect.value; render(); };
   main.querySelectorAll('[data-action="agency-squad"]').forEach(b=>b.onclick=()=>openAgencySquadModal(b.dataset.id));
+  main.querySelectorAll('[data-action="agency-add-players"]').forEach(b=>b.onclick=()=>openAddPlayersToAgencyModal(b.dataset.id));
+
+  // Zaznaczanie agencji do usunięcia hurtem. „Zaznacz wszystkie" obejmuje TYLKO to, co widać —
+  // przy włączonym wyszukiwaniu zaznaczenie ukrytych agencji byłoby pułapką.
+  const agencyCheckboxes = main.querySelectorAll('.agency-checkbox') as any;
+  const agencySelectAll = main.querySelector('#select-all-agencies') as any;
+  const agencyHeaderCheck = main.querySelector('.agency-header-checkbox') as any;
+  const agencyDeleteBtn = main.querySelector('#delete-selected-agencies-btn') as any;
+  function odswiezPrzyciskAgencji(){
+    if(!agencyDeleteBtn) return;
+    const ile = Array.from(agencyCheckboxes).filter((c:any)=>c.checked).length;
+    agencyDeleteBtn.style.display = ile ? 'inline-block' : 'none';
+    agencyDeleteBtn.textContent = `🗑️ Usuń zaznaczone (${ile})`;
+  }
+  const zaznaczWszystkieAgencje = (stan)=>{
+    Array.from(agencyCheckboxes).forEach((c:any)=>c.checked = stan);
+    if(agencySelectAll) agencySelectAll.checked = stan;
+    if(agencyHeaderCheck) agencyHeaderCheck.checked = stan;
+    odswiezPrzyciskAgencji();
+  };
+  if(agencySelectAll) agencySelectAll.onchange = ()=>zaznaczWszystkieAgencje(agencySelectAll.checked);
+  if(agencyHeaderCheck) agencyHeaderCheck.onchange = ()=>zaznaczWszystkieAgencje(agencyHeaderCheck.checked);
+  Array.from(agencyCheckboxes).forEach((c:any)=>c.onchange = odswiezPrzyciskAgencji);
+  if(agencyDeleteBtn) agencyDeleteBtn.onclick = async ()=>{
+    const ids = Array.from(agencyCheckboxes).filter((c:any)=>c.checked).map((c:any)=>c.dataset.id);
+    if(!ids.length) return;
+    const zbior = new Set(ids);
+    const nazwy = DB.agencies.filter(a=>zbior.has(a.id)).map(a=>a.name);
+    const menedzerow = DB.agents.filter(m=>zbior.has(m.agencyId)).length;
+    const zawodnikow = DB.players.filter(p=>zbior.has(p.agencyId)).length;
+    // Wypisujemy skutki uboczne, zanim ktoś skasuje 190 agencji jednym kliknięciem.
+    if(!confirm(`Usunąć ${ids.length} agencji?\n\n` +
+      nazwy.slice(0,8).join(', ') + (nazwy.length>8 ? ` … i ${nazwy.length-8} więcej` : '') +
+      (menedzerow ? `\n\nZniknie też ${menedzerow} menedżer(ów) tych agencji.` : '') +
+      (zawodnikow ? `\n${zawodnikow} zawodnik(ów) straci przypisanie do agencji — znacznik „Agent: Tak" im zostaje.` : '') +
+      `\n\nTego nie można cofnąć.`)) return;
+    DB.agents = DB.agents.filter(m=>!zbior.has(m.agencyId));
+    DB.players.forEach(p=>{ if(zbior.has(p.agencyId)){ p.agencyId = ''; p.agentId = ''; } });
+    DB.agencies = DB.agencies.filter(a=>!zbior.has(a.id));
+    const ok = await saveAgents() && await saveAgencies() && await savePlayers();
+    if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony. Odśwież stronę, żeby zobaczyć rzeczywisty stan.'); return; }
+    viewingAgencyId = null;
+    render();
+  };
   main.querySelectorAll('[data-action="open-agency"]').forEach(b=>b.onclick=(e)=>{
     e.preventDefault();          // odnośnik w profilu zawodnika nie ma przeładowywać strony
     viewingAgencyId = b.dataset.id;
@@ -7973,6 +8017,7 @@ function viewAgencies(){
     const zawodnicy = agencyPlayers(a.id);
     const mlodziez = zawodnicy.filter(isYouthPlayer).length;
     return `<tr style="cursor:pointer;" data-action="open-agency" data-id="${a.id}" title="Kliknij, aby zobaczyć menedżerów i zawodników">
+      <td onclick="event.stopPropagation()" style="width:24px;"><input type="checkbox" class="agency-checkbox" data-id="${a.id}"></td>
       <td style="color:var(--ink-soft);font-size:12px;text-align:right;">${i+1}</td>
       <td><div style="display:flex;align-items:center;gap:8px;">${agencyLogoHtml(a)}<span>
         <strong>${esc(a.name)}</strong>${a.licensed?` <span class="agent-yes" style="font-size:10px;" title="Agencja licencjonowana wg Transfermarktu">LIC</span>`:''}
@@ -8014,14 +8059,22 @@ function viewAgencies(){
   ${bezAgencji ? `<p class="note" style="margin:0 0 10px;">${bezAgencji} zawodnik(ów) ma zaznaczonego menedżera, ale nie wskazano agencji.
     Kliknij <strong>Uporządkuj stare wpisy</strong>, aby przenieść nazwy wpisane wcześniej tekstem.</p>` : ''}
 
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+    <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
+      <input type="checkbox" id="select-all-agencies">
+      <span style="font-size:13px;">Zaznacz wszystkie${agencySearchQuery?' z widoku':''}</span>
+    </label>
+    <button class="danger" id="delete-selected-agencies-btn" style="display:none;" data-action="delete-selected-agencies">🗑️ Usuń zaznaczone (0)</button>
+  </div>
+
   <div class="card" style="padding:0;overflow:auto;">
     <table>
-      <thead><tr><th style="width:34px;text-align:right;">Lp.</th><th>Agencja</th>
+      <thead><tr><th style="width:24px;"><input type="checkbox" class="agency-header-checkbox"></th><th style="width:34px;text-align:right;">Lp.</th><th>Agencja</th>
         <th style="text-align:right;">Menedżerów</th><th style="text-align:right;">Zawodników</th>
         <th style="text-align:right;" title="Rocznik 2006 i młodsi">Młodzież</th>
         <th style="text-align:right;" title="Cały portfel agencji wg Transfermarktu — nie tylko ci zawodnicy, których masz w bazie">Wg TM</th>
         <th>Kontakt</th><th></th></tr></thead>
-      <tbody>${wiersze || `<tr><td colspan="8"><div class="empty">${agencySearchQuery
+      <tbody>${wiersze || `<tr><td colspan="9"><div class="empty">${agencySearchQuery
         ? 'Brak agencji pasujących do wyszukiwania.'
         : 'Brak agencji. Dodaj ręcznie albo pobierz z Transfermarktu przyciskiem powyżej.'}</div></td></tr>`}</tbody>
     </table>
@@ -8077,6 +8130,7 @@ function viewAgencyDetail(id){
     <button class="secondary" data-action="edit-agency" data-id="${a.id}">Edytuj agencję</button>
     <button class="gold" data-action="add-agent" data-agency="${a.id}">+ Nowy menedżer</button>
     <button class="gold" data-action="agency-squad" data-id="${a.id}" title="Wgraj listę reprezentowanych zawodników z Transfermarktu">📥 Wgraj zawodników</button>
+    <button class="secondary" data-action="agency-add-players" data-id="${a.id}" title="Wybierz zawodników z bazy i przypisz ich do tej agencji">➕ Dodaj z bazy</button>
   </div>
 
   <h3 style="color:var(--pitch);font-family:'Barlow Condensed',sans-serif;">Menedżerowie <span class="reports-count">${menedzerowie.length}</span></h3>
@@ -8094,6 +8148,124 @@ function viewAgencyDetail(id){
       <tbody>${wierszeZawodnikow || `<tr><td colspan="6"><div class="empty">Żaden zawodnik nie jest jeszcze przypisany do tej agencji.</div></td></tr>`}</tbody>
     </table>
   </div>`;
+}
+
+// Wspólny zapis przypisania zawodnika do agencji — używa go i wgrywanie listy z Transfermarktu,
+// i ręczne dodawanie. Trzymamy to w jednym miejscu, żeby obie drogi ustawiały DOKŁADNIE to samo:
+// agencję w profilu, znacznik „Agent: Tak" na liście zawodników oraz ślad, skąd i kiedy to wiemy.
+function przypiszZawodnikaDoAgencji(p, agencja, zrodlo){
+  if(!p || !agencja) return false;
+  if(p.agencyId === agencja.id) return false;
+  p.agentId = '';                       // opiekun należał do poprzedniej agencji
+  p.agencyId = agencja.id;
+  p.hasAgent = true;                    // to właśnie zapala „Tak" w kolumnie Agent
+  p.agencyName = agencja.name + (agencja.tmLink ? ' ' + agencja.tmLink : '');
+  p.agentCheckedAt = new Date().toISOString().slice(0,10);
+  p.agentSource = zrodlo;
+  return true;
+}
+
+// Ręczne dopisanie zawodników do agencji — dla przypadków, których Transfermarkt nie zna:
+// młodzież z niższych lig, informacja od skauta, rozmowa z menedżerem.
+function openAddPlayersToAgencyModal(agencyId){
+  const agencja = agencyById(agencyId);
+  if(!agencja) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  let szukaj = '';
+  let tylkoBezAgencji = true;
+  const wybrani = new Set();
+
+  function lista(){
+    let l = DB.players.slice();
+    if(tylkoBezAgencji) l = l.filter(p=> !p.agencyId || p.agencyId === agencyId);
+    const q = importNorm(szukaj);
+    if(q) l = l.filter(p=> importNorm([p.lastName,p.firstName].join(' ')).includes(q)
+      || importNorm(clubName(p.clubId)).includes(q));
+    l.sort((a,b)=> (a.lastName||'').localeCompare(b.lastName||'','pl') || (a.firstName||'').localeCompare(b.firstName||'','pl'));
+    return l;
+  }
+
+  function draw(){
+    const l = lista();
+    const LIMIT = 120;
+    overlay.innerHTML = `
+    <div class="modal" style="max-width:720px;">
+      <h3>Dodaj zawodników — ${esc(agencja.name)}</h3>
+      <p class="note" style="margin-top:0;">Zaznacz zawodników z bazy. Każdemu ustawię tę agencję w profilu
+      i zaznaczę <strong>Agent: Tak</strong> na liście zawodników.</p>
+
+      <div class="field-wrap" style="margin-bottom:8px;">
+        <input id="dodaj-szukaj" placeholder="Szukaj po nazwisku albo klubie..." value="${esc(szukaj)}" autocomplete="off">
+      </div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;margin-bottom:10px;cursor:pointer;">
+        <input type="checkbox" id="dodaj-tylko-wolni" ${tylkoBezAgencji?'checked':''}>
+        <span>Pokaż tylko tych bez przypisanej agencji</span>
+      </label>
+
+      <div style="max-height:320px;overflow:auto;border-top:1px solid #E3DECE;padding-top:8px;">
+        ${l.length ? `<table><tbody>${l.slice(0,LIMIT).map(p=>`<tr>
+          <td style="width:24px;"><input type="checkbox" class="dodaj-check" data-id="${p.id}" ${wybrani.has(p.id)?'checked':''} ${p.agencyId===agencyId?'disabled':''}></td>
+          <td><strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}${isYouthPlayer(p)?youthBadge():''}
+            <span class="club-sub" style="display:block;">${esc(p.birthYear||'—')} · ${esc(clubName(p.clubId))}</span></td>
+          <td style="font-size:12px;">${p.agencyId===agencyId
+            ? '<span class="note">już w tej agencji</span>'
+            : (p.agencyId ? `<span style="color:var(--clay-dark);">${esc((agencyById(p.agencyId)||{}).name||'inna agencja')}</span>` : '')}</td>
+        </tr>`).join('')}</tbody></table>`
+        : '<div class="empty">Nikt nie pasuje do wyszukiwania.</div>'}
+      </div>
+      ${l.length > LIMIT ? `<p class="note" style="margin-top:6px;">Pokazuję ${LIMIT} z ${l.length} — zawęź wyszukiwaniem.</p>` : ''}
+
+      <div class="modal-actions">
+        <button class="secondary" data-action="close-modal">Anuluj</button>
+        <button class="gold" data-action="dodaj-zapisz">Dodaj zaznaczonych (${wybrani.size})</button>
+      </div>
+    </div>`;
+    wire();
+  }
+
+  function wire(){
+    overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=()=>{ overlay.remove(); render(); });
+    const inp = overlay.querySelector('#dodaj-szukaj') as any;
+    if(inp){
+      inp.oninput = ()=>{
+        szukaj = inp.value;
+        const poz = inp.selectionStart;
+        draw();
+        const nowy = overlay.querySelector('#dodaj-szukaj') as any;
+        if(nowy){ nowy.focus(); nowy.setSelectionRange(poz, poz); }
+      };
+    }
+    const chk = overlay.querySelector('#dodaj-tylko-wolni') as any;
+    if(chk) chk.onchange = ()=>{ tylkoBezAgencji = chk.checked; draw(); };
+    overlay.querySelectorAll('.dodaj-check').forEach((c:any)=>c.onchange = ()=>{
+      if(c.checked) wybrani.add(c.dataset.id); else wybrani.delete(c.dataset.id);
+      // Przerysowanie tylko po to, żeby licznik na przycisku był zgodny z zaznaczeniem.
+      const przycisk = overlay.querySelector('[data-action="dodaj-zapisz"]');
+      if(przycisk) przycisk.textContent = `Dodaj zaznaczonych (${wybrani.size})`;
+    });
+    overlay.querySelectorAll('[data-action="dodaj-zapisz"]').forEach(b=>b.onclick=async()=>{
+      if(!wybrani.size){ alert('Nikogo nie zaznaczyłeś.'); return; }
+      let dodani = 0, przeniesieni = 0;
+      wybrani.forEach(id=>{
+        const p = DB.players.find(x=>x.id===id);
+        if(!p) return;
+        if(p.agencyId && p.agencyId !== agencyId) przeniesieni++;
+        if(przypiszZawodnikaDoAgencji(p, agencja, 'ręcznie')) dodani++;
+      });
+      const ok = await savePlayers();
+      if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
+      alert(`Dodano do agencji: ${dodani}` +
+        (przeniesieni ? `\n(w tym przeniesionych z innej agencji: ${przeniesieni})` : '') +
+        `\n\nKażdy ma teraz „Agent: Tak" na liście zawodników i tę agencję w profilu.`);
+      overlay.remove();
+      render();
+    });
+  }
+
+  overlay.addEventListener('click', e=>{ if(e.target===overlay){ overlay.remove(); render(); } });
+  document.body.appendChild(overlay);
+  draw();
 }
 
 // Wgranie składu jednej agencji. Zawodników NIE zakładamy — wiążemy tylko tych, którzy już są
@@ -8218,13 +8390,7 @@ function openAgencySquadModal(agencyId){
         const p = x.player;
         if(p.agencyId === agencyId) return;         // już tu jest — nic nie ruszamy
         if(p.agencyId) przeniesieni++;
-        p.agentId = '';                              // opiekun należał do poprzedniej agencji
-        p.agencyId = agencyId;
-        p.hasAgent = true;
-        p.agencyName = agencja.name + (agencja.tmLink ? ' ' + agencja.tmLink : '');
-        p.agentCheckedAt = dzis;
-        p.agentSource = 'Transfermarkt (profil agencji)';
-        przypisani++;
+        if(przypiszZawodnikaDoAgencji(p, agencja, 'Transfermarkt (profil agencji)')) przypisani++;
       });
       // Liczba zawodników agencji wg Transfermarktu — bierzemy prosto z długości listy.
       let zmianaAgencji = false;
