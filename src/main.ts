@@ -5284,6 +5284,7 @@ function attachHandlers(){
     render();
   });
   main.querySelectorAll('[data-action="agent-import"]').forEach(b=>b.onclick=()=>openAgentImportModal());
+  main.querySelectorAll('[data-action="agencies-import"]').forEach(b=>b.onclick=()=>openAgenciesImportModal());
   const agencySearchInput = main.querySelector('#agency-search');
   if(agencySearchInput) agencySearchInput.oninput = ()=>{ agencySearchQuery = agencySearchInput.value; render(); };
   main.querySelectorAll('[data-action="open-agency"]').forEach(b=>b.onclick=(e)=>{
@@ -7534,6 +7535,93 @@ d.style.cssText='position:fixed;top:16px;right:16px;z-index:999999;background:#1
 document.body.appendChild(d);setTimeout(function(){d.remove()},3200);
 }).catch(function(e){alert('Nie udalo sie skopiowac: '+e.message)})}catch(e){alert('Blad: '+e.message)}})();`;
 
+// Zakładka do zbierania CAŁEJ LISTY AGENCJI z Transfermarktu (Zapoznaj się → Agencje, wybór kraju).
+// Lista jest podzielona na strony — bufor sumuje się między nimi, więc przechodzisz stronę po
+// stronie, klikając zakładkę na każdej, a na końcu wklejasz wszystko naraz.
+//
+// Wiersz tabeli czytamy przez odnośnik do profilu agencji (/beraterfirma/berater/…), bo to jedyny
+// element o stałym kształcie. Reszta kolumn bywa przestawiana, dlatego liczby bierzemy „po
+// znaczeniu": pierwsza komórka będąca samą liczbą to liczba zawodników, pierwsza z symbolem euro
+// to wartość rynkowa. Sztywne numery kolumn rozjechałyby się przy najbliższej zmianie serwisu.
+const TM_AGENCIES_BOOKMARKLET = `javascript:(function(){try{
+var K='sbs_agencje';
+if(window.event&&window.event.shiftKey){localStorage.removeItem(K);alert('SBS: wyczyszczono zebrane agencje.');return;}
+var linki=document.querySelectorAll('a[href*="/beraterfirma/berater/"]');
+if(!linki.length){alert('SBS: nie widze tu listy agencji.\\n\\nOtworz Transfermarkt \\u2192 Zapoznaj sie \\u2192 Agencje, wybierz kraj i kliknij ponownie.');return;}
+var widziane={},wiersze=[];
+for(var i=0;i<linki.length;i++){
+var a=linki[i];
+var nazwa=(a.getAttribute('title')||a.textContent||'').replace(/\\s+/g,' ').trim();
+if(!nazwa||nazwa.length<2)continue;
+var href=a.href;
+if(widziane[href])continue;
+var tr=a.closest('tr');if(!tr)continue;
+widziane[href]=1;
+var kraj='';
+var flaga=tr.querySelector('img.flaggenrahmen,img[class*="flagge"]');
+if(flaga)kraj=(flaga.getAttribute('title')||flaga.getAttribute('alt')||'').trim();
+var lic=/licensed/i.test(tr.textContent||'')?'tak':'nie';
+var td=tr.querySelectorAll('td'),zaw='',wart='';
+for(var j=0;j<td.length;j++){
+var t=(td[j].textContent||'').replace(/\\u00a0/g,' ').trim();
+if(!zaw&&/^\\d{1,5}$/.test(t))zaw=t;
+if(!wart&&t.indexOf('\\u20ac')>=0)wart=t;}
+wiersze.push(nazwa+' | '+href+' | '+kraj+' | '+zaw+' | '+wart+' | '+lic);}
+if(!wiersze.length){alert('SBS: znalazlem odnosniki, ale nie umialem odczytac wierszy tabeli.');return;}
+var stare=localStorage.getItem(K)||'';
+var nowe=[],juz=0;
+for(var k=0;k<wiersze.length;k++){
+var adres=wiersze[k].split(' | ')[1];
+if(stare.indexOf(adres)>=0){juz++;continue;}
+nowe.push(wiersze[k]);}
+var caly=stare+(stare?'\\n':'')+nowe.join('\\n');
+if(!nowe.length){alert('SBS: wszystkie '+wiersze.length+' agencji z tej strony juz mam w buforze.');return;}
+localStorage.setItem(K,caly);
+var ile=caly.split('\\n').filter(function(x){return x.trim()}).length;
+navigator.clipboard.writeText(caly).then(function(){
+var d=document.createElement('div');
+d.innerHTML='<b>SBS: dodano '+nowe.length+' agencji</b>'+(juz?'<br>pominieto powtorzonych: '+juz:'')+'<br>w buforze: '+ile+' \\u2014 schowek gotowy<br><span style="opacity:.75;font-weight:400">Przejdz na kolejna strone i kliknij ponownie<br>Shift+klik = wyczysc bufor</span>';
+d.style.cssText='position:fixed;top:16px;right:16px;z-index:999999;background:#16302A;color:#C69B3C;padding:12px 18px;border-radius:8px;font:600 13px sans-serif;line-height:1.5;box-shadow:0 4px 16px rgba(0,0,0,.3)';
+document.body.appendChild(d);setTimeout(function(){d.remove()},3600);
+}).catch(function(e){alert('Nie udalo sie skopiowac: '+e.message)})}catch(e){alert('Blad: '+e.message)}})();`;
+
+// Rozbiór wklejonej listy agencji. Format z zakładki to wiersze rozdzielone „ | ".
+// Wklejka zrobiona ręcznie (bez zakładki) nie ma linków ani liczb — wtedy traktujemy
+// każdą linijkę jako samą nazwę agencji. Mówimy o tym wprost w oknie importu.
+function parseAgencjeWklejka(text){
+  const liczba = (s)=>{
+    const m = String(s||'').replace(/\s/g,'').match(/^(\d{1,5})$/);
+    return m ? parseInt(m[1],10) : null;
+  };
+  const wynik = [];
+  String(text||'').split(/\r?\n/).forEach(linia=>{
+    const l = linia.trim();
+    if(!l || /^###/.test(l)) return;
+    const czesci = l.includes('|') ? l.split('|').map(s=>s.trim())
+                 : l.includes('\t') ? l.split('\t').map(s=>s.trim())
+                 : [l];
+    const name = czesci[0];
+    if(!name || name.length > 90) return;
+    // Odsiewamy wiersze, które są samą liczbą, kwotą albo numeracją stron — w ręcznej wklejce
+    // ze strony jest ich pełno i bez tego zrobiłyby się z nich „agencje" o nazwie „138".
+    if(/^[\d\s.,€%+-]+$/.test(name)) return;
+    // Kwoty („118,13 mln €", „856 tys. €") przechodziły przez powyższy filtr, bo mają w sobie
+    // litery — a w ręcznej wklejce ze strony jest ich tyle samo, co nazw agencji.
+    if(name.includes('€') || /^\d[\d\s.,]*\s*(mln|mld|tys\.?)\b/i.test(name)) return;
+    if(/^(licensed|polska|agencja menad|z weryfikacj|zawodnik|pogloski|pogłoski|reklama)/i.test(name)) return;
+    const link = czesci.find(c=>/^https?:\/\//i.test(c)) || '';
+    return void wynik.push({
+      name,
+      tmLink: link,
+      country: (czesci[2] && !/^https?:/i.test(czesci[2])) ? czesci[2] : '',
+      playersTm: liczba(czesci[3]),
+      marketValue: czesci[4] && czesci[4].includes('€') ? czesci[4] : '',
+      licensed: /^tak$/i.test(czesci[5]||''),
+    });
+  });
+  return wynik;
+}
+
 // Rozbiór bufora zebranego zakładką. Jeden blok = jeden zawodnik.
 function parseAgentPaste(text){
   return String(text||'').split(/^###\s*/m).map(s=>s.trim()).filter(Boolean).map(blok=>{
@@ -7737,11 +7825,13 @@ function viewAgencies(){
     const mlodziez = zawodnicy.filter(isYouthPlayer).length;
     return `<tr style="cursor:pointer;" data-action="open-agency" data-id="${a.id}" title="Kliknij, aby zobaczyć menedżerów i zawodników">
       <td style="color:var(--ink-soft);font-size:12px;text-align:right;">${i+1}</td>
-      <td><strong>${esc(a.name)}</strong>${a.tmLink?` <span class="note" style="font-size:11px;">TM</span>`:''}
+      <td><strong>${esc(a.name)}</strong>${a.licensed?` <span class="agent-yes" style="font-size:10px;" title="Agencja licencjonowana wg Transfermarktu">LIC</span>`:''}
         <span class="club-sub" style="display:block;">${esc([a.city, a.country].filter(Boolean).join(', ')||'—')}</span></td>
       <td style="text-align:right;">${menedzerowie.length}</td>
       <td style="text-align:right;">${zawodnicy.length}</td>
       <td style="text-align:right;">${mlodziez ? `<span class="agent-yes">${mlodziez}</span>` : '0'}</td>
+      <td style="text-align:right;color:var(--ink-soft);font-size:12px;">${a.playersTm!=null?a.playersTm:'—'}${
+        a.marketValue?`<span class="club-sub" style="display:block;">${esc(a.marketValue)}</span>`:''}</td>
       <td style="font-size:12px;">${esc(a.email||'')}${a.phone?`<span class="club-sub" style="display:block;">${esc(a.phone)}</span>`:''}</td>
       <td onclick="event.stopPropagation()" style="white-space:nowrap;">
         <button class="link-btn" data-action="edit-agency" data-id="${a.id}">Edytuj</button>
@@ -7758,7 +7848,8 @@ function viewAgencies(){
   <div class="toolbar" style="flex-wrap:wrap;gap:10px;">
     <input id="agency-search" placeholder="Szukaj agencji, miasta lub nazwiska menedżera..." value="${esc(agencySearchQuery)}" style="max-width:360px;">
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
-      <button class="secondary" data-action="agent-import" title="Zbierz agencje z profili zawodników na Transfermarkcie">🕵 Pobierz z Transfermarktu</button>
+      <button class="gold" data-action="agencies-import" title="Wgraj całą listę agencji z Transfermarktu — strona po stronie">📋 Wgraj listę agencji</button>
+      <button class="secondary" data-action="agent-import" title="Zbierz agencje z profili zawodników na Transfermarkcie">🕵 Pobierz z profili zawodników</button>
       <button class="secondary" data-action="agency-migrate" title="Przenieś agencje wpisane wcześniej jako zwykły tekst przy zawodniku">🔗 Uporządkuj stare wpisy</button>
       <button class="gold" data-action="add-agency">+ Nowa agencja</button>
     </div>
@@ -7771,8 +7862,10 @@ function viewAgencies(){
     <table>
       <thead><tr><th style="width:34px;text-align:right;">Lp.</th><th>Agencja</th>
         <th style="text-align:right;">Menedżerów</th><th style="text-align:right;">Zawodników</th>
-        <th style="text-align:right;" title="Rocznik 2006 i młodsi">Młodzież</th><th>Kontakt</th><th></th></tr></thead>
-      <tbody>${wiersze || `<tr><td colspan="7"><div class="empty">${agencySearchQuery
+        <th style="text-align:right;" title="Rocznik 2006 i młodsi">Młodzież</th>
+        <th style="text-align:right;" title="Cały portfel agencji wg Transfermarktu — nie tylko ci zawodnicy, których masz w bazie">Wg TM</th>
+        <th>Kontakt</th><th></th></tr></thead>
+      <tbody>${wiersze || `<tr><td colspan="8"><div class="empty">${agencySearchQuery
         ? 'Brak agencji pasujących do wyszukiwania.'
         : 'Brak agencji. Dodaj ręcznie albo pobierz z Transfermarktu przyciskiem powyżej.'}</div></td></tr>`}</tbody>
     </table>
@@ -7844,6 +7937,158 @@ function viewAgencyDetail(id){
       <tbody>${wierszeZawodnikow || `<tr><td colspan="6"><div class="empty">Żaden zawodnik nie jest jeszcze przypisany do tej agencji.</div></td></tr>`}</tbody>
     </table>
   </div>`;
+}
+
+function openAgenciesImportModal(){
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  let parsed = [];
+  let pasted = '';
+
+  // Rozdzielenie na nowe i już znane. Rozpoznajemy po adresie na Transfermarkcie, a gdy go nie ma —
+  // po nazwie. Znanych nie duplikujemy, tylko uzupełniamy im puste pola.
+  function podzial(){
+    const nowe = [], znane = [];
+    const widzianeWTejWklejce = new Set();
+    parsed.forEach(w=>{
+      const klucz = w.tmLink || importNorm(w.name);
+      if(widzianeWTejWklejce.has(klucz)) return;   // ta sama agencja dwa razy w jednej wklejce
+      widzianeWTejWklejce.add(klucz);
+      const istnieje = (w.tmLink && DB.agencies.find(a=>a.tmLink===w.tmLink))
+        || DB.agencies.find(a=>importNorm(a.name)===importNorm(w.name));
+      if(istnieje) znane.push({...w, istniejaca: istnieje});
+      else nowe.push(w);
+    });
+    return {nowe, znane};
+  }
+
+  function draw(){
+    const {nowe, znane} = parsed.length ? podzial() : {nowe:[], znane:[]};
+    overlay.innerHTML = `
+    <div class="modal" style="max-width:780px;">
+      <h3>📋 Wgraj listę agencji</h3>
+      <p class="note" style="margin-top:0;">Lista agencji na Transfermarkcie jest podzielona na strony.
+      Zakładka zbiera je do wspólnego bufora — przechodzisz stronę po stronie i klikasz na każdej,
+      a na końcu wklejasz wszystko naraz.</p>
+
+      <details style="margin-bottom:12px;" ${parsed.length?'':'open'}>
+        <summary style="cursor:pointer;font-weight:700;color:var(--gold-dark);">1. Ustaw zakładkę (raz)</summary>
+        <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
+          <li>Włącz pasek zakładek: <strong>Ctrl+Shift+B</strong></li>
+          <li>Przeciągnij ten przycisk na pasek zakładek:<br>
+            <a href="${esc(TM_AGENCIES_BOOKMARKLET)}" onclick="return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:#C69B3C;color:#16302A;border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">📋 Agencje do SBS</a>
+          </li>
+          <li>Na Transfermarkcie: <strong>Zapoznaj się → Agencje</strong>, wybierz kraj, kliknij <strong>Pokaż wybór</strong></li>
+          <li>Kliknij zakładkę. Przejdź na kolejną stronę (2, 3, …) i klikaj na każdej — bufor się sumuje,
+              powtórzone agencje są pomijane.</li>
+          <li><strong>Shift+klik</strong> czyści bufor, gdy chcesz zacząć od nowa.</li>
+        </ol>
+        <details style="margin-top:6px;">
+          <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Przeciąganie nie działa? Kod do wklejenia ręcznie</summary>
+          <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;margin-top:6px;">${esc(TM_AGENCIES_BOOKMARKLET)}</textarea>
+        </details>
+      </details>
+
+      <div class="field-wrap" style="margin-bottom:10px;">
+        <label class="field">2. Wklej zebrane (Ctrl+V)</label>
+        <textarea id="agencies-paste" rows="7" placeholder="FairSport Agency | https://www.transfermarkt.pl/... | Polska | 138 | 118,13 mln € | tak" style="font-size:11.5px;font-family:monospace;">${esc(pasted)}</textarea>
+        <div class="note" style="margin-top:5px;font-size:11px;">Możesz też wkleić samą listę nazw — po jednej w linijce.
+        Wtedy powstaną agencje z samą nazwą, bez linku i liczb, a resztę uzupełnisz ręcznie.</div>
+      </div>
+      <div class="modal-actions" style="justify-content:flex-start;margin-top:0;">
+        <button class="secondary" data-action="agencies-parse">Rozpoznaj</button>
+      </div>
+
+      ${parsed.length ? `
+        <div style="border-top:1px solid #E3DECE;padding-top:10px;margin-top:12px;">
+          <p class="note" style="margin-top:0;">Rozpoznano <strong>${parsed.length}</strong>:
+            nowych <strong>${nowe.length}</strong>, już w bazie <strong>${znane.length}</strong>.</p>
+          <div style="max-height:280px;overflow:auto;">
+            <table><thead><tr><th style="width:24px;"></th><th>Agencja</th><th>Kraj</th>
+              <th style="text-align:right;" title="Liczba zawodników wg Transfermarktu">Zaw.</th>
+              <th style="text-align:right;">Wartość</th><th></th></tr></thead>
+            <tbody>
+            ${nowe.map((w,i)=>`<tr>
+              <td><input type="checkbox" class="agency-row-check" data-idx="${i}" checked></td>
+              <td><strong>${esc(w.name)}</strong>${w.licensed?' <span class="agent-yes" style="font-size:10px;">LIC</span>':''}</td>
+              <td style="font-size:12px;">${esc(w.country||'—')}</td>
+              <td style="text-align:right;">${w.playersTm!=null?w.playersTm:'—'}</td>
+              <td style="text-align:right;font-size:12px;">${esc(w.marketValue||'—')}</td>
+              <td style="font-size:11px;color:var(--ink-soft);">nowa</td>
+            </tr>`).join('')}
+            ${znane.map(w=>`<tr style="opacity:.65;">
+              <td></td>
+              <td>${esc(w.name)}</td>
+              <td style="font-size:12px;">${esc(w.country||'—')}</td>
+              <td style="text-align:right;">${w.playersTm!=null?w.playersTm:'—'}</td>
+              <td style="text-align:right;font-size:12px;">${esc(w.marketValue||'—')}</td>
+              <td style="font-size:11px;color:var(--ink-soft);">jest — uzupełnię puste pola</td>
+            </tr>`).join('')}
+            </tbody></table>
+          </div>
+        </div>
+        <div class="modal-actions" style="justify-content:flex-start;">
+          <button class="gold" data-action="agencies-apply">Zapisz ${nowe.length} nowych${znane.length?` i uzupełnij ${znane.length}`:''}</button>
+        </div>
+      ` : ''}
+
+      <div class="modal-actions">
+        <button class="secondary" data-action="close-modal">Zamknij</button>
+      </div>
+    </div>`;
+    wire();
+  }
+
+  function wire(){
+    overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=()=>{ overlay.remove(); render(); });
+    const ta = overlay.querySelector('#agencies-paste');
+    if(ta) ta.oninput = ()=>{ pasted = ta.value; };
+    overlay.querySelectorAll('[data-action="agencies-parse"]').forEach(b=>b.onclick=()=>{
+      pasted = (overlay.querySelector('#agencies-paste')||{}).value || '';
+      parsed = parseAgencjeWklejka(pasted);
+      if(!parsed.length){ alert('Nie rozpoznałem żadnej agencji.\n\nWklej to, co skopiowała zakładka „📋 Agencje do SBS", albo listę nazw po jednej w linijce.'); return; }
+      draw();
+    });
+    overlay.querySelectorAll('[data-action="agencies-apply"]').forEach(b=>b.onclick=async()=>{
+      const {nowe, znane} = podzial();
+      const zaznaczone = Array.from(overlay.querySelectorAll('.agency-row-check:checked')).map(c=>Number(c.dataset.idx));
+      const dzis = new Date().toISOString().slice(0,10);
+      let dodane = 0, uzupelnione = 0;
+      zaznaczone.forEach(i=>{
+        const w = nowe[i];
+        if(!w) return;
+        DB.agencies.push({
+          id: uid('AG'), name: w.name, tmLink: w.tmLink||'', country: w.country||'',
+          city:'', email:'', phone:'', website:'', notes:'',
+          playersTm: w.playersTm==null?undefined:w.playersTm,
+          marketValue: w.marketValue||'', licensed: !!w.licensed,
+          dateAdded: dzis
+        });
+        dodane++;
+      });
+      // Istniejące agencje tylko UZUPEŁNIAMY — nigdy nie nadpisujemy tego, co wpisałeś ręcznie.
+      znane.forEach(w=>{
+        const a = w.istniejaca;
+        let zmiana = false;
+        if(!a.tmLink && w.tmLink){ a.tmLink = w.tmLink; zmiana = true; }
+        if(!a.country && w.country){ a.country = w.country; zmiana = true; }
+        if(a.playersTm == null && w.playersTm != null){ a.playersTm = w.playersTm; zmiana = true; }
+        if(!a.marketValue && w.marketValue){ a.marketValue = w.marketValue; zmiana = true; }
+        if(!a.licensed && w.licensed){ a.licensed = true; zmiana = true; }
+        if(zmiana) uzupelnione++;
+      });
+      const ok = await saveAgencies();
+      if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
+      alert(`Zapisano.\n\nNowych agencji: ${dodane}` + (uzupelnione?`\nUzupełnionych istniejących: ${uzupelnione}`:'') +
+        `\n\nMenedżerów (osoby) dopisujesz sam — Transfermarkt podaje tylko firmy.`);
+      parsed = []; pasted = '';
+      draw();
+    });
+  }
+
+  overlay.addEventListener('click', e=>{ if(e.target===overlay){ overlay.remove(); render(); } });
+  document.body.appendChild(overlay);
+  draw();
 }
 
 function openAgencyModal(id){

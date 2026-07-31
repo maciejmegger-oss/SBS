@@ -172,6 +172,12 @@ export interface Agency {
   phone?: string;
   notes?: string;
   dateAdded?: string;
+  // Dane z listy agencji na Transfermarkcie — pomagają ocenić skalę agencji przed kontaktem.
+  // Trzymane osobno od naszych własnych liczb, bo dotyczą CAŁEGO portfela agencji, a nie tylko
+  // tych zawodników, których mamy w bazie.
+  playersTm?: number;
+  marketValue?: string;
+  licensed?: boolean;
 }
 
 // Menedżer — konkretna osoba pracująca w agencji. To z nią się rozmawia, więc trzyma dane
