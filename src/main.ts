@@ -7400,6 +7400,12 @@ document.body.appendChild(d);setTimeout(function(){d.remove()},3200);
 // rodzaju bufora co tamta: wchodzisz na profil, klikasz, i tak przez całą listę — a na końcu
 // wklejasz wszystko naraz.
 //
+// Etykieta pola różni się między wersjami językowymi i zmienia się w czasie — na polskiej stronie
+// jest to „Menadżerowie:", nie „Doradca". Dlatego nie szukamy jednego napisu w tekście strony,
+// tylko chodzimy po DOM: znajdujemy komórkę-etykietę pasującą do wzorca i bierzemy sąsiada obok.
+// Nazwę agencji czytamy z atrybutu `title` odnośnika, bo widoczny tekst bywa ucięty wielokropkiem
+// („BMS Sportconsulting …") — a przy okazji mamy adres strony agencji.
+//
 // UWAGA merytoryczna, zapisana też w oknie importu: brak doradcy na Transfermarkcie NIE znaczy,
 // że zawodnik nie ma menedżera. To pole bywa tam nieuzupełnione, zwłaszcza u młodzieży. Dlatego
 // skrypt zapisuje „AGENT: -", a aplikacja odnotowuje wtedy tylko fakt sprawdzenia — nigdy nie
@@ -7411,16 +7417,29 @@ var u=location.href;
 if(!/\\/profil\\/spieler\\/\\d+/.test(u)){alert('SBS: to nie jest profil zawodnika na Transfermarkcie.\\n\\nOtworz profil zawodnika (adres z \\u201e/profil/spieler/\\u201d) i kliknij ponownie.');return;}
 var imie=(document.title||'').split(' - ')[0].replace(/\\s+/g,' ').trim();
 if(!imie){alert('SBS: nie odczytalem nazwiska z tej strony.');return;}
-var txt=document.body.innerText.replace(/\\u00a0/g,' ');
-var L=['Doradca','Berater','Player agent','Agent'];var agent='';
-for(var i=0;i<L.length&&!agent;i++){
-var m=txt.match(new RegExp('(?:^|\\\\n)[ \\\\t]*'+L[i]+'[ \\\\t]*:?[ \\\\t]*\\\\n?[ \\\\t]*([^\\\\n]{1,60})','i'));
-if(m)agent=m[1].trim();}
-if(/^(brak|-|\\u2013|\\u2014|unknown|k\\.A\\.)$/i.test(agent))agent='';
-if(/^(Aktualny|Wzrost|Pozycja|Data|Miejsce|Narodowo|Kontrakt|Numer|Noga|Warto)/i.test(agent))agent='';
-var mR=txt.match(/(?:Data urodzenia|Geb\\.\\/Alter|Date of birth)[^\\n]*?(\\d{4})/i);
-var rok=mR?mR[1]:'';
-var wpis='### '+imie+' ###\\nROK: '+rok+'\\nAGENT: '+(agent||'-');
+function pole(ok){
+var n=document.querySelectorAll('span,th,td,dt,div');
+for(var i=0;i<n.length;i++){var e=n[i];
+if(e.children.length)continue;
+var t=(e.textContent||'').replace(/\\u00a0/g,' ').trim();
+if(!t||t.length>34||t.charAt(t.length-1)!==':')continue;
+var k=t.toLowerCase().replace(/\\u0142/g,'l').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').replace(/[^a-z]/g,'');
+if(!ok(k))continue;
+var v=e.nextElementSibling;if(!v)continue;
+var a=v.querySelector('a')||(v.tagName==='A'?v:null);
+var nazwa=a?((a.getAttribute('title')||a.textContent||'').trim()):((v.textContent||'').replace(/\\u00a0/g,' ').trim());
+nazwa=nazwa.replace(/[\\s.\\u2026]+$/,'').trim();
+if(nazwa)return{nazwa:nazwa,link:(a&&a.href)?a.href:''};}
+return null;}
+var ETYKIETY=['menadzerowie','menedzerowie','menadzer','menedzer','doradca','doradcy','berater','spielerberater','playeragent','agent','agents','advisor'];
+var ag=pole(function(k){return ETYKIETY.indexOf(k)>=0;});
+var agent=ag?ag.nazwa:'';var agLink=ag?ag.link:'';
+if(/^(brak|-|\\u2013|\\u2014|unknown|k\\.A\\.)$/i.test(agent)){agent='';agLink='';}
+var ur=pole(function(k){return k.indexOf('urodz')===0||k.indexOf('dataurodzenia')===0||k.indexOf('geb')===0||k.indexOf('dateofbirth')===0;});
+var rok='';
+if(ur){var mu=ur.nazwa.match(/(\\d{4})/);if(mu)rok=mu[1];}
+if(!rok){var mt=document.body.innerText.replace(/\\u00a0/g,' ').match(/(?:Urodz|Data urodzenia|Geb\\.|Date of birth)[^\\n]*?(\\d{4})/i);if(mt)rok=mt[1];}
+var wpis='### '+imie+' ###\\nROK: '+rok+'\\nAGENT: '+(agent||'-')+(agLink?'\\nLINK: '+agLink:'');
 var stare=localStorage.getItem(K)||'';
 if(stare.indexOf('### '+imie+' ###')>=0){alert('SBS: '+imie+' jest juz zebrany — pomijam, zeby nie dublowac.');return;}
 var caly=stare+(stare?'\\n\\n':'')+wpis;
@@ -7439,13 +7458,21 @@ function parseAgentPaste(text){
     const linie = blok.split(/\r?\n/);
     const naglowek = (linie.shift()||'').replace(/#+\s*$/,'').trim();
     if(!naglowek) return null;
-    let rok = '', agent = '';
+    let rok = '', agent = '', link = '';
     linie.forEach(l=>{
-      const mr = l.match(/^ROK:\s*(\d{4})/i);  if(mr) rok = mr[1];
-      const ma = l.match(/^AGENT:\s*(.*)$/i);  if(ma) agent = ma[1].trim();
+      const mr = l.match(/^ROK:\s*(\d{4})/i);   if(mr) rok = mr[1];
+      const ma = l.match(/^AGENT:\s*(.*)$/i);   if(ma) agent = ma[1].trim();
+      const ml = l.match(/^LINK:\s*(\S+)/i);    if(ml) link = ml[1].trim();
     });
     const brak = !agent || /^[-–—]$/.test(agent) || /^(brak|nie podano|unknown)$/i.test(agent);
-    return { nazwa: naglowek, birthYear: rok, agencyName: brak ? '' : agent, maAgenta: !brak };
+    return {
+      nazwa: naglowek, birthYear: rok, maAgenta: !brak,
+      agencyName: brak ? '' : agent,
+      agencyLink: brak ? '' : link,
+      // W bazie nazwa i adres agencji mieszkają w jednym polu — agencyDisplayHtml() rozdziela je
+      // przy wyświetlaniu i robi z adresu klikalny odnośnik „strona agencji →".
+      agencyValue: brak ? '' : (link ? agent + ' ' + link : agent)
+    };
   }).filter(Boolean);
 }
 
@@ -7587,7 +7614,8 @@ function openAgentImportModal(){
                   <span class="note" style="display:block;">${esc(clubName(p.clubId))}</span></td>
                 <td style="font-size:12px;">${p.hasAgent ? `<span class="agent-yes">Tak</span>${p.agencyName?' · '+esc(p.agencyName):''}` : `<span class="agent-no">Nie</span>`}</td>
                 <td style="font-size:12px;">→ ${x.maAgenta
-                  ? `<span class="agent-yes">Tak</span> · ${esc(x.agencyName)}`
+                  ? `<span class="agent-yes">Tak</span> · ${esc(x.agencyName)}` +
+                    (x.agencyLink ? `<a class="ext-link" href="${esc(x.agencyLink)}" target="_blank" rel="noopener noreferrer" style="display:block;font-size:11px;">strona agencji →</a>` : '')
                   : `<span class="note">Transfermarkt nie podaje — zapiszę tylko datę sprawdzenia</span>`}</td>
               </tr>`;
             }).join('')}
@@ -7643,7 +7671,7 @@ function openAgentImportModal(){
         p.agentSource = 'Transfermarkt';
         if(x.maAgenta){
           p.hasAgent = true;
-          if(x.agencyName) p.agencyName = x.agencyName;
+          if(x.agencyValue) p.agencyName = x.agencyValue;
           zAgentem++;
         } else {
           // Świadomie NIE ustawiamy hasAgent=false. Brak wpisu na Transfermarkcie to brak danych,
