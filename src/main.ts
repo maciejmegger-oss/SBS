@@ -7543,6 +7543,12 @@ document.body.appendChild(d);setTimeout(function(){d.remove()},3200);
 // element o stałym kształcie. Reszta kolumn bywa przestawiana, dlatego liczby bierzemy „po
 // znaczeniu": pierwsza komórka będąca samą liczbą to liczba zawodników, pierwsza z symbolem euro
 // to wartość rynkowa. Sztywne numery kolumn rozjechałyby się przy najbliższej zmianie serwisu.
+//
+// UWAGA na zagnieżdżenie: Transfermarkt wkłada w pierwszą komórkę OSOBNĄ tabelkę (logo, nazwa,
+// kraj, znaczek LICENSED). closest('tr') trafia więc w jej wiersz, w którym liczb nie ma wcale —
+// pierwsza wersja zbierała przez to same nazwy z pustym krajem, liczbą zawodników i wartością.
+// Dlatego wspinamy się do NAJBARDZIEJ ZEWNĘTRZNEGO wiersza, a przy czytaniu liczb pomijamy
+// komórki zawierające zagnieżdżoną tabelę — inaczej wpadłby nam tekst z tamtej tabelki.
 const TM_AGENCIES_BOOKMARKLET = `javascript:(function(){try{
 var K='sbs_agencje';
 if(window.event&&window.event.shiftKey){localStorage.removeItem(K);alert('SBS: wyczyszczono zebrane agencje.');return;}
@@ -7556,6 +7562,8 @@ if(!nazwa||nazwa.length<2)continue;
 var href=a.href;
 if(widziane[href])continue;
 var tr=a.closest('tr');if(!tr)continue;
+var wyzej;
+while((wyzej=tr.parentElement&&tr.parentElement.closest('tr')))tr=wyzej;
 widziane[href]=1;
 var kraj='';
 var flaga=tr.querySelector('img.flaggenrahmen,img[class*="flagge"]');
@@ -7563,6 +7571,7 @@ if(flaga)kraj=(flaga.getAttribute('title')||flaga.getAttribute('alt')||'').trim(
 var lic=/licensed/i.test(tr.textContent||'')?'tak':'nie';
 var td=tr.querySelectorAll('td'),zaw='',wart='';
 for(var j=0;j<td.length;j++){
+if(td[j].querySelector('table,td'))continue;
 var t=(td[j].textContent||'').replace(/\\u00a0/g,' ').trim();
 if(!zaw&&/^\\d{1,5}$/.test(t))zaw=t;
 if(!wart&&t.indexOf('\\u20ac')>=0)wart=t;}
@@ -8079,9 +8088,17 @@ function openAgenciesImportModal(){
       });
       const ok = await saveAgencies();
       if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
-      alert(`Zapisano.\n\nNowych agencji: ${dodane}` + (uzupelnione?`\nUzupełnionych istniejących: ${uzupelnione}`:'') +
-        `\n\nMenedżerów (osoby) dopisujesz sam — Transfermarkt podaje tylko firmy.`);
+      // Gdy nic się nie zmieniło, mówimy to WPROST. Suchy komunikat „Nowych agencji: 0" czytało
+      // się jak awarię zapisu, choć znaczył tylko tyle, że wszystko już było na miejscu.
+      if(!dodane && !uzupelnione){
+        alert(`Wszystkie ${parsed.length} agencji były już w bazie i nie brakowało im żadnych danych.\n\n` +
+          `Nic nie zmieniłem — to nie błąd zapisu. Lista agencji jest w zakładce pod tym oknem.`);
+      } else {
+        alert(`Zapisano.\n\nNowych agencji: ${dodane}` + (uzupelnione?`\nUzupełnionych istniejących: ${uzupelnione}`:'') +
+          `\n\nMenedżerów (osoby) dopisujesz sam — Transfermarkt podaje tylko firmy.`);
+      }
       parsed = []; pasted = '';
+      render();      // odśwież listę POD oknem, żeby było widać efekt bez zamykania
       draw();
     });
   }
