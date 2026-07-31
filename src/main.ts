@@ -6136,6 +6136,12 @@ const origOpenPlayerModal = openPlayerModal;
 openPlayerModal = function(id, presetClubId, prefillData){ origOpenPlayerModal(id, presetClubId, prefillData); wireLastModal(); };
 const origOpenClubModal = openClubModal;
 openClubModal = function(id){ origOpenClubModal(id); wireLastModal(); };
+// Okna agencji i menedżera muszą przejść tę samą drogę. Bez tego ich „Zapisz" nie miał w ogóle
+// podpiętej obsługi: kliknięcie nic nie robiło, okno zostawało otwarte i wyglądało na zawieszone.
+const origOpenAgencyModal = openAgencyModal;
+openAgencyModal = function(id){ origOpenAgencyModal(id); wireLastModal(); };
+const origOpenAgentModal = openAgentModal;
+openAgentModal = function(agentId, agencyId){ origOpenAgentModal(agentId, agencyId); wireLastModal(); };
 function openPlayerTabsModal(playerId){
   const already = document.querySelector('.modal-overlay[data-tabs-for]');
   if(already) already.remove();
@@ -7663,8 +7669,11 @@ document.body.appendChild(d);setTimeout(function(){d.remove()},3600);
 // Nazwę agencji bierzemy z tytułu strony, a jej adres wprost z paska — dzięki temu wklejka wie,
 // do której agencji należy, i nie trzeba tego wybierać ręcznie.
 const TM_AGENCY_SQUAD_BOOKMARKLET = `javascript:(function(){try{
+var K='sbs_sklad_agencji';
+if(window.event&&window.event.shiftKey){localStorage.removeItem(K);alert('SBS: wyczyszczono zebrany sklad.');return;}
 var u=location.href;
 if(!/\\/beraterfirma\\/berater\\/\\d+/.test(u)&&!/\\/berater\\/\\d+/.test(u)){alert('SBS: to nie jest profil agencji.\\n\\nOtworz strone agencji na Transfermarkcie (adres z \\u201e/beraterfirma/berater/\\u201d) i kliknij ponownie.');return;}
+var idAg=((u.match(/\\/berater\\/(\\d+)/)||[])[1])||'';
 var agencja=(document.title||'').split(/ - |\\|/)[0].replace(/\\s+/g,' ').trim();
 var linki=document.querySelectorAll('a[href*="/profil/spieler/"]');
 if(!linki.length){alert('SBS: nie widze tabeli reprezentowanych zawodnikow na tej stronie.');return;}
@@ -7673,32 +7682,67 @@ for(var i=0;i<linki.length;i++){
 var a=linki[i];
 var nazwa=(a.getAttribute('title')||a.textContent||'').replace(/\\s+/g,' ').trim();
 if(!nazwa||nazwa.length<3||nazwa.length>60)continue;
-var href=a.href;
+var href=a.href.split('?')[0];
 if(widziane[href])continue;
 widziane[href]=1;
 var tr=a.closest('tr');
-var wiek='',klub='',wart='';
+var wiek='',klub='',wart='',poz='';
 if(tr){
 var wyzej;
 while((wyzej=tr.parentElement&&tr.parentElement.closest('tr')))tr=wyzej;
 var kl=tr.querySelector('a[href*="/startseite/verein/"],a[href*="/kader/verein/"]');
 if(kl)klub=(kl.getAttribute('title')||kl.textContent||'').replace(/\\s+/g,' ').trim();
 if(!klub){var ki=tr.querySelector('img[src*="wappen"]');if(ki)klub=(ki.getAttribute('title')||ki.getAttribute('alt')||'').trim();}
+var kom=a.closest('td');
+if(kom){var linie=(kom.innerText||'').split('\\n').map(function(x){return x.trim()}).filter(Boolean);
+for(var z=0;z<linie.length;z++){if(linie[z]!==nazwa&&linie[z].length>2&&linie[z].length<32&&!/\\d/.test(linie[z])){poz=linie[z];break;}}}
 var td=tr.querySelectorAll('td');
 for(var j=0;j<td.length;j++){
 if(td[j].querySelector('table,td'))continue;
 var t=(td[j].textContent||'').replace(/\\u00a0/g,' ').trim();
 if(!wiek&&/^\\d{2}$/.test(t))wiek=t;
 if(!wart&&t.indexOf('\\u20ac')>=0)wart=t;}}
-wiersze.push(nazwa+' | '+wiek+' | '+klub+' | '+wart);}
+wiersze.push(nazwa+' | '+wiek+' | '+klub+' | '+poz+' | '+wart);}
 if(!wiersze.length){alert('SBS: znalazlem odnosniki do zawodnikow, ale nie umialem odczytac wierszy.');return;}
-var caly='### AGENCJA: '+agencja+' | '+u+' ###\\n'+wiersze.join('\\n');
+var naglowek='### AGENCJA: '+agencja+' | '+u+' | ID:'+idAg+' ###';
+var stare=(localStorage.getItem(K)||'').split('\\n').filter(function(x){return x.trim()});
+if(stare.length&&stare[0].indexOf('ID:'+idAg+' ')<0){
+if(!confirm('SBS: w buforze masz sklad innej agencji ('+stare[0].replace(/^### AGENCJA: /,'').split(' | ')[0]+').\\n\\nOK = zaczynam zbierac te agencje od nowa.\\nAnuluj = nie ruszam bufora.'))return;
+stare=[];}
+var poNazwie={},kolejnosc=[];
+for(var s=1;s<stare.length;s++){var kl2=stare[s].split(' | ')[0];if(!kl2)continue;if(!poNazwie[kl2])kolejnosc.push(kl2);poNazwie[kl2]=stare[s];}
+var nowych=0;
+for(var k=0;k<wiersze.length;k++){var kl3=wiersze[k].split(' | ')[0];
+if(!poNazwie[kl3]){kolejnosc.push(kl3);nowych++;}
+poNazwie[kl3]=wiersze[k];}
+var lista=[];for(var m=0;m<kolejnosc.length;m++)lista.push(poNazwie[kolejnosc[m]]);
+var caly=naglowek+'\\n'+lista.join('\\n');
+localStorage.setItem(K,caly);
+var ile=lista.length;
 navigator.clipboard.writeText(caly).then(function(){
 var d=document.createElement('div');
-d.innerHTML='<b>SBS: '+agencja+'</b><br>zawodnikow: '+wiersze.length+' \\u2014 schowek gotowy<br><span style="opacity:.75;font-weight:400">Wklej w oknie agencji w SBS</span>';
+d.innerHTML='<b>SBS: '+agencja+'</b><br>z tej strony nowych: '+nowych+'<br>w buforze: '+ile+' \\u2014 schowek gotowy<br><span style="opacity:.75;font-weight:400">Przejdz na kolejna strone i kliknij ponownie<br>Shift+klik = wyczysc bufor</span>';
 d.style.cssText='position:fixed;top:16px;right:16px;z-index:999999;background:#16302A;color:#C69B3C;padding:12px 18px;border-radius:8px;font:600 13px sans-serif;line-height:1.5;box-shadow:0 4px 16px rgba(0,0,0,.3)';
 document.body.appendChild(d);setTimeout(function(){d.remove()},3600);
 }).catch(function(e){alert('Nie udalo sie skopiowac: '+e.message)})}catch(e){alert('Blad: '+e.message)}})();`;
+
+// Klub z Transfermarktu -> klub w naszej bazie. To jednocześnie nasz sprawdzian „czy gra w Polsce":
+// baza zawiera wyłącznie polskie rozgrywki, więc trafienie w klub oznacza polską ligę. Nazwy bywają
+// zapisane inaczej („Bruk-Bet Termalica Nieciecza" vs „Termalica Nieciecza"), stąd dopasowanie
+// dokładne, a potem zawieranie — ale tylko przy nazwach dość długich, by nie łączyć przypadkiem.
+function znajdzKlubPoNazwieTM(nazwaTM){
+  const n = importNorm(nazwaTM);
+  if(!n || n.length < 3) return null;
+  const dokladny = DB.clubs.find(c=> importNorm(c.name) === n);
+  if(dokladny) return dokladny;
+  const kandydaci = DB.clubs.filter(c=>{
+    const cn = importNorm(c.name);
+    if(cn.length < 5 || n.length < 5) return false;
+    return cn.includes(n) || n.includes(cn);
+  });
+  // Przy kilku pasujących nie zgadujemy — „Zagłębie" pasowałoby i do Lubina, i do Sosnowca.
+  return kandydaci.length === 1 ? kandydaci[0] : null;
+}
 
 // Rozbiór wklejki z profilu agencji: nagłówek „### AGENCJA: nazwa | adres ###" i po jednym
 // zawodniku w linijce.
@@ -7721,11 +7765,17 @@ function parseAgencySquadPaste(text){
     const nazwa = cz[0];
     if(!nazwa || nazwa.length < 3 || nazwa.length > 60) return;
     if(/^[\d\s.,€%+-]+$/.test(nazwa)) return;
+    // Starsze wklejki miały 4 pola (bez pozycji) — rozpoznajemy oba układy, żeby bufor
+    // zebrany przed zmianą nadal się wczytywał.
+    const zPozycja = cz.length >= 5;
     zawodnicy.push({
       nazwa,
       wiek: /^\d{1,2}$/.test(cz[1]||'') ? parseInt(cz[1],10) : null,
       klub: cz[2] || '',
-      wartosc: (cz[3] && cz[3].includes('€')) ? cz[3] : ''
+      pozycja: zPozycja ? (cz[3] || '') : '',
+      wartosc: zPozycja
+        ? ((cz[4] && cz[4].includes('€')) ? cz[4] : '')
+        : ((cz[3] && cz[3].includes('€')) ? cz[3] : '')
     });
   });
   return {agencja, link, zawodnicy};
@@ -8278,30 +8328,38 @@ function openAgencySquadModal(agencyId){
   overlay.className = 'modal-overlay';
   let wklejka = '';
   let rozpoznane = null;
+  let zakladajBrakujacych = true;
 
+  // Rozdział na cztery kubełki:
+  //  trafione        — są w bazie, wystarczy przypiąć agencję
+  //  doZalozenia     — nie ma ich w bazie, ALE grają w klubie, który mamy (czyli w polskiej lidze)
+  //  niejednoznaczne — kilka osób o tym nazwisku; nie zgadujemy
+  //  zagraniczni     — klub spoza naszej bazy; pomijamy, bo to nie polskie rozgrywki
   function dopasuj(){
-    if(!rozpoznane) return {trafione:[], nietrafione:[], niejednoznaczne:[]};
-    const trafione = [], nietrafione = [], niejednoznaczne = [];
+    if(!rozpoznane) return {trafione:[], doZalozenia:[], niejednoznaczne:[], zagraniczni:[]};
+    const trafione = [], doZalozenia = [], niejednoznaczne = [], zagraniczni = [];
     rozpoznane.zawodnicy.forEach(z=>{
       const rocznik = z.wiek ? String(new Date().getFullYear() - z.wiek) : '';
+      const klub = znajdzKlubPoNazwieTM(z.klub);
       const kandydaci = matchPlayersByFullName(z.nazwa, rocznik);
-      if(kandydaci.length === 1) trafione.push({...z, player: kandydaci[0]});
-      else if(kandydaci.length > 1) niejednoznaczne.push({...z, kandydaci});
-      else nietrafione.push(z);
+      if(kandydaci.length === 1){ trafione.push({...z, player: kandydaci[0], klubBazy: klub}); return; }
+      if(kandydaci.length > 1){ niejednoznaczne.push({...z, kandydaci}); return; }
+      if(klub) doZalozenia.push({...z, klubBazy: klub, rocznik});
+      else zagraniczni.push(z);
     });
-    return {trafione, nietrafione, niejednoznaczne};
+    return {trafione, doZalozenia, niejednoznaczne, zagraniczni};
   }
 
   function draw(){
-    const {trafione, nietrafione, niejednoznaczne} = dopasuj();
+    const {trafione, doZalozenia, niejednoznaczne, zagraniczni} = dopasuj();
     const inna = rozpoznane && rozpoznane.link && agencja.tmLink && rozpoznane.link !== agencja.tmLink;
 
     overlay.innerHTML = `
     <div class="modal" style="max-width:780px;">
       <h3>📥 Wgraj zawodników — ${esc(agencja.name)}</h3>
-      <p class="note" style="margin-top:0;">Otwórz profil agencji na Transfermarkcie, kliknij zakładkę i wklej tutaj.
-      Powiążę <strong>tylko tych zawodników, którzy już są w Twojej bazie</strong> — reszty nie zakładam,
-      bo agencje reprezentują też zawodników z lig, których nie obserwujesz.</p>
+      <p class="note" style="margin-top:0;">Profil agencji jest <strong>podzielony na strony</strong> — kliknij zakładkę
+      na każdej z nich, bufor się sumuje. Biorę <strong>tylko zawodników grających w klubach z Twojej bazy</strong>,
+      czyli w polskich rozgrywkach; resztę wypisuję, ale pomijam.</p>
 
       <details style="margin-bottom:12px;" ${rozpoznane?'':'open'}>
         <summary style="cursor:pointer;font-weight:700;color:var(--gold-dark);">1. Ustaw zakładkę (raz)</summary>
@@ -8311,7 +8369,8 @@ function openAgencySquadModal(agencyId){
           </li>
           ${agencja.tmLink ? `<li>Otwórz <a class="ext-link" href="${esc(agencja.tmLink)}" target="_blank" rel="noopener noreferrer">profil tej agencji &rarr;</a></li>`
             : `<li>Otwórz profil tej agencji na Transfermarkcie <span class="note">(nie mam zapisanego adresu — dopisz go w „Edytuj agencję", to pojawi się tu odnośnik)</span></li>`}
-          <li>Kliknij zakładkę i wróć tutaj</li>
+          <li>Kliknij zakładkę, przejdź na kolejną stronę składu (2, 3, …) i klikaj na każdej — bufor się sumuje</li>
+          <li>Na koniec wróć tutaj i wklej. <strong>Shift+klik</strong> czyści bufor.</li>
         </ol>
         <details style="margin-top:6px;">
           <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Kod do wklejenia ręcznie</summary>
@@ -8334,9 +8393,16 @@ function openAgencySquadModal(agencyId){
           przypiszę zawodników do otwartej.</p>` : ''}
         <div style="border-top:1px solid #E3DECE;padding-top:10px;margin-top:12px;">
           <p class="note" style="margin-top:0;">Na liście z Transfermarktu: <strong>${rozpoznane.zawodnicy.length}</strong>.
-            W Twojej bazie znalazłem <strong>${trafione.length}</strong>${
-            niejednoznaczne.length? `, niejednoznacznych <strong>${niejednoznaczne.length}</strong>`:''}${
-            nietrafione.length? `, spoza bazy <strong>${nietrafione.length}</strong>`:''}.</p>
+            Gra w klubach z Twojej bazy: <strong>${trafione.length + doZalozenia.length}</strong>
+            (w bazie ${trafione.length}${doZalozenia.length? `, do założenia ${doZalozenia.length}`:''}).
+            Poza polskimi rozgrywkami: <strong>${zagraniczni.length}</strong>${
+            niejednoznaczne.length? `, niejednoznacznych <strong>${niejednoznaczne.length}</strong>`:''}.</p>
+
+          ${doZalozenia.length ? `<label style="display:flex;align-items:center;gap:6px;font-size:12.5px;margin:8px 0;cursor:pointer;">
+            <input type="checkbox" id="squad-zakladaj" ${zakladajBrakujacych?'checked':''}>
+            <span>Załóż <strong>${doZalozenia.length}</strong> brakujących zawodników z polskich klubów</span>
+          </label>` : ''}
+
           <div style="max-height:280px;overflow:auto;">
             <table><tbody>
             ${trafione.map((x,i)=>`<tr>
@@ -8348,16 +8414,23 @@ function openAgencySquadModal(agencyId){
                 : (x.player.agencyId ? `<span style="color:var(--clay-dark);">zmiana z: ${esc((agencyById(x.player.agencyId)||{}).name||'innej agencji')}</span>`
                                      : '<span class="agent-yes">przypiszę</span>')}</td>
             </tr>`).join('')}
+            ${doZalozenia.map((x,i)=>`<tr style="background:rgba(198,155,60,0.06);">
+              <td style="width:24px;"><input type="checkbox" class="squad-new-check" data-idx="${i}" ${zakladajBrakujacych?'checked':''}></td>
+              <td>${esc(x.nazwa)}${x.rocznik && Number(x.rocznik)>=2006 ? youthBadge() : ''}
+                <span class="club-sub" style="display:block;">${esc(x.klubBazy.name)}${x.rocznik? ' · '+esc(x.rocznik):''}${x.pozycja? ' · '+esc(x.pozycja):''}</span></td>
+              <td style="font-size:12px;color:var(--gold-dark);">nowy — założę</td>
+            </tr>`).join('')}
             ${niejednoznaczne.map(x=>`<tr style="color:var(--clay-dark);"><td></td>
               <td colspan="2" style="font-size:12px;">${esc(x.nazwa)} — w bazie jest ${x.kandydaci.length} osób o tym nazwisku, przypisz ręcznie</td></tr>`).join('')}
-            ${nietrafione.length ? `<tr><td></td><td colspan="2" style="font-size:12px;color:var(--ink-soft);padding-top:8px;">
-              <strong>Spoza bazy (${nietrafione.length})</strong> — nie zakładam ich:<br>${
-              nietrafione.slice(0,25).map(z=>esc(z.nazwa)).join(', ')}${nietrafione.length>25?` … i ${nietrafione.length-25} więcej`:''}</td></tr>` : ''}
+            ${zagraniczni.length ? `<tr><td></td><td colspan="2" style="font-size:12px;color:var(--ink-soft);padding-top:8px;">
+              <strong>Poza polskimi rozgrywkami (${zagraniczni.length})</strong> — pomijam:<br>${
+              zagraniczni.slice(0,20).map(z=>esc(z.nazwa)+(z.klub?` <span style="opacity:.7">(${esc(z.klub)})</span>`:'')).join(', ')}${
+              zagraniczni.length>20?` … i ${zagraniczni.length-20} więcej`:''}</td></tr>` : ''}
             </tbody></table>
           </div>
         </div>
         <div class="modal-actions" style="justify-content:flex-start;">
-          <button class="gold" data-action="squad-apply">Przypisz zaznaczonych do agencji</button>
+          <button class="gold" data-action="squad-apply">Zapisz zaznaczonych</button>
         </div>
       ` : ''}
 
@@ -8379,11 +8452,16 @@ function openAgencySquadModal(agencyId){
       rozpoznane = r;
       draw();
     });
+    const zakladajCheck = overlay.querySelector('#squad-zakladaj') as any;
+    if(zakladajCheck) zakladajCheck.onchange = ()=>{
+      zakladajBrakujacych = zakladajCheck.checked;
+      overlay.querySelectorAll('.squad-new-check').forEach((c:any)=>c.checked = zakladajBrakujacych);
+    };
     overlay.querySelectorAll('[data-action="squad-apply"]').forEach(b=>b.onclick=async()=>{
-      const {trafione} = dopasuj();
+      const {trafione, doZalozenia} = dopasuj();
       const zaznaczone = Array.from(overlay.querySelectorAll('.squad-row-check:checked')).map(c=>Number(c.dataset.idx));
-      const dzis = new Date().toISOString().slice(0,10);
-      let przypisani = 0, przeniesieni = 0;
+      const zaznaczoneNowe = Array.from(overlay.querySelectorAll('.squad-new-check:checked')).map(c=>Number(c.dataset.idx));
+      let przypisani = 0, przeniesieni = 0, zalozeni = 0;
       zaznaczone.forEach(i=>{
         const x = trafione[i];
         if(!x) return;
@@ -8391,6 +8469,33 @@ function openAgencySquadModal(agencyId){
         if(p.agencyId === agencyId) return;         // już tu jest — nic nie ruszamy
         if(p.agencyId) przeniesieni++;
         if(przypiszZawodnikaDoAgencji(p, agencja, 'Transfermarkt (profil agencji)')) przypisani++;
+      });
+      // Zakładanie brakujących — TYLKO tych, których klub mamy w bazie. Wiek z Transfermarktu
+      // daje rocznik z dokładnością do roku (zależy, czy zawodnik miał już urodziny), więc
+      // zapisujemy to w notatce zamiast udawać pewność.
+      zaznaczoneNowe.forEach(i=>{
+        const x = doZalozenia[i];
+        if(!x) return;
+        const czesci = String(x.nazwa).split(/\s+/).filter(Boolean);
+        const firstName = czesci[0] || '';
+        const lastName = czesci.slice(1).join(' ') || firstName;
+        const nowy = {
+          id: uid('Z'), firstName, lastName,
+          birthDate: '', birthYear: x.rocznik || '', nationality: '',
+          position: x.pozycja ? (mapSquadPosition(x.pozycja) || x.pozycja) : '',
+          foot: '', height: null, status: '', clubId: x.klubBazy.id, scout: currentScout || '',
+          videoLink: '', lnpLink: '', tmLink: '',
+          hasAgent: true, agencyId: agencja.id, agentId: '',
+          agencyName: agencja.name + (agencja.tmLink ? ' ' + agencja.tmLink : ''),
+          agentCheckedAt: new Date().toISOString().slice(0,10),
+          agentSource: 'Transfermarkt (profil agencji)',
+          formation: '', customFields: {},
+          notes: 'Dodany z profilu agencji na Transfermarkcie.' +
+            (x.rocznik ? ' Rocznik wyliczony z wieku — może być o rok wcześniejszy.' : ''),
+          dateAdded: new Date().toISOString().slice(0,10)
+        };
+        DB.players.push(nowy);
+        zalozeni++;
       });
       // Liczba zawodników agencji wg Transfermarktu — bierzemy prosto z długości listy.
       let zmianaAgencji = false;
@@ -8402,10 +8507,12 @@ function openAgencySquadModal(agencyId){
       const okAg = zmianaAgencji ? await saveAgencies() : true;
       const ok = okAg && await savePlayers();
       if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
-      alert(przypisani
+      alert((przypisani || zalozeni)
         ? `Przypisano do agencji: ${przypisani}` +
           (przeniesieni ? `\n(w tym przeniesionych z innej agencji: ${przeniesieni})` : '') +
-          `\n\nLiczba zawodników agencji wg Transfermarktu: ${rozpoznane.zawodnicy.length}`
+          (zalozeni ? `\nZałożono nowych zawodników: ${zalozeni}` : '') +
+          `\n\nKażdy ma „Agent: Tak" i tę agencję w profilu.` +
+          `\nLiczba zawodników agencji wg Transfermarktu: ${rozpoznane.zawodnicy.length}`
         : 'Nic nie zmieniłem — zaznaczeni zawodnicy byli już przypisani do tej agencji.');
       rozpoznane = null; wklejka = '';
       render();
