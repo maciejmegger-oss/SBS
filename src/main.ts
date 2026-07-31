@@ -7547,6 +7547,11 @@ document.body.appendChild(d);setTimeout(function(){d.remove()},3200);
 // znaczeniu": pierwsza komórka będąca samą liczbą to liczba zawodników, pierwsza z symbolem euro
 // to wartość rynkowa. Sztywne numery kolumn rozjechałyby się przy najbliższej zmianie serwisu.
 //
+// Bufor ODŚWIEŻA wiersze, a nie tylko dopisuje nowe. Pierwsza wersja pomijała agencję, której
+// adres już w buforze był — więc gdy zbierało się listę zepsutą wersją skryptu, ponowne przejście
+// stron niczego nie naprawiało: poprawione wiersze były „już zebrane" i wypadały. Teraz wiersz o
+// tym samym adresie zastępuje poprzedni, zachowując kolejność zbierania.
+//
 // UWAGA na zagnieżdżenie: Transfermarkt wkłada w pierwszą komórkę OSOBNĄ tabelkę (logo, nazwa,
 // kraj, znaczek LICENSED). closest('tr') trafia więc w jej wiersz, w którym liczb nie ma wcale —
 // pierwsza wersja zbierała przez to same nazwy z pustym krajem, liczbą zawodników i wartością.
@@ -7587,19 +7592,23 @@ if(!zaw&&/^\\d{1,5}$/.test(t))zaw=t;
 if(!wart&&t.indexOf('\\u20ac')>=0)wart=t;}
 wiersze.push(nazwa+' | '+href+' | '+kraj+' | '+zaw+' | '+wart+' | '+lic+' | '+logo);}
 if(!wiersze.length){alert('SBS: znalazlem odnosniki, ale nie umialem odczytac wierszy tabeli.');return;}
-var stare=localStorage.getItem(K)||'';
-var nowe=[],juz=0;
+var stare=(localStorage.getItem(K)||'').split('\\n').filter(function(x){return x.trim()});
+var poAdresie={},kolejnosc=[];
+for(var s=0;s<stare.length;s++){var ad=stare[s].split(' | ')[1];if(!ad)continue;if(!poAdresie[ad])kolejnosc.push(ad);poAdresie[ad]=stare[s];}
+var nowe=0,odswiezone=0;
 for(var k=0;k<wiersze.length;k++){
 var adres=wiersze[k].split(' | ')[1];
-if(stare.indexOf(adres)>=0){juz++;continue;}
-nowe.push(wiersze[k]);}
-var caly=stare+(stare?'\\n':'')+nowe.join('\\n');
-if(!nowe.length){alert('SBS: wszystkie '+wiersze.length+' agencji z tej strony juz mam w buforze.');return;}
+if(poAdresie[adres]){if(poAdresie[adres]!==wiersze[k])odswiezone++;}
+else{kolejnosc.push(adres);nowe++;}
+poAdresie[adres]=wiersze[k];}
+var lista=[];for(var m=0;m<kolejnosc.length;m++)lista.push(poAdresie[kolejnosc[m]]);
+var caly=lista.join('\\n');
+if(!nowe&&!odswiezone){alert('SBS: wszystkie '+wiersze.length+' agencji z tej strony mam juz w buforze, i to z tymi samymi danymi.');return;}
 localStorage.setItem(K,caly);
-var ile=caly.split('\\n').filter(function(x){return x.trim()}).length;
+var ile=lista.length;
 navigator.clipboard.writeText(caly).then(function(){
 var d=document.createElement('div');
-d.innerHTML='<b>SBS: dodano '+nowe.length+' agencji</b>'+(juz?'<br>pominieto powtorzonych: '+juz:'')+'<br>w buforze: '+ile+' \\u2014 schowek gotowy<br><span style="opacity:.75;font-weight:400">Przejdz na kolejna strone i kliknij ponownie<br>Shift+klik = wyczysc bufor</span>';
+d.innerHTML='<b>SBS: nowych '+nowe+' agencji</b>'+(odswiezone?'<br>odswiezono danych: '+odswiezone:'')+'<br>w buforze: '+ile+' \\u2014 schowek gotowy<br><span style="opacity:.75;font-weight:400">Przejdz na kolejna strone i kliknij ponownie<br>Shift+klik = wyczysc bufor</span>';
 d.style.cssText='position:fixed;top:16px;right:16px;z-index:999999;background:#16302A;color:#C69B3C;padding:12px 18px;border-radius:8px;font:600 13px sans-serif;line-height:1.5;box-shadow:0 4px 16px rgba(0,0,0,.3)';
 document.body.appendChild(d);setTimeout(function(){d.remove()},3600);
 }).catch(function(e){alert('Nie udalo sie skopiowac: '+e.message)})}catch(e){alert('Blad: '+e.message)}})();`;
