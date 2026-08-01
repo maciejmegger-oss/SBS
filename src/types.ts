@@ -207,6 +207,9 @@ export interface Database {
   matches: Match[];
   agencies: Agency[];
   agents: Agent[];
+  // Logotypy agencji w base64, klucz = id agencji. Osobno od rekordów agencji, bo obrazki
+  // są o rzędy wielkości większe niż reszta pól i nie chcemy ich przepisywać przy każdej zmianie.
+  agencyLogos: ClubCrestMap;
   clubCrests: ClubCrestMap;
   settings: Settings | null;
 }

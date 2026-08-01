@@ -26,7 +26,7 @@ const FORMATIONS = ["1-4-4-2","1-4-3-3","1-3-4-3","1-3-5-2","1-4-5-1","1-5-4-1",
 let currentScout = "";
 let customTabNames = [];
 
-let DB: Database = { players: [], clubs: [], observations: [], reports: [], talents: [], contacts: [], matches: [], agencies: [], agents: [], clubCrests: {}, settings: null };
+let DB: Database = { players: [], clubs: [], observations: [], reports: [], talents: [], contacts: [], matches: [], agencies: [], agents: [], agencyLogos: {}, clubCrests: {}, settings: null };
 let currentView = "dashboard";
 let editingPlayerId = null;
 let editingReportId = null;
@@ -1736,7 +1736,7 @@ async function loadAllInner(){
   // Faza 1: równoległe wczytanie WSZYSTKICH kolekcji i flag jednorazowych. Wcześniej ~16 odczytów szło
   // sekwencyjnie (każdy to osobny round-trip do Supabase) — przy dużej bazie sumowało się do kilkunastu
   // sekund. Promise.all robi je naraz; każdy z własnym .catch, więc pojedynczy błąd nie wywraca całości.
-  const [p, c, cc, o, rp, tl, ct, mt, ag, agt, pmaRow, s,
+  const [p, c, cc, o, rp, tl, ct, mt, ag, agt, agLogo, pmaRow, s,
     seedFlag, enrichFlag, enrichAviaFlag, enrichGornikFlag, enrichAviaV2Flag, recoMigrationFlag, statusMigrationFlag] = await Promise.all([
     storage.get('scouting:players', true).catch(()=>null),
     storage.get('scouting:clubs', true).catch(()=>null),
@@ -1748,6 +1748,7 @@ async function loadAllInner(){
     storage.get('scouting:matches', true).catch(()=>null),
     storage.get('scouting:agencies', true).catch(()=>null),
     storage.get('scouting:agents', true).catch(()=>null),
+    storage.get('scouting:agency_logos', true).catch(()=>null),
     storage.get('scouting:position_map_assignments', true).catch(()=>null),
     storage.get('scouting:settings', true).catch(()=>null),
     storage.get('scouting:seed_rosters_v9', true).catch(()=>null),
@@ -1768,6 +1769,15 @@ async function loadAllInner(){
   try{ DB.matches = mt ? JSON.parse(mt.value) : []; }catch(e){ DB.matches = []; }
   try{ DB.agencies = ag ? JSON.parse(ag.value) : []; }catch(e){ DB.agencies = []; }
   try{ DB.agents = agt ? JSON.parse(agt.value) : []; }catch(e){ DB.agents = []; }
+  try{ DB.agencyLogos = agLogo ? JSON.parse(agLogo.value) : {}; }catch(e){ DB.agencyLogos = {}; }
+  // Ratunek dla logotypów, które trafiły do mapy herbów, zanim dostały własny magazyn.
+  // Do bazy i tak nie doszły (klucz obcy je odrzucał), ale jeśli któreś siedzi jeszcze
+  // w pamięci otwartej karty, przenosimy je zamiast gubić.
+  Object.keys(DB.clubCrests||{}).forEach(id=>{
+    if(!id.startsWith('AG')) return;
+    if(!DB.agencyLogos[id]) DB.agencyLogos[id] = DB.clubCrests[id];
+    delete DB.clubCrests[id];
+  });
   try{ positionMapAssignments = pmaRow ? JSON.parse(pmaRow.value) : {}; }catch(e){ positionMapAssignments = {}; }
   try{
     const loaded = s ? JSON.parse(s.value) : {};
@@ -1978,7 +1988,15 @@ async function robustStorageSet(key, jsonValue){
 
 async function savePlayers(){ return robustStorageSet('scouting:players', JSON.stringify(DB.players)); }
 async function saveClubs(){ return robustStorageSet('scouting:clubs', JSON.stringify(DB.clubs)); }
-async function saveClubCrests(){ return robustStorageSet('scouting:club_crests', JSON.stringify(DB.clubCrests)); }
+async function saveClubCrests(){
+  // Do tabeli herbów wchodzą WYŁĄCZNIE identyfikatory istniejących klubów: kolumna club_id ma
+  // klucz obcy do sbs_clubs, więc jeden obcy klucz (np. agencji) wywraca CAŁY wsad i herby
+  // przestają się zapisywać, choć z pozoru nic złego nie zrobiłeś. Odsiewamy je przed zapisem.
+  const znaneKluby = new Set(DB.clubs.map(c=>c.id));
+  const czyste = {};
+  Object.keys(DB.clubCrests||{}).forEach(id=>{ if(znaneKluby.has(id)) czyste[id] = DB.clubCrests[id]; });
+  return robustStorageSet('scouting:club_crests', JSON.stringify(czyste));
+}
 async function saveObservations(){ return robustStorageSet('scouting:observations', JSON.stringify(DB.observations)); }
 async function saveReports(){ return robustStorageSet('scouting:reports', JSON.stringify(DB.reports)); }
 async function saveTalents(){ return robustStorageSet('scouting:talents', JSON.stringify(DB.talents)); }
@@ -1990,6 +2008,7 @@ async function saveMatches(){ return robustStorageSet('scouting:matches', JSON.s
 // Zbiór jest mały (setki rekordów, nie tysiące), więc jeden JSON w zupełności wystarcza.
 async function saveAgencies(){ return robustStorageSet('scouting:agencies', JSON.stringify(DB.agencies)); }
 async function saveAgents(){ return robustStorageSet('scouting:agents', JSON.stringify(DB.agents)); }
+async function saveAgencyLogos(){ return robustStorageSet('scouting:agency_logos', JSON.stringify(DB.agencyLogos)); }
 
 // ---- Automatyczne statystyki z 90minut.pl -------------------------------------------------
 // Źródłem jest link w polu "mPZPN / 90minut.pl" (p.lnpLink). Pobieranie idzie przez naszą
@@ -2466,6 +2485,7 @@ const SAVE_FN_BY_KEY = {
   'scouting:reports': ()=>saveReports(), 'scouting:talents': ()=>saveTalents(), 'scouting:contacts': ()=>saveContacts(),
   'scouting:settings': ()=>saveSettings(), 'scouting:position_map_assignments': ()=>savePositionMapAssignments(),
   'scouting:agencies': ()=>saveAgencies(), 'scouting:agents': ()=>saveAgents(),
+  'scouting:agency_logos': ()=>saveAgencyLogos(),
 };
 async function retryFailedSave(){
   const key = lastSaveFailure ? lastSaveFailure.key : null;
@@ -5593,8 +5613,9 @@ function attachHandlers(){
     const a = agencyById(inp.dataset.agencyId);
     if(!a) return;
     try{
-      DB.clubCrests[a.id] = await processCrestFile(file);
-      const ok = await saveClubCrests();
+      if(!DB.agencyLogos) DB.agencyLogos = {};
+      DB.agencyLogos[a.id] = await processCrestFile(file);
+      const ok = await saveAgencyLogos();
       if(!ok){ alert('Nie udało się zapisać logo — sprawdź baner u góry strony.'); return; }
       render();
     }catch(e){
@@ -7768,12 +7789,25 @@ var wiek='',klub='',wart='',poz='';
 if(tr){
 var wyzej;
 while((wyzej=tr.parentElement&&tr.parentElement.closest('tr')))tr=wyzej;
-var kl=tr.querySelector('a[href*="/startseite/verein/"],a[href*="/kader/verein/"]');
-if(kl)klub=(kl.getAttribute('title')||kl.textContent||'').replace(/\\s+/g,' ').trim();
-if(!klub){var ki=tr.querySelector('img[src*="wappen"]');if(ki)klub=(ki.getAttribute('title')||ki.getAttribute('alt')||'').trim();}
+var kl=tr.querySelector('a[href*="/verein/"]');
+if(kl){
+klub=(kl.getAttribute('title')||'').replace(/\\s+/g,' ').trim();
+if(!klub){var im2=kl.querySelector('img');if(im2)klub=(im2.getAttribute('title')||im2.getAttribute('alt')||'').replace(/\\s+/g,' ').trim();}
+if(!klub)klub=(kl.textContent||'').replace(/\\s+/g,' ').trim();}
+if(!klub){var ki=tr.querySelector('img[class*="wappen"],img[src*="wappen"],img[src*="vereinslogo"]');
+if(ki)klub=(ki.getAttribute('title')||ki.getAttribute('alt')||'').replace(/\\s+/g,' ').trim();}
 var kom=a.closest('td');
-if(kom){var linie=(kom.innerText||'').split('\\n').map(function(x){return x.trim()}).filter(Boolean);
-for(var z=0;z<linie.length;z++){if(linie[z]!==nazwa&&linie[z].length>2&&linie[z].length<32&&!/\\d/.test(linie[z])){poz=linie[z];break;}}}
+if(kom){
+var wyzejK;
+while((wyzejK=kom.parentElement&&kom.parentElement.closest('td')))kom=wyzejK;
+var lisc=kom.querySelectorAll('*');
+for(var z=0;z<lisc.length;z++){
+if(lisc[z].children.length)continue;
+var tx=(lisc[z].textContent||'').replace(/\\s+/g,' ').trim();
+if(!tx||tx===nazwa)continue;
+if(tx.length<3||tx.length>32)continue;
+if(/\\d|@|\\u20ac/.test(tx))continue;
+poz=tx;break;}}
 var td=tr.querySelectorAll('td');
 for(var j=0;j<td.length;j++){
 if(td[j].querySelector('table,td'))continue;
@@ -8021,15 +8055,19 @@ function agencyLogoHtml(a, size){
 }
 
 function agencyById(id){ return DB.agencies.find(a=>a.id===id) || null; }
-// Logo agencji trzymamy w TYM SAMYM magazynie co herby klubów (tabela sbs_club_crests, klucz
-// tekstowy). Identyfikatory agencji zaczynają się od „AG", klubów od „K", więc nie ma jak się
-// pomylić, a unikamy zakładania nowej tabeli — czyli ręcznej migracji w Supabase, która przy
-// sbs_matches nigdy nie została uruchomiona i przez to długo psuła zapisy.
-// Wgrany plik idzie tą samą obróbką co herb (skalowanie do rozsądnego rozmiaru), żeby jeden
-// duży PNG nie rozdął magazynu.
+// Logotypy agencji mają WŁASNY magazyn (klucz scouting:agency_logos w sbs_kv).
+//
+// Pierwsza wersja wkładała je do tabeli herbów klubów, licząc na to, że klucz jest zwykłym
+// tekstem. Nie jest: sbs_club_crests.club_id ma klucz obcy do sbs_clubs, więc baza odrzucała
+// każdy zapis z identyfikatorem agencji („Key is not present in table sbs_clubs") i logo nigdy
+// się nie zapisywało. Osobny magazyn omija to bez migracji schematu.
+//
+// Osobny, a nie wewnątrz rekordu agencji — obrazki w base64 ważą tysiące razy więcej niż reszta
+// pól, a cały zbiór agencji zapisuje się przy każdej drobnej zmianie. Trzymane obok wchodzą do
+// zapisu tylko wtedy, gdy faktycznie zmieniasz logo.
 function agencyLogo(a){
   if(!a) return null;
-  if(DB.clubCrests[a.id]) return DB.clubCrests[a.id];
+  if(DB.agencyLogos && DB.agencyLogos[a.id]) return DB.agencyLogos[a.id];
   return a.logoUrl || null;
 }
 function agentById(id){ return DB.agents.find(a=>a.id===id) || null; }
@@ -8561,23 +8599,32 @@ function openAgencySquadModal(agencyId){
   //  niejednoznaczne — kilka osób o tym nazwisku; nie zgadujemy
   //  zagraniczni     — klub spoza naszej bazy; pomijamy, bo to nie polskie rozgrywki
   function dopasuj(){
-    if(!rozpoznane) return {trafione:[], doZalozenia:[], niejednoznaczne:[], zagraniczni:[]};
-    const trafione = [], doZalozenia = [], niejednoznaczne = [], zagraniczni = [];
+    if(!rozpoznane) return {trafione:[], doZalozenia:[], niejednoznaczne:[], zagraniczni:[], bezKlubu:[]};
+    const trafione = [], doZalozenia = [], niejednoznaczne = [], zagraniczni = [], bezKlubu = [];
     rozpoznane.zawodnicy.forEach(z=>{
       const rocznik = z.wiek ? String(new Date().getFullYear() - z.wiek) : '';
       const klub = znajdzKlubPoNazwieTM(z.klub);
       const kandydaci = matchPlayersByFullName(z.nazwa, rocznik);
       if(kandydaci.length === 1){ trafione.push({...z, player: kandydaci[0], klubBazy: klub}); return; }
       if(kandydaci.length > 1){ niejednoznaczne.push({...z, kandydaci}); return; }
-      if(klub) doZalozenia.push({...z, klubBazy: klub, rocznik});
+      if(klub){ doZalozenia.push({...z, klubBazy: klub, rocznik}); return; }
+      // Pusty klub to NIE to samo, co klub zagraniczny. Pierwsze znaczy, że nie udało się go
+      // odczytać ze strony i trzeba wskazać ręcznie; drugie, że zawodnik gra poza Polską.
+      // Wrzucanie jednego do drugiego kasowałoby ludzi bez śladu.
+      if(!String(z.klub||'').trim()) bezKlubu.push({...z, rocznik});
       else zagraniczni.push(z);
     });
-    return {trafione, doZalozenia, niejednoznaczne, zagraniczni};
+    return {trafione, doZalozenia, niejednoznaczne, zagraniczni, bezKlubu};
   }
 
   function draw(){
-    const {trafione, doZalozenia, niejednoznaczne, zagraniczni} = dopasuj();
+    const {trafione, doZalozenia, niejednoznaczne, zagraniczni, bezKlubu} = dopasuj();
     const inna = rozpoznane && rozpoznane.link && agencja.tmLink && rozpoznane.link !== agencja.tmLink;
+    // Ile zawodników ma agencja wg Transfermarktu, a ile faktycznie zebrałeś. Rozjazd znaczy
+    // zwykle jedno: profil ma kilka stron, a kliknięcie padło tylko na część z nich.
+    const wgTm = agencja.playersTm;
+    const zebrano = rozpoznane ? rozpoznane.zawodnicy.length : 0;
+    const brakujeStron = rozpoznane && wgTm != null && zebrano < wgTm - 2;
 
     overlay.innerHTML = `
     <div class="modal" style="max-width:780px;">
@@ -8616,6 +8663,11 @@ function openAgencySquadModal(agencyId){
           Uwaga: wklejka pochodzi z profilu <strong>${esc(rozpoznane.agencja||'innej agencji')}</strong>,
           a otwarta jest <strong>${esc(agencja.name)}</strong>. Sprawdź, czy to na pewno ta sama agencja —
           przypiszę zawodników do otwartej.</p>` : ''}
+        ${brakujeStron ? `<p class="note" style="color:var(--clay-dark);margin-top:12px;border:1px solid var(--clay-dark);border-radius:6px;padding:8px 10px;">
+          <strong>Zebrałeś ${zebrano} z ${wgTm} zawodników tej agencji.</strong>
+          Profil jest podzielony na strony — wróć na Transfermarkt, przejdź kolejne strony składu
+          (2, 3, 4…) i kliknij zakładkę na <strong>każdej</strong>, a potem wklej ponownie.
+          Bufor sumuje się sam, więc nic z tego, co już masz, nie przepadnie.</p>` : ''}
         <div style="border-top:1px solid #E3DECE;padding-top:10px;margin-top:12px;">
           <p class="note" style="margin-top:0;">Na liście z Transfermarktu: <strong>${rozpoznane.zawodnicy.length}</strong>.
             Gra w klubach z Twojej bazy: <strong>${trafione.length + doZalozenia.length}</strong>
@@ -8647,6 +8699,12 @@ function openAgencySquadModal(agencyId){
             </tr>`).join('')}
             ${niejednoznaczne.map(x=>`<tr style="color:var(--clay-dark);"><td></td>
               <td colspan="2" style="font-size:12px;">${esc(x.nazwa)} — w bazie jest ${x.kandydaci.length} osób o tym nazwisku, przypisz ręcznie</td></tr>`).join('')}
+            ${bezKlubu.length ? `<tr><td></td><td colspan="2" style="font-size:12px;color:var(--clay-dark);padding-top:8px;">
+              <strong>Bez odczytanego klubu (${bezKlubu.length})</strong> — nie wiem, gdzie grają, więc ich nie zakładam.
+              Na Transfermarkcie przełącz tabelę na kartę <strong>„Szczegółowo"</strong>, tam klub jest podany tekstem,
+              i zbierz jeszcze raz:<br>${
+              bezKlubu.slice(0,20).map(z=>esc(z.nazwa)).join(', ')}${
+              bezKlubu.length>20?` … i ${bezKlubu.length-20} więcej`:''}</td></tr>` : ''}
             ${zagraniczni.length ? `<tr><td></td><td colspan="2" style="font-size:12px;color:var(--ink-soft);padding-top:8px;">
               <strong>Poza polskimi rozgrywkami (${zagraniczni.length})</strong> — pomijam:<br>${
               zagraniczni.slice(0,20).map(z=>esc(z.nazwa)+(z.klub?` <span style="opacity:.7">(${esc(z.klub)})</span>`:'')).join(', ')}${
