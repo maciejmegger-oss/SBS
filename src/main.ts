@@ -5417,10 +5417,14 @@ function attachHandlers(){
   });
   main.querySelectorAll('[data-action="agency-migrate"]').forEach(b=>b.onclick=async()=>{
     const r = await migrujAgencjeZTekstu();
+    const m = await uporzadkujMenedzerow();
     render();
-    alert(r.powiazane
-      ? `Uporządkowano.\n\nPowiązano zawodników z agencjami: ${r.powiazane}\nZałożono nowych agencji: ${r.utworzone}`
-      : 'Nie znalazłem nic do uporządkowania — wszyscy zawodnicy z menedżerem mają już wskazaną agencję.');
+    const czesci = [];
+    if(r.powiazane) czesci.push(`Powiązano zawodników z agencjami: ${r.powiazane}\nZałożono nowych agencji: ${r.utworzone}`);
+    if(m.poprawione) czesci.push(`Poprawiono nazwiska menedżerów: ${m.poprawione}\n(zdjęte „licensed", myślniki i role — rola trafiła do własnej rubryki)`);
+    if(m.zTelefonem) czesci.push(`Uzupełniono telefon z agencji u menedżerów: ${m.zTelefonem}`);
+    alert(czesci.length ? 'Uporządkowano.\n\n' + czesci.join('\n\n')
+      : 'Nie znalazłem nic do uporządkowania.');
   });
   main.querySelectorAll('[data-action="toggle-agent"]').forEach(b=>b.onclick=(e)=>{
     e.stopPropagation();          // klik w komórkę nie może otwierać profilu zawodnika
@@ -7778,14 +7782,30 @@ function parseMenedzerowieWklejka(text){
   }
   (wynik as any).telAgencji = telAgencji;
   (wynik as any).mailAgencji = mailAgencji;
+  // Czytamy BLOKAMI, nie linijka po linijce. Na profilu agencji dane kontaktowe stoją pod
+  // nazwiskiem, w osobnych wierszach („Tel.: +48…", „E-mail : ktos@…"), więc przypisujemy je
+  // do ostatniej rozpoznanej osoby. Wcześniej każda linijka była oceniana samodzielnie i telefony
+  // po prostu przepadały.
+  const oczyscKontakt = (s)=> String(s||'').replace(/^[\s:.]+/, '').trim();
   String(text||'').split(/\r?\n/).forEach(l=>{
     let s = l.trim();
     if(!s || /^###/.test(s)) return;
+    const ostatni = wynik.length ? wynik[wynik.length-1] : null;
+
+    // Wiersze kontaktowe — z etykietą albo bez.
+    const mTel = s.match(/^tel\.?\s*:?\s*(.+)$/i) || s.match(/^(?:telefon|phone)\s*:?\s*(.+)$/i);
+    if(mTel){ if(ostatni && !ostatni.phone) ostatni.phone = oczyscKontakt(mTel[1]); return; }
+    const mMail = s.match(/^e-?\s?mail\s*:?\s*(.+)$/i);
+    if(mMail){ if(ostatni && !ostatni.email) ostatni.email = oczyscKontakt(mMail[1]); return; }
+    if(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)){ if(ostatni && !ostatni.email) ostatni.email = s; return; }
+    if(/^[+\d][\d\s()-]{6,}$/.test(s)){ if(ostatni && !ostatni.phone) ostatni.phone = s; return; }
+
+    // Wiersz z nazwiskiem. Kontakt może też stać po pionowej kresce — obsługujemy oba zapisy.
     const cz = s.split('|').map(x=>x.trim());
     let pelne = cz[0];
     if(!pelne) return;
-    // Ozdobniki listy na początku („- Arkadiusz Głowacki") i znaki interpunkcyjne na końcu.
-    pelne = pelne.replace(/^[-–—•·*\s]+/, '').replace(/[,;.\s]+$/, '').trim();
+    // Ozdobniki listy na początku („- Arkadiusz Głowacki") i śmieci na końcu („(Agent) -").
+    pelne = pelne.replace(/^[-–—•·*\s]+/, '').replace(/[-–—,;.\s]+$/, '').trim();
     // Rola stoi w nawiasie na końcu: „(Agent)", „(Owner)", „(Head of Scouting)".
     let role = '';
     const mr = pelne.match(/\(([^)]{2,40})\)\s*$/);
@@ -7793,11 +7813,11 @@ function parseMenedzerowieWklejka(text){
     // Znacznik licencji jest osobną plakietką na stronie i wchodził w środek nazwiska.
     let licensed = false;
     if(/\blicensed\b/i.test(pelne)){ licensed = true; pelne = pelne.replace(/\blicensed\b/ig, ' '); }
-    pelne = pelne.replace(/\s+/g,' ').replace(/[,;.\s]+$/,'').trim();
+    pelne = pelne.replace(/\s+/g,' ').replace(/[-–—,;.\s]+$/,'').trim();
     if(!pelne || pelne.length < 4 || pelne.length > 60) return;
     if(/\d|@/.test(pelne)) return;                    // to nie nazwisko, tylko kontakt
     const slowa = pelne.split(/\s+/).filter(Boolean);
-    if(slowa.length < 2) return;                      // samo imię za mało, żeby zakładać osobę
+    if(slowa.length < 2) return;                      // samo imię (albo „Polska") to nie osoba
     wynik.push({
       firstName: slowa[0],
       lastName: slowa.slice(1).join(' '),
@@ -8101,6 +8121,19 @@ function agencyLogoHtml(a, size){
     onerror="this.outerHTML=this.dataset.fallback" data-fallback="${esc(zastepcze)}">`;
 }
 
+// Adres zewnętrzny do odnośnika. Bez „http://" przeglądarka traktuje wpis jako ścieżkę WEWNĄTRZ
+// aplikacji i ląduje na stronie 404 naszego serwera — dokładnie to działo się przy stronach agencji.
+// Zwracamy pusty ciąg dla tego, co adresem nie jest (numer telefonu, sama nazwa), żeby nie robić
+// odnośnika, który i tak donikąd nie prowadzi.
+function adresZewnetrzny(raw){
+  const s = String(raw||'').trim();
+  if(!s) return '';
+  if(/^https?:\/\//i.test(s)) return s;
+  if(/^[+\d][\d\s()-]{5,}$/.test(s)) return '';                       // numer telefonu
+  if(!/^[\w-]+(\.[\w-]+)+([/?#].*)?$/i.test(s)) return '';            // nie wygląda na domenę
+  return 'https://' + s;
+}
+
 function agencyById(id){ return DB.agencies.find(a=>a.id===id) || null; }
 // Logotypy agencji mają WŁASNY magazyn (klucz scouting:agency_logos w sbs_kv).
 //
@@ -8171,6 +8204,34 @@ function znajdzLubUtworzAgencje(nazwa, link){
 }
 // Jednorazowe przeniesienie tego, co siedzi w polu tekstowym agencyName, do rekordów agencji.
 // Nie kasuje agencyName — zostaje jako zapasowy opis, gdyby coś w powiązaniu poszło nie tak.
+// Porządki na menedżerach WGRANYCH WCZEŚNIEJ, zanim import nauczył się czyścić nazwiska.
+// Robi trzy rzeczy: zdejmuje z nazwiska ozdobniki, plakietkę „licensed" i rolę w nawiasie,
+// przenosi rolę do własnego pola, a osobom bez telefonu podstawia numer agencji.
+// To ten sam rozbiór co przy imporcie, więc jedno i drugie daje identyczny wynik.
+async function uporzadkujMenedzerow(){
+  let poprawione = 0, zTelefonem = 0;
+  DB.agents.forEach(m=>{
+    const pelne = [m.firstName, m.lastName].filter(Boolean).join(' ');
+    const rozbiór = parseMenedzerowieWklejka(pelne)[0];
+    if(rozbiór){
+      const zmienioneImie = rozbiór.firstName !== m.firstName || rozbiór.lastName !== m.lastName;
+      if(zmienioneImie){ m.firstName = rozbiór.firstName; m.lastName = rozbiór.lastName; poprawione++; }
+      if(!m.role && rozbiór.role) m.role = rozbiór.role;
+      if(!m.licensed && rozbiór.licensed) m.licensed = true;
+    }
+    if(!m.phone){
+      const a = agencyById(m.agencyId);
+      if(a && a.phone){ m.phone = a.phone; zTelefonem++; }
+    }
+    if(!m.email){
+      const a = agencyById(m.agencyId);
+      if(a && a.email) m.email = a.email;
+    }
+  });
+  if(poprawione || zTelefonem) await saveAgents();
+  return {poprawione, zTelefonem};
+}
+
 async function migrujAgencjeZTekstu(){
   let utworzone = 0, powiazane = 0;
   DB.players.forEach(p=>{
@@ -8358,8 +8419,8 @@ function viewAgencyDetail(id){
   <p class="view-sub">
     ${esc([a.city, a.country].filter(Boolean).join(', ')||'brak lokalizacji')}
     ${a.email?` &middot; ${esc(a.email)}`:''}${a.phone?` &middot; ${esc(a.phone)}`:''}
-    ${a.tmLink?` &middot; <a class="ext-link" href="${esc(a.tmLink)}" target="_blank" rel="noopener noreferrer">Transfermarkt &rarr;</a>`:''}
-    ${a.website?` &middot; <a class="ext-link" href="${esc(a.website)}" target="_blank" rel="noopener noreferrer">strona &rarr;</a>`:''}
+    ${adresZewnetrzny(a.tmLink)?` &middot; <a class="ext-link" href="${esc(adresZewnetrzny(a.tmLink))}" target="_blank" rel="noopener noreferrer">Transfermarkt &rarr;</a>`:''}
+    ${adresZewnetrzny(a.website)?` &middot; <a class="ext-link" href="${esc(adresZewnetrzny(a.website))}" target="_blank" rel="noopener noreferrer">strona &rarr;</a>`:''}
   </p>
   ${a.notes?`<p class="note" style="margin-top:-6px;">${esc(a.notes)}</p>`:''}
   <div style="display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;">
