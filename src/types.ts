@@ -192,6 +192,8 @@ export interface Agent {
   email?: string;
   phone?: string;
   licence?: string;       // numer licencji FIFA Football Agent
+  role?: string;          // rola w agencji: Agent, Owner, Head of Scouting, Player Service…
+  licensed?: boolean;     // znacznik „LICENSED" z Transfermarktu
   tmLink?: string;
   notes?: string;
   dateAdded?: string;

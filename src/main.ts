@@ -5312,6 +5312,15 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="agency-squad"]').forEach(b=>b.onclick=()=>openAgencySquadModal(b.dataset.id));
   main.querySelectorAll('[data-action="agency-add-players"]').forEach(b=>b.onclick=()=>openAddPlayersToAgencyModal(b.dataset.id));
   main.querySelectorAll('[data-action="agency-staff"]').forEach(b=>b.onclick=()=>openAgencyStaffModal(b.dataset.id));
+  // Telefon i e-mail wpisywane wprost w tabeli — Transfermarkt nie podaje ich przy osobach,
+  // więc i tak trafiają tam ręcznie i nie ma po co za każdym razem otwierać okna edycji.
+  main.querySelectorAll('.agent-inline').forEach((inp:any)=>inp.onchange = async ()=>{
+    const m = agentById(inp.dataset.id);
+    if(!m) return;
+    m[inp.dataset.field] = inp.value.trim();
+    const ok = await saveAgents();
+    if(!ok) alert('Nie udało się zapisać — sprawdź baner u góry strony.');
+  });
 
   // Zaznaczanie agencji do usunięcia hurtem. „Zaznacz wszystkie" obejmuje TYLKO to, co widać —
   // przy włączonym wyszukiwaniu zaznaczenie ukrytych agencji byłoby pułapką.
@@ -7731,7 +7740,24 @@ if(widziane[t.toLowerCase()])continue;widziane[t.toLowerCase()]=1;
 osoby.push(t);}
 if(osoby.length)break;}}
 if(!osoby.length){alert('SBS: nie znalazlem sekcji Pracownicy na tej stronie.\\n\\nMozesz wpisac nazwiska recznie w oknie w SBS — po jednym w linijce.');return;}
-var caly='### PRACOWNICY: '+agencja+' | '+u+' ###\\n'+osoby.join('\\n');
+// Numer i mail z bloku CONTACT to jedyne dane kontaktowe, jakie Transfermarkt podaje — i sa
+// wspolne dla calej agencji, nie dla poszczegolnych osob. Dopisujemy je do naglowka, zeby SBS
+// mogl nimi podstawic puste pola przy menedzerach.
+var tel='',mail='';
+var wszystkie=document.querySelectorAll('td,span,div,dt,th');
+for(var t2=0;t2<wszystkie.length;t2++){
+var e2=wszystkie[t2];
+if(e2.children.length)continue;
+var et=(e2.textContent||'').replace(/\\u00a0/g,' ').trim();
+if(!et||et.length>20)continue;
+var kk=et.toLowerCase().replace(/[^a-z]/g,'');
+if(kk!=='telefon'&&kk!=='email'&&kk!=='emailadres')continue;
+var v2=e2.nextElementSibling;if(!v2)continue;
+var vt=(v2.textContent||'').replace(/\\u00a0/g,' ').trim();
+if(!vt||vt==='-')continue;
+if(kk==='telefon'&&!tel)tel=vt;
+if(kk!=='telefon'&&!mail&&vt.indexOf('@')>=0)mail=vt;}
+var caly='### PRACOWNICY: '+agencja+' | '+u+(tel?' | TEL:'+tel:'')+(mail?' | MAIL:'+mail:'')+' ###\\n'+osoby.join('\\n');
 navigator.clipboard.writeText(caly).then(function(){
 var d=document.createElement('div');
 d.innerHTML='<b>SBS: '+agencja+'</b><br>pracownikow: '+osoby.length+' \\u2014 schowek gotowy<br><span style="opacity:.75;font-weight:400">Wklej w oknie „Wgraj menedzerow" w SBS</span>';
@@ -7743,11 +7769,31 @@ document.body.appendChild(d);setTimeout(function(){d.remove()},3600);
 // — po jednym w linijce, opcjonalnie z e-mailem i telefonem po pionowej kresce.
 function parseMenedzerowieWklejka(text){
   const wynik = [];
+  // Kontakt agencji wyłuskany z nagłówka — podstawiany osobom, które nie mają własnego numeru.
+  let telAgencji = '', mailAgencji = '';
+  const naglowek = String(text||'').split(/\r?\n/).find(l=>/^###/.test(l.trim()));
+  if(naglowek){
+    const mt = naglowek.match(/TEL:\s*([^|#]+)/i);   if(mt) telAgencji = mt[1].trim();
+    const mm = naglowek.match(/MAIL:\s*([^|#\s]+)/i); if(mm) mailAgencji = mm[1].trim();
+  }
+  (wynik as any).telAgencji = telAgencji;
+  (wynik as any).mailAgencji = mailAgencji;
   String(text||'').split(/\r?\n/).forEach(l=>{
-    const s = l.trim();
+    let s = l.trim();
     if(!s || /^###/.test(s)) return;
     const cz = s.split('|').map(x=>x.trim());
-    const pelne = cz[0];
+    let pelne = cz[0];
+    if(!pelne) return;
+    // Ozdobniki listy na początku („- Arkadiusz Głowacki") i znaki interpunkcyjne na końcu.
+    pelne = pelne.replace(/^[-–—•·*\s]+/, '').replace(/[,;.\s]+$/, '').trim();
+    // Rola stoi w nawiasie na końcu: „(Agent)", „(Owner)", „(Head of Scouting)".
+    let role = '';
+    const mr = pelne.match(/\(([^)]{2,40})\)\s*$/);
+    if(mr){ role = mr[1].trim(); pelne = pelne.slice(0, mr.index).trim(); }
+    // Znacznik licencji jest osobną plakietką na stronie i wchodził w środek nazwiska.
+    let licensed = false;
+    if(/\blicensed\b/i.test(pelne)){ licensed = true; pelne = pelne.replace(/\blicensed\b/ig, ' '); }
+    pelne = pelne.replace(/\s+/g,' ').replace(/[,;.\s]+$/,'').trim();
     if(!pelne || pelne.length < 4 || pelne.length > 60) return;
     if(/\d|@/.test(pelne)) return;                    // to nie nazwisko, tylko kontakt
     const slowa = pelne.split(/\s+/).filter(Boolean);
@@ -7755,6 +7801,7 @@ function parseMenedzerowieWklejka(text){
     wynik.push({
       firstName: slowa[0],
       lastName: slowa.slice(1).join(' '),
+      role, licensed,
       email: cz.find(x=>x.includes('@')) || '',
       phone: cz.find(x=>/^[+\d][\d\s()-]{6,}$/.test(x)) || '',
     });
@@ -8276,9 +8323,11 @@ function viewAgencyDetail(id){
     menedzerowie.map(m=>`<option value="${m.id}" ${wybrany===m.id?'selected':''}>${esc(agentFullName(m))}</option>`).join('');
 
   const wierszeMenedzerow = menedzerowie.map(m=>`<tr>
-    <td><strong>${esc(agentFullName(m))}</strong>${m.licence?`<span class="club-sub" style="display:block;">licencja ${esc(m.licence)}</span>`:''}</td>
-    <td style="font-size:12px;">${esc(m.email||'—')}</td>
-    <td style="font-size:12px;">${esc(m.phone||'—')}</td>
+    <td><strong>${esc(agentFullName(m))}</strong>${m.licensed?` <span class="agent-yes" style="font-size:10px;" title="Licencjonowany wg Transfermarktu">LIC</span>`:''}${
+      m.licence?`<span class="club-sub" style="display:block;">licencja ${esc(m.licence)}</span>`:''}</td>
+    <td style="font-size:12px;">${esc(m.role||'—')}</td>
+    <td><input class="agent-inline" data-id="${m.id}" data-field="email" value="${esc(m.email||'')}" placeholder="E-mail" style="width:100%;box-sizing:border-box;font-size:12px;"></td>
+    <td><input class="agent-inline" data-id="${m.id}" data-field="phone" value="${esc(m.phone||'')}" placeholder="Telefon" style="width:100%;box-sizing:border-box;font-size:12px;"></td>
     <td style="text-align:right;">${agentPlayers(m.id).length}</td>
     <td style="font-size:12px;">${esc(m.notes||'')}</td>
     <td style="white-space:nowrap;">
@@ -8324,8 +8373,8 @@ function viewAgencyDetail(id){
   <h3 style="color:var(--pitch);font-family:'Barlow Condensed',sans-serif;">Menedżerowie <span class="reports-count">${menedzerowie.length}</span></h3>
   <div class="card" style="padding:0;overflow:auto;margin-bottom:24px;">
     <table>
-      <thead><tr><th>Imię i nazwisko</th><th>E-mail</th><th>Telefon</th><th style="text-align:right;">Zawodników</th><th>Notatka</th><th></th></tr></thead>
-      <tbody>${wierszeMenedzerow || `<tr><td colspan="6"><div class="empty">Brak menedżerów — dodaj osoby, z którymi faktycznie rozmawiasz.</div></td></tr>`}</tbody>
+      <thead><tr><th>Imię i nazwisko</th><th>Rola</th><th style="min-width:190px;">E-mail</th><th style="min-width:150px;">Telefon</th><th style="text-align:right;">Zawodników</th><th>Notatka</th><th></th></tr></thead>
+      <tbody>${wierszeMenedzerow || `<tr><td colspan="7"><div class="empty">Brak menedżerów — dodaj osoby, z którymi faktycznie rozmawiasz.</div></td></tr>`}</tbody>
     </table>
   </div>
 
@@ -8559,20 +8608,34 @@ function openAgencyStaffModal(agencyId){
       const zaznaczeni = Array.from(overlay.querySelectorAll('.staff-check:checked')).map((c:any)=>Number(c.dataset.idx));
       if(!zaznaczeni.length){ alert('Nikogo nie zaznaczyłeś.'); return; }
       const dzis = new Date().toISOString().slice(0,10);
+      const telZWklejki = (rozpoznani as any).telAgencji || '';
+      const mailZWklejki = (rozpoznani as any).mailAgencji || '';
+      // Numer i mail z profilu uzupełniają też sam rekord agencji, jeśli był pusty.
+      let zmianaAgencji = false;
+      if(!agencja.phone && telZWklejki){ agencja.phone = telZWklejki; zmianaAgencji = true; }
+      if(!agencja.email && mailZWklejki){ agencja.email = mailZWklejki; zmianaAgencji = true; }
+      if(zmianaAgencji) await saveAgencies();
       let dodani = 0;
       zaznaczeni.forEach(i=>{
         const m = nowi[i];
         if(!m) return;
         DB.agents.push({
           id: uid('MN'), agencyId, firstName: m.firstName, lastName: m.lastName,
-          email: m.email||'', phone: m.phone||'', licence: '', tmLink: '', notes: '',
+          // Brak telefonu przy osobie podstawiamy numerem agencji — to jedyny numer, jaki
+          // Transfermarkt w ogóle podaje, i lepszy punkt zaczepienia niż puste pole.
+          email: m.email || '', phone: m.phone || telZWklejki || agencja.phone || '',
+          role: m.role || '', licensed: !!m.licensed,
+          licence: '', tmLink: '', notes: '',
           dateAdded: dzis
         });
         dodani++;
       });
       const ok = await saveAgents();
       if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
-      alert(`Dodano menedżerów: ${dodani}\n\nTelefon, e-mail i licencję uzupełnisz, klikając „Edytuj" przy każdym.`);
+      alert(`Dodano menedżerów: ${dodani}` +
+        (telZWklejki ? `\n\nTransfermarkt podaje JEDEN numer dla całej agencji (${telZWklejki}) — wpisałem go każdemu,` +
+          `\nkto nie miał własnego. Numery bezpośrednie wpisz w tabeli, w kolumnie Telefon.`
+          : `\n\nTransfermarkt nie podaje numerów do poszczególnych osób — wpisz je w tabeli, w kolumnie Telefon.`));
       rozpoznani = null; wklejka = '';
       render();
       draw();
