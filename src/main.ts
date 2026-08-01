@@ -2601,14 +2601,19 @@ let lastNavSig = null;
 let historyInited = false;
 let restoringFromHistory = false;
 function navSignature(){
-  return JSON.stringify({v:currentView, p:viewingPlayerId, c:viewingClubId, ct:clubBrowse.top, cg:clubBrowse.group, cmp:compareIds});
+  // Sygnatura musi obejmować KAŻDY stan, który zmienia zawartość ekranu. Brakowało tu widoku
+  // agencji i rocznika — wejście w agencję nie zmieniało sygnatury, więc do historii nie trafiał
+  // żaden wpis, a „wstecz" wracało do ostatniego zapamiętanego widoku, czyli zwykle dashboardu.
+  return JSON.stringify({v:currentView, p:viewingPlayerId, c:viewingClubId, a:viewingAgencyId,
+    r:viewingRocznikGroup, ct:clubBrowse.top, cg:clubBrowse.group, cmp:compareIds});
 }
 function syncHistory(){
   const sig = navSignature();
   if(sig === lastNavSig) return;      // ten sam widok (np. render po zapisie danych) — nie dubluj wpisu
   lastNavSig = sig;
   if(restoringFromHistory) return;    // przywracanie z historii nie tworzy nowego wpisu
-  const state = {currentView, viewingPlayerId, viewingClubId, clubBrowseTop:clubBrowse.top, clubBrowseGroup:clubBrowse.group, compareIds:[...compareIds]};
+  const state = {currentView, viewingPlayerId, viewingClubId, viewingAgencyId, viewingRocznikGroup,
+    clubBrowseTop:clubBrowse.top, clubBrowseGroup:clubBrowse.group, compareIds:[...compareIds]};
   if(!historyInited){ history.replaceState(state, ''); historyInited = true; }
   else history.pushState(state, '');
 }
@@ -2618,6 +2623,8 @@ window.addEventListener('popstate', (e)=>{
   currentView = (s && s.currentView) || 'dashboard';
   viewingPlayerId = (s && s.viewingPlayerId) || null;
   viewingClubId = (s && s.viewingClubId) || null;
+  viewingAgencyId = (s && s.viewingAgencyId) || null;
+  viewingRocznikGroup = (s && s.viewingRocznikGroup) || null;
   editingPlayerId = null;
   if(clubBrowse){ clubBrowse.top = (s && s.clubBrowseTop) || ''; clubBrowse.group = (s && s.clubBrowseGroup) || ''; }
   if(s && s.compareIds) compareIds = s.compareIds;
@@ -8131,7 +8138,11 @@ function adresZewnetrzny(raw){
   if(/^https?:\/\//i.test(s)) return s;
   if(/^[+\d][\d\s()-]{5,}$/.test(s)) return '';                       // numer telefonu
   if(!/^[\w-]+(\.[\w-]+)+([/?#].*)?$/i.test(s)) return '';            // nie wygląda na domenę
-  return 'https://' + s;
+  // Do samej domeny doklejamy „http://", a nie „https://" — tak samo, jak zachowuje się pasek
+  // adresu przeglądarki. Wymuszanie HTTPS wysypywało strony agencji z niepasującym certyfikatem
+  // (unidos.com.pl działa wyłącznie po HTTP i Firefox pokazywał ostrzeżenie o bezpieczeństwie).
+  // Strony, które mają poprawne HTTPS, i tak same przekierują — kosztem jednego przeskoku.
+  return 'http://' + s;
 }
 
 function agencyById(id){ return DB.agencies.find(a=>a.id===id) || null; }
