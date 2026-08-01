@@ -5291,6 +5291,7 @@ function attachHandlers(){
   if(agencySortSelect) agencySortSelect.onchange = ()=>{ agencySort = agencySortSelect.value; render(); };
   main.querySelectorAll('[data-action="agency-squad"]').forEach(b=>b.onclick=()=>openAgencySquadModal(b.dataset.id));
   main.querySelectorAll('[data-action="agency-add-players"]').forEach(b=>b.onclick=()=>openAddPlayersToAgencyModal(b.dataset.id));
+  main.querySelectorAll('[data-action="agency-staff"]').forEach(b=>b.onclick=()=>openAgencyStaffModal(b.dataset.id));
 
   // Zaznaczanie agencji do usunięcia hurtem. „Zaznacz wszystkie" obejmuje TYLKO to, co widać —
   // przy włączonym wyszukiwaniu zaznaczenie ukrytych agencji byłoby pułapką.
@@ -5580,6 +5581,21 @@ function attachHandlers(){
     try{
       DB.clubCrests[club.id] = await processCrestFile(file);
       await saveClubCrests();
+      render();
+    }catch(e){
+      alert('Nie udało się wczytać tego pliku. Spróbuj PNG/JPG lub PDF.');
+      console.error(e);
+    }
+  });
+  main.querySelectorAll('.agency-logo-input').forEach(inp=>inp.onchange = async ()=>{
+    const file = inp.files[0];
+    if(!file) return;
+    const a = agencyById(inp.dataset.agencyId);
+    if(!a) return;
+    try{
+      DB.clubCrests[a.id] = await processCrestFile(file);
+      const ok = await saveClubCrests();
+      if(!ok){ alert('Nie udało się zapisać logo — sprawdź baner u góry strony.'); return; }
       render();
     }catch(e){
       alert('Nie udało się wczytać tego pliku. Spróbuj PNG/JPG lub PDF.');
@@ -7663,6 +7679,68 @@ d.style.cssText='position:fixed;top:16px;right:16px;z-index:999999;background:#1
 document.body.appendChild(d);setTimeout(function(){d.remove()},3600);
 }).catch(function(e){alert('Nie udalo sie skopiowac: '+e.message)})}catch(e){alert('Blad: '+e.message)}})();`;
 
+// Zakładka do zbierania PRACOWNIKÓW agencji — sekcja „Pracownicy" na profilu agencji wymienia
+// osoby, z którymi faktycznie się rozmawia. To jedyne miejsce, gdzie Transfermarkt podaje ludzi,
+// a nie samą firmę; wszystko inne (telefon, mail, licencja) i tak dopisujesz sam.
+const TM_AGENCY_STAFF_BOOKMARKLET = `javascript:(function(){try{
+var u=location.href;
+if(!/\\/berater\\/\\d+/.test(u)){alert('SBS: to nie jest profil agencji.\\n\\nOtworz strone agencji na Transfermarkcie i kliknij ponownie.');return;}
+var agencja=(document.title||'').split(/ - |\\|/)[0].replace(/\\s+/g,' ').trim();
+var osoby=[],widziane={};
+var linki=document.querySelectorAll('a[href*="/beraterberater/"],a[href*="/mitarbeiter/"],a[href*="/berater/mitarbeiter/"]');
+for(var i=0;i<linki.length;i++){
+var n=(linki[i].getAttribute('title')||linki[i].textContent||'').replace(/\\s+/g,' ').trim();
+if(!n||n.length<4||n.length>50)continue;
+if(widziane[n.toLowerCase()])continue;widziane[n.toLowerCase()]=1;
+osoby.push(n);}
+if(!osoby.length){
+// Zapasowo: sekcja „Pracownicy" bywa zwyklym blokiem bez odnosnikow — bierzemy z niej wiersze,
+// ktore wygladaja na imie i nazwisko (dwa lub trzy slowa z wielkiej litery, bez cyfr).
+var bloki=document.querySelectorAll('div,section,aside,table');
+for(var b=0;b<bloki.length;b++){
+var nag=(bloki[b].textContent||'').slice(0,40);
+if(!/pracownic|mitarbeiter|staff/i.test(nag))continue;
+var linie=(bloki[b].innerText||'').split('\\n').map(function(x){return x.trim()}).filter(Boolean);
+for(var l=0;l<linie.length;l++){
+var t=linie[l];
+if(/pracownic|mitarbeiter|staff/i.test(t))continue;
+if(t.length<4||t.length>50||/\\d|@|\\u20ac/.test(t))continue;
+if(!/^[A-Z\\u0104\\u0106\\u0118\\u0141\\u0143\\u00d3\\u015a\\u0179\\u017b][^ ]+( [A-Z\\u0104\\u0106\\u0118\\u0141\\u0143\\u00d3\\u015a\\u0179\\u017b][^ ]+){1,2}$/.test(t))continue;
+if(widziane[t.toLowerCase()])continue;widziane[t.toLowerCase()]=1;
+osoby.push(t);}
+if(osoby.length)break;}}
+if(!osoby.length){alert('SBS: nie znalazlem sekcji Pracownicy na tej stronie.\\n\\nMozesz wpisac nazwiska recznie w oknie w SBS — po jednym w linijce.');return;}
+var caly='### PRACOWNICY: '+agencja+' | '+u+' ###\\n'+osoby.join('\\n');
+navigator.clipboard.writeText(caly).then(function(){
+var d=document.createElement('div');
+d.innerHTML='<b>SBS: '+agencja+'</b><br>pracownikow: '+osoby.length+' \\u2014 schowek gotowy<br><span style="opacity:.75;font-weight:400">Wklej w oknie „Wgraj menedzerow" w SBS</span>';
+d.style.cssText='position:fixed;top:16px;right:16px;z-index:999999;background:#16302A;color:#C69B3C;padding:12px 18px;border-radius:8px;font:600 13px sans-serif;line-height:1.5;box-shadow:0 4px 16px rgba(0,0,0,.3)';
+document.body.appendChild(d);setTimeout(function(){d.remove()},3600);
+}).catch(function(e){alert('Nie udalo sie skopiowac: '+e.message)})}catch(e){alert('Blad: '+e.message)}})();`;
+
+// Rozbiór listy menedżerów. Przyjmuje i wklejkę z zakładki, i zwykłą listę nazwisk wpisaną ręcznie
+// — po jednym w linijce, opcjonalnie z e-mailem i telefonem po pionowej kresce.
+function parseMenedzerowieWklejka(text){
+  const wynik = [];
+  String(text||'').split(/\r?\n/).forEach(l=>{
+    const s = l.trim();
+    if(!s || /^###/.test(s)) return;
+    const cz = s.split('|').map(x=>x.trim());
+    const pelne = cz[0];
+    if(!pelne || pelne.length < 4 || pelne.length > 60) return;
+    if(/\d|@/.test(pelne)) return;                    // to nie nazwisko, tylko kontakt
+    const slowa = pelne.split(/\s+/).filter(Boolean);
+    if(slowa.length < 2) return;                      // samo imię za mało, żeby zakładać osobę
+    wynik.push({
+      firstName: slowa[0],
+      lastName: slowa.slice(1).join(' '),
+      email: cz.find(x=>x.includes('@')) || '',
+      phone: cz.find(x=>/^[+\d][\d\s()-]{6,}$/.test(x)) || '',
+    });
+  });
+  return wynik;
+}
+
 // Zakładka do zbierania REPREZENTOWANYCH ZAWODNIKÓW z profilu jednej agencji.
 // Profil agencji ma tabelę „Reprezentowani zawodnicy" — zawodnika rozpoznajemy po odnośniku do
 // jego profilu (/profil/spieler/…), tak samo jak agencję rozpoznajemy po /beraterfirma/berater/.
@@ -7933,13 +8011,27 @@ function agencyLogoHtml(a, size){
   const inicjaly = String(a && a.name || '?').split(/\s+/).filter(Boolean).slice(0,2)
     .map(w=>w[0]).join('').toUpperCase();
   const zastepcze = `<span style="width:${s}px;height:${s}px;display:inline-flex;align-items:center;justify-content:center;background:#16302A;color:#C69B3C;border-radius:6px;font-weight:800;font-size:${Math.round(s*0.38)}px;flex:0 0 auto;">${esc(inicjaly)}</span>`;
-  if(!a || !a.logoUrl) return zastepcze;
-  return `<img src="${esc(a.logoUrl)}" alt="" referrerpolicy="no-referrer" loading="lazy"
+  // Pierwszeństwo ma logo WGRANE RĘCZNIE — adres z Transfermarktu bywa niedostępny (hotlink),
+  // a plik wgrany przez użytkownika jest jego i zawsze się wyświetli.
+  const zrodlo = agencyLogo(a);
+  if(!zrodlo) return zastepcze;
+  return `<img src="${esc(zrodlo)}" alt="" referrerpolicy="no-referrer" loading="lazy"
     style="width:${s}px;height:${s}px;object-fit:contain;border-radius:6px;background:#fff;flex:0 0 auto;"
     onerror="this.outerHTML=this.dataset.fallback" data-fallback="${esc(zastepcze)}">`;
 }
 
 function agencyById(id){ return DB.agencies.find(a=>a.id===id) || null; }
+// Logo agencji trzymamy w TYM SAMYM magazynie co herby klubów (tabela sbs_club_crests, klucz
+// tekstowy). Identyfikatory agencji zaczynają się od „AG", klubów od „K", więc nie ma jak się
+// pomylić, a unikamy zakładania nowej tabeli — czyli ręcznej migracji w Supabase, która przy
+// sbs_matches nigdy nie została uruchomiona i przez to długo psuła zapisy.
+// Wgrany plik idzie tą samą obróbką co herb (skalowanie do rozsądnego rozmiaru), żeby jeden
+// duży PNG nie rozdął magazynu.
+function agencyLogo(a){
+  if(!a) return null;
+  if(DB.clubCrests[a.id]) return DB.clubCrests[a.id];
+  return a.logoUrl || null;
+}
 function agentById(id){ return DB.agents.find(a=>a.id===id) || null; }
 function agencyAgents(agencyId){
   return DB.agents.filter(a=>a.agencyId===agencyId)
@@ -8069,7 +8161,10 @@ function viewAgencies(){
     return `<tr style="cursor:pointer;" data-action="open-agency" data-id="${a.id}" title="Kliknij, aby zobaczyć menedżerów i zawodników">
       <td onclick="event.stopPropagation()" style="width:24px;"><input type="checkbox" class="agency-checkbox" data-id="${a.id}"></td>
       <td style="color:var(--ink-soft);font-size:12px;text-align:right;">${i+1}</td>
-      <td><div style="display:flex;align-items:center;gap:8px;">${agencyLogoHtml(a)}<span>
+      <td><div style="display:flex;align-items:center;gap:8px;">
+        <label for="agency-logo-${a.id}" onclick="event.stopPropagation()" style="cursor:pointer;display:inline-flex;flex:0 0 auto;" title="Kliknij, aby wgrać własne logo agencji">${agencyLogoHtml(a)}</label>
+        <input type="file" id="agency-logo-${a.id}" class="agency-logo-input" data-agency-id="${a.id}" accept="image/png,image/jpeg,image/jpg,.png,.jpg,.jpeg,application/pdf,.pdf" style="display:none;" onclick="event.stopPropagation()">
+        <span>
         <strong>${esc(a.name)}</strong>${a.licensed?` <span class="agent-yes" style="font-size:10px;" title="Agencja licencjonowana wg Transfermarktu">LIC</span>`:''}
         <span class="club-sub" style="display:block;">${esc([a.city, a.country].filter(Boolean).join(', ')||'—')}</span>
       </span></div></td>
@@ -8168,7 +8263,11 @@ function viewAgencyDetail(id){
 
   return `
   <button class="secondary" data-action="back-agencies" style="margin-bottom:14px;">&larr; Wróć do agencji</button>
-  <h2 class="view-title">${esc(a.name)}</h2>
+  <div style="display:flex;align-items:center;gap:12px;">
+    <label for="agency-logo-${a.id}" style="cursor:pointer;display:inline-flex;" title="Kliknij, aby wgrać własne logo agencji">${agencyLogoHtml(a, 52)}</label>
+    <input type="file" id="agency-logo-${a.id}" class="agency-logo-input" data-agency-id="${a.id}" accept="image/png,image/jpeg,image/jpg,.png,.jpg,.jpeg,application/pdf,.pdf" style="display:none;">
+    <h2 class="view-title" style="margin:0;">${esc(a.name)}</h2>
+  </div>
   <p class="view-sub">
     ${esc([a.city, a.country].filter(Boolean).join(', ')||'brak lokalizacji')}
     ${a.email?` &middot; ${esc(a.email)}`:''}${a.phone?` &middot; ${esc(a.phone)}`:''}
@@ -8179,6 +8278,7 @@ function viewAgencyDetail(id){
   <div style="display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;">
     <button class="secondary" data-action="edit-agency" data-id="${a.id}">Edytuj agencję</button>
     <button class="gold" data-action="add-agent" data-agency="${a.id}">+ Nowy menedżer</button>
+    <button class="gold" data-action="agency-staff" data-id="${a.id}" title="Wgraj kilku menedżerów naraz — z profilu agencji albo z listy nazwisk">👥 Wgraj menedżerów</button>
     <button class="gold" data-action="agency-squad" data-id="${a.id}" title="Wgraj listę reprezentowanych zawodników z Transfermarktu">📥 Wgraj zawodników</button>
     <button class="secondary" data-action="agency-add-players" data-id="${a.id}" title="Wybierz zawodników z bazy i przypisz ich do tej agencji">➕ Dodaj z bazy</button>
   </div>
@@ -8321,6 +8421,131 @@ function openAddPlayersToAgencyModal(agencyId){
 // Wgranie składu jednej agencji. Zawodników NIE zakładamy — wiążemy tylko tych, którzy już są
 // w bazie. Transfermarkt wymienia cały portfel agencji, także z lig, których nie obserwujesz;
 // tworzenie z tego setek pustych rekordów zaśmieciłoby kartotekę bardziej, niż by pomogło.
+// Hurtowe dopisanie menedżerów do agencji — z sekcji „Pracownicy" na Transfermarkcie albo
+// z listy nazwisk wpisanej ręcznie.
+function openAgencyStaffModal(agencyId){
+  const agencja = agencyById(agencyId);
+  if(!agencja) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  let wklejka = '';
+  let rozpoznani = null;
+
+  function podzial(){
+    if(!rozpoznani) return {nowi:[], juzSa:[]};
+    const nowi = [], juzSa = [];
+    const istniejacy = agencyAgents(agencyId);
+    const widziane = new Set();
+    rozpoznani.forEach(m=>{
+      const klucz = importNorm(m.firstName + m.lastName);
+      if(widziane.has(klucz)) return;
+      widziane.add(klucz);
+      const jest = istniejacy.find(x=> importNorm((x.firstName||'')+(x.lastName||'')) === klucz);
+      if(jest) juzSa.push({...m, istniejacy: jest}); else nowi.push(m);
+    });
+    return {nowi, juzSa};
+  }
+
+  function draw(){
+    const {nowi, juzSa} = podzial();
+    overlay.innerHTML = `
+    <div class="modal" style="max-width:660px;">
+      <h3>👥 Wgraj menedżerów — ${esc(agencja.name)}</h3>
+      <p class="note" style="margin-top:0;">Sekcja <strong>Pracownicy</strong> na profilu agencji to jedyne miejsce,
+      gdzie Transfermarkt podaje osoby, a nie samą firmę. Telefon, e-mail i licencję dopisujesz sam — tego tam nie ma.</p>
+
+      <details style="margin-bottom:12px;" ${rozpoznani?'':'open'}>
+        <summary style="cursor:pointer;font-weight:700;color:var(--gold-dark);">Zakładka (opcjonalnie)</summary>
+        <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
+          <li>Przeciągnij na pasek zakładek:<br>
+            <a href="${esc(TM_AGENCY_STAFF_BOOKMARKLET)}" onclick="return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:#C69B3C;color:#16302A;border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">👥 Pracownicy agencji do SBS</a>
+          </li>
+          ${agencja.tmLink ? `<li>Otwórz <a class="ext-link" href="${esc(agencja.tmLink)}" target="_blank" rel="noopener noreferrer">profil tej agencji &rarr;</a>, kliknij zakładkę</li>`
+            : `<li>Otwórz profil agencji na Transfermarkcie i kliknij zakładkę</li>`}
+        </ol>
+        <details style="margin-top:6px;">
+          <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Kod do wklejenia ręcznie</summary>
+          <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;margin-top:6px;">${esc(TM_AGENCY_STAFF_BOOKMARKLET)}</textarea>
+        </details>
+      </details>
+
+      <div class="field-wrap" style="margin-bottom:10px;">
+        <label class="field">Wklej albo wpisz — po jednym menedżerze w linijce</label>
+        <textarea id="staff-paste" rows="7" placeholder="Paweł Zimoń&#10;Branislav Jašurek&#10;Tomasz Rumiński | tomasz@agencja.pl | +48 600 100 200" style="font-size:12px;font-family:monospace;">${esc(wklejka)}</textarea>
+        <div class="note" style="margin-top:5px;font-size:11px;">Możesz dopisać e-mail i telefon po pionowej kresce — kolejność dowolna.</div>
+      </div>
+      <div class="modal-actions" style="justify-content:flex-start;margin-top:0;">
+        <button class="secondary" data-action="staff-parse">Rozpoznaj</button>
+      </div>
+
+      ${rozpoznani ? `
+        <div style="border-top:1px solid #E3DECE;padding-top:10px;margin-top:12px;max-height:260px;overflow:auto;">
+          <p class="note" style="margin-top:0;">Rozpoznano <strong>${rozpoznani.length}</strong>:
+            nowych <strong>${nowi.length}</strong>${juzSa.length? `, już w agencji <strong>${juzSa.length}</strong>`:''}.</p>
+          <table><tbody>
+          ${nowi.map((m,i)=>`<tr>
+            <td style="width:24px;"><input type="checkbox" class="staff-check" data-idx="${i}" checked></td>
+            <td><strong>${esc(m.lastName)}</strong> ${esc(m.firstName)}</td>
+            <td style="font-size:12px;">${esc(m.email||'')}${m.phone?`<span class="club-sub" style="display:block;">${esc(m.phone)}</span>`:''}</td>
+          </tr>`).join('')}
+          ${juzSa.map(m=>`<tr style="opacity:.6;"><td></td>
+            <td>${esc(m.lastName)} ${esc(m.firstName)}</td>
+            <td style="font-size:12px;">jest już w tej agencji</td></tr>`).join('')}
+          </tbody></table>
+        </div>
+        <div class="modal-actions" style="justify-content:flex-start;">
+          <button class="gold" data-action="staff-apply">Dodaj zaznaczonych (${nowi.length})</button>
+        </div>
+      ` : ''}
+
+      <div class="modal-actions">
+        <button class="secondary" data-action="close-modal">Zamknij</button>
+      </div>
+    </div>`;
+    wire();
+  }
+
+  function wire(){
+    overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=()=>{ overlay.remove(); render(); });
+    const ta = overlay.querySelector('#staff-paste') as any;
+    if(ta) ta.oninput = ()=>{ wklejka = ta.value; };
+    overlay.querySelectorAll('[data-action="staff-parse"]').forEach(b=>b.onclick=()=>{
+      wklejka = ((overlay.querySelector('#staff-paste') as any)||{}).value || '';
+      const r = parseMenedzerowieWklejka(wklejka);
+      if(!r.length){ alert('Nie rozpoznałem żadnego menedżera.\n\nWpisz imię i nazwisko — po jednym w linijce.'); return; }
+      rozpoznani = r;
+      draw();
+    });
+    overlay.querySelectorAll('[data-action="staff-apply"]').forEach(b=>b.onclick=async()=>{
+      const {nowi} = podzial();
+      const zaznaczeni = Array.from(overlay.querySelectorAll('.staff-check:checked')).map((c:any)=>Number(c.dataset.idx));
+      if(!zaznaczeni.length){ alert('Nikogo nie zaznaczyłeś.'); return; }
+      const dzis = new Date().toISOString().slice(0,10);
+      let dodani = 0;
+      zaznaczeni.forEach(i=>{
+        const m = nowi[i];
+        if(!m) return;
+        DB.agents.push({
+          id: uid('MN'), agencyId, firstName: m.firstName, lastName: m.lastName,
+          email: m.email||'', phone: m.phone||'', licence: '', tmLink: '', notes: '',
+          dateAdded: dzis
+        });
+        dodani++;
+      });
+      const ok = await saveAgents();
+      if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
+      alert(`Dodano menedżerów: ${dodani}\n\nTelefon, e-mail i licencję uzupełnisz, klikając „Edytuj" przy każdym.`);
+      rozpoznani = null; wklejka = '';
+      render();
+      draw();
+    });
+  }
+
+  overlay.addEventListener('click', e=>{ if(e.target===overlay){ overlay.remove(); render(); } });
+  document.body.appendChild(overlay);
+  draw();
+}
+
 function openAgencySquadModal(agencyId){
   const agencja = agencyById(agencyId);
   if(!agencja) return;
