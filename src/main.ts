@@ -4645,9 +4645,11 @@ function buildAutoPositionCandidates(league, formation, number){
   if(!posDef) return [];
   const statusRank = {'Do transferu':0, 'Na Testy':1};
   const candidates = DB.players
-    // System gry: gdy wybrano konkretny, pokazuj zawodników z tym systemem ORAZ tych bez wpisanego systemu
-    // (są kandydatami do każdego układu) — inaczej zawodnik "Do transferu" bez systemu nie trafiał na mapę.
-    .filter(p => clubLeague(p.clubId)===league && p.position===posDef.posName && (!formation || !p.formation || p.formation===formation)
+    // System gry: po wybraniu konkretnego układu zawodnik pojawia się WYŁĄCZNIE w tym, który ma
+    // zapisany w profilu. Wcześniej ci bez wpisanego systemu wchodzili do każdego układu naraz,
+    // przez co ten sam zawodnik widniał we wszystkich systemach i mapa przestawała cokolwiek
+    // rozróżniać. Kto nie ma systemu w profilu, jest widoczny pod „Wszystkie systemy".
+    .filter(p => clubLeague(p.clubId)===league && p.position===posDef.posName && (!formation || p.formation===formation)
       && (p.status==='Do transferu' || p.status==='Na Testy'))
     .map(p => ({p, a: playerAvg(p.id)}))
     // NIE wymagamy obserwacji — zawodnik z samą decyzją statusu (z raportu) też trafia na mapę.
@@ -4684,7 +4686,22 @@ function viewRankingNumbersMode(){
     } else {
       // Dołącz automatycznie zawodników ze statusem (Do transferu/Testy), których jeszcze nie ma na tej
       // pozycji — "Do transferu" na początek (priorytet), "Na Testy" na koniec. Cap 6 na pozycję.
-      const cur = positionMapAssignments[key];
+      let cur = positionMapAssignments[key];
+      // Sprzątanie po starej regule: dopóki zawodnik bez wpisanego systemu wchodził do KAŻDEGO
+      // układu, jego identyfikator zapisał się na mapie wszystkich systemów. Sama zmiana warunku
+      // by go stąd nie usunęła, bo przypisania są zapamiętane — więc odsiewamy je przy wczytaniu.
+      // Zawodnika przypisanego RĘCZNIE to nie dotyczy tylko wtedy, gdy ma zgodny system.
+      if(rankingFormationFilter){
+        const przefiltrowane = cur.filter(id=>{
+          const pl = DB.players.find(p=>p.id===id);
+          return !pl || pl.formation === rankingFormationFilter;
+        });
+        if(przefiltrowane.length !== cur.length){
+          positionMapAssignments[key] = przefiltrowane;
+          cur = przefiltrowane;
+          anyChanged = true;
+        }
+      }
       auto.forEach(id=>{
         if(cur.includes(id) || cur.length >= 6) return;
         const pl = DB.players.find(p=>p.id===id);
@@ -4695,6 +4712,14 @@ function viewRankingNumbersMode(){
     if((positionMapAssignments[key]||[]).length>0) anyRealCandidatesFound = true;
   });
   if(anyChanged) savePositionMapAssignments();
+
+  // Ilu zawodników wypada z widoku TYLKO dlatego, że nie mają wpisanego systemu gry. Bez tej
+  // informacji znikaliby po cichu i wyglądałoby to na zgubione dane.
+  const bezSystemu = rankingFormationFilter
+    ? DB.players.filter(p => clubLeague(p.clubId)===rankingLeague && !p.formation
+        && (p.status==='Do transferu' || p.status==='Na Testy')
+        && POSITION_NUMBERS.some(pd => pd.posName === p.position)).length
+    : 0;
 
   const activeCoords = FORMATION_COORDS[rankingFormationFilter] || FORMATION_COORDS[''];
 
@@ -4742,7 +4767,8 @@ function viewRankingNumbersMode(){
   </div>
   <p class="note" style="margin-top:10px;">Kliknij dowolną pozycję na boisku, aby dodać, usunąć lub przeciągnięciem zmienić kolejność zawodników (do 6 na pozycję, dwa pierwsze miejsca = priorytetowi).
   ${rankingFormationFilter? ` Układ pól odzwierciedla kształt systemu ${esc(rankingFormationFilter)}.` : ''}
-  ${!anyRealCandidatesFound? ' Mapa jest pusta, bo żaden zawodnik tej ligi nie ma jeszcze wpisanej obserwacji (oceny) — dodaj obserwacje w zakładce "Nowa obserwacja" albo przypisz kogoś ręcznie.' : ''}</p>`;
+  ${!anyRealCandidatesFound? ' Mapa jest pusta, bo w tej lidze nikt nie ma statusu „Do transferu" ani „Na Testy" — to one wypełniają mapę. Status nadajesz w profilu zawodnika albo raportem.' : ''}
+  ${bezSystemu? ` <strong>Poza tym systemem:</strong> ${bezSystemu} zawodnik(ów) tej ligi ma status kwalifikujący, ale w profilu nie ma wpisanego systemu gry — zobaczysz ich pod „Wszystkie systemy" albo po uzupełnieniu systemu w profilu.` : ''}</p>`;
 }
 
 function viewRanking(){
@@ -10297,8 +10323,69 @@ function openRocznikExcelImport(rocznikGroup){
 }
 
 const TRANSFER_HISTORY_TYPES = ['Transfer definitywny','Wypożyczenie','Wolny transfer','Debiut w klubie (juniorzy)','Powrót z wypożyczenia'];
+// Rozbiór WKLEJONEJ tabeli transferów z Transfermarktu. Kolumny na stronie stoją w kolejności:
+// Sezon | Data | Odchodzi z | Dołącza do | Wartość rynkowa | Kwota transferu — a po skopiowaniu
+// rozdziela je tabulator. Kolejności NIE zakładamy na sztywno: sezon, datę i kwoty rozpoznajemy
+// po kształcie, a to, co zostanie, to nazwy klubów. Dzięki temu zmiana układu tabeli albo wersji
+// językowej nie wywraca odczytu.
+function parseHistoriaTransferow(text){
+  const MIESIACE = {sty:1,lut:2,mar:3,kwi:4,maj:5,cze:6,lip:7,sie:8,wrz:9,paz:10,paź:10,lis:11,gru:12};
+  const wynik = [];
+  String(text||'').split(/\r?\n/).forEach(linia=>{
+    const s = linia.trim();
+    if(!s) return;
+    // Nagłówek tabeli i wiersze podsumowania odsiewamy po charakterystycznych słowach.
+    if(/^(sezon|data|odchodzi|dołącza|dolacza|wartość|wartosc|kwota|season|date|left|joined|fee|razem|suma)\b/i.test(s)) return;
+
+    const pola = s.split(/\t+|\s{2,}|\s+\|\s+/).map(x=>x.trim()).filter(Boolean);
+    if(pola.length < 2) return;
+
+    let sezon = '', data = '', kwota = '', wartosc = '';
+    const pozostale = [];
+    pola.forEach(p=>{
+      if(!sezon && /^\d{2}\/\d{2}$/.test(p)){ sezon = p; return; }
+      if(!sezon && /^\d{4}[\/-]\d{2,4}$/.test(p)){ sezon = p; return; }
+      const md = p.match(/^(\d{1,2})\s+([a-ząćęłńóśźż]{3,})\s+(\d{4})$/i);
+      if(!data && md && MIESIACE[md[2].slice(0,3).toLowerCase()]){
+        data = `${md[3]}-${String(MIESIACE[md[2].slice(0,3).toLowerCase()]).padStart(2,'0')}-${String(md[1]).padStart(2,'0')}`;
+        return;
+      }
+      if(!data && /^\d{4}-\d{2}-\d{2}$/.test(p)){ data = p; return; }
+      // Kwoty: „500 tys. €", „1,20 mln €", „free transfer", „wypożyczenie".
+      if(/€|\bmln\b|\btys\b|free transfer|wolny transfer|bez kwoty|wypożycz|wypozycz|loan|\?$|^-$/i.test(p)){
+        if(!wartosc) wartosc = p; else if(!kwota) kwota = p;
+        return;
+      }
+      pozostale.push(p);
+    });
+
+    // Nazwy klubów: pierwsze dwa pola, których nie rozpoznaliśmy jako liczby/daty/kwoty.
+    // Transfermarkt powtarza nazwę klubu w komórce (pełną i skróconą) — bierzemy tę dłuższą.
+    const kluby = pozostale.filter(x=> x.length >= 2 && !/^\d+$/.test(x));
+    if(kluby.length < 2) return;
+    const fromClub = kluby[0];
+    const toClub = kluby[1];
+    if(!fromClub || !toClub) return;
+
+    // Gdy w wierszu była tylko jedna kwota, jest nią kwota transferu, nie wartość rynkowa.
+    const fee = kwota || wartosc || '';
+    const typ = /wypożycz|wypozycz|loan/i.test(fee) ? 'Wypożyczenie'
+      : /free transfer|wolny transfer/i.test(fee) ? 'Transfer definitywny'
+      : fee ? 'Transfer definitywny' : '';
+
+    wynik.push({
+      fromClub, toClub,
+      from: sezon || (data ? data.slice(0,4) : ''),
+      type: typ,
+      fee: /wypożycz|wypozycz|loan/i.test(fee) ? '' : fee,
+      note: data ? ('Data transferu: ' + data) : '',
+    });
+  });
+  return wynik;
+}
+
 // Historia transferowa — wpisy dodawane ręcznie przez scouta (klub, okres, typ, kwota), na wzór układu
-// kariery znanego z Transfermarkt/90minut. To dane faktograficzne wpisywane przez użytkownika, nie import.
+// kariery znanego z Transfermarkt/90minut, albo wklejone hurtem z tabeli transferów.
 function openTransferHistoryModal(playerId){
   const already = document.querySelector('.modal-overlay[data-transferhist-for]');
   if(already) already.remove();
@@ -10335,6 +10422,16 @@ function openTransferHistoryModal(playerId){
             ${t.note?`<div style="font-size:12px;margin-top:3px;">${esc(t.note)}</div>`:''}
           </div>`).join('') : '<div class="empty">Brak wpisów — dodaj pierwszy poniżej.</div>'}
       </div>
+      <details style="border-top:1px solid #E3DECE;padding-top:12px;margin-bottom:12px;">
+        <summary style="cursor:pointer;font-weight:700;color:var(--gold-dark);">📋 Wklej całą historię z Transfermarktu</summary>
+        <p class="note" style="margin:8px 0;">Na profilu zawodnika zaznacz tabelę <strong>Transfery</strong> (razem z wierszami, bez nagłówka lub z nim — odsieję go)
+        i wklej poniżej. Rozpoznaję sezon, datę, oba kluby i kwotę; wypożyczenia oznaczam typem.</p>
+        <textarea id="th-paste" rows="6" placeholder="26/27&#9;1 lip 2026&#9;Podhale Nowy Targ&#9;Cracovia&#9;100 tys. €&#9;free transfer" style="font-size:11.5px;font-family:monospace;"></textarea>
+        <div class="modal-actions" style="justify-content:flex-start;margin-top:8px;">
+          <button class="secondary" data-action="th-parse">Rozpoznaj</button>
+        </div>
+        <div id="th-preview"></div>
+      </details>
       <div style="border-top:1px solid #E3DECE;margin-bottom:14px;padding-top:12px;${editing?'background:#FBF6E9;border-radius:8px;padding:12px;':''}">
         <label class="field" style="display:block;margin-bottom:8px;">${editing?'✎ Edytuj wpis':'Dodaj wpis'}</label>
         <div class="grid grid-2">
@@ -10369,6 +10466,40 @@ function openTransferHistoryModal(playerId){
       if(editIdx===idx) editIdx = null; else if(editIdx!=null && editIdx>idx) editIdx--;
       await savePlayers();
       draw();
+    });
+    overlay.querySelectorAll('[data-action="th-parse"]').forEach(b=>b.onclick=()=>{
+      const ta = overlay.querySelector('#th-paste');
+      const box = overlay.querySelector('#th-preview');
+      const rozpoznane = parseHistoriaTransferow(ta ? ta.value : '');
+      if(!rozpoznane.length){
+        box.innerHTML = `<p class="note" style="color:var(--clay-dark);">Nie rozpoznałem żadnego transferu.
+          Zaznacz tabelę razem z wierszami (nie sam nagłówek) i wklej ponownie.</p>`;
+        return;
+      }
+      // Nie dublujemy wpisów, które już są — porównujemy po parze klubów i sezonie.
+      const maJuz = (w)=> (p.transferHistory||[]).some(t=>
+        importNorm(t.fromClub||'')===importNorm(w.fromClub) &&
+        importNorm(t.toClub||'')===importNorm(w.toClub) &&
+        (t.from||'')===(w.from||''));
+      const nowe = rozpoznane.filter(w=>!maJuz(w));
+      box.innerHTML = `
+        <p class="note" style="margin:8px 0;">Rozpoznano <strong>${rozpoznane.length}</strong>,
+          nowych <strong>${nowe.length}</strong>${rozpoznane.length-nowe.length? `, już w historii ${rozpoznane.length-nowe.length}`:''}.</p>
+        <table><tbody>${nowe.map(w=>`<tr>
+          <td style="font-size:12px;white-space:nowrap;">${esc(w.from||'—')}</td>
+          <td style="font-size:12px;">${esc(w.fromClub)} → <strong>${esc(w.toClub)}</strong></td>
+          <td style="font-size:12px;">${esc(w.type||'—')}</td>
+          <td style="font-size:12px;">${esc(w.fee||'—')}</td>
+        </tr>`).join('')}</tbody></table>
+        ${nowe.length? `<div class="modal-actions" style="justify-content:flex-start;">
+          <button class="gold" data-action="th-apply">Dodaj ${nowe.length} wpisów do historii</button></div>` : ''}`;
+      box.querySelectorAll('[data-action="th-apply"]').forEach(bt=>bt.onclick=async()=>{
+        nowe.forEach(w=> p.transferHistory.push(Object.assign({id: uid('TH')}, w)));
+        const ok = await savePlayers();
+        if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
+        if(ta) ta.value = '';
+        draw();
+      });
     });
     overlay.querySelectorAll('[data-action="save-transfer-history"]').forEach(b=>b.onclick=async()=>{
       const fromClub = overlay.querySelector('#th-from-club').value.trim();
