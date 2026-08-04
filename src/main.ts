@@ -7726,7 +7726,6 @@ function parseSquadStatsText(text, squad){
   // Czytamy pozycyjnie po ŻETONACH, nie po samych liczbach — kreska „–" oznacza zero/brak i musi
   // zajmować swoje miejsce w kolejności. Inaczej wiersz z kreską przy golach przesuwałby się o jedno.
   const statsFromLine = (line)=>{
-    if(!/['’]/.test(line)) return null;                    // bez minut to nie jest wiersz statystyk
     let tail = line;
     const words = [...line.matchAll(WORDS)];
     if(words.length){
@@ -7734,7 +7733,19 @@ function parseSquadStatsText(text, squad){
       tail = line.slice(last.index + last[0].length);
     }
     const minM = tail.match(/(\d[\d.]*)\s*['’]/);
-    if(!minM) return null;
+    if(!minM){
+      // BRAK MINUT NIE ZNACZY, ŻE WIERSZ JEST NIEWAŻNY.
+      //
+      // Transfermarkt pisze przy takich zawodnikach „Poza kadrą w tym sezonie" albo stawia kreski
+      // — i to jest konkretna informacja: zero występów. Wcześniej odrzucaliśmy takie wiersze, przez
+      // co na starcie sezonu, gdy prawie nikt jeszcze nie zagrał, import kończył się komunikatem
+      // „nie dopasowałem żadnego wiersza". Zapisujemy zera tylko wtedy, gdy źródło WPROST mówi
+      // o braku występów; przy samym braku liczb nadal nic nie zgadujemy.
+      const brakWystepow = /poza kadr|nie by[łl] w kadrze|not in squad|kein einsatz/i.test(line)
+        || /(^|\s)[-–—](\s+[-–—])+(\s|$)/.test(tail);
+      if(!brakWystepow) return null;
+      return { minutes: 0, matches: 0, goals: 0 };
+    }
     const minutes = parseInt(minM[1].replace(/\./g,''), 10);
     if(isNaN(minutes)) return null;
 
