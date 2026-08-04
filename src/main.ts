@@ -2600,6 +2600,7 @@ function render(){
 let lastNavSig = null;
 let historyInited = false;
 let restoringFromHistory = false;
+let navIndex = 0;   // pozycja w naszej ścieżce; 0 = pierwszy widok, nie ma dokąd cofać
 function navSignature(){
   // Sygnatura musi obejmować KAŻDY stan, który zmienia zawartość ekranu. Brakowało tu widoku
   // agencji i rocznika — wejście w agencję nie zmieniało sygnatury, więc do historii nie trafiał
@@ -2614,8 +2615,18 @@ function syncHistory(){
   if(restoringFromHistory) return;    // przywracanie z historii nie tworzy nowego wpisu
   const state = {currentView, viewingPlayerId, viewingClubId, viewingAgencyId, viewingRocznikGroup,
     clubBrowseTop:clubBrowse.top, clubBrowseGroup:clubBrowse.group, compareIds:[...compareIds]};
-  if(!historyInited){ history.replaceState(state, ''); historyInited = true; }
-  else history.pushState(state, '');
+  if(!historyInited){ navIndex = 0; history.replaceState({...state, navIndex}, ''); historyInited = true; }
+  else { navIndex++; history.pushState({...state, navIndex}, ''); }
+}
+// Przyciski „← Wróć…" w aplikacji mają iść TĄ SAMĄ ścieżką co przycisk wstecz w przeglądarce.
+// Wcześniej ustawiały stan wprost, przez co render() dokładał NOWY wpis do historii: ścieżka
+// rosła do przodu, a przeglądarkowe „wstecz" wracało tam, skąd użytkownik właśnie wyszedł.
+// navIndex mówi, czy jest dokąd cofać wewnątrz aplikacji; na pierwszym wpisie ustawiamy stan
+// ręcznie, żeby nie wyrzucić użytkownika ze strony.
+function cofnijWidok(przywrocStan){
+  if(navIndex > 0){ history.back(); return; }
+  przywrocStan();
+  render();
 }
 window.addEventListener('popstate', (e)=>{
   const s = e.state;
@@ -2625,6 +2636,7 @@ window.addEventListener('popstate', (e)=>{
   viewingClubId = (s && s.viewingClubId) || null;
   viewingAgencyId = (s && s.viewingAgencyId) || null;
   viewingRocznikGroup = (s && s.viewingRocznikGroup) || null;
+  navIndex = (s && typeof s.navIndex === 'number') ? s.navIndex : 0;
   editingPlayerId = null;
   if(clubBrowse){ clubBrowse.top = (s && s.clubBrowseTop) || ''; clubBrowse.group = (s && s.clubBrowseGroup) || ''; }
   if(s && s.compareIds) compareIds = s.compareIds;
@@ -5304,6 +5316,16 @@ function attachHandlers(){
     if((e.target as HTMLElement).closest('button, input, a, label')) return;
     viewingPlayerId = (row as HTMLElement).dataset.id; currentView='players'; render();
   }));
+  // Osobna akcja dla PRZYCISKU „Profil" (np. w widoku agencji). Obsługa kliknięcia w wiersz wyżej
+  // celowo pomija kliknięcia w przyciski, żeby „Usuń" czy „Odłącz" nie otwierały profilu — więc
+  // przycisk otwierający profil musi mieć własną akcję, inaczej sam siebie blokuje.
+  main.querySelectorAll('[data-action="open-player-profile"]').forEach(b=>b.onclick=(e)=>{
+    e.stopPropagation();
+    viewingPlayerId = (b as HTMLElement).dataset.id;
+    currentView = 'players';
+    viewingAgencyId = null;
+    render();
+  });
   // Przycisk "Monitoring" w liście zawodników — od razu dodaje/usuwa zawodnika z zakładki Monitoring.
   main.querySelectorAll('[data-action="monitoring-plan-obs"]').forEach(b=>b.onclick=()=>{
     obsPreselectPlayerId = b.dataset.id;
@@ -5377,7 +5399,7 @@ function attachHandlers(){
     currentView = 'agencies'; viewingPlayerId = null;
     render();
   });
-  main.querySelectorAll('[data-action="back-agencies"]').forEach(b=>b.onclick=()=>{ viewingAgencyId = null; render(); });
+  main.querySelectorAll('[data-action="back-agencies"]').forEach(b=>b.onclick=()=>cofnijWidok(()=>{ viewingAgencyId = null; }));
   main.querySelectorAll('[data-action="add-agency"]').forEach(b=>b.onclick=()=>openAgencyModal(null));
   main.querySelectorAll('[data-action="edit-agency"]').forEach(b=>b.onclick=()=>openAgencyModal(b.dataset.id));
   main.querySelectorAll('[data-action="add-agent"]').forEach(b=>b.onclick=()=>openAgentModal(null, b.dataset.agency));
@@ -5455,8 +5477,8 @@ function attachHandlers(){
     render();
     savePlayers();
   });
-  main.querySelectorAll('[data-action="back-players"]').forEach(b=>b.onclick=()=>{viewingPlayerId=null; render();});
-  main.querySelectorAll('[data-action="back-rocznik"]').forEach(b=>b.onclick=()=>{viewingRocznikGroup=null; currentView='clubs'; render();});
+  main.querySelectorAll('[data-action="back-players"]').forEach(b=>b.onclick=()=>cofnijWidok(()=>{ viewingPlayerId=null; }));
+  main.querySelectorAll('[data-action="back-rocznik"]').forEach(b=>b.onclick=()=>cofnijWidok(()=>{ viewingRocznikGroup=null; currentView='clubs'; }));
   main.querySelectorAll('[data-action="delete-rocznik"]').forEach(b=>b.onclick=async()=>{
     const year = b.dataset.year;
     if(confirm(`Usunąć wszystkich zawodników z rocznika ${year}? To działanie nie może być cofnięte.`)){
@@ -5839,9 +5861,7 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="view-club"]').forEach(b=>b.onclick=()=>{
     viewingClubId = b.dataset.id; render();
   });
-  main.querySelectorAll('[data-action="back-clubs"]').forEach(b=>b.onclick=()=>{
-    viewingClubId = null; render();
-  });
+  main.querySelectorAll('[data-action="back-clubs"]').forEach(b=>b.onclick=()=>cofnijWidok(()=>{ viewingClubId = null; }));
   main.querySelectorAll('[data-action="add-player-to-club"]').forEach(b=>b.onclick=()=>openPlayerModal(null, b.dataset.id));
 
   const obsScoutSelect = main.querySelector('#obs-scout-select');
@@ -6052,7 +6072,7 @@ function attachHandlers(){
     }
     currentView='compare'; viewingPlayerId=null; render();
   });
-  main.querySelectorAll('[data-action="compare-back"]').forEach(b=>b.onclick=()=>{ currentView='players'; viewingPlayerId=null; render(); });
+  main.querySelectorAll('[data-action="compare-back"]').forEach(b=>b.onclick=()=>cofnijWidok(()=>{ currentView='players'; viewingPlayerId=null; }));
   [0,1,2].forEach(i=>{ const sel=main.querySelector('#compare-sel-'+i); if(sel) sel.onchange=()=>{ compareIds[i]=sel.value; render(); }; });
 
   // Wgrywanie wielu logotypów naraz — dopasowanie plików do klubów po nazwie.
@@ -8415,7 +8435,7 @@ function viewAgencyDetail(id){
     <td><div class="club-cell">${crestImg(clubCrest(p.clubId))}<span class="club-name">${esc(clubName(p.clubId))}</span></div></td>
     <td><select class="agent-assign" data-player="${p.id}" style="min-width:190px;">${opcjeMenedzera(p.agentId||'')}</select></td>
     <td style="white-space:nowrap;">
-      <button class="link-btn" data-action="row-open-player" data-id="${p.id}">Profil</button>
+      <button class="link-btn" data-action="open-player-profile" data-id="${p.id}">Profil</button>
       <button class="link-btn" data-action="unlink-agency" data-id="${p.id}" style="margin-left:8px;color:var(--clay-dark);">Odłącz</button>
     </td>
   </tr>`).join('');
