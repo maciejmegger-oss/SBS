@@ -89,6 +89,9 @@ const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }> = {
       // identyfikatory — nazwa agencji zmienia się przy fuzjach i zmianach szyldu, a wtedy
       // wystarczy poprawić ją w JEDNYM miejscu, zamiast w każdym zawodniku z osobna.
       "agencyId", "agentId",
+      // Mecze już rozliczone z protokołu PZPN. Statystyki SUMUJĄ się przy każdym wczytaniu,
+      // więc bez tej listy ponowne wgranie tego samego protokołu policzyłoby wszystko drugi raz.
+      "rozliczoneMecze",
     ],
   },
   sbs_observations: {

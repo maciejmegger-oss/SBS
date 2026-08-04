@@ -2964,7 +2964,7 @@ function leagueQuickAccessPanel(){
     <p class="note" style="margin-top:-4px;margin-bottom:10px;">Kliknij logo ligi, aby zobaczyć jej kluby — kliknij herb klubu, aby przejść do zawodników.</p>
     <div class="league-logos-row">${logos}</div>
     ${clubsRow}
-    ${dashboardLeagueSelected ? tabelaLigowaHtml(dashboardLeagueSelected) : ''}
+    ${dashboardLeagueSelected ? tabelaLigowaHtml(dashboardLeagueSelected, dashboardGroupSelected) : ''}
   </div>`;
 }
 
@@ -2973,7 +2973,14 @@ function leagueQuickAccessPanel(){
 // Wynik trzymamy w pamięci karty na czas sesji — tabela zmienia się po kolejce, nie co minutę.
 const tabeleLigowe = {};        // liga -> {stan:'ladowanie'|'gotowe'|'blad', grupy:[{nazwa,wiersze}], blad}
 
-function tabelaLigowaHtml(liga){
+// Nazwa grupy z naszej bazy („III liga, gr. II") kontra nagłówek strony 90minut
+// („Betclic III liga 2026/2027, grupa: II") — porównujemy sam oznacznik grupy.
+function oznacznikGrupy(nazwa){
+  const m = String(nazwa||'').match(/gr(?:upa)?\.?\s*:?\s*([IVX]+|\d+|[a-ząćęłńóśźż-]+)\s*$/i);
+  return m ? importNorm(m[1]) : '';
+}
+
+function tabelaLigowaHtml(liga, grupa){
   const dane = tabeleLigowe[liga];
   if(!dane){
     // Pierwsze wejście: zlecamy pobranie i pokazujemy informację, że trwa.
@@ -2993,6 +3000,15 @@ function tabelaLigowaHtml(liga){
   if(!dane.grupy.length){
     return `<div style="margin-top:16px;border-top:1px solid #E3DECE;padding-top:14px;">
       <div class="note">Brak tabeli dla ${esc(liga)} — rozgrywki mogły się jeszcze nie rozpocząć.</div></div>`;
+  }
+
+  // Po wybraniu konkretnej grupy pokazujemy TYLKO ją — cztery tabele naraz zaciemniają obraz,
+  // a wybór grupy jest jasną deklaracją, co chcesz oglądać.
+  let grupy = dane.grupy;
+  if(grupa){
+    const szukany = oznacznikGrupy(grupa);
+    const pasujace = grupy.filter(g=> oznacznikGrupy(g.nazwa) === szukany);
+    if(pasujace.length) grupy = pasujace;
   }
 
   // Klub z naszej bazy wyróżniamy, żeby od razu było widać, gdzie stoją obserwowani.
@@ -3016,8 +3032,8 @@ function tabelaLigowaHtml(liga){
       </tr>`;
     }).join('')}</tbody></table>`;
 
-  const sekcje = dane.grupy.map((g,i)=> dane.grupy.length === 1
-    ? tabelaHtml(g)
+  const sekcje = grupy.map((g,i)=> grupy.length === 1
+    ? `<div class="note" style="font-weight:700;color:var(--pitch);margin-bottom:6px;">${esc(g.nazwa)}</div>${tabelaHtml(g)}`
     : `<details ${i===0?'open':''} style="margin-bottom:8px;">
          <summary style="cursor:pointer;font-weight:700;color:var(--pitch);">${esc(g.nazwa)}</summary>
          ${tabelaHtml(g)}
@@ -3200,6 +3216,7 @@ function viewPlayers(){
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <button class="gold" data-action="add-player">+ Nowy zawodnik</button>
       ${viewingRocznikGroup ? `<button class="gold" data-action="rocznik-excel-import">📋 Wgraj z Excela</button>` : ''}
+      <button class="secondary" data-action="protokol-meczu" title="Wczytaj protokół meczu z Łączy nas piłką — dopisuje mecze, minuty, bramki i kartki obu drużynom">⚽ Protokół meczu</button>
       <button class="secondary" data-action="agent-import" title="Zbierz menedżerów z profili na Transfermarkcie">🕵 Menedżerowie</button>
       <button class="secondary" data-action="compare-open" title="Zaznacz do 3 zawodników na liście, aby porównać właśnie ich">⚖️ Porównaj zawodników</button>
     </div>
@@ -5471,6 +5488,7 @@ function attachHandlers(){
     render();
   });
   main.querySelectorAll('[data-action="agent-import"]').forEach(b=>b.onclick=()=>openAgentImportModal());
+  main.querySelectorAll('[data-action="protokol-meczu"]').forEach(b=>b.onclick=()=>openProtokolMeczuModal());
   main.querySelectorAll('[data-action="agencies-import"]').forEach(b=>b.onclick=()=>openAgenciesImportModal());
   const agencySearchInput = main.querySelector('#agency-search');
   if(agencySearchInput) agencySearchInput.oninput = ()=>{ agencySearchQuery = agencySearchInput.value; render(); };
@@ -8856,6 +8874,164 @@ function openAddPlayersToAgencyModal(agencyId){
 // tworzenie z tego setek pustych rekordów zaśmieciłoby kartotekę bardziej, niż by pomogło.
 // Hurtowe dopisanie menedżerów do agencji — z sekcji „Pracownicy" na Transfermarkcie albo
 // z listy nazwisk wpisanej ręcznie.
+// Wczytanie protokołu meczowego z Łączy nas piłką i DOPISANIE statystyk zawodnikom.
+//
+// Statystyki się SUMUJĄ (mecz po meczu), więc każde spotkanie musi być rozliczone dokładnie raz.
+// Identyfikatorem meczu jest adres protokołu — zapisujemy go przy zawodniku, a ponowne wczytanie
+// tego samego protokołu jest pomijane. Bez tego drugie kliknięcie podwoiłoby komuś dorobek.
+function openProtokolMeczuModal(){
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  let wklejka = '';
+  let rozpoznany = null;
+
+  const kluczMeczu = ()=>{
+    if(!rozpoznany) return '';
+    const m = String(rozpoznany.link||'').match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+    return m ? m[1] : (rozpoznany.link || rozpoznany.tytul || '');
+  };
+
+  function dopasuj(){
+    if(!rozpoznany) return {gotowi:[], juzRozliczeni:[], nieznalezieni:[], niejednoznaczni:[], bezWystepu:[]};
+    const klucz = kluczMeczu();
+    const gotowi = [], juzRozliczeni = [], nieznalezieni = [], niejednoznaczni = [], bezWystepu = [];
+    rozpoznany.zawodnicy.forEach(z=>{
+      if(!z.wystapil){ bezWystepu.push(z); return; }
+      let kandydaci = matchPlayersByFullName(z.nazwa, '');
+      // Gdy nazwisko powtarza się w bazie, rozstrzyga klub z protokołu.
+      if(kandydaci.length > 1 && z.klub){
+        const wKlubie = kandydaci.filter(p=> importNorm(clubName(p.clubId)).includes(importNorm(z.klub))
+          || importNorm(z.klub).includes(importNorm(clubName(p.clubId))));
+        if(wKlubie.length) kandydaci = wKlubie;
+      }
+      if(!kandydaci.length){ nieznalezieni.push(z); return; }
+      if(kandydaci.length > 1){ niejednoznaczni.push({...z, kandydaci}); return; }
+      const p = kandydaci[0];
+      if((p.rozliczoneMecze||[]).includes(klucz)){ juzRozliczeni.push({...z, player: p}); return; }
+      gotowi.push({...z, player: p});
+    });
+    return {gotowi, juzRozliczeni, nieznalezieni, niejednoznaczni, bezWystepu};
+  }
+
+  function draw(){
+    const {gotowi, juzRozliczeni, nieznalezieni, niejednoznaczni, bezWystepu} = dopasuj();
+    overlay.innerHTML = `
+    <div class="modal" style="max-width:820px;">
+      <h3>⚽ Protokół meczu — Łączy nas piłką</h3>
+      <p class="note" style="margin-top:0;">Jedyne źródło, które podaje III ligę i rozgrywki młodzieżowe na poziomie zawodnika.
+      Wczytanie <strong>dopisuje</strong> mecz, minuty, bramki i kartki obu drużynom naraz.
+      Minuty liczę z wejść i zejść (podstawowy bez zmiany = 90); doliczonego czasu nie dodaję, bo protokół go nie podaje.</p>
+
+      <details style="margin-bottom:12px;" ${rozpoznany?'':'open'}>
+        <summary style="cursor:pointer;font-weight:700;color:var(--gold-dark);">1. Ustaw zakładkę (raz)</summary>
+        <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
+          <li>Włącz pasek zakładek: <strong>Ctrl+Shift+B</strong></li>
+          <li>Przeciągnij na pasek:<br>
+            <a href="${esc(LNP_PROTOKOL_BOOKMARKLET)}" onclick="return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:#C69B3C;color:#16302A;border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">⚽ Protokół do SBS</a>
+          </li>
+          <li>Otwórz protokół meczu na laczynaspilka.pl (sekcja <strong>Składy</strong> musi być widoczna) i kliknij zakładkę</li>
+        </ol>
+        <details style="margin-top:6px;">
+          <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Kod do wklejenia ręcznie</summary>
+          <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;margin-top:6px;">${esc(LNP_PROTOKOL_BOOKMARKLET)}</textarea>
+        </details>
+      </details>
+
+      <div class="field-wrap" style="margin-bottom:10px;">
+        <label class="field">2. Wklej odczytany protokół (Ctrl+V)</label>
+        <textarea id="prot-paste" rows="6" placeholder="### PROTOKOL: Błękitni Stargard vs Wda Świecie | https://... ###&#10;P|Błękitni Stargard|8|Maciej Budawski|0|0|0||" style="font-size:11.5px;font-family:monospace;">${esc(wklejka)}</textarea>
+      </div>
+      <div class="modal-actions" style="justify-content:flex-start;margin-top:0;">
+        <button class="secondary" data-action="prot-parse">Rozpoznaj</button>
+      </div>
+
+      ${rozpoznany ? `
+        <div style="border-top:1px solid #E3DECE;padding-top:10px;margin-top:12px;">
+          <p class="note" style="margin-top:0;"><strong>${esc(rozpoznany.tytul||'Mecz')}</strong><br>
+            Zawodników w protokole: ${rozpoznany.zawodnicy.length}. Do dopisania: <strong>${gotowi.length}</strong>${
+            juzRozliczeni.length? `, ten mecz już rozliczony u <strong>${juzRozliczeni.length}</strong>`:''}${
+            bezWystepu.length? `, nie weszło z ławki ${bezWystepu.length}`:''}${
+            nieznalezieni.length? `, spoza bazy ${nieznalezieni.length}`:''}.</p>
+          <div style="max-height:300px;overflow:auto;">
+            <table><thead><tr><th style="width:24px;"></th><th>Zawodnik</th><th style="text-align:right;">Min.</th>
+              <th style="text-align:right;">Gole</th><th style="text-align:right;">Kartki</th></tr></thead>
+            <tbody>
+            ${gotowi.map((x,i)=>`<tr>
+              <td><input type="checkbox" class="prot-check" data-idx="${i}" checked></td>
+              <td><strong>${esc(x.player.lastName)}</strong> ${esc(x.player.firstName)}
+                <span class="club-sub" style="display:block;">${esc(clubName(x.player.clubId))}${x.rola==='R'?' · z ławki':''}</span></td>
+              <td style="text-align:right;">${x.minuty}</td>
+              <td style="text-align:right;">${x.gole||'—'}</td>
+              <td style="text-align:right;">${x.zolte?'🟨':''}${x.czerwone?'🟥':''}${!x.zolte&&!x.czerwone?'—':''}</td>
+            </tr>`).join('')}
+            ${juzRozliczeni.length? `<tr><td></td><td colspan="4" style="font-size:12px;color:var(--ink-soft);padding-top:8px;">
+              <strong>Ten mecz już rozliczony (${juzRozliczeni.length})</strong> — pomijam, żeby nie policzyć dwa razy:<br>${
+              juzRozliczeni.slice(0,15).map(x=>esc(x.nazwa)).join(', ')}${juzRozliczeni.length>15?' …':''}</td></tr>`:''}
+            ${niejednoznaczni.length? `<tr><td></td><td colspan="4" style="font-size:12px;color:var(--clay-dark);">
+              <strong>Niejednoznaczni (${niejednoznaczni.length})</strong> — w bazie kilka osób o tym nazwisku:<br>${
+              niejednoznaczni.map(x=>esc(x.nazwa)).join(', ')}</td></tr>`:''}
+            ${nieznalezieni.length? `<tr><td></td><td colspan="4" style="font-size:12px;color:var(--ink-soft);">
+              <strong>Spoza bazy (${nieznalezieni.length})</strong> — nie zakładam ich:<br>${
+              nieznalezieni.slice(0,20).map(x=>esc(x.nazwa)).join(', ')}${nieznalezieni.length>20?' …':''}</td></tr>`:''}
+            </tbody></table>
+          </div>
+        </div>
+        ${gotowi.length? `<div class="modal-actions" style="justify-content:flex-start;">
+          <button class="gold" data-action="prot-apply">Dopisz statystyki (${gotowi.length})</button></div>`:''}
+      ` : ''}
+
+      <div class="modal-actions">
+        <button class="secondary" data-action="close-modal">Zamknij</button>
+      </div>
+    </div>`;
+    wire();
+  }
+
+  function wire(){
+    overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=()=>{ overlay.remove(); render(); });
+    const ta = overlay.querySelector('#prot-paste') as any;
+    if(ta) ta.oninput = ()=>{ wklejka = ta.value; };
+    overlay.querySelectorAll('[data-action="prot-parse"]').forEach(b=>b.onclick=()=>{
+      wklejka = ((overlay.querySelector('#prot-paste') as any)||{}).value || '';
+      const r = parseProtokolMeczu(wklejka);
+      if(!r.zawodnicy.length){ alert('Nie rozpoznałem protokołu.\n\nWklej to, co skopiowała zakładka „⚽ Protokół do SBS".'); return; }
+      rozpoznany = r;
+      draw();
+    });
+    overlay.querySelectorAll('[data-action="prot-apply"]').forEach(b=>b.onclick=async()=>{
+      const {gotowi} = dopasuj();
+      const zaznaczeni = Array.from(overlay.querySelectorAll('.prot-check:checked')).map((c:any)=>Number(c.dataset.idx));
+      const klucz = kluczMeczu();
+      if(!klucz){ alert('Protokół nie ma adresu meczu — bez niego nie mogę zabezpieczyć przed podwójnym liczeniem.'); return; }
+      let dopisani = 0;
+      zaznaczeni.forEach(i=>{
+        const x = gotowi[i];
+        if(!x) return;
+        const p = x.player;
+        p.matches = (p.matches || 0) + 1;
+        p.minutes = (p.minutes || 0) + x.minuty;
+        if(x.gole) p.goals = (p.goals || 0) + x.gole;
+        if(x.zolte) p.yellowCards = (p.yellowCards || 0) + x.zolte;
+        if(x.czerwone) p.redCards = (p.redCards || 0) + x.czerwone;
+        p.statsUpdatedAt = new Date().toISOString().slice(0,10);
+        p.statsSource = 'Łączy nas piłką (protokół)';
+        p.rozliczoneMecze = [...(p.rozliczoneMecze || []), klucz];
+        dopisani++;
+      });
+      const ok = await savePlayers();
+      if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
+      alert(`Dopisano statystyki: ${dopisani} zawodnikom.\n\nTen mecz jest już oznaczony jako rozliczony — ponowne wczytanie go pominie.`);
+      rozpoznany = null; wklejka = '';
+      render();
+      draw();
+    });
+  }
+
+  overlay.addEventListener('click', e=>{ if(e.target===overlay){ overlay.remove(); render(); } });
+  document.body.appendChild(overlay);
+  draw();
+}
+
 function openAgencyStaffModal(agencyId){
   const agencja = agencyById(agencyId);
   if(!agencja) return;
@@ -10437,6 +10613,117 @@ function openRocznikExcelImport(rocznikGroup){
 }
 
 const TRANSFER_HISTORY_TYPES = ['Transfer definitywny','Wypożyczenie','Wolny transfer','Debiut w klubie (juniorzy)','Powrót z wypożyczenia'];
+// Zakładka czytająca PROTOKÓŁ MECZOWY z Łączy nas piłką (laczynaspilka.pl).
+//
+// To jedyne źródło, które podaje III ligę i rozgrywki młodzieżowe na poziomie zawodnika:
+// obie jedenastki, ławkę, minuty wejść i zejść, bramki oraz kartki. Transfermarkt tych rozgrywek
+// nie prowadzi, a 90minut nie publikuje minut. Strona renderuje treść JavaScriptem, więc serwer
+// niczego by z niej nie odczytał — czytamy DOM w przeglądarce użytkownika, na stronie, którą
+// ma otwartą. Nie omijamy przy tym żadnego zabezpieczenia: protokół jest publiczny.
+//
+// Układ kolumn na stronie (odczytany ze zrzutu protokołu):
+//   skład wyjściowy: [zawodnik][bramki][żółta][czerwona][zejście]
+//   skład rezerwowy: [zawodnik][bramki][żółta][czerwona][wejście][zejście]
+// Rozróżniamy je po LICZBIE kolumn, a nie po ikonach — ikony są obrazkami bez tekstu.
+const LNP_PROTOKOL_BOOKMARKLET = `javascript:(function(){try{
+function tx(e){return e?(e.textContent||'').replace(/\\u00a0/g,' ').replace(/\\s+/g,' ').trim():'';}
+function minuty(s){var m=String(s||'').match(/\\d{1,3}(?=\\s*['\\u2019])/g);return m||[];}
+var naglowki=[].slice.call(document.querySelectorAll('h1,h2,h3,h4,h5,div,span,p'));
+var wyjsciowe=naglowki.filter(function(e){return e.children.length===0&&/^Sk\\u0142ad wyj\\u015bciowy$/i.test(tx(e));});
+var rezerwowe=naglowki.filter(function(e){return e.children.length===0&&/^Sk\\u0142ad rezerwowy$/i.test(tx(e));});
+if(!wyjsciowe.length){alert('SBS: nie widze skladow na tej stronie.\\n\\nOtworz PROTOKOL MECZU na laczynaspilka.pl (sekcja \\u201eSklady\\u201d) i kliknij ponownie.');return;}
+// Nazwa druzyny: najblizszy wczesniejszy naglowek, ktory nie jest etykieta skladu.
+function druzynaDla(el){
+var w=el;
+while(w){
+var p=w.previousElementSibling;
+while(p){
+var t=tx(p);
+if(t&&t.length<60&&!/^Sk\\u0142ad (wyj\\u015bciowy|rezerwowy)$/i.test(t)&&!/^Zawodnik$/i.test(t)&&/[A-Za-z\\u0104-\\u017c]/.test(t))return t;
+p=p.previousElementSibling;}
+w=w.parentElement;}
+return '';}
+function wiersze(etykieta){
+// Tabela stoi zaraz za etykieta — szukamy w kolejnych elementach rodzica.
+var kontener=etykieta.parentElement,tab=null,glebokosc=0;
+while(kontener&&!tab&&glebokosc<4){tab=kontener.querySelector('table');kontener=kontener.parentElement;glebokosc++;}
+if(!tab)return [];
+return [].slice.call(tab.querySelectorAll('tr')).map(function(tr){
+return [].slice.call(tr.querySelectorAll('td,th')).map(tx);}).filter(function(k){return k.length>=5;});}
+var linie=[];
+function zbierz(lista,rola){
+for(var i=0;i<lista.length;i++){
+var klub=druzynaDla(lista[i]);
+var w=wiersze(lista[i]);
+for(var r=0;r<w.length;r++){
+var k=w[r];
+var nazwa=k[0];
+if(!nazwa||/^zawodnik$/i.test(nazwa))continue;
+// Numer stoi przed nazwiskiem w tej samej komorce („8 Maciej Budawski").
+var mn=nazwa.match(/^(\\d{1,2})\\s+(.+)$/);
+var numer=mn?mn[1]:'';
+if(mn)nazwa=mn[2];
+nazwa=nazwa.replace(/\\s*\\((C|B|M|K)\\)\\s*$/i,'').trim();
+if(nazwa.length<3)continue;
+var gole,zolta,czerwona,wejscie,zejscie;
+if(k.length>=6){gole=minuty(k[1]).length;zolta=minuty(k[2]).length?1:0;czerwona=minuty(k[3]).length?1:0;wejscie=minuty(k[4])[0]||'';zejscie=minuty(k[5])[0]||'';}
+else{gole=minuty(k[1]).length;zolta=minuty(k[2]).length?1:0;czerwona=minuty(k[3]).length?1:0;wejscie='';zejscie=minuty(k[4])[0]||'';}
+linie.push([rola,klub,numer,nazwa,gole,zolta,czerwona,wejscie,zejscie].join('|'));}}}
+zbierz(wyjsciowe,'P');
+zbierz(rezerwowe,'R');
+if(!linie.length){alert('SBS: znalazlem sekcje skladow, ale nie odczytalem zadnego wiersza zawodnika.');return;}
+var tytul=(document.title||'').replace(/\\s+/g,' ').trim();
+var caly='### PROTOKOL: '+tytul+' | '+location.href+' ###\\n'+linie.join('\\n');
+navigator.clipboard.writeText(caly).then(function(){
+var d=document.createElement('div');
+d.innerHTML='<b>SBS: protokol odczytany</b><br>zawodnikow: '+linie.length+' \\u2014 schowek gotowy<br><span style="opacity:.75;font-weight:400">Wklej w SBS: Zawodnicy \\u2192 Protokol meczu</span>';
+d.style.cssText='position:fixed;top:16px;right:16px;z-index:999999;background:#16302A;color:#C69B3C;padding:12px 18px;border-radius:8px;font:600 13px sans-serif;line-height:1.5;box-shadow:0 4px 16px rgba(0,0,0,.3)';
+document.body.appendChild(d);setTimeout(function(){d.remove()},4200);
+}).catch(function(e){alert('Nie udalo sie skopiowac: '+e.message)})}catch(e){alert('Blad: '+e.message)}})();`;
+
+// Rozbiór wklejonego protokołu. Minuty liczymy z wejść i zejść: podstawowy bez zmiany gra 90,
+// zdjęty w 56' gra 56, wchodzący w 74' gra 16. Doliczonego czasu NIE dodajemy — protokół go nie
+// podaje, a zgadywanie zaburzyłoby porównywalność między meczami.
+function parseProtokolMeczu(text){
+  const linie = String(text||'').split(/\r?\n/);
+  let tytul = '', link = '';
+  const zawodnicy = [];
+  linie.forEach(l=>{
+    const s = l.trim();
+    if(!s) return;
+    const m = s.match(/^###\s*PROTOKOL:\s*(.*?)\s*###$/i);
+    if(m){
+      const cz = m[1].split('|').map(x=>x.trim());
+      tytul = cz[0] || '';
+      link = cz.find(x=>/^https?:\/\//i.test(x)) || '';
+      return;
+    }
+    if(/^###/.test(s)) return;
+    const k = s.split('|').map(x=>x.trim());
+    if(k.length < 9) return;
+    const [rola, klub, numer, nazwa, gole, zolta, czerwona, wejscie, zejscie] = k;
+    if(!nazwa || nazwa.length < 3) return;
+    const wszedl = wejscie ? parseInt(wejscie,10) : null;
+    const zszedl = zejscie ? parseInt(zejscie,10) : null;
+    // Rezerwowy, który nie wszedł, NIE zalicza występu — to nie to samo, co gra 0 minut.
+    const wystapil = rola === 'P' || wszedl != null;
+    let minuty = 0;
+    if(wystapil){
+      const od = rola === 'P' ? 0 : (wszedl || 0);
+      const do_ = zszedl != null ? zszedl : 90;
+      minuty = Math.max(0, Math.min(90, do_ - od));
+    }
+    zawodnicy.push({
+      rola, klub, numer, nazwa,
+      gole: parseInt(gole,10) || 0,
+      zolte: parseInt(zolta,10) || 0,
+      czerwone: parseInt(czerwona,10) || 0,
+      wszedl, zszedl, wystapil, minuty,
+    });
+  });
+  return {tytul, link, zawodnicy};
+}
+
 // Zakładka czytająca TABELĘ TRANSFERÓW z profilu zawodnika na Transfermarkcie.
 //
 // Powstała, bo wklejenie tej tabeli jest nie do rozczytania: przeglądarka kopiuje ją PIONOWO,
@@ -10503,6 +10790,54 @@ document.body.appendChild(d);setTimeout(function(){d.remove()},3600);
 // rozdziela je tabulator. Kolejności NIE zakładamy na sztywno: sezon, datę i kwoty rozpoznajemy
 // po kształcie, a to, co zostanie, to nazwy klubów. Dzięki temu zmiana układu tabeli albo wersji
 // językowej nie wywraca odczytu.
+// Odczyt wklejki PIONOWEJ — takiej, jaką daje zaznaczenie tabeli transferów myszą.
+//
+// Kolumny znikają, ale zostaje powtarzalny wzór, ten sam w każdej próbce:
+//
+//     Pogoń Młd.        <- klub opuszczany
+//     Stätzling Jgd.    <- klub docelowy (wariant skrócony)
+//     Niemcy            <- kraj klubu docelowego
+//     Stätzling Jgd.    <- klub docelowy (pełny)
+//     -                 <- wartość rynkowa
+//     Bez odstępnego    <- kwota transferu
+//
+// Kotwicą jest POWTÓRZENIE nazwy klubu docelowego wokół nazwy kraju („X, kraj, X"). Klub
+// opuszczany to linijka bezpośrednio przed tą trójką. To rozpoznanie oparte na strukturze,
+// a nie na zgadywaniu kolejności — dlatego nie pomyli klubów miejscami.
+function parseHistoriaPionowa(text){
+  const linie = String(text||'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean)
+    .filter(l=>!/^###/.test(l));
+  const kwotowa = (s)=> /€|\bmln\b|\btys\b|bez odst[eę]pnego|free transfer|wolny transfer|wypożycz|wypozycz|loan|^[-–—?]$/i.test(s);
+  const wynik = [];
+  for(let i = 1; i + 1 < linie.length; i++){
+    // „X, cokolwiek, X" — powtórzona nazwa klubu docelowego wokół kraju.
+    if(importNorm(linie[i-1]) !== importNorm(linie[i+1])) continue;
+    if(!linie[i-1] || kwotowa(linie[i-1])) continue;
+    const toClub = linie[i+1];
+    const fromClub = (i - 2 >= 0 && !kwotowa(linie[i-2])) ? linie[i-2] : '';
+    if(!fromClub || importNorm(fromClub) === importNorm(toClub)) continue;
+    // Za trójką stoją wartość rynkowa i kwota transferu.
+    const ogon = linie.slice(i+2, i+5).filter(kwotowa);
+    const kwota = ogon.length >= 2 ? ogon[1] : (ogon[0] || '');
+    // Sezon lub rok szukamy wstecz, przed nazwą klubu opuszczanego.
+    let sezon = '';
+    for(let j = i-3; j >= 0 && j >= i-8; j--){
+      if(/^\d{2}\/\d{2}$/.test(linie[j])){ sezon = linie[j]; break; }
+      const md = linie[j].match(/\b(\d{4})\b/);
+      if(md && !sezon) sezon = md[1];
+    }
+    const wypozyczenie = /wypożycz|wypozycz|loan/i.test(kwota);
+    wynik.push({
+      fromClub, toClub, from: sezon,
+      type: wypozyczenie ? 'Wypożyczenie' : (kwota ? 'Transfer definitywny' : ''),
+      fee: wypozyczenie ? '' : (/^[-–—?]$/.test(kwota) ? '' : kwota),
+      note: '',
+    });
+    i += 2;   // ta trójka jest już rozliczona
+  }
+  return wynik;
+}
+
 function parseHistoriaTransferow(text){
   const MIESIACE = {sty:1,lut:2,mar:3,kwi:4,maj:5,cze:6,lip:7,sie:8,wrz:9,paz:10,paź:10,lis:11,gru:12};
   const wynik = [];
@@ -10654,7 +10989,11 @@ function openTransferHistoryModal(playerId){
     overlay.querySelectorAll('[data-action="th-parse"]').forEach(b=>b.onclick=()=>{
       const ta = overlay.querySelector('#th-paste');
       const box = overlay.querySelector('#th-preview');
-      const rozpoznane = parseHistoriaTransferow(ta ? ta.value : '');
+      // Najpierw układ kolumnowy (z zakładki), a gdy nic z niego nie wyjdzie — pionowy,
+      // czyli ten, który powstaje po zaznaczeniu tabeli myszą.
+      const tresc = ta ? ta.value : '';
+      let rozpoznane = parseHistoriaTransferow(tresc);
+      if(!rozpoznane.length) rozpoznane = parseHistoriaPionowa(tresc);
       if(!rozpoznane.length){
         box.innerHTML = `<p class="note" style="color:var(--clay-dark);">Nie rozpoznałem żadnego transferu.
           Jeśli wklejałeś zaznaczoną myszą tabelę — to nie zadziała, bo Transfermarkt kopiuje ją pionowo,
