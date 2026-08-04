@@ -6984,20 +6984,46 @@ function openMatchScheduleModal(){
 
       // Klucze już obecnych meczów liczymy RAZ; wcześniej dla każdego z 2000+ meczów
       // przechodziliśmy całą tablicę, co przy pełnym sezonie zajmowało zauważalnie długo.
-      const known = new Set(DB.matches.map(x=>`${x.date}|${x.homeTeam}|${x.awayTeam}`));
+      // Tożsamość meczu to KOLEJKA + para drużyn, świadomie bez daty. Wcześniej w kluczu była
+      // data — więc gdy 90minut zamieniało datę przybliżoną na potwierdzoną, klucz się zmieniał
+      // i powstawał DRUGI wpis zamiast poprawienia pierwszego. Obserwacja wskazywała wtedy nadal
+      // na stary termin, bez godziny.
+      const kluczMeczu = (x)=> `${x.round ?? ''}|${importNorm(x.homeTeam)}|${importNorm(x.awayTeam)}`;
+      const wgKlucza = new Map();
+      DB.matches.forEach(x=> wgKlucza.set(kluczMeczu(x), x));
+      let uaktualnione = 0;
+      const potwierdzone = [];
       for(const s of settled){
         if(s.error) continue;
         for(const m of s.data.matches){
           seen++;
-          const key = `${m.date}|${m.homeTeam}|${m.awayTeam}`;
-          if(known.has(key)) continue;
-          known.add(key);
-          DB.matches.push({id: uid('M'), league: s.league, competition: s.data.league,
-            date: m.date, time: m.time, homeTeam: m.homeTeam, awayTeam: m.awayTeam,
-            round: m.round, dateApprox: !!m.dateApprox, stadium: ''});
-          added++;
+          const key = kluczMeczu(m);
+          if(!m.dateApprox && m.date) potwierdzone.push(m);
+          const istniejacy = wgKlucza.get(key);
+          if(!istniejacy){
+            const nowy = {id: uid('M'), league: s.league, competition: s.data.league,
+              date: m.date, time: m.time, homeTeam: m.homeTeam, awayTeam: m.awayTeam,
+              round: m.round, dateApprox: !!m.dateApprox, stadium: ''};
+            DB.matches.push(nowy);
+            wgKlucza.set(key, nowy);
+            added++;
+            continue;
+          }
+          // Poprawiamy tylko w stronę większej pewności: potwierdzony termin zastępuje przybliżony
+          // albo wcześniejszy potwierdzony, gdy klub przełożył spotkanie.
+          const jestDokladna = !m.dateApprox && !!m.date;
+          const inny = istniejacy.date !== m.date || (istniejacy.time||'') !== (m.time||'');
+          if(jestDokladna && (istniejacy.dateApprox || inny)){
+            istniejacy.date = m.date;
+            istniejacy.time = m.time || '';
+            istniejacy.dateApprox = false;
+            uaktualnione++;
+          }
         }
       }
+      // Potwierdzony termin przepisujemy do zaplanowanych obserwacji tego meczu — po to, żeby
+      // mecz wybrany, gdy nie miał jeszcze godziny, sam dostał właściwy dzień i godzinę.
+      const obsPoprawione = await przepiszTerminyDoObserwacji(potwierdzone);
       // Doszły nowe mecze, więc podpowiedzi „ilu zawodników w bazie" trzeba policzyć od nowa.
       klubyWgId = null; zawodnicyWgKlubu = null; cacheDruzyn.clear();
       // Znacznik czasu pobrania trzymamy per liga — na nim opiera się dobowe odświeżanie.
@@ -7008,7 +7034,9 @@ function openMatchScheduleModal(){
       if(!ok) throw new Error('nie udało się zapisać meczów w bazie.');
       await saveSettings();
       status.innerHTML = `✓ Pobrano ${seen} meczów, dodano nowych: <strong>${added}</strong>.` +
-        (added < seen ? ` Resztę już miałeś w bazie.` : '');
+        (uaktualnione ? ` Potwierdzono termin przy <strong>${uaktualnione}</strong>.` : '') +
+        (obsPoprawione ? ` Poprawiono termin w <strong>${obsPoprawione}</strong> zaplanowanych obserwacjach.` : '') +
+        (added + uaktualnione < seen ? ` Reszta bez zmian.` : '');
       draw();
     }catch(e){
       status.innerHTML = `<span style="color:var(--clay-dark);">Nie udało się pobrać: ${esc(e.message)}</span>`;
@@ -7402,7 +7430,46 @@ const SCHEDULE_SOURCES = {
                   'http://www.90minut.pl/liga/1/liga14743.html',
                   'http://www.90minut.pl/liga/1/liga14744.html',
                   'http://www.90minut.pl/liga/1/liga14745.html'],
+  // Sześć grup IV ligi, sezon 2026/2027 — te, które obserwujesz. Numery rozgrywek pochodzą
+  // wprost ze stron 90minut i zmieniają się co sezon; przy nowym sezonie trzeba je podmienić
+  // (albo wskazać własne adresy w ustawieniach, patrz scheduleUrlsFor).
+  'IV liga':     ['http://www.90minut.pl/liga/1/liga14747.html',   // śląska
+                  'http://www.90minut.pl/liga/1/liga14748.html',   // zachodniopomorska
+                  'http://www.90minut.pl/liga/1/liga14749.html',   // pomorska
+                  'http://www.90minut.pl/liga/1/liga14768.html',   // dolnośląska
+                  'http://www.90minut.pl/liga/1/liga14779.html',   // wielkopolska
+                  'http://www.90minut.pl/liga/1/liga14836.html'],  // kujawsko-pomorska
 };
+// Przepisanie potwierdzonych terminów do ZAPLANOWANYCH obserwacji. Kluby mają czas do piątku do
+// północy na zgłoszenie terminu, więc mecz wybrany wcześniej często nie ma jeszcze dnia i godziny.
+// Ruszamy wyłącznie obserwacje z przyszłości — przestawianie tych, które już się odbyły, byłoby
+// fałszowaniem historii pracy.
+async function przepiszTerminyDoObserwacji(potwierdzone){
+  if(!potwierdzone || !potwierdzone.length) return 0;
+  const poParze = new Map();
+  potwierdzone.forEach(m=>{
+    poParze.set(`${importNorm(m.homeTeam)}|${importNorm(m.awayTeam)}`, {date: m.date, time: m.time || ''});
+  });
+  const dzisiaj = new Date().toISOString().slice(0,10);
+  let zmienione = 0;
+  DB.observations.forEach(o=>{
+    const czysty = String(o.match||'').replace(/\s+/g,' ').trim();
+    const czesci = czysty.split(/\s+[-–—]\s+/);
+    if(czesci.length < 2) return;
+    // Za nazwą gościa bywa doklejona data z terminarza — bierzemy tekst do pierwszego przecinka.
+    const klucz = `${importNorm(czesci[0])}|${importNorm(czesci[1].split(',')[0])}`;
+    const termin = poParze.get(klucz);
+    if(!termin) return;
+    if(o.date && o.date < dzisiaj) return;
+    if(o.date === termin.date && (o.matchTime||'') === termin.time) return;
+    o.date = termin.date;
+    if(termin.time) o.matchTime = termin.time;
+    zmienione++;
+  });
+  if(zmienione) await saveObservations();
+  return zmienione;
+}
+
 function scheduleUrlsFor(league){
   const override = DB.settings.scheduleUrls && DB.settings.scheduleUrls[league];
   if(override) return Array.isArray(override) ? override : [override];
