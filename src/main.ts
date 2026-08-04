@@ -3875,7 +3875,16 @@ async function saveNewObservation(){
   obs.startLocation = startLoc;
   try{ obs.distanceKm = await calcDistanceBetween(startLoc, obs.location); }catch(e){ obs.distanceKm = null; }
   if(!editing) DB.observations.push(obs);
-  await saveObservations();
+  // Wynik zapisu MUSI być sprawdzony. Wcześniej szedł bez kontroli, więc gdy baza odrzucała
+  // zapis, plan znikał po cichu: na ekranie wyglądał na zapisany, a w bazie go nie było.
+  const zapisano = await saveObservations();
+  if(!zapisano){
+    if(!editing) DB.observations = DB.observations.filter(x=>x.id !== obs.id);   // nie udawaj, że jest
+    alert('NIE ZAPISANO planu obserwacji — baza odrzuciła zapis.\n\n' +
+      'Plan nie został dodany. Sprawdź baner u góry strony i spróbuj ponownie; jeśli błąd wraca, zgłoś go.');
+    render();
+    return;
+  }
   // Adres obiektu zapamiętujemy przy klubie-gospodarzu — przy następnym meczu tej drużyny
   // podstawi się sam — i pokazujemy go w Kontaktach. Gdy gospodarza nie ma jeszcze w bazie,
   // zakładany jest klub z samą nazwą; mówimy o tym wprost, bo trzeba mu dopisać ligę i region.

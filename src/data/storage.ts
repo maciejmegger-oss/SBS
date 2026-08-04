@@ -40,9 +40,24 @@ const BATCH_SIZE = 200; // wsad zapisu na jedno zapytanie — unika przekroczeni
 const camelToSnake = (k: string) => k.replace(/[A-Z]/g, (m) => "_" + m.toLowerCase());
 const snakeToCamel = (k: string) => k.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 
+// PUSTE ODWOŁANIE TO NULL, NIE PUSTY TEKST.
+//
+// Kolumny wskazujące na inną tabelę (player_id, club_id, …) mają w bazie klucz obcy. Aplikacja
+// zapisywała „brak wskazania" jako pusty ciąg — a pusty ciąg to konkretna wartość, więc Postgres
+// szukał rekordu o identyfikatorze "" i odrzucał zapis błędem 23503. Skutki były dotkliwe i
+// niewidoczne: obserwacja ZESPOŁU (bez wskazanego zawodnika) nie dawała się zapisać nigdy, a że
+// cała kolekcja idzie jednym wsadem, JEDEN taki wiersz przewracał zapis wszystkich pozostałych.
+// Ten sam problem dotyczył zawodnika bez klubu.
+//
+// Zamiana robiona jest tutaj, w jednym miejscu na całą warstwę zapisu, żeby nie dało się jej
+// obejść przypadkiem z poziomu widoku. Klucz główny `id` zostaje nietknięty.
 const rowFromObj = (obj: Record<string, unknown>): Record<string, unknown> => {
   const row: Record<string, unknown> = {};
-  for (const k in obj) row[camelToSnake(k)] = obj[k];
+  for (const k in obj) {
+    const kolumna = camelToSnake(k);
+    const wartosc = obj[k];
+    row[kolumna] = kolumna.endsWith("_id") && wartosc === "" ? null : wartosc;
+  }
   return row;
 };
 
