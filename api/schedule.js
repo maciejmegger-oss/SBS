@@ -20,8 +20,10 @@ export default async function handler(req, res) {
   }
   if (wynik.error) return res.status(502).json({ error: wynik.error });
 
-  if (!wynik.matches.length) {
-    return res.status(404).json({ error: "Nie znaleziono terminarza na tej stronie." });
+  // Tabela bywa dostępna, gdy terminarza jeszcze nie ma (i odwrotnie), więc brak jednego
+  // nie może przekreślać drugiego.
+  if (!wynik.matches.length && !(wynik.table || []).length) {
+    return res.status(404).json({ error: "Nie znaleziono terminarza ani tabeli na tej stronie." });
   }
 
   res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
@@ -29,5 +31,6 @@ export default async function handler(req, res) {
     source: "90minut.pl",
     league: wynik.league,
     matches: wynik.matches,
+    table: wynik.table || [],
   });
 }

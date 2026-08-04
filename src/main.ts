@@ -1573,6 +1573,22 @@ const SEED_PLAYER_ENRICHMENT_AVIA = [
 
 function uid(prefix){ return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
 function esc(s){ return (s===undefined||s===null?"":String(s)).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+// Przerysowanie okna modalnego buduje jego zawartość od nowa, więc pole tekstowe, w którym ktoś
+// pisze, jest niszczone i tworzone ponownie — kursor wraca wtedy na początek i kolejne litery
+// wchodzą od tyłu („Maciej" zamieniało się w „jeicaM"). render() radzi sobie z tym dla treści
+// strony, ale okna modalne żyją poza nią, więc potrzebują własnego zabezpieczenia.
+// Zapamiętujemy pozycję kursora przed przerysowaniem i przywracamy ją do tego samego pola.
+function zachowajKursorPoPrzerysowaniu(kontener, selektor, przerysuj){
+  const stare = kontener.querySelector(selektor);
+  const poz = (stare && stare.selectionStart != null) ? stare.selectionStart : null;
+  przerysuj();
+  const nowe = kontener.querySelector(selektor);
+  if(!nowe) return;
+  nowe.focus();
+  const docelowa = poz != null ? poz : String(nowe.value || '').length;
+  try{ nowe.setSelectionRange(docelowa, docelowa); }catch(e){ /* np. input[type=number] tego nie wspiera */ }
+}
 function fmt1(n){ return (Math.round(n*10)/10).toFixed(1); }
 
 async function enrichZniczRoster(){
@@ -2948,7 +2964,94 @@ function leagueQuickAccessPanel(){
     <p class="note" style="margin-top:-4px;margin-bottom:10px;">Kliknij logo ligi, aby zobaczyć jej kluby — kliknij herb klubu, aby przejść do zawodników.</p>
     <div class="league-logos-row">${logos}</div>
     ${clubsRow}
+    ${dashboardLeagueSelected ? tabelaLigowaHtml(dashboardLeagueSelected) : ''}
   </div>`;
+}
+
+// Aktualna tabela ligowa pod kafelkami. Pobiera się z tej samej strony 90minut co terminarz,
+// więc nie dokładamy nowego źródła ani nowego zapytania do serwisu ponad to, co już robimy.
+// Wynik trzymamy w pamięci karty na czas sesji — tabela zmienia się po kolejce, nie co minutę.
+const tabeleLigowe = {};        // liga -> {stan:'ladowanie'|'gotowe'|'blad', grupy:[{nazwa,wiersze}], blad}
+
+function tabelaLigowaHtml(liga){
+  const dane = tabeleLigowe[liga];
+  if(!dane){
+    // Pierwsze wejście: zlecamy pobranie i pokazujemy informację, że trwa.
+    pobierzTabeleLigowe(liga);
+    return `<div style="margin-top:16px;border-top:1px solid #E3DECE;padding-top:14px;">
+      <div class="note">Pobieram tabelę ${esc(liga)} z 90minut…</div></div>`;
+  }
+  if(dane.stan === 'ladowanie'){
+    return `<div style="margin-top:16px;border-top:1px solid #E3DECE;padding-top:14px;">
+      <div class="note">Pobieram tabelę ${esc(liga)} z 90minut…</div></div>`;
+  }
+  if(dane.stan === 'blad'){
+    return `<div style="margin-top:16px;border-top:1px solid #E3DECE;padding-top:14px;">
+      <div class="note" style="color:var(--clay-dark);">Nie udało się pobrać tabeli: ${esc(dane.blad||'')}
+      ${liga==='CLJ U19' ? ' — dla rozgrywek juniorskich 90minut nie prowadzi tabeli pod tym adresem.' : ''}</div></div>`;
+  }
+  if(!dane.grupy.length){
+    return `<div style="margin-top:16px;border-top:1px solid #E3DECE;padding-top:14px;">
+      <div class="note">Brak tabeli dla ${esc(liga)} — rozgrywki mogły się jeszcze nie rozpocząć.</div></div>`;
+  }
+
+  // Klub z naszej bazy wyróżniamy, żeby od razu było widać, gdzie stoją obserwowani.
+  const naszeKluby = new Set(DB.clubs.map(c=>importNorm(c.name)));
+  const tabelaHtml = (g)=>`<table class="tabela-ligowa">
+    <thead><tr><th style="width:34px;text-align:right;">Lp.</th><th>Drużyna</th>
+      <th style="text-align:right;">M.</th><th style="text-align:right;">Pkt.</th>
+      <th style="text-align:right;">Z</th><th style="text-align:right;">R</th><th style="text-align:right;">P</th>
+      <th style="text-align:right;">Bramki</th></tr></thead>
+    <tbody>${g.wiersze.map(w=>{
+      const nasz = naszeKluby.has(importNorm(w.nazwa));
+      return `<tr${nasz?' style="background:rgba(198,155,60,0.10);"':''}>
+        <td style="text-align:right;color:var(--ink-soft);">${w.miejsce}.</td>
+        <td>${nasz?'<strong>':''}${esc(w.nazwa)}${nasz?'</strong>':''}</td>
+        <td style="text-align:right;">${w.mecze}</td>
+        <td style="text-align:right;"><strong>${w.punkty}</strong></td>
+        <td style="text-align:right;">${w.zwyciestwa ?? '—'}</td>
+        <td style="text-align:right;">${w.remisy ?? '—'}</td>
+        <td style="text-align:right;">${w.porazki ?? '—'}</td>
+        <td style="text-align:right;white-space:nowrap;">${esc(w.bramki||'—')}</td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+
+  const sekcje = dane.grupy.map((g,i)=> dane.grupy.length === 1
+    ? tabelaHtml(g)
+    : `<details ${i===0?'open':''} style="margin-bottom:8px;">
+         <summary style="cursor:pointer;font-weight:700;color:var(--pitch);">${esc(g.nazwa)}</summary>
+         ${tabelaHtml(g)}
+       </details>`).join('');
+
+  return `<div style="margin-top:16px;border-top:1px solid #E3DECE;padding-top:14px;">
+    <div class="note" style="margin-bottom:8px;">Aktualna tabela — źródło: 90minut.pl. Kluby z Twojej bazy są wyróżnione.</div>
+    <div style="overflow:auto;">${sekcje}</div>
+  </div>`;
+}
+
+async function pobierzTabeleLigowe(liga){
+  if(tabeleLigowe[liga]) return;
+  tabeleLigowe[liga] = {stan:'ladowanie', grupy:[]};
+  const adresy = scheduleUrlsFor(liga);
+  if(!adresy.length){
+    tabeleLigowe[liga] = {stan:'blad', grupy:[], blad:'nie mam adresu tych rozgrywek na 90minut'};
+    render();
+    return;
+  }
+  try{
+    const wyniki = await Promise.all(adresy.map(async (url)=>{
+      const res = await fetch('/api/schedule?url=' + encodeURIComponent(url));
+      const ctype = res.headers.get('content-type') || '';
+      if(!ctype.includes('application/json')) throw new Error('tabela działa tylko na wdrożonej stronie');
+      if(!res.ok){ const b = await res.json().catch(()=>({})); throw new Error(b.error || ('kod ' + res.status)); }
+      const d = await res.json();
+      return {nazwa: d.league || liga, wiersze: d.table || []};
+    }));
+    tabeleLigowe[liga] = {stan:'gotowe', grupy: wyniki.filter(g=>g.wiersze.length)};
+  }catch(e){
+    tabeleLigowe[liga] = {stan:'blad', grupy:[], blad: e.message};
+  }
+  render();
 }
 
 function viewDashboard(){
@@ -10323,6 +10426,67 @@ function openRocznikExcelImport(rocznikGroup){
 }
 
 const TRANSFER_HISTORY_TYPES = ['Transfer definitywny','Wypożyczenie','Wolny transfer','Debiut w klubie (juniorzy)','Powrót z wypożyczenia'];
+// Zakładka czytająca TABELĘ TRANSFERÓW z profilu zawodnika na Transfermarkcie.
+//
+// Powstała, bo wklejenie tej tabeli jest nie do rozczytania: przeglądarka kopiuje ją PIONOWO,
+// po jednej komórce w linijce („Polska / Warta Mld. / Wa. Poznań U19 / Polska / …"), więc ginie
+// podział na kolumny i nie da się odróżnić klubu opuszczanego od docelowego. W DOM te kolumny
+// są osobnymi elementami, więc odczyt jest jednoznaczny.
+//
+// Nowy układ Transfermarktu ma klasy „…transfer-history-grid__<kolumna>"; starszy to zwykła
+// tabela. Obsługujemy oba, a gdy żadnego nie ma — mówimy o tym wprost zamiast zgadywać.
+const TM_TRANSFERS_BOOKMARKLET = `javascript:(function(){try{
+var u=location.href;
+if(!/\\/profil\\/spieler\\/\\d+/.test(u)){alert('SBS: to nie jest profil zawodnika na Transfermarkcie.\\n\\nOtworz profil zawodnika i kliknij ponownie.');return;}
+var imie=(document.title||'').split(' - ')[0].replace(/\\s+/g,' ').trim();
+function tekst(e){return e?(e.textContent||'').replace(/\\u00a0/g,' ').replace(/\\s+/g,' ').trim():'';}
+function nazwaKlubu(kom){
+if(!kom)return '';
+var a=kom.querySelector('a[href*="/verein/"]');
+if(a){var t=(a.getAttribute('title')||'').trim();if(t)return t;
+var im=a.querySelector('img');if(im){var ti=(im.getAttribute('title')||im.getAttribute('alt')||'').trim();if(ti)return ti;}
+if(tekst(a))return tekst(a);}
+var im2=kom.querySelector('img[src*="wappen"],img[class*="wappen"]');
+if(im2){var t2=(im2.getAttribute('title')||im2.getAttribute('alt')||'').trim();if(t2)return t2;}
+// Ostatecznie najdluzszy wiersz tekstu w komorce (odsiewa skroty i nazwe kraju z flagi).
+var linie=tekst(kom).split(/\\s{2,}/).filter(Boolean);
+linie.sort(function(a,b){return b.length-a.length});
+return linie[0]||'';}
+var wiersze=[];
+var grid=document.querySelectorAll('[class*="transfer-history-grid__row"],[class*="transfer-history-grid"] [class*="__season"]');
+var kom=document.querySelectorAll('[class*="transfer-history-grid__season"]');
+for(var i=0;i<kom.length;i++){
+var rzad=kom[i].parentElement;if(!rzad)continue;
+var q=function(k){return rzad.querySelector('[class*="transfer-history-grid__'+k+'"]')};
+var sezon=tekst(q('season')),data=tekst(q('date'));
+var zK=nazwaKlubu(q('old-club')),doK=nazwaKlubu(q('new-club'));
+var kwota=tekst(q('fee')),wart=tekst(q('market-value'));
+if(!zK&&!doK)continue;
+wiersze.push([sezon,data,zK,doK,wart,kwota].join('\\t'));}
+if(!wiersze.length){
+// Starszy uklad: zwykla tabela z naglowkiem zawierajacym „Sezon"/„Season".
+var tab=document.querySelectorAll('table');
+for(var t3=0;t3<tab.length&&!wiersze.length;t3++){
+if(!/sezon|season/i.test(tekst(tab[t3].querySelector('thead'))||''))continue;
+var tr=tab[t3].querySelectorAll('tbody tr');
+for(var r=0;r<tr.length;r++){
+var td=tr[r].querySelectorAll('td');if(td.length<4)continue;
+var kluby=[];for(var c=0;c<td.length;c++){var n=nazwaKlubu(td[c]);if(n&&kluby.indexOf(n)<0)kluby.push(n);}
+if(kluby.length<2)continue;
+var teksty=[];for(var c2=0;c2<td.length;c2++)teksty.push(tekst(td[c2]));
+var sez=teksty.find(function(x){return /^\\d{2}\\/\\d{2}$/.test(x)})||'';
+var dat=teksty.find(function(x){return /\\d{1,2}\\s+[a-z\\u0105\\u0107\\u0119\\u0142\\u0144\\u00f3\\u015b\\u017a\\u017c]{3,}\\s+\\d{4}/i.test(x)})||'';
+var kw=teksty.filter(function(x){return /\\u20ac|mln|tys|free|wolny/i.test(x)});
+wiersze.push([sez,dat,kluby[0],kluby[1],kw[0]||'',kw[1]||''].join('\\t'));}}}
+if(!wiersze.length){alert('SBS: nie znalazlem tabeli transferow na tej stronie.\\n\\nUpewnij sie, ze jestes na PROFILU zawodnika i ze sekcja „Transfery" jest widoczna.');return;}
+var caly='### TRANSFERY: '+imie+' ###\\n'+wiersze.join('\\n');
+navigator.clipboard.writeText(caly).then(function(){
+var d=document.createElement('div');
+d.innerHTML='<b>SBS: '+imie+'</b><br>transferow: '+wiersze.length+' \\u2014 schowek gotowy<br><span style="opacity:.75;font-weight:400">Wklej w oknie historii transferowej</span>';
+d.style.cssText='position:fixed;top:16px;right:16px;z-index:999999;background:#16302A;color:#C69B3C;padding:12px 18px;border-radius:8px;font:600 13px sans-serif;line-height:1.5;box-shadow:0 4px 16px rgba(0,0,0,.3)';
+document.body.appendChild(d);setTimeout(function(){d.remove()},3600);
+}).catch(function(e){alert('Nie udalo sie skopiowac: '+e.message)})}catch(e){alert('Blad: '+e.message)}})();`;
+
 // Rozbiór WKLEJONEJ tabeli transferów z Transfermarktu. Kolumny na stronie stoją w kolejności:
 // Sezon | Data | Odchodzi z | Dołącza do | Wartość rynkowa | Kwota transferu — a po skopiowaniu
 // rozdziela je tabulator. Kolejności NIE zakładamy na sztywno: sezon, datę i kwoty rozpoznajemy
@@ -10424,8 +10588,17 @@ function openTransferHistoryModal(playerId){
       </div>
       <details style="border-top:1px solid #E3DECE;padding-top:12px;margin-bottom:12px;">
         <summary style="cursor:pointer;font-weight:700;color:var(--gold-dark);">📋 Wklej całą historię z Transfermarktu</summary>
-        <p class="note" style="margin:8px 0;">Na profilu zawodnika zaznacz tabelę <strong>Transfery</strong> (razem z wierszami, bez nagłówka lub z nim — odsieję go)
-        i wklej poniżej. Rozpoznaję sezon, datę, oba kluby i kwotę; wypożyczenia oznaczam typem.</p>
+        <p class="note" style="margin:8px 0;">Transfermarkt kopiuje tę tabelę <strong>pionowo, po jednej komórce w linijce</strong>
+        — ginie wtedy podział na kolumny i nie da się odróżnić klubu opuszczanego od docelowego. Dlatego użyj zakładki,
+        która czyta tabelę wprost ze strony:</p>
+        <p style="margin:8px 0;">
+          <a href="${esc(TM_TRANSFERS_BOOKMARKLET)}" onclick="return false;" style="display:inline-block;padding:8px 16px;background:#C69B3C;color:#16302A;border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">↔ Transfery do SBS</a>
+          <span class="note" style="display:block;font-size:11px;margin-top:4px;">Przeciągnij na pasek zakładek (Ctrl+Shift+B), wejdź na profil zawodnika, kliknij — i wklej poniżej.</span>
+        </p>
+        <details style="margin-bottom:6px;">
+          <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Kod do wklejenia ręcznie</summary>
+          <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;margin-top:6px;">${esc(TM_TRANSFERS_BOOKMARKLET)}</textarea>
+        </details>
         <textarea id="th-paste" rows="6" placeholder="26/27&#9;1 lip 2026&#9;Podhale Nowy Targ&#9;Cracovia&#9;100 tys. €&#9;free transfer" style="font-size:11.5px;font-family:monospace;"></textarea>
         <div class="modal-actions" style="justify-content:flex-start;margin-top:8px;">
           <button class="secondary" data-action="th-parse">Rozpoznaj</button>
@@ -10473,7 +10646,9 @@ function openTransferHistoryModal(playerId){
       const rozpoznane = parseHistoriaTransferow(ta ? ta.value : '');
       if(!rozpoznane.length){
         box.innerHTML = `<p class="note" style="color:var(--clay-dark);">Nie rozpoznałem żadnego transferu.
-          Zaznacz tabelę razem z wierszami (nie sam nagłówek) i wklej ponownie.</p>`;
+          Jeśli wklejałeś zaznaczoną myszą tabelę — to nie zadziała, bo Transfermarkt kopiuje ją pionowo,
+          po jednej komórce w linijce, i przepada podział na kolumny.
+          <strong>Użyj zakładki „↔ Transfery do SBS"</strong> z pola powyżej: czyta tabelę ze strony razem z kolumnami.</p>`;
         return;
       }
       // Nie dublujemy wpisów, które już są — porównujemy po parze klubów i sezonie.
@@ -10693,7 +10868,8 @@ function openPositionSlotModal(league, formation, number){
     const searchInput = overlay.querySelector('#posmodal-search');
     if(searchInput){
       searchInput.focus();
-      searchInput.oninput = ()=> draw(searchInput.value);
+      searchInput.oninput = ()=> zachowajKursorPoPrzerysowaniu(overlay, '#posmodal-search',
+        ()=> draw(searchInput.value));
     }
     overlay.querySelectorAll('.picker-result').forEach(row=>row.onclick = async ()=>{
       const ids = currentIds();

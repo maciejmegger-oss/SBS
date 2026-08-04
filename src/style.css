@@ -443,6 +443,13 @@ tr.player-row:hover{background:#FBF6E9;}
 /* Monitoring — czytelny wskaźnik "ma agenta" (Tak/Nie). */
 .agent-yes{color:#3E7D4C;font-weight:800;}
 .agent-no{color:var(--ink-soft);font-weight:600;}
+/* Tabela ligowa pod kafelkami lig na dashboardzie — zwarta, żeby 18 drużyn mieściło się bez
+   przewijania w pionie; przewijanie w bok obsługuje kontener. */
+.tabela-ligowa{width:100%;border-collapse:collapse;font-size:12.5px;}
+.tabela-ligowa th{background:var(--pitch);color:#F6F3EA;padding:5px 8px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.03em;}
+.tabela-ligowa td{padding:4px 8px;border-bottom:1px solid #EFEADC;}
+.tabela-ligowa tbody tr:last-child td{border-bottom:none;}
+
 /* Przełącznik „ma menedżera" na liście zawodników — ma wyglądać na klikalny, ale nie krzyczeć
    mocniej niż status obok. „Tak" na zielono, „Nie" wyblakłe, żeby wzrok łapał samych z agentem. */
 .agent-toggle{border:1px solid transparent;border-radius:5px;padding:2px 9px;font-size:12px;cursor:pointer;background:transparent;}

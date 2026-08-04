@@ -108,6 +108,60 @@ export function parseSchedule(html) {
   return out;
 }
 
+// Klasyfikacja ligowa z tej samej strony co terminarz — 90minut umieszcza ją nad meczami,
+// za znacznikiem „POCZĄTEK TABELI". Bierzemy pierwsze osiem kolumn (miejsce, nazwa, mecze,
+// punkty, zwycięstwa, remisy, porażki, bramki); dalsze to rozbicie na dom/wyjazd i mecze
+// bezpośrednie, których nie potrzebujemy.
+export function parseTabela(html) {
+  const start = html.indexOf("POCZĄTEK TABELI");
+  const obszar = start >= 0 ? html.slice(start) : html;
+  const koniec = obszar.search(/KONIEC TABELI|Kolejka\s*\d/i);
+  const segment = koniec > 0 ? obszar.slice(0, koniec) : obszar;
+
+  const out = [];
+  const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let m;
+  // 90minut wypisuje numer miejsca TYLKO przy pierwszej drużynie danej lokaty — kolejne, mające
+  // tyle samo punktów, mają tę komórkę pustą. Odrzucanie takich wierszy gubiło pół tabeli
+  // (a przed startem sezonu, gdy wszyscy mają zero, zostawała jedna drużyna). Pustą lokatę
+  // dziedziczymy po poprzednim wierszu.
+  let ostatnieMiejsce = 0;
+  while ((m = rowRe.exec(segment)) !== null) {
+    const cells = (m[1].match(/<td[^>]*>[\s\S]*?<\/td>/gi) || []).map(strip);
+    if (cells.length < 8) continue;
+
+    const nazwa = cells[1];
+    if (!nazwa || /^nazwa$/i.test(nazwa)) continue;
+    const surowe = parseInt(String(cells[0]).replace(/\D/g, ""), 10);
+    const miejsce = Number.isFinite(surowe) ? surowe : ostatnieMiejsce;
+    if (!miejsce) continue;               // wiersz przed pierwszą lokatą to nagłówek
+    ostatnieMiejsce = miejsce;
+
+    const liczba = (i) => {
+      const n = parseInt(String(cells[i]).replace(/[^\d-]/g, ""), 10);
+      return Number.isFinite(n) ? n : null;
+    };
+    const bramki = String(cells[7] || "").trim();
+    const mecze = liczba(2), punkty = liczba(3);
+    if (mecze === null || punkty === null) continue;
+
+    out.push({
+      miejsce, nazwa, mecze, punkty,
+      zwyciestwa: liczba(4), remisy: liczba(5), porazki: liczba(6),
+      bramki: /^\d+\s*[-:]\s*\d+$/.test(bramki) ? bramki : "",
+    });
+  }
+  // Odsiewamy po NAZWIE, nie po lokacie — drużyny dzielące miejsce są normalne, a powtórzona
+  // nazwa oznaczałaby drugą tabelę na stronie (np. osobno runda jesienna).
+  const widziane = new Set();
+  return out.filter((w) => {
+    const klucz = normalizujNazwe(w.nazwa);
+    if (widziane.has(klucz)) return false;
+    widziane.add(klucz);
+    return true;
+  });
+}
+
 // Pobranie i rozbiór jednej strony ligi. 90minut serwuje ISO-8859-2 — bez tego dekodera polskie
 // nazwy klubów przychodzą zniekształcone.
 export async function fetchLeagueSchedule(rawUrl) {
@@ -127,7 +181,7 @@ export async function fetchLeagueSchedule(rawUrl) {
   } catch {
     html = new TextDecoder("latin1").decode(buffer);
   }
-  return { league: parseLeagueName(html), matches: parseSchedule(html) };
+  return { league: parseLeagueName(html), matches: parseSchedule(html), table: parseTabela(html) };
 }
 
 // Klucz meczu: KOLEJKA + para drużyn, świadomie BEZ daty.
