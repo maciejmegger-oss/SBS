@@ -5901,17 +5901,34 @@ function attachHandlers(){
   }
   // Własne podpowiedzi adresów (zamiast natywnego <datalist>, niespójnego w tym środowisku) — filtrują się
   // po każdej wpisanej literze i pamiętają wszystkie miejscowości/adresy użyte we wcześniejszych planach.
+  // Pozycja podpowiedzi ma osobno ETYKIETĘ (co widać, np. z nazwą klubu) i WARTOŚĆ (co trafia do
+  // pola). Bez tego rozdzielenia wybranie „ul. Sportowa 5 — Elana Toruń" wpisywałoby do adresu
+  // także nazwę klubu i psuło liczenie dystansu.
   function setupAddressAutocomplete(inputEl, boxEl, sourceValues){
     if(!inputEl || !boxEl) return;
-    const values = [...new Set(sourceValues.filter(Boolean))];
+    const widziane = new Set();
+    const values = [];
+    sourceValues.filter(Boolean).forEach(v=>{
+      const etykieta = typeof v === 'string' ? v : v.etykieta;
+      const wartosc = typeof v === 'string' ? v : v.wartosc;
+      if(!etykieta || !wartosc || widziane.has(etykieta)) return;
+      widziane.add(etykieta);
+      values.push({etykieta, wartosc});
+    });
     const render = ()=>{
       const q = inputEl.value.trim().toLowerCase();
-      const matches = q ? values.filter(v=>v.toLowerCase().includes(q) && v.toLowerCase()!==q) : values;
+      const matches = q ? values.filter(v=>v.etykieta.toLowerCase().includes(q) && v.wartosc.toLowerCase()!==q) : values;
       if(!matches.length){ boxEl.innerHTML=''; boxEl.style.display='none'; return; }
-      boxEl.innerHTML = matches.slice(0,8).map(v=>`<div class="addr-suggestion-item">${esc(v)}</div>`).join('');
+      boxEl.innerHTML = matches.slice(0,8).map((v,i)=>`<div class="addr-suggestion-item" data-idx="${i}">${esc(v.etykieta)}</div>`).join('');
       boxEl.style.display = 'block';
+      const widoczne = matches.slice(0,8);
       boxEl.querySelectorAll('.addr-suggestion-item').forEach(item=>{
-        item.onmousedown = (e)=>{ e.preventDefault(); inputEl.value = item.textContent; boxEl.style.display='none'; inputEl.dispatchEvent(new Event('blur')); };
+        item.onmousedown = (e)=>{
+          e.preventDefault();
+          inputEl.value = widoczne[Number(item.dataset.idx)].wartosc;
+          boxEl.style.display='none';
+          inputEl.dispatchEvent(new Event('blur'));
+        };
       });
     };
     inputEl.addEventListener('input', render);
@@ -5920,8 +5937,29 @@ function attachHandlers(){
   }
   setupAddressAutocomplete(obsStart, main.querySelector('#obs-start-suggestions'),
     DB.observations.map(o=>o.startLocation).concat(DB.settings.startLocation||[]));
+  // Adresy obiektów podpowiadamy z DWÓCH źródeł: z wcześniejszych planów ORAZ z adresów
+  // zapamiętanych przy klubach. To drugie było zbierane, ale nigdy nie pokazywane — więc wpisując
+  // „Elana" nie dostawało się adresu, który system już znał. Do adresu doklejamy nazwę klubu,
+  // żeby dało się go znaleźć po nazwie drużyny, a nie tylko po ulicy.
+  const adresyKlubow = Object.entries(DB.settings.stadiumAddresses || {}).map(([clubId, adres])=>{
+    const nazwa = clubName(clubId);
+    return {etykieta: (nazwa && nazwa !== '—') ? `${adres} — ${nazwa}` : adres, wartosc: adres};
+  });
   setupAddressAutocomplete(obsLoc, main.querySelector('#obs-location-suggestions'),
-    DB.observations.map(o=>o.location));
+    adresyKlubow.concat(DB.observations.map(o=>o.location)));
+
+  // Wpisanie meczu podstawia adres gospodarza, jeśli system go pamięta, a pole jest jeszcze puste.
+  // Dzięki temu przy „Elana Toruń - …" adres pojawia się sam, bez szukania w podpowiedziach.
+  const obsMatchInput = main.querySelector('#obs-match');
+  if(obsMatchInput && obsLoc){
+    obsMatchInput.addEventListener('blur', ()=>{
+      if(obsLoc.value.trim()) return;                       // nie nadpisujemy tego, co wpisałeś
+      const adres = stadiumAddressFor(hostFromMatch(obsMatchInput.value));
+      if(!adres) return;
+      obsLoc.value = adres;
+      obsLoc.dispatchEvent(new Event('blur'));              // przelicz dystans
+    });
+  }
   main.querySelectorAll('[data-action="cal-prev-month"]').forEach(b=>b.onclick=()=>calShiftMonth(-1));
   main.querySelectorAll('[data-action="cal-next-month"]').forEach(b=>b.onclick=()=>calShiftMonth(1));
   main.querySelectorAll('.cal-cell[data-date]').forEach(cell=>cell.onclick=()=>calSelectDay(cell.dataset.date));
