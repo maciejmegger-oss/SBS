@@ -3390,7 +3390,9 @@ function viewPlayerDetail(id){
     }).join('') : `<div class="empty">Brak obserwacji dla tego zawodnika.</div>`}
   </div>
   <div class="card">
-    <h4 style="margin-top:0;color:var(--pitch);">⚡ Szybkie statystyki sezonu</h4>
+    <h4 style="margin-top:0;color:var(--pitch);">⚡ Szybkie statystyki sezonu${
+      p.statsSeason ? ` <span class="note" style="font-weight:400;">— ${esc(p.statsSeason)}</span>` : ''}</h4>
+    ${poprzednieSezonyHtml(p)}
     <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;">
       <div class="field-wrap" style="margin-bottom:8px;"><label class="field">Mecze</label><input type="number" min="0" id="qs-matches" value="${p.matches!=null?p.matches:''}"></div>
       <div class="field-wrap" style="margin-bottom:8px;"><label class="field">Minuty</label><input type="number" min="0" id="qs-minutes" value="${p.minutes!=null?p.minutes:''}"></div>
@@ -4071,6 +4073,27 @@ const REPORT_SET_PIECES = [
 
 // Młodzieżowiec — rocznik 2006 i młodszy, we wszystkich ligach. Odznaka w stylu "3D" (gradient +
 // warstwowy cień), spójna z kafelkami lig na dashboardzie, a nie zwykła płaska plakietka.
+// Dorobek z POPRZEDNICH sezonów. Pola mecze/minuty/gole na zawodniku dotyczą sezonu bieżącego —
+// odświeżenie z API je nadpisuje. Wcześniejsze sezony trafiają do archiwum i pokazujemy je tutaj,
+// żeby nadpisanie nie wyglądało jak utrata danych.
+function poprzednieSezonyHtml(p){
+  const sezony = p.seasonStats || {};
+  const biezacy = p.statsSeason || '';
+  const klucze = Object.keys(sezony).filter(k=>k !== biezacy).sort().reverse();
+  if(!klucze.length) return '';
+  return `<div style="margin-bottom:10px;">
+    <div class="note" style="margin-bottom:4px;">Poprzednie sezony:</div>
+    <table style="font-size:12.5px;"><tbody>${klucze.map(k=>{
+      const s = sezony[k] || {};
+      return `<tr>
+        <td style="font-weight:700;white-space:nowrap;padding-right:12px;">${esc(k)}</td>
+        <td style="padding-right:12px;">${s.mecze ?? '—'} m &middot; ${s.minuty ?? '—'} min &middot; ${s.gole ?? '—'} g</td>
+        <td class="note">${esc(s.zrodlo||'')}</td>
+      </tr>`;
+    }).join('')}</tbody></table>
+  </div>`;
+}
+
 function isYouthPlayer(p){
   const y = Number(p.birthYear);
   return Number.isFinite(y) && y >= 2006;

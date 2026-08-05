@@ -163,13 +163,44 @@ export default async function handler(req, res) {
     doZapisu.push({ id: g.id, kto: `${g.last_name} ${g.first_name}`, z, przed: { mecze: g.matches, minuty: g.minutes, gole: g.goals }, custom_fields: g.custom_fields });
   });
 
-  let zapisani = 0;
+  // SEZONY SĄ ROZDZIELONE.
+  //
+  // Pola matches/minutes/goals to dorobek BIEŻĄCEGO sezonu — na nich opiera się cała aplikacja.
+  // To, co było tam wcześniej, pochodzi z wklejek z Transfermarktu i dotyczy sezonu POPRZEDNIEGO;
+  // nadpisanie tego danymi z dwóch kolejek skasowałoby całoroczny dorobek. Dlatego przed pierwszym
+  // zapisem przenosimy stary stan do archiwum pod etykietą poprzedniego sezonu — i robimy to
+  // dokładnie raz, bo drugi przebieg zastałby tam już dane z sezonu bieżącego.
+  const etykietaSezonu = (rok) => `${rok}/${String(rok + 1).slice(2)}`;
+  const sezonBiezacy = etykietaSezonu(sezon);
+  const sezonPoprzedni = etykietaSezonu(sezon - 1);
+
+  let zapisani = 0, zarchiwizowani = 0;
   if (zapisz) {
     const dzis = new Date().toISOString().slice(0, 10);
     for (const p of doZapisu) {
-      const ext = { ...(((p.custom_fields || {}).__ext) || {}),
+      const extPrzed = ((p.custom_fields || {}).__ext) || {};
+      const sezony = { ...(extPrzed.seasonStats || {}) };
+
+      // Archiwizacja: tylko gdy jest co archiwizować i gdy poprzedni sezon nie jest już zapisany.
+      const mialDorobek = (p.przed.mecze || 0) > 0 || (p.przed.minuty || 0) > 0 || (p.przed.gole || 0) > 0;
+      if (mialDorobek && !sezony[sezonPoprzedni] && !sezony[sezonBiezacy]) {
+        sezony[sezonPoprzedni] = {
+          mecze: p.przed.mecze || 0, minuty: p.przed.minuty || 0, gole: p.przed.gole || 0,
+          zolte: extPrzed.yellowCards || 0, czerwone: extPrzed.redCards || 0, asysty: extPrzed.assists || 0,
+          zrodlo: extPrzed.statsSource || "wcześniejszy import", zarchiwizowano: dzis,
+        };
+        zarchiwizowani++;
+      }
+      sezony[sezonBiezacy] = {
+        mecze: p.z.mecze, minuty: p.z.minuty, gole: p.z.gole,
+        zolte: p.z.zolte, czerwone: p.z.czerwone, asysty: p.z.asysty,
+        zrodlo: "API-Football", zarchiwizowano: dzis,
+      };
+
+      const ext = { ...extPrzed,
         yellowCards: p.z.zolte, redCards: p.z.czerwone, assists: p.z.asysty,
-        statsUpdatedAt: dzis, statsSource: "API-Football (Ekstraklasa)", statsSeason: String(sezon) };
+        seasonStats: sezony,
+        statsUpdatedAt: dzis, statsSource: "API-Football (Ekstraklasa)", statsSeason: sezonBiezacy };
       const r = await fetch(`${BAZA}/rest/v1/sbs_players?id=eq.${encodeURIComponent(p.id)}`, {
         method: "PATCH", headers: naglowkiBazy(),
         body: JSON.stringify({ matches: p.z.mecze, minutes: p.z.minuty, goals: p.z.gole,
@@ -183,6 +214,9 @@ export default async function handler(req, res) {
     ok: true,
     trybPodgladu: !zapisz,
     sezon,
+    sezonBiezacy: `${sezon}/${String(sezon + 1).slice(2)}`,
+    sezonPoprzedniZarchiwizowany: `${sezon - 1}/${String(sezon).slice(2)}`,
+    zarchiwizowani,
     zuzyteZapytania,
     zawodnikowZApi: zawodnicyApi.length,
     doZapisu: doZapisu.length,

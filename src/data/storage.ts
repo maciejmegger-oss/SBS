@@ -92,6 +92,11 @@ const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }> = {
       // Mecze już rozliczone z protokołu PZPN. Statystyki SUMUJĄ się przy każdym wczytaniu,
       // więc bez tej listy ponowne wgranie tego samego protokołu policzyłoby wszystko drugi raz.
       "rozliczoneMecze",
+      // Statystyki W ROZBICIU NA SEZONY: { "2025/26": {mecze, minuty, gole, ...}, "2026/27": {...} }.
+      // Pola matches/minutes/goals na rekordzie pozostają dorobkiem BIEŻĄCEGO sezonu — na nich
+      // opiera się cała dotychczasowa aplikacja. Tutaj trzymamy archiwum, żeby odświeżenie
+      // z API nie kasowało tego, co zawodnik uzbierał wcześniej.
+      "seasonStats",
     ],
   },
   sbs_observations: {
