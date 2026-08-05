@@ -8936,9 +8936,9 @@ function openProtokolMeczuModal(){
   };
 
   function dopasuj(){
-    if(!rozpoznany) return {gotowi:[], juzRozliczeni:[], nieznalezieni:[], niejednoznaczni:[], bezWystepu:[]};
+    if(!rozpoznany) return {gotowi:[], juzRozliczeni:[], nieznalezieni:[], niejednoznaczni:[], bezWystepu:[], doZalozenia:[]};
     const klucz = kluczMeczu();
-    const gotowi = [], juzRozliczeni = [], nieznalezieni = [], niejednoznaczni = [], bezWystepu = [];
+    const gotowi = [], juzRozliczeni = [], nieznalezieni = [], niejednoznaczni = [], bezWystepu = [], doZalozenia = [];
     rozpoznany.zawodnicy.forEach(z=>{
       if(!z.wystapil){ bezWystepu.push(z); return; }
       let kandydaci = matchPlayersByFullName(z.nazwa, '');
@@ -8948,17 +8948,25 @@ function openProtokolMeczuModal(){
           || importNorm(z.klub).includes(importNorm(clubName(p.clubId))));
         if(wKlubie.length) kandydaci = wKlubie;
       }
-      if(!kandydaci.length){ nieznalezieni.push(z); return; }
+      if(!kandydaci.length){
+        // Nie ma go w bazie — ale protokół podaje klub, więc jeśli ten klub mamy, da się go
+        // założyć. To jedyna sensowna droga dla IV ligi, gdzie kartoteka jest praktycznie pusta:
+        // pierwszy protokół drużyny buduje jej kadrę, kolejne dopisują już tylko statystyki.
+        const klub = znajdzKlubPoNazwieTM(z.klub);
+        if(klub) doZalozenia.push({...z, klubBazy: klub});
+        else nieznalezieni.push(z);
+        return;
+      }
       if(kandydaci.length > 1){ niejednoznaczni.push({...z, kandydaci}); return; }
       const p = kandydaci[0];
       if((p.rozliczoneMecze||[]).includes(klucz)){ juzRozliczeni.push({...z, player: p}); return; }
       gotowi.push({...z, player: p});
     });
-    return {gotowi, juzRozliczeni, nieznalezieni, niejednoznaczni, bezWystepu};
+    return {gotowi, juzRozliczeni, nieznalezieni, niejednoznaczni, bezWystepu, doZalozenia};
   }
 
   function draw(){
-    const {gotowi, juzRozliczeni, nieznalezieni, niejednoznaczni, bezWystepu} = dopasuj();
+    const {gotowi, juzRozliczeni, nieznalezieni, niejednoznaczni, bezWystepu, doZalozenia} = dopasuj();
     overlay.innerHTML = `
     <div class="modal" style="max-width:820px;">
       <h3>⚽ Protokół meczu — Łączy nas piłką</h3>
@@ -8992,7 +9000,7 @@ function openProtokolMeczuModal(){
       ${rozpoznany ? `
         <div style="border-top:1px solid #E3DECE;padding-top:10px;margin-top:12px;">
           <p class="note" style="margin-top:0;"><strong>${esc(rozpoznany.tytul||'Mecz')}</strong><br>
-            Zawodników w protokole: ${rozpoznany.zawodnicy.length}. Do dopisania: <strong>${gotowi.length}</strong>${
+            Zawodników w protokole: ${rozpoznany.zawodnicy.length}. Do dopisania: <strong>${gotowi.length}</strong>${doZalozenia.length? `, do założenia <strong>${doZalozenia.length}</strong>`:''}${
             juzRozliczeni.length? `, ten mecz już rozliczony u <strong>${juzRozliczeni.length}</strong>`:''}${
             bezWystepu.length? `, nie weszło z ławki ${bezWystepu.length}`:''}${
             nieznalezieni.length? `, spoza bazy ${nieznalezieni.length}`:''}.</p>
@@ -9008,6 +9016,14 @@ function openProtokolMeczuModal(){
               <td style="text-align:right;">${x.gole||'—'}</td>
               <td style="text-align:right;">${x.zolte?'🟨':''}${x.czerwone?'🟥':''}${!x.zolte&&!x.czerwone?'—':''}</td>
             </tr>`).join('')}
+            ${doZalozenia.map((x,i)=>`<tr style="background:rgba(198,155,60,0.06);">
+              <td><input type="checkbox" class="prot-new-check" data-idx="${i}" checked></td>
+              <td>${esc(x.nazwa)}
+                <span class="club-sub" style="display:block;">${esc(x.klubBazy.name)}${x.rola==='R'?' · z ławki':''} · <strong>nowy — założę</strong></span></td>
+              <td style="text-align:right;">${x.minuty}</td>
+              <td style="text-align:right;">${x.gole||'—'}</td>
+              <td style="text-align:right;">${x.zolte?'🟨':''}${x.czerwone?'🟥':''}${!x.zolte&&!x.czerwone?'—':''}</td>
+            </tr>`).join('')}
             ${juzRozliczeni.length? `<tr><td></td><td colspan="4" style="font-size:12px;color:var(--ink-soft);padding-top:8px;">
               <strong>Ten mecz już rozliczony (${juzRozliczeni.length})</strong> — pomijam, żeby nie policzyć dwa razy:<br>${
               juzRozliczeni.slice(0,15).map(x=>esc(x.nazwa)).join(', ')}${juzRozliczeni.length>15?' …':''}</td></tr>`:''}
@@ -9015,13 +9031,13 @@ function openProtokolMeczuModal(){
               <strong>Niejednoznaczni (${niejednoznaczni.length})</strong> — w bazie kilka osób o tym nazwisku:<br>${
               niejednoznaczni.map(x=>esc(x.nazwa)).join(', ')}</td></tr>`:''}
             ${nieznalezieni.length? `<tr><td></td><td colspan="4" style="font-size:12px;color:var(--ink-soft);">
-              <strong>Spoza bazy (${nieznalezieni.length})</strong> — nie zakładam ich:<br>${
+              <strong>Bez rozpoznanego klubu (${nieznalezieni.length})</strong> — nie zakładam, bo nie wiem, gdzie grają:<br>${
               nieznalezieni.slice(0,20).map(x=>esc(x.nazwa)).join(', ')}${nieznalezieni.length>20?' …':''}</td></tr>`:''}
             </tbody></table>
           </div>
         </div>
-        ${gotowi.length? `<div class="modal-actions" style="justify-content:flex-start;">
-          <button class="gold" data-action="prot-apply">Dopisz statystyki (${gotowi.length})</button></div>`:''}
+        ${(gotowi.length||doZalozenia.length)? `<div class="modal-actions" style="justify-content:flex-start;">
+          <button class="gold" data-action="prot-apply">Dopisz statystyki (${gotowi.length}${doZalozenia.length?` + ${doZalozenia.length} nowych`:''})</button></div>`:''}
       ` : ''}
 
       <div class="modal-actions">
@@ -9043,11 +9059,35 @@ function openProtokolMeczuModal(){
       draw();
     });
     overlay.querySelectorAll('[data-action="prot-apply"]').forEach(b=>b.onclick=async()=>{
-      const {gotowi} = dopasuj();
+      const {gotowi, doZalozenia} = dopasuj();
       const zaznaczeni = Array.from(overlay.querySelectorAll('.prot-check:checked')).map((c:any)=>Number(c.dataset.idx));
+      const zaznaczeniNowi = Array.from(overlay.querySelectorAll('.prot-new-check:checked')).map((c:any)=>Number(c.dataset.idx));
       const klucz = kluczMeczu();
       if(!klucz){ alert('Protokół nie ma adresu meczu — bez niego nie mogę zabezpieczyć przed podwójnym liczeniem.'); return; }
-      let dopisani = 0;
+      let dopisani = 0, zalozeni = 0;
+      // Zawodnicy, których jeszcze nie ma w kartotece, a ich klub mamy w bazie. Zakładamy ich
+      // od razu z dorobkiem z tego meczu — dzięki temu pierwszy protokół drużyny buduje jej kadrę.
+      // Rocznika ani pozycji protokół nie podaje, więc zostają puste do uzupełnienia.
+      zaznaczeniNowi.forEach(i=>{
+        const x = doZalozenia[i];
+        if(!x) return;
+        const czesci = String(x.nazwa).split(/\s+/).filter(Boolean);
+        DB.players.push({
+          id: uid('Z'), firstName: czesci[0] || '', lastName: czesci.slice(1).join(' ') || czesci[0] || '',
+          birthDate: '', birthYear: '', nationality: '', position: '', foot: '', height: null,
+          status: '', clubId: x.klubBazy.id, scout: currentScout || '',
+          videoLink: '', lnpLink: '', tmLink: '', hasAgent: false, agencyName: '',
+          formation: '', customFields: {},
+          matches: 1, minutes: x.minuty, goals: x.gole || 0,
+          yellowCards: x.zolte || 0, redCards: x.czerwone || 0,
+          statsUpdatedAt: new Date().toISOString().slice(0,10),
+          statsSource: 'Łączy nas piłką (protokół)',
+          rozliczoneMecze: [klucz],
+          notes: 'Założony z protokołu meczowego — uzupełnij rocznik i pozycję.',
+          dateAdded: new Date().toISOString().slice(0,10),
+        });
+        zalozeni++;
+      });
       zaznaczeni.forEach(i=>{
         const x = gotowi[i];
         if(!x) return;
@@ -9064,7 +9104,9 @@ function openProtokolMeczuModal(){
       });
       const ok = await savePlayers();
       if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
-      alert(`Dopisano statystyki: ${dopisani} zawodnikom.\n\nTen mecz jest już oznaczony jako rozliczony — ponowne wczytanie go pominie.`);
+      alert(`Dopisano statystyki: ${dopisani} zawodnikom.` +
+        (zalozeni ? `\nZałożono nowych zawodników: ${zalozeni} (bez rocznika i pozycji — uzupełnij w profilu).` : '') +
+        `\n\nTen mecz jest już oznaczony jako rozliczony — ponowne wczytanie go pominie.`);
       rozpoznany = null; wklejka = '';
       render();
       draw();
