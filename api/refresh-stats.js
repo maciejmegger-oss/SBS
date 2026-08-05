@@ -88,7 +88,12 @@ export default async function handler(req, res) {
             || (poz.statistics || [])[0];
           if (!st) return;
           zawodnicyApi.push({
-            nazwa: poz.player && poz.player.name,
+            // Pole `name` bywa skrócone („D. Rallis"), przez co dopasowanie po zbiorze słów
+            // nie trafiało w „Dimitris Rallis" i odpadały setki zawodników. Imię i nazwisko
+            // w osobnych polach są pełne — bierzemy je, a `name` zostaje jako zapas.
+            nazwa: [poz.player && poz.player.firstname, poz.player && poz.player.lastname]
+              .filter(Boolean).join(" ") || (poz.player && poz.player.name),
+            nazwaZapasowa: poz.player && poz.player.name,
             klub: d.name,
             mecze: (st.games && st.games.appearences) || 0,
             minuty: (st.games && st.games.minutes) || 0,
@@ -128,7 +133,17 @@ export default async function handler(req, res) {
 
   const doZapisu = [], niejednoznaczni = [], nieznalezieni = [];
   zawodnicyApi.forEach((z) => {
-    const kandydaci = wgNazwiska.get(kluczNazwiska(z.nazwa)) || [];
+    // Próbujemy pełnego zapisu, a gdy nie trafi — skróconego. Dodatkowo samo nazwisko, bo
+    // dostawca bywa niekonsekwentny w imionach (drugie imię, wersja oryginalna kontra polska).
+    let kandydaci = wgNazwiska.get(kluczNazwiska(z.nazwa)) || [];
+    if (!kandydaci.length && z.nazwaZapasowa) kandydaci = wgNazwiska.get(kluczNazwiska(z.nazwaZapasowa)) || [];
+    if (!kandydaci.length) {
+      const slowa = String(z.nazwa || "").split(/\s+/).filter(Boolean);
+      const samoNazwisko = slowa.length > 1 ? norm(slowa[slowa.length - 1]) : "";
+      if (samoNazwisko.length >= 4) {
+        kandydaci = gracze.filter((g) => norm(g.last_name) === samoNazwisko);
+      }
+    }
     if (!kandydaci.length) { nieznalezieni.push(z.nazwa); return; }
     let wybor = kandydaci;
     if (wybor.length > 1) {
