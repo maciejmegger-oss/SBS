@@ -11863,7 +11863,8 @@ function wireLastModal(){
 // Aplikacja nie startuje, dopóki nie ma sesji. Do tej pory nie było jej wcale: przycisk „Wyloguj się"
 // wołał funkcję, która nie istniała, a dane dawały się czytać i zapisywać bez żadnego uwierzytelnienia.
 function loginScreenHtml(tryb, komunikat, blad){
-  const pole = (id, typ, etykieta, autofokus)=>`
+  // Ostatni parametr jest opcjonalny — pola bez autofokusu wołają tę funkcję z trzema argumentami.
+  const pole = (id, typ, etykieta, autofokus?)=>`
     <div class="field-wrap">
       <label class="field" for="${id}">${etykieta}</label>
       <input id="${id}" type="${typ}" ${autofokus?'autofocus':''} autocomplete="${typ==='password'?'current-password':'username'}">
