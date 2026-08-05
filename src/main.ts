@@ -4807,18 +4807,23 @@ function positionMapKey(league, formation, number){ return league+'|||'+(formati
 function buildAutoPositionCandidates(league, formation, number){
   const posDef = POSITION_NUMBERS.find(p=>p.number===number);
   if(!posDef) return [];
+  // Na mapę wchodzi każdy, kogo AKTYWNIE prowadzisz: ze statusem decyzyjnym albo z Monitoringu.
+  // Wcześniej liczyły się wyłącznie dwa statusy, przez co zawodnik „Rekomendowany" albo świeżo
+  // dodany do Monitoringu nie pojawiał się nigdzie — a to on jest przedmiotem pracy skautingowej.
+  const kwalifikujeSie = (p)=> p.status==='Do transferu' || p.status==='Na Testy' || !!p.monitored;
   const statusRank = {'Do transferu':0, 'Na Testy':1};
+  const rangaZawodnika = (p)=> statusRank[p.status] !== undefined ? statusRank[p.status] : 2;
   const candidates = DB.players
     // System gry: po wybraniu konkretnego układu zawodnik pojawia się WYŁĄCZNIE w tym, który ma
     // zapisany w profilu. Wcześniej ci bez wpisanego systemu wchodzili do każdego układu naraz,
     // przez co ten sam zawodnik widniał we wszystkich systemach i mapa przestawała cokolwiek
     // rozróżniać. Kto nie ma systemu w profilu, jest widoczny pod „Wszystkie systemy".
     .filter(p => clubLeague(p.clubId)===league && p.position===posDef.posName && (!formation || p.formation===formation)
-      && (p.status==='Do transferu' || p.status==='Na Testy'))
+      && kwalifikujeSie(p))
     .map(p => ({p, a: playerAvg(p.id)}))
     // NIE wymagamy obserwacji — zawodnik z samą decyzją statusu (z raportu) też trafia na mapę.
     .sort((a,b) => {
-      const s = statusRank[a.p.status] - statusRank[b.p.status];   // Do transferu przed Na Testy
+      const s = rangaZawodnika(a.p) - rangaZawodnika(b.p);   // Do transferu, potem Na Testy, na końcu Monitoring
       if(s !== 0) return s;
       return ((b.a&&b.a.overall!=null)? b.a.overall : -1) - ((a.a&&a.a.overall!=null)? a.a.overall : -1);     // potem wg średniej oceny (z raportów)
     });
@@ -4881,7 +4886,7 @@ function viewRankingNumbersMode(){
   // informacji znikaliby po cichu i wyglądałoby to na zgubione dane.
   const bezSystemu = rankingFormationFilter
     ? DB.players.filter(p => clubLeague(p.clubId)===rankingLeague && !p.formation
-        && (p.status==='Do transferu' || p.status==='Na Testy')
+        && (p.status==='Do transferu' || p.status==='Na Testy' || !!p.monitored)
         && POSITION_NUMBERS.some(pd => pd.posName === p.position)).length
     : 0;
 
@@ -4931,7 +4936,7 @@ function viewRankingNumbersMode(){
   </div>
   <p class="note" style="margin-top:10px;">Kliknij dowolną pozycję na boisku, aby dodać, usunąć lub przeciągnięciem zmienić kolejność zawodników (do 6 na pozycję, dwa pierwsze miejsca = priorytetowi).
   ${rankingFormationFilter? ` Układ pól odzwierciedla kształt systemu ${esc(rankingFormationFilter)}.` : ''}
-  ${!anyRealCandidatesFound? ' Mapa jest pusta, bo w tej lidze nikt nie ma statusu „Do transferu" ani „Na Testy" — to one wypełniają mapę. Status nadajesz w profilu zawodnika albo raportem.' : ''}
+  ${!anyRealCandidatesFound? ' Mapa jest pusta, bo w tej lidze nikt nie jest ani w Monitoringu, ani ze statusem „Do transferu" / „Na Testy" — to oni wypełniają mapę. Dodaj kogoś do Monitoringu albo nadaj status w profilu zawodnika.' : ''}
   ${bezSystemu? ` <strong>Poza tym systemem:</strong> ${bezSystemu} zawodnik(ów) tej ligi ma status kwalifikujący, ale w profilu nie ma wpisanego systemu gry — zobaczysz ich pod „Wszystkie systemy" albo po uzupełnieniu systemu w profilu.` : ''}</p>`;
 }
 
