@@ -2026,6 +2026,27 @@ async function saveAgencies(){ return robustStorageSet('scouting:agencies', JSON
 async function saveAgents(){ return robustStorageSet('scouting:agents', JSON.stringify(DB.agents)); }
 async function saveAgencyLogos(){ return robustStorageSet('scouting:agency_logos', JSON.stringify(DB.agencyLogos)); }
 
+// Zapis JEDNEGO zawodnika zamiast całej kartoteki. Pełny zapis to przy 4050 zawodnikach ponad
+// 20 zapytań i ~7 MB — nie do zaakceptowania przy zmianie jednego pola. Używamy go wszędzie tam,
+// gdzie zmiana dotyczy dokładnie jednej osoby: historia transferowa, znacznik agenta, szybkie
+// statystyki. Zbiorcze operacje (import, scalanie) nadal idą przez savePlayers().
+async function savePlayerOne(p){
+  if(!p) return false;
+  try{
+    await storage.saveOne('scouting:players', p);
+    if(lastSaveFailure && lastSaveFailure.key === 'scouting:players'){
+      lastSaveFailure = null;
+      try{ renderNav(); }catch(e){ /* baner to dodatek, nie może wywrócić zapisu */ }
+    }
+    return true;
+  }catch(e){
+    console.error('Zapis zawodnika nie powiódł się:', e);
+    lastSaveFailure = {key:'scouting:players', time: new Date().toLocaleTimeString('pl-PL')};
+    try{ renderNav(); }catch(err){ /* jw. */ }
+    return false;
+  }
+}
+
 // ---- Automatyczne statystyki z 90minut.pl -------------------------------------------------
 // Źródłem jest link w polu "mPZPN / 90minut.pl" (p.lnpLink). Pobieranie idzie przez naszą
 // funkcję /api/stats, bo 90minut nie wysyła nagłówka CORS i przeglądarka nie odpyta go wprost.
@@ -10808,13 +10829,21 @@ function parseHistoriaPionowa(text){
   const linie = String(text||'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean)
     .filter(l=>!/^###/.test(l));
   const kwotowa = (s)=> /€|\bmln\b|\btys\b|bez odst[eę]pnego|free transfer|wolny transfer|wypożycz|wypozycz|loan|^[-–—?]$/i.test(s);
+  // Data ani sezon NIE są nazwą klubu. Bez tego warunku „05.02.2026" lądowało w rubryce
+  // „z klubu" i przy każdym transferze powstawał drugi, fałszywy wpis.
+  const dataLubSezon = (s)=> /^\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4}$/.test(s)
+    || /^\d{2}\/\d{2}$/.test(s)
+    || /^\d{1,2}\s+[a-ząćęłńóśźż]{3,}\s+\d{4}$/i.test(s)
+    || /^\d{4}$/.test(s);
+  const nieKlub = (s)=> !s || kwotowa(s) || dataLubSezon(s);
   const wynik = [];
+  const juzDodane = new Set();          // ochrona przed powieleniem w obrębie jednej wklejki
   for(let i = 1; i + 1 < linie.length; i++){
     // „X, cokolwiek, X" — powtórzona nazwa klubu docelowego wokół kraju.
     if(importNorm(linie[i-1]) !== importNorm(linie[i+1])) continue;
-    if(!linie[i-1] || kwotowa(linie[i-1])) continue;
+    if(nieKlub(linie[i-1])) continue;
     const toClub = linie[i+1];
-    const fromClub = (i - 2 >= 0 && !kwotowa(linie[i-2])) ? linie[i-2] : '';
+    const fromClub = (i - 2 >= 0 && !nieKlub(linie[i-2])) ? linie[i-2] : '';
     if(!fromClub || importNorm(fromClub) === importNorm(toClub)) continue;
     // Za trójką stoją wartość rynkowa i kwota transferu.
     const ogon = linie.slice(i+2, i+5).filter(kwotowa);
@@ -10827,6 +10856,11 @@ function parseHistoriaPionowa(text){
       if(md && !sezon) sezon = md[1];
     }
     const wypozyczenie = /wypożycz|wypozycz|loan/i.test(kwota);
+    // Ten sam transfer nie może wejść dwa razy z jednej wklejki — Transfermarkt powtarza
+    // niektóre warianty nazw, przez co wzór „X, kraj, X" trafiał się kilkakrotnie.
+    const odcisk = importNorm(fromClub) + '>' + importNorm(toClub) + '@' + (sezon||'');
+    if(juzDodane.has(odcisk)){ i += 2; continue; }
+    juzDodane.add(odcisk);
     wynik.push({
       fromClub, toClub, from: sezon,
       type: wypozyczenie ? 'Wypożyczenie' : (kwota ? 'Transfer definitywny' : ''),
@@ -10981,9 +11015,11 @@ function openTransferHistoryModal(playerId){
     overlay.querySelectorAll('[data-action="th-cancel-edit"]').forEach(b=>b.onclick=()=>{ editIdx = null; draw(); });
     overlay.querySelectorAll('.th-delete-btn').forEach(b=>b.onclick=async()=>{
       const idx = Number(b.dataset.idx);
+      const kopia = p.transferHistory.slice();
       p.transferHistory.splice(idx, 1);
       if(editIdx===idx) editIdx = null; else if(editIdx!=null && editIdx>idx) editIdx--;
-      await savePlayers();
+      const ok = await savePlayerOne(p);
+      if(!ok){ p.transferHistory = kopia; alert("Nie udało się usunąć — sprawdź baner u góry strony."); }
       draw();
     });
     overlay.querySelectorAll('[data-action="th-parse"]').forEach(b=>b.onclick=()=>{
@@ -11020,7 +11056,7 @@ function openTransferHistoryModal(playerId){
           <button class="gold" data-action="th-apply">Dodaj ${nowe.length} wpisów do historii</button></div>` : ''}`;
       box.querySelectorAll('[data-action="th-apply"]').forEach(bt=>bt.onclick=async()=>{
         nowe.forEach(w=> p.transferHistory.push(Object.assign({id: uid('TH')}, w)));
-        const ok = await savePlayers();
+        const ok = await savePlayerOne(p);
         if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
         if(ta) ta.value = '';
         draw();
@@ -11039,7 +11075,7 @@ function openTransferHistoryModal(playerId){
       };
       if(editIdx!=null){ Object.assign(p.transferHistory[editIdx], entry); editIdx = null; }
       else { p.transferHistory.push(Object.assign({id: uid('TH')}, entry)); }
-      const ok = await savePlayers();
+      const ok = await savePlayerOne(p);
       if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
       draw();
     });

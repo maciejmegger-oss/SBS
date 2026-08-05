@@ -304,6 +304,31 @@ export const storage = {
     return { key, value, shared };
   },
 
+  // ZAPIS POJEDYNCZEGO REKORDU.
+  //
+  // set() wysyła CAŁĄ kolekcję: przy 4050 zawodnikach to najpierw zapytanie o wszystkie
+  // identyfikatory (~2 s), a potem 21 wsadów po 200 rekordów — łącznie ponad 7 MB. Płacenie tego
+  // za skasowanie jednego wpisu w historii transferowej sprawiało, że interfejs wyglądał na
+  // zawieszony, a operacja „nie działała", bo trwała kilkanaście sekund.
+  //
+  // Tutaj idzie jeden rekord i jedno zapytanie. Świadomie NIE ma tu ochrony przed wskrzeszaniem
+  // (fetchServerIds) — dotyczy ona zapisu całej migawki; przy celowej zmianie JEDNEGO rekordu,
+  // który użytkownik ma właśnie przed sobą, jest zbędna.
+  async saveOne(key: string, item: Record<string, unknown>): Promise<boolean> {
+    const table = COLLECTION_TABLES[key];
+    if (!table) throw new Error("saveOne obsługuje tylko kolekcje tabelowe, nie " + key);
+    const row = rowFromObj(packExt(table, item));
+    for (;;) {
+      const { error } = await sb.from(table).upsert(row, { onConflict: "id" });
+      if (!error) return true;
+      const missing =
+        error.message.match(/column [\w".]*\.(\w+) does not exist/) ||
+        error.message.match(/Could not find the '(\w+)' column/);
+      if (!missing) throw new Error(error.message);
+      delete row[missing[1]];
+    }
+  },
+
   async delete(key: string, shared?: boolean): Promise<{ key: string; deleted: true; shared?: boolean }> {
     const { error } = await sb.from("sbs_kv").delete().eq("key", key);
     if (error) throw new Error(error.message);
