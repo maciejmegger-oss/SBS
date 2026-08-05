@@ -181,9 +181,16 @@ export default async function handler(req, res) {
       const extPrzed = ((p.custom_fields || {}).__ext) || {};
       const sezony = { ...(extPrzed.seasonStats || {}) };
 
-      // Archiwizacja: tylko gdy jest co archiwizować i gdy poprzedni sezon nie jest już zapisany.
-      const mialDorobek = (p.przed.mecze || 0) > 0 || (p.przed.minuty || 0) > 0 || (p.przed.gole || 0) > 0;
-      if (mialDorobek && !sezony[sezonPoprzedni] && !sezony[sezonBiezacy]) {
+      // Archiwizujemy TYLKO wtedy, gdy dotychczasowe liczby nie mogą pochodzić z sezonu bieżącego.
+      //
+      // Dorobek w sezonie rośnie, więc liczba meczów większa niż podaje API oznacza dane z
+      // wcześniejszych rozgrywek. Jeśli jest mniejsza lub równa — to ten sam sezon, zapisany
+      // wcześniej niepełny, i archiwizowanie go pod etykietą poprzedniego sezonu byłoby
+      // policzeniem tych samych występów dwa razy. Pierwszy przebieg zrobił dokładnie ten błąd
+      // u 34 zawodników, bo wklejki z Transfermarktu powstały już po starcie sezonu.
+      const zPoprzedniegoSezonu = (p.przed.mecze || 0) > (p.z.mecze || 0)
+        || (p.przed.minuty || 0) > (p.z.minuty || 0) + 60;
+      if (zPoprzedniegoSezonu && !sezony[sezonPoprzedni] && !sezony[sezonBiezacy]) {
         sezony[sezonPoprzedni] = {
           mecze: p.przed.mecze || 0, minuty: p.przed.minuty || 0, gole: p.przed.gole || 0,
           zolte: extPrzed.yellowCards || 0, czerwone: extPrzed.redCards || 0, asysty: extPrzed.assists || 0,
