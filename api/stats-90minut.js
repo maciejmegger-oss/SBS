@@ -161,7 +161,7 @@ export default async function handler(req, res) {
 
   // --- 4. DOPASOWANIE DO NASZEJ BAZY ---
   const rZ = await fetch(
-    `${BAZA}/rest/v1/sbs_players?select=id,first_name,last_name,birth_year,matches,minutes,goals,custom_fields&club_id=eq.${encodeURIComponent(idKlubu)}&limit=200`,
+    `${BAZA}/rest/v1/sbs_players?select=id,first_name,last_name,birth_year,position,matches,minutes,goals,custom_fields&club_id=eq.${encodeURIComponent(idKlubu)}&limit=200`,
     { headers: naglowkiBazy() }
   );
   if (!rZ.ok) return res.status(502).json({ error: "Odczyt zawodników: " + rZ.status });
@@ -192,15 +192,35 @@ export default async function handler(req, res) {
       const wRoczniku = kandydaci.filter((g) => Number(g.birth_year) === Number(z.rocznik));
       if (wRoczniku.length === 1) kandydaci = wRoczniku;
     }
-    if (kandydaci.length !== 1) { niejednoznaczni.push(z.nazwaPelna); continue; }
+    if (kandydaci.length !== 1) {
+      // Najczęstsza przyczyna kilku kandydatów to TEN SAM zawodnik zapisany dwa razy — raz
+      // z polskimi znakami, raz bez („Głowicki" i „Glowicki"). Mówimy o tym wprost, bo brzmi
+      // to inaczej niż imiennicy i wymaga innego działania: usunięcia zdublowanego wpisu.
+      const wariantyNazwiska = new Set(kandydaci.map((g) => kluczNazwiska(`${g.first_name} ${g.last_name}`)));
+      niejednoznaczni.push({
+        kto: z.nazwaPelna,
+        powod: wariantyNazwiska.size === 1 ? "ten sam zawodnik jest w bazie kilka razy" : "kilku zawodników o tym nazwisku",
+        wBazie: kandydaci.map((g) => `${g.last_name} ${g.first_name}${g.birth_year ? ` (${g.birth_year})` : ""}`),
+      });
+      continue;
+    }
     const g = kandydaci[0];
     const ext = ((g.custom_fields || {}).__ext) || {};
+
+    // ROCZNIK. 90minut podaje datę urodzenia na stronie zawodnika, więc wypełniamy nim PUSTE pole
+    // — bez rocznika nie da się oznaczyć młodzieżowca, a to jedna z ważniejszych informacji
+    // w skautingu. Istniejącego rocznika NIE nadpisujemy: mógł zostać poprawiony ręcznie,
+    // a przy sprzeczności wpis człowieka jest bardziej wiarygodny niż odczyt ze strony.
+    const brakujeRocznika = !g.birth_year && !!z.rocznik;
+
     const bezZmian =
       (g.matches || 0) === z.wystepy && (g.minutes || 0) === z.minuty && (g.goals || 0) === z.gole
-      && (ext.yellowCards || 0) === z.zolte && (ext.redCards || 0) === z.czerwone;
+      && (ext.yellowCards || 0) === z.zolte && (ext.redCards || 0) === z.czerwone
+      && !brakujeRocznika;
     if (bezZmian) continue;
     doZapisu.push({
       id: g.id, kto: `${g.last_name} ${g.first_name}`, ext, custom_fields: g.custom_fields,
+      rocznik: brakujeRocznika ? z.rocznik : null,
       bylo: { mecze: g.matches, minuty: g.minutes, gole: g.goals, zolte: ext.yellowCards, czerwone: ext.redCards },
       bedzie: { mecze: z.wystepy, minuty: z.minuty, gole: z.gole, zolte: z.zolte, czerwone: z.czerwone },
       m90Id: z.id,
@@ -234,12 +254,13 @@ export default async function handler(req, res) {
         m90Id: p.m90Id,
         statsUpdatedAt: dzis, statsSource: `90minut (${klub.league})`, statsSeason: etykietaSezonu,
       };
+      const doWyslania = {
+        matches: p.bedzie.mecze, minutes: p.bedzie.minuty, goals: p.bedzie.gole,
+        custom_fields: { ...(p.custom_fields || {}), __ext: ext },
+      };
+      if (p.rocznik) doWyslania.birth_year = p.rocznik;
       const r = await fetch(`${BAZA}/rest/v1/sbs_players?id=eq.${encodeURIComponent(p.id)}`, {
-        method: "PATCH", headers: naglowkiBazy(),
-        body: JSON.stringify({
-          matches: p.bedzie.mecze, minutes: p.bedzie.minuty, goals: p.bedzie.gole,
-          custom_fields: { ...(p.custom_fields || {}), __ext: ext },
-        }),
+        method: "PATCH", headers: naglowkiBazy(), body: JSON.stringify(doWyslania),
       });
       if (r.ok) zapisani++;
       else bledyZapisu.push({ kto: p.kto, status: r.status, tresc: (await r.text()).slice(0, 200) });
@@ -257,8 +278,10 @@ export default async function handler(req, res) {
     zawodnikowNa90minut: zeStatystykami.length,
     doZapisu: doZapisu.length,
     zapisani,
+    rocznikiDoUzupelnienia: doZapisu.filter((p) => p.rocznik).length,
     zmiany: doZapisu.map((p) => ({
       kto: p.kto,
+      rocznik: p.rocznik || null,
       bylo: `${p.bylo.mecze ?? "—"} m / ${p.bylo.minuty ?? "—"} min / ${p.bylo.gole ?? "—"} g / ${p.bylo.zolte ?? "—"} ŻK`,
       bedzie: `${p.bedzie.mecze} m / ${p.bedzie.minuty} min / ${p.bedzie.gole} g / ${p.bedzie.zolte} ŻK`,
     })),

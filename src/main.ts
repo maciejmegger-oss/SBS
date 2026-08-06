@@ -7284,7 +7284,14 @@ function openSquadImportModal(clubId){
       const origLabel = b.textContent; b.disabled = true; b.textContent = 'Importowanie...';
       let added = 0, skipped = 0, bezRocznika = 0, zWieku = 0;
       toAdd.forEach(p=>{
-        const exists = DB.players.some(pl=>pl.firstName===p.firstName && pl.lastName===p.lastName && pl.clubId===club.id);
+        // Porównanie z pominięciem polskich znaków. Dosłowne zestawienie napisów uznawało
+        // „Głowicki" i „Glowicki" za dwie różne osoby i zakładało bliźniaczy wpis — a taki
+        // duplikat psuje potem pobieranie statystyk, bo przy dwóch kandydatach o tym samym
+        // nazwisku nie da się rozstrzygnąć, którego z nich dotyczą liczby.
+        const exists = DB.players.some(pl=>
+          pl.clubId===club.id
+          && importNorm(pl.firstName)===importNorm(p.firstName)
+          && importNorm(pl.lastName)===importNorm(p.lastName));
         if(exists){ skipped++; return; }
         if(!p.birthYear) bezRocznika++;
         else if(p.birthYearFromAge) zWieku++;
@@ -10448,9 +10455,10 @@ function open90minutStatsModal(clubId){
   function tabelaZmian(r){
     if(!r.zmiany.length) return `<p class="note" style="margin:10px 0;">Wszystkie liczby są już aktualne — nie ma czego zapisywać.</p>`;
     return `<table style="width:100%;font-size:12px;border-collapse:collapse;margin:10px 0;">
-      <tr style="text-align:left;color:var(--ink-soft);"><th style="padding:4px;">Zawodnik</th><th style="padding:4px;">Było</th><th style="padding:4px;">Będzie</th></tr>
+      <tr style="text-align:left;color:var(--ink-soft);"><th style="padding:4px;">Zawodnik</th><th style="padding:4px;">Rocznik</th><th style="padding:4px;">Było</th><th style="padding:4px;">Będzie</th></tr>
       ${r.zmiany.map(z=>`<tr style="border-top:1px solid #EEE9DC;">
         <td style="padding:4px;font-weight:600;">${esc(z.kto)}</td>
+        <td style="padding:4px;">${z.rocznik?`<strong style="color:var(--pitch);">${esc(String(z.rocznik))}</strong>${Number(z.rocznik)>=2006?youthBadge():''}`:'<span class="meta">—</span>'}</td>
         <td style="padding:4px;color:var(--ink-soft);">${esc(z.bylo)}</td>
         <td style="padding:4px;">${esc(z.bedzie)}</td></tr>`).join('')}
     </table>`;
@@ -10483,8 +10491,14 @@ function open90minutStatsModal(clubId){
           Grali, ale nie ma ich w naszej bazie (${wynik.spozaBazy.length}) — kliknij, żeby zobaczyć</summary>
           <div class="note" style="font-size:11.5px;margin-top:6px;line-height:1.7;">
           ${wynik.spozaBazy.map(x=>`${esc(x.kto)}${x.rocznik?' ('+x.rocznik+')':''} — ${x.minuty} min`).join('<br>')}</div></details>` : ''}
-        ${wynik.niejednoznaczni.length ? `<p class="note" style="font-size:11.5px;margin-top:8px;">
-          Nie wiem, o kogo chodzi (imiennicy bez rocznika): ${esc(wynik.niejednoznaczni.join(', '))}</p>` : ''}
+        ${wynik.niejednoznaczni.length ? `<div style="border-left:3px solid var(--clay-dark);padding:8px 12px;margin-top:10px;background:#FBF3F2;font-size:12px;">
+          <strong>Pominąłem ${wynik.niejednoznaczni.length} — nie wiem, o kogo chodzi:</strong>
+          ${wynik.niejednoznaczni.map(n=>`<div style="margin-top:5px;">
+            <strong>${esc(n.kto)}</strong> — ${esc(n.powod)}<br>
+            <span class="meta">w bazie: ${esc((n.wBazie||[]).join(' &nbsp;•&nbsp; '))}</span></div>`).join('')}
+          <p style="margin:8px 0 0;">Jeśli to ten sam zawodnik wpisany dwa razy, usuń zbędny wpis
+          na liście składu poniżej — wtedy rocznik i statystyki wejdą przy kolejnym pobraniu.</p>
+        </div>` : ''}
         ${wynik.bledyZapisu && wynik.bledyZapisu.length ? `<p class="note" style="font-size:11.5px;margin-top:8px;color:var(--clay-dark);">
           Nie udało się zapisać: ${wynik.bledyZapisu.map(b=>esc(b.kto)).join(', ')}</p>` : ''}
       ` : ''}
