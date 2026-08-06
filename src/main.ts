@@ -4478,8 +4478,12 @@ function parseTalentRowsObject(rows){
     // Najczęstszy powód odrzucenia to wklejony ARTYKUŁ zamiast tabeli. Zdania mają wiele słów
     // i znaki interpunkcyjne, więc łatwo je rozpoznać — i wtedy warto powiedzieć wprost, co zrobić,
     // zamiast powtarzać, że „nie znaleziono wiersza".
-    const linie = String(text||'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-    const wyglądaNaArtykuł = linie.some(l=> l.split(/\s+/).length > 8 && /[.,]/.test(l));
+    // Ta funkcja dostaje już rozbite WIERSZE, nie surowy tekst — prozę rozpoznajemy więc po tym,
+    // co znalazło się w komórkach. Wcześniej sięgałem tu po nieistniejącą zmienną `text`, przez co
+    // zamiast podpowiedzi wyskakiwał błąd „text is not defined" i import nie działał w ogóle.
+    const komorki = rows.flatMap(r => Object.values(r||{})).map(v => String(v||'').trim()).filter(Boolean);
+    const linie = komorki.slice(0, 12);
+    const wyglądaNaArtykuł = komorki.some(v => v.split(/\s+/).length > 8 && /[.,]/.test(v));
     if(wyglądaNaArtykuł){
       throw new Error(
         'To wygląda na artykuł, a nie na listę zawodników.\n\n' +
