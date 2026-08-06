@@ -12472,7 +12472,7 @@ async function performLogout(){
 //
 // UWAGA, dopóki jest false: dane w bazie są dostępne bez uwierzytelnienia — ten przełącznik
 // dotyczy tylko ekranu w aplikacji, nie reguł dostępu po stronie Supabase.
-const WYMAGAJ_LOGOWANIA = false;
+const WYMAGAJ_LOGOWANIA = true;
 
 async function startApp(){
   if(!WYMAGAJ_LOGOWANIA){ loadAll(); return; }
