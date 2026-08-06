@@ -9148,7 +9148,28 @@ function openProtokolMeczuModal(){
     overlay.querySelectorAll('[data-action="prot-parse"]').forEach(b=>b.onclick=()=>{
       wklejka = ((overlay.querySelector('#prot-paste') as any)||{}).value || '';
       const r = parseProtokolMeczu(wklejka);
-      if(!r.zawodnicy.length){ alert('Nie rozpoznałem protokołu.\n\nWklej to, co skopiowała zakładka „⚽ Protokół do SBS".'); return; }
+      if(!r.zawodnicy.length){
+        // Zamiast samego „nie rozpoznałem" mówimy, CO dostaliśmy — inaczej nie da się ustalić,
+        // czy zawiodła zakładka, czy wkleiło się coś innego (np. ręczne zaznaczenie strony).
+        const linie = String(wklejka||'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+        const maNaglowek = linie.some(l=>/^###\s*PROTOKOL:/i.test(l));
+        const maKreski = linie.some(l=>l.split('|').length >= 9);
+        let diagnoza;
+        if(!linie.length) diagnoza = 'Pole jest puste — nic nie zostało wklejone.';
+        else if(!maNaglowek && !maKreski) diagnoza =
+          'To nie jest wynik zakładki. Brakuje nagłówka „### PROTOKOL:" i wierszy rozdzielonych kreskami,\n' +
+          'więc wygląda to na ręcznie zaznaczony fragment strony. Przy takim zaznaczeniu znikają puste\n' +
+          'komórki tabeli i nie da się odróżnić bramki od kartki ani od zmiany — dlatego tego nie czytam.';
+        else if(maNaglowek && !maKreski) diagnoza =
+          'Nagłówek jest, ale nie ma ani jednego wiersza zawodnika. Zakładka nie odczytała składów —\n' +
+          'upewnij się, że sekcja „Składy" była rozwinięta i widoczna, gdy ją klikałeś.';
+        else diagnoza = 'Wiersze są, ale w innym układzie, niż oczekiwałem.';
+        alert('Nie rozpoznałem protokołu.\n\n' + diagnoza +
+          '\n\nPierwsze linijki tego, co wkleiłeś:\n' + linie.slice(0,5).map(l=>'  ' + l.slice(0,60)).join('\n') +
+          '\n\nKliknij zakładkę „⚽ Protokół do SBS" na PASKU ZAKŁADEK, będąc na stronie protokołu,\n' +
+          'i wklej to, co skopiuje — powinno zaczynać się od „### PROTOKOL:".');
+        return;
+      }
       rozpoznany = r;
       draw();
     });
