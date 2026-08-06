@@ -105,7 +105,11 @@ const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }> = {
     // skladMeczu: obsada obu drużyn na potrzeby obserwacji online i wideo, razem ze znacznikiem
     // zawodników wyróżniających się. Trzymamy to przy obserwacji, a nie przy meczu, bo to notatka
     // konkretnego skauta z konkretnego oglądania — dwóch obserwatorów może wyróżnić kogo innego.
-    fields: ["startLocation", "distanceKm", "obsType", "skladMeczu"],
+    // googleEventId MUSI tu być. packExt odtwarza __ext wyłącznie z pól wymienionych na tej
+    // liście, więc identyfikator wydarzenia zapisany przez serwer zniknąłby przy pierwszym
+    // zapisie obserwacji z przeglądarki — a wtedy synchronizacja zakładałaby w kalendarzu
+    // drugie wydarzenie dla tej samej obserwacji.
+    fields: ["startLocation", "distanceKm", "obsType", "skladMeczu", "googleEventId"],
   },
 };
 

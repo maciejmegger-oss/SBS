@@ -3660,7 +3660,7 @@ function viewClubDetail(id){
     <div style="display:flex;gap:8px;">
       <button class="gold" data-action="import-squad" data-id="${c.id}">📋 Import składu</button>
       <button class="gold" data-action="stats-90minut" data-id="${c.id}" title="Pobierz z 90minut mecze, minuty, bramki i kartki całego składu — bez kopiowania czegokolwiek">⏱ Statystyki z 90minut</button>
-      <button class="secondary" data-action="import-squad-stats" data-id="${c.id}" title="Wklej tabelę statystyk całej drużyny — minuty, mecze, gole, kartki">⏱ Statystyki drużyny (wklejka)</button>
+      <button class="secondary" data-action="import-squad-stats" data-id="${c.id}" title="Zapasowa droga: ręczna wklejka z Transfermarktu. Dla polskich lig użyj przycisku obok.">📋 Wklejka z Transfermarktu</button>
       <button class="secondary" data-action="edit-club" data-id="${c.id}">Edytuj klub</button>
       <button class="danger" data-action="delete-club" data-id="${c.id}">Usuń</button>
     </div>
@@ -5541,7 +5541,7 @@ function attachHandlers(){
       if(!ok){ alert('Pobrano statystyki, ale nie udało się ich zapisać — sprawdź baner u góry strony.'); return; }
       alert(`Sezon ${data.season}: ${data.matches} meczów, ${data.goals} bramek.\n` +
         `Źródło: ${data.source}${data.clubs && data.clubs.length ? ' — ' + data.clubs.join(', ') : ''}.\n\n` +
-        '90minut nie publikuje minut ani asyst — te pola pozostają bez zmian.');
+        'To tabela kariery — bez minut i kartek. Po minuty użyj w widoku klubu przycisku „⏱ Statystyki z 90minut".');
       render();
     }catch(e){
       alert('Nie udało się pobrać statystyk: ' + (e.message||e));
@@ -10450,8 +10450,11 @@ function openSquadStatsModal(clubId){
     <p class="note" style="font-size:11.5px;">Potrzebne kolumny to <strong>Mecze</strong>, <strong>Bramki</strong> i
     <strong>Minuty</strong> (liczby z apostrofem, np. <code>1.980'</code>). Nagłówków nie musisz zaznaczać —
     wiersze dopasowuję po nazwisku do ${squad.length} zawodników tego klubu, a czego nie rozpoznam, to pominę i wypiszę.</p>
-    <p class="note" style="font-size:11px;color:var(--ink-soft);">Dlaczego ręcznie: 90minut nie publikuje minut,
-    a Transfermarkt rysuje tę tabelę JavaScriptem — w kodzie strony jej nie ma, więc serwer nie ma czego pobrać.</p>
+    <div style="border-left:3px solid var(--gold-dark);padding:8px 12px;margin:10px 0;background:#FBF9F3;font-size:12px;">
+      <strong>Dla polskich lig nie musisz tego robić.</strong> Zamknij to okno i kliknij
+      <strong>⏱ Statystyki z 90minut</strong> — mecze, minuty, bramki i kartki pobiorą się same.
+      Ta wklejka jest zapasem dla klubów zagranicznych, których 90minut nie prowadzi.
+    </div>
     <div class="field-wrap" style="margin-bottom:14px;">
       <textarea id="squad-stats-paste" rows="12" placeholder="Lewandowski   24   18   5   3   1   1.980'&#10;Zieliński     22    4   7   2   0   1.755'" style="font-size:12px;font-family:monospace;"></textarea>
     </div>
@@ -10578,7 +10581,7 @@ function openPasteStatsModal(playerId){
       status.innerHTML = `✓ Pobrano z 90minut.pl (sezon ${esc(data.season||'—')}):
         <strong>${data.matches!=null?data.matches:'—'}</strong> mecze,
         <strong>${data.goals!=null?data.goals:'—'}</strong> goli.<br>
-        <span style="color:var(--ink-soft);">90minut nie publikuje minut, asyst ani kartek — te uzupełnij w kroku 2.</span>`;
+        <span style="color:var(--ink-soft);">To tabela kariery — bez minut i kartek. Po nie wejdź w klub i kliknij „⏱ Statystyki z 90minut".</span>`;
       render();
     }catch(e){
       status.innerHTML = `<span style="color:var(--clay-dark);">Nie udało się pobrać: ${esc(e.message)}</span>`;
