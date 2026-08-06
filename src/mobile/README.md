@@ -21,7 +21,7 @@ Lokalnie, w trakcie pracy nad kodem: `npm run dev`, a potem `http://localhost:51
 | Ekran | Do czego służy | Co zapisuje |
 | --- | --- | --- |
 | **Obserwacje** | plany pobrane z SBS, od wczoraj wzwyż; wejście w mecz jednym kliknięciem | nic (albo nowa obserwacja spoza planu) |
-| **Live** | zegar meczu, przełącznik *udane/nieudane*, dziewięć kafli zdarzeń, oś zdarzeń, cofnięcie | `sbs_live_events` (lub `sbs_kv`, patrz niżej) |
+| **Live** | zegar meczu (dwie połowy i dogrywka, doliczony czas biegnie dalej), przełącznik *udane/nieudane*, dziewięć kafli zdarzeń, oś zdarzeń, cofnięcie | `sbs_live_events` (lub `sbs_kv`, patrz niżej) |
 | **Ocena** | 5 atrybutów 1–10, fazy gry i stałe fragmenty 1–6, perspektywa, decyzja, dyktowany opis | `sbs_observations.ratings`, `sbs_reports`, `sbs_players.status` |
 | **Baza** | wyszukiwarka zawodników offline, stan kolejki wysyłki, odświeżenie kopii bazy | nic |
 

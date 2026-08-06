@@ -14,11 +14,16 @@
 import { sb } from "../data/storage";
 import type { Player, Club, Observation, Report } from "../types";
 
+// Część meczu: 1 i 2 to połowy regulaminowe, 3 i 4 to dogrywka. Doliczonego czasu nie liczymy
+// osobno — zegar po prostu biegnie dalej, więc zdarzenie z 47. minuty pierwszej połowy zapisuje
+// się jako 47', tak jak podałby je sprawozdawca.
+export type Period = 1 | 2 | 3 | 4;
+
 export interface LiveEvent {
   id: string;
   observationId: string;
   playerId?: string;
-  half: 1 | 2;
+  half: Period;
   minute: number;
   type: string;      // klucz zdarzenia, np. "strzal"
   label: string;     // etykieta pokazywana scoutowi, np. "Strzał"
@@ -348,8 +353,8 @@ export interface LiveState {
   observationId: string;
   playerId?: string;
   matchLabel: string;
-  half: 1 | 2;
-  seconds: number;         // czas bieżącej połowy
+  half: Period;
+  seconds: number;         // czas bieżącej części meczu
   running: boolean;
   startedAt: number | null; // znacznik czasu telefonu przy ostatnim starcie zegara
   events: LiveEvent[];

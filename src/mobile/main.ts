@@ -11,7 +11,7 @@ import {
   uid, getCache, refreshCache, patchCache, flushQueue, queueLength,
   saveObservation, saveReport, savePlayerStatus, saveLiveEvents,
   getLive, setLive, getScout, setScout,
-  type Cache, type LiveEvent, type LiveState,
+  type Cache, type LiveEvent, type LiveState, type Period,
 } from "./db";
 import type { Observation, Report } from "../types";
 
@@ -45,6 +45,18 @@ const STATUS_OPTIONS = [
   { value: "Odrzucony", label: "Odrzucony" },
 ];
 const PERSPEKTYWA = ["WYSOKA", "ŚREDNIA", "NISKA"];
+
+// Części meczu. `offset` to minuta, od której zaczyna się liczenie w danej części — dzięki temu
+// zdarzenie z dogrywki ma minutę 97, a nie 7, i zgadza się z tym, co pokazuje tablica na stadionie.
+// Doliczony czas nie wymaga osobnej obsługi: zegar nie zatrzymuje się na 45:00 ani 90:00, tylko
+// biegnie dalej, więc gol w doliczonym czasie pierwszej połowy zapisze się jako 46' lub 47'.
+const PERIODS: { n: Period; label: string; offset: number }[] = [
+  { n: 1, label: "1. połowa", offset: 0 },
+  { n: 2, label: "2. połowa", offset: 45 },
+  { n: 3, label: "1. dogrywka", offset: 90 },
+  { n: 4, label: "2. dogrywka", offset: 105 },
+];
+const periodOf = (n: Period) => PERIODS.find((p) => p.n === n) || PERIODS[0];
 
 // Zdarzenia rejestrowane jednym dotknięciem. Dziewięć kafli to maksimum, jakie mieści się na
 // ekranie telefonu bez przewijania — a przewijanie w trakcie akcji oznacza przegapioną akcję.
@@ -147,15 +159,13 @@ function liveSeconds(s: LiveState): number {
   if (!s.running || !s.startedAt) return s.seconds;
   return s.seconds + Math.floor((Date.now() - s.startedAt) / 1000);
 }
-const liveMinute = (s: LiveState): number => Math.floor(liveSeconds(s) / 60) + (s.half === 2 ? 45 : 0);
+const liveMinute = (s: LiveState): number => Math.floor(liveSeconds(s) / 60) + periodOf(s.half).offset;
 
 function paintClock() {
   if (!live) return;
   const el = $("clock-time");
   if (!el) return;
-  const secs = liveSeconds(live);
-  const min = Math.floor(secs / 60) + (live.half === 2 ? 45 : 0);
-  el.textContent = min + ":" + pad(secs % 60);
+  el.textContent = liveMinute(live) + ":" + pad(liveSeconds(live) % 60);
 }
 
 function startClockTicker() {
@@ -244,7 +254,8 @@ function viewLive(): string {
   const counts: Record<string, number> = {};
   live.events.forEach((e) => (counts[e.type] = (counts[e.type] || 0) + 1));
   const secs = liveSeconds(live);
-  const min = Math.floor(secs / 60) + (live.half === 2 ? 45 : 0);
+  const okres = periodOf(live.half);
+  const nastepny = PERIODS.find((p) => p.n === ((live!.half + 1) as Period));
 
   return `
     <div class="row" style="margin-bottom:10px;">
@@ -257,12 +268,12 @@ function viewLive(): string {
 
     <div class="clock">
       <div>
-        <div class="clock-time" id="clock-time">${min}:${pad(secs % 60)}</div>
-        <div class="clock-half">${live.half}. połowa</div>
+        <div class="clock-time" id="clock-time">${liveMinute(live)}:${pad(secs % 60)}</div>
+        <div class="clock-half">${esc(okres.label)}</div>
       </div>
       <div class="clock-btns">
         <button class="clock-btn ${live.running ? "run" : ""}" data-act="clock-toggle">${live.running ? "Pauza" : "Start"}</button>
-        ${live.half === 1 ? '<button class="clock-btn" data-act="second-half">2. połowa</button>' : ""}
+        ${nastepny ? `<button class="clock-btn" data-act="next-period">${esc(nastepny.label)}</button>` : ""}
       </div>
     </div>
 
@@ -661,11 +672,17 @@ document.addEventListener("click", (e) => {
       else { live.running = true; live.startedAt = Date.now(); }
       setLive(live); render();
       break;
-    case "second-half":
+    case "next-period": {
       if (!live) break;
-      live.seconds = 0; live.half = 2; live.running = false; live.startedAt = null;
+      const nast = PERIODS.find((p) => p.n === ((live!.half + 1) as Period));
+      if (!nast) break;
+      // Przejście do kolejnej części zeruje zegar i jest nieodwracalne, a przycisk stoi tuż obok
+      // pauzy. Jedno pytanie trzy razy w meczu jest tańsze niż pomyłkowo skasowany czas gry.
+      if (!window.confirm("Rozpocząć: " + nast.label + "?")) break;
+      live.seconds = 0; live.half = nast.n; live.running = false; live.startedAt = null;
       setLive(live); render();
       break;
+    }
     case "pol": polarity = Number(v) === -1 ? -1 : 1; render(); break;
     case "tag": addEvent(el.dataset.k!); break;
     case "undo":

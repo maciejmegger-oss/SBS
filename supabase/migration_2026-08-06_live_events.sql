@@ -12,8 +12,8 @@ create table if not exists sbs_live_events (
   id             text primary key,
   observation_id text references sbs_observations(id) on delete cascade,
   player_id      text references sbs_players(id) on delete set null,
-  half           smallint,      -- 1 lub 2
-  minute         integer,       -- minuta MECZU (druga połowa liczona od 45), nie godzina zegarowa
+  half           smallint,      -- część meczu: 1-2 połowy regulaminowe, 3-4 dogrywka
+  minute         integer,       -- minuta MECZU (2. połowa od 45, dogrywka od 90), nie godzina zegarowa
   type           text,          -- klucz zdarzenia: 'strzal', 'podanie_kluczowe', 'pojedynek'…
   quality        smallint,      -- 1 = udane, -1 = nieudane
   note           text,
