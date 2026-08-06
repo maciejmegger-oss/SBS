@@ -3900,6 +3900,7 @@ function obsMonthListHtml(){
         <span style="display:flex;align-items:center;gap:8px;">
           <span class="obs-type-tag" style="background:${obsTypeMeta(obsTypeOf(o)).color};">${esc(obsTypeMeta(obsTypeOf(o)).label)}</span>
           <span class="meta">${esc(o.date)}${o.matchTime?' &middot; '+esc(o.matchTime):''}</span>
+          <button class="link-btn" data-action="obs-sklad" data-id="${o.id}" style="font-size:11px;" title="Składy obu drużyn i zaznaczanie zawodników wyróżniających się">👥 Skład${liczbaWyroznionych(o)?' ('+liczbaWyroznionych(o)+')':''}</button>
           <button class="link-btn" data-action="edit-obs" data-id="${o.id}" style="font-size:11px;">✎ Edytuj</button>
           <button class="link-btn" data-action="delete-obs" data-id="${o.id}" style="font-size:11px;color:var(--clay-dark);">Usuń</button>
         </span>
@@ -5549,13 +5550,25 @@ function attachHandlers(){
     }
   });
   main.querySelectorAll('[data-action="open-match-schedule"]').forEach(b=>b.onclick=()=>openMatchScheduleModal());
-  // Wybór rodzaju obserwacji — bez przerysowania całego widoku, żeby nie gubić wpisanych już pól.
-  // Zmiana rodzaju obserwacji przechodzi przez stan modułu i przerysowanie — dzięki temu wybór
-  // przeżywa każde odświeżenie formularza, także to wywołane przez inne akcje na widoku.
+  // Wybór rodzaju obserwacji przestawiamy W MIEJSCU, bez przerysowania formularza.
+  //
+  // Przerysowanie kasowało wszystko, co było już wpisane: przy NOWEJ obserwacji pola renderują
+  // się z pustych wartości (wypełnia je tylko tryb edycji), więc wybrany z terminarza mecz,
+  // adres i notatki znikały po samym przełączeniu Live na Video. Podmiana klas i ukrytego pola
+  // załatwia to samo, a niczego nie dotyka.
   document.querySelectorAll('[data-action="pick-obs-type"]').forEach(b=>b.onclick=()=>{
+    const wybrany = b.dataset.type;
     const editing = editingObsId ? DB.observations.find(o=>o.id===editingObsId) : null;
-    if(editing) editing.obsType = b.dataset.type; else newObsType = b.dataset.type;
-    render();
+    if(editing) editing.obsType = wybrany; else newObsType = wybrany;
+
+    const ukryte = document.getElementById('obs-type');
+    if(ukryte) ukryte.value = wybrany;
+    document.querySelectorAll('[data-action="pick-obs-type"]').forEach(inny=>{
+      const meta = obsTypeMeta(inny.dataset.type);
+      inny.style.cssText = inny.dataset.type === wybrany
+        ? `background:${meta.color};border-color:${meta.color};color:#fff;`
+        : `background:#fff;border-color:#D9D3C4;color:var(--ink-soft);`;
+    });
   });
   main.querySelectorAll('[data-action="view-player"]').forEach(b=>b.onclick=()=>{viewingPlayerId=b.dataset.id; currentView='players'; render();});
   // Kliknięcie w wiersz listy zawodników otwiera profil, ale nie może przechwytywać kliknięć
@@ -6283,6 +6296,7 @@ function attachHandlers(){
     render();
     const card = document.querySelector('.main .card'); if(card) card.scrollIntoView({behavior:'smooth', block:'start'});
   });
+  main.querySelectorAll('[data-action="obs-sklad"]').forEach(b=>b.onclick=()=>openObsSkladModal(b.dataset.id));
   main.querySelectorAll('[data-action="cancel-edit-obs"]').forEach(b=>b.onclick=()=>{ editingObsId = null; render(); });
   main.querySelectorAll('[data-action="delete-obs"]').forEach(b=>b.onclick=async()=>{
     if(!confirm('Usunąć tę obserwację?')) return;
@@ -7218,6 +7232,7 @@ function openMatchScheduleModal(){
   overlay.className = 'modal-overlay';
   let selectedLeague = '';
   let selectedMatch = null;
+  let szukanaDruzyna = '';
   // Ligi, dla których próbowaliśmy już pobrać terminarz w tym otwarciu okna — bez tego
   // nieudane pobranie (np. brak sieci) zapętliłoby się przy każdym przerysowaniu.
   const autoTried = new Set();
@@ -7280,7 +7295,14 @@ function openMatchScheduleModal(){
   const SCHEDULE_WINDOW_DAYS = 30;
   function upcomingMatches(){
     const endStr = new Date(Date.now() + SCHEDULE_WINDOW_DAYS*24*60*60*1000).toISOString().slice(0,10);
-    return futureMatches().filter(m=> m.date <= endStr);
+    // Szukanie po fragmencie nazwy („So" → Solec Kujawski) obejmuje OBIE drużyny, bo mecz jest
+    // wart pokazania niezależnie od tego, czy szukany klub gra u siebie, czy na wyjeździe.
+    // Porównujemy bez polskich znaków, żeby „lecz" trafiało w „Łęczna".
+    const szukane = importNorm(szukanaDruzyna);
+    return futureMatches().filter(m=> m.date <= endStr).filter(m=>{
+      if(!szukane) return true;
+      return importNorm(m.homeTeam).includes(szukane) || importNorm(m.awayTeam).includes(szukane);
+    });
   }
 
   // Kolejki obecne w wyświetlanym oknie — służą tylko do nagłówków grup i podpisu w tytule.
@@ -7471,6 +7493,13 @@ function openMatchScheduleModal(){
         <div id="schedule-status" class="note" style="margin-top:6px;font-size:11.5px;"></div>
       </div>
 
+      <div class="field-wrap" style="margin-bottom:10px;">
+        <label class="field">Szukaj drużyny</label>
+        <input id="schedule-team-search" placeholder="np. So… → Solec Kujawski" value="${esc(szukanaDruzyna)}" autocomplete="off">
+        ${szukanaDruzyna?`<div class="note" style="margin-top:4px;font-size:11.5px;">Pasujących meczów: <strong>${matches.length}</strong>
+          &middot; <button class="link-btn" data-action="clear-team-search" style="font-size:11px;">wyczyść</button></div>`:''}
+      </div>
+
       ${!DB.matches.length ? `
         <div class="empty" style="padding:24px;text-align:center;">
           <p style="margin-bottom:12px;">Brak meczów w bazie.</p>
@@ -7599,6 +7628,15 @@ function openMatchScheduleModal(){
 
     const leagueFilter = overlay.querySelector('#schedule-league-filter') as HTMLSelectElement;
     if(leagueFilter) leagueFilter.onchange = ()=>{ selectedLeague = leagueFilter.value; draw(); maybeAutoFetch(); };
+
+    // Przerysowanie okna zabiera ognisko z pola tekstowego i po każdej literze trzeba by w nie
+    // klikać na nowo. Ten sam pomocnik zdał egzamin przy pozostałych polach w aplikacji.
+    const szukajka = overlay.querySelector('#schedule-team-search');
+    if(szukajka) szukajka.oninput = ()=>{
+      szukanaDruzyna = szukajka.value;
+      zachowajKursorPoPrzerysowaniu(overlay, '#schedule-team-search', draw);
+    };
+    overlay.querySelectorAll('[data-action="clear-team-search"]').forEach(b=>b.onclick=()=>{ szukanaDruzyna=''; draw(); });
     overlay.querySelectorAll('[data-action="fetch-schedule"]').forEach(b=>b.onclick=()=>fetchScheduleFor90minut(b));
 
     overlay.querySelectorAll('.match-row').forEach(row=>{
@@ -10084,6 +10122,206 @@ function openLeagueStatsModal(league){
   };
 
   document.body.appendChild(overlay);
+}
+
+// SKŁADY DO OBSERWACJI MECZU (online i wideo).
+//
+// SKĄD BRAĆ SKŁAD — dwie drogi, bo zależy to od tego, czy mecz już się odbył:
+//
+//   PRZED MECZEM nie ma publicznego źródła składów. Kluby ogłaszają wyjściową jedenastkę mniej
+//   więcej godzinę przed gwizdkiem, w mediach społecznościowych, i nie trafia to do żadnego
+//   serwisu, który dałoby się odczytać. Dlatego bierzemy KADRĘ KLUBU z naszej bazy — masz przed
+//   sobą wszystkich zawodników obu drużyn i zaznaczasz tych, którzy wyszli na boisko.
+//
+//   PO MECZU (i przy obserwacji z wideo, która i tak jest późniejsza) 90minut publikuje protokół:
+//   kto faktycznie zagrał, z numerami, podziałem na podstawowy skład i rezerwę oraz minutami
+//   zejścia. To jest źródło dokładniejsze i wtedy warto go użyć.
+//
+// Wyróżnienia zapisujemy przy OBSERWACJI, a nie przy meczu — to notatka konkretnego skauta
+// z konkretnego oglądania, a dwóch obserwatorów może wskazać kogo innego.
+const liczbaWyroznionych = (o) => {
+  const s = o && o.skladMeczu;
+  if(!s) return 0;
+  return ['gospodarze','goscie'].reduce((suma,strona)=>
+    suma + (((s[strona]||{}).zawodnicy)||[]).filter(z=>z.wyrozniony).length, 0);
+};
+
+// „Pogoń Szczecin - Motor Lublin" -> obie nazwy. Rozdzielamy po myślniku OTOCZONYM spacjami,
+// bo w nazwach klubów myślnik występuje na stałe („Błękitni Stargard - Wda Świecie" kontra
+// „Bielsko-Biała"). Doklejoną datę po przecinku ucinamy.
+function paraDruzynZObserwacji(tekst){
+  const czysty = String(tekst||'').replace(/\s+/g,' ').trim();
+  const czesci = czysty.split(/\s+[-–—]\s+/);
+  if(czesci.length < 2) return null;
+  const gospodarz = czesci[0].trim();
+  const gosc = czesci[1].split(',')[0].trim();
+  return (gospodarz && gosc) ? {gospodarz, gosc} : null;
+}
+
+function openObsSkladModal(obsId){
+  const obs = DB.observations.find(o=>o.id===obsId);
+  if(!obs) return;
+  const para = paraDruzynZObserwacji(obs.match);
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  let pracuje = false, komunikat = '', bladPobrania = '';
+
+  // Kadra z naszej bazy — dostępna od razu, także przed meczem.
+  function zBazy(nazwaDruzyny){
+    const klub = DB.clubs.find(c=>importNorm(c.name) === importNorm(nazwaDruzyny))
+      || DB.clubs.find(c=>{
+        const a = importNorm(c.name), b = importNorm(nazwaDruzyny);
+        return a.length>=5 && b.length>=5 && (a.includes(b) || b.includes(a));
+      });
+    if(!klub) return null;
+    const kadra = DB.players.filter(p=>p.clubId===klub.id)
+      .sort((a,b)=>(a.lastName||'').localeCompare(b.lastName||'','pl'));
+    return {nazwa: klub.name, zawodnicy: kadra.map(p=>({
+      playerId: p.id, nazwa: `${p.firstName||''} ${p.lastName||''}`.trim(),
+      numer: null, pozycja: p.position||'', rocznik: p.birthYear||'', wyrozniony: false,
+    }))};
+  }
+
+  function wczytajZBazy(){
+    if(!para){ bladPobrania = 'Pole „Mecz" nie zawiera dwóch drużyn rozdzielonych myślnikiem.'; draw(); return; }
+    const g = zBazy(para.gospodarz), s = zBazy(para.gosc);
+    if(!g && !s){
+      bladPobrania = `Nie mam w bazie ani „${para.gospodarz}", ani „${para.gosc}". Zaimportuj skład klubu w zakładce Kluby.`;
+      draw(); return;
+    }
+    obs.skladMeczu = {
+      zrodlo: 'baza', pobrano: new Date().toISOString().slice(0,10),
+      gospodarze: g || {nazwa: para.gospodarz, zawodnicy: []},
+      goscie: s || {nazwa: para.gosc, zawodnicy: []},
+    };
+    bladPobrania = '';
+    komunikat = (!g || !s)
+      ? `Wczytałem tylko jedną drużynę — drugiej („${g?para.gosc:para.gospodarz}") nie ma w bazie klubów.`
+      : 'Wczytałem kadry obu drużyn z bazy SBS.';
+    zapisz();
+  }
+
+  async function wczytajZ90minut(){
+    if(!para){ bladPobrania = 'Pole „Mecz" nie zawiera dwóch drużyn rozdzielonych myślnikiem.'; draw(); return; }
+    pracuje = true; bladPobrania = ''; komunikat = ''; draw();
+    try{
+      const klubGosp = DB.clubs.find(c=>importNorm(c.name)===importNorm(para.gospodarz));
+      const res = await fetch('/api/sklad-meczu?home=' + encodeURIComponent(para.gospodarz)
+        + '&away=' + encodeURIComponent(para.gosc)
+        + (klubGosp && klubGosp.league ? '&league=' + encodeURIComponent(klubGosp.league) : ''));
+      const dane = await res.json();
+      if(!res.ok || dane.error){
+        bladPobrania = (dane.error || ('Serwer odpowiedział kodem ' + res.status + '.'))
+          + (dane.podpowiedz ? ' ' + dane.podpowiedz : '');
+      } else {
+        // Zachowujemy dotychczasowe wyróżnienia — wczytanie protokołu po meczu nie może skasować
+        // tego, co skaut zaznaczył w trakcie oglądania.
+        const bylo = obs.skladMeczu || {};
+        const przenies = (strona, zawodnicy)=>{
+          const wczesniej = new Map((((bylo[strona]||{}).zawodnicy)||[])
+            .map(z=>[importNorm(z.nazwa), !!z.wyrozniony]));
+          return zawodnicy.map(z=>({
+            nazwa: z.nazwa, numer: z.numer, podstawowy: z.podstawowy, zszedl: z.zszedl,
+            zolte: z.zolte, czerwone: z.czerwone,
+            wyrozniony: wczesniej.get(importNorm(z.nazwa)) || false,
+          }));
+        };
+        obs.skladMeczu = {
+          zrodlo: '90minut', pobrano: new Date().toISOString().slice(0,10),
+          wynik: dane.wynik || '', link: dane.zrodlo || '',
+          gospodarze: {nazwa: dane.gospodarzeNazwa, zawodnicy: przenies('gospodarze', dane.gospodarze)},
+          goscie: {nazwa: dane.goscieNazwa, zawodnicy: przenies('goscie', dane.goscie)},
+        };
+        komunikat = 'Wczytałem protokół — to zawodnicy, którzy faktycznie zagrali.';
+        await zapisz();
+        return;
+      }
+    }catch(e){
+      bladPobrania = 'Nie udało się połączyć z serwerem: ' + (e && e.message ? e.message : e);
+    }finally{
+      pracuje = false; draw();
+    }
+  }
+
+  async function zapisz(){
+    pracuje = true; draw();
+    const ok = await saveObservations();
+    pracuje = false;
+    if(!ok) komunikat = 'UWAGA: nie udało się zapisać do bazy. Sprawdź połączenie.';
+    draw();
+  }
+
+  function kolumnaHtml(strona, tytulZapasowy){
+    const dane = (obs.skladMeczu||{})[strona];
+    const zawodnicy = (dane && dane.zawodnicy) || [];
+    return `<div style="flex:1;min-width:250px;">
+      <h4 style="margin:0 0 6px;color:var(--pitch);font-size:13px;">${esc((dane&&dane.nazwa)||tytulZapasowy||'—')}
+        <span class="meta" style="font-weight:400;">(${zawodnicy.length})</span></h4>
+      ${zawodnicy.length ? zawodnicy.map((z,i)=>`
+        <label style="display:flex;align-items:center;gap:7px;padding:3px 4px;border-radius:5px;cursor:pointer;font-size:12.5px;${z.wyrozniony?'background:#FCF3D9;font-weight:700;':''}">
+          <input type="checkbox" class="obs-wyroz" data-strona="${strona}" data-i="${i}" ${z.wyrozniony?'checked':''}>
+          <span style="color:var(--ink-soft);min-width:20px;">${z.numer!=null?esc(String(z.numer)):''}</span>
+          <span style="flex:1;">${esc(z.nazwa)}</span>
+          <span class="meta" style="font-size:10.5px;white-space:nowrap;">${
+            z.podstawowy===false ? 'ław.' : (z.zszedl ? z.zszedl+"'" : '')
+          }${z.zolte?' 🟨':''}${z.czerwone?' 🟥':''}${z.pozycja?esc(z.pozycja):''}${z.rocznik?' '+esc(String(z.rocznik)):''}</span>
+        </label>`).join('')
+      : `<p class="note" style="font-size:11.5px;">Brak — wczytaj skład przyciskiem powyżej.</p>`}
+    </div>`;
+  }
+
+  function draw(){
+    const s = obs.skladMeczu;
+    overlay.innerHTML = `
+    <div class="modal" style="max-width:820px;">
+      <h3>👥 Skład meczu</h3>
+      <p class="note" style="margin-bottom:4px;">${esc(obs.match||'brak danych meczu')}
+        &middot; ${esc(obs.date||'')}${obs.matchTime?' '+esc(obs.matchTime):''}</p>
+      <p class="note" style="font-size:11.5px;margin-bottom:10px;">
+        <strong>Przed meczem</strong> składów nie ma nigdzie publicznie — kluby ogłaszają je na godzinę przed gwizdkiem.
+        Weź wtedy <strong>kadrę z bazy SBS</strong>. <strong>Po meczu</strong> (i przy oglądaniu z wideo)
+        użyj <strong>protokołu z 90minut</strong> — pokaże, kto faktycznie zagrał, z numerami i minutami zejścia.</p>
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+        <button class="secondary" data-x="baza" ${pracuje?'disabled':''}>📋 Kadry z bazy SBS</button>
+        <button class="gold" data-x="protokol" ${pracuje?'disabled':''}>${pracuje?'Pobieram…':'⚽ Kto zagrał (90minut)'}</button>
+      </div>
+
+      ${bladPobrania?`<div class="empty" style="text-align:left;padding:12px;border-color:var(--clay-dark);">
+        <strong style="color:var(--clay-dark);">${esc(bladPobrania)}</strong></div>`:''}
+      ${komunikat?`<p class="note" style="font-size:12px;color:var(--pitch);">${esc(komunikat)}</p>`:''}
+
+      ${s?`<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;">
+        Źródło: <strong>${s.zrodlo==='90minut'?'protokół 90minut':'kadra z bazy SBS'}</strong>
+        &middot; pobrano ${esc(s.pobrano||'')}${s.wynik?' &middot; '+esc(s.wynik):''}
+        ${s.link?` &middot; <a class="ext-link" href="${esc(s.link)}" target="_blank" rel="noopener">protokół &rarr;</a>`:''}
+        <br>Zaznacz zawodników, którzy się wyróżnili — zaznaczenia zapisują się od razu.</div>
+        <div style="display:flex;gap:22px;flex-wrap:wrap;">
+          ${kolumnaHtml('gospodarze', para&&para.gospodarz)}
+          ${kolumnaHtml('goscie', para&&para.gosc)}
+        </div>
+        <p class="note" style="font-size:11.5px;margin-top:10px;">Wyróżnionych: <strong>${liczbaWyroznionych(obs)}</strong></p>
+      `:''}
+
+      <div style="display:flex;justify-content:flex-end;margin-top:14px;">
+        <button class="secondary" data-x="zamknij">Zamknij</button>
+      </div>
+    </div>`;
+
+    overlay.querySelector('[data-x="zamknij"]').onclick = ()=>{ overlay.remove(); render(); };
+    overlay.querySelector('[data-x="baza"]').onclick = wczytajZBazy;
+    overlay.querySelector('[data-x="protokol"]').onclick = wczytajZ90minut;
+    overlay.querySelectorAll('.obs-wyroz').forEach(inp=>inp.onchange = ()=>{
+      const lista = obs.skladMeczu[inp.dataset.strona].zawodnicy;
+      lista[Number(inp.dataset.i)].wyrozniony = inp.checked;
+      zapisz();
+    });
+  }
+
+  overlay.addEventListener('click', e=>{ if(e.target===overlay){ overlay.remove(); render(); } });
+  document.body.appendChild(overlay);
+  draw();
 }
 
 // Pobranie statystyk całego składu z 90minut — bez kopiowania czegokolwiek.

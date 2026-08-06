@@ -102,7 +102,10 @@ const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }> = {
   sbs_observations: {
     // sbs_observations nie ma osobnej kolumny custom_fields — używamy istniejącej `ratings` (jsonb).
     hostField: "ratings",
-    fields: ["startLocation", "distanceKm", "obsType"],
+    // skladMeczu: obsada obu drużyn na potrzeby obserwacji online i wideo, razem ze znacznikiem
+    // zawodników wyróżniających się. Trzymamy to przy obserwacji, a nie przy meczu, bo to notatka
+    // konkretnego skauta z konkretnego oglądania — dwóch obserwatorów może wyróżnić kogo innego.
+    fields: ["startLocation", "distanceKm", "obsType", "skladMeczu"],
   },
 };
 
