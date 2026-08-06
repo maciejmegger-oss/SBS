@@ -4467,7 +4467,24 @@ function parseTalentRowsObject(rows){
   const withAnyName = parsed.filter(r => r.firstName || r.lastName);
   const skippedCount = withAnyName.length - validRows.length; // np. wiersz z legendą/notatką złapaną w kolumnie danych
 
-  if(!validRows.length) throw new Error('Nie znaleziono żadnego wiersza z imieniem lub nazwiskiem.');
+  if(!validRows.length){
+    // Najczęstszy powód odrzucenia to wklejony ARTYKUŁ zamiast tabeli. Zdania mają wiele słów
+    // i znaki interpunkcyjne, więc łatwo je rozpoznać — i wtedy warto powiedzieć wprost, co zrobić,
+    // zamiast powtarzać, że „nie znaleziono wiersza".
+    const linie = String(text||'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+    const wyglądaNaArtykuł = linie.some(l=> l.split(/\s+/).length > 8 && /[.,]/.test(l));
+    if(wyglądaNaArtykuł){
+      throw new Error(
+        'To wygląda na artykuł, a nie na listę zawodników.\n\n' +
+        'To pole czyta TABELĘ: jedna osoba w linijce, kolumny Imię, Nazwisko, Rocznik, Klub\n' +
+        'rozdzielone tabulatorem, przecinkiem albo dwiema spacjami.\n\n' +
+        'Pojedynczego zawodnika z artykułu dodaj formularzem „Dodaj ręcznie" niżej —\n' +
+        'wpisz imię, nazwisko, rocznik i klub, a potem „pełny profil", żeby uzupełnić resztę.'
+      );
+    }
+    throw new Error('Nie znaleziono żadnego wiersza z imieniem lub nazwiskiem.\n\n' +
+      'Oczekuję jednej osoby w linijce, z kolumnami rozdzielonymi tabulatorem, przecinkiem albo dwiema spacjami.');
+  }
   return {
     talents: validRows.map(r => ({
       id: uid('T'), firstName: r.firstName, lastName: r.lastName, birthYear: r.birthYear, club: r.club,
