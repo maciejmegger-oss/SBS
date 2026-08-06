@@ -6890,10 +6890,43 @@ function parseSquadBlocks(rawText){
     };
   });
 }
-// Punkt wejścia używany przez importer: najpierw próbuje formatu blokowego (prawdziwe kopiowanie z
-// Transfermarkt), a jeśli nic nie wykryje, spada do prostszego trybu "jedna linia = jeden zawodnik".
+// Trzeci układ: KRATKA KOSZULEK. Tak wygląda skład na Łączy nas piłką i na stronach klubowych —
+// rysunek koszulki z numerem, a pod nim nazwisko. Po skopiowaniu zostaje z tego naprzemiennie
+// numer w osobnej linii i nazwisko w następnej, BEZ nazwy pozycji.
+//
+// Pozostałe dwa parsery wymagają pozycji: blokowy szuka jej jako punktu orientacyjnego, liniowy
+// bez niej odrzuca wiersz. Dlatego ten układ nie rozpoznawał niczego, choć to jedyne miejsce
+// z PEŁNĄ listą zgłoszonych — 90minut podaje wyłącznie tych, którzy weszli na boisko.
+const WYGLADA_NA_NAZWISKO = /^[\p{Lu}][\p{L}'’-]+(?:\s+[\p{Lu}][\p{L}'’-]+){1,3}$/u;
+
+function parseSquadKratka(rawText){
+  const linie = rawText.split('\n').map(l=>l.trim()).filter(Boolean);
+  const znalezieni = [];
+  for(let i=0;i<linie.length-1;i++){
+    if(!/^\d{1,2}$/.test(linie[i])) continue;
+    const nazwa = linie[i+1];
+    // Nazwa pozycji odpada — inaczej „12 / Bramkarz" wpisałoby bramkarza jako zawodnika.
+    if(isSquadPositionLine(nazwa) || !WYGLADA_NA_NAZWISKO.test(nazwa)) continue;
+    const slowa = nazwa.split(/\s+/);
+    znalezieni.push({
+      ok:true, firstName: slowa[0], lastName: slowa.slice(1).join(' '),
+      position: '', birthYear: '', nationality: '',
+      numer: parseInt(linie[i],10),
+      raw: `${linie[i]} ${nazwa}`,
+    });
+    i++;  // nazwisko zużyte, żeby nie startowało kolejnego dopasowania
+  }
+  // Próg pięciu zawodników chroni przed przypadkowym trafieniem w innym układzie, gdzie liczba
+  // sąsiaduje z nazwą (np. tabela strzelców). Prawdziwy skład ma ich kilkanaście.
+  return znalezieni.length >= 5 ? znalezieni : null;
+}
+
+// Punkt wejścia używany przez importer. Kolejność od najbardziej charakterystycznego układu do
+// najogólniejszego: blokowy z Transfermarktu, kratka koszulek, a na końcu "jedna linia = zawodnik".
 function parseSquadText(rawText){
-  return parseSquadBlocks(rawText) || rawText.split('\n').map(parseSquadLine).filter(Boolean);
+  return parseSquadBlocks(rawText)
+    || parseSquadKratka(rawText)
+    || rawText.split('\n').map(parseSquadLine).filter(Boolean);
 }
 // Import składu z pliku Excel/CSV — np. listy rocznikowe do rozgrywek juniorskich (Rocznik 2011-2014),
 // gdzie nie ma strony na Transfermarkt do skopiowania. Kolumny: Imię, Nazwisko (albo jedna kolumna
