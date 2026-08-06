@@ -3158,9 +3158,17 @@ function viewDashboard(){
       ${recent.length? recent.map(o=>{
         const pl = DB.players.find(p=>p.id===o.playerId);
         const avg = RATING_KEYS.reduce((a,k)=>a+(Number(o.ratings[k])||0),0)/RATING_KEYS.length;
+        // Obserwacja BEZ wskazanego zawodnika to obserwacja całego meczu — świadomy wybór, a nie
+        // uszkodzony wpis. Pokazujemy wtedy sam mecz. Napis „(usunięty zawodnik)" sugerował awarię
+        // i był po prostu nieprawdziwy: takie obserwacje nigdy nie miały przypisanego zawodnika.
+        // Zawodnika naprawdę usuniętego rozpoznajemy po tym, że identyfikator JEST, ale nic mu nie
+        // odpowiada — i tylko wtedy trzeba o tym uprzedzić.
+        const naglowek = pl ? esc(pl.firstName + " " + pl.lastName)
+          : (o.playerId ? '<span style="color:var(--clay-dark);">(zawodnik usunięty z kartoteki)</span>'
+                        : esc(o.match || 'Obserwacja meczu'));
         return `<div class="obs-item">
-          <strong>${pl? esc(pl.firstName+" "+pl.lastName):"(usunięty zawodnik)"}</strong> — <span class="avg-chip">${fmt1(avg)}</span>
-          <div class="meta">${esc(o.date)} &middot; ${esc(o.match)} &middot; scout: ${esc(o.scout)}</div>
+          <strong>${naglowek}</strong>${pl || o.playerId ? ` — <span class="avg-chip">${fmt1(avg)}</span>` : ''}
+          <div class="meta">${esc(o.date)}${pl || o.playerId ? ' &middot; ' + esc(o.match) : ''} &middot; scout: ${esc(o.scout)}</div>
         </div>`;
       }).join('') : `<div class="empty">Brak obserwacji — dodaj pierwszą w zakładce „Plan Obserwacji”.</div>`}
     </div>
@@ -3896,7 +3904,7 @@ function obsMonthListHtml(){
     const pl = DB.players.find(p=>p.id===o.playerId);
     return `<div class="obs-item">
       <div class="toolbar" style="margin-bottom:2px;">
-        <strong>${i+1}. ${pl?esc(pl.firstName+' '+pl.lastName):'—'}</strong>
+        <strong>${i+1}. ${pl ? esc(pl.firstName+' '+pl.lastName) : esc(o.match || 'Obserwacja meczu')}</strong>
         <span style="display:flex;align-items:center;gap:8px;">
           <span class="obs-type-tag" style="background:${obsTypeMeta(obsTypeOf(o)).color};">${esc(obsTypeMeta(obsTypeOf(o)).label)}</span>
           <span class="meta">${esc(o.date)}${o.matchTime?' &middot; '+esc(o.matchTime):''}</span>
@@ -3905,7 +3913,7 @@ function obsMonthListHtml(){
           <button class="link-btn" data-action="delete-obs" data-id="${o.id}" style="font-size:11px;color:var(--clay-dark);">Usuń</button>
         </span>
       </div>
-      <div class="meta">${esc(o.match||'brak danych meczu')}${o.location?' &middot; 📍 '+esc(o.location):''} &middot; scout: ${esc(o.scout)}</div>
+      <div class="meta">${pl ? esc(o.match||'brak danych meczu') : '<em>obserwacja całego meczu</em>'}${o.location?' &middot; 📍 '+esc(o.location):''} &middot; scout: ${esc(o.scout)}</div>
     </div>`;
   }).join('');
 }
@@ -3967,7 +3975,8 @@ function obsCalendarHtml(){
     ${selectedObs.length ? selectedObs.map(o=>{
       const pl = DB.players.find(p=>p.id===o.playerId);
       return `<div class="obs-item" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-        <span><strong>${pl?esc(pl.firstName+' '+pl.lastName):'—'}</strong> — ${esc(o.match||'brak danych meczu')} <span class="meta">(${esc(o.scout)})</span></span>
+        <span>${pl ? `<strong>${esc(pl.firstName+' '+pl.lastName)}</strong> — ${esc(o.match||'brak danych meczu')}`
+          : `<strong>${esc(o.match || 'Obserwacja meczu')}</strong>`} <span class="meta">(${esc(o.scout)})</span></span>
         <span style="flex-shrink:0;white-space:nowrap;">
           <button class="link-btn" data-action="edit-obs" data-id="${o.id}" style="font-size:11px;">✎</button>
           <button class="link-btn" data-action="delete-obs" data-id="${o.id}" style="font-size:11px;color:var(--clay-dark);">✕</button>
