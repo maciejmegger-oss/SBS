@@ -2158,6 +2158,13 @@ async function deleteClubRecord(id){ return robustStorageDelete('scouting:clubs'
 async function deleteObservationRecord(id){ return robustStorageDelete('scouting:observations', id); }
 async function deleteReportRecord(id){ return robustStorageDelete('scouting:reports', id); }
 async function deleteTalentRecord(id){ return robustStorageDelete('scouting:talents', id); }
+// Usunięcie wielu talentów jednym zapytaniem. Kasowanie po jednym przy kilkudziesięciu
+// zaznaczonych to kilkadziesiąt osobnych żądań i kilkanaście sekund czekania.
+async function deleteTalentRecords(ids){
+  if(!ids || !ids.length) return true;
+  try{ await storage.deleteItems('scouting:talents', ids); return true; }
+  catch(e){ console.error('Zbiorcze usuwanie talentów nie powiodło się:', e); return false; }
+}
 async function deleteContactRecord(id){ return robustStorageDelete('scouting:contacts', id); }
 
 function clubName(id){ const c = DB.clubs.find(x=>x.id===id); return c? c.name : "—"; }
@@ -4563,7 +4570,7 @@ function viewTalent(){
   const rows = DB.talents.slice().sort((a,b)=>(b.dateAdded||'').localeCompare(a.dateAdded||''));
   const rowsHtml = rows.length ? rows.map(t=>`
     <div class="talent-row">
-      <span class="talent-row-name">${esc(t.firstName)} ${esc(t.lastName)}</span>
+      <span class="talent-row-name"><input type="checkbox" class="talent-check" data-id="${t.id}" style="margin-right:6px;vertical-align:middle;">${esc(t.firstName)} ${esc(t.lastName)}</span>
       <span class="talent-row-actions">
         <button class="link-btn" data-action="talent-promote" data-id="${t.id}" style="color:var(--gold-dark);">pełny profil / dodaj do bazy</button>
         <button class="link-btn talent-remove-btn" data-id="${t.id}" style="color:var(--clay-dark);">usuń</button>
@@ -4622,6 +4629,12 @@ function viewTalent(){
 
     <aside class="talent-aside">
       <h3 class="reports-aside-title">Lista talentów <span class="reports-count">${rows.length}</span></h3>
+      ${rows.length ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:13px;">
+          <input type="checkbox" id="talent-select-all"><span>Zaznacz wszystkie</span>
+        </label>
+        <button class="danger" id="talent-delete-selected" style="display:none;" data-action="talent-delete-selected">🗑️ Usuń zaznaczonych (0)</button>
+      </div>` : ''}
       <div class="card talent-list">${rowsHtml}</div>
     </aside>
   </div>`;
@@ -5920,6 +5933,35 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="talent-promote"]').forEach(b=>b.onclick=()=>{
     promoteTalentToPlayer(b.dataset.id);
   });
+
+  // Zaznaczanie i usuwanie wielu talentów naraz. Lista rośnie szybko przy imporcie z arkusza,
+  // a kasowanie pojedynczo bywa dziesiątkami kliknięć.
+  const talentChecks = main.querySelectorAll('.talent-check') as any;
+  const talentAll = main.querySelector('#talent-select-all') as any;
+  const talentDelBtn = main.querySelector('#talent-delete-selected') as any;
+  function odswiezTalentPrzycisk(){
+    if(!talentDelBtn) return;
+    const ile = Array.from(talentChecks).filter((c:any)=>c.checked).length;
+    talentDelBtn.style.display = ile ? 'inline-block' : 'none';
+    talentDelBtn.textContent = `🗑️ Usuń zaznaczonych (${ile})`;
+  }
+  if(talentAll) talentAll.onchange = ()=>{
+    Array.from(talentChecks).forEach((c:any)=>c.checked = talentAll.checked);
+    odswiezTalentPrzycisk();
+  };
+  Array.from(talentChecks).forEach((c:any)=>c.onchange = odswiezTalentPrzycisk);
+  if(talentDelBtn) talentDelBtn.onclick = async ()=>{
+    const ids = Array.from(talentChecks).filter((c:any)=>c.checked).map((c:any)=>c.dataset.id);
+    if(!ids.length) return;
+    if(!confirm(`Usunąć ${ids.length} ${ids.length===1?'talent':'talentów'} z listy?\n\nTego nie można cofnąć.`)) return;
+    // Kasujemy jednym zapytaniem, a nie po jednym — przy kilkudziesięciu wpisach to różnica
+    // między chwilą a kilkunastoma sekundami.
+    const ok = await deleteTalentRecords(ids);
+    if(!ok){ alert('Nie udało się usunąć — sprawdź baner u góry strony. Nic nie usunięto.'); return; }
+    const zbior = new Set(ids);
+    DB.talents = DB.talents.filter(t=>!zbior.has(t.id));
+    render();
+  };
   main.querySelectorAll('[data-action="talent-add-manual"]').forEach(b=>b.onclick=()=>addTalentManually());
   main.querySelectorAll('[data-action="talent-paste-parse"]').forEach(b=>b.onclick=()=>{
     const ta = main.querySelector('#talent-paste-text');
