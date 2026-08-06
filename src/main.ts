@@ -2058,6 +2058,15 @@ const STATS_MAX_AGE_MS = 6 * 60 * 60 * 1000;   // odświeżamy najwyżej raz na 
 const STATS_STARTUP_LIMIT = 25;                // ile profili maksymalnie odświeżamy przy jednym przebiegu
 const STATS_INTERVAL_MS = 6 * 60 * 60 * 1000;  // powtarzamy cyklicznie, gdy karta zostaje otwarta
 
+// 90minut.pl NIE obsługuje HTTPS — na porcie 443 nic nie nasłuchuje (połączenie jest odrzucane,
+// więc nie chodzi o certyfikat ani wersję TLS). Adres z https:// przechodzi walidację w /api/stats
+// i dopiero `fetch` pada na timeoucie, przez co wracał stamtąd błąd 504 — nie do odróżnienia od
+// awarii serwisu. Sprowadzamy protokół do http:, zanim link gdziekolwiek trafi.
+function normalizuj90minut(link){
+  const s = String(link || '').trim();
+  return s.replace(/^https:\/\/((?:www\.)?90minut\.pl)/i, 'http://$1');
+}
+
 function has90minutLink(p){ return !!(p.lnpLink && /90minut\.pl/i.test(p.lnpLink)); }
 
 function statsAreStale(p){
@@ -5423,7 +5432,7 @@ function openClubModal(id){
       <div class="field-wrap"><label class="field">Kategorie juniorskie</label><input id="cm-juniors" value="${c?esc(c.juniorCategories||''):''}" placeholder="np. U19, U17, U15"></div>
     </div>
     <div class="grid grid-2">
-      <div class="field-wrap"><label class="field">Link — tabela / skład (90minut.pl, ŁNP)</label><input id="cm-lnp" value="${c?esc(c.profileLnp||''):''}" placeholder="https://www.90minut.pl/... lub laczynaspilka.pl"></div>
+      <div class="field-wrap"><label class="field">Link — tabela / skład (90minut.pl, ŁNP)</label><input id="cm-lnp" value="${c?esc(c.profileLnp||''):''}" placeholder="http://www.90minut.pl/... lub laczynaspilka.pl"></div>
       <div class="field-wrap"><label class="field">Link — Transfermarkt</label><input id="cm-tm" value="${c?esc(c.profileTm||''):''}" placeholder="https://www.transfermarkt.pl/..."></div>
     </div>
     <div class="modal-actions">
@@ -7871,6 +7880,43 @@ function parseSquadStatsText(text, squad){
   };
 }
 
+// Rozpoznanie protokołu meczowego wklejonego do okna statystyk drużyny/ligi.
+//
+// Te okna oczekują tabeli „Statystyki drużynowe" z Transfermarktu, gdzie liczba z apostrofem to
+// MINUTY GRY. W protokole meczowym liczba z apostrofem znaczy co innego — MINUTĘ ZDARZENIA — więc
+// parser wpisywał rezerwowym odwrotność ich dorobku (wszedł w 81' → zapisywał 81 zamiast 9) i
+// zakładał osobny wiersz na każde zdarzenie tego samego zawodnika. Wynik wyglądał wiarygodnie
+// i był nieprawdziwy, dlatego taki tekst odrzucamy, zamiast go interpretować.
+//
+// Typ zdarzenia (gol, kartka, zmiana) jest na stronie IKONĄ bez tekstu — po skopiowaniu zostają
+// same liczby, więc goli i kartek nie da się z tej wklejki odzyskać żadnym parserem. Właściwa
+// droga to zakładka „⚽ Protokół meczu", która czyta kolumny z DOM.
+function wygladaNaProtokolMeczu(text){
+  const t = String(text || '');
+  if(/^###\s*PROTOKOL:/im.test(t)) return true;
+  const sygnaly = [
+    /sk[łl]ad\s+wyj[śs]ciowy/i,
+    /sk[łl]ad\s+rezerwowy/i,
+    /przebieg\s+spotkania/i,
+    /wynik\s+do\s+przerwy/i,
+    /asystent\s+trenera|trener\s+bramkarzy|kierownik\s+dru[żz]yny/i,
+  ].filter(re => re.test(t)).length;
+  // Dwa niezależne sygnały — pojedynczy mógłby paść przypadkiem w zwykłej tabeli statystyk.
+  return sygnaly >= 2;
+}
+
+function komunikatOProtokole(){
+  return `<div class="empty" style="text-align:left;padding:14px;">
+    <strong style="color:var(--clay-dark);">To jest protokół meczowy, a nie tabela statystyk.</strong>
+    <p style="margin:8px 0 0;">Liczby z apostrofem znaczą tu <strong>minutę zdarzenia</strong>, a nie minuty gry.
+    Rezerwowy, który wszedł w 81', ma za sobą 9 minut, a nie 81 — gdybym to wczytał, zapisałbym odwrotność.</p>
+    <p style="margin:8px 0 0;">Goli i kartek w tej wklejce nie ma wcale: na stronie są ikonami bez tekstu,
+    więc kopiowanie zostawia same liczby.</p>
+    <p style="margin:8px 0 0;">Użyj zakładki <strong>Zawodnicy → ⚽ Protokół meczu</strong> — czyta kolumny wprost ze strony,
+    więc bierze bramki, kartki oraz wejścia i zejścia, i dopisuje statystyki obu drużynom naraz.</p>
+  </div>`;
+}
+
 // Link do strony ze statystykami drużyny na Transfermarkt. Gdy klub ma zapisany profil, zamieniamy
 // w nim zakładkę na „Statystyki drużynowe" (/leistungsdaten/) — to jedyna, która podaje minuty.
 // Bez zapisanego profilu kierujemy do wyszukiwarki po nazwie klubu.
@@ -10071,6 +10117,10 @@ function openLeagueStatsModal(league){
     if(!parsed){
       const text = (overlay.querySelector('#league-stats-paste') as HTMLTextAreaElement).value.trim();
       if(!text){ alert('Wklej najpierw tabele statystyk.'); return; }
+      if(wygladaNaProtokolMeczu(text)){
+        preview.innerHTML = komunikatOProtokole();
+        parsed = null; return;
+      }
       // Najczęstszy błąd: skopiowana zakładka „Kadra" zamiast „Statystyki drużynowe". Tamta ma
       // daty urodzenia i wartości rynkowe, ale ani jednej minuty — rozpoznajemy to wprost,
       // zamiast zostawiać użytkownika z „nie dopasowałem żadnego wiersza".
@@ -10199,6 +10249,10 @@ function openSquadStatsModal(clubId){
     if(!parsed){
       const text = (overlay.querySelector('#squad-stats-paste') as HTMLTextAreaElement).value.trim();
       if(!text){ alert('Wklej najpierw tabelę statystyk.'); return; }
+      if(wygladaNaProtokolMeczu(text)){
+        preview.innerHTML = komunikatOProtokole();
+        parsed = null; return;
+      }
       parsed = parseSquadStatsText(text, squad);
       if(!parsed.results.length){
         preview.innerHTML = `<div class="empty">Nie dopasowałem żadnego wiersza do zawodników tego klubu.
@@ -10247,10 +10301,13 @@ function openPasteStatsModal(playerId){
   // Krok 1: import po wklejeniu linku. Zapisuje adres w odpowiednim polu profilu, a dla 90minut
   // od razu ściąga liczby przez /api/stats (ten sam pośrednik, co odświeżanie cykliczne).
   async function importStatsFromLink(btn){
-    const input = overlay.querySelector('#stats-link');
+    const input = overlay.querySelector('#stats-link') as HTMLInputElement;
     const status = overlay.querySelector('#link-status');
-    const raw = (input.value||'').trim();
+    // Normalizujemy od razu, żeby do bazy nie trafił adres 90minut z https:// — taki link
+    // nigdy się nie pobierze, a wpadłby do cyklicznego odświeżania co 6 h i padał przy każdym przebiegu.
+    const raw = normalizuj90minut((input.value||'').trim());
     if(!raw){ alert('Wklej najpierw link do profilu zawodnika.'); return; }
+    input.value = raw;
 
     const src = detectStatsSource(raw);
     if(src.kind === 'invalid'){ alert('To nie wygląda na poprawny adres URL.'); return; }
@@ -10298,7 +10355,7 @@ function openPasteStatsModal(playerId){
       <div style="border:1px solid #E3DECE;border-radius:8px;padding:12px;margin-bottom:16px;background:#FBF9F3;">
         <label class="field" style="display:block;margin-bottom:6px;">1. Wklej link do profilu zawodnika</label>
         <div style="display:flex;gap:8px;">
-          <input id="stats-link" placeholder="https://www.90minut.pl/kariera.php?id=..." value="${esc(p.lnpLink||p.tmLink||'')}" style="flex:1;font-size:12px;">
+          <input id="stats-link" placeholder="http://www.90minut.pl/kariera.php?id=..." value="${esc(p.lnpLink||p.tmLink||'')}" style="flex:1;font-size:12px;">
           <button class="gold" data-action="fetch-from-link" style="white-space:nowrap;">⬇ Pobierz</button>
         </div>
         <div id="link-status" class="note" style="margin-top:8px;font-size:11.5px;">
@@ -11798,7 +11855,7 @@ function wireLastModal(){
       clubId: document.getElementById('pm-club').value,
       scout: document.getElementById('pm-scout').value.trim(),
       videoLink: document.getElementById('pm-video').value.trim(),
-      lnpLink: document.getElementById('pm-lnp').value.trim(),
+      lnpLink: normalizuj90minut(document.getElementById('pm-lnp').value.trim()),
       tmLink: document.getElementById('pm-tm').value.trim(),
       hasAgent,
       agencyName: hasAgent ? document.getElementById('pm-agency').value.trim() : '',
@@ -11906,7 +11963,7 @@ function wireLastModal(){
       city: document.getElementById('cm-city').value.trim(),
       crestUrl: isUploadedImage ? '' : crestValue,
       juniorCategories: document.getElementById('cm-juniors').value.trim(),
-      profileLnp: document.getElementById('cm-lnp').value.trim(),
+      profileLnp: normalizuj90minut(document.getElementById('cm-lnp').value.trim()),
       profileTm: document.getElementById('cm-tm').value.trim()
     };
     const id = ov.dataset.clubId;

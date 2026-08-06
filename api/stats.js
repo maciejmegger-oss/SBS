@@ -25,6 +25,12 @@ function validateTarget(raw) {
   if (!ALLOWED_HOSTS.has(url.hostname)) {
     return { error: "Dozwolone są tylko profile z 90minut.pl." };
   }
+  // 90minut nie wystawia HTTPS — na porcie 443 nic nie nasłuchuje, połączenie jest odrzucane
+  // (to nie kwestia certyfikatu). Adres z https:// przechodził tę walidację i dopiero `fetch`
+  // padał na timeoucie, przez co ta funkcja zwracała 504 — kod nie do odróżnienia od awarii
+  // serwisu, więc przyczyna była myląca. Normalizacja tutaj naprawia także adresy, które
+  // zapisano wcześniej z https://, bo dotyczy każdego żądania, a nie tylko nowo wpisywanych.
+  if (url.protocol === "https:") url.protocol = "http:";
   return { url };
 }
 
