@@ -5288,6 +5288,22 @@ function viewSettings(){
     ${block('customFields','Dodatkowe pola zawodnika','Własne pola, które pojawią się dodatkowo w formularzu zawodnika i w jego profilu — dodawaj dowolną ilość, kiedy tylko czegoś zabraknie w standardowej kartotece.')}
   </div>
   <div class="card">
+    <h4 style="margin-top:0;">Kopia zapasowa</h4>
+    <p class="note" style="margin-bottom:10px;">Zapisuje <strong>wszystkie</strong> dane do jednego pliku na Twoim dysku:
+    zawodników, kluby, obserwacje, raporty, talenty, kontakty, agencje, menedżerów, terminarz, herby i ustawienia.
+    Plik możesz trzymać gdziekolwiek — na dysku, w chmurze, na pendrivie.</p>
+    <button class="gold" data-action="kopia-pobierz">⭳ Pobierz kopię wszystkich danych</button>
+    <p class="note" style="margin:10px 0 14px;font-size:11.5px;">Supabase w darmowym planie <strong>nie robi kopii za Ciebie</strong>.
+    Jedyna kopia to ta, którą pobierzesz sam. Warto po każdym większym imporcie.</p>
+
+    <details>
+      <summary style="cursor:pointer;font-size:12.5px;color:var(--ink-soft);">Przywracanie z pliku</summary>
+      <p class="note" style="margin:8px 0;">Wczytanie kopii <strong>zastąpi</strong> dane w bazie tymi z pliku.
+      Zanim cokolwiek podmienię, pobiorę automatycznie kopię stanu obecnego — żeby dało się cofnąć pomyłkę.</p>
+      <input type="file" id="kopia-plik" accept=".json">
+    </details>
+  </div>
+  <div class="card">
     <h4 style="margin-top:0;">Dane</h4>
     <p class="note">Baza jest współdzielona — wszyscy scouci widzą te same dane w czasie rzeczywistym.</p>
     <button class="secondary" data-action="import-znicz-roster" style="margin-bottom:10px;">Zaimportuj / uzupełnij znane składy klubów</button>
@@ -6580,6 +6596,55 @@ function attachHandlers(){
       b.textContent = originalText;
     }
   });
+  // Kopia zapasowa całej bazy do jednego pliku. Supabase w darmowym planie nie robi kopii,
+  // więc jedyną istniejącą kopią jest ta, którą użytkownik pobierze sam.
+  main.querySelectorAll('[data-action="kopia-pobierz"]').forEach(b=>b.onclick=()=>{
+    const dane = {
+      _opis: 'Kopia zapasowa Scout Base System', _wersja: 1,
+      _data: new Date().toISOString(),
+      _liczby: { zawodnicy: DB.players.length, kluby: DB.clubs.length, obserwacje: DB.observations.length },
+      players: DB.players, clubs: DB.clubs, observations: DB.observations, reports: DB.reports,
+      talents: DB.talents, contacts: DB.contacts, matches: DB.matches,
+      agencies: DB.agencies, agents: DB.agents, agencyLogos: DB.agencyLogos,
+      clubCrests: DB.clubCrests, settings: DB.settings,
+    };
+    const blob = new Blob([JSON.stringify(dane)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `sbs_kopia_${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url), 2000);
+  });
+
+  const plikKopii = document.getElementById('kopia-plik');
+  if(plikKopii) plikKopii.onchange = async ()=>{
+    const f = plikKopii.files[0];
+    if(!f) return;
+    try{
+      const dane = JSON.parse(await f.text());
+      if(!Array.isArray(dane.players)) throw new Error('To nie wygląda na kopię z SBS — brakuje listy zawodników.');
+      const ile = `${(dane.players||[]).length} zawodników, ${(dane.clubs||[]).length} klubów, ${(dane.observations||[]).length} obserwacji`;
+      if(!confirm(`Wczytać kopię z ${String(dane._data||'').slice(0,10)}?\n\nW pliku: ${ile}.\nObecnie w bazie: ${DB.players.length} zawodników.\n\nDane w bazie zostaną ZASTĄPIONE. Najpierw pobiorę kopię stanu obecnego.`)) { plikKopii.value=''; return; }
+      // Kopia bezpieczeństwa PRZED podmianą — żeby dało się cofnąć pomyłkę w wyborze pliku.
+      document.querySelector('[data-action="kopia-pobierz"]').click();
+      await new Promise(r=>setTimeout(r, 1200));
+      ['players','clubs','observations','reports','talents','contacts','matches','agencies','agents'].forEach(k=>{
+        if(Array.isArray(dane[k])) DB[k] = dane[k];
+      });
+      if(dane.agencyLogos) DB.agencyLogos = dane.agencyLogos;
+      if(dane.clubCrests) DB.clubCrests = dane.clubCrests;
+      if(dane.settings) DB.settings = dane.settings;
+      const wyniki = await Promise.all([savePlayers(), saveClubs(), saveObservations()]);
+      alert(wyniki.every(Boolean)
+        ? `Wczytano kopię: ${ile}.`
+        : 'Część danych nie zapisała się do bazy — sprawdź baner u góry strony. Twoja kopia bezpieczeństwa została pobrana przed podmianą.');
+      render();
+    }catch(e){
+      alert('Nie udało się wczytać kopii: ' + (e.message||e));
+    }finally{ plikKopii.value=''; }
+  };
+
   main.querySelectorAll('[data-action="reset-all"]').forEach(b=>b.onclick=async()=>{
     if(confirm('Na pewno usunąć WSZYSTKIE dane (zawodnicy, kluby, obserwacje)? Tej operacji nie można cofnąć.')){
       DB.players=[]; DB.clubs=[]; DB.observations=[];
@@ -10496,10 +10561,12 @@ function open90minutStatsModal(clubId){
           ${wynik.zapisani ? ` &middot; <span style="color:var(--pitch);font-weight:700;">zapisanych: ${wynik.zapisani}</span>` : ''}</div>
         </div>
         ${tabelaZmian(wynik)}
-        ${wynik.spozaBazy.length ? `<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12px;">
-          Grali, ale nie ma ich w naszej bazie (${wynik.spozaBazy.length}) — kliknij, żeby zobaczyć</summary>
-          <div class="note" style="font-size:11.5px;margin-top:6px;line-height:1.7;">
-          ${wynik.spozaBazy.map(x=>`${esc(x.kto)}${x.rocznik?' ('+x.rocznik+')':''} — ${x.minuty} min`).join('<br>')}</div></details>` : ''}
+        ${wynik.spozaBazy.length ? `<div style="border-left:3px solid var(--gold-dark);padding:8px 12px;margin-top:10px;background:#FBF9F3;font-size:12px;">
+          <strong>Zagrali w tym klubie, ale nie ma ich w kartotece — ${wynik.spozaBazy.length}:</strong>
+          <div style="margin-top:6px;line-height:1.8;">
+          ${wynik.spozaBazy.map(x=>`${esc(x.kto)}${x.rocznik?` <strong>${x.rocznik}</strong>${Number(x.rocznik)>=2006?youthBadge():''}`:''} — ${x.minuty} min`).join('<br>')}</div>
+          <button class="gold" data-x="dopisz" style="margin-top:10px;">+ Dopisz całą tę ${wynik.spozaBazy.length}-osobową listę do klubu</button>
+        </div>` : ''}
         ${wynik.niejednoznaczni.length ? `<div style="border-left:3px solid var(--clay-dark);padding:8px 12px;margin-top:10px;background:#FBF3F2;font-size:12px;">
           <strong>Pominąłem ${wynik.niejednoznaczni.length} — nie wiem, o kogo chodzi:</strong>
           ${wynik.niejednoznaczni.map(n=>`<div style="margin-top:5px;">
@@ -10524,6 +10591,40 @@ function open90minutStatsModal(clubId){
     if(sprawdz) sprawdz.onclick = ()=>pobierz(false);
     const zapisz = overlay.querySelector('[data-x="zapisz"]');
     if(zapisz) zapisz.onclick = ()=>pobierz(true);
+
+    // Dopisanie zawodników, którzy zagrali, ale nie ma ich w kartotece. To siatka bezpieczeństwa:
+    // wystarczy, że ktoś wejdzie na boisko choć na minutę, a nie przepadnie tylko dlatego,
+    // że nie było go na liście, z której importowano skład.
+    const dopisz = overlay.querySelector('[data-x="dopisz"]');
+    if(dopisz) dopisz.onclick = async ()=>{
+      const nowi = (wynik.spozaBazy||[]).filter(x=>{
+        const slowa = String(x.kto||'').trim().split(/\s+/);
+        if(slowa.length < 2) return false;
+        // Ostatnia kontrola po stronie przeglądarki — gdyby ktoś w międzyczasie został dodany ręcznie.
+        return !DB.players.some(p=> p.clubId===clubId
+          && importNorm(p.firstName+p.lastName) === importNorm(slowa[0]+slowa.slice(1).join('')));
+      });
+      if(!nowi.length){ komunikat = 'Wszyscy są już w kartotece.'; draw(); return; }
+      nowi.forEach(x=>{
+        const slowa = String(x.kto).trim().split(/\s+/);
+        DB.players.push({
+          id: uid('Z'), firstName: slowa[0], lastName: slowa.slice(1).join(' '),
+          birthDate: '', birthYear: x.rocznik ? String(x.rocznik) : '', nationality: '',
+          position: '', foot: '', height: null, status: '', clubId, scout: currentScout || '',
+          videoLink: '', lnpLink: '', tmLink: x.adres || '',
+          hasAgent: false, agencyName: '', formation: '', customFields: {},
+          notes: 'Dopisany automatycznie — zagrał w meczu, a nie było go w kartotece.',
+          dateAdded: new Date().toISOString().slice(0,10),
+        });
+      });
+      pracuje = true; draw();
+      const ok = await savePlayers();
+      pracuje = false;
+      komunikat = ok ? `Dopisano ${nowi.length} zawodników. Kliknij ponownie „Sprawdź, co się zmieni", żeby wciągnąć ich statystyki.`
+                     : 'Nie udało się zapisać — sprawdź baner u góry strony.';
+      if(ok) wynik.spozaBazy = [];
+      draw();
+    };
   }
 
   async function pobierz(zapisujemy){
