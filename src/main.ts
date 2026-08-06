@@ -6899,26 +6899,66 @@ function parseSquadBlocks(rawText){
 // z PEŁNĄ listą zgłoszonych — 90minut podaje wyłącznie tych, którzy weszli na boisko.
 const WYGLADA_NA_NAZWISKO = /^[\p{Lu}][\p{L}'’-]+(?:\s+[\p{Lu}][\p{L}'’-]+){1,3}$/u;
 
+// Kopiowanie takiej kratki daje w praktyce jeden z czterech układów — zależnie od tego, czy
+// przeglądarka wstawi łamanie wiersza między numerem a nazwiskiem i po której stronie stoi numer.
+// Zamiast zgadywać, który to, obsługujemy wszystkie i bierzemy ten, który znalazł najwięcej.
+const zawodnikZKratki = (numer, nazwa, zrodlo)=>{
+  const slowa = nazwa.split(/\s+/);
+  return {
+    ok:true, firstName: slowa[0], lastName: slowa.slice(1).join(' '),
+    position: '', birthYear: '', nationality: '',
+    numer: numer!=null ? parseInt(numer,10) : null,
+    raw: zrodlo,
+  };
+};
+const dobreNazwisko = (s)=> !!s && !isSquadPositionLine(s) && WYGLADA_NA_NAZWISKO.test(s);
+
 function parseSquadKratka(rawText){
-  const linie = rawText.split('\n').map(l=>l.trim()).filter(Boolean);
-  const znalezieni = [];
+  const linie = rawText.split('\n').map(l=>l.replace(/\s+/g,' ').trim()).filter(Boolean);
+  const warianty = [];
+
+  // 1. numer i nazwisko w JEDNEJ linii: „40 Bartosz Kowalczyk" (także rozdzielone tabulatorem,
+  //    bo tabulatory sprowadziliśmy wyżej do spacji).
+  warianty.push(linie.map(l=>{
+    const m = l.match(/^(\d{1,2})\s+(.+)$/);
+    return (m && dobreNazwisko(m[2])) ? zawodnikZKratki(m[1], m[2], l) : null;
+  }).filter(Boolean));
+
+  // 2. numer w swojej linii, nazwisko w NASTĘPNEJ.
+  const poNumerze = [];
   for(let i=0;i<linie.length-1;i++){
-    if(!/^\d{1,2}$/.test(linie[i])) continue;
-    const nazwa = linie[i+1];
-    // Nazwa pozycji odpada — inaczej „12 / Bramkarz" wpisałoby bramkarza jako zawodnika.
-    if(isSquadPositionLine(nazwa) || !WYGLADA_NA_NAZWISKO.test(nazwa)) continue;
-    const slowa = nazwa.split(/\s+/);
-    znalezieni.push({
-      ok:true, firstName: slowa[0], lastName: slowa.slice(1).join(' '),
-      position: '', birthYear: '', nationality: '',
-      numer: parseInt(linie[i],10),
-      raw: `${linie[i]} ${nazwa}`,
-    });
-    i++;  // nazwisko zużyte, żeby nie startowało kolejnego dopasowania
+    if(/^\d{1,2}$/.test(linie[i]) && dobreNazwisko(linie[i+1])){
+      poNumerze.push(zawodnikZKratki(linie[i], linie[i+1], `${linie[i]} ${linie[i+1]}`));
+      i++;
+    }
   }
-  // Próg pięciu zawodników chroni przed przypadkowym trafieniem w innym układzie, gdzie liczba
-  // sąsiaduje z nazwą (np. tabela strzelców). Prawdziwy skład ma ich kilkanaście.
-  return znalezieni.length >= 5 ? znalezieni : null;
+  warianty.push(poNumerze);
+
+  // 3. nazwisko w swojej linii, numer w NASTĘPNEJ (część układów podpisuje koszulkę od dołu).
+  const przedNumerem = [];
+  for(let i=0;i<linie.length-1;i++){
+    if(dobreNazwisko(linie[i]) && /^\d{1,2}$/.test(linie[i+1])){
+      przedNumerem.push(zawodnikZKratki(linie[i+1], linie[i], `${linie[i+1]} ${linie[i]}`));
+      i++;
+    }
+  }
+  warianty.push(przedNumerem);
+
+  // 4. same nazwiska, bez numerów — gdy przeglądarka pominie tekst na obrazku koszulki.
+  //    Wymagamy, żeby stały OBOK SIEBIE, inaczej złapalibyśmy pozycje z menu i stopki.
+  const ciagi = [];
+  let biezacy = [];
+  for(const l of linie){
+    if(dobreNazwisko(l)) biezacy.push(l);
+    else { if(biezacy.length > ciagi.length) ciagi.length = 0, ciagi.push(...biezacy); biezacy = []; }
+  }
+  if(biezacy.length > ciagi.length){ ciagi.length = 0; ciagi.push(...biezacy); }
+  warianty.push(ciagi.map(n=>zawodnikZKratki(null, n, n)));
+
+  // Próg ośmiu zawodników. Prawdziwa lista zgłoszonych ma ich kilkanaście do trzydziestu, a wyżej
+  // podniesiony próg chroni przed trafieniem w tabelę strzelców albo w blok nawigacji.
+  const najlepszy = warianty.sort((a,b)=>b.length-a.length)[0];
+  return (najlepszy && najlepszy.length >= 8) ? najlepszy : null;
 }
 
 // Punkt wejścia używany przez importer. Kolejność od najbardziej charakterystycznego układu do
@@ -7087,6 +7127,27 @@ function parseSquadWorkbookRows(rows){
     };
   }).filter(Boolean);
 }
+// Opis wklejki widziany oczami parsera: numerowane linie z etykietą, czym każda z nich JEST.
+// Powstało, bo układ schowka bywa inny, niż wygląda na stronie, a bez tego widoku diagnoza sprowadza
+// się do zgadywania — a każde nietrafione zgadnięcie to kolejna funkcja, która „powinna działać".
+function opiszWklejke(tekst){
+  const linie = String(tekst||'').split('\n');
+  const etykieta = (l)=>{
+    const t = l.replace(/\s+/g,' ').trim();
+    if(!t) return 'pusta';
+    if(/^\d{1,2}$/.test(t)) return 'SAM NUMER';
+    if(isSquadPositionLine(t)) return 'POZYCJA';
+    if(WYGLADA_NA_NAZWISKO.test(t)) return 'NAZWISKO';
+    if(/^\d{1,2}\s+/.test(t)) return 'NUMER + reszta';
+    return 'inne';
+  };
+  const naglowek = `linii razem: ${linie.length}; pokazuję pierwsze 60\n`
+    + `tabulatory oznaczam jako [TAB]\n${'-'.repeat(52)}\n`;
+  return naglowek + linie.slice(0, 60).map((l,i)=>
+    `${String(i+1).padStart(3)} | ${etykieta(l).padEnd(14)} | ${l.replace(/\t/g,'[TAB]').slice(0,60)}`
+  ).join('\n');
+}
+
 function openSquadImportModal(clubId){
   const already = document.querySelector('.modal-overlay[data-squadimport-for]');
   if(already) already.remove();
@@ -7098,6 +7159,7 @@ function openSquadImportModal(clubId){
   overlay.dataset.squadimportFor = clubId;
   let parsed = [];
   let pastedText = '';
+  let diagnostyka = '';
   // Zrzut ekranu tylko jako WIZUALNY podgląd do porównania obok wklejonego tekstu — nie jest
   // analizowany automatycznie (brak OCR/AI w aplikacji), dane zawsze biorą się z wklejonego tekstu.
   let referenceImage = null;
@@ -7128,7 +7190,12 @@ function openSquadImportModal(clubId){
       </div>
       <div class="modal-actions" style="justify-content:flex-start;margin-bottom:10px;">
         <button class="secondary" data-action="squad-parse">Rozpoznaj zawodników</button>
+        <button class="secondary" data-action="squad-diag" title="Pokazuje wklejony tekst tak, jak widzi go parser — do wysłania, gdy rozpoznawanie zawodzi">🔍 Pokaż, co widzę</button>
       </div>
+      ${diagnostyka ? `<div class="field-wrap" style="margin-bottom:12px;">
+        <label class="field">Tak wygląda wklejka dla parsera — zaznacz to pole, skopiuj i wyślij, jeśli rozpoznawanie zawodzi</label>
+        <textarea readonly rows="14" style="font-size:11px;font-family:monospace;white-space:pre;">${esc(diagnostyka)}</textarea>
+      </div>` : ''}
       <div class="field-wrap" style="border-top:1px dashed #D9D3C4;padding-top:10px;margin-bottom:14px;">
         <label class="field">…albo wgraj plik Excel / CSV (np. lista rocznika do rozgrywek juniorskich) — kolumny: <strong>Imię, Nazwisko</strong> (albo „Zawodnik"), opcjonalnie Rocznik, Pozycja, Narodowość, <strong>Menedżer</strong> (Tak/Nie), Agencja</label>
         <input type="file" id="squad-import-file" accept=".xlsx,.xls,.csv">
@@ -7177,6 +7244,11 @@ function openSquadImportModal(clubId){
       const text = overlay.querySelector('#squad-import-text').value;
       pastedText = text;
       parsed = parseSquadText(text);
+      draw();
+    });
+    overlay.querySelectorAll('[data-action="squad-diag"]').forEach(b=>b.onclick=()=>{
+      pastedText = overlay.querySelector('#squad-import-text').value;
+      diagnostyka = opiszWklejke(pastedText);
       draw();
     });
     const squadFileInput = overlay.querySelector('#squad-import-file');
