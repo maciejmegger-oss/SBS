@@ -3253,7 +3253,6 @@ function viewPlayers(){
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <button class="gold" data-action="add-player">+ Nowy zawodnik</button>
       ${viewingRocznikGroup ? `<button class="gold" data-action="rocznik-excel-import">📋 Wgraj z Excela</button>` : ''}
-      <button class="secondary" data-action="protokol-meczu" title="Wczytaj protokół meczu z Łączy nas piłką — dopisuje mecze, minuty, bramki i kartki obu drużynom">⚽ Protokół meczu</button>
       <button class="secondary" data-action="agent-import" title="Zbierz menedżerów z profili na Transfermarkcie">🕵 Menedżerowie</button>
       <button class="secondary" data-action="compare-open" title="Zaznacz do 3 zawodników na liście, aby porównać właśnie ich">⚖️ Porównaj zawodników</button>
     </div>
@@ -3660,7 +3659,8 @@ function viewClubDetail(id){
     </div>
     <div style="display:flex;gap:8px;">
       <button class="gold" data-action="import-squad" data-id="${c.id}">📋 Import składu</button>
-      <button class="secondary" data-action="import-squad-stats" data-id="${c.id}" title="Wklej tabelę statystyk całej drużyny — minuty, mecze, gole, kartki">⏱ Statystyki drużyny</button>
+      <button class="gold" data-action="stats-90minut" data-id="${c.id}" title="Pobierz z 90minut mecze, minuty, bramki i kartki całego składu — bez kopiowania czegokolwiek">⏱ Statystyki z 90minut</button>
+      <button class="secondary" data-action="import-squad-stats" data-id="${c.id}" title="Wklej tabelę statystyk całej drużyny — minuty, mecze, gole, kartki">⏱ Statystyki drużyny (wklejka)</button>
       <button class="secondary" data-action="edit-club" data-id="${c.id}">Edytuj klub</button>
       <button class="danger" data-action="delete-club" data-id="${c.id}">Usuń</button>
     </div>
@@ -5581,7 +5581,6 @@ function attachHandlers(){
     render();
   });
   main.querySelectorAll('[data-action="agent-import"]').forEach(b=>b.onclick=()=>openAgentImportModal());
-  main.querySelectorAll('[data-action="protokol-meczu"]').forEach(b=>b.onclick=()=>openProtokolMeczuModal());
   main.querySelectorAll('[data-action="agencies-import"]').forEach(b=>b.onclick=()=>openAgenciesImportModal());
   const agencySearchInput = main.querySelector('#agency-search');
   if(agencySearchInput) agencySearchInput.oninput = ()=>{ agencySearchQuery = agencySearchInput.value; render(); };
@@ -6025,6 +6024,7 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="manage-transfer-history"]').forEach(b=>b.onclick=()=>openTransferHistoryModal(b.dataset.id));
   main.querySelectorAll('[data-action="import-squad"]').forEach(b=>b.onclick=()=>openSquadImportModal(b.dataset.id));
   main.querySelectorAll('[data-action="import-squad-stats"]').forEach(b=>b.onclick=()=>openSquadStatsModal(b.dataset.id));
+  main.querySelectorAll('[data-action="stats-90minut"]').forEach(b=>b.onclick=()=>open90minutStatsModal(b.dataset.id));
 
   // Zaznaczanie i usuwanie zawodników wprost ze składu klubu — pojedynczo lub całością.
   const squadChecks = document.querySelectorAll('.squad-player-check');
@@ -7996,7 +7996,7 @@ function parseSquadStatsText(text, squad){
 //
 // Typ zdarzenia (gol, kartka, zmiana) jest na stronie IKONĄ bez tekstu — po skopiowaniu zostają
 // same liczby, więc goli i kartek nie da się z tej wklejki odzyskać żadnym parserem. Właściwa
-// droga to zakładka „⚽ Protokół meczu", która czyta kolumny z DOM.
+// droga to przycisk „⏱ Statystyki z 90minut" w widoku klubu, który pobiera liczby z serwera.
 function wygladaNaProtokolMeczu(text){
   const t = String(text || '');
   if(/^###\s*PROTOKOL:/im.test(t)) return true;
@@ -8018,8 +8018,8 @@ function komunikatOProtokole(){
     Rezerwowy, który wszedł w 81', ma za sobą 9 minut, a nie 81 — gdybym to wczytał, zapisałbym odwrotność.</p>
     <p style="margin:8px 0 0;">Goli i kartek w tej wklejce nie ma wcale: na stronie są ikonami bez tekstu,
     więc kopiowanie zostawia same liczby.</p>
-    <p style="margin:8px 0 0;">Użyj zakładki <strong>Zawodnicy → ⚽ Protokół meczu</strong> — czyta kolumny wprost ze strony,
-    więc bierze bramki, kartki oraz wejścia i zejścia, i dopisuje statystyki obu drużynom naraz.</p>
+    <p style="margin:8px 0 0;">Zamiast tego wejdź w <strong>klub</strong> i kliknij <strong>⏱ Statystyki z 90minut</strong> —
+    liczby pobierane są z serwera, razem z minutami, bramkami i kartkami. Nic nie trzeba kopiować.</p>
   </div>`;
 }
 
@@ -9075,227 +9075,6 @@ function openAddPlayersToAgencyModal(agencyId){
 // tworzenie z tego setek pustych rekordów zaśmieciłoby kartotekę bardziej, niż by pomogło.
 // Hurtowe dopisanie menedżerów do agencji — z sekcji „Pracownicy" na Transfermarkcie albo
 // z listy nazwisk wpisanej ręcznie.
-// Wczytanie protokołu meczowego z Łączy nas piłką i DOPISANIE statystyk zawodnikom.
-//
-// Statystyki się SUMUJĄ (mecz po meczu), więc każde spotkanie musi być rozliczone dokładnie raz.
-// Identyfikatorem meczu jest adres protokołu — zapisujemy go przy zawodniku, a ponowne wczytanie
-// tego samego protokołu jest pomijane. Bez tego drugie kliknięcie podwoiłoby komuś dorobek.
-function openProtokolMeczuModal(){
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
-  let wklejka = '';
-  let rozpoznany = null;
-
-  const kluczMeczu = ()=>{
-    if(!rozpoznany) return '';
-    const m = String(rozpoznany.link||'').match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
-    return m ? m[1] : (rozpoznany.link || rozpoznany.tytul || '');
-  };
-
-  function dopasuj(){
-    if(!rozpoznany) return {gotowi:[], juzRozliczeni:[], nieznalezieni:[], niejednoznaczni:[], bezWystepu:[], doZalozenia:[]};
-    const klucz = kluczMeczu();
-    const gotowi = [], juzRozliczeni = [], nieznalezieni = [], niejednoznaczni = [], bezWystepu = [], doZalozenia = [];
-    rozpoznany.zawodnicy.forEach(z=>{
-      if(!z.wystapil){ bezWystepu.push(z); return; }
-      let kandydaci = matchPlayersByFullName(z.nazwa, '');
-      // Gdy nazwisko powtarza się w bazie, rozstrzyga klub z protokołu.
-      if(kandydaci.length > 1 && z.klub){
-        const wKlubie = kandydaci.filter(p=> importNorm(clubName(p.clubId)).includes(importNorm(z.klub))
-          || importNorm(z.klub).includes(importNorm(clubName(p.clubId))));
-        if(wKlubie.length) kandydaci = wKlubie;
-      }
-      if(!kandydaci.length){
-        // Nie ma go w bazie — ale protokół podaje klub, więc jeśli ten klub mamy, da się go
-        // założyć. To jedyna sensowna droga dla IV ligi, gdzie kartoteka jest praktycznie pusta:
-        // pierwszy protokół drużyny buduje jej kadrę, kolejne dopisują już tylko statystyki.
-        const klub = znajdzKlubPoNazwieTM(z.klub);
-        if(klub) doZalozenia.push({...z, klubBazy: klub});
-        else nieznalezieni.push(z);
-        return;
-      }
-      if(kandydaci.length > 1){ niejednoznaczni.push({...z, kandydaci}); return; }
-      const p = kandydaci[0];
-      if((p.rozliczoneMecze||[]).includes(klucz)){ juzRozliczeni.push({...z, player: p}); return; }
-      gotowi.push({...z, player: p});
-    });
-    return {gotowi, juzRozliczeni, nieznalezieni, niejednoznaczni, bezWystepu, doZalozenia};
-  }
-
-  function draw(){
-    const {gotowi, juzRozliczeni, nieznalezieni, niejednoznaczni, bezWystepu, doZalozenia} = dopasuj();
-    overlay.innerHTML = `
-    <div class="modal" style="max-width:820px;">
-      <h3>⚽ Protokół meczu — Łączy nas piłką</h3>
-      <p class="note" style="margin-top:0;">Jedyne źródło, które podaje III ligę i rozgrywki młodzieżowe na poziomie zawodnika.
-      Wczytanie <strong>dopisuje</strong> mecz, minuty, bramki i kartki obu drużynom naraz.
-      Minuty liczę z wejść i zejść (podstawowy bez zmiany = 90); doliczonego czasu nie dodaję, bo protokół go nie podaje.</p>
-
-      <details style="margin-bottom:12px;" ${rozpoznany?'':'open'}>
-        <summary style="cursor:pointer;font-weight:700;color:var(--gold-dark);">1. Ustaw zakładkę (raz)</summary>
-        <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
-          <li>Włącz pasek zakładek: <strong>Ctrl+Shift+B</strong></li>
-          <li>Przeciągnij na pasek:<br>
-            <a href="${esc(LNP_PROTOKOL_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:#C69B3C;color:#16302A;border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">⚽ Protokół do SBS</a>
-          </li>
-          <li>Otwórz protokół meczu na laczynaspilka.pl (sekcja <strong>Składy</strong> musi być widoczna) i kliknij zakładkę</li>
-        </ol>
-        <details style="margin-top:6px;">
-          <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Kod do wklejenia ręcznie</summary>
-          <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;margin-top:6px;">${esc(LNP_PROTOKOL_BOOKMARKLET)}</textarea>
-        </details>
-      </details>
-
-      <div class="field-wrap" style="margin-bottom:10px;">
-        <label class="field">2. Wklej odczytany protokół (Ctrl+V)</label>
-        <textarea id="prot-paste" rows="6" placeholder="### PROTOKOL: Błękitni Stargard vs Wda Świecie | https://... ###&#10;P|Błękitni Stargard|8|Maciej Budawski|0|0|0||" style="font-size:11.5px;font-family:monospace;">${esc(wklejka)}</textarea>
-      </div>
-      <div class="modal-actions" style="justify-content:flex-start;margin-top:0;">
-        <button class="secondary" data-action="prot-parse">Rozpoznaj</button>
-      </div>
-
-      ${rozpoznany ? `
-        <div style="border-top:1px solid #E3DECE;padding-top:10px;margin-top:12px;">
-          <p class="note" style="margin-top:0;"><strong>${esc(rozpoznany.tytul||'Mecz')}</strong><br>
-            Zawodników w protokole: ${rozpoznany.zawodnicy.length}. Do dopisania: <strong>${gotowi.length}</strong>${doZalozenia.length? `, do założenia <strong>${doZalozenia.length}</strong>`:''}${
-            juzRozliczeni.length? `, ten mecz już rozliczony u <strong>${juzRozliczeni.length}</strong>`:''}${
-            bezWystepu.length? `, nie weszło z ławki ${bezWystepu.length}`:''}${
-            nieznalezieni.length? `, spoza bazy ${nieznalezieni.length}`:''}.</p>
-          <div style="max-height:300px;overflow:auto;">
-            <table><thead><tr><th style="width:24px;"></th><th>Zawodnik</th><th style="text-align:right;">Min.</th>
-              <th style="text-align:right;">Gole</th><th style="text-align:right;">Kartki</th></tr></thead>
-            <tbody>
-            ${gotowi.map((x,i)=>`<tr>
-              <td><input type="checkbox" class="prot-check" data-idx="${i}" checked></td>
-              <td><strong>${esc(x.player.lastName)}</strong> ${esc(x.player.firstName)}
-                <span class="club-sub" style="display:block;">${esc(clubName(x.player.clubId))}${x.rola==='R'?' · z ławki':''}</span></td>
-              <td style="text-align:right;">${x.minuty}</td>
-              <td style="text-align:right;">${x.gole||'—'}</td>
-              <td style="text-align:right;">${x.zolte?'🟨':''}${x.czerwone?'🟥':''}${!x.zolte&&!x.czerwone?'—':''}</td>
-            </tr>`).join('')}
-            ${doZalozenia.map((x,i)=>`<tr style="background:rgba(198,155,60,0.06);">
-              <td><input type="checkbox" class="prot-new-check" data-idx="${i}" checked></td>
-              <td>${esc(x.nazwa)}
-                <span class="club-sub" style="display:block;">${esc(x.klubBazy.name)}${x.rola==='R'?' · z ławki':''} · <strong>nowy — założę</strong></span></td>
-              <td style="text-align:right;">${x.minuty}</td>
-              <td style="text-align:right;">${x.gole||'—'}</td>
-              <td style="text-align:right;">${x.zolte?'🟨':''}${x.czerwone?'🟥':''}${!x.zolte&&!x.czerwone?'—':''}</td>
-            </tr>`).join('')}
-            ${juzRozliczeni.length? `<tr><td></td><td colspan="4" style="font-size:12px;color:var(--ink-soft);padding-top:8px;">
-              <strong>Ten mecz już rozliczony (${juzRozliczeni.length})</strong> — pomijam, żeby nie policzyć dwa razy:<br>${
-              juzRozliczeni.slice(0,15).map(x=>esc(x.nazwa)).join(', ')}${juzRozliczeni.length>15?' …':''}</td></tr>`:''}
-            ${niejednoznaczni.length? `<tr><td></td><td colspan="4" style="font-size:12px;color:var(--clay-dark);">
-              <strong>Niejednoznaczni (${niejednoznaczni.length})</strong> — w bazie kilka osób o tym nazwisku:<br>${
-              niejednoznaczni.map(x=>esc(x.nazwa)).join(', ')}</td></tr>`:''}
-            ${nieznalezieni.length? `<tr><td></td><td colspan="4" style="font-size:12px;color:var(--ink-soft);">
-              <strong>Bez rozpoznanego klubu (${nieznalezieni.length})</strong> — nie zakładam, bo nie wiem, gdzie grają:<br>${
-              nieznalezieni.slice(0,20).map(x=>esc(x.nazwa)).join(', ')}${nieznalezieni.length>20?' …':''}</td></tr>`:''}
-            </tbody></table>
-          </div>
-        </div>
-        ${(gotowi.length||doZalozenia.length)? `<div class="modal-actions" style="justify-content:flex-start;">
-          <button class="gold" data-action="prot-apply">Dopisz statystyki (${gotowi.length}${doZalozenia.length?` + ${doZalozenia.length} nowych`:''})</button></div>`:''}
-      ` : ''}
-
-      <div class="modal-actions">
-        <button class="secondary" data-action="close-modal">Zamknij</button>
-      </div>
-    </div>`;
-    wire();
-  }
-
-  function wire(){
-    overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=()=>{ overlay.remove(); render(); });
-    const ta = overlay.querySelector('#prot-paste') as any;
-    if(ta) ta.oninput = ()=>{ wklejka = ta.value; };
-    overlay.querySelectorAll('[data-action="prot-parse"]').forEach(b=>b.onclick=()=>{
-      wklejka = ((overlay.querySelector('#prot-paste') as any)||{}).value || '';
-      const r = parseProtokolMeczu(wklejka);
-      if(!r.zawodnicy.length){
-        // Zamiast samego „nie rozpoznałem" mówimy, CO dostaliśmy — inaczej nie da się ustalić,
-        // czy zawiodła zakładka, czy wkleiło się coś innego (np. ręczne zaznaczenie strony).
-        const linie = String(wklejka||'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-        const maNaglowek = linie.some(l=>/^###\s*PROTOKOL:/i.test(l));
-        const maKreski = linie.some(l=>l.split('|').length >= 9);
-        let diagnoza;
-        if(!linie.length) diagnoza = 'Pole jest puste — nic nie zostało wklejone.';
-        else if(!maNaglowek && !maKreski) diagnoza =
-          'To nie jest wynik zakładki. Brakuje nagłówka „### PROTOKOL:" i wierszy rozdzielonych kreskami,\n' +
-          'więc wygląda to na ręcznie zaznaczony fragment strony. Przy takim zaznaczeniu znikają puste\n' +
-          'komórki tabeli i nie da się odróżnić bramki od kartki ani od zmiany — dlatego tego nie czytam.';
-        else if(maNaglowek && !maKreski) diagnoza =
-          'Nagłówek jest, ale nie ma ani jednego wiersza zawodnika. Zakładka nie odczytała składów —\n' +
-          'upewnij się, że sekcja „Składy" była rozwinięta i widoczna, gdy ją klikałeś.';
-        else diagnoza = 'Wiersze są, ale w innym układzie, niż oczekiwałem.';
-        alert('Nie rozpoznałem protokołu.\n\n' + diagnoza +
-          '\n\nPierwsze linijki tego, co wkleiłeś:\n' + linie.slice(0,5).map(l=>'  ' + l.slice(0,60)).join('\n') +
-          '\n\nKliknij zakładkę „⚽ Protokół do SBS" na PASKU ZAKŁADEK, będąc na stronie protokołu,\n' +
-          'i wklej to, co skopiuje — powinno zaczynać się od „### PROTOKOL:".');
-        return;
-      }
-      rozpoznany = r;
-      draw();
-    });
-    overlay.querySelectorAll('[data-action="prot-apply"]').forEach(b=>b.onclick=async()=>{
-      const {gotowi, doZalozenia} = dopasuj();
-      const zaznaczeni = Array.from(overlay.querySelectorAll('.prot-check:checked')).map((c:any)=>Number(c.dataset.idx));
-      const zaznaczeniNowi = Array.from(overlay.querySelectorAll('.prot-new-check:checked')).map((c:any)=>Number(c.dataset.idx));
-      const klucz = kluczMeczu();
-      if(!klucz){ alert('Protokół nie ma adresu meczu — bez niego nie mogę zabezpieczyć przed podwójnym liczeniem.'); return; }
-      let dopisani = 0, zalozeni = 0;
-      // Zawodnicy, których jeszcze nie ma w kartotece, a ich klub mamy w bazie. Zakładamy ich
-      // od razu z dorobkiem z tego meczu — dzięki temu pierwszy protokół drużyny buduje jej kadrę.
-      // Rocznika ani pozycji protokół nie podaje, więc zostają puste do uzupełnienia.
-      zaznaczeniNowi.forEach(i=>{
-        const x = doZalozenia[i];
-        if(!x) return;
-        const czesci = String(x.nazwa).split(/\s+/).filter(Boolean);
-        DB.players.push({
-          id: uid('Z'), firstName: czesci[0] || '', lastName: czesci.slice(1).join(' ') || czesci[0] || '',
-          birthDate: '', birthYear: '', nationality: '', position: '', foot: '', height: null,
-          status: '', clubId: x.klubBazy.id, scout: currentScout || '',
-          videoLink: '', lnpLink: '', tmLink: '', hasAgent: false, agencyName: '',
-          formation: '', customFields: {},
-          matches: 1, minutes: x.minuty, goals: x.gole || 0,
-          yellowCards: x.zolte || 0, redCards: x.czerwone || 0,
-          statsUpdatedAt: new Date().toISOString().slice(0,10),
-          statsSource: 'Łączy nas piłką (protokół)',
-          rozliczoneMecze: [klucz],
-          notes: 'Założony z protokołu meczowego — uzupełnij rocznik i pozycję.',
-          dateAdded: new Date().toISOString().slice(0,10),
-        });
-        zalozeni++;
-      });
-      zaznaczeni.forEach(i=>{
-        const x = gotowi[i];
-        if(!x) return;
-        const p = x.player;
-        p.matches = (p.matches || 0) + 1;
-        p.minutes = (p.minutes || 0) + x.minuty;
-        if(x.gole) p.goals = (p.goals || 0) + x.gole;
-        if(x.zolte) p.yellowCards = (p.yellowCards || 0) + x.zolte;
-        if(x.czerwone) p.redCards = (p.redCards || 0) + x.czerwone;
-        p.statsUpdatedAt = new Date().toISOString().slice(0,10);
-        p.statsSource = 'Łączy nas piłką (protokół)';
-        p.rozliczoneMecze = [...(p.rozliczoneMecze || []), klucz];
-        dopisani++;
-      });
-      const ok = await savePlayers();
-      if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
-      alert(`Dopisano statystyki: ${dopisani} zawodnikom.` +
-        (zalozeni ? `\nZałożono nowych zawodników: ${zalozeni} (bez rocznika i pozycji — uzupełnij w profilu).` : '') +
-        `\n\nTen mecz jest już oznaczony jako rozliczony — ponowne wczytanie go pominie.`);
-      rozpoznany = null; wklejka = '';
-      render();
-      draw();
-    });
-  }
-
-  overlay.addEventListener('click', e=>{ if(e.target===overlay){ overlay.remove(); render(); } });
-  document.body.appendChild(overlay);
-  draw();
-}
-
 function openAgencyStaffModal(agencyId){
   const agencja = agencyById(agencyId);
   if(!agencja) return;
@@ -10307,6 +10086,102 @@ function openLeagueStatsModal(league){
   document.body.appendChild(overlay);
 }
 
+// Pobranie statystyk całego składu z 90minut — bez kopiowania czegokolwiek.
+//
+// Cała robota dzieje się na serwerze (/api/stats-90minut): strona ligi → protokoły meczów tego
+// klubu → strony zawodników, z których bierzemy GOTOWE sumy sezonowe. Dlatego dwukrotne
+// uruchomienie niczego nie podwaja — nie dopisujemy meczu do meczu, tylko przepisujemy sumę.
+//
+// Najpierw pokazujemy podgląd, a dopiero potem zapisujemy. Przy pierwszym uruchomieniu na klubie
+// zmian bywa kilkadziesiąt i warto zobaczyć je przed dotknięciem bazy.
+function open90minutStatsModal(clubId){
+  const club = DB.clubs.find(c=>c.id===clubId);
+  if(!club) return;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  let wynik = null, pracuje = false, blad = '';
+
+  function tabelaZmian(r){
+    if(!r.zmiany.length) return `<p class="note" style="margin:10px 0;">Wszystkie liczby są już aktualne — nie ma czego zapisywać.</p>`;
+    return `<table style="width:100%;font-size:12px;border-collapse:collapse;margin:10px 0;">
+      <tr style="text-align:left;color:var(--ink-soft);"><th style="padding:4px;">Zawodnik</th><th style="padding:4px;">Było</th><th style="padding:4px;">Będzie</th></tr>
+      ${r.zmiany.map(z=>`<tr style="border-top:1px solid #EEE9DC;">
+        <td style="padding:4px;font-weight:600;">${esc(z.kto)}</td>
+        <td style="padding:4px;color:var(--ink-soft);">${esc(z.bylo)}</td>
+        <td style="padding:4px;">${esc(z.bedzie)}</td></tr>`).join('')}
+    </table>`;
+  }
+
+  function draw(){
+    overlay.innerHTML = `
+    <div class="modal" style="max-width:760px;">
+      <h3>⏱ Statystyki z 90minut — ${esc(club.name)}</h3>
+      <p class="note" style="margin-bottom:10px;">Pobieram z 90minut protokoły meczów tego klubu, a z nich
+      <strong>mecze, minuty, bramki i kartki</strong> każdego zawodnika. Liczby są gotowymi sumami za sezon,
+      więc ponowne uruchomienie niczego nie podwoi.
+      <br><strong>Asyst nie pobieram</strong> — 90minut ich nie publikuje, więc to pole zostaje nietknięte.</p>
+
+      ${blad ? `<div class="empty" style="text-align:left;padding:12px;border-color:var(--clay-dark);">
+        <strong style="color:var(--clay-dark);">${esc(blad)}</strong>
+        ${wynik && wynik.podpowiedz ? `<p style="margin:8px 0 0;">${esc(wynik.podpowiedz)}</p>` : ''}
+      </div>` : ''}
+
+      ${wynik && wynik.ok ? `
+        <div style="background:#FBF9F3;border:1px solid #E3DECE;border-radius:8px;padding:10px;font-size:12.5px;">
+          <div>${esc(wynik.rozgrywki || wynik.liga || '')}</div>
+          <div style="margin-top:4px;">Sprawdzonych meczów: <strong>${wynik.sprawdzoneMecze}</strong>
+          &middot; zawodników odczytanych z 90minut: <strong>${wynik.zawodnikowNa90minut}</strong>
+          &middot; do zapisania: <strong>${wynik.doZapisu}</strong>
+          ${wynik.zapisani ? ` &middot; <span style="color:var(--pitch);font-weight:700;">zapisanych: ${wynik.zapisani}</span>` : ''}</div>
+        </div>
+        ${tabelaZmian(wynik)}
+        ${wynik.spozaBazy.length ? `<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12px;">
+          Grali, ale nie ma ich w naszej bazie (${wynik.spozaBazy.length}) — kliknij, żeby zobaczyć</summary>
+          <div class="note" style="font-size:11.5px;margin-top:6px;line-height:1.7;">
+          ${wynik.spozaBazy.map(x=>`${esc(x.kto)}${x.rocznik?' ('+x.rocznik+')':''} — ${x.minuty} min`).join('<br>')}</div></details>` : ''}
+        ${wynik.niejednoznaczni.length ? `<p class="note" style="font-size:11.5px;margin-top:8px;">
+          Nie wiem, o kogo chodzi (imiennicy bez rocznika): ${esc(wynik.niejednoznaczni.join(', '))}</p>` : ''}
+        ${wynik.bledyZapisu && wynik.bledyZapisu.length ? `<p class="note" style="font-size:11.5px;margin-top:8px;color:var(--clay-dark);">
+          Nie udało się zapisać: ${wynik.bledyZapisu.map(b=>esc(b.kto)).join(', ')}</p>` : ''}
+      ` : ''}
+
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+        <button class="secondary" data-x="zamknij">Zamknij</button>
+        <button class="secondary" data-x="sprawdz" ${pracuje?'disabled':''}>${pracuje?'Pobieram…':'Sprawdź, co się zmieni'}</button>
+        ${wynik && wynik.ok && wynik.doZapisu && !wynik.zapisani ? `<button class="gold" data-x="zapisz" ${pracuje?'disabled':''}>Zapisz ${wynik.doZapisu} zmian</button>` : ''}
+      </div>
+    </div>`;
+
+    overlay.querySelector('[data-x="zamknij"]').onclick = ()=>{ overlay.remove(); render(); };
+    const sprawdz = overlay.querySelector('[data-x="sprawdz"]');
+    if(sprawdz) sprawdz.onclick = ()=>pobierz(false);
+    const zapisz = overlay.querySelector('[data-x="zapisz"]');
+    if(zapisz) zapisz.onclick = ()=>pobierz(true);
+  }
+
+  async function pobierz(zapisujemy){
+    pracuje = true; blad = ''; draw();
+    try{
+      const res = await fetch('/api/stats-90minut?clubId=' + encodeURIComponent(clubId) + (zapisujemy?'&apply=1':''));
+      const dane = await res.json();
+      wynik = dane;
+      if(!res.ok || dane.error) blad = dane.error || ('Serwer odpowiedział kodem ' + res.status + '.');
+      // Po zapisie odświeżamy dane w aplikacji, żeby nowe liczby były widoczne od razu,
+      // a nie dopiero po przeładowaniu strony.
+      if(zapisujemy && dane.zapisani) await loadAll();
+    }catch(e){
+      blad = 'Nie udało się połączyć z serwerem: ' + (e && e.message ? e.message : e);
+    }finally{
+      pracuje = false; draw();
+    }
+  }
+
+  overlay.addEventListener('click', e=>{ if(e.target===overlay){ overlay.remove(); render(); } });
+  document.body.appendChild(overlay);
+  draw();
+}
+
 function openSquadStatsModal(clubId){
   const club = DB.clubs.find(c=>c.id===clubId);
   if(!club) return;
@@ -10888,132 +10763,6 @@ function openRocznikExcelImport(rocznikGroup){
 }
 
 const TRANSFER_HISTORY_TYPES = ['Transfer definitywny','Wypożyczenie','Wolny transfer','Debiut w klubie (juniorzy)','Powrót z wypożyczenia'];
-// Zakładka czytająca PROTOKÓŁ MECZOWY z Łączy nas piłką (laczynaspilka.pl).
-//
-// To jedyne źródło, które podaje III ligę i rozgrywki młodzieżowe na poziomie zawodnika:
-// obie jedenastki, ławkę, minuty wejść i zejść, bramki oraz kartki. Transfermarkt tych rozgrywek
-// nie prowadzi, a 90minut nie publikuje minut. Strona renderuje treść JavaScriptem, więc serwer
-// niczego by z niej nie odczytał — czytamy DOM w przeglądarce użytkownika, na stronie, którą
-// ma otwartą. Nie omijamy przy tym żadnego zabezpieczenia: protokół jest publiczny.
-//
-// Układ kolumn na stronie (odczytany ze zrzutu protokołu):
-//   skład wyjściowy: [zawodnik][bramki][żółta][czerwona][zejście]
-//   skład rezerwowy: [zawodnik][bramki][żółta][czerwona][wejście][zejście]
-// Rozróżniamy je po LICZBIE kolumn, a nie po ikonach — ikony są obrazkami bez tekstu.
-const LNP_PROTOKOL_BOOKMARKLET = `javascript:(function(){try{
-function tx(e){return e?(e.textContent||'').replace(/\\u00a0/g,' ').replace(/\\s+/g,' ').trim():'';}
-function minuty(s){var m=String(s||'').match(/\\d{1,3}(?=\\s*['\\u2019])/g);return m||[];}
-var naglowki=[].slice.call(document.querySelectorAll('h1,h2,h3,h4,h5,div,span,p'));
-var wyjsciowe=naglowki.filter(function(e){return e.children.length===0&&/^Sk\\u0142ad wyj\\u015bciowy$/i.test(tx(e));});
-var rezerwowe=naglowki.filter(function(e){return e.children.length===0&&/^Sk\\u0142ad rezerwowy$/i.test(tx(e));});
-if(!wyjsciowe.length){alert('SBS: nie widze skladow na tej stronie.\\n\\nOtworz PROTOKOL MECZU na laczynaspilka.pl (sekcja \\u201eSklady\\u201d) i kliknij ponownie.');return;}
-// Nazwa druzyny: najblizszy wczesniejszy naglowek, ktory nie jest etykieta skladu.
-function druzynaDla(el){
-var w=el;
-while(w){
-var p=w.previousElementSibling;
-while(p){
-var t=tx(p);
-if(t&&t.length<60&&!/^Sk\\u0142ad (wyj\\u015bciowy|rezerwowy)$/i.test(t)&&!/^Zawodnik$/i.test(t)&&/[A-Za-z\\u0104-\\u017c]/.test(t))return t;
-p=p.previousElementSibling;}
-w=w.parentElement;}
-return '';}
-function wiersze(etykieta){
-// Tabela stoi zaraz za etykieta — szukamy w kolejnych elementach rodzica.
-var kontener=etykieta.parentElement,tab=null,glebokosc=0;
-while(kontener&&!tab&&glebokosc<4){tab=kontener.querySelector('table');kontener=kontener.parentElement;glebokosc++;}
-if(tab){
-var zTabeli=[].slice.call(tab.querySelectorAll('tr')).map(function(tr){
-return [].slice.call(tr.querySelectorAll('td,th')).map(tx);}).filter(function(k){return k.length>=5;});
-if(zTabeli.length)return zTabeli;}
-// Zapas: nowoczesne strony budują takie zestawienia SIATKĄ BLOKÓW, nie tabelą. Wtedy wierszem
-// jest element, którego dzieci odpowiadają kolumnom — szukamy pojemnika, w którym powtarza się
-// kilka takich elementów o tej samej liczbie dzieci. Pusta kolumna nadal jest osobnym dzieckiem,
-// więc układ kolumn zostaje zachowany — a to jest tu najważniejsze.
-var szukaj=etykieta.parentElement,poziom=0;
-while(szukaj&&poziom<5){
-var dzieci=[].slice.call(szukaj.children);
-for(var d=0;d<dzieci.length;d++){
-var kandydat=dzieci[d];
-var podwiersze=[].slice.call(kandydat.children).filter(function(w){return w.children.length>=5;});
-if(podwiersze.length>=3){
-return podwiersze.map(function(w){return [].slice.call(w.children).map(tx);});}}
-szukaj=szukaj.parentElement;poziom++;}
-return [];}
-var linie=[];
-function zbierz(lista,rola){
-for(var i=0;i<lista.length;i++){
-var klub=druzynaDla(lista[i]);
-var w=wiersze(lista[i]);
-for(var r=0;r<w.length;r++){
-var k=w[r];
-var nazwa=k[0];
-if(!nazwa||/^zawodnik$/i.test(nazwa))continue;
-// Numer stoi przed nazwiskiem w tej samej komorce („8 Maciej Budawski").
-var mn=nazwa.match(/^(\\d{1,2})\\s+(.+)$/);
-var numer=mn?mn[1]:'';
-if(mn)nazwa=mn[2];
-nazwa=nazwa.replace(/\\s*\\((C|B|M|K)\\)\\s*$/i,'').trim();
-if(nazwa.length<3)continue;
-var gole,zolta,czerwona,wejscie,zejscie;
-if(k.length>=6){gole=minuty(k[1]).length;zolta=minuty(k[2]).length?1:0;czerwona=minuty(k[3]).length?1:0;wejscie=minuty(k[4])[0]||'';zejscie=minuty(k[5])[0]||'';}
-else{gole=minuty(k[1]).length;zolta=minuty(k[2]).length?1:0;czerwona=minuty(k[3]).length?1:0;wejscie='';zejscie=minuty(k[4])[0]||'';}
-linie.push([rola,klub,numer,nazwa,gole,zolta,czerwona,wejscie,zejscie].join('|'));}}}
-zbierz(wyjsciowe,'P');
-zbierz(rezerwowe,'R');
-if(!linie.length){alert('SBS: znalazlem sekcje skladow, ale nie odczytalem zadnego wiersza zawodnika.');return;}
-var tytul=(document.title||'').replace(/\\s+/g,' ').trim();
-var caly='### PROTOKOL: '+tytul+' | '+location.href+' ###\\n'+linie.join('\\n');
-navigator.clipboard.writeText(caly).then(function(){
-var d=document.createElement('div');
-d.innerHTML='<b>SBS: protokol odczytany</b><br>zawodnikow: '+linie.length+' \\u2014 schowek gotowy<br><span style="opacity:.75;font-weight:400">Wklej w SBS: Zawodnicy \\u2192 Protokol meczu</span>';
-d.style.cssText='position:fixed;top:16px;right:16px;z-index:999999;background:#16302A;color:#C69B3C;padding:12px 18px;border-radius:8px;font:600 13px sans-serif;line-height:1.5;box-shadow:0 4px 16px rgba(0,0,0,.3)';
-document.body.appendChild(d);setTimeout(function(){d.remove()},4200);
-}).catch(function(e){alert('Nie udalo sie skopiowac: '+e.message)})}catch(e){alert('Blad: '+e.message)}})();`;
-
-// Rozbiór wklejonego protokołu. Minuty liczymy z wejść i zejść: podstawowy bez zmiany gra 90,
-// zdjęty w 56' gra 56, wchodzący w 74' gra 16. Doliczonego czasu NIE dodajemy — protokół go nie
-// podaje, a zgadywanie zaburzyłoby porównywalność między meczami.
-function parseProtokolMeczu(text){
-  const linie = String(text||'').split(/\r?\n/);
-  let tytul = '', link = '';
-  const zawodnicy = [];
-  linie.forEach(l=>{
-    const s = l.trim();
-    if(!s) return;
-    const m = s.match(/^###\s*PROTOKOL:\s*(.*?)\s*###$/i);
-    if(m){
-      const cz = m[1].split('|').map(x=>x.trim());
-      tytul = cz[0] || '';
-      link = cz.find(x=>/^https?:\/\//i.test(x)) || '';
-      return;
-    }
-    if(/^###/.test(s)) return;
-    const k = s.split('|').map(x=>x.trim());
-    if(k.length < 9) return;
-    const [rola, klub, numer, nazwa, gole, zolta, czerwona, wejscie, zejscie] = k;
-    if(!nazwa || nazwa.length < 3) return;
-    const wszedl = wejscie ? parseInt(wejscie,10) : null;
-    const zszedl = zejscie ? parseInt(zejscie,10) : null;
-    // Rezerwowy, który nie wszedł, NIE zalicza występu — to nie to samo, co gra 0 minut.
-    const wystapil = rola === 'P' || wszedl != null;
-    let minuty = 0;
-    if(wystapil){
-      const od = rola === 'P' ? 0 : (wszedl || 0);
-      const do_ = zszedl != null ? zszedl : 90;
-      minuty = Math.max(0, Math.min(90, do_ - od));
-    }
-    zawodnicy.push({
-      rola, klub, numer, nazwa,
-      gole: parseInt(gole,10) || 0,
-      zolte: parseInt(zolta,10) || 0,
-      czerwone: parseInt(czerwona,10) || 0,
-      wszedl, zszedl, wystapil, minuty,
-    });
-  });
-  return {tytul, link, zawodnicy};
-}
-
 // Zakładka czytająca TABELĘ TRANSFERÓW z profilu zawodnika na Transfermarkcie.
 //
 // Powstała, bo wklejenie tej tabeli jest nie do rozczytania: przeglądarka kopiuje ją PIONOWO,

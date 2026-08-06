@@ -159,7 +159,14 @@ export default async function handler(req, res) {
     if (wybor.length !== 1) { niejednoznaczni.push(z.nazwa); return; }
     const g = wybor[0];
     // Zapisujemy tylko realne zmiany — inaczej co przebieg przepisywalibyśmy 500 rekordów bez potrzeby.
-    if ((g.matches || 0) === z.mecze && (g.minutes || 0) === z.minuty && (g.goals || 0) === z.gole) return;
+    //
+    // Kartki i asysty MUSZĄ być w tym porównaniu. Wcześniej patrzyliśmy wyłącznie na mecze, minuty
+    // i bramki, więc zawodnik, któremu przybyła tylko kartka albo asysta, wypadał jako „bez zmian"
+    // i te liczby nigdy nie trafiały do bazy. Stąd Ekstraklasa miała kartki policzone, ale puste.
+    const extG = ((g.custom_fields || {}).__ext) || {};
+    if ((g.matches || 0) === z.mecze && (g.minutes || 0) === z.minuty && (g.goals || 0) === z.gole
+      && (extG.yellowCards || 0) === z.zolte && (extG.redCards || 0) === z.czerwone
+      && (extG.assists || 0) === z.asysty) return;
     doZapisu.push({ id: g.id, kto: `${g.last_name} ${g.first_name}`, z, przed: { mecze: g.matches, minuty: g.minutes, gole: g.goals }, custom_fields: g.custom_fields });
   });
 

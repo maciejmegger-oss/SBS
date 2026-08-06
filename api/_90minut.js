@@ -5,6 +5,65 @@
 
 const ALLOWED_HOSTS = new Set(["90minut.pl", "www.90minut.pl"]);
 
+// Adresy rozgrywek na 90minut, sezon 2026/2027. Trzymamy je w jednym miejscu, bo zmieniają się
+// co sezon, a korzystają z nich zarówno cotygodniowe odświeżanie terminarzy, jak i pobieranie
+// statystyk zawodników — rozjazd między dwiema kopiami byłby błędem nie do zauważenia.
+export const ZRODLA_LIG = {
+  "Ekstraklasa": ["http://www.90minut.pl/liga/1/liga14675.html"],
+  "I liga": ["http://www.90minut.pl/liga/1/liga14676.html"],
+  "II liga": ["http://www.90minut.pl/liga/1/liga14677.html"],
+  "III liga": [
+    "http://www.90minut.pl/liga/1/liga14742.html",
+    "http://www.90minut.pl/liga/1/liga14743.html",
+    "http://www.90minut.pl/liga/1/liga14744.html",
+    "http://www.90minut.pl/liga/1/liga14745.html",
+  ],
+  // Wszystkie 16 grup wojewódzkich — odczytane ze stron wojewódzkich ZPN na 90minut. Wcześniej
+  // było ich tu sześć, więc kluby z pozostałych dziesięciu województw nie miały ani terminarza,
+  // ani skąd wziąć statystyk.
+  "IV liga": [
+    "http://www.90minut.pl/liga/1/liga14768.html",  // dolnośląska
+    "http://www.90minut.pl/liga/1/liga14836.html",  // kujawsko-pomorska
+    "http://www.90minut.pl/liga/1/liga15026.html",  // lubelska
+    "http://www.90minut.pl/liga/1/liga14837.html",  // lubuska
+    "http://www.90minut.pl/liga/1/liga14968.html",  // łódzka
+    "http://www.90minut.pl/liga/1/liga14839.html",  // małopolska
+    "http://www.90minut.pl/liga/1/liga14764.html",  // mazowiecka
+    "http://www.90minut.pl/liga/1/liga14808.html",  // opolska
+    "http://www.90minut.pl/liga/1/liga14818.html",  // podkarpacka
+    "http://www.90minut.pl/liga/1/liga14905.html",  // podlaska
+    "http://www.90minut.pl/liga/1/liga14749.html",  // pomorska
+    "http://www.90minut.pl/liga/1/liga14747.html",  // śląska
+    "http://www.90minut.pl/liga/1/liga14780.html",  // świętokrzyska
+    "http://www.90minut.pl/liga/1/liga14771.html",  // warmińsko-mazurska
+    "http://www.90minut.pl/liga/1/liga14779.html",  // wielkopolska
+    "http://www.90minut.pl/liga/1/liga14748.html",  // zachodniopomorska
+  ],
+  // Centralna Liga Juniorów. Rozgrywki 2026/27 jeszcze nie wystartowały, więc formatu protokołów
+  // nie dało się na nich sprawdzić — strona jest jednak ta sama co w ligach seniorskich.
+  "CLJ U19": ["http://www.90minut.pl/liga/1/liga15142.html"],
+  "CLJ U17": [
+    "http://www.90minut.pl/liga/1/liga15144.html",  // zachodnia
+    "http://www.90minut.pl/liga/1/liga15145.html",  // wschodnia
+  ],
+};
+
+// Nazwa rozgrywek w kartotece klubu niesie także grupę („III liga, gr. I", „IV liga (mazowiecka)"),
+// a klucze wyżej są poziomami. Bez tego sprowadzenia żaden klub nie trafiłby w swój adres, bo
+// dosłowne porównanie napisów zawodzi dla każdego wpisu poza Ekstraklasą.
+//
+// Kolejność sprawdzania jest istotna: „IV" przed „III" przed „II" przed „I", inaczej „III liga"
+// zostałaby rozpoznana jako pierwsza liga.
+export function poziomRozgrywek(nazwa) {
+  const t = String(nazwa || "").trim();
+  if (/ekstraklasa/i.test(t)) return "Ekstraklasa";
+  if (/\bclj\b/i.test(t)) return /u\s*-?\s*17/i.test(t) ? "CLJ U17" : "CLJ U19";
+  for (const rzymska of ["IV", "III", "II", "I"]) {
+    if (new RegExp(`(^|[^IVX])${rzymska}\\s*liga`, "i").test(t)) return `${rzymska} liga`;
+  }
+  return "";
+}
+
 const strip = (s) =>
   String(s || "")
     .replace(/<[^>]*>/g, " ")
@@ -200,3 +259,186 @@ export const normalizujNazwe = (s) =>
 
 export const kluczMeczu = (m) =>
   `${m.round ?? ""}|${normalizujNazwe(m.homeTeam)}|${normalizujNazwe(m.awayTeam)}`;
+
+// ---------------------------------------------------------------------------
+// PROTOKOŁY MECZÓW I STATYSTYKI ZAWODNIKÓW
+//
+// 90minut to jedyne znane nam źródło, które podaje minuty gry na poziomie zawodnika dla III i
+// IV ligi, i robi to w zwykłym HTML-u — bez JavaScriptu i bez bramki reCAPTCHA. Dzięki temu
+// czytamy je z serwera, zamiast prosić o kopiowanie stron w przeglądarce.
+//
+// Podział pracy jest celowy:
+//   * strona meczu (mecz.php) służy TYLKO do ustalenia, KTO gra w danym klubie,
+//   * liczby bierzemy ze strony zawodnika (wystepy.php), gdzie 90minut podaje gotowe sumy
+//     sezonowe. Nie sumujemy więc meczów samodzielnie, co eliminuje całą klasę błędów
+//     (mecz policzony dwa razy, pominięta zmiana, doliczony czas).
+//
+// Czego tu NIE MA: asyst. 90minut ich nie publikuje i nie da się ich stąd wyliczyć.
+// ---------------------------------------------------------------------------
+
+const komorki = (wierszHtml) =>
+  [...wierszHtml.matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((m) => m[1]);
+
+const wiersze = (tabelaHtml) => [...tabelaHtml.matchAll(/<tr[\s\S]*?<\/tr>/gi)].map((m) => m[0]);
+
+const tabele = (html) => [...html.matchAll(/<table[\s\S]*?<\/table>/gi)].map((m) => m[0]);
+
+// Krzyżówka wyników na stronie ligi: każdy rozegrany mecz to odnośnik z podpowiedzią
+// title="Gospodarz 5-0 Gość". Zwracamy sam identyfikator i tę podpowiedź — nazw drużyn NIE
+// rozdzielamy, bo nazwy klubów bywają z liczbami („KKS 1925 Kalisz") i każde cięcie po wyniku
+// jest zgadywanką. Do wybrania meczów danego klubu wystarczy sprawdzić, czy jego nazwa
+// występuje w podpowiedzi; nazwy drużyn i tak odczytamy potem z samej strony meczu.
+export function parseLinkiMeczow(html) {
+  const out = new Map();
+  // Atrybuty w znaczniku stoją w dowolnej kolejności (href, class, dopiero potem title), więc
+  // najpierw wycinamy cały znacznik, a dopiero z niego wyciągamy oba pola. Próba złapania
+  // jednym wyrażeniem gubiła podpowiedź i wszystkie mecze wychodziły bez nazw drużyn.
+  const re = /<a\b[^>]*mecz\.php\?id_mecz=\d+[^>]*>/gi;
+  let m;
+  while ((m = re.exec(html))) {
+    const znacznik = m[0];
+    const id = (znacznik.match(/id_mecz=(\d+)/) || [])[1];
+    if (!id) continue;
+    const tytul = strip((znacznik.match(/title="([^"]*)"/i) || [])[1] || "");
+    // Ten sam mecz pojawia się w krzyżówce raz, ale strona bywa łatana ręcznie — pierwsze
+    // wystąpienie z niepustą podpowiedzią jest tym właściwym.
+    if (!out.has(id) || (!out.get(id) && tytul)) out.set(id, tytul);
+  }
+  return [...out].map(([id, tytul]) => ({ id, tytul }));
+}
+
+// Skład z protokołu meczu. Układ jest trzykolumnowy i stały: lewa komórka to gospodarze,
+// prawa to goście, środkowa jest pusta i tylko je rozdziela. Rodzaj kartki poznajemy po
+// atrybucie alt obrazka ("ŻK" / "CK") — tekstu przy nim nie ma.
+export function parseSkladyMeczu(html) {
+  // Nagłówek rozgrywek musi zawierać numer kolejki. Samo „liga" trafiało w pozycje bocznego
+  // menu („Transfery - I liga") i mecz III ligi opisywało jako pierwszoligowy.
+  const naglowek = strip((html.match(/<b>([^<]*Kolejka[^<]*)<\/b>/i) || [])[1] || "");
+
+  // Nazwy drużyn stoją nad wynikiem, w komórkach szerokości 220 px.
+  const nazwy = [...html.matchAll(/<td[^>]*width="220"[^>]*>\s*<b><font[^>]*>([\s\S]*?)<\/font><\/b>/gi)]
+    .map((m) => strip(m[1]));
+
+  // W jednej komórce potrafi stać DWÓCH zawodników: schodzący, minuta zmiany i wchodzący
+  // („(17) Błażej Starzycki 61 (3) Rafał Remisz"). Czytanie tylko pierwszego odnośnika gubiło
+  // wszystkich rezerwowych. Dzielimy więc komórkę na odcinki wyznaczone przez odnośniki:
+  // kartki i minuta stojące za nazwiskiem należą do zawodnika, po którym następują.
+  const zKomorki = (cel) => {
+    const trafienia = [...cel.matchAll(/<a[^>]*wystepy\.php\?id=(\d+)(?:&(?:amp;)?id_sezon=(\d+))?[^>]*>([\s\S]*?)<\/a>/gi)];
+    return trafienia.map((a, i) => {
+      const poczatek = a.index + a[0].length;
+      const koniec = i + 1 < trafienia.length ? trafienia[i + 1].index : cel.length;
+      const ogon = cel.slice(poczatek, koniec);
+      const podpis = strip(a[3]);
+      const nr = (podpis.match(/^\((\d+)\)/) || [])[1];
+      const minuta = (strip(ogon).match(/\b(\d{1,3})\b/) || [])[1];
+      return {
+        id: a[1],
+        // Numer sezonu bierzemy wprost z odnośnika, zamiast go zgadywać — protokół sam wie,
+        // do których rozgrywek należy, i przy meczach z poprzednich lat nadal trafimy dobrze.
+        sezon: a[2] || "",
+        numer: nr ? parseInt(nr, 10) : null,
+        nazwa: podpis.replace(/^\(\d+\)\s*/, ""),
+        // Pierwszy odnośnik w komórce to zawodnik z wyjściowej jedenastki, kolejne weszły z ławki.
+        podstawowy: i === 0,
+        zszedl: i === 0 && minuta ? parseInt(minuta, 10) : null,
+        zolte: (ogon.match(/alt="ŻK"/g) || []).length,
+        czerwone: (ogon.match(/alt="CK"/g) || []).length,
+      };
+    });
+  };
+
+  const gospodarze = [], goscie = [];
+  for (const w of wiersze(html)) {
+    if (!/wystepy\.php/.test(w)) continue;
+    const k = komorki(w);
+    if (k.length < 3) continue;
+    gospodarze.push(...zKomorki(k[0]));
+    goscie.push(...zKomorki(k[2]));
+  }
+
+  return {
+    rozgrywki: naglowek,
+    gospodarzeNazwa: nazwy[0] || "",
+    goscieNazwa: nazwy[1] || "",
+    gospodarze,
+    goscie,
+  };
+}
+
+// Zbiorcza tabela występów ze strony zawodnika. Kolumny z bramkami i kartkami mają w nagłówku
+// sam obrazek, więc rozpoznajemy je po nazwie pliku (goal.gif / yel.gif / red.gif), a resztę po
+// tekście nagłówka. Trzymanie się sztywnych numerów kolumn zepsułoby się przy pierwszej zmianie
+// układu strony.
+export function parseWystepyZawodnika(html) {
+  const nazwa = strip((html.match(/<title>([\s\S]*?)<\/title>/i) || [])[1] || "");
+
+  const rocznikTekst = strip(html).match(/Data urodzenia\s+(\d{1,2}\s+[a-ząćęłńóśźż]+\s+(\d{4}))/i);
+  const rocznik = rocznikTekst ? parseInt(rocznikTekst[2], 10) : null;
+
+  const tabelaWystepow = tabele(html).filter((t) => /czas gry/i.test(strip(t))).pop();
+  if (!tabelaWystepow) return { nazwa, rocznik, sezony: [] };
+
+  const rz = wiersze(tabelaWystepow);
+  const naglowki = komorki(rz[0] || "");
+  const kolumna = (test) => naglowki.findIndex(test);
+  const poTekscie = (wzor) => kolumna((c) => wzor.test(strip(c)));
+  const poObrazku = (plik) => kolumna((c) => new RegExp(plik.replace(".", "\\."), "i").test(c));
+
+  const idx = {
+    klub: poTekscie(/^drużyna$/i),
+    rozgrywki: poTekscie(/^rozgr/i),
+    wystepy: poTekscie(/^występy$/i),
+    wPodstawowym: poTekscie(/^w\s*"?11/i),
+    minuty: poTekscie(/^czas gry$/i),
+    gole: poObrazku("goal.gif"),
+    zolte: poObrazku("yel.gif"),
+    czerwone: poObrazku("red.gif"),
+  };
+  if (idx.minuty < 0 || idx.wystepy < 0) return { nazwa, rocznik, sezony: [] };
+
+  const liczba = (k, i) => {
+    if (i < 0 || i >= k.length) return 0;
+    const n = parseInt(strip(k[i]).replace(/[^\d-]/g, ""), 10);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const sezony = [];
+  for (const w of rz.slice(1)) {
+    const k = komorki(w);
+    if (k.length < naglowki.length - 1) continue;
+    const rozgrywki = strip(k[idx.rozgrywki] || "");
+    sezony.push({
+      klub: strip(k[idx.klub] || ""),
+      rozgrywki,
+      // Wiersz „RAZEM" podsumowuje wszystkie rozgrywki (liga + puchar) — przydaje się jako
+      // zapas, gdy nie znamy dokładnej nazwy rozgrywek, ale nie wolno go mylić z ligą.
+      podsumowanie: /^razem$/i.test(rozgrywki),
+      wystepy: liczba(k, idx.wystepy),
+      wPodstawowym: liczba(k, idx.wPodstawowym),
+      minuty: liczba(k, idx.minuty),
+      gole: liczba(k, idx.gole),
+      zolte: liczba(k, idx.zolte),
+      czerwone: liczba(k, idx.czerwone),
+    });
+  }
+  return { nazwa, rocznik, sezony };
+}
+
+// Wspólne pobranie strony z 90minut. Kodowanie ISO-8859-2 jest tu obowiązkowe — bez niego
+// polskie nazwiska przychodzą zniekształcone i nic się nie dopasuje do naszej bazy.
+export async function pobierzZ90minut(rawUrl) {
+  const { url, error } = validateTarget(rawUrl);
+  if (error) throw new Error(error);
+  const odp = await fetch(url.toString(), {
+    headers: { "User-Agent": "ScoutBaseSystem/1.0 (+https://scoutbasesystem.com)" },
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!odp.ok) throw new Error(`90minut odpowiedziało kodem ${odp.status}.`);
+  const bufor = await odp.arrayBuffer();
+  try {
+    return new TextDecoder("iso-8859-2").decode(bufor);
+  } catch {
+    return new TextDecoder("latin1").decode(bufor);
+  }
+}
