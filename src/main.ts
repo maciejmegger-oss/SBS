@@ -3670,6 +3670,7 @@ function viewClubDetail(id){
     <div class="toolbar" style="margin-bottom:8px;">
       <h4 style="margin:0;color:var(--pitch);">Zawodnicy scoutowani w tym klubie (${squad.length})</h4>
       <div style="display:flex;gap:8px;align-items:center;">
+        <button class="secondary" id="squad-reset-stats-btn" style="display:none;" data-action="reset-squad-stats" data-club="${c.id}" title="Czyści dorobek bieżącego sezonu, żeby wczytać go od nowa. Archiwum poprzednich sezonów zostaje.">↺ Wyzeruj statystyki (0)</button>
         <button class="danger" id="squad-delete-btn" style="display:none;" data-action="delete-squad-selected" data-club="${c.id}">🗑️ Usuń zaznaczonych (0)</button>
         <button class="gold" data-action="add-player-to-club" data-id="${c.id}">+ Dodaj zawodnika do tego klubu</button>
       </div>
@@ -5965,12 +5966,18 @@ function attachHandlers(){
   // Zaznaczanie i usuwanie zawodników wprost ze składu klubu — pojedynczo lub całością.
   const squadChecks = document.querySelectorAll('.squad-player-check');
   const squadDelBtn = document.getElementById('squad-delete-btn');
+  const squadResetBtn = document.getElementById('squad-reset-stats-btn');
   const squadAll = document.getElementById('squad-select-all');
   const odswiezPrzycisk = ()=>{
-    if(!squadDelBtn) return;
     const n = Array.from(squadChecks).filter(c=>c.checked).length;
-    squadDelBtn.style.display = n ? 'inline-block' : 'none';
-    squadDelBtn.textContent = `🗑️ Usuń zaznaczonych (${n})`;
+    if(squadDelBtn){
+      squadDelBtn.style.display = n ? 'inline-block' : 'none';
+      squadDelBtn.textContent = `🗑️ Usuń zaznaczonych (${n})`;
+    }
+    if(squadResetBtn){
+      squadResetBtn.style.display = n ? 'inline-block' : 'none';
+      squadResetBtn.textContent = `↺ Wyzeruj statystyki (${n})`;
+    }
   };
   squadChecks.forEach(c=>c.onchange = odswiezPrzycisk);
   if(squadAll) squadAll.onchange = ()=>{ squadChecks.forEach(c=>c.checked = squadAll.checked); odswiezPrzycisk(); };
@@ -5991,6 +5998,42 @@ function attachHandlers(){
       alert('Nie udało się usunąć: ' + ((e as any).message||e));
     }
   };
+  // Wyzerowanie dorobku BIEŻĄCEGO sezonu — potrzebne, gdy statystyki wjechały błędnie (np. z wklejki
+  // pomylonej z protokołem) i trzeba wczytać je od nowa. Zerujemy do pustej wartości, a nie do zera:
+  // „nie wiemy" to co innego niż „zagrał zero minut", a dopisywanie z protokołu i tak startuje od (x||0).
+  //
+  // Kasujemy też listę rozliczonych meczów — bez tego ponowne wczytanie tego samego protokołu zostałoby
+  // pominięte jako już policzone i wyzerowanie nie dałoby się cofnąć wczytaniem. Archiwum sezonów
+  // (seasonStats) zostaje nietknięte: dotyczy lat poprzednich i nie ma związku z tym błędem.
+  if(squadResetBtn) squadResetBtn.onclick = async ()=>{
+    const ids = new Set(Array.from(squadChecks).filter(c=>c.checked).map(c=>c.dataset.id));
+    if(!ids.size) return;
+    if(!confirm(`Wyzerować statystyki bieżącego sezonu u ${ids.size} zawodników?\n\n`
+      + `Czyszczę: mecze, minuty, gole, asysty, kartki oraz znacznik rozliczonych meczów.\n`
+      + `Zostaje: archiwum poprzednich sezonów, oceny i obserwacje.`)) return;
+    const orig = squadResetBtn.textContent;
+    squadResetBtn.disabled = true; squadResetBtn.textContent = `Zeruję ${ids.size}…`;
+    const kopia = DB.players.filter(p=>ids.has(p.id)).map(p=>({...p}));
+    DB.players.forEach(p=>{
+      if(!ids.has(p.id)) return;
+      p.matches = null; p.minutes = null; p.goals = null; p.assists = null;
+      p.yellowCards = null; p.redCards = null;
+      p.statsUpdatedAt = ''; p.statsSource = '';
+      p.rozliczoneMecze = [];
+    });
+    const ok = await savePlayers();
+    if(!ok){
+      // Zapis nie przeszedł — cofamy zmianę w pamięci, żeby widok nie pokazywał wyzerowanych
+      // liczb, których w bazie nie ma.
+      const wg = new Map(kopia.map(p=>[p.id, p]));
+      DB.players = DB.players.map(p=> wg.get(p.id) || p);
+      squadResetBtn.disabled = false; squadResetBtn.textContent = orig;
+      alert('Nie udało się zapisać — sprawdź baner u góry strony. Nic nie zostało zmienione.');
+      return;
+    }
+    render();
+  };
+
   main.querySelectorAll('[data-action="league-stats"]').forEach(b=>b.onclick=()=>openLeagueStatsModal(b.dataset.league));
   main.querySelectorAll('[data-action="merge-duplicates"]').forEach(b=>b.onclick=()=>openMergeDuplicatesModal());
   main.querySelectorAll('[data-action="analyze-player"]').forEach(b=>b.onclick=()=>openPlayerAnalysisModal(b.dataset.id));
@@ -10795,9 +10838,24 @@ function wiersze(etykieta){
 // Tabela stoi zaraz za etykieta — szukamy w kolejnych elementach rodzica.
 var kontener=etykieta.parentElement,tab=null,glebokosc=0;
 while(kontener&&!tab&&glebokosc<4){tab=kontener.querySelector('table');kontener=kontener.parentElement;glebokosc++;}
-if(!tab)return [];
-return [].slice.call(tab.querySelectorAll('tr')).map(function(tr){
-return [].slice.call(tr.querySelectorAll('td,th')).map(tx);}).filter(function(k){return k.length>=5;});}
+if(tab){
+var zTabeli=[].slice.call(tab.querySelectorAll('tr')).map(function(tr){
+return [].slice.call(tr.querySelectorAll('td,th')).map(tx);}).filter(function(k){return k.length>=5;});
+if(zTabeli.length)return zTabeli;}
+// Zapas: nowoczesne strony budują takie zestawienia SIATKĄ BLOKÓW, nie tabelą. Wtedy wierszem
+// jest element, którego dzieci odpowiadają kolumnom — szukamy pojemnika, w którym powtarza się
+// kilka takich elementów o tej samej liczbie dzieci. Pusta kolumna nadal jest osobnym dzieckiem,
+// więc układ kolumn zostaje zachowany — a to jest tu najważniejsze.
+var szukaj=etykieta.parentElement,poziom=0;
+while(szukaj&&poziom<5){
+var dzieci=[].slice.call(szukaj.children);
+for(var d=0;d<dzieci.length;d++){
+var kandydat=dzieci[d];
+var podwiersze=[].slice.call(kandydat.children).filter(function(w){return w.children.length>=5;});
+if(podwiersze.length>=3){
+return podwiersze.map(function(w){return [].slice.call(w.children).map(tx);});}}
+szukaj=szukaj.parentElement;poziom++;}
+return [];}
 var linie=[];
 function zbierz(lista,rola){
 for(var i=0;i<lista.length;i++){
