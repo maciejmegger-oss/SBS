@@ -8503,7 +8503,7 @@ function openBookmarkletModal(){
     <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
       <li>Włącz pasek zakładek w przeglądarce: <strong>Ctrl+Shift+B</strong></li>
       <li>Przeciągnij ten przycisk na pasek zakładek:<br>
-        <a href="${esc(TM_BOOKMARKLET)}" onclick="return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:#C69B3C;color:#16302A;border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">⏱ Kopiuj do SBS</a>
+        <a href="${esc(TM_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:#C69B3C;color:#16302A;border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">⏱ Kopiuj do SBS</a>
       </li>
       <li>Wejdź na stronę klubu → <strong>Statystyki drużynowe</strong></li>
       <li>Kliknij <strong>„⏱ Kopiuj do SBS"</strong> na pasku zakładek — pojawi się potwierdzenie</li>
@@ -9073,7 +9073,7 @@ function openProtokolMeczuModal(){
         <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
           <li>Włącz pasek zakładek: <strong>Ctrl+Shift+B</strong></li>
           <li>Przeciągnij na pasek:<br>
-            <a href="${esc(LNP_PROTOKOL_BOOKMARKLET)}" onclick="return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:#C69B3C;color:#16302A;border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">⚽ Protokół do SBS</a>
+            <a href="${esc(LNP_PROTOKOL_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:#C69B3C;color:#16302A;border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">⚽ Protokół do SBS</a>
           </li>
           <li>Otwórz protokół meczu na laczynaspilka.pl (sekcja <strong>Składy</strong> musi być widoczna) i kliknij zakładkę</li>
         </ol>
@@ -9247,7 +9247,7 @@ function openAgencyStaffModal(agencyId){
         <summary style="cursor:pointer;font-weight:700;color:var(--gold-dark);">Zakładka (opcjonalnie)</summary>
         <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
           <li>Przeciągnij na pasek zakładek:<br>
-            <a href="${esc(TM_AGENCY_STAFF_BOOKMARKLET)}" onclick="return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:#C69B3C;color:#16302A;border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">👥 Pracownicy agencji do SBS</a>
+            <a href="${esc(TM_AGENCY_STAFF_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:#C69B3C;color:#16302A;border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">👥 Pracownicy agencji do SBS</a>
           </li>
           ${agencja.tmLink ? `<li>Otwórz <a class="ext-link" href="${esc(agencja.tmLink)}" target="_blank" rel="noopener noreferrer">profil tej agencji &rarr;</a>, kliknij zakładkę</li>`
             : `<li>Otwórz profil agencji na Transfermarkcie i kliknij zakładkę</li>`}
@@ -9402,7 +9402,7 @@ function openAgencySquadModal(agencyId){
         <summary style="cursor:pointer;font-weight:700;color:var(--gold-dark);">1. Ustaw zakładkę (raz)</summary>
         <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
           <li>Przeciągnij na pasek zakładek:<br>
-            <a href="${esc(TM_AGENCY_SQUAD_BOOKMARKLET)}" onclick="return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:#C69B3C;color:#16302A;border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">📥 Zawodnicy agencji do SBS</a>
+            <a href="${esc(TM_AGENCY_SQUAD_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:#C69B3C;color:#16302A;border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">📥 Zawodnicy agencji do SBS</a>
           </li>
           ${agencja.tmLink ? `<li>Otwórz <a class="ext-link" href="${esc(agencja.tmLink)}" target="_blank" rel="noopener noreferrer">profil tej agencji &rarr;</a></li>`
             : `<li>Otwórz profil tej agencji na Transfermarkcie <span class="note">(nie mam zapisanego adresu — dopisz go w „Edytuj agencję", to pojawi się tu odnośnik)</span></li>`}
@@ -9610,7 +9610,7 @@ function openAgenciesImportModal(){
         <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
           <li>Włącz pasek zakładek: <strong>Ctrl+Shift+B</strong></li>
           <li>Przeciągnij ten przycisk na pasek zakładek:<br>
-            <a href="${esc(TM_AGENCIES_BOOKMARKLET)}" onclick="return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:#C69B3C;color:#16302A;border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">📋 Agencje do SBS</a>
+            <a href="${esc(TM_AGENCIES_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:#C69B3C;color:#16302A;border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">📋 Agencje do SBS</a>
           </li>
           <li>Na Transfermarkcie: <strong>Zapoznaj się → Agencje</strong>, wybierz kraj, kliknij <strong>Pokaż wybór</strong></li>
           <li>Kliknij zakładkę. Przejdź na kolejną stronę (2, 3, …) i klikaj na każdej — bufor się sumuje,
@@ -9837,7 +9837,7 @@ function openAgentImportModal(){
         <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
           <li>Włącz pasek zakładek: <strong>Ctrl+Shift+B</strong></li>
           <li>Przeciągnij ten przycisk na pasek zakładek:<br>
-            <a href="${esc(TM_AGENT_BOOKMARKLET)}" onclick="return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:#C69B3C;color:#16302A;border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">🕵 Menedżer do SBS</a>
+            <a href="${esc(TM_AGENT_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:#C69B3C;color:#16302A;border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">🕵 Menedżer do SBS</a>
           </li>
           <li>Wejdź na <strong>profil zawodnika</strong> na Transfermarkcie i kliknij zakładkę</li>
           <li>Powtórz dla kolejnych — bufor się sumuje. <strong>Shift+klik</strong> czyści zebrane.</li>
@@ -11157,7 +11157,7 @@ function openTransferHistoryModal(playerId){
         — ginie wtedy podział na kolumny i nie da się odróżnić klubu opuszczanego od docelowego. Dlatego użyj zakładki,
         która czyta tabelę wprost ze strony:</p>
         <p style="margin:8px 0;">
-          <a href="${esc(TM_TRANSFERS_BOOKMARKLET)}" onclick="return false;" style="display:inline-block;padding:8px 16px;background:#C69B3C;color:#16302A;border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">↔ Transfery do SBS</a>
+          <a href="${esc(TM_TRANSFERS_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;padding:8px 16px;background:#C69B3C;color:#16302A;border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">↔ Transfery do SBS</a>
           <span class="note" style="display:block;font-size:11px;margin-top:4px;">Przeciągnij na pasek zakładek (Ctrl+Shift+B), wejdź na profil zawodnika, kliknij — i wklej poniżej.</span>
         </p>
         <details style="margin-bottom:6px;">
