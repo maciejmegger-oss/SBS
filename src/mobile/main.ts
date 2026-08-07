@@ -83,6 +83,68 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getEleme
 const pad = (n: number) => (n < 10 ? "0" : "") + n;
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
+// ---------------------------------------------------------------------------
+// Motyw jasny / ciemny
+// ---------------------------------------------------------------------------
+//
+// Mecze gra się o różnych porach: ciemny ekran wieczorem nie oślepia i oszczędza baterię,
+// ale w pełnym słońcu jest nieczytelny. Wybór zapamiętujemy w telefonie, bo scout ustawia go
+// raz na dane warunki, a nie przy każdym uruchomieniu.
+//
+// Domyślnie idziemy za ustawieniem systemu — telefony same przełączają się na ciemny o zmroku,
+// więc bez wskazania użytkownika to najlepsze przybliżenie pory dnia, jakie mamy.
+
+const THEME_KEY = "sbs-m:theme";
+type Theme = "light" | "dark";
+
+const systemTheme = (): Theme =>
+  window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+
+const storedTheme = (): Theme | null => {
+  const v = localStorage.getItem(THEME_KEY);
+  return v === "light" || v === "dark" ? v : null;
+};
+
+const activeTheme = (): Theme => storedTheme() || systemTheme();
+
+function applyTheme(t: Theme) {
+  document.documentElement.dataset.theme = t;
+  // Pasek stanu telefonu ma kolor z tego znacznika. Bez podmiany w trybie jasnym zostawałby
+  // ciemnozielony i odcinał się od reszty ekranu.
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", t === "light" ? "#F6F3EA" : "#16302A");
+}
+
+// Przełączenie NIE przerysowuje widoku. Cały wygląd wisi na zmiennych CSS, więc podmiana
+// znacznika wystarcza — a przerysowanie skasowałoby to, co scout ma właśnie wpisane w notatce
+// do minuty albo w opisie po meczu. Poprawiamy tylko sam przycisk.
+function themeButtonHtml(): string {
+  const jasny = activeTheme() === "light";
+  return `<button class="theme-btn" data-act="theme" aria-label="${jasny ? "Przełącz na ciemny ekran" : "Przełącz na jasny ekran"}">${jasny ? ICON_MOON : ICON_SUN}</button>`;
+}
+
+function updateThemeButton() {
+  const btn = document.querySelector(".topbar .theme-btn");
+  if (btn) btn.outerHTML = themeButtonHtml();
+}
+
+function toggleTheme() {
+  const nowy: Theme = activeTheme() === "light" ? "dark" : "light";
+  localStorage.setItem(THEME_KEY, nowy);
+  applyTheme(nowy);
+  updateThemeButton();
+}
+
+// Ustawiamy motyw natychmiast przy wczytaniu skryptu, przed pierwszym rysowaniem — inaczej
+// przy jasnym motywie mignęłoby ciemne tło.
+applyTheme(activeTheme());
+
+// Zmiana ustawienia systemowego (zachód słońca, tryb nocny) przestawia panel tylko wtedy, gdy
+// scout nie wybrał wariantu sam. Własny wybór jest ważniejszy niż podpowiedź systemu.
+window.matchMedia?.("(prefers-color-scheme: light)").addEventListener?.("change", () => {
+  if (!storedTheme()) { applyTheme(systemTheme()); updateThemeButton(); }
+});
+
 let toastTimer: number | undefined;
 function toast(msg: string) {
   let el = $("toast");
@@ -436,6 +498,13 @@ function viewBaza(): string {
 // Szkielet i przerysowanie
 // ---------------------------------------------------------------------------
 
+// Herb SBS. Ten sam plik służy za ikonę na ekranie głównym telefonu (public/manifest.webmanifest),
+// więc po instalacji panelu ikona i logo w aplikacji są tym samym znakiem.
+const LOGO = "/icon-192.png";
+
+const ICON_SUN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.1 5.1l1.4 1.4M17.5 17.5l1.4 1.4M18.9 5.1l-1.4 1.4M6.5 17.5l-1.4 1.4"/></svg>';
+const ICON_MOON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></svg>';
+
 const TABS: { id: ViewName; label: string; icon: string }[] = [
   { id: "dzis", label: "Obserwacje", icon: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>' },
   { id: "live", label: "Live", icon: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6"/>' },
@@ -447,7 +516,8 @@ function syncPill(): string {
   const n = queueLength();
   if (!navigator.onLine) return `<span class="sync offline">Offline${n ? " · " + n : ""}</span>`;
   if (n) return `<span class="sync pending">W kolejce · ${n}</span>`;
-  return '<span class="sync">Zsynchronizowano</span>';
+  // Krótko, bo pasek dzieli szerokość z nazwą aplikacji i przyciskiem motywu.
+  return '<span class="sync">Wysłane</span>';
 }
 
 function render() {
@@ -462,8 +532,10 @@ function render() {
 
   app.innerHTML = `
     <div class="topbar">
+      <img class="mark" src="${LOGO}" alt="">
       <h1>SBS Scout Live</h1>
       ${syncPill()}
+      ${themeButtonHtml()}
     </div>
     <main id="main">${body}</main>
     <nav class="tabbar">
@@ -720,6 +792,7 @@ document.addEventListener("click", (e) => {
       ocena.setPieceComment = $<HTMLTextAreaElement>("o-sfg")?.value ?? ocena.setPieceComment;
       render();
       break;
+    case "theme": toggleTheme(); break;
     case "dictate": dictate(); break;
     case "save-ocena": saveOcena(); break;
 
@@ -760,8 +833,11 @@ function renderLogin(info?: string) {
   const app = $("app")!;
   app.innerHTML = `
     <div class="login">
-      <h1>SBS Scout Live</h1>
-      <p class="hint">Zaloguj się tym samym kontem, co w Scout Base System.</p>
+      <div class="login-brand">
+        <img src="${LOGO}" alt="Scout Base System" width="88" height="88">
+        <h1>SBS Scout Live</h1>
+        <p class="hint">Zaloguj się tym samym kontem, co w Scout Base System.</p>
+      </div>
       <div id="login-error"></div>
       ${info ? `<div class="error" style="background:rgba(78,154,99,.14); border-color:var(--good); color:#8FD3A2;">${esc(info)}</div>` : ""}
       <div class="field"><input id="l-email" type="email" inputmode="email" autocomplete="username" placeholder="E-mail"></div>
@@ -797,6 +873,37 @@ function renderLogin(info?: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Ekran powitalny
+// ---------------------------------------------------------------------------
+//
+// Herb wchodzi obrotem w trzech wymiarach, obiega go złota obręcz. Trwa to sekundę i nie
+// wstrzymuje niczego: logowanie i pobieranie danych idą pod spodem, a ekran znika sam.
+// Dotknięcie kończy go od razu — scout, który wraca do trwającego meczu, nie ma na co czekać.
+
+function splash() {
+  const el = document.createElement("div");
+  el.className = "splash";
+  el.innerHTML = `
+    <div class="splash-stage">
+      <div class="splash-orbit"></div>
+      <div class="splash-logo"><img src="${LOGO}" alt="Scout Base System"></div>
+    </div>
+    <div class="splash-word">SBS Scout <span>Live</span></div>`;
+  document.body.appendChild(el);
+
+  let zamkniete = false;
+  const zamknij = () => {
+    if (zamkniete) return;
+    zamkniete = true;
+    el.classList.add("done");
+    // Element usuwamy dopiero po wygaszeniu, żeby nie uciął się w połowie przejścia.
+    window.setTimeout(() => el.remove(), 450);
+  };
+  el.addEventListener("click", zamknij);
+  window.setTimeout(zamknij, 1600);
+}
+
+// ---------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------
 
@@ -827,6 +934,7 @@ document.addEventListener("visibilitychange", () => {
   if (!document.hidden) { paintClock(); void flushQueue().then(refreshSyncPill); }
 });
 
+splash();
 currentUser().then((user) => (user ? start() : renderLogin()));
 
 // Rejestracja mechanizmu offline tylko w wersji wdrożonej — w trybie deweloperskim przeszkadzałby

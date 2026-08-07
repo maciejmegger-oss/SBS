@@ -34,14 +34,15 @@ export interface LiveEvent {
 
 // Zadanie w kolejce wysyłki. Każde jest samodzielne i idempotentne (upsert po id), więc powtórna
 // próba po zerwaniu połączenia niczego nie zdubluje.
-// Każde zadanie ma własny identyfikator, bo kolejka żyje w localStorage: przy każdym odczycie
-// powstają NOWE obiekty i nie da się rozpoznać wykonanego zadania po tożsamości obiektu.
-type QueueJob = { id: string } & (
+type QueueJobPayload =
   | { kind: "observation"; row: Record<string, unknown> }
   | { kind: "report"; row: Record<string, unknown> }
   | { kind: "playerStatus"; playerId: string; status: string }
-  | { kind: "liveEvents"; observationId: string; events: LiveEvent[] }
-);
+  | { kind: "liveEvents"; observationId: string; events: LiveEvent[] };
+
+// Zadanie w kolejce ma dodatkowo własny identyfikator, bo kolejka żyje w localStorage: przy każdym
+// odczycie powstają NOWE obiekty i wykonanego zadania nie da się rozpoznać po tożsamości obiektu.
+type QueueJob = QueueJobPayload & { id: string };
 
 const LS = {
   cache: "sbs-m:cache",          // kopia bazy do pracy offline
@@ -200,7 +201,7 @@ const setQueue = (q: QueueJob[]) => writeLS(LS.queue, q);
 
 export const queueLength = () => getQueue().length;
 
-function enqueue(job: Omit<QueueJob, "id">) {
+function enqueue(job: QueueJobPayload) {
   const pelne = { ...job, id: uid("job") } as QueueJob;
   const q = getQueue();
   // Zadania dotyczące tego samego obiektu zastępują się nawzajem — w kolejce ma czekać stan

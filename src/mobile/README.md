@@ -25,6 +25,20 @@ Lokalnie, w trakcie pracy nad kodem: `npm run dev`, a potem `http://localhost:51
 | **Ocena** | 5 atrybutów 1–10, fazy gry i stałe fragmenty 1–6, perspektywa, decyzja, dyktowany opis | `sbs_observations.ratings`, `sbs_reports`, `sbs_players.status` |
 | **Baza** | wyszukiwarka zawodników offline, stan kolejki wysyłki, odświeżenie kopii bazy | nic |
 
+Przy uruchomieniu panel pokazuje przez sekundę herb SBS obracany w trzech wymiarach. Ekran
+powitalny niczego nie wstrzymuje (logowanie i pobieranie danych idą pod spodem), a dotknięcie
+kończy go od razu.
+
+## Jasny i ciemny ekran
+
+Przycisk w pasku górnym, obok stanu wysyłki. Mecze gra się i w południe, i po zmroku: ciemny
+wariant nie oślepia wieczorem i oszczędza baterię, jasny jest jedynym czytelnym w pełnym słońcu.
+
+- Bez wskazania panel idzie za ustawieniem telefonu — a telefony same przełączają się o zmroku.
+- Własny wybór jest ważniejszy niż podpowiedź systemu i zostaje zapamiętany w telefonie.
+- Przełączenie nie przerysowuje widoku, więc nie kasuje wpisanej notatki ani opisu — cały wygląd
+  wisi na zmiennych CSS (`src/mobile/style.css`), a przełącznik podmienia tylko `data-theme`.
+
 Skale i klucze są **identyczne** z aplikacją na komputerze (`RATING_KEYS`, `REPORT_PHASES`,
 `REPORT_SET_PIECES` w `src/main.ts`), więc radar, średnie i wykresy w SBS liczą się bez żadnej
 konwersji.
