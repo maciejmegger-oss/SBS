@@ -9,28 +9,7 @@
 //
 // Zmieniamy tylko obserwacje z przyszłości. Przesuwanie tych, które już się odbyły, byłoby
 // fałszowaniem historii pracy.
-import { fetchLeagueSchedule, kluczMeczu, normalizujNazwe } from "./_90minut.js";
-
-// Adresy rozgrywek na 90minut, sezon 2026/2027.
-const ZRODLA = {
-  "Ekstraklasa": ["http://www.90minut.pl/liga/1/liga14675.html"],
-  "I liga": ["http://www.90minut.pl/liga/1/liga14676.html"],
-  "II liga": ["http://www.90minut.pl/liga/1/liga14677.html"],
-  "III liga": [
-    "http://www.90minut.pl/liga/1/liga14742.html",
-    "http://www.90minut.pl/liga/1/liga14743.html",
-    "http://www.90minut.pl/liga/1/liga14744.html",
-    "http://www.90minut.pl/liga/1/liga14745.html",
-  ],
-  "IV liga": [
-    "http://www.90minut.pl/liga/1/liga14747.html",  // śląska
-    "http://www.90minut.pl/liga/1/liga14748.html",  // zachodniopomorska
-    "http://www.90minut.pl/liga/1/liga14749.html",  // pomorska
-    "http://www.90minut.pl/liga/1/liga14768.html",  // dolnośląska
-    "http://www.90minut.pl/liga/1/liga14779.html",  // wielkopolska
-    "http://www.90minut.pl/liga/1/liga14836.html",  // kujawsko-pomorska
-  ],
-};
+import { fetchLeagueSchedule, kluczMeczu, normalizujNazwe, ZRODLA_LIG as ZRODLA } from "./_90minut.js";
 
 const BAZA = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const KLUCZ = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY;

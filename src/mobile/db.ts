@@ -11,7 +11,7 @@
 // zwykle nie ma. Każdy zapis ląduje najpierw w pamięci telefonu, a dopiero potem — gdy się da —
 // idzie na serwer. Nic nie ginie po zamknięciu przeglądarki ani po rozładowaniu telefonu.
 
-import { sb } from "../data/storage";
+import { sb, EXT_CONFIG } from "../data/storage";
 import type { Player, Club, Observation, Report } from "../types";
 
 // Część meczu: 1 i 2 to połowy regulaminowe, 3 i 4 to dogrywka. Doliczonego czasu nie liczymy
@@ -102,7 +102,13 @@ const objFromRow = (row: Record<string, unknown>): Record<string, unknown> => {
 // chowa je w polu jsonb pod kluczem `__ext` (patrz src/data/storage.ts). Przy odczycie trzeba je
 // wyciągnąć na wierzch, przy zapisie — schować z powrotem, inaczej rodzaj obserwacji i punkt
 // startowy znikałyby po każdej edycji z telefonu.
-const OBS_EXT_FIELDS = ["startLocation", "distanceKm", "obsType"];
+//
+// Listę bierzemy WPROST z warstwy aplikacji na komputerze, zamiast trzymać tu jej odpowiednik.
+// Własna kopia już raz się rozjechała: doszły tam `skladMeczu` i `googleEventId`, o których ten
+// plik nie wiedział — a pole spoza listy nie trafia do `__ext`, tylko leci jako osobna kolumna,
+// której w tabeli nie ma. Zapis obserwacji z telefonu kończyłby się wtedy błędem i zawieszał
+// kolejkę wysyłki, a przy okazji gubił powiązanie z wydarzeniem w Kalendarzu Google.
+const OBS_EXT_FIELDS = EXT_CONFIG.sbs_observations.fields;
 
 const liftObsExt = (o: Record<string, unknown>) => {
   const host = o.ratings as Record<string, unknown> | undefined;

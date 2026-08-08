@@ -16,98 +16,176 @@
   --warn-bg:#F4E3C4;
   --bad-bg:#F3D6D0;
   --card:#FFFFFF;
+
+  /* Nazwane role, wcześniej wpisywane w kodzie liczbami — kolor podany liczbą nie reaguje
+     na zmianę motywu, więc panel zostawał jasny na ciemnym tle. */
+  --border:#E3DECE;
+  --border-strong:#D9D3C4;
+  --ink-faint:#8A857A;
+  --card-soft:#FBF9F3;      /* delikatne tło wyróżnionej sekcji */
+  --card-warm:#FBF6E9;      /* podświetlenie zaznaczonego wiersza */
+  --card-alert:#FBF3F2;     /* tło ostrzeżenia */
+
+  /* --pitch pełnił dwie sprzeczne role naraz: tła ciemnych powierzchni i koloru nagłówków.
+     Na ciemnym motywie nie może być jednocześnie ciemny i jasny, więc role są rozdzielone.
+     --on-pitch to tekst leżący NA ciemnym tle — jasny w obu motywach. */
+  --heading:#16302A;
+  --on-pitch:#F6F3EA;
+
+  /* Podświetlenia wierszy w Komitecie Transferowym — razem z kolorem tekstu, który na nich leży. */
+  --row-transfer-a:#FBEFC9;
+  --row-transfer-b:#FCF8EC;
+  --row-trial:#EEF3FA;
+  --row-reco:#EDF5EE;
+  --row-rejected:#F8EEEA;
+  --row-watching:#FAF7EF;
+  --row-ink:#1B2420;
+  --warn-ink:#7A5A15;
+
   --radius:10px;
   font-family:'Inter',sans-serif;
+  color-scheme:light;
 }
+
+/* CIEMNY MOTYW.
+   Zmieniamy wyłącznie wartości zmiennych — żadnej reguły układu, więc nic nie może się
+   rozjechać. Zieleń i złoto zostają, bo to znaki rozpoznawcze systemu; zmienia się jasność. */
+:root[data-theme="dark"]{
+  --pitch:#0C1512;
+  --pitch-2:#132019;
+  --turf:#1A2E26;
+  --line:#2C4438;
+  --chalk:#0F1512;          /* tło strony */
+  --chalk-dim:#1B2621;
+  --card:#18211D;
+  --card-soft:#1D2823;
+  --card-warm:#2C2517;
+  --card-alert:#2C1C19;
+  --border:#2B3A33;
+  --border-strong:#3A4B42;
+  --ink:#E9E5D9;
+  --ink-soft:#A6AFA5;
+  --ink-faint:#7C837A;
+  /* Nagłówki i akcenty rozjaśnione, żeby zachować kontrast na ciemnym tle.
+     Złoto i glina w wersji jasnej — te same barwy, tylko czytelne. */
+  --heading:#7FC9A6;
+  --gold:#D9B45E;
+  --gold-dark:#C69B3C;
+  --clay:#D97A68;
+  --clay-dark:#E08C7A;
+  --good:#5FBF77;
+  --good-bg:#1C3323;
+  --warn-bg:#3A3018;
+  --bad-bg:#3A2320;
+  /* Te same podświetlenia, przyciemnione — zachowują rozróżnienie statusów, ale zostawiają
+     jasnemu tekstowi wystarczający kontrast. */
+  --row-transfer-a:#3A2F12;
+  --row-transfer-b:#241E10;
+  --row-trial:#182430;
+  --row-reco:#16281B;
+  --row-rejected:#2E1D19;
+  --row-watching:#26221A;
+  --row-ink:#F2EEE2;
+  --warn-ink:#E3C273;
+  color-scheme:dark;
+}
+
+/* Przełącznik motywu w pasku bocznym. */
+.theme-toggle{
+  margin:10px 20px 0;padding:8px 12px;border-radius:8px;cursor:pointer;
+  background:transparent;border:1px solid var(--line);color:var(--on-pitch);
+  font-size:12px;font-weight:600;display:flex;align-items:center;gap:8px;width:calc(100% - 40px);
+}
+.theme-toggle:hover{background:var(--pitch-2);}
 *{box-sizing:border-box;}
 body{margin:0;background:var(--chalk);color:var(--ink);}
 .app{display:flex;min-height:600px;}
 #save-failure-banner:empty{display:none;}
-.save-fail-bar{background:#B6503F;color:#fff;position:relative;z-index:10;
+.save-fail-bar{background:var(--clay);color:var(--card);position:relative;z-index:10;
   padding:10px 16px;font-size:13px;display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;
   box-shadow:0 2px 8px rgba(0,0,0,.25);}
 .save-fail-bar strong{font-weight:700;}
-.save-fail-bar button{background:#fff;color:#B6503F;border:none;border-radius:6px;padding:5px 12px;font-weight:700;font-size:12px;cursor:pointer;}
-.sidebar{width:220px;background:var(--pitch);color:var(--chalk);flex-shrink:0;padding:20px 0;display:flex;flex-direction:column;}
+.save-fail-bar button{background:var(--card);color:var(--clay);border:none;border-radius:6px;padding:5px 12px;font-weight:700;font-size:12px;cursor:pointer;}
+.sidebar{width:220px;background:var(--pitch);color:var(--on-pitch);flex-shrink:0;padding:20px 0;display:flex;flex-direction:column;}
 .brand{padding:0 20px 18px 20px;border-bottom:1px solid var(--line);margin-bottom:10px;}
 .brand-logo{width:44px;height:44px;border-radius:11px;display:block;margin-bottom:10px;}
-.brand h1{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:19px;letter-spacing:.02em;margin:0;line-height:1.15;color:var(--chalk);}
+.brand h1{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:19px;letter-spacing:.02em;margin:0;line-height:1.15;color:var(--on-pitch);}
 .brand p{margin:4px 0 0;font-size:11px;color:#9FB3A9;text-transform:uppercase;letter-spacing:.08em;}
 .brand .subtitle{margin:4px 0 0;font-size:12px;color:#9FB3A9;text-transform:none;letter-spacing:0;}
 .nav-item{display:flex;align-items:center;gap:10px;padding:11px 20px;font-size:14px;color:#CBD9D1;cursor:pointer;border-left:3px solid transparent;user-select:none;}
-.nav-item:hover{background:var(--pitch-2);color:var(--chalk);}
-.nav-item.active{background:var(--pitch-2);color:var(--chalk);border-left-color:var(--gold);font-weight:600;}
+.nav-item:hover{background:var(--pitch-2);color:var(--on-pitch);}
+.nav-item.active{background:var(--pitch-2);color:var(--on-pitch);border-left-color:var(--gold);font-weight:600;}
 .nav-dot{width:6px;height:6px;border-radius:50%;background:#5B7A6C;flex-shrink:0;}
 .nav-item.active .nav-dot{background:var(--gold);}
 .scout-box{margin-top:auto;padding:14px 20px 0 20px;border-top:1px solid var(--line);}
 .scout-box label{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#9FB3A9;}
 .scout-box select{width:100%;margin-top:6px;}
 .main{flex:1;padding:26px 32px;min-width:0;}
-h2.view-title{font-family:'Barlow Condensed',sans-serif;font-size:26px;font-weight:700;margin:0 0 4px;color:var(--pitch);}
+h2.view-title{font-family:'Barlow Condensed',sans-serif;font-size:26px;font-weight:700;margin:0 0 4px;color:var(--heading);}
 .view-sub{font-size:13px;color:var(--ink-soft);margin:0 0 20px;}
-.card{background:var(--card);border:1px solid #E3DECE;border-radius:var(--radius);padding:18px 20px;margin-bottom:16px;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;margin-bottom:16px;}
 .grid{display:grid;gap:14px;}
 .grid-4{grid-template-columns:repeat(4,1fr);}
 .grid-5{grid-template-columns:repeat(5,1fr);}
 .grid-3{grid-template-columns:repeat(3,1fr);}
 .grid-2{grid-template-columns:repeat(2,1fr);}
-.stat{background:var(--pitch);color:var(--chalk);border-radius:var(--radius);padding:16px 18px;}
+.stat{background:var(--pitch);color:var(--on-pitch);border-radius:var(--radius);padding:16px 18px;}
 .stat .num{font-family:'Barlow Condensed',sans-serif;font-size:32px;font-weight:700;color:var(--gold);line-height:1;}
 .stat .lbl{font-size:12px;color:#B9CBC1;margin-top:4px;text-transform:uppercase;letter-spacing:.05em;}
 input,select,textarea,button{font-family:'Inter',sans-serif;font-size:13px;}
-input,select,textarea{padding:8px 10px;border:1px solid #D3CDB9;border-radius:6px;background:#FFFFFF;color:var(--ink);width:100%;}
+input,select,textarea{padding:8px 10px;border:1px solid var(--border-strong);border-radius:6px;background:var(--card);color:var(--ink);width:100%;}
 input:focus,select:focus,textarea:focus{outline:2px solid var(--gold);outline-offset:-1px;border-color:var(--gold);}
 label.field{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);margin:0 0 4px;font-weight:600;}
 .field-wrap{margin-bottom:12px;}
-button{cursor:pointer;border-radius:6px;border:1px solid var(--pitch);background:var(--pitch);color:var(--chalk);padding:9px 16px;font-weight:600;}
+button{cursor:pointer;border-radius:6px;border:1px solid var(--pitch);background:var(--pitch);color:var(--on-pitch);padding:9px 16px;font-weight:600;}
 button:hover{background:var(--pitch-2);}
-button.secondary{background:transparent;color:var(--pitch);border:1px solid #C9C2AB;}
-button.secondary:hover{background:#EFEADA;}
+button.secondary{background:transparent;color:var(--heading);border:1px solid var(--border-strong);}
+button.secondary:hover{background:var(--chalk-dim);}
 button.gold{background:var(--gold);border-color:var(--gold-dark);color:#3A2C0C;}
-button.gold:hover{background:var(--gold-dark);color:var(--chalk);}
+button.gold:hover{background:var(--gold-dark);color:var(--on-pitch);}
 button.danger{background:transparent;border:1px solid var(--clay);color:var(--clay-dark);}
 button.danger:hover{background:var(--bad-bg);}
 table{width:100%;border-collapse:collapse;font-size:13px;}
-th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);border-bottom:2px solid #E3DECE;padding:8px 8px;white-space:nowrap;}
-td{padding:9px 8px;border-bottom:1px solid #EFEBDE;vertical-align:middle;}
-tr:hover td{background:#FBF9F2;}
+th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);border-bottom:2px solid var(--border);padding:8px 8px;white-space:nowrap;}
+td{padding:9px 8px;border-bottom:1px solid var(--border);vertical-align:middle;}
+tr:hover td{background:var(--card-soft);}
 .badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;}
 .badge.new{background:#E0E4EC;color:#2E3A56;}
-.badge.tab-chip{background:var(--chalk-dim);color:var(--pitch);border:1px solid var(--gold);}
-.badge.watching{background:var(--warn-bg);color:#7A5A15;}
+.badge.tab-chip{background:var(--chalk-dim);color:var(--heading);border:1px solid var(--gold);}
+.badge.watching{background:var(--warn-bg);color:var(--warn-ink);}
 .badge.reco{background:var(--good-bg);color:var(--good);}
 .badge.trial{background:#DCEAF3;color:#1D5A78;}
 .badge.signed{background:var(--gold);color:#3A2C0C;}
-.badge.rejected{background:#EDEAE1;color:#8A857A;}
-.badge.hold{background:#EDEAE1;color:#8A857A;}
+.badge.rejected{background:var(--chalk-dim);color:var(--ink-faint);}
+.badge.hold{background:var(--chalk-dim);color:var(--ink-faint);}
 .pill-urgent{background:var(--bad-bg);color:var(--clay-dark);}
 .pill-top{background:var(--good-bg);color:var(--good);}
-.pill-ok{background:#EDEAE1;color:var(--ink-soft);}
+.pill-ok{background:var(--chalk-dim);color:var(--ink-soft);}
 .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
 .filters select,.filters input{width:auto;min-width:130px;}
 .toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;}
 .modal-overlay{position:fixed;inset:0;background:rgba(20,30,25,.55);display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;z-index:50;overflow:auto;}
 .modal{background:var(--card);border-radius:12px;max-width:640px;width:100%;padding:24px 26px;}
-.modal h3{font-family:'Barlow Condensed',sans-serif;font-size:22px;margin:0 0 14px;color:var(--pitch);}
+.modal h3{font-family:'Barlow Condensed',sans-serif;font-size:22px;margin:0 0 14px;color:var(--heading);}
 .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px;}
 .close-x{position:absolute;top:14px;right:16px;cursor:pointer;color:var(--ink-soft);font-size:18px;background:none;border:none;padding:4px;}
 .slider-row{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
 .perspektywa-picker{display:flex;gap:10px;flex-wrap:wrap;}
 .persp-btn{border:2px solid transparent;border-radius:8px;padding:10px 20px;font-family:'Barlow Condensed',sans-serif;
-  font-weight:700;font-size:14px;letter-spacing:.03em;cursor:pointer;background:#F6F3EA;color:var(--ink-soft);opacity:.6;}
-.persp-btn.persp-wysoka.active{background:#3E7D4C;color:#fff;opacity:1;border-color:#2E5D38;}
-.persp-btn.persp-srednia.active{background:#3E6FA8;color:#fff;opacity:1;border-color:#2E5580;}
-.persp-btn.persp-niska.active{background:#B6503F;color:#fff;opacity:1;border-color:#8F3D2F;}
-.cal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;font-family:'Barlow Condensed',sans-serif;font-size:15px;color:var(--pitch);}
+  font-weight:700;font-size:14px;letter-spacing:.03em;cursor:pointer;background:var(--chalk);color:var(--ink-soft);opacity:.6;}
+.persp-btn.persp-wysoka.active{background:var(--good);color:var(--card);opacity:1;border-color:#2E5D38;}
+.persp-btn.persp-srednia.active{background:#3E6FA8;color:var(--card);opacity:1;border-color:#2E5580;}
+.persp-btn.persp-niska.active{background:var(--clay);color:var(--card);opacity:1;border-color:#8F3D2F;}
+.cal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;font-family:'Barlow Condensed',sans-serif;font-size:15px;color:var(--heading);}
 .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
 .cal-grid-header{margin-bottom:4px;}
 .cal-cell{position:relative;aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:6px;
-  font-size:12.5px;color:var(--ink);cursor:pointer;background:#F6F3EA;}
+  font-size:12.5px;color:var(--ink);cursor:pointer;background:var(--chalk);}
 .cal-cell.cal-weekday{background:none;cursor:default;font-weight:700;color:var(--ink-soft);font-size:11px;text-transform:uppercase;aspect-ratio:auto;}
 .cal-cell.cal-empty{background:none;cursor:default;}
 .cal-cell.cal-today{border:2px solid var(--gold);font-weight:700;}
-.cal-cell.cal-selected{background:var(--pitch);color:var(--chalk);}
-.cal-cell.cal-has-obs .cal-dot{position:absolute;bottom:2px;right:3px;background:var(--gold);color:var(--pitch);border-radius:50%;
+.cal-cell.cal-selected{background:var(--pitch);color:var(--on-pitch);}
+.cal-cell.cal-has-obs .cal-dot{position:absolute;bottom:2px;right:3px;background:var(--gold);color:var(--heading);border-radius:50%;
   width:14px;height:14px;font-size:9px;display:flex;align-items:center;justify-content:center;font-weight:700;}
 .slider-row .lbl{width:150px;font-size:12.5px;font-weight:600;color:var(--ink);flex-shrink:0;}
 .slider-row input[type=range]{flex:1;}
@@ -119,7 +197,7 @@ tr:hover td{background:#FBF9F2;}
 .tag{display:flex;align-items:center;gap:6px;background:var(--chalk-dim);border-radius:20px;padding:4px 10px;font-size:12px;}
 .tag button{background:none;border:none;color:var(--clay-dark);padding:0;font-size:14px;line-height:1;}
 .settings-block{margin-bottom:22px;}
-.settings-block h4{font-size:14px;margin:0 0 8px;color:var(--pitch);}
+.settings-block h4{font-size:14px;margin:0 0 8px;color:var(--heading);}
 .add-row{display:flex;gap:8px;margin-top:8px;}
 .add-row input{flex:1;}
 .note{font-size:11.5px;color:var(--ink-soft);font-style:italic;}
@@ -129,22 +207,22 @@ tr:hover td{background:#FBF9F2;}
 .gauge-ring{position:relative;}
 .gauge-ring svg{display:block;}
 .gauge-value{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-  font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:18px;color:var(--pitch);}
+  font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:18px;color:var(--heading);}
 .gauge-label{font-size:10.5px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.03em;text-align:center;}
 .gauge-overall{display:flex;align-items:center;gap:14px;background:var(--pitch);border-radius:10px;padding:12px 16px;margin-bottom:14px;}
 .gauge-overall .gauge-value{color:var(--gold);}
-.gauge-overall .txt{color:var(--chalk);font-size:12.5px;line-height:1.4;}
+.gauge-overall .txt{color:var(--on-pitch);font-size:12.5px;line-height:1.4;}
 .gauge-overall .txt strong{display:block;font-size:14px;margin-bottom:2px;}
 .obs-item{border-left:3px solid var(--gold);padding:8px 0 8px 12px;margin-bottom:10px;}
 .obs-item.priority-item{border-left-color:var(--gold);background:var(--warn-bg);border-radius:0 6px 6px 0;padding-right:8px;}
 .row-arrow-btn{background:none;border:1px solid var(--line);border-radius:4px;color:var(--ink-soft);font-size:10px;line-height:1;padding:2px 5px;cursor:pointer;}
 .row-arrow-btn:disabled{opacity:.3;cursor:default;}
 .obs-item .meta{font-size:11px;color:var(--ink-soft);}
-.avg-chip{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:15px;padding:2px 10px;border-radius:6px;background:var(--chalk-dim);color:var(--pitch);}
-.crest{width:22px;height:22px;object-fit:contain;border-radius:4px;background:#fff;border:1px solid #E3DECE;flex-shrink:0;}
-.crest-lg{width:48px;height:48px;object-fit:contain;border-radius:6px;background:#fff;border:1px solid #E3DECE;flex-shrink:0;}
-.player-photo-lg{width:64px;height:64px;object-fit:cover;border-radius:50%;background:#fff;border:2px solid var(--gold);flex-shrink:0;display:flex;align-items:center;justify-content:center;}
-.player-photo-ph{background:var(--pitch);color:var(--chalk);font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:22px;}
+.avg-chip{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:15px;padding:2px 10px;border-radius:6px;background:var(--chalk-dim);color:var(--heading);}
+.crest{width:22px;height:22px;object-fit:contain;border-radius:4px;background:var(--card);border:1px solid var(--border);flex-shrink:0;}
+.crest-lg{width:48px;height:48px;object-fit:contain;border-radius:6px;background:var(--card);border:1px solid var(--border);flex-shrink:0;}
+.player-photo-lg{width:64px;height:64px;object-fit:cover;border-radius:50%;background:var(--card);border:2px solid var(--gold);flex-shrink:0;display:flex;align-items:center;justify-content:center;}
+.player-photo-ph{background:var(--pitch);color:var(--on-pitch);font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:22px;}
 .crest-ph{display:flex;align-items:center;justify-content:center;color:var(--ink-soft);font-size:10px;text-align:center;}
 
 .pitch-field{position:relative;width:100%;max-width:460px;margin:0 auto;aspect-ratio:2/3;
@@ -155,16 +233,16 @@ tr:hover td{background:#FBF9F2;}
 .pitch-box{position:absolute;border:2px solid rgba(246,243,234,.55);}
 .pitch-slot{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:1px;
   width:74px;text-align:center;cursor:pointer;background:none;border:none;padding:0;}
-.pitch-slot .dot{width:32px;height:32px;border-radius:50%;background:var(--gold);color:var(--pitch);
+.pitch-slot .dot{width:32px;height:32px;border-radius:50%;background:var(--gold);color:var(--heading);
   display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;border:2px solid var(--chalk);flex-shrink:0;}
 .pitch-slot.empty{cursor:pointer;}
 .pitch-slot .pin{position:absolute;top:-4px;right:-4px;font-size:11px;}
 .pitch-slot .dot{position:relative;}
 .pitch-slot.empty .dot{background:rgba(255,255,255,.14);color:rgba(255,255,255,.5);border-style:dashed;border-color:rgba(255,255,255,.4);}
-.pitch-slot .p-name{font-size:11px;font-weight:700;color:var(--chalk);line-height:1.15;text-shadow:0 1px 3px rgba(0,0,0,.5);}
+.pitch-slot .p-name{font-size:11px;font-weight:700;color:var(--on-pitch);line-height:1.15;text-shadow:0 1px 3px rgba(0,0,0,.5);}
 .pitch-slot .p-rating{font-size:10.5px;color:var(--gold);font-weight:700;text-shadow:0 1px 3px rgba(0,0,0,.5);}
 .pitch-slot .p-role{font-size:8.5px;color:rgba(246,243,234,.7);text-transform:uppercase;letter-spacing:.03em;}
-.pitch-slot .num-dot{width:30px;height:30px;border-radius:50%;background:var(--pitch);color:var(--chalk);
+.pitch-slot .num-dot{width:30px;height:30px;border-radius:50%;background:var(--pitch);color:var(--on-pitch);
   display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;border:2px solid var(--gold);flex-shrink:0;font-family:'Barlow Condensed',sans-serif;}
 @media (max-width:780px){
   .pitch-slot{width:60px;}
@@ -173,49 +251,90 @@ tr:hover td{background:#FBF9F2;}
   .pitch-slot .p-rating{font-size:9px;}
   .pitch-slot .p-role{font-size:7.5px;}
 }
-.position-map-pitch{background:repeating-linear-gradient(to bottom, var(--turf) 0, var(--turf) 10%, var(--pitch-2) 10%, var(--pitch-2) 20%);
-  width:100%;max-width:900px;margin:0 auto;box-sizing:border-box;position:relative;
-  aspect-ratio:5/6;clip-path:polygon(20% 0%, 80% 0%, 100% 100%, 0% 100%);
-  filter:drop-shadow(0 3px 10px rgba(0,0,0,.25));}
+/* MAPA RANKINGOWA — boisko w ujęciu telewizyjnym.
+   Murawa ma WŁASNE kolory, niezależne od motywu: w transmisjach trawa jest zawsze zielona,
+   niezależnie od tego, czy studio jest jasne czy ciemne. Dzięki temu plakietki z nazwiskami
+   mogą mieć jeden, dobrany kontrast — zamiast przełączać się razem z resztą aplikacji. */
+:root{
+  --turf-a:#2F6B48;          /* jaśniejszy pas koszenia */
+  --turf-b:#275C3D;          /* ciemniejszy pas koszenia */
+  --turf-line:rgba(255,255,255,.72);
+}
+.position-map-pitch{
+  width:100%;max-width:1240px;margin:0 auto;box-sizing:border-box;position:relative;
+  aspect-ratio:1/1.12;
+  /* Węższe ścięcie u góry niż wcześniej (14% zamiast 20%) — perspektywa zostaje, ale przy
+     bramce przeciwnika robi się miejsce na nazwiska, które dotąd się tam nie mieściły. */
+  clip-path:polygon(14% 0%, 86% 0%, 100% 100%, 0% 100%);
+  background:
+    /* Przyciemnienie brzegów: oko czyta środek jako bliższy, co pogłębia wrażenie przestrzeni. */
+    radial-gradient(120% 85% at 50% 100%, rgba(255,255,255,.16) 0%, rgba(255,255,255,0) 45%, rgba(0,0,0,.34) 100%),
+    repeating-linear-gradient(to bottom, var(--turf-a) 0, var(--turf-a) 8.33%, var(--turf-b) 8.33%, var(--turf-b) 16.66%);
+  box-shadow:0 18px 44px rgba(0,0,0,.45), inset 0 0 90px rgba(0,0,0,.28);
+}
 .position-map-content{position:absolute;inset:0;z-index:2;}
 .pitch-deco{position:absolute;inset:0;z-index:1;pointer-events:none;}
-.pitch-watermark{position:absolute;left:50%;top:50%;width:46%;transform:translate(-50%,-50%);opacity:.08;z-index:0;pointer-events:none;}
-.pitch-deco-line{position:absolute;left:0;right:0;top:50%;height:2px;background:rgba(255,255,255,.4);}
+.pitch-watermark{position:absolute;left:50%;top:50%;width:38%;transform:translate(-50%,-50%);opacity:.07;z-index:0;pointer-events:none;}
+/* Linie boiska: jaśniejsze i z delikatnym cieniem, jak wapno na trawie w świetle jupiterów. */
+.pitch-deco-line{position:absolute;left:0;right:0;top:50%;height:3px;background:var(--turf-line);box-shadow:0 1px 3px rgba(0,0,0,.35);}
 .pitch-deco-circle{position:absolute;left:50%;top:50%;width:30%;height:16%;transform:translate(-50%,-50%);
-  border:2px solid rgba(255,255,255,.4);border-radius:50%;}
-.pitch-deco-box{position:absolute;left:50%;width:52%;height:13%;border:2px solid rgba(255,255,255,.4);transform:translateX(-50%);}
+  border:3px solid var(--turf-line);border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.3);}
+.pitch-deco-box{position:absolute;left:50%;width:52%;height:13%;border:3px solid var(--turf-line);transform:translateX(-50%);box-shadow:0 1px 3px rgba(0,0,0,.3);}
 .pitch-deco-box-top{top:0;border-top:none;}
 .pitch-deco-box-bottom{bottom:0;border-bottom:none;}
-.pitch-deco-goal{position:absolute;left:50%;width:16%;height:4%;border:2px solid rgba(255,255,255,.55);background:rgba(255,255,255,.08);transform:translateX(-50%);}
+.pitch-deco-goal{position:absolute;left:50%;width:16%;height:4%;border:3px solid rgba(255,255,255,.88);background:rgba(255,255,255,.14);transform:translateX(-50%);}
 .pitch-deco-goal-top{top:-3%;border-bottom:none;}
 .pitch-deco-goal-bottom{bottom:-3%;border-top:none;}
-.pitch-deco-arc{position:absolute;left:50%;width:20%;height:7%;border:2px solid rgba(255,255,255,.4);border-radius:50%;transform:translateX(-50%);}
+.pitch-deco-arc{position:absolute;left:50%;width:20%;height:7%;border:3px solid var(--turf-line);border-radius:50%;transform:translateX(-50%);}
 .pitch-deco-arc-top{top:13%;border-top:none;clip-path:inset(50% 0 0 0);}
 .pitch-deco-arc-bottom{bottom:13%;border-bottom:none;clip-path:inset(0 0 50% 0);}
-.pos-marker{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;background:none;border:none;padding:0;z-index:3;}
-.pos-marker-dot{width:26px;height:26px;border-radius:50%;background:#B6503F;color:#fff;display:flex;align-items:center;justify-content:center;
-  font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:13px;border:2px solid #fff;box-shadow:0 2px 5px rgba(0,0,0,.3);flex-shrink:0;}
-.pos-marker-dot.gk{background:var(--gold);color:var(--pitch);}
-.pos-marker-tag{background:#fff;border:1px solid #E7E2D3;border-radius:5px;padding:2px;box-shadow:0 2px 5px rgba(0,0,0,.2);min-width:78px;}
-.pos-marker-row{display:flex;align-items:center;gap:3px;padding:1.5px 3px;white-space:nowrap;}
-.pos-marker-row + .pos-marker-row{border-top:1px solid #F0EDE3;}
-.pos-marker-row .crest-xs{width:11px;height:11px;object-fit:contain;border-radius:2px;background:#fff;flex-shrink:0;}
-.pmr-name{font-size:9px;font-weight:700;color:var(--ink);overflow:hidden;text-overflow:ellipsis;}
-.pmr-year{font-size:7.5px;color:var(--ink-soft);font-weight:600;margin-left:auto;padding-left:2px;}
-.pmr-empty{justify-content:center;color:var(--ink-soft);font-size:10px;padding:3px;}
+
+.pos-marker{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;background:none;border:none;padding:0;z-index:3;}
+.pos-marker:hover{z-index:9;}
+.pos-marker-dot{width:34px;height:34px;border-radius:50%;background:var(--clay);color:#fff;display:flex;align-items:center;justify-content:center;
+  font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:18px;border:2.5px solid rgba(255,255,255,.92);
+  box-shadow:0 3px 9px rgba(0,0,0,.5);flex-shrink:0;}
+.pos-marker-dot.gk{background:var(--gold);color:#3A2C0C;}
+
+/* Plakietka z nazwiskami w stylu paska transmisyjnego: ciemne, półprzezroczyste tło i biały
+   tekst. Na trawie czyta się to znacznie lepiej niż jasny prostokąt, bo nie konkuruje jasnością
+   z murawą, tylko się od niej odcina. */
+.pos-marker-tag{background:rgba(10,18,15,.86);border:1px solid rgba(255,255,255,.16);border-radius:7px;
+  padding:3px;box-shadow:0 6px 18px rgba(0,0,0,.55);min-width:150px;backdrop-filter:blur(2px);}
+.pos-marker-row{display:flex;align-items:center;gap:6px;padding:3px 6px;white-space:nowrap;border-radius:4px;}
+.pos-marker-row + .pos-marker-row{border-top:1px solid rgba(255,255,255,.1);}
+.pos-marker-row .crest-xs{width:16px;height:16px;object-fit:contain;border-radius:3px;background:rgba(255,255,255,.9);flex-shrink:0;}
+.pmr-name{font-size:13px;font-weight:700;color:#F4F1E6;overflow:hidden;text-overflow:ellipsis;letter-spacing:.01em;}
+.pmr-year{font-size:11px;color:#9FB3A6;font-weight:600;margin-left:auto;padding-left:6px;}
+.pmr-empty{justify-content:center;color:#9FB3A6;font-size:13px;padding:4px;}
 /* Status na mapie rankingowej: „Do transferu" = złote podświetlenie; „Na Testy"/inne = bez koloru. */
-.pos-marker-row.pmr-transfer{background:linear-gradient(180deg,#FBF0CE 0%,#F3E1A6 100%);border-radius:4px;box-shadow:inset 0 0 0 1px var(--gold);}
-.pos-marker-row.pmr-transfer .pmr-name{color:#6B5312;font-weight:800;}
-.pos-marker-row.pmr-transfer .pmr-year{color:#8A6D1E;}
+.pos-marker-row.pmr-transfer{background:linear-gradient(180deg,#E8C766 0%,#C69B3C 100%);box-shadow:inset 0 0 0 1px rgba(255,255,255,.35);}
+.pos-marker-row.pmr-transfer .pmr-name{color:#2A1F05;font-weight:800;}
+.pos-marker-row.pmr-transfer .pmr-year{color:#5A4410;}
+/* Logotypy agencji. Biel jest tu ŚWIADOMA i nie idzie przez zmienną motywu: logotypy przychodzą
+   z zewnątrz i w większości są ciemną kreską na przezroczystym tle. Płytka w kolorze karty
+   znikała razem z nimi na ciemnym motywie. Margines wewnętrzny odsuwa kreskę od krawędzi,
+   dzięki czemu drobne znaki nie zlewają się z obramowaniem. */
+.agency-logo{object-fit:contain;border-radius:7px;background:#FFFFFF;padding:3px;
+  border:1px solid rgba(0,0,0,.10);box-shadow:0 1px 3px rgba(0,0,0,.28);flex:0 0 auto;box-sizing:border-box;}
+.agency-logo-fallback{display:inline-flex;align-items:center;justify-content:center;
+  background:var(--pitch);color:var(--gold);border:1px solid var(--line);font-weight:800;padding:0;}
+
 .pitch-wrap-outer{width:100%;}
+@media (max-width:980px){
+  .pos-marker-tag{min-width:118px;}
+  .pmr-name{font-size:11px;}
+  .pmr-year{font-size:9.5px;}
+  .pos-marker-dot{width:28px;height:28px;font-size:15px;}
+}
 @media (max-width:780px){
   .pitch-wrap-outer{width:calc(100% + 32px);margin-left:-16px;padding:0 6px;box-sizing:border-box;}
-  .position-map-pitch{max-width:none;}
-  .pos-marker-dot{width:20px;height:20px;font-size:10.5px;}
-  .pos-marker-tag{min-width:56px;}
-  .pmr-name{font-size:7.2px;}
-  .pmr-year{font-size:6px;}
-  .pos-marker-row .crest-xs{width:8px;height:8px;}
+  .position-map-pitch{max-width:none;aspect-ratio:1/1.25;}
+  .pos-marker-dot{width:22px;height:22px;font-size:12px;}
+  .pos-marker-tag{min-width:88px;}
+  .pmr-name{font-size:9px;}
+  .pmr-year{font-size:7.5px;}
+  .pos-marker-row .crest-xs{width:11px;height:11px;}
 }
 .club-cell{display:flex;align-items:center;gap:8px;}
 .ext-link{display:inline-flex;align-items:center;gap:4px;color:var(--gold-dark);font-weight:600;text-decoration:none;font-size:12.5px;}
@@ -232,7 +351,7 @@ tr:hover td{background:#FBF9F2;}
 
 /* Sekcja "Kluby w bazie" na dashboardzie — karty klubów z herbem, klik → zawodnicy klubu. */
 .club-crest-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;}
-.club-crest-card{display:flex;align-items:center;gap:12px;padding:10px 12px;background:#FAF8F1;border:1px solid #ECE7D8;border-radius:10px;cursor:pointer;transition:transform .1s ease, box-shadow .1s ease, border-color .1s ease;}
+.club-crest-card{display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--card-soft);border:1px solid var(--border);border-radius:10px;cursor:pointer;transition:transform .1s ease, box-shadow .1s ease, border-color .1s ease;}
 .club-crest-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(10,23,18,.10);border-color:var(--gold);}
 .club-crest-card:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
 
@@ -245,32 +364,32 @@ tr:hover td{background:#FBF9F2;}
 /* Picker decyzji/statusu na dole raportu — klik tylko zaznacza, nie przeładowuje formularza. */
 /* Status/decyzja — każda opcja ma własny, żywy kolor (odróżnia wybór statusu od skali ocen czerwień→złoto). */
 .status-picker{display:flex;flex-wrap:wrap;gap:8px;}
-.status-btn{border:2px solid var(--sc);background:#fff;color:var(--sc);border-radius:20px;padding:7px 16px;font-size:13px;font-weight:700;cursor:pointer;transition:background .12s,color .12s,transform .1s;}
-.status-btn:hover{transform:translateY(-1px);background:color-mix(in srgb, var(--sc) 12%, #fff);}
-.status-btn.active{background:var(--sc);color:#fff;box-shadow:0 2px 8px rgba(10,23,18,.18);}
+.status-btn{border:2px solid var(--sc);background:var(--card);color:var(--sc);border-radius:20px;padding:7px 16px;font-size:13px;font-weight:700;cursor:pointer;transition:background .12s,color .12s,transform .1s;}
+.status-btn:hover{transform:translateY(-1px);background:color-mix(in srgb, var(--sc) 12%, var(--card));}
+.status-btn.active{background:var(--sc);color:var(--card);box-shadow:0 2px 8px rgba(10,23,18,.18);}
 .status-btn[data-value="Do Obserwacji"]{--sc:#1F8A70;}
 .status-btn[data-value="Na Testy"]{--sc:#D97706;}
 .status-btn[data-value="Do transferu"]{--sc:#B8912E;}
 .status-btn[data-value="Do transferu"].active{color:#3A2C0C;}
 .status-btn[data-value="Z polecenia"]{--sc:#2F6FED;}
-.status-btn[data-value="Odrzucony"]{--sc:#B6503F;}
+.status-btn[data-value="Odrzucony"]{--sc:var(--clay);}
 
 /* Typ obserwacji (Live/Online/Video) — odcienie niebieskiego, wyraźnie inna paleta niż status/ocena. */
 .obstype-picker{display:flex;flex-wrap:wrap;gap:8px;}
-.obstype-btn{border:2px solid #3B6FA0;background:#fff;color:#3B6FA0;border-radius:8px;padding:8px 18px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:14px;letter-spacing:.03em;cursor:pointer;transition:background .12s,color .12s,transform .1s;}
-.obstype-btn:hover{transform:translateY(-1px);background:#EAF1FA;}
-.obstype-btn.active{background:#2F6FED;color:#fff;border-color:#1E4FA8;box-shadow:0 2px 8px rgba(10,23,18,.18);}
+.obstype-btn{border:2px solid #3B6FA0;background:var(--card);color:#3B6FA0;border-radius:8px;padding:8px 18px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:14px;letter-spacing:.03em;cursor:pointer;transition:background .12s,color .12s,transform .1s;}
+.obstype-btn:hover{transform:translateY(-1px);background:var(--chalk-dim);}
+.obstype-btn.active{background:#2F6FED;color:var(--card);border-color:#1E4FA8;box-shadow:0 2px 8px rgba(10,23,18,.18);}
 
 /* Punktowe ocenianie 1-6 w raportach — skala kolorów od czerwieni (1) do złota (6). */
 .rating-points{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap;}
-.rp-dot{width:30px;height:30px;border-radius:8px;border:2px solid var(--rp);background:#fff;color:var(--rp);font-weight:800;font-size:13px;line-height:1;cursor:pointer;padding:0;transition:transform .08s ease, background .1s ease;}
+.rp-dot{width:30px;height:30px;border-radius:8px;border:2px solid var(--rp);background:var(--card);color:var(--rp);font-weight:800;font-size:13px;line-height:1;cursor:pointer;padding:0;transition:transform .08s ease, background .1s ease;}
 .rp-dot:hover{transform:translateY(-1px);}
-.rp-dot.active{background:var(--rp);color:#fff;box-shadow:0 2px 6px rgba(10,23,18,.18);}
+.rp-dot.active{background:var(--rp);color:var(--card);box-shadow:0 2px 6px rgba(10,23,18,.18);}
 
 /* Podpowiedzi adresów w Planie Obserwacji — filtrują się po każdej wpisanej literze. */
-.addr-suggestions{display:none;position:absolute;left:0;right:0;top:100%;z-index:20;background:#fff;border:1px solid #D3CDB9;border-top:none;border-radius:0 0 8px 8px;box-shadow:0 6px 16px rgba(10,23,18,.12);max-height:220px;overflow-y:auto;}
+.addr-suggestions{display:none;position:absolute;left:0;right:0;top:100%;z-index:20;background:var(--card);border:1px solid var(--border-strong);border-top:none;border-radius:0 0 8px 8px;box-shadow:0 6px 16px rgba(10,23,18,.12);max-height:220px;overflow-y:auto;}
 .addr-suggestion-item{padding:8px 12px;font-size:13px;cursor:pointer;}
-.addr-suggestion-item:hover{background:#F6F3EA;}
+.addr-suggestion-item:hover{background:var(--chalk);}
 
 /* Szybki dostęp wg lig (Dashboard) — logotypy w jednolitym rozmiarze, styl 3D (wypukła płytka + cień),
    zawsze w jednym poziomym rzędzie (tylko 5 pozycji, więc mieści się bez zawijania na typowej szerokości). */
@@ -278,23 +397,23 @@ tr:hover td{background:#FBF9F2;}
 .league-logo-3d{display:flex;flex-direction:column;align-items:center;gap:9px;cursor:pointer;flex:0 0 auto;}
 .league-logo-3d-plate{
   position:relative;width:148px;height:96px;display:flex;align-items:center;justify-content:center;border-radius:14px;
-  background:linear-gradient(180deg,#FFFFFF 0%,#F3EFE2 100%);
+  background:linear-gradient(180deg,var(--card) 0%,#F3EFE2 100%);
   box-shadow:0 1px 0 rgba(255,255,255,.8) inset, 0 -6px 10px rgba(0,0,0,.05) inset, 0 3px 0 rgba(10,23,18,.08), 0 10px 18px rgba(10,23,18,.16);
   transition:transform .14s ease, box-shadow .14s ease;
 }
 .league-logo-3d-plate img{max-width:126px;max-height:78px;object-fit:contain;}
 .league-logo-3d:hover .league-logo-3d-plate{transform:translateY(-5px);box-shadow:0 1px 0 rgba(255,255,255,.8) inset, 0 -6px 10px rgba(0,0,0,.05) inset, 0 6px 0 rgba(10,23,18,.10), 0 16px 26px rgba(10,23,18,.22);}
 .league-logo-3d.active .league-logo-3d-plate{transform:translateY(-3px);box-shadow:0 0 0 3px var(--gold), 0 1px 0 rgba(255,255,255,.8) inset, 0 4px 0 rgba(140,108,33,.35), 0 12px 20px rgba(10,23,18,.20);}
-.league-logo-3d-label{font-size:13px;font-weight:700;color:var(--pitch);text-align:center;max-width:138px;line-height:1.2;}
+.league-logo-3d-label{font-size:13px;font-weight:700;color:var(--heading);text-align:center;max-width:138px;line-height:1.2;}
 .league-logo-3d.active .league-logo-3d-label{color:var(--gold-dark);}
 .league-logo-3d-upload{position:absolute;bottom:-6px;right:-6px;width:22px;height:22px;display:flex;align-items:center;justify-content:center;
-  background:var(--gold);color:#3A2C0C;border-radius:50%;font-size:11px;cursor:pointer;box-shadow:0 2px 5px rgba(10,23,18,.25);border:2px solid #fff;}
-.league-logo-3d-upload:hover{background:var(--gold-dark);color:#fff;}
+  background:var(--gold);color:#3A2C0C;border-radius:50%;font-size:11px;cursor:pointer;box-shadow:0 2px 5px rgba(10,23,18,.25);border:2px solid var(--card);}
+.league-logo-3d-upload:hover{background:var(--gold-dark);color:var(--card);}
 
 /* Wariant mniejszy — kafelki grup w obrębie ligi (np. III liga: gr. I-IV), sam tekst bez logo.
    Bardziej podłużne i płaskie niż główne kafelki lig (niższe, delikatniejszy cień). */
 .league-logo-3d-plate-small{
-  width:118px;height:38px;font-weight:800;font-size:14px;color:var(--pitch);border-radius:9px;
+  width:118px;height:38px;font-weight:800;font-size:14px;color:var(--heading);border-radius:9px;
   box-shadow:0 1px 0 rgba(255,255,255,.8) inset, 0 -3px 5px rgba(0,0,0,.04) inset, 0 2px 0 rgba(10,23,18,.06), 0 5px 9px rgba(10,23,18,.10);
 }
 .league-logo-3d-small:hover .league-logo-3d-plate-small{transform:translateY(-2px);box-shadow:0 1px 0 rgba(255,255,255,.8) inset, 0 -3px 5px rgba(0,0,0,.04) inset, 0 3px 0 rgba(10,23,18,.08), 0 8px 14px rgba(10,23,18,.14);}
@@ -308,9 +427,9 @@ tr:hover td{background:#FBF9F2;}
    (zamiast pigułek o różnej szerokości). Etykieta u góry, ocena u dołu; na wąskim ekranie 2 kolumny. */
 .report-metric-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
 .report-metric-box{display:flex;flex-direction:column;align-items:center;justify-content:space-between;gap:4px;
-  background:#F6F3EA;border:1px solid #E7E2D3;border-radius:8px;padding:8px 6px;text-align:center;min-height:52px;}
+  background:var(--chalk);border:1px solid var(--chalk-dim);border-radius:8px;padding:8px 6px;text-align:center;min-height:52px;}
 .report-metric-box .rmb-label{font-size:10.5px;line-height:1.2;color:var(--ink-soft);}
-.report-metric-box strong{font-size:16px;color:var(--pitch);line-height:1;}
+.report-metric-box strong{font-size:16px;color:var(--heading);line-height:1;}
 @media(max-width:700px){ .report-metric-grid{grid-template-columns:repeat(2,1fr);} }
 
 /* Zakładka Raporty — formularz po lewej, boczna lista „Raporty" po prawej. */
@@ -319,12 +438,12 @@ tr:hover td{background:#FBF9F2;}
 /* Bez ujemnego marginesu: podciąganie panelu w górę wsuwało go pod nagłówek strony i przy dłuższym
    podtytule napisy nachodziły na siebie. Obie kolumny zaczynają się teraz na tej samej wysokości. */
 .reports-aside{position:sticky;top:12px;}
-.reports-aside-title{margin:0 0 2px;color:var(--pitch);font-family:'Barlow Condensed',sans-serif;font-size:24px;display:flex;align-items:center;gap:8px;}
+.reports-aside-title{margin:0 0 2px;color:var(--heading);font-family:'Barlow Condensed',sans-serif;font-size:24px;display:flex;align-items:center;gap:8px;}
 .reports-count{background:var(--pitch);color:var(--gold);font-size:12px;font-weight:800;font-family:Inter,sans-serif;border-radius:20px;padding:1px 9px;}
 .reports-list{max-height:70vh;overflow:auto;padding:6px 10px;}
-.report-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:11px;align-items:center;padding:11px 4px;border-bottom:1px solid #EFEADD;}
+.report-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:11px;align-items:center;padding:11px 4px;border-bottom:1px solid var(--chalk-dim);}
 .report-row:last-child{border-bottom:none;}
-.report-row.editing{background:#FBF6E9;border-radius:8px;padding-left:6px;padding-right:6px;}
+.report-row.editing{background:var(--card-warm);border-radius:8px;padding-left:6px;padding-right:6px;}
 .report-num{width:26px;height:26px;flex:0 0 auto;border-radius:50%;background:var(--pitch);color:var(--gold);font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center;}
 .report-row-body{min-width:0;}
 .report-row-body strong{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -333,8 +452,8 @@ tr:hover td{background:#FBF9F2;}
 .report-row-body .meta{font-size:11px;}
 .report-row-actions{display:flex;gap:4px;flex:0 0 auto;}
 .report-row-actions button{padding:3px 7px;font-size:11px;line-height:1;}
-.danger-btn{background:#fff;border:1px solid #E3C9C2;color:var(--clay-dark);border-radius:7px;cursor:pointer;}
-.danger-btn:hover{background:var(--clay-dark);color:#fff;border-color:var(--clay-dark);}
+.danger-btn{background:var(--card);border:1px solid var(--border-strong);color:var(--clay-dark);border-radius:7px;cursor:pointer;}
+.danger-btn:hover{background:var(--clay-dark);color:var(--card);border-color:var(--clay-dark);}
 @media(max-width:1000px){ .reports-layout{grid-template-columns:1fr;} .reports-aside{position:static;margin-top:0;} .reports-list{max-height:none;} }
 
 /* Zakładka Talent — formularze i lista w RÓWNYCH połowach strony (w odróżnieniu od Raportów,
@@ -343,9 +462,9 @@ tr:hover td{background:#FBF9F2;}
 .talent-aside{position:sticky;top:12px;}
 .talent-list{max-height:76vh;overflow:auto;padding:8px 12px;}
 .talent-row{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 14px;
-  padding:12px 4px;border-bottom:1px solid #EFEADD;}
+  padding:12px 4px;border-bottom:1px solid var(--chalk-dim);}
 .talent-row:last-child{border-bottom:none;}
-.talent-row-name{font-size:15px;font-weight:700;color:var(--pitch);}
+.talent-row-name{font-size:15px;font-weight:700;color:var(--heading);}
 .talent-row-meta{flex:1 1 100%;font-size:12px;color:var(--ink-soft);}
 .talent-row-actions{display:flex;gap:14px;flex:0 0 auto;white-space:nowrap;}
 .talent-row-actions button{font-size:12.5px;}
@@ -366,13 +485,13 @@ tr:hover td{background:#FBF9F2;}
 /* Rodzaj obserwacji (Live / Online) — wybór kolorem, ten sam kolor wraca na kalendarzu. */
 .obs-type-picker{display:flex;gap:8px;}
 .obs-type-btn{flex:1;padding:9px 14px;border-radius:8px;font-weight:700;font-size:13px;
-  cursor:pointer;border:2px solid #D9D3C4;background:#fff;color:var(--ink-soft);transition:all .15s;}
+  cursor:pointer;border:2px solid var(--border-strong);background:var(--card);color:var(--ink-soft);transition:all .15s;}
 .obs-type-btn:hover{border-color:#B9B2A0;}
-.obs-type-btn.obs-type-live.selected{background:#3E7D4C;border-color:#3E7D4C;color:#fff;}
-.obs-type-btn.obs-type-online.selected{background:#2F6FA8;border-color:#2F6FA8;color:#fff;}
+.obs-type-btn.obs-type-live.selected{background:var(--good);border-color:var(--good);color:var(--card);}
+.obs-type-btn.obs-type-online.selected{background:#2F6FA8;border-color:#2F6FA8;color:var(--card);}
 
 /* Znacznik rodzaju obserwacji na liście zaplanowanych. */
-.obs-type-tag{display:inline-block;padding:2px 9px;border-radius:4px;color:#fff;
+.obs-type-tag{display:inline-block;padding:2px 9px;border-radius:4px;color:var(--card);
   font-size:10.5px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;}
 
 /* Kropki w kalendarzu: jedna na każdy rodzaj obserwacji w danym dniu. */
@@ -381,26 +500,26 @@ tr:hover td{background:#FBF9F2;}
 
 /* Ekran logowania — pokazywany, dopóki nie ma sesji. */
 .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;
-  background:linear-gradient(135deg,#16302A 0%,#0E241E 100%);padding:24px;}
-.login-card{background:var(--paper,#FBF9F3);border-radius:14px;padding:32px 30px;width:100%;max-width:400px;
+  background:linear-gradient(135deg,var(--pitch) 0%,#0E241E 100%);padding:24px;}
+.login-card{background:var(--paper,var(--card-soft));border-radius:14px;padding:32px 30px;width:100%;max-width:400px;
   box-shadow:0 18px 50px rgba(0,0,0,.35);}
-.login-title{font-family:'Barlow Condensed',sans-serif;font-size:30px;color:var(--pitch);margin:0 0 2px;letter-spacing:.02em;}
+.login-title{font-family:'Barlow Condensed',sans-serif;font-size:30px;color:var(--heading);margin:0 0 2px;letter-spacing:.02em;}
 .login-sub{color:var(--ink-soft);font-size:13px;margin:0 0 20px;}
 .login-card .field-wrap{margin-bottom:14px;}
 .login-card input{width:100%;box-sizing:border-box;}
-.login-error{background:#FBEDEA;border:1px solid #E3C9C2;color:var(--clay-dark);
+.login-error{background:var(--bad-bg);border:1px solid var(--border-strong);color:var(--clay-dark);
   padding:9px 12px;border-radius:8px;font-size:12.5px;margin-bottom:14px;}
-.login-info{background:#F1F6EE;border:1px solid #CFE0C6;color:#2F5D3A;
+.login-info{background:var(--good-bg);border:1px solid var(--border-strong);color:var(--good);
   padding:9px 12px;border-radius:8px;font-size:12.5px;margin-bottom:14px;}
 
 /* Pasek porównawczy w porównywarce: długość = udział względem najlepszego wyniku,
    kolor = jakość na skali chłodny błękit → ciepłe złoto. */
-.stat-bar{height:6px;background:#EFEADD;border-radius:3px;overflow:hidden;margin-top:4px;
+.stat-bar{height:6px;background:var(--chalk-dim);border-radius:3px;overflow:hidden;margin-top:4px;
   margin-left:auto;width:100%;max-width:150px;}
 .stat-bar-fill{height:100%;border-radius:3px;transition:width .25s ease;}
 
 /* Lista zawodników — podświetlenie wiersza, żeby było widać, że cały otwiera profil. */
-tr.player-row:hover{background:#FBF6E9;}
+tr.player-row:hover{background:var(--card-warm);}
 
 /* Szeroka tabela zawodników: przewijana w bok, z widocznym paskiem i kursorem chwytania,
    żeby było jasne, że da się ją przesunąć. Kolumna akcji („Monitoring", usuwanie) jest
@@ -411,8 +530,8 @@ tr.player-row:hover{background:#FBF6E9;}
 .table-scroll{overflow-x:auto;cursor:grab;scrollbar-width:auto;min-width:0;max-width:100%;}
 .table-scroll:active{cursor:grabbing;}
 .table-scroll::-webkit-scrollbar{height:12px;}
-.table-scroll::-webkit-scrollbar-track{background:#EFEADA;border-radius:6px;}
-.table-scroll::-webkit-scrollbar-thumb{background:#C9C2AB;border-radius:6px;}
+.table-scroll::-webkit-scrollbar-track{background:var(--chalk-dim);border-radius:6px;}
+.table-scroll::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:6px;}
 .table-scroll::-webkit-scrollbar-thumb:hover{background:#B0A88F;}
 
 /* Ciasniejsze upakowanie, żeby wszystkie 15 kolumn zmieściło się bez przewijania w bok.
@@ -429,24 +548,24 @@ tr.player-row:hover{background:#FBF6E9;}
 
 .players-table th:last-child,
 .players-table td:last-child{
-  position:sticky; right:0; background:var(--paper,#FBF9F3);
+  position:sticky; right:0; background:var(--paper,var(--card-soft));
   box-shadow:-6px 0 8px -6px rgba(0,0,0,.18); white-space:nowrap;
 }
-.players-table tr.player-row:hover td:last-child{background:#FBF6E9;}
+.players-table tr.player-row:hover td:last-child{background:var(--card-warm);}
 
 /* Kartki w listach (żółte / czerwone) — małe znaczniki w kolorach kartek. */
 .card-chip{display:inline-block;min-width:18px;padding:1px 5px;border-radius:3px;font-size:11px;
   font-weight:800;line-height:1.5;text-align:center;}
 .card-chip.card-y{background:#F2C94C;color:#5A4400;}
-.card-chip.card-r{background:#C0392B;color:#FFF;}
+.card-chip.card-r{background:#C0392B;color:var(--card);}
 
 /* Monitoring — czytelny wskaźnik "ma agenta" (Tak/Nie). */
-.agent-yes{color:#3E7D4C;font-weight:800;}
+.agent-yes{color:var(--good);font-weight:800;}
 .agent-no{color:var(--ink-soft);font-weight:600;}
 /* Tabela ligowa pod kafelkami lig na dashboardzie — zwarta, żeby 18 drużyn mieściło się bez
    przewijania w pionie; przewijanie w bok obsługuje kontener. */
 .tabela-ligowa{width:100%;border-collapse:collapse;font-size:12.5px;}
-.tabela-ligowa th{background:var(--pitch);color:#F6F3EA;padding:5px 8px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.03em;}
+.tabela-ligowa th{background:var(--pitch);color:var(--on-pitch);padding:5px 8px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.03em;}
 .tabela-ligowa td{padding:4px 8px;border-bottom:1px solid #EFEADC;}
 .tabela-ligowa tbody tr:last-child td{border-bottom:none;}
 
@@ -457,32 +576,38 @@ tr.player-row:hover{background:#FBF6E9;}
 .agent-toggle:hover{border-color:var(--gold-dark);}
 
 /* Kolory wierszy w Komitecie Transferowym (jak w raporcie): Do transferu = złoto, reszta wg statusu. */
-tr.crow-transfer{background:linear-gradient(90deg,#FBEFC9 0%,#FCF8EC 55%);}
+/* Podświetlenia wierszy komitetu. Wpisane liczbą były zawsze jasne, więc na ciemnym motywie
+   jasny tekst lądował na jasnym tle i nazwiska znikały. Teraz idą przez zmienne. */
+tr.crow-transfer{background:linear-gradient(90deg,var(--row-transfer-a) 0%,var(--row-transfer-b) 55%);}
 tr.crow-transfer td:first-child{box-shadow:inset 4px 0 0 var(--gold);}
-tr.crow-trial{background:#EEF3FA;}
-tr.crow-reco{background:#EDF5EE;}
-tr.crow-rejected{background:#F8EEEA;}
-tr.crow-watching{background:#FAF7EF;}
+tr.crow-trial{background:var(--row-trial);}
+tr.crow-reco{background:var(--row-reco);}
+tr.crow-rejected{background:var(--row-rejected);}
+tr.crow-watching{background:var(--row-watching);}
+/* Kolor tekstu MUSI iść razem z tłem — samo przyciemnienie tła bez tego zostawiłoby
+   ciemny tekst z motywu jasnego na ciemnym podświetleniu. */
+tr.crow-transfer td,tr.crow-trial td,tr.crow-reco td,
+tr.crow-rejected td,tr.crow-watching td{color:var(--row-ink);}
 
 /* Miniatury załączników (JPG/PDF) — czytelny mały podgląd zamiast samej nazwy pliku. */
 .attach-grid{display:flex;flex-wrap:wrap;gap:12px;}
-.attach-card{width:150px;cursor:pointer;border:1px solid #E7E2D3;border-radius:10px;overflow:hidden;background:#fff;transition:box-shadow .12s,transform .12s;}
+.attach-card{width:150px;cursor:pointer;border:1px solid var(--chalk-dim);border-radius:10px;overflow:hidden;background:var(--card);transition:box-shadow .12s,transform .12s;}
 .attach-card:hover{box-shadow:0 4px 12px rgba(10,23,18,.12);transform:translateY(-2px);}
-.attach-thumb{height:120px;background:#F6F3EA;display:flex;align-items:center;justify-content:center;overflow:hidden;}
+.attach-thumb{height:120px;background:var(--chalk);display:flex;align-items:center;justify-content:center;overflow:hidden;}
 .attach-thumb img{width:100%;height:100%;object-fit:cover;pointer-events:none;display:block;}
 .attach-thumb embed{width:100%;height:100%;pointer-events:none;border:0;}
 .attach-thumb-icon{font-size:40px;line-height:1;}
-.attach-card-name{font-size:11px;padding:6px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-top:1px solid #EFEADD;color:var(--pitch);}
-.attach-thumb-sm{width:84px;height:84px;flex:0 0 auto;border:1px solid #E7E2D3;border-radius:8px;display:block;}
+.attach-card-name{font-size:11px;padding:6px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-top:1px solid var(--chalk-dim);color:var(--heading);}
+.attach-thumb-sm{width:84px;height:84px;flex:0 0 auto;border:1px solid var(--chalk-dim);border-radius:8px;display:block;}
 
 /* Pole wyboru klubu z wyszukiwaniem (alfabetycznie + zawężanie przy pisaniu). */
 .club-combo{position:relative;}
 .club-combo-input{width:100%;}
-.club-combo-list{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:60;background:#fff;border:1px solid #D9D3C4;border-radius:10px;box-shadow:0 10px 26px rgba(10,23,18,.18);max-height:280px;overflow:auto;display:none;}
+.club-combo-list{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:60;background:var(--card);border:1px solid var(--border-strong);border-radius:10px;box-shadow:0 10px 26px rgba(10,23,18,.18);max-height:280px;overflow:auto;display:none;}
 .club-combo-item{display:flex;flex-direction:column;gap:1px;padding:7px 12px;cursor:pointer;border-bottom:1px solid #F2EEE3;}
 .club-combo-item:last-child{border-bottom:none;}
-.club-combo-item:hover{background:#FBF6E9;}
-.club-combo-item strong{font-size:13px;color:var(--pitch);}
+.club-combo-item:hover{background:var(--card-warm);}
+.club-combo-item strong{font-size:13px;color:var(--heading);}
 .club-combo-reg{font-size:11px;color:var(--ink-soft);}
 .club-combo-empty{padding:10px 12px;color:var(--ink-soft);font-size:12px;}
 
@@ -497,13 +622,13 @@ tr.crow-watching{background:#FAF7EF;}
 /* Kafelki graficzne poziomów rozgrywek (Kluby) — logo (wgrane lub placeholder) + etykieta + liczba klubów. */
 .league-tiles{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:4px;}
 .league-tile{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 16px;min-width:84px;
-  background:#fff;border:1.5px solid #E3DECE;border-radius:12px;cursor:pointer;transition:border-color .12s,box-shadow .12s,transform .12s;}
+  background:var(--card);border:1.5px solid var(--border);border-radius:12px;cursor:pointer;transition:border-color .12s,box-shadow .12s,transform .12s;}
 .league-tile:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(10,23,18,.10);}
-.league-tile.active{border-color:var(--gold);background:#FBF6E9;box-shadow:0 3px 10px rgba(140,108,33,.18);}
+.league-tile.active{border-color:var(--gold);background:var(--card-warm);box-shadow:0 3px 10px rgba(140,108,33,.18);}
 .league-tile-logo{display:inline-flex;cursor:pointer;}
 .league-tile-logo-all{width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;background:var(--pitch);color:var(--gold);border-radius:9px;font-weight:800;font-size:14px;cursor:default;}
-.league-tile-label{font-size:12px;font-weight:700;color:var(--pitch);text-align:center;line-height:1.15;}
-.league-tile-count{font-size:11px;color:var(--ink-soft);background:#F0ECDE;border-radius:10px;padding:1px 8px;}
+.league-tile-label{font-size:12px;font-weight:700;color:var(--heading);text-align:center;line-height:1.15;}
+.league-tile-count{font-size:11px;color:var(--ink-soft);background:var(--chalk-dim);border-radius:10px;padding:1px 8px;}
 .league-tile.active .league-tile-count{background:var(--gold);color:#3A2C0C;font-weight:700;}
 
 @media (max-width: 780px){

@@ -1579,6 +1579,28 @@ function esc(s){ return (s===undefined||s===null?"":String(s)).replace(/[&<>"']/
 // wchodzą od tyłu („Maciej" zamieniało się w „jeicaM"). render() radzi sobie z tym dla treści
 // strony, ale okna modalne żyją poza nią, więc potrzebują własnego zabezpieczenia.
 // Zapamiętujemy pozycję kursora przed przerysowaniem i przywracamy ją do tego samego pola.
+// Przełącznik jasnego i ciemnego motywu.
+//
+// Motyw jest wyłącznie zmianą wartości zmiennych CSS — żadna reguła układu się nie rusza, więc
+// przełączenie nie może niczego rozjechać. Wybór trzymamy w pamięci przeglądarki, a nie w bazie:
+// to ustawienie TEGO urządzenia, a nie konta, i baza jest wspólna dla całego zespołu.
+//
+// Pierwsze wejście bez zapisanego wyboru idzie za ustawieniem systemu operacyjnego.
+function odswiezPrzelacznikMotywu(){
+  const btn = document.getElementById('theme-toggle');
+  if(!btn) return;
+  const ciemny = document.documentElement.getAttribute('data-theme') === 'dark';
+  btn.innerHTML = ciemny ? '☀️ <span>Jasne tło</span>' : '🌙 <span>Ciemne tło</span>';
+  btn.title = ciemny ? 'Przełącz na jasny motyw' : 'Przełącz na ciemny motyw';
+  btn.onclick = ()=>{
+    const teraz = document.documentElement.getAttribute('data-theme') === 'dark';
+    if(teraz) document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme','dark');
+    try{ localStorage.setItem('sbs-motyw', teraz ? 'light' : 'dark'); }catch(e){ /* tryb prywatny */ }
+    odswiezPrzelacznikMotywu();
+  };
+}
+
 function zachowajKursorPoPrzerysowaniu(kontener, selektor, przerysuj){
   const stare = kontener.querySelector(selektor);
   const poz = (stare && stare.selectionStart != null) ? stare.selectionStart : null;
@@ -2177,9 +2199,9 @@ function crestImg(url, size, name){
   if(url) return `<img src="${esc(url)}" class="${cls}" alt="">`;
   const initials = (name||'').split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase() || '?';
   const fs = size==='lg' ? 15 : size==='xs' ? 7 : 9;
-  return `<svg class="${cls}" viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg" style="background:#fff;">
-    <path d="M22 3 L38 8 L38 21 C38 30.5 31 37.5 22 40.5 C13 37.5 6 30.5 6 21 L6 8 Z" fill="#16302A" stroke="#C69B3C" stroke-width="1.6"/>
-    <text x="22" y="${size==='lg'?27:26}" text-anchor="middle" font-family="'Barlow Condensed',sans-serif" font-weight="700" font-size="${fs*2}" fill="#F6F3EA">${esc(initials)}</text>
+  return `<svg class="${cls}" viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg" style="background:var(--card);">
+    <path d="M22 3 L38 8 L38 21 C38 30.5 31 37.5 22 40.5 C13 37.5 6 30.5 6 21 L6 8 Z" fill="var(--pitch)" stroke="var(--gold)" stroke-width="1.6"/>
+    <text x="22" y="${size==='lg'?27:26}" text-anchor="middle" font-family="'Barlow Condensed',sans-serif" font-weight="700" font-size="${fs*2}" fill="var(--on-pitch)">${esc(initials)}</text>
   </svg>`;
 }
 function playerObs(playerId){ return DB.observations.filter(o=>o.playerId===playerId).sort((a,b)=> a.date.localeCompare(b.date)); }
@@ -2235,7 +2257,7 @@ function daysSince(dateStr){
 }
 
 // ---------- RADAR / PORÓWNYWARKA ----------
-const RADAR_COLORS = ['#16302A', '#C69B3C', '#B6503F']; // pitch / gold / clay — do 3 zawodników
+const RADAR_COLORS = ['var(--pitch)', 'var(--gold)', 'var(--clay)']; // pitch / gold / clay — do 3 zawodników
 // Radar (wykres pajęczy) z 5 atrybutów (RATING_KEYS, skala 1-10). entries: [{label, avgs:{k:val}, count}].
 function radarSvg(entries){
   const keys = RATING_KEYS, N = keys.length, max = 10;
@@ -2245,15 +2267,15 @@ function radarSvg(entries){
   let grid = '';
   for(let ring=2; ring<=10; ring+=2){
     const rr = R*ring/max;
-    grid += `<polygon points="${keys.map((_,i)=>pt(i,rr).join(',')).join(' ')}" fill="none" stroke="#E7E2D3" stroke-width="1"/>`;
+    grid += `<polygon points="${keys.map((_,i)=>pt(i,rr).join(',')).join(' ')}" fill="none" stroke="var(--chalk-dim)" stroke-width="1"/>`;
   }
   let axes = '';
   keys.forEach((k,i)=>{
     const [x,y] = pt(i,R);
-    axes += `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="#E7E2D3" stroke-width="1"/>`;
+    axes += `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="var(--chalk-dim)" stroke-width="1"/>`;
     const [lx,ly] = pt(i,R+20);
     const anchor = Math.abs(lx-cx)<6 ? 'middle' : (lx>cx ? 'start' : 'end');
-    axes += `<text x="${lx}" y="${ly+3}" text-anchor="${anchor}" font-size="11" font-weight="600" fill="#5B6560">${esc(RATING_LABELS[k]||k)}</text>`;
+    axes += `<text x="${lx}" y="${ly+3}" text-anchor="${anchor}" font-size="11" font-weight="600" fill="var(--ink-soft)">${esc(RATING_LABELS[k]||k)}</text>`;
   });
   let shapes = '';
   entries.forEach((e,idx)=>{
@@ -2294,9 +2316,9 @@ function compareTable(entries){
   const head = `<tr><th>Atrybut</th>${withAvg.map(e=>`<th>${esc(e.p.lastName)}</th>`).join('')}</tr>`;
   const rows = RATING_KEYS.map(k=>{
     const mx = Math.max(...withAvg.map(e=>e.avg.avgs[k]));
-    return `<tr><td>${esc(RATING_LABELS[k])}</td>${withAvg.map(e=>`<td style="${e.avg.avgs[k]===mx?'font-weight:800;color:var(--pitch);':''}">${fmt1(e.avg.avgs[k])}</td>`).join('')}</tr>`;
+    return `<tr><td>${esc(RATING_LABELS[k])}</td>${withAvg.map(e=>`<td style="${e.avg.avgs[k]===mx?'font-weight:800;color:var(--heading);':''}">${fmt1(e.avg.avgs[k])}</td>`).join('')}</tr>`;
   }).join('');
-  const overallRow = `<tr style="border-top:2px solid #E3DECE;"><td><strong>Śr. z raportów</strong></td>${withAvg.map(e=>`<td><strong>${e.avg.overall!=null?fmt1(e.avg.overall):'—'}</strong></td>`).join('')}</tr>`;
+  const overallRow = `<tr style="border-top:2px solid var(--border);"><td><strong>Śr. z raportów</strong></td>${withAvg.map(e=>`<td><strong>${e.avg.overall!=null?fmt1(e.avg.overall):'—'}</strong></td>`).join('')}</tr>`;
   const obsRow = `<tr><td style="color:var(--ink-soft);font-size:11.5px;">Liczba obserwacji</td>${withAvg.map(e=>`<td style="color:var(--ink-soft);font-size:11.5px;">${e.avg.count}</td>`).join('')}</tr>`;
   return `<table style="width:auto;min-width:280px;">${head}${rows}${overallRow}${obsRow}</table>`;
 }
@@ -2329,7 +2351,7 @@ function compareSeasonStats(entries){
   ];
   const maDane = entries.some(e=> POLA.some(f=> e.p[f.k]!=null));
   if(!maDane){
-    return `<div class="card"><h4 style="margin-top:0;color:var(--pitch);">Statystyki sezonu</h4>
+    return `<div class="card"><h4 style="margin-top:0;color:var(--heading);">Statystyki sezonu</h4>
       <div class="empty">Brak statystyk u wybranych zawodników — uzupełnij je w profilu albo przez „Statystyki drużyny".</div></div>`;
   }
 
@@ -2350,7 +2372,7 @@ function compareSeasonStats(entries){
         // Jakość: przy kartkach im mniej, tym lepiej — dlatego skalę odwracamy.
         const jakosc = rozstep === 0 ? 1
           : (f.odwrotne ? (Math.max(...konkretne) - v) / rozstep : (v - najmniej) / rozstep);
-        return `<td style="text-align:right;${czyNaj?'font-weight:800;color:var(--pitch);':''}">
+        return `<td style="text-align:right;${czyNaj?'font-weight:800;color:var(--heading);':''}">
           ${v}<div class="note" style="font-size:10.5px;">${proc}%</div>
           ${statBar(proc, jakosc)}</td>`;
       }).join('')}
@@ -2375,7 +2397,7 @@ function compareSeasonStats(entries){
         const czyNaj = v === Math.max(...konkretne) && konkretne.length > 1;
         const najm = Math.min(...konkretne), rozs = max - najm;
         const proc = Math.round(v/max*100);
-        return `<td style="text-align:right;${czyNaj?'font-weight:800;color:var(--pitch);':''}">
+        return `<td style="text-align:right;${czyNaj?'font-weight:800;color:var(--heading);':''}">
           ${v.toFixed(cyfry)}<div class="note" style="font-size:10.5px;">${proc}%</div>
           ${statBar(proc, rozs===0 ? 1 : (v-najm)/rozs)}</td>`;
       }).join('')}
@@ -2383,7 +2405,7 @@ function compareSeasonStats(entries){
   };
 
   return `<div class="card" style="overflow:auto;">
-    <h4 style="margin-top:0;color:var(--pitch);">Statystyki sezonu</h4>
+    <h4 style="margin-top:0;color:var(--heading);">Statystyki sezonu</h4>
     <p class="note" style="margin-top:-6px;">Wartość bezwzględna, pod nią udział procentowy względem najwyższego wyniku w zestawieniu. Pogrubienie = najlepszy.</p>
     <table style="width:100%;">
       <tr><th style="text-align:left;">Wskaźnik</th>${entries.map(e=>`<th style="text-align:right;">${esc(e.p.lastName)} ${esc(e.p.firstName)}</th>`).join('')}</tr>
@@ -2402,7 +2424,7 @@ function compareReports(entries){
                           .sort((a,b)=>(b.date||'').localeCompare(a.date||''))
   }));
   if(!zRaportami.some(x=>x.raporty.length)){
-    return `<div class="card"><h4 style="margin-top:0;color:var(--pitch);">Raporty</h4>
+    return `<div class="card"><h4 style="margin-top:0;color:var(--heading);">Raporty</h4>
       <div class="empty">Żaden z wybranych zawodników nie ma jeszcze raportu.</div></div>`;
   }
 
@@ -2421,7 +2443,7 @@ function compareReports(entries){
       <td><strong>${esc(label)}</strong><div class="note" style="font-size:10.5px;">średnia, skala 1-6</div></td>
       ${wartosci.map(v=> v==null
         ? '<td style="text-align:right;color:var(--ink-soft);">—</td>'
-        : `<td style="text-align:right;${v===max&&konkretne.length>1?'font-weight:800;color:var(--pitch);':''}">
+        : `<td style="text-align:right;${v===max&&konkretne.length>1?'font-weight:800;color:var(--heading);':''}">
             ${fmt1(v)}<div class="note" style="font-size:10.5px;">${Math.round(v/6*100)}%</div>
             ${statBar(v/6*100, v/6)}</td>`).join('')}
     </tr>`;
@@ -2442,9 +2464,9 @@ function compareReports(entries){
     });
     if(!teksty.some(Boolean)) return '';
     return `<div style="margin-bottom:14px;">
-      <div style="font-weight:800;color:var(--pitch);font-size:13px;margin-bottom:5px;">${esc(o.label)}</div>
+      <div style="font-weight:800;color:var(--heading);font-size:13px;margin-bottom:5px;">${esc(o.label)}</div>
       <div class="grid" style="grid-template-columns:repeat(${entries.length},minmax(0,1fr));gap:10px;">
-        ${teksty.map((t,i)=>`<div style="background:#FBF9F3;border:1px solid #EFEADD;border-radius:8px;padding:9px;font-size:12.5px;line-height:1.55;">
+        ${teksty.map((t,i)=>`<div style="background:var(--card-soft);border:1px solid var(--chalk-dim);border-radius:8px;padding:9px;font-size:12.5px;line-height:1.55;">
           <div class="note" style="font-size:10.5px;margin-bottom:3px;">${esc(entries[i].p.lastName)}</div>
           ${t ? esc(t) : '<span style="color:var(--ink-soft);">— brak opisu —</span>'}
         </div>`).join('')}
@@ -2453,7 +2475,7 @@ function compareReports(entries){
   }).filter(Boolean).join('');
 
   return `<div class="card" style="overflow:auto;">
-    <h4 style="margin-top:0;color:var(--pitch);">Raporty</h4>
+    <h4 style="margin-top:0;color:var(--heading);">Raporty</h4>
     <p class="note" style="margin-top:-6px;">Oceny uśrednione ze wszystkich raportów zawodnika. Opisy pochodzą z najnowszego raportu każdego z nich.</p>
     <table style="width:100%;margin-bottom:16px;">
       <tr><th style="text-align:left;">Obszar</th>${entries.map(e=>`<th style="text-align:right;">${esc(e.p.lastName)} ${esc(e.p.firstName)}</th>`).join('')}</tr>
@@ -2503,18 +2525,18 @@ function viewCompare(){
   ${entries.length ? `
   <div class="grid grid-2">
     <div class="card">
-      <h4 style="margin-top:0;color:var(--pitch);">Radar profilu</h4>
+      <h4 style="margin-top:0;color:var(--heading);">Radar profilu</h4>
       ${radarEntries.length ? radarSvg(radarEntries) + `<div style="text-align:center;margin-top:8px;">${legend}</div>` : '<div class="empty">Zaznaczeni zawodnicy nie mają jeszcze ocen — dodaj obserwacje.</div>'}
     </div>
     <div class="card">
-      <h4 style="margin-top:0;color:var(--pitch);">Porównanie opisowe</h4>
+      <h4 style="margin-top:0;color:var(--heading);">Porównanie opisowe</h4>
       ${compareDescriptive(entries)}
     </div>
   </div>
   ${compareSeasonStats(entries)}
   ${compareReports(entries)}
   <div class="card" style="overflow:auto;">
-    <h4 style="margin-top:0;color:var(--pitch);">Dane liczbowe (radar)</h4>
+    <h4 style="margin-top:0;color:var(--heading);">Dane liczbowe (radar)</h4>
     ${compareTable(entries) || '<div class="empty">Brak ocen z obserwacji — radar pojawi się, gdy będą.</div>'}
   </div>` : '<div class="card"><div class="empty">Wybierz zawodników powyżej, aby zobaczyć porównanie.</div></div>'}`;
 }
@@ -2560,6 +2582,7 @@ function renderNav(){
     brand.title = 'Powrót do panelu głównego';
     brand.onclick = ()=>{ currentView='dashboard'; editingPlayerId=null; viewingPlayerId=null; render(); };
   }
+  odswiezPrzelacznikMotywu();
   const nav = document.getElementById('nav');
   nav.innerHTML = NAV_ITEMS.map(it => `
     <div class="nav-item ${currentView===it.id?'active':''}" data-view="${it.id}">
@@ -2776,7 +2799,7 @@ function polandVoivodeshipMap(){
   const tops = items.map(s=>`<g class="voiv-shape" data-region="${esc(s.v.region)}">
       <path d="${s.v.d}" fill="${s.fill}" stroke="#0E241E" stroke-width="1.1"/>
       <path d="${s.v.d}" fill="url(#voivGloss)" stroke="none"/>
-      <text x="${s.center.x}" y="${s.center.y}" text-anchor="middle" font-size="10" font-weight="800" fill="#F6F3EA" style="pointer-events:none;paint-order:stroke;stroke:#0B1F19;stroke-width:3px;">${s.count}</text>
+      <text x="${s.center.x}" y="${s.center.y}" text-anchor="middle" font-size="10" font-weight="800" fill="var(--on-pitch)" style="pointer-events:none;paint-order:stroke;stroke:#0B1F19;stroke-width:3px;">${s.count}</text>
     </g>`).join('');
   return `<svg viewBox="0 -4 612 592" class="poland-map" style="width:100%;height:auto;max-width:440px;display:block;margin:0 auto;">
     <defs>
@@ -2784,8 +2807,8 @@ function polandVoivodeshipMap(){
         <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#08130F" flood-opacity="0.55"/>
       </filter>
       <linearGradient id="voivGloss" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#ffffff" stop-opacity="0.16"/>
-        <stop offset="0.5" stop-color="#ffffff" stop-opacity="0.02"/>
+        <stop offset="0" stop-color="var(--card)" stop-opacity="0.16"/>
+        <stop offset="0.5" stop-color="var(--card)" stop-opacity="0.02"/>
         <stop offset="1" stop-color="#000000" stop-opacity="0.22"/>
       </linearGradient>
     </defs>
@@ -2801,9 +2824,9 @@ function observationsDonut(){
   const forTransfer = DB.players.filter(p=>p.status==='Do transferu').length;
   const total = Math.max(1, totalObs + inObservation + forTransfer);
   const segments = [
-    {label:'Obserwacje', value:totalObs, color:'#C69B3C'},
+    {label:'Obserwacje', value:totalObs, color:'var(--gold)'},
     {label:'W obserwacji', value:inObservation, color:'#6E9C7C'},
-    {label:'Do transferu', value:forTransfer, color:'#B6503F'}
+    {label:'Do transferu', value:forTransfer, color:'var(--clay)'}
   ];
   const R = 60, CX = 70, CY = 70, STROKE = 24;
   const circumference = 2*Math.PI*R;
@@ -2881,7 +2904,7 @@ function bydgoszczDistanceWidget(){
   const yearObs = DB.observations.filter(o=>(o.date||'').startsWith(year) && o.distanceKm!=null);
   const totalKm = yearObs.reduce((sum,o)=>sum+Number(o.distanceKm||0), 0);
   return `<div class="card">
-    <h4 style="margin-top:0;color:var(--pitch);">📍 Dystans obserwacji 2026</h4>
+    <h4 style="margin-top:0;color:var(--heading);">📍 Dystans obserwacji 2026</h4>
     ${yearObs.length ? `
       <div style="display:flex;align-items:baseline;gap:8px;">
         <span style="font-size:32px;font-weight:800;color:var(--gold-dark);">${totalKm.toLocaleString('pl-PL')}</span>
@@ -2898,7 +2921,7 @@ function sponsorsPanel(){
   // sponsorów. Dodać logo można klikając w puste pole okienka (niewidoczna, klikalna strefa).
   const logos = sponsors.map((s,i)=>`<div style="position:relative;display:inline-flex;">
       <img src="${s.dataUrl}" alt="${esc(s.name||'')}" style="height:34px;max-width:100px;object-fit:contain;">
-      <button class="link-btn" data-action="remove-sponsor" data-idx="${i}" title="Usuń" style="position:absolute;top:-7px;right:-7px;background:var(--clay-dark);color:#fff;border-radius:50%;width:15px;height:15px;font-size:9px;line-height:1;padding:0;">✕</button>
+      <button class="link-btn" data-action="remove-sponsor" data-idx="${i}" title="Usuń" style="position:absolute;top:-7px;right:-7px;background:var(--clay-dark);color:var(--card);border-radius:50%;width:15px;height:15px;font-size:9px;line-height:1;padding:0;">✕</button>
     </div>`).join('');
   return `<div class="card sponsors-box">
     ${logos}
@@ -2961,7 +2984,7 @@ function leagueQuickAccessPanel(){
           return `<div class="club-crest-card" data-action="dash-goto-club" data-id="${esc(c.id)}" title="Przejdź do zawodników klubu ${esc(c.name)}">
             ${crestImg(clubCrest(c.id), null, c.name)}
             <div style="min-width:0;">
-              <div style="font-weight:700;color:var(--pitch);font-size:14px;">${esc(c.name)}</div>
+              <div style="font-weight:700;color:var(--heading);font-size:14px;">${esc(c.name)}</div>
               <div style="font-size:11.5px;color:var(--ink-soft);">${esc((c.region||'').replace(' ZPN',''))} &middot; <strong>${n}</strong> ${plZaw(n)}</div>
             </div>
           </div>`;
@@ -2971,7 +2994,7 @@ function leagueQuickAccessPanel(){
           ${clubs.length ? `<div class="club-crest-grid">${cards}</div>` : `<div class="empty">Brak klubów tej grupy w bazie.</div>`}
         </div>`;
       }
-      clubsRow = `<div style="margin-top:16px;border-top:1px solid #E3DECE;padding-top:14px;">
+      clubsRow = `<div style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px;">
         <div class="note" style="margin-bottom:8px;">${esc(dashboardLeagueSelected)} — wybierz grupę</div>
         <div class="league-logos-row">${groupTiles}</div>
         ${groupClubsRow}
@@ -2984,12 +3007,12 @@ function leagueQuickAccessPanel(){
         return `<div class="club-crest-card" data-action="dash-goto-club" data-id="${esc(c.id)}" title="Przejdź do zawodników klubu ${esc(c.name)}">
           ${crestImg(clubCrest(c.id), null, c.name)}
           <div style="min-width:0;">
-            <div style="font-weight:700;color:var(--pitch);font-size:14px;">${esc(c.name)}</div>
+            <div style="font-weight:700;color:var(--heading);font-size:14px;">${esc(c.name)}</div>
             <div style="font-size:11.5px;color:var(--ink-soft);">${esc((c.region||'').replace(' ZPN',''))} &middot; <strong>${n}</strong> ${plZaw(n)}</div>
           </div>
         </div>`;
       }).join('');
-      clubsRow = `<div style="margin-top:16px;border-top:1px solid #E3DECE;padding-top:14px;">
+      clubsRow = `<div style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px;">
         <div class="note" style="margin-bottom:8px;">${esc(dashboardLeagueSelected)} — ${clubs.length} ${clubs.length===1?'klub':'klubów'} w bazie</div>
         ${clubs.length ? `<div class="club-crest-grid">${cards}</div>` : `<div class="empty">Brak klubów tego poziomu w bazie — dodaj je w zakładce Kluby.</div>`}
       </div>`;
@@ -2997,7 +3020,7 @@ function leagueQuickAccessPanel(){
   }
 
   return `<div class="card">
-    <h4 style="margin-top:0;color:var(--pitch);">Szybki dostęp wg lig</h4>
+    <h4 style="margin-top:0;color:var(--heading);">Szybki dostęp wg lig</h4>
     <p class="note" style="margin-top:-4px;margin-bottom:10px;">Kliknij logo ligi, aby zobaczyć jej kluby — kliknij herb klubu, aby przejść do zawodników.</p>
     <div class="league-logos-row">${logos}</div>
     ${clubsRow}
@@ -3022,20 +3045,20 @@ function tabelaLigowaHtml(liga, grupa){
   if(!dane){
     // Pierwsze wejście: zlecamy pobranie i pokazujemy informację, że trwa.
     pobierzTabeleLigowe(liga);
-    return `<div style="margin-top:16px;border-top:1px solid #E3DECE;padding-top:14px;">
+    return `<div style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px;">
       <div class="note">Pobieram tabelę ${esc(liga)} z 90minut…</div></div>`;
   }
   if(dane.stan === 'ladowanie'){
-    return `<div style="margin-top:16px;border-top:1px solid #E3DECE;padding-top:14px;">
+    return `<div style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px;">
       <div class="note">Pobieram tabelę ${esc(liga)} z 90minut…</div></div>`;
   }
   if(dane.stan === 'blad'){
-    return `<div style="margin-top:16px;border-top:1px solid #E3DECE;padding-top:14px;">
+    return `<div style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px;">
       <div class="note" style="color:var(--clay-dark);">Nie udało się pobrać tabeli: ${esc(dane.blad||'')}
       ${liga==='CLJ U19' ? ' — dla rozgrywek juniorskich 90minut nie prowadzi tabeli pod tym adresem.' : ''}</div></div>`;
   }
   if(!dane.grupy.length){
-    return `<div style="margin-top:16px;border-top:1px solid #E3DECE;padding-top:14px;">
+    return `<div style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px;">
       <div class="note">Brak tabeli dla ${esc(liga)} — rozgrywki mogły się jeszcze nie rozpocząć.</div></div>`;
   }
 
@@ -3070,13 +3093,13 @@ function tabelaLigowaHtml(liga, grupa){
     }).join('')}</tbody></table>`;
 
   const sekcje = grupy.map((g,i)=> grupy.length === 1
-    ? `<div class="note" style="font-weight:700;color:var(--pitch);margin-bottom:6px;">${esc(g.nazwa)}</div>${tabelaHtml(g)}`
+    ? `<div class="note" style="font-weight:700;color:var(--heading);margin-bottom:6px;">${esc(g.nazwa)}</div>${tabelaHtml(g)}`
     : `<details ${i===0?'open':''} style="margin-bottom:8px;">
-         <summary style="cursor:pointer;font-weight:700;color:var(--pitch);">${esc(g.nazwa)}</summary>
+         <summary style="cursor:pointer;font-weight:700;color:var(--heading);">${esc(g.nazwa)}</summary>
          ${tabelaHtml(g)}
        </details>`).join('');
 
-  return `<div style="margin-top:16px;border-top:1px solid #E3DECE;padding-top:14px;">
+  return `<div style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px;">
     <div class="note" style="margin-bottom:8px;">Aktualna tabela — źródło: 90minut.pl. Kluby z Twojej bazy są wyróżnione.</div>
     <div style="overflow:auto;">${sekcje}</div>
   </div>`;
@@ -3128,12 +3151,12 @@ function viewDashboard(){
   </div>
   <div class="grid grid-2">
     <div class="card">
-      <h4 style="margin-top:0;color:var(--pitch);">Mapa Województw</h4>
+      <h4 style="margin-top:0;color:var(--heading);">Mapa Województw</h4>
       ${polandVoivodeshipMap()}
       <p class="note" style="text-align:center;margin-top:6px;">Liczba klubów w bazie wg województwa</p>
     </div>
     <div class="card">
-      <h4 style="margin-top:0;color:var(--pitch);">Szybkie akcje</h4>
+      <h4 style="margin-top:0;color:var(--heading);">Szybkie akcje</h4>
       <div style="display:flex;flex-direction:column;gap:10px;">
         <button class="gold" data-action="goto-newobs">+ Dodaj obserwację z meczu</button>
         <button class="secondary" data-action="goto-addplayer">+ Dodaj nowego zawodnika</button>
@@ -3144,7 +3167,7 @@ function viewDashboard(){
   </div>
   <div class="grid grid-2" style="margin-top:18px;">
     <div class="card">
-      <h4 style="margin-top:0;color:var(--pitch);">Statystyki obserwacji</h4>
+      <h4 style="margin-top:0;color:var(--heading);">Statystyki obserwacji</h4>
       ${observationsDonut()}
     </div>
     ${bydgoszczDistanceWidget()}
@@ -3154,13 +3177,21 @@ function viewDashboard(){
   </div>
   <div style="margin-top:18px;">
     <div class="card">
-      <h4 style="margin-top:0;color:var(--pitch);">Ostatnie obserwacje</h4>
+      <h4 style="margin-top:0;color:var(--heading);">Ostatnie obserwacje</h4>
       ${recent.length? recent.map(o=>{
         const pl = DB.players.find(p=>p.id===o.playerId);
         const avg = RATING_KEYS.reduce((a,k)=>a+(Number(o.ratings[k])||0),0)/RATING_KEYS.length;
+        // Obserwacja BEZ wskazanego zawodnika to obserwacja całego meczu — świadomy wybór, a nie
+        // uszkodzony wpis. Pokazujemy wtedy sam mecz. Napis „(usunięty zawodnik)" sugerował awarię
+        // i był po prostu nieprawdziwy: takie obserwacje nigdy nie miały przypisanego zawodnika.
+        // Zawodnika naprawdę usuniętego rozpoznajemy po tym, że identyfikator JEST, ale nic mu nie
+        // odpowiada — i tylko wtedy trzeba o tym uprzedzić.
+        const naglowek = pl ? esc(pl.firstName + " " + pl.lastName)
+          : (o.playerId ? '<span style="color:var(--clay-dark);">(zawodnik usunięty z kartoteki)</span>'
+                        : esc(o.match || 'Obserwacja meczu'));
         return `<div class="obs-item">
-          <strong>${pl? esc(pl.firstName+" "+pl.lastName):"(usunięty zawodnik)"}</strong> — <span class="avg-chip">${fmt1(avg)}</span>
-          <div class="meta">${esc(o.date)} &middot; ${esc(o.match)} &middot; scout: ${esc(o.scout)}</div>
+          <strong>${naglowek}</strong>${pl || o.playerId ? ` — <span class="avg-chip">${fmt1(avg)}</span>` : ''}
+          <div class="meta">${esc(o.date)}${pl || o.playerId ? ' &middot; ' + esc(o.match) : ''} &middot; scout: ${esc(o.scout)}</div>
         </div>`;
       }).join('') : `<div class="empty">Brak obserwacji — dodaj pierwszą w zakładce „Plan Obserwacji”.</div>`}
     </div>
@@ -3222,7 +3253,7 @@ function viewPlayers(){
       <td style="text-align:right;">${p.goals!=null?p.goals:'—'}</td>
       <td style="text-align:right;">${a? a.count : 0}</td>
       <td style="white-space:nowrap;">
-        <button class="link-btn" data-action="add-to-monitoring" data-id="${p.id}" title="${p.monitored?'W Monitoringu — kliknij, aby usunąć':'Dodaj do Monitoringu'}" style="color:${p.monitored?'#3E7D4C':'var(--gold-dark)'};">${p.monitored?'✓ Monitoring':'+ Monitoring'}</button>
+        <button class="link-btn" data-action="add-to-monitoring" data-id="${p.id}" title="${p.monitored?'W Monitoringu — kliknij, aby usunąć':'Dodaj do Monitoringu'}" style="color:${p.monitored?'var(--good)':'var(--gold-dark)'};">${p.monitored?'✓ Monitoring':'+ Monitoring'}</button>
         <button class="link-btn" data-action="delete-player" data-id="${p.id}" title="Usuń zawodnika" style="margin-left:8px;color:var(--clay-dark);">Usuń</button>
       </td>
     </tr>`;
@@ -3253,7 +3284,6 @@ function viewPlayers(){
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <button class="gold" data-action="add-player">+ Nowy zawodnik</button>
       ${viewingRocznikGroup ? `<button class="gold" data-action="rocznik-excel-import">📋 Wgraj z Excela</button>` : ''}
-      <button class="secondary" data-action="protokol-meczu" title="Wczytaj protokół meczu z Łączy nas piłką — dopisuje mecze, minuty, bramki i kartki obu drużynom">⚽ Protokół meczu</button>
       <button class="secondary" data-action="agent-import" title="Zbierz menedżerów z profili na Transfermarkcie">🕵 Menedżerowie</button>
       <button class="secondary" data-action="compare-open" title="Zaznacz do 3 zawodników na liście, aby porównać właśnie ich">⚖️ Porównaj zawodników</button>
     </div>
@@ -3328,14 +3358,14 @@ function viewPlayerDetail(id){
   </div>
   <div class="grid grid-2">
     <div class="card">
-      <h4 style="margin-top:0;color:var(--pitch);">Profil ocen ${a && a.overall!=null? '&middot; średnia '+fmt1(a.overall)+' <span class="note" style="font-weight:400;">(z '+a.reportCount+' rap.)</span>' : ''}</h4>
+      <h4 style="margin-top:0;color:var(--heading);">Profil ocen ${a && a.overall!=null? '&middot; średnia '+fmt1(a.overall)+' <span class="note" style="font-weight:400;">(z '+a.reportCount+' rap.)</span>' : ''}</h4>
       ${a && a.avgs? `<div class="gauge-row" style="margin-bottom:14px;">
         ${RATING_KEYS.map(k=>gaugeRing(a.avgs[k], 64, RATING_LABELS[k])).join('')}
       </div>` : ''}
       <div class="radar-wrap">${radarChartHtml}</div>
     </div>
     <div class="card">
-      <h4 style="margin-top:0;color:var(--pitch);">Informacje</h4>
+      <h4 style="margin-top:0;color:var(--heading);">Informacje</h4>
       <table>
         <tr><td style="color:var(--ink-soft);">Status</td><td>${p.status? `<span class="badge ${STATUS_CLASS[p.status]||'new'}">${esc(p.status)}</span>` : '—'}</td></tr>
         <tr><td style="color:var(--ink-soft);">Narodowość</td><td>${p.nationality? nationalityFlag(p.nationality)+' '+esc(p.nationality) : "—"}</td></tr>
@@ -3370,7 +3400,7 @@ function viewPlayerDetail(id){
   </div>
   <div class="card">
     <div class="toolbar" style="margin-bottom:8px;">
-      <h4 style="margin:0;color:var(--pitch);">Załączniki</h4>
+      <h4 style="margin:0;color:var(--heading);">Załączniki</h4>
       <button class="link-btn" data-action="manage-attachments" data-id="${p.id}" style="color:var(--gold-dark);">Zarządzaj załącznikami</button>
     </div>
     ${p.attachments && p.attachments.length? `
@@ -3383,13 +3413,13 @@ function viewPlayerDetail(id){
   </div>
   <div class="card">
     <div class="toolbar" style="margin-bottom:0;">
-      <h4 style="margin:0;color:var(--pitch);">Raport zawodnika</h4>
+      <h4 style="margin:0;color:var(--heading);">Raport zawodnika</h4>
       <button class="secondary" data-action="print-player" data-id="${p.id}">⭳ Pobierz raport PDF</button>
     </div>
     <p class="note" style="margin-top:8px;margin-bottom:0;">Generuje i pobiera gotowy plik PDF — chwilę to potrwa, w zależności od urządzenia.</p>
   </div>
   <div class="card">
-    <h4 style="margin-top:0;color:var(--pitch);">Historia obserwacji (${obs.length})</h4>
+    <h4 style="margin-top:0;color:var(--heading);">Historia obserwacji (${obs.length})</h4>
     ${obs.length? obs.map(o=>{
       // Oceny liczbowe przy obserwacji to już tylko dane historyczne (okno "Statystyka" usunięte).
       const hasHistRatings = o.statsFilledIn && o.ratings && RATING_KEYS.some(k=>Number(o.ratings[k])>0);
@@ -3406,7 +3436,7 @@ function viewPlayerDetail(id){
     }).join('') : `<div class="empty">Brak obserwacji dla tego zawodnika.</div>`}
   </div>
   <div class="card">
-    <h4 style="margin-top:0;color:var(--pitch);">⚡ Szybkie statystyki sezonu${
+    <h4 style="margin-top:0;color:var(--heading);">⚡ Szybkie statystyki sezonu${
       p.statsSeason ? ` <span class="note" style="font-weight:400;">— ${esc(p.statsSeason)}</span>` : ''}</h4>
     ${poprzednieSezonyHtml(p)}
     <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;">
@@ -3421,11 +3451,11 @@ function viewPlayerDetail(id){
     <p class="note" style="margin-top:6px;">Szybka aktualizacja bez otwierania pełnej edycji — wpisz i zapisz.</p>
   </div>
   <div class="card">
-    <h4 style="margin-top:0;color:var(--pitch);">Profil ocen — radar</h4>
+    <h4 style="margin-top:0;color:var(--heading);">Profil ocen — radar</h4>
     ${(()=>{ const a = playerAvg(p.id); return (a && a.avgs) ? radarSvg([{label:p.lastName, avgs:a.avgs, count:a.count}]) + `<p class="note" style="text-align:center;margin-top:6px;">Radar z historycznych ocen obserwacji (skala 1–10)${a.overall!=null?` &middot; śr. ocena z raportów: ${fmt1(a.overall)}`:''}</p>` : '<div class="empty">Brak ocen — średnia pojawi się po wypełnieniu raportu w zakładce „Raporty".</div>'; })()}
   </div>
   <div class="card">
-    <h4 style="margin-top:0;color:var(--pitch);">Raporty taktyczne (${playerReports(p.id).length})</h4>
+    <h4 style="margin-top:0;color:var(--heading);">Raporty taktyczne (${playerReports(p.id).length})</h4>
     ${playerReports(p.id).length? playerReports(p.id).map(r=>{
       const phaseAvg = REPORT_PHASES.reduce((a2,f)=>a2+(Number(r.phases[f.key])||0),0)/REPORT_PHASES.length;
       const spAvg = REPORT_SET_PIECES.reduce((a2,f)=>a2+(Number(r.setPieces[f.key])||0),0)/REPORT_SET_PIECES.length;
@@ -3454,7 +3484,7 @@ function viewPlayerDetail(id){
   </div>
   <div class="card">
     <div class="toolbar" style="margin-bottom:8px;">
-      <h4 style="margin:0;color:var(--pitch);">Historia transferowa</h4>
+      <h4 style="margin:0;color:var(--heading);">Historia transferowa</h4>
       <button class="link-btn" data-action="manage-transfer-history" data-id="${p.id}" style="color:var(--gold-dark);">Zarządzaj</button>
     </div>
     ${(p.transferHistory && p.transferHistory.length) ? `<table><tbody>
@@ -3467,16 +3497,16 @@ function viewPlayerDetail(id){
     </tbody></table>` : '<div class="empty">Brak historii transferowej — dodaj wpisy przez „Zarządzaj" (Z klubu → Do klubu, rok, typ transferu).</div>'}
   </div>
   <div class="card">
-    <h4 style="margin-top:0;color:var(--pitch);">Opis Końcowy</h4>
+    <h4 style="margin-top:0;color:var(--heading);">Opis Końcowy</h4>
     <textarea id="opis-koncowy" rows="5" placeholder="Wpisz opis końcowy zawodnika...">${esc(p.opisKoncowy||'')}</textarea>
     <button class="gold" data-action="save-opis" data-id="${p.id}" style="margin-top:8px;">Zapisz opis</button>
   </div>`;
 }
 
 function gaugeColor(value){
-  if(value>=8) return '#3E7D4C'; // score-high (zielony)
-  if(value>=5) return '#C69B3C'; // score-mid (złoty)
-  return '#B6503F'; // score-low (czerwony)
+  if(value>=8) return 'var(--good)'; // score-high (zielony)
+  if(value>=5) return 'var(--gold)'; // score-mid (złoty)
+  return 'var(--clay)'; // score-low (czerwony)
 }
 function gaugeRing(value, size, label){
   const s = size || 78;
@@ -3489,7 +3519,7 @@ function gaugeRing(value, size, label){
   return `<div class="gauge-wrap">
     <div class="gauge-ring" style="width:${s}px;height:${s}px;">
       <svg viewBox="0 0 ${s} ${s}" width="${s}" height="${s}">
-        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#E7E2D3" stroke-width="6"/>
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--chalk-dim)" stroke-width="6"/>
         <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="6"
           stroke-dasharray="${circumference.toFixed(2)}" stroke-dashoffset="${dashOffset.toFixed(2)}"
           stroke-linecap="round" transform="rotate(-90 ${cx} ${cy})"/>
@@ -3511,22 +3541,22 @@ function radarChart(avgs){
   const gridLevels=[0.25,0.5,0.75,1];
   let grid = gridLevels.map(lvl=>{
     const pts = RATING_KEYS.map((k,i)=>pt(i,lvl*10).join(",")).join(" ");
-    return `<polygon points="${pts}" fill="none" stroke="#D9D3C0" stroke-width="1"/>`;
+    return `<polygon points="${pts}" fill="none" stroke="var(--border-strong)" stroke-width="1"/>`;
   }).join('');
   let axes = RATING_KEYS.map((k,i)=>{
     const [x,y] = pt(i,10);
-    return `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="#D9D3C0" stroke-width="1"/>`;
+    return `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="var(--border-strong)" stroke-width="1"/>`;
   }).join('');
   let dataPts = RATING_KEYS.map((k,i)=>pt(i,avgs[k]).join(",")).join(" ");
   let labels = RATING_KEYS.map((k,i)=>{
     const ang = -Math.PI/2 + i*(2*Math.PI/n);
     const lx = cx+(r+26)*Math.cos(ang), ly = cy+(r+26)*Math.sin(ang);
-    return `<text x="${lx}" y="${ly}" font-size="10.5" fill="#5B6560" text-anchor="middle" font-family="Inter,sans-serif">${RATING_LABELS[k]}</text>`;
+    return `<text x="${lx}" y="${ly}" font-size="10.5" fill="var(--ink-soft)" text-anchor="middle" font-family="Inter,sans-serif">${RATING_LABELS[k]}</text>`;
   }).join('');
   return `<svg width="${size+60}" height="${size+20}" viewBox="0 0 ${size+60} ${size+20}">
     <g transform="translate(30,0)">
     ${grid}${axes}
-    <polygon points="${dataPts}" fill="#C69B3C" fill-opacity="0.35" stroke="#8C6C21" stroke-width="2"/>
+    <polygon points="${dataPts}" fill="var(--gold)" fill-opacity="0.35" stroke="var(--gold-dark)" stroke-width="2"/>
     ${labels}
     </g>
   </svg>`;
@@ -3535,7 +3565,7 @@ function radarChart(avgs){
 // ---------- CLUBS ----------
 function pill(label, active, action, dataAttrs){
   const attrs = Object.entries(dataAttrs||{}).map(([k,v])=>`data-${k}="${esc(v)}"`).join(' ');
-  return `<button class="secondary" data-action="${action}" ${attrs} style="border-radius:20px;padding:6px 14px;font-size:12.5px;${active?'background:var(--pitch);color:var(--chalk);border-color:var(--pitch);':''}">${esc(label)}</button>`;
+  return `<button class="secondary" data-action="${action}" ${attrs} style="border-radius:20px;padding:6px 14px;font-size:12.5px;${active?'background:var(--pitch);color:var(--on-pitch);border-color:var(--pitch);':''}">${esc(label)}</button>`;
 }
 // Logo poziomu rozgrywek (I liga, II liga...) — wgrywane przez użytkownika (jak herby klubów), bo oficjalne
 // logotypy lig (Ekstraklasa, Betclic 1/2/3 liga) to znaki towarowe, których nie pobieramy automatycznie.
@@ -3546,7 +3576,7 @@ function leagueLogoImg(topLevel, size){
   // "gabarycie" bez rozciągania/spłaszczania.
   if(logo) return `<img src="${esc(logo)}" alt="" style="max-width:${size}px;max-height:${Math.round(size*0.62)}px;object-fit:contain;">`;
   const initials = (topLevel.match(/[A-ZĄĆĘŁŃÓŚŹŻ0-9]/g)||[]).join('').slice(0,3) || topLevel.slice(0,2).toUpperCase();
-  return `<span style="width:${size}px;height:${size}px;display:inline-flex;align-items:center;justify-content:center;background:#16302A;color:#C69B3C;border-radius:9px;font-weight:800;font-size:${Math.round(size*0.34)}px;">${esc(initials)}</span>`;
+  return `<span style="width:${size}px;height:${size}px;display:inline-flex;align-items:center;justify-content:center;background:var(--pitch);color:var(--gold);border-radius:9px;font-weight:800;font-size:${Math.round(size*0.34)}px;">${esc(initials)}</span>`;
 }
 function viewClubs(){
   if(viewingClubId) return viewClubDetail(viewingClubId);
@@ -3660,13 +3690,14 @@ function viewClubDetail(id){
     </div>
     <div style="display:flex;gap:8px;">
       <button class="gold" data-action="import-squad" data-id="${c.id}">📋 Import składu</button>
-      <button class="secondary" data-action="import-squad-stats" data-id="${c.id}" title="Wklej tabelę statystyk całej drużyny — minuty, mecze, gole, kartki">⏱ Statystyki drużyny</button>
+      <button class="gold" data-action="stats-90minut" data-id="${c.id}" title="Pobierz z 90minut mecze, minuty, bramki i kartki całego składu — bez kopiowania czegokolwiek">⏱ Statystyki z 90minut</button>
+      <button class="secondary" data-action="import-squad-stats" data-id="${c.id}" title="Zapasowa droga: ręczna wklejka z Transfermarktu. Dla polskich lig użyj przycisku obok.">📋 Wklejka z Transfermarktu</button>
       <button class="secondary" data-action="edit-club" data-id="${c.id}">Edytuj klub</button>
       <button class="danger" data-action="delete-club" data-id="${c.id}">Usuń</button>
     </div>
   </div>
   <div class="card">
-    <h4 style="margin-top:0;color:var(--pitch);">Pełny oficjalny skład</h4>
+    <h4 style="margin-top:0;color:var(--heading);">Pełny oficjalny skład</h4>
     <p class="note" style="margin-bottom:10px;">Nie pobieramy automatycznie składów z zewnętrznych serwisów — poniżej znajdziesz bezpośrednie linki do sprawdzenia pełnej, aktualnej listy zawodników na sezon ${esc(c.season||'bieżący')}.</p>
     <div style="display:flex;gap:18px;flex-wrap:wrap;">
       ${c.profileLnp? `<a class="ext-link" href="${esc(c.profileLnp)}" target="_blank" rel="noopener">90minut.pl / Łączy Nas Piłka &rarr;</a>` : `<span class="note">Brak linku do 90minut.pl — dodaj w edycji klubu</span>`}
@@ -3675,7 +3706,7 @@ function viewClubDetail(id){
   </div>
   <div class="card">
     <div class="toolbar" style="margin-bottom:8px;">
-      <h4 style="margin:0;color:var(--pitch);">Zawodnicy scoutowani w tym klubie (${squad.length})</h4>
+      <h4 style="margin:0;color:var(--heading);">Zawodnicy scoutowani w tym klubie (${squad.length})</h4>
       <div style="display:flex;gap:8px;align-items:center;">
         <button class="secondary" id="squad-reset-stats-btn" style="display:none;" data-action="reset-squad-stats" data-club="${c.id}" title="Czyści dorobek bieżącego sezonu, żeby wczytać go od nowa. Archiwum poprzednich sezonów zostaje.">↺ Wyzeruj statystyki (0)</button>
         <button class="danger" id="squad-delete-btn" style="display:none;" data-action="delete-squad-selected" data-club="${c.id}">🗑️ Usuń zaznaczonych (0)</button>
@@ -3693,7 +3724,7 @@ function viewClubDetail(id){
 // Rodzaje obserwacji z przypisanym kolorem — ten sam kolor niesie się do kalendarza i listy,
 // żeby po samym rzucie oka było widać, co jest wyjazdem, a co oglądaniem zdalnym.
 const OBS_TYPES = [
-  { id:'live',   label:'Live',   color:'#3E7D4C' },
+  { id:'live',   label:'Live',   color:'var(--good)' },
   { id:'online', label:'Online', color:'#2F6FA8' },
   { id:'video',  label:'Video',  color:'#8B5CF6' },
 ];
@@ -3810,7 +3841,7 @@ function viewNewObs(){
   <p class="view-sub">Zaplanuj, kogo i kiedy obserwujesz — szczegółową ocenę wpiszesz później, klikając zaplanowaną pozycję na liście poniżej.</p>
   <div class="grid grid-2">
     <div class="card" style="${editing?'border:1px solid var(--gold);':''}">
-      <h4 style="margin-top:0;color:var(--pitch);">${editing? 'Edytuj plan' : 'Nowy plan'}</h4>
+      <h4 style="margin-top:0;color:var(--heading);">${editing? 'Edytuj plan' : 'Nowy plan'}</h4>
       <div class="field-wrap">
         <label class="field">Zawodnik</label>
         <select id="obs-player">${playerOptions || '<option value="">Brak zawodników — dodaj najpierw w zakładce Zawodnicy</option>'}</select>
@@ -3834,8 +3865,8 @@ function viewNewObs(){
             // Kolor ustawiamy wprost w stylu elementu — ogólniejsze reguły dla <button> potrafiły
             // przykryć regułę opartą na klasie i zaznaczenie nie było widać.
             const styl = aktywnyTyp === t.id
-              ? `background:${t.color};border-color:${t.color};color:#fff;`
-              : `background:#fff;border-color:#D9D3C4;color:var(--ink-soft);`;
+              ? `background:${t.color};border-color:${t.color};color:var(--card);`
+              : `background:var(--card);border-color:var(--border-strong);color:var(--ink-soft);`;
             return `<button type="button" class="obs-type-btn" data-action="pick-obs-type" data-type="${t.id}" style="${styl}">${t.label}</button>`;
           }).join('')}
         </div>
@@ -3868,12 +3899,12 @@ function viewNewObs(){
       </div>
     </div>
     <div class="card">
-      <h4 style="margin-top:0;color:var(--pitch);">Kalendarz</h4>
+      <h4 style="margin-top:0;color:var(--heading);">Kalendarz</h4>
       ${obsCalendarHtml()}
     </div>
   </div>
 
-  <h3 style="margin-top:24px;color:var(--pitch);font-family:'Barlow Condensed',sans-serif;">Zaplanowane i obserwowane w ${monthNamePl(obsCalendarDate.getMonth())} ${obsCalendarDate.getFullYear()}</h3>
+  <h3 style="margin-top:24px;color:var(--heading);font-family:'Barlow Condensed',sans-serif;">Zaplanowane i obserwowane w ${monthNamePl(obsCalendarDate.getMonth())} ${obsCalendarDate.getFullYear()}</h3>
   <div class="card">${obsMonthListHtml()}</div>`;
 }
 
@@ -3896,15 +3927,16 @@ function obsMonthListHtml(){
     const pl = DB.players.find(p=>p.id===o.playerId);
     return `<div class="obs-item">
       <div class="toolbar" style="margin-bottom:2px;">
-        <strong>${i+1}. ${pl?esc(pl.firstName+' '+pl.lastName):'—'}</strong>
+        <strong>${i+1}. ${pl ? esc(pl.firstName+' '+pl.lastName) : esc(o.match || 'Obserwacja meczu')}</strong>
         <span style="display:flex;align-items:center;gap:8px;">
           <span class="obs-type-tag" style="background:${obsTypeMeta(obsTypeOf(o)).color};">${esc(obsTypeMeta(obsTypeOf(o)).label)}</span>
           <span class="meta">${esc(o.date)}${o.matchTime?' &middot; '+esc(o.matchTime):''}</span>
+          <button class="link-btn" data-action="obs-sklad" data-id="${o.id}" style="font-size:11px;" title="Składy obu drużyn i zaznaczanie zawodników wyróżniających się">👥 Skład${liczbaWyroznionych(o)?' ('+liczbaWyroznionych(o)+')':''}</button>
           <button class="link-btn" data-action="edit-obs" data-id="${o.id}" style="font-size:11px;">✎ Edytuj</button>
           <button class="link-btn" data-action="delete-obs" data-id="${o.id}" style="font-size:11px;color:var(--clay-dark);">Usuń</button>
         </span>
       </div>
-      <div class="meta">${esc(o.match||'brak danych meczu')}${o.location?' &middot; 📍 '+esc(o.location):''} &middot; scout: ${esc(o.scout)}</div>
+      <div class="meta">${pl ? esc(o.match||'brak danych meczu') : '<em>obserwacja całego meczu</em>'}${o.location?' &middot; 📍 '+esc(o.location):''} &middot; scout: ${esc(o.scout)}</div>
     </div>`;
   }).join('');
 }
@@ -3961,12 +3993,13 @@ function obsCalendarHtml(){
   </div>
   <div class="cal-grid">${cells}</div>
   ${obsCalendarSelectedDay ? `
-  <div style="margin-top:12px;border-top:1px solid #E3DECE;padding-top:10px;">
-    <strong style="font-size:13px;color:var(--pitch);">${esc(obsCalendarSelectedDay)}</strong>
+  <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px;">
+    <strong style="font-size:13px;color:var(--heading);">${esc(obsCalendarSelectedDay)}</strong>
     ${selectedObs.length ? selectedObs.map(o=>{
       const pl = DB.players.find(p=>p.id===o.playerId);
       return `<div class="obs-item" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-        <span><strong>${pl?esc(pl.firstName+' '+pl.lastName):'—'}</strong> — ${esc(o.match||'brak danych meczu')} <span class="meta">(${esc(o.scout)})</span></span>
+        <span>${pl ? `<strong>${esc(pl.firstName+' '+pl.lastName)}</strong> — ${esc(o.match||'brak danych meczu')}`
+          : `<strong>${esc(o.match || 'Obserwacja meczu')}</strong>`} <span class="meta">(${esc(o.scout)})</span></span>
         <span style="flex-shrink:0;white-space:nowrap;">
           <button class="link-btn" data-action="edit-obs" data-id="${o.id}" style="font-size:11px;">✎</button>
           <button class="link-btn" data-action="delete-obs" data-id="${o.id}" style="font-size:11px;color:var(--clay-dark);">✕</button>
@@ -4176,14 +4209,14 @@ function selectObsType(value){
 
 function perspektywaBadge(value){
   if(!value) return '';
-  const colorMap = {'WYSOKA':'#3E7D4C', 'ŚREDNIA':'#3E6FA8', 'NISKA':'#B6503F'};
-  const color = colorMap[value] || '#8A857A';
-  return `<span class="badge" style="background:${color};color:#fff;font-weight:700;">${esc(value)}</span>`;
+  const colorMap = {'WYSOKA':'var(--good)', 'ŚREDNIA':'#3E6FA8', 'NISKA':'var(--clay)'};
+  const color = colorMap[value] || 'var(--ink-faint)';
+  return `<span class="badge" style="background:${color};color:var(--card);font-weight:700;">${esc(value)}</span>`;
 }
 function perspektywaBadgeReport(value){
   if(!value) return '';
-  const colorMap = {'WYSOKA':'#3E7D4C', 'ŚREDNIA':'#3E6FA8', 'NISKA':'#B6503F'};
-  const color = colorMap[value] || '#8A857A';
+  const colorMap = {'WYSOKA':'var(--good)', 'ŚREDNIA':'#3E6FA8', 'NISKA':'var(--clay)'};
+  const color = colorMap[value] || 'var(--ink-faint)';
   return `<span class="persp-badge-report" style="background:${color};">PERSPEKTYWA: ${esc(value)}</span>`;
 }
 
@@ -4262,7 +4295,7 @@ function viewReports(){
     <div class="field-wrap"><label class="field">Mentalność (opis)</label><textarea id="rep-mentalnosc-opis" rows="2" placeholder="Ocena mentalna opisowo...">${editing? esc(editing.mentalnoscOpis||'') : ''}</textarea></div>
     <div class="field-wrap"><label class="field">Potencjał (opis)</label><textarea id="rep-potencjal-opis" rows="2" placeholder="Ocena potencjału opisowo...">${editing? esc(editing.potencjalOpis||'') : ''}</textarea></div>
 
-    <div style="border-top:1px solid #E3DECE;margin:14px 0;padding-top:10px;">
+    <div style="border-top:1px solid var(--border);margin:14px 0;padding-top:10px;">
       <label class="field" style="display:block;margin-bottom:8px;">Perspektywa</label>
       <div class="perspektywa-picker" id="rep-perspektywa-picker" data-value="${esc(reportPerspektywaValue)}">
         <button type="button" class="persp-btn persp-wysoka ${reportPerspektywaValue==='WYSOKA'?'active':''}" data-value="WYSOKA">WYSOKA</button>
@@ -4271,7 +4304,7 @@ function viewReports(){
       </div>
     </div>
 
-    <div style="border-top:1px solid #E3DECE;margin:14px 0;padding-top:10px;">
+    <div style="border-top:1px solid var(--border);margin:14px 0;padding-top:10px;">
       <label class="field" style="display:block;margin-bottom:8px;">Fazy gry (skala 1-6)</label>
       ${REPORT_PHASES.map(f=>{ const v = editing && editing.phases && editing.phases[f.key]!=null ? editing.phases[f.key] : 3; return `
         <div class="slider-row">
@@ -4280,7 +4313,7 @@ function viewReports(){
         </div>`; }).join('')}
     </div>
 
-    <div style="border-top:1px solid #E3DECE;margin:14px 0;padding-top:10px;">
+    <div style="border-top:1px solid var(--border);margin:14px 0;padding-top:10px;">
       <label class="field" style="display:block;margin-bottom:8px;">Stałe fragmenty gry (skala 1-6)</label>
       ${REPORT_SET_PIECES.map(f=>{ const v = editing && editing.setPieces && editing.setPieces[f.key]!=null ? editing.setPieces[f.key] : 3; return `
         <div class="slider-row">
@@ -4293,12 +4326,12 @@ function viewReports(){
       </div>
     </div>
 
-    <div class="field-wrap" style="border-top:1px solid #E3DECE;margin:14px 0 0;padding-top:10px;">
+    <div class="field-wrap" style="border-top:1px solid var(--border);margin:14px 0 0;padding-top:10px;">
       <label class="field">Opis raportu</label>
       <textarea id="rep-description" rows="3" placeholder="Ogólne wrażenie, kontekst obserwacji...">${editing? esc(editing.description||'') : ''}</textarea>
     </div>
 
-    <div style="border-top:1px solid #E3DECE;margin:14px 0;padding-top:10px;">
+    <div style="border-top:1px solid var(--border);margin:14px 0;padding-top:10px;">
       <label class="field" style="display:block;margin-bottom:8px;">Decyzja / status zawodnika</label>
       <div class="status-picker" id="rep-status-picker" data-value="${esc(reportStatusValue)}">
         ${REPORT_STATUS_OPTIONS.map(o=>`<button type="button" class="status-btn ${reportStatusValue===o.value?'active':''}" data-value="${esc(o.value)}">${esc(o.label)}</button>`).join('')}
@@ -4588,7 +4621,7 @@ function viewTalent(){
 
   <div class="talent-layout">
     <div>
-      <h3 style="margin-top:0;color:var(--pitch);font-family:'Barlow Condensed',sans-serif;">Wklej tekst</h3>
+      <h3 style="margin-top:0;color:var(--heading);font-family:'Barlow Condensed',sans-serif;">Wklej tekst</h3>
       <div class="card">
         <p class="note" style="margin-top:-4px;">Skopiuj tabelę zawodników (np. z Transfermarkt/Wikipedii/arkusza) i wklej poniżej — jedna osoba na linię, kolumny <strong>Imię, Nazwisko, Rocznik, Klub</strong> rozdzielone tabulatorem, przecinkiem albo dwiema spacjami. Nagłówek opcjonalny.</p>
         <div class="field-wrap">
@@ -4598,7 +4631,7 @@ function viewTalent(){
           <button class="secondary" data-action="talent-paste-parse">Rozpoznaj zawodników</button>
         </div>
         ${talentPasteParsed ? `
-          <div style="border-top:1px solid #E3DECE;margin-top:14px;padding-top:10px;max-height:260px;overflow:auto;">
+          <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:10px;max-height:260px;overflow:auto;">
             <p class="note" style="margin-top:0;">Rozpoznano <strong>${talentPasteParsed.length}</strong> ${plZaw(talentPasteParsed.length)}. Odznacz, czego nie chcesz dodać.</p>
             <table><tbody>
               ${talentPasteParsed.map((t,i)=>`<tr>
@@ -4615,7 +4648,7 @@ function viewTalent(){
         ` : ''}
       </div>
 
-      <h3 style="margin-top:20px;color:var(--pitch);font-family:'Barlow Condensed',sans-serif;">Dodaj ręcznie</h3>
+      <h3 style="margin-top:20px;color:var(--heading);font-family:'Barlow Condensed',sans-serif;">Dodaj ręcznie</h3>
       <div class="card">
         <div class="grid grid-2">
           <div class="field-wrap"><label class="field">Imię</label><input id="talent-manual-first"></div>
@@ -4739,7 +4772,7 @@ function viewContacts(){
     Adres obiektu zapisuje się sam, gdy wpiszesz go w Planie Obserwacji: trafia do klubu-gospodarza i pokazuje się tutaj.</p>
 
   <div class="card" style="max-width:640px;">
-    <h4 style="margin-top:0;color:var(--pitch);">Import z Excela / CSV</h4>
+    <h4 style="margin-top:0;color:var(--heading);">Import z Excela / CSV</h4>
     <p class="note" style="margin-top:-4px;">Oczekiwane kolumny: <strong>Klub, Email</strong> (dodatkowo rozpoznawane: Adres, Imię, Nazwisko, Telefon, Notatka — jeśli są w arkuszu).</p>
     <div class="modal-actions" style="justify-content:flex-start;margin-top:0;margin-bottom:12px;">
       <button class="secondary" data-action="contacts-download-template">Pobierz szablon Excel</button>
@@ -5158,7 +5191,7 @@ function openPlayerAnalysisModal(playerId){
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.dataset.analysisFor = playerId;
-  const tone = {go:'#3E7D4C', test:'#C69B3C', watch:'#8C6C21', no:'#B6503F', hold:'#5B6560'}[an.recoTone];
+  const tone = {go:'var(--good)', test:'var(--gold)', watch:'var(--gold-dark)', no:'var(--clay)', hold:'var(--ink-soft)'}[an.recoTone];
   const trendTxt = an.trend==null ? 'brak (za mało obserwacji)' : (an.trend>0.15?`↑ poprawa (+${fmt1(an.trend)})` : an.trend<-0.15?`↓ spadek (${fmt1(an.trend)})` : '→ stabilnie');
   overlay.innerHTML = `
   <div class="modal" style="max-width:640px;">
@@ -5276,6 +5309,22 @@ function viewSettings(){
   </div>
   <div class="card">
     ${block('customFields','Dodatkowe pola zawodnika','Własne pola, które pojawią się dodatkowo w formularzu zawodnika i w jego profilu — dodawaj dowolną ilość, kiedy tylko czegoś zabraknie w standardowej kartotece.')}
+  </div>
+  <div class="card">
+    <h4 style="margin-top:0;">Kopia zapasowa</h4>
+    <p class="note" style="margin-bottom:10px;">Zapisuje <strong>wszystkie</strong> dane do jednego pliku na Twoim dysku:
+    zawodników, kluby, obserwacje, raporty, talenty, kontakty, agencje, menedżerów, terminarz, herby i ustawienia.
+    Plik możesz trzymać gdziekolwiek — na dysku, w chmurze, na pendrivie.</p>
+    <button class="gold" data-action="kopia-pobierz">⭳ Pobierz kopię wszystkich danych</button>
+    <p class="note" style="margin:10px 0 14px;font-size:11.5px;">Supabase w darmowym planie <strong>nie robi kopii za Ciebie</strong>.
+    Jedyna kopia to ta, którą pobierzesz sam. Warto po każdym większym imporcie.</p>
+
+    <details>
+      <summary style="cursor:pointer;font-size:12.5px;color:var(--ink-soft);">Przywracanie z pliku</summary>
+      <p class="note" style="margin:8px 0;">Wczytanie kopii <strong>zastąpi</strong> dane w bazie tymi z pliku.
+      Zanim cokolwiek podmienię, pobiorę automatycznie kopię stanu obecnego — żeby dało się cofnąć pomyłkę.</p>
+      <input type="file" id="kopia-plik" accept=".json">
+    </details>
   </div>
   <div class="card">
     <h4 style="margin-top:0;">Dane</h4>
@@ -5540,7 +5589,7 @@ function attachHandlers(){
       if(!ok){ alert('Pobrano statystyki, ale nie udało się ich zapisać — sprawdź baner u góry strony.'); return; }
       alert(`Sezon ${data.season}: ${data.matches} meczów, ${data.goals} bramek.\n` +
         `Źródło: ${data.source}${data.clubs && data.clubs.length ? ' — ' + data.clubs.join(', ') : ''}.\n\n` +
-        '90minut nie publikuje minut ani asyst — te pola pozostają bez zmian.');
+        'To tabela kariery — bez minut i kartek. Po minuty użyj w widoku klubu przycisku „⏱ Statystyki z 90minut".');
       render();
     }catch(e){
       alert('Nie udało się pobrać statystyk: ' + (e.message||e));
@@ -5549,13 +5598,25 @@ function attachHandlers(){
     }
   });
   main.querySelectorAll('[data-action="open-match-schedule"]').forEach(b=>b.onclick=()=>openMatchScheduleModal());
-  // Wybór rodzaju obserwacji — bez przerysowania całego widoku, żeby nie gubić wpisanych już pól.
-  // Zmiana rodzaju obserwacji przechodzi przez stan modułu i przerysowanie — dzięki temu wybór
-  // przeżywa każde odświeżenie formularza, także to wywołane przez inne akcje na widoku.
+  // Wybór rodzaju obserwacji przestawiamy W MIEJSCU, bez przerysowania formularza.
+  //
+  // Przerysowanie kasowało wszystko, co było już wpisane: przy NOWEJ obserwacji pola renderują
+  // się z pustych wartości (wypełnia je tylko tryb edycji), więc wybrany z terminarza mecz,
+  // adres i notatki znikały po samym przełączeniu Live na Video. Podmiana klas i ukrytego pola
+  // załatwia to samo, a niczego nie dotyka.
   document.querySelectorAll('[data-action="pick-obs-type"]').forEach(b=>b.onclick=()=>{
+    const wybrany = b.dataset.type;
     const editing = editingObsId ? DB.observations.find(o=>o.id===editingObsId) : null;
-    if(editing) editing.obsType = b.dataset.type; else newObsType = b.dataset.type;
-    render();
+    if(editing) editing.obsType = wybrany; else newObsType = wybrany;
+
+    const ukryte = document.getElementById('obs-type');
+    if(ukryte) ukryte.value = wybrany;
+    document.querySelectorAll('[data-action="pick-obs-type"]').forEach(inny=>{
+      const meta = obsTypeMeta(inny.dataset.type);
+      inny.style.cssText = inny.dataset.type === wybrany
+        ? `background:${meta.color};border-color:${meta.color};color:var(--card);`
+        : `background:var(--card);border-color:var(--border-strong);color:var(--ink-soft);`;
+    });
   });
   main.querySelectorAll('[data-action="view-player"]').forEach(b=>b.onclick=()=>{viewingPlayerId=b.dataset.id; currentView='players'; render();});
   // Kliknięcie w wiersz listy zawodników otwiera profil, ale nie może przechwytywać kliknięć
@@ -5581,7 +5642,6 @@ function attachHandlers(){
     render();
   });
   main.querySelectorAll('[data-action="agent-import"]').forEach(b=>b.onclick=()=>openAgentImportModal());
-  main.querySelectorAll('[data-action="protokol-meczu"]').forEach(b=>b.onclick=()=>openProtokolMeczuModal());
   main.querySelectorAll('[data-action="agencies-import"]').forEach(b=>b.onclick=()=>openAgenciesImportModal());
   const agencySearchInput = main.querySelector('#agency-search');
   if(agencySearchInput) agencySearchInput.oninput = ()=>{ agencySearchQuery = agencySearchInput.value; render(); };
@@ -6025,6 +6085,7 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="manage-transfer-history"]').forEach(b=>b.onclick=()=>openTransferHistoryModal(b.dataset.id));
   main.querySelectorAll('[data-action="import-squad"]').forEach(b=>b.onclick=()=>openSquadImportModal(b.dataset.id));
   main.querySelectorAll('[data-action="import-squad-stats"]').forEach(b=>b.onclick=()=>openSquadStatsModal(b.dataset.id));
+  main.querySelectorAll('[data-action="stats-90minut"]').forEach(b=>b.onclick=()=>open90minutStatsModal(b.dataset.id));
 
   // Zaznaczanie i usuwanie zawodników wprost ze składu klubu — pojedynczo lub całością.
   const squadChecks = document.querySelectorAll('.squad-player-check');
@@ -6283,6 +6344,7 @@ function attachHandlers(){
     render();
     const card = document.querySelector('.main .card'); if(card) card.scrollIntoView({behavior:'smooth', block:'start'});
   });
+  main.querySelectorAll('[data-action="obs-sklad"]').forEach(b=>b.onclick=()=>openObsSkladModal(b.dataset.id));
   main.querySelectorAll('[data-action="cancel-edit-obs"]').forEach(b=>b.onclick=()=>{ editingObsId = null; render(); });
   main.querySelectorAll('[data-action="delete-obs"]').forEach(b=>b.onclick=async()=>{
     if(!confirm('Usunąć tę obserwację?')) return;
@@ -6557,6 +6619,55 @@ function attachHandlers(){
       b.textContent = originalText;
     }
   });
+  // Kopia zapasowa całej bazy do jednego pliku. Supabase w darmowym planie nie robi kopii,
+  // więc jedyną istniejącą kopią jest ta, którą użytkownik pobierze sam.
+  main.querySelectorAll('[data-action="kopia-pobierz"]').forEach(b=>b.onclick=()=>{
+    const dane = {
+      _opis: 'Kopia zapasowa Scout Base System', _wersja: 1,
+      _data: new Date().toISOString(),
+      _liczby: { zawodnicy: DB.players.length, kluby: DB.clubs.length, obserwacje: DB.observations.length },
+      players: DB.players, clubs: DB.clubs, observations: DB.observations, reports: DB.reports,
+      talents: DB.talents, contacts: DB.contacts, matches: DB.matches,
+      agencies: DB.agencies, agents: DB.agents, agencyLogos: DB.agencyLogos,
+      clubCrests: DB.clubCrests, settings: DB.settings,
+    };
+    const blob = new Blob([JSON.stringify(dane)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `sbs_kopia_${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url), 2000);
+  });
+
+  const plikKopii = document.getElementById('kopia-plik');
+  if(plikKopii) plikKopii.onchange = async ()=>{
+    const f = plikKopii.files[0];
+    if(!f) return;
+    try{
+      const dane = JSON.parse(await f.text());
+      if(!Array.isArray(dane.players)) throw new Error('To nie wygląda na kopię z SBS — brakuje listy zawodników.');
+      const ile = `${(dane.players||[]).length} zawodników, ${(dane.clubs||[]).length} klubów, ${(dane.observations||[]).length} obserwacji`;
+      if(!confirm(`Wczytać kopię z ${String(dane._data||'').slice(0,10)}?\n\nW pliku: ${ile}.\nObecnie w bazie: ${DB.players.length} zawodników.\n\nDane w bazie zostaną ZASTĄPIONE. Najpierw pobiorę kopię stanu obecnego.`)) { plikKopii.value=''; return; }
+      // Kopia bezpieczeństwa PRZED podmianą — żeby dało się cofnąć pomyłkę w wyborze pliku.
+      document.querySelector('[data-action="kopia-pobierz"]').click();
+      await new Promise(r=>setTimeout(r, 1200));
+      ['players','clubs','observations','reports','talents','contacts','matches','agencies','agents'].forEach(k=>{
+        if(Array.isArray(dane[k])) DB[k] = dane[k];
+      });
+      if(dane.agencyLogos) DB.agencyLogos = dane.agencyLogos;
+      if(dane.clubCrests) DB.clubCrests = dane.clubCrests;
+      if(dane.settings) DB.settings = dane.settings;
+      const wyniki = await Promise.all([savePlayers(), saveClubs(), saveObservations()]);
+      alert(wyniki.every(Boolean)
+        ? `Wczytano kopię: ${ile}.`
+        : 'Część danych nie zapisała się do bazy — sprawdź baner u góry strony. Twoja kopia bezpieczeństwa została pobrana przed podmianą.');
+      render();
+    }catch(e){
+      alert('Nie udało się wczytać kopii: ' + (e.message||e));
+    }finally{ plikKopii.value=''; }
+  };
+
   main.querySelectorAll('[data-action="reset-all"]').forEach(b=>b.onclick=async()=>{
     if(confirm('Na pewno usunąć WSZYSTKIE dane (zawodnicy, kluby, obserwacje)? Tej operacji nie można cofnąć.')){
       DB.players=[]; DB.clubs=[]; DB.observations=[];
@@ -6669,7 +6780,7 @@ function openCommitteeReportsModal(playerId){
         ${p.committeeReports.length ? p.committeeReports.map((a,i)=>`
           <div class="obs-item">
             <div class="toolbar" style="margin-bottom:2px;">
-              <a href="${a.dataUrl}" download="${esc(a.name)}" style="font-weight:700;color:var(--pitch);text-decoration:none;">📄 ${esc(a.name)}</a>
+              <a href="${a.dataUrl}" download="${esc(a.name)}" style="font-weight:700;color:var(--heading);text-decoration:none;">📄 ${esc(a.name)}</a>
               <button class="link-btn committee-report-delete-btn" data-idx="${i}" style="color:var(--clay-dark);font-size:11px;">usuń</button>
             </div>
             <div class="meta">${fmtSize(a.size)} &middot; dodano ${esc(a.uploadedAt)}</div>
@@ -6681,7 +6792,7 @@ function openCommitteeReportsModal(playerId){
         <input type="file" id="committee-report-file" accept="application/pdf,.pdf">
         <div id="committee-report-status" class="note" style="margin-top:4px;"></div>
       </div>
-      <div style="border-top:1px solid #E3DECE;margin:14px 0;padding-top:10px;">
+      <div style="border-top:1px solid var(--border);margin:14px 0;padding-top:10px;">
         <label class="field" style="display:block;margin-bottom:6px;">Opinia porównawcza komitetu</label>
         <p class="note" style="margin-top:-2px;">Wgraj powyższe raporty także na czacie z Claude — poproś o porównawczą ocenę na podstawie tych raportów jako scout, menadżer i trener, a wynik wklej tutaj.</p>
         <textarea id="committee-opinion-text" rows="5" placeholder="Wklej tutaj opinię porównawczą...">${esc(p.committeeOpinion||'')}</textarea>
@@ -6876,10 +6987,83 @@ function parseSquadBlocks(rawText){
     };
   });
 }
-// Punkt wejścia używany przez importer: najpierw próbuje formatu blokowego (prawdziwe kopiowanie z
-// Transfermarkt), a jeśli nic nie wykryje, spada do prostszego trybu "jedna linia = jeden zawodnik".
+// Trzeci układ: KRATKA KOSZULEK. Tak wygląda skład na Łączy nas piłką i na stronach klubowych —
+// rysunek koszulki z numerem, a pod nim nazwisko. Po skopiowaniu zostaje z tego naprzemiennie
+// numer w osobnej linii i nazwisko w następnej, BEZ nazwy pozycji.
+//
+// Pozostałe dwa parsery wymagają pozycji: blokowy szuka jej jako punktu orientacyjnego, liniowy
+// bez niej odrzuca wiersz. Dlatego ten układ nie rozpoznawał niczego, choć to jedyne miejsce
+// z PEŁNĄ listą zgłoszonych — 90minut podaje wyłącznie tych, którzy weszli na boisko.
+const WYGLADA_NA_NAZWISKO = /^[\p{Lu}][\p{L}'’-]+(?:\s+[\p{Lu}][\p{L}'’-]+){1,3}$/u;
+
+// Kopiowanie takiej kratki daje w praktyce jeden z czterech układów — zależnie od tego, czy
+// przeglądarka wstawi łamanie wiersza między numerem a nazwiskiem i po której stronie stoi numer.
+// Zamiast zgadywać, który to, obsługujemy wszystkie i bierzemy ten, który znalazł najwięcej.
+const zawodnikZKratki = (numer, nazwa, zrodlo)=>{
+  const slowa = nazwa.split(/\s+/);
+  return {
+    ok:true, firstName: slowa[0], lastName: slowa.slice(1).join(' '),
+    position: '', birthYear: '', nationality: '',
+    numer: numer!=null ? parseInt(numer,10) : null,
+    raw: zrodlo,
+  };
+};
+const dobreNazwisko = (s)=> !!s && !isSquadPositionLine(s) && WYGLADA_NA_NAZWISKO.test(s);
+
+function parseSquadKratka(rawText){
+  const linie = rawText.split('\n').map(l=>l.replace(/\s+/g,' ').trim()).filter(Boolean);
+  const warianty = [];
+
+  // 1. numer i nazwisko w JEDNEJ linii: „40 Bartosz Kowalczyk" (także rozdzielone tabulatorem,
+  //    bo tabulatory sprowadziliśmy wyżej do spacji).
+  warianty.push(linie.map(l=>{
+    const m = l.match(/^(\d{1,2})\s+(.+)$/);
+    return (m && dobreNazwisko(m[2])) ? zawodnikZKratki(m[1], m[2], l) : null;
+  }).filter(Boolean));
+
+  // 2. numer w swojej linii, nazwisko w NASTĘPNEJ.
+  const poNumerze = [];
+  for(let i=0;i<linie.length-1;i++){
+    if(/^\d{1,2}$/.test(linie[i]) && dobreNazwisko(linie[i+1])){
+      poNumerze.push(zawodnikZKratki(linie[i], linie[i+1], `${linie[i]} ${linie[i+1]}`));
+      i++;
+    }
+  }
+  warianty.push(poNumerze);
+
+  // 3. nazwisko w swojej linii, numer w NASTĘPNEJ (część układów podpisuje koszulkę od dołu).
+  const przedNumerem = [];
+  for(let i=0;i<linie.length-1;i++){
+    if(dobreNazwisko(linie[i]) && /^\d{1,2}$/.test(linie[i+1])){
+      przedNumerem.push(zawodnikZKratki(linie[i+1], linie[i], `${linie[i+1]} ${linie[i]}`));
+      i++;
+    }
+  }
+  warianty.push(przedNumerem);
+
+  // 4. same nazwiska, bez numerów — gdy przeglądarka pominie tekst na obrazku koszulki.
+  //    Wymagamy, żeby stały OBOK SIEBIE, inaczej złapalibyśmy pozycje z menu i stopki.
+  const ciagi = [];
+  let biezacy = [];
+  for(const l of linie){
+    if(dobreNazwisko(l)) biezacy.push(l);
+    else { if(biezacy.length > ciagi.length) ciagi.length = 0, ciagi.push(...biezacy); biezacy = []; }
+  }
+  if(biezacy.length > ciagi.length){ ciagi.length = 0; ciagi.push(...biezacy); }
+  warianty.push(ciagi.map(n=>zawodnikZKratki(null, n, n)));
+
+  // Próg ośmiu zawodników. Prawdziwa lista zgłoszonych ma ich kilkanaście do trzydziestu, a wyżej
+  // podniesiony próg chroni przed trafieniem w tabelę strzelców albo w blok nawigacji.
+  const najlepszy = warianty.sort((a,b)=>b.length-a.length)[0];
+  return (najlepszy && najlepszy.length >= 8) ? najlepszy : null;
+}
+
+// Punkt wejścia używany przez importer. Kolejność od najbardziej charakterystycznego układu do
+// najogólniejszego: blokowy z Transfermarktu, kratka koszulek, a na końcu "jedna linia = zawodnik".
 function parseSquadText(rawText){
-  return parseSquadBlocks(rawText) || rawText.split('\n').map(parseSquadLine).filter(Boolean);
+  return parseSquadBlocks(rawText)
+    || parseSquadKratka(rawText)
+    || rawText.split('\n').map(parseSquadLine).filter(Boolean);
 }
 // Import składu z pliku Excel/CSV — np. listy rocznikowe do rozgrywek juniorskich (Rocznik 2011-2014),
 // gdzie nie ma strony na Transfermarkt do skopiowania. Kolumny: Imię, Nazwisko (albo jedna kolumna
@@ -7040,6 +7224,27 @@ function parseSquadWorkbookRows(rows){
     };
   }).filter(Boolean);
 }
+// Opis wklejki widziany oczami parsera: numerowane linie z etykietą, czym każda z nich JEST.
+// Powstało, bo układ schowka bywa inny, niż wygląda na stronie, a bez tego widoku diagnoza sprowadza
+// się do zgadywania — a każde nietrafione zgadnięcie to kolejna funkcja, która „powinna działać".
+function opiszWklejke(tekst){
+  const linie = String(tekst||'').split('\n');
+  const etykieta = (l)=>{
+    const t = l.replace(/\s+/g,' ').trim();
+    if(!t) return 'pusta';
+    if(/^\d{1,2}$/.test(t)) return 'SAM NUMER';
+    if(isSquadPositionLine(t)) return 'POZYCJA';
+    if(WYGLADA_NA_NAZWISKO.test(t)) return 'NAZWISKO';
+    if(/^\d{1,2}\s+/.test(t)) return 'NUMER + reszta';
+    return 'inne';
+  };
+  const naglowek = `linii razem: ${linie.length}; pokazuję pierwsze 60\n`
+    + `tabulatory oznaczam jako [TAB]\n${'-'.repeat(52)}\n`;
+  return naglowek + linie.slice(0, 60).map((l,i)=>
+    `${String(i+1).padStart(3)} | ${etykieta(l).padEnd(14)} | ${l.replace(/\t/g,'[TAB]').slice(0,60)}`
+  ).join('\n');
+}
+
 function openSquadImportModal(clubId){
   const already = document.querySelector('.modal-overlay[data-squadimport-for]');
   if(already) already.remove();
@@ -7051,6 +7256,7 @@ function openSquadImportModal(clubId){
   overlay.dataset.squadimportFor = clubId;
   let parsed = [];
   let pastedText = '';
+  let diagnostyka = '';
   // Zrzut ekranu tylko jako WIZUALNY podgląd do porównania obok wklejonego tekstu — nie jest
   // analizowany automatycznie (brak OCR/AI w aplikacji), dane zawsze biorą się z wklejonego tekstu.
   let referenceImage = null;
@@ -7070,24 +7276,29 @@ function openSquadImportModal(clubId){
           <label class="field">Podgląd zrzutu ekranu (opcjonalnie, do porównania — nie jest odczytywany automatycznie)</label>
           ${referenceImage ? `
             <div style="position:relative;">
-              <img src="${referenceImage}" style="max-width:100%;max-height:260px;object-fit:contain;border:1px solid #E3DECE;border-radius:6px;display:block;">
+              <img src="${referenceImage}" style="max-width:100%;max-height:260px;object-fit:contain;border:1px solid var(--border);border-radius:6px;display:block;">
               <button class="secondary" data-action="squad-image-remove" style="position:absolute;top:6px;right:6px;padding:2px 8px;">✕</button>
             </div>
           ` : `
-            <label for="squad-import-image" style="display:flex;align-items:center;justify-content:center;height:120px;border:1px dashed #C9C2AE;border-radius:6px;cursor:pointer;color:var(--ink-soft);font-size:13px;text-align:center;padding:8px;">📋 Wklej (Ctrl+V) lub kliknij, aby wgrać zrzut</label>
+            <label for="squad-import-image" style="display:flex;align-items:center;justify-content:center;height:120px;border:1px dashed var(--border-strong);border-radius:6px;cursor:pointer;color:var(--ink-soft);font-size:13px;text-align:center;padding:8px;">📋 Wklej (Ctrl+V) lub kliknij, aby wgrać zrzut</label>
             <input type="file" id="squad-import-image" accept="image/*" style="display:none;">
           `}
         </div>
       </div>
       <div class="modal-actions" style="justify-content:flex-start;margin-bottom:10px;">
         <button class="secondary" data-action="squad-parse">Rozpoznaj zawodników</button>
+        <button class="secondary" data-action="squad-diag" title="Pokazuje wklejony tekst tak, jak widzi go parser — do wysłania, gdy rozpoznawanie zawodzi">🔍 Pokaż, co widzę</button>
       </div>
-      <div class="field-wrap" style="border-top:1px dashed #D9D3C4;padding-top:10px;margin-bottom:14px;">
+      ${diagnostyka ? `<div class="field-wrap" style="margin-bottom:12px;">
+        <label class="field">Tak wygląda wklejka dla parsera — zaznacz to pole, skopiuj i wyślij, jeśli rozpoznawanie zawodzi</label>
+        <textarea readonly rows="14" style="font-size:11px;font-family:monospace;white-space:pre;">${esc(diagnostyka)}</textarea>
+      </div>` : ''}
+      <div class="field-wrap" style="border-top:1px dashed var(--border-strong);padding-top:10px;margin-bottom:14px;">
         <label class="field">…albo wgraj plik Excel / CSV (np. lista rocznika do rozgrywek juniorskich) — kolumny: <strong>Imię, Nazwisko</strong> (albo „Zawodnik"), opcjonalnie Rocznik, Pozycja, Narodowość, <strong>Menedżer</strong> (Tak/Nie), Agencja</label>
         <input type="file" id="squad-import-file" accept=".xlsx,.xls,.csv">
       </div>
       ${parsed.length ? `
-        <div style="border-top:1px solid #E3DECE;padding-top:10px;margin-bottom:12px;max-height:280px;overflow:auto;">
+        <div style="border-top:1px solid var(--border);padding-top:10px;margin-bottom:12px;max-height:280px;overflow:auto;">
           <p class="note" style="margin-top:0;">Rozpoznano <strong>${parsed.filter(p=>p.ok).length}</strong> z ${parsed.length} linii. Odznacz, czego nie chcesz importować.</p>
           <table><tbody>
             ${parsed.map((p,i)=> p.ok ? `
@@ -7132,6 +7343,11 @@ function openSquadImportModal(clubId){
       parsed = parseSquadText(text);
       draw();
     });
+    overlay.querySelectorAll('[data-action="squad-diag"]').forEach(b=>b.onclick=()=>{
+      pastedText = overlay.querySelector('#squad-import-text').value;
+      diagnostyka = opiszWklejke(pastedText);
+      draw();
+    });
     const squadFileInput = overlay.querySelector('#squad-import-file');
     if(squadFileInput) squadFileInput.onchange = async ()=>{
       const file = squadFileInput.files[0];
@@ -7165,7 +7381,14 @@ function openSquadImportModal(clubId){
       const origLabel = b.textContent; b.disabled = true; b.textContent = 'Importowanie...';
       let added = 0, skipped = 0, bezRocznika = 0, zWieku = 0;
       toAdd.forEach(p=>{
-        const exists = DB.players.some(pl=>pl.firstName===p.firstName && pl.lastName===p.lastName && pl.clubId===club.id);
+        // Porównanie z pominięciem polskich znaków. Dosłowne zestawienie napisów uznawało
+        // „Głowicki" i „Glowicki" za dwie różne osoby i zakładało bliźniaczy wpis — a taki
+        // duplikat psuje potem pobieranie statystyk, bo przy dwóch kandydatach o tym samym
+        // nazwisku nie da się rozstrzygnąć, którego z nich dotyczą liczby.
+        const exists = DB.players.some(pl=>
+          pl.clubId===club.id
+          && importNorm(pl.firstName)===importNorm(p.firstName)
+          && importNorm(pl.lastName)===importNorm(p.lastName));
         if(exists){ skipped++; return; }
         if(!p.birthYear) bezRocznika++;
         else if(p.birthYearFromAge) zWieku++;
@@ -7218,6 +7441,7 @@ function openMatchScheduleModal(){
   overlay.className = 'modal-overlay';
   let selectedLeague = '';
   let selectedMatch = null;
+  let szukanaDruzyna = '';
   // Ligi, dla których próbowaliśmy już pobrać terminarz w tym otwarciu okna — bez tego
   // nieudane pobranie (np. brak sieci) zapętliłoby się przy każdym przerysowaniu.
   const autoTried = new Set();
@@ -7280,7 +7504,14 @@ function openMatchScheduleModal(){
   const SCHEDULE_WINDOW_DAYS = 30;
   function upcomingMatches(){
     const endStr = new Date(Date.now() + SCHEDULE_WINDOW_DAYS*24*60*60*1000).toISOString().slice(0,10);
-    return futureMatches().filter(m=> m.date <= endStr);
+    // Szukanie po fragmencie nazwy („So" → Solec Kujawski) obejmuje OBIE drużyny, bo mecz jest
+    // wart pokazania niezależnie od tego, czy szukany klub gra u siebie, czy na wyjeździe.
+    // Porównujemy bez polskich znaków, żeby „lecz" trafiało w „Łęczna".
+    const szukane = importNorm(szukanaDruzyna);
+    return futureMatches().filter(m=> m.date <= endStr).filter(m=>{
+      if(!szukane) return true;
+      return importNorm(m.homeTeam).includes(szukane) || importNorm(m.awayTeam).includes(szukane);
+    });
   }
 
   // Kolejki obecne w wyświetlanym oknie — służą tylko do nagłówków grup i podpisu w tytule.
@@ -7451,7 +7682,7 @@ function openMatchScheduleModal(){
     const roundHeader = (m)=>{
       if(!rounds.length || m.round === lastRound) return '';
       lastRound = m.round;
-      return `<div style="margin:6px 0 2px;font-weight:800;color:var(--pitch);font-size:13px;">Kolejka ${m.round}</div>`;
+      return `<div style="margin:6px 0 2px;font-weight:800;color:var(--heading);font-size:13px;">Kolejka ${m.round}</div>`;
     };
 
     overlay.innerHTML = `
@@ -7471,6 +7702,13 @@ function openMatchScheduleModal(){
         <div id="schedule-status" class="note" style="margin-top:6px;font-size:11.5px;"></div>
       </div>
 
+      <div class="field-wrap" style="margin-bottom:10px;">
+        <label class="field">Szukaj drużyny</label>
+        <input id="schedule-team-search" placeholder="np. So… → Solec Kujawski" value="${esc(szukanaDruzyna)}" autocomplete="off">
+        ${szukanaDruzyna?`<div class="note" style="margin-top:4px;font-size:11.5px;">Pasujących meczów: <strong>${matches.length}</strong>
+          &middot; <button class="link-btn" data-action="clear-team-search" style="font-size:11px;">wyczyść</button></div>`:''}
+      </div>
+
       ${!DB.matches.length ? `
         <div class="empty" style="padding:24px;text-align:center;">
           <p style="margin-bottom:12px;">Brak meczów w bazie.</p>
@@ -7487,10 +7725,10 @@ function openMatchScheduleModal(){
             const dateObj = new Date(m.date + 'T00:00:00');
             const dayName = ['Nd','Pon','Wt','Śr','Czw','Pt','Sob'][dateObj.getDay()];
 
-            return roundHeader(m) + `<div class="match-row" data-match-id="${m.id}" style="border:1px solid #E3DECE;border-radius:8px;padding:12px;cursor:pointer;transition:all 0.2s;background:${selectedMatch===m.id?'#FBF6E9':'#fff'};" onmouseover="this.style.background='#FBF6E9'" onmouseout="this.style.background='${selectedMatch===m.id?'#FBF6E9':'#fff'}'">
+            return roundHeader(m) + `<div class="match-row" data-match-id="${m.id}" style="border:1px solid var(--border);border-radius:8px;padding:12px;cursor:pointer;transition:all 0.2s;background:${selectedMatch===m.id?'var(--card-warm)':'var(--card)'};" onmouseover="this.style.background='var(--card-warm)'" onmouseout="this.style.background='${selectedMatch===m.id?'var(--card-warm)':'var(--card)'}'">
               <div style="display:flex;justify-content:space-between;align-items:center;">
                 <div>
-                  <div style="font-weight:600;color:var(--pitch);">${esc(m.homeTeam||'—')} — ${esc(m.awayTeam||'—')}</div>
+                  <div style="font-weight:600;color:var(--heading);">${esc(m.homeTeam||'—')} — ${esc(m.awayTeam||'—')}</div>
                   <div class="meta" style="font-size:12px;">${m.dateApprox?'~ ':''}${dayName} ${esc(m.date)}${m.time?' • '+esc(m.time):''}${m.stadium?' • 📍 '+esc(m.stadium):''}${m.dateApprox?' <span title="90minut podaje na razie tylko zakres dat tej kolejki">(termin orientacyjny)</span>':''}</div>
                   ${m.league?`<div class="meta" style="font-size:11px;color:var(--gold-dark);">${esc(m.league)}</div>`:''}
                 </div>
@@ -7523,7 +7761,7 @@ function openMatchScheduleModal(){
       if(!players.length) return `<div class="empty" style="padding:12px;font-size:12px;">Brak zawodników z ${esc(teamName)} w bazie</div>`;
       return players.map(p=>{
         const isYouth = Number(p.birthYear) >= 2005;
-        return `<div class="player-option" data-player-id="${p.id}" style="padding:8px 12px;border:1px solid #E3DECE;border-radius:6px;margin-bottom:6px;cursor:pointer;background:#fff;" onmouseover="this.style.background='#FBF6E9'" onmouseout="this.style.background='#fff'">
+        return `<div class="player-option" data-player-id="${p.id}" style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;cursor:pointer;background:var(--card);" onmouseover="this.style.background='var(--card-warm)'" onmouseout="this.style.background='var(--card)'">
           <div style="display:flex;justify-content:space-between;align-items:center;">
             <div>
               <strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}
@@ -7538,18 +7776,18 @@ function openMatchScheduleModal(){
     overlay.innerHTML = `
     <div class="modal" style="max-width:700px;max-height:85vh;overflow:auto;">
       <h3>Wybierz zawodnika do obserwacji</h3>
-      <div style="background:#FBF6E9;padding:12px;border-radius:8px;margin-bottom:16px;">
-        <div style="font-weight:600;color:var(--pitch);">${esc(m.homeTeam||'—')} — ${esc(m.awayTeam||'—')}</div>
+      <div style="background:var(--card-warm);padding:12px;border-radius:8px;margin-bottom:16px;">
+        <div style="font-weight:600;color:var(--heading);">${esc(m.homeTeam||'—')} — ${esc(m.awayTeam||'—')}</div>
         <div class="meta">${esc(m.date)}${m.time?' • '+esc(m.time):''}${m.stadium?' • 📍 '+esc(m.stadium):''}</div>
       </div>
 
       <div style="margin-bottom:16px;">
-        <h4 style="color:var(--pitch);margin-bottom:8px;">🏠 ${esc(m.homeTeam||'Gospodarz')}</h4>
+        <h4 style="color:var(--heading);margin-bottom:8px;">🏠 ${esc(m.homeTeam||'Gospodarz')}</h4>
         ${renderPlayerList(homePlayers, m.homeTeam)}
       </div>
 
       <div style="margin-bottom:16px;">
-        <h4 style="color:var(--pitch);margin-bottom:8px;">✈️ ${esc(m.awayTeam||'Gość')}</h4>
+        <h4 style="color:var(--heading);margin-bottom:8px;">✈️ ${esc(m.awayTeam||'Gość')}</h4>
         ${renderPlayerList(awayPlayers, m.awayTeam)}
       </div>
 
@@ -7599,6 +7837,15 @@ function openMatchScheduleModal(){
 
     const leagueFilter = overlay.querySelector('#schedule-league-filter') as HTMLSelectElement;
     if(leagueFilter) leagueFilter.onchange = ()=>{ selectedLeague = leagueFilter.value; draw(); maybeAutoFetch(); };
+
+    // Przerysowanie okna zabiera ognisko z pola tekstowego i po każdej literze trzeba by w nie
+    // klikać na nowo. Ten sam pomocnik zdał egzamin przy pozostałych polach w aplikacji.
+    const szukajka = overlay.querySelector('#schedule-team-search');
+    if(szukajka) szukajka.oninput = ()=>{
+      szukanaDruzyna = szukajka.value;
+      zachowajKursorPoPrzerysowaniu(overlay, '#schedule-team-search', draw);
+    };
+    overlay.querySelectorAll('[data-action="clear-team-search"]').forEach(b=>b.onclick=()=>{ szukanaDruzyna=''; draw(); });
     overlay.querySelectorAll('[data-action="fetch-schedule"]').forEach(b=>b.onclick=()=>fetchScheduleFor90minut(b));
 
     overlay.querySelectorAll('.match-row').forEach(row=>{
@@ -7647,7 +7894,7 @@ function openMatchImportModal(){
       <input type="file" id="match-file" accept=".xlsx,.xls,.csv">
     </div>
 
-    <div style="border-top:1px dashed #D9D3C4;padding-top:12px;margin-bottom:14px;">
+    <div style="border-top:1px dashed var(--border-strong);padding-top:12px;margin-bottom:14px;">
       <label class="field">…albo wklej terminarz (jeden mecz na linię)</label>
       <textarea id="match-paste" rows="8" placeholder="Ekstraklasa	2026-08-01	17:00	Legia Warszawa	Lech Poznań&#10;Ekstraklasa	2026-08-02	20:00	Raków	Pogoń" style="font-size:12px;font-family:monospace;"></textarea>
     </div>
@@ -7996,7 +8243,7 @@ function parseSquadStatsText(text, squad){
 //
 // Typ zdarzenia (gol, kartka, zmiana) jest na stronie IKONĄ bez tekstu — po skopiowaniu zostają
 // same liczby, więc goli i kartek nie da się z tej wklejki odzyskać żadnym parserem. Właściwa
-// droga to zakładka „⚽ Protokół meczu", która czyta kolumny z DOM.
+// droga to przycisk „⏱ Statystyki z 90minut" w widoku klubu, który pobiera liczby z serwera.
 function wygladaNaProtokolMeczu(text){
   const t = String(text || '');
   if(/^###\s*PROTOKOL:/im.test(t)) return true;
@@ -8018,8 +8265,8 @@ function komunikatOProtokole(){
     Rezerwowy, który wszedł w 81', ma za sobą 9 minut, a nie 81 — gdybym to wczytał, zapisałbym odwrotność.</p>
     <p style="margin:8px 0 0;">Goli i kartek w tej wklejce nie ma wcale: na stronie są ikonami bez tekstu,
     więc kopiowanie zostawia same liczby.</p>
-    <p style="margin:8px 0 0;">Użyj zakładki <strong>Zawodnicy → ⚽ Protokół meczu</strong> — czyta kolumny wprost ze strony,
-    więc bierze bramki, kartki oraz wejścia i zejścia, i dopisuje statystyki obu drużynom naraz.</p>
+    <p style="margin:8px 0 0;">Zamiast tego wejdź w <strong>klub</strong> i kliknij <strong>⏱ Statystyki z 90minut</strong> —
+    liczby pobierane są z serwera, razem z minutami, bramkami i kartkami. Nic nie trzeba kopiować.</p>
   </div>`;
 }
 
@@ -8566,7 +8813,7 @@ function openBookmarkletModal(){
     <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
       <li>Włącz pasek zakładek w przeglądarce: <strong>Ctrl+Shift+B</strong></li>
       <li>Przeciągnij ten przycisk na pasek zakładek:<br>
-        <a href="${esc(TM_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:#C69B3C;color:#16302A;border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">⏱ Kopiuj do SBS</a>
+        <a href="${esc(TM_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">⏱ Kopiuj do SBS</a>
       </li>
       <li>Wejdź na stronę klubu → <strong>Statystyki drużynowe</strong></li>
       <li>Kliknij <strong>„⏱ Kopiuj do SBS"</strong> na pasku zakładek — pojawi się potwierdzenie</li>
@@ -8607,17 +8854,23 @@ let agencySort = 'wartosc';   // wartosc | zawodnicy | nazwa
 
 // Logo agencji. Adres wskazuje na serwer Transfermarktu, więc może się nie wczytać (blokada
 // odsyłacza, zmiana adresu) — wtedy pokazujemy inicjały, tak jak przy klubach bez herbu.
+// Logotypy agencji na JASNEJ płytce — zawsze, niezależnie od motywu.
+//
+// Logotypy przychodzą z zewnątrz i są nieprzewidywalne: większość to ciemna kreska na
+// przezroczystym tle, część jest biała. Na ciemnym tle te pierwsze znikały zupełnie. Biała
+// płytka z marginesem to rozwiązanie, które stosują wszystkie serwisy transferowe — działa
+// dla każdego logotypu, bo nie zakłada niczego o jego kolorze.
 function agencyLogoHtml(a, size){
-  const s = size || 26;
+  const s = size || 34;
   const inicjaly = String(a && a.name || '?').split(/\s+/).filter(Boolean).slice(0,2)
     .map(w=>w[0]).join('').toUpperCase();
-  const zastepcze = `<span style="width:${s}px;height:${s}px;display:inline-flex;align-items:center;justify-content:center;background:#16302A;color:#C69B3C;border-radius:6px;font-weight:800;font-size:${Math.round(s*0.38)}px;flex:0 0 auto;">${esc(inicjaly)}</span>`;
+  const zastepcze = `<span class="agency-logo agency-logo-fallback" style="width:${s}px;height:${s}px;font-size:${Math.round(s*0.36)}px;">${esc(inicjaly)}</span>`;
   // Pierwszeństwo ma logo WGRANE RĘCZNIE — adres z Transfermarktu bywa niedostępny (hotlink),
   // a plik wgrany przez użytkownika jest jego i zawsze się wyświetli.
   const zrodlo = agencyLogo(a);
   if(!zrodlo) return zastepcze;
   return `<img src="${esc(zrodlo)}" alt="" referrerpolicy="no-referrer" loading="lazy"
-    style="width:${s}px;height:${s}px;object-fit:contain;border-radius:6px;background:#fff;flex:0 0 auto;"
+    class="agency-logo" style="width:${s}px;height:${s}px;"
     onerror="this.outerHTML=this.dataset.fallback" data-fallback="${esc(zastepcze)}">`;
 }
 
@@ -8935,7 +9188,7 @@ function viewAgencyDetail(id){
     <button class="secondary" data-action="agency-add-players" data-id="${a.id}" title="Wybierz zawodników z bazy i przypisz ich do tej agencji">➕ Dodaj z bazy</button>
   </div>
 
-  <h3 style="color:var(--pitch);font-family:'Barlow Condensed',sans-serif;">Menedżerowie <span class="reports-count">${menedzerowie.length}</span></h3>
+  <h3 style="color:var(--heading);font-family:'Barlow Condensed',sans-serif;">Menedżerowie <span class="reports-count">${menedzerowie.length}</span></h3>
   <div class="card" style="padding:0;overflow:auto;margin-bottom:24px;">
     <table>
       <thead><tr><th>Imię i nazwisko</th><th>Rola</th><th style="min-width:190px;">E-mail</th><th style="min-width:150px;">Telefon</th><th style="text-align:right;">Zawodników</th><th>Notatka</th><th></th></tr></thead>
@@ -8943,7 +9196,7 @@ function viewAgencyDetail(id){
     </table>
   </div>
 
-  <h3 style="color:var(--pitch);font-family:'Barlow Condensed',sans-serif;">Zawodnicy tej agencji <span class="reports-count">${zawodnicy.length}</span></h3>
+  <h3 style="color:var(--heading);font-family:'Barlow Condensed',sans-serif;">Zawodnicy tej agencji <span class="reports-count">${zawodnicy.length}</span></h3>
   <div class="card" style="padding:0;overflow:auto;">
     <table>
       <thead><tr><th>Zawodnik</th><th>Rocznik</th><th>Pozycja</th><th>Klub</th><th>Opiekun z agencji</th><th></th></tr></thead>
@@ -9005,7 +9258,7 @@ function openAddPlayersToAgencyModal(agencyId){
         <span>Pokaż tylko tych bez przypisanej agencji</span>
       </label>
 
-      <div style="max-height:320px;overflow:auto;border-top:1px solid #E3DECE;padding-top:8px;">
+      <div style="max-height:320px;overflow:auto;border-top:1px solid var(--border);padding-top:8px;">
         ${l.length ? `<table><tbody>${l.slice(0,LIMIT).map(p=>`<tr>
           <td style="width:24px;"><input type="checkbox" class="dodaj-check" data-id="${p.id}" ${wybrani.has(p.id)?'checked':''} ${p.agencyId===agencyId?'disabled':''}></td>
           <td><strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}${isYouthPlayer(p)?youthBadge():''}
@@ -9075,227 +9328,6 @@ function openAddPlayersToAgencyModal(agencyId){
 // tworzenie z tego setek pustych rekordów zaśmieciłoby kartotekę bardziej, niż by pomogło.
 // Hurtowe dopisanie menedżerów do agencji — z sekcji „Pracownicy" na Transfermarkcie albo
 // z listy nazwisk wpisanej ręcznie.
-// Wczytanie protokołu meczowego z Łączy nas piłką i DOPISANIE statystyk zawodnikom.
-//
-// Statystyki się SUMUJĄ (mecz po meczu), więc każde spotkanie musi być rozliczone dokładnie raz.
-// Identyfikatorem meczu jest adres protokołu — zapisujemy go przy zawodniku, a ponowne wczytanie
-// tego samego protokołu jest pomijane. Bez tego drugie kliknięcie podwoiłoby komuś dorobek.
-function openProtokolMeczuModal(){
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
-  let wklejka = '';
-  let rozpoznany = null;
-
-  const kluczMeczu = ()=>{
-    if(!rozpoznany) return '';
-    const m = String(rozpoznany.link||'').match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
-    return m ? m[1] : (rozpoznany.link || rozpoznany.tytul || '');
-  };
-
-  function dopasuj(){
-    if(!rozpoznany) return {gotowi:[], juzRozliczeni:[], nieznalezieni:[], niejednoznaczni:[], bezWystepu:[], doZalozenia:[]};
-    const klucz = kluczMeczu();
-    const gotowi = [], juzRozliczeni = [], nieznalezieni = [], niejednoznaczni = [], bezWystepu = [], doZalozenia = [];
-    rozpoznany.zawodnicy.forEach(z=>{
-      if(!z.wystapil){ bezWystepu.push(z); return; }
-      let kandydaci = matchPlayersByFullName(z.nazwa, '');
-      // Gdy nazwisko powtarza się w bazie, rozstrzyga klub z protokołu.
-      if(kandydaci.length > 1 && z.klub){
-        const wKlubie = kandydaci.filter(p=> importNorm(clubName(p.clubId)).includes(importNorm(z.klub))
-          || importNorm(z.klub).includes(importNorm(clubName(p.clubId))));
-        if(wKlubie.length) kandydaci = wKlubie;
-      }
-      if(!kandydaci.length){
-        // Nie ma go w bazie — ale protokół podaje klub, więc jeśli ten klub mamy, da się go
-        // założyć. To jedyna sensowna droga dla IV ligi, gdzie kartoteka jest praktycznie pusta:
-        // pierwszy protokół drużyny buduje jej kadrę, kolejne dopisują już tylko statystyki.
-        const klub = znajdzKlubPoNazwieTM(z.klub);
-        if(klub) doZalozenia.push({...z, klubBazy: klub});
-        else nieznalezieni.push(z);
-        return;
-      }
-      if(kandydaci.length > 1){ niejednoznaczni.push({...z, kandydaci}); return; }
-      const p = kandydaci[0];
-      if((p.rozliczoneMecze||[]).includes(klucz)){ juzRozliczeni.push({...z, player: p}); return; }
-      gotowi.push({...z, player: p});
-    });
-    return {gotowi, juzRozliczeni, nieznalezieni, niejednoznaczni, bezWystepu, doZalozenia};
-  }
-
-  function draw(){
-    const {gotowi, juzRozliczeni, nieznalezieni, niejednoznaczni, bezWystepu, doZalozenia} = dopasuj();
-    overlay.innerHTML = `
-    <div class="modal" style="max-width:820px;">
-      <h3>⚽ Protokół meczu — Łączy nas piłką</h3>
-      <p class="note" style="margin-top:0;">Jedyne źródło, które podaje III ligę i rozgrywki młodzieżowe na poziomie zawodnika.
-      Wczytanie <strong>dopisuje</strong> mecz, minuty, bramki i kartki obu drużynom naraz.
-      Minuty liczę z wejść i zejść (podstawowy bez zmiany = 90); doliczonego czasu nie dodaję, bo protokół go nie podaje.</p>
-
-      <details style="margin-bottom:12px;" ${rozpoznany?'':'open'}>
-        <summary style="cursor:pointer;font-weight:700;color:var(--gold-dark);">1. Ustaw zakładkę (raz)</summary>
-        <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
-          <li>Włącz pasek zakładek: <strong>Ctrl+Shift+B</strong></li>
-          <li>Przeciągnij na pasek:<br>
-            <a href="${esc(LNP_PROTOKOL_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:#C69B3C;color:#16302A;border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">⚽ Protokół do SBS</a>
-          </li>
-          <li>Otwórz protokół meczu na laczynaspilka.pl (sekcja <strong>Składy</strong> musi być widoczna) i kliknij zakładkę</li>
-        </ol>
-        <details style="margin-top:6px;">
-          <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Kod do wklejenia ręcznie</summary>
-          <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;margin-top:6px;">${esc(LNP_PROTOKOL_BOOKMARKLET)}</textarea>
-        </details>
-      </details>
-
-      <div class="field-wrap" style="margin-bottom:10px;">
-        <label class="field">2. Wklej odczytany protokół (Ctrl+V)</label>
-        <textarea id="prot-paste" rows="6" placeholder="### PROTOKOL: Błękitni Stargard vs Wda Świecie | https://... ###&#10;P|Błękitni Stargard|8|Maciej Budawski|0|0|0||" style="font-size:11.5px;font-family:monospace;">${esc(wklejka)}</textarea>
-      </div>
-      <div class="modal-actions" style="justify-content:flex-start;margin-top:0;">
-        <button class="secondary" data-action="prot-parse">Rozpoznaj</button>
-      </div>
-
-      ${rozpoznany ? `
-        <div style="border-top:1px solid #E3DECE;padding-top:10px;margin-top:12px;">
-          <p class="note" style="margin-top:0;"><strong>${esc(rozpoznany.tytul||'Mecz')}</strong><br>
-            Zawodników w protokole: ${rozpoznany.zawodnicy.length}. Do dopisania: <strong>${gotowi.length}</strong>${doZalozenia.length? `, do założenia <strong>${doZalozenia.length}</strong>`:''}${
-            juzRozliczeni.length? `, ten mecz już rozliczony u <strong>${juzRozliczeni.length}</strong>`:''}${
-            bezWystepu.length? `, nie weszło z ławki ${bezWystepu.length}`:''}${
-            nieznalezieni.length? `, spoza bazy ${nieznalezieni.length}`:''}.</p>
-          <div style="max-height:300px;overflow:auto;">
-            <table><thead><tr><th style="width:24px;"></th><th>Zawodnik</th><th style="text-align:right;">Min.</th>
-              <th style="text-align:right;">Gole</th><th style="text-align:right;">Kartki</th></tr></thead>
-            <tbody>
-            ${gotowi.map((x,i)=>`<tr>
-              <td><input type="checkbox" class="prot-check" data-idx="${i}" checked></td>
-              <td><strong>${esc(x.player.lastName)}</strong> ${esc(x.player.firstName)}
-                <span class="club-sub" style="display:block;">${esc(clubName(x.player.clubId))}${x.rola==='R'?' · z ławki':''}</span></td>
-              <td style="text-align:right;">${x.minuty}</td>
-              <td style="text-align:right;">${x.gole||'—'}</td>
-              <td style="text-align:right;">${x.zolte?'🟨':''}${x.czerwone?'🟥':''}${!x.zolte&&!x.czerwone?'—':''}</td>
-            </tr>`).join('')}
-            ${doZalozenia.map((x,i)=>`<tr style="background:rgba(198,155,60,0.06);">
-              <td><input type="checkbox" class="prot-new-check" data-idx="${i}" checked></td>
-              <td>${esc(x.nazwa)}
-                <span class="club-sub" style="display:block;">${esc(x.klubBazy.name)}${x.rola==='R'?' · z ławki':''} · <strong>nowy — założę</strong></span></td>
-              <td style="text-align:right;">${x.minuty}</td>
-              <td style="text-align:right;">${x.gole||'—'}</td>
-              <td style="text-align:right;">${x.zolte?'🟨':''}${x.czerwone?'🟥':''}${!x.zolte&&!x.czerwone?'—':''}</td>
-            </tr>`).join('')}
-            ${juzRozliczeni.length? `<tr><td></td><td colspan="4" style="font-size:12px;color:var(--ink-soft);padding-top:8px;">
-              <strong>Ten mecz już rozliczony (${juzRozliczeni.length})</strong> — pomijam, żeby nie policzyć dwa razy:<br>${
-              juzRozliczeni.slice(0,15).map(x=>esc(x.nazwa)).join(', ')}${juzRozliczeni.length>15?' …':''}</td></tr>`:''}
-            ${niejednoznaczni.length? `<tr><td></td><td colspan="4" style="font-size:12px;color:var(--clay-dark);">
-              <strong>Niejednoznaczni (${niejednoznaczni.length})</strong> — w bazie kilka osób o tym nazwisku:<br>${
-              niejednoznaczni.map(x=>esc(x.nazwa)).join(', ')}</td></tr>`:''}
-            ${nieznalezieni.length? `<tr><td></td><td colspan="4" style="font-size:12px;color:var(--ink-soft);">
-              <strong>Bez rozpoznanego klubu (${nieznalezieni.length})</strong> — nie zakładam, bo nie wiem, gdzie grają:<br>${
-              nieznalezieni.slice(0,20).map(x=>esc(x.nazwa)).join(', ')}${nieznalezieni.length>20?' …':''}</td></tr>`:''}
-            </tbody></table>
-          </div>
-        </div>
-        ${(gotowi.length||doZalozenia.length)? `<div class="modal-actions" style="justify-content:flex-start;">
-          <button class="gold" data-action="prot-apply">Dopisz statystyki (${gotowi.length}${doZalozenia.length?` + ${doZalozenia.length} nowych`:''})</button></div>`:''}
-      ` : ''}
-
-      <div class="modal-actions">
-        <button class="secondary" data-action="close-modal">Zamknij</button>
-      </div>
-    </div>`;
-    wire();
-  }
-
-  function wire(){
-    overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=()=>{ overlay.remove(); render(); });
-    const ta = overlay.querySelector('#prot-paste') as any;
-    if(ta) ta.oninput = ()=>{ wklejka = ta.value; };
-    overlay.querySelectorAll('[data-action="prot-parse"]').forEach(b=>b.onclick=()=>{
-      wklejka = ((overlay.querySelector('#prot-paste') as any)||{}).value || '';
-      const r = parseProtokolMeczu(wklejka);
-      if(!r.zawodnicy.length){
-        // Zamiast samego „nie rozpoznałem" mówimy, CO dostaliśmy — inaczej nie da się ustalić,
-        // czy zawiodła zakładka, czy wkleiło się coś innego (np. ręczne zaznaczenie strony).
-        const linie = String(wklejka||'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-        const maNaglowek = linie.some(l=>/^###\s*PROTOKOL:/i.test(l));
-        const maKreski = linie.some(l=>l.split('|').length >= 9);
-        let diagnoza;
-        if(!linie.length) diagnoza = 'Pole jest puste — nic nie zostało wklejone.';
-        else if(!maNaglowek && !maKreski) diagnoza =
-          'To nie jest wynik zakładki. Brakuje nagłówka „### PROTOKOL:" i wierszy rozdzielonych kreskami,\n' +
-          'więc wygląda to na ręcznie zaznaczony fragment strony. Przy takim zaznaczeniu znikają puste\n' +
-          'komórki tabeli i nie da się odróżnić bramki od kartki ani od zmiany — dlatego tego nie czytam.';
-        else if(maNaglowek && !maKreski) diagnoza =
-          'Nagłówek jest, ale nie ma ani jednego wiersza zawodnika. Zakładka nie odczytała składów —\n' +
-          'upewnij się, że sekcja „Składy" była rozwinięta i widoczna, gdy ją klikałeś.';
-        else diagnoza = 'Wiersze są, ale w innym układzie, niż oczekiwałem.';
-        alert('Nie rozpoznałem protokołu.\n\n' + diagnoza +
-          '\n\nPierwsze linijki tego, co wkleiłeś:\n' + linie.slice(0,5).map(l=>'  ' + l.slice(0,60)).join('\n') +
-          '\n\nKliknij zakładkę „⚽ Protokół do SBS" na PASKU ZAKŁADEK, będąc na stronie protokołu,\n' +
-          'i wklej to, co skopiuje — powinno zaczynać się od „### PROTOKOL:".');
-        return;
-      }
-      rozpoznany = r;
-      draw();
-    });
-    overlay.querySelectorAll('[data-action="prot-apply"]').forEach(b=>b.onclick=async()=>{
-      const {gotowi, doZalozenia} = dopasuj();
-      const zaznaczeni = Array.from(overlay.querySelectorAll('.prot-check:checked')).map((c:any)=>Number(c.dataset.idx));
-      const zaznaczeniNowi = Array.from(overlay.querySelectorAll('.prot-new-check:checked')).map((c:any)=>Number(c.dataset.idx));
-      const klucz = kluczMeczu();
-      if(!klucz){ alert('Protokół nie ma adresu meczu — bez niego nie mogę zabezpieczyć przed podwójnym liczeniem.'); return; }
-      let dopisani = 0, zalozeni = 0;
-      // Zawodnicy, których jeszcze nie ma w kartotece, a ich klub mamy w bazie. Zakładamy ich
-      // od razu z dorobkiem z tego meczu — dzięki temu pierwszy protokół drużyny buduje jej kadrę.
-      // Rocznika ani pozycji protokół nie podaje, więc zostają puste do uzupełnienia.
-      zaznaczeniNowi.forEach(i=>{
-        const x = doZalozenia[i];
-        if(!x) return;
-        const czesci = String(x.nazwa).split(/\s+/).filter(Boolean);
-        DB.players.push({
-          id: uid('Z'), firstName: czesci[0] || '', lastName: czesci.slice(1).join(' ') || czesci[0] || '',
-          birthDate: '', birthYear: '', nationality: '', position: '', foot: '', height: null,
-          status: '', clubId: x.klubBazy.id, scout: currentScout || '',
-          videoLink: '', lnpLink: '', tmLink: '', hasAgent: false, agencyName: '',
-          formation: '', customFields: {},
-          matches: 1, minutes: x.minuty, goals: x.gole || 0,
-          yellowCards: x.zolte || 0, redCards: x.czerwone || 0,
-          statsUpdatedAt: new Date().toISOString().slice(0,10),
-          statsSource: 'Łączy nas piłką (protokół)',
-          rozliczoneMecze: [klucz],
-          notes: 'Założony z protokołu meczowego — uzupełnij rocznik i pozycję.',
-          dateAdded: new Date().toISOString().slice(0,10),
-        });
-        zalozeni++;
-      });
-      zaznaczeni.forEach(i=>{
-        const x = gotowi[i];
-        if(!x) return;
-        const p = x.player;
-        p.matches = (p.matches || 0) + 1;
-        p.minutes = (p.minutes || 0) + x.minuty;
-        if(x.gole) p.goals = (p.goals || 0) + x.gole;
-        if(x.zolte) p.yellowCards = (p.yellowCards || 0) + x.zolte;
-        if(x.czerwone) p.redCards = (p.redCards || 0) + x.czerwone;
-        p.statsUpdatedAt = new Date().toISOString().slice(0,10);
-        p.statsSource = 'Łączy nas piłką (protokół)';
-        p.rozliczoneMecze = [...(p.rozliczoneMecze || []), klucz];
-        dopisani++;
-      });
-      const ok = await savePlayers();
-      if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
-      alert(`Dopisano statystyki: ${dopisani} zawodnikom.` +
-        (zalozeni ? `\nZałożono nowych zawodników: ${zalozeni} (bez rocznika i pozycji — uzupełnij w profilu).` : '') +
-        `\n\nTen mecz jest już oznaczony jako rozliczony — ponowne wczytanie go pominie.`);
-      rozpoznany = null; wklejka = '';
-      render();
-      draw();
-    });
-  }
-
-  overlay.addEventListener('click', e=>{ if(e.target===overlay){ overlay.remove(); render(); } });
-  document.body.appendChild(overlay);
-  draw();
-}
-
 function openAgencyStaffModal(agencyId){
   const agencja = agencyById(agencyId);
   if(!agencja) return;
@@ -9331,7 +9363,7 @@ function openAgencyStaffModal(agencyId){
         <summary style="cursor:pointer;font-weight:700;color:var(--gold-dark);">Zakładka (opcjonalnie)</summary>
         <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
           <li>Przeciągnij na pasek zakładek:<br>
-            <a href="${esc(TM_AGENCY_STAFF_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:#C69B3C;color:#16302A;border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">👥 Pracownicy agencji do SBS</a>
+            <a href="${esc(TM_AGENCY_STAFF_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">👥 Pracownicy agencji do SBS</a>
           </li>
           ${agencja.tmLink ? `<li>Otwórz <a class="ext-link" href="${esc(agencja.tmLink)}" target="_blank" rel="noopener noreferrer">profil tej agencji &rarr;</a>, kliknij zakładkę</li>`
             : `<li>Otwórz profil agencji na Transfermarkcie i kliknij zakładkę</li>`}
@@ -9352,7 +9384,7 @@ function openAgencyStaffModal(agencyId){
       </div>
 
       ${rozpoznani ? `
-        <div style="border-top:1px solid #E3DECE;padding-top:10px;margin-top:12px;max-height:260px;overflow:auto;">
+        <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:12px;max-height:260px;overflow:auto;">
           <p class="note" style="margin-top:0;">Rozpoznano <strong>${rozpoznani.length}</strong>:
             nowych <strong>${nowi.length}</strong>${juzSa.length? `, już w agencji <strong>${juzSa.length}</strong>`:''}.</p>
           <table><tbody>
@@ -9486,7 +9518,7 @@ function openAgencySquadModal(agencyId){
         <summary style="cursor:pointer;font-weight:700;color:var(--gold-dark);">1. Ustaw zakładkę (raz)</summary>
         <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
           <li>Przeciągnij na pasek zakładek:<br>
-            <a href="${esc(TM_AGENCY_SQUAD_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:#C69B3C;color:#16302A;border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">📥 Zawodnicy agencji do SBS</a>
+            <a href="${esc(TM_AGENCY_SQUAD_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">📥 Zawodnicy agencji do SBS</a>
           </li>
           ${agencja.tmLink ? `<li>Otwórz <a class="ext-link" href="${esc(agencja.tmLink)}" target="_blank" rel="noopener noreferrer">profil tej agencji &rarr;</a></li>`
             : `<li>Otwórz profil tej agencji na Transfermarkcie <span class="note">(nie mam zapisanego adresu — dopisz go w „Edytuj agencję", to pojawi się tu odnośnik)</span></li>`}
@@ -9517,7 +9549,7 @@ function openAgencySquadModal(agencyId){
           Profil jest podzielony na strony — wróć na Transfermarkt, przejdź kolejne strony składu
           (2, 3, 4…) i kliknij zakładkę na <strong>każdej</strong>, a potem wklej ponownie.
           Bufor sumuje się sam, więc nic z tego, co już masz, nie przepadnie.</p>` : ''}
-        <div style="border-top:1px solid #E3DECE;padding-top:10px;margin-top:12px;">
+        <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:12px;">
           <p class="note" style="margin-top:0;">Na liście z Transfermarktu: <strong>${rozpoznane.zawodnicy.length}</strong>.
             Gra w klubach z Twojej bazy: <strong>${trafione.length + doZalozenia.length}</strong>
             (w bazie ${trafione.length}${doZalozenia.length? `, do założenia ${doZalozenia.length}`:''}).
@@ -9694,7 +9726,7 @@ function openAgenciesImportModal(){
         <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
           <li>Włącz pasek zakładek: <strong>Ctrl+Shift+B</strong></li>
           <li>Przeciągnij ten przycisk na pasek zakładek:<br>
-            <a href="${esc(TM_AGENCIES_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:#C69B3C;color:#16302A;border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">📋 Agencje do SBS</a>
+            <a href="${esc(TM_AGENCIES_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">📋 Agencje do SBS</a>
           </li>
           <li>Na Transfermarkcie: <strong>Zapoznaj się → Agencje</strong>, wybierz kraj, kliknij <strong>Pokaż wybór</strong></li>
           <li>Kliknij zakładkę. Przejdź na kolejną stronę (2, 3, …) i klikaj na każdej — bufor się sumuje,
@@ -9718,7 +9750,7 @@ function openAgenciesImportModal(){
       </div>
 
       ${parsed.length ? `
-        <div style="border-top:1px solid #E3DECE;padding-top:10px;margin-top:12px;">
+        <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:12px;">
           <p class="note" style="margin-top:0;">Rozpoznano <strong>${parsed.length}</strong>:
             nowych <strong>${nowe.length}</strong>, już w bazie <strong>${znane.length}</strong>.</p>
           <div style="max-height:280px;overflow:auto;">
@@ -9921,7 +9953,7 @@ function openAgentImportModal(){
         <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
           <li>Włącz pasek zakładek: <strong>Ctrl+Shift+B</strong></li>
           <li>Przeciągnij ten przycisk na pasek zakładek:<br>
-            <a href="${esc(TM_AGENT_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:#C69B3C;color:#16302A;border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">🕵 Menedżer do SBS</a>
+            <a href="${esc(TM_AGENT_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">🕵 Menedżer do SBS</a>
           </li>
           <li>Wejdź na <strong>profil zawodnika</strong> na Transfermarkcie i kliknij zakładkę</li>
           <li>Powtórz dla kolejnych — bufor się sumuje. <strong>Shift+klik</strong> czyści zebrane.</li>
@@ -9941,7 +9973,7 @@ function openAgentImportModal(){
       </div>
 
       ${parsed.length ? `
-        <div style="border-top:1px solid #E3DECE;padding-top:10px;margin-top:12px;max-height:300px;overflow:auto;">
+        <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:12px;max-height:300px;overflow:auto;">
           <p class="note" style="margin-top:0;">Rozpoznano <strong>${parsed.length}</strong>,
           dopasowano do bazy <strong>${doZapisu.length}</strong>. Odznacz, czego nie chcesz zapisywać.</p>
           <table><tbody>
@@ -9972,8 +10004,8 @@ function openAgentImportModal(){
         </div>
       ` : ''}
 
-      <details style="margin-top:14px;border-top:1px dashed #D9D3C4;padding-top:10px;">
-        <summary style="cursor:pointer;font-weight:700;color:var(--pitch);">
+      <details style="margin-top:14px;border-top:1px dashed var(--border-strong);padding-top:10px;">
+        <summary style="cursor:pointer;font-weight:700;color:var(--heading);">
           Młodzieżowcy bez informacji o menedżerze — ${doKolejki.length}
         </summary>
         <p class="note" style="margin:6px 0;">Rocznik 2006 i młodsi, u których nie ma ani zaznaczonego „Tak",
@@ -10122,8 +10154,8 @@ function openMergeDuplicatesModal(){
        Zostaje wpis z większym składem (a przy równych — ten z herbem), reszta zostanie do niego dołączona.</p>
        <div style="max-height:320px;overflow:auto;">
        ${grupy.map(g=>`
-         <div style="border-bottom:1px solid #EFEADD;padding:9px 2px;font-size:12.5px;">
-           <strong style="color:var(--pitch);">${esc(g.zostaje.c.name)}</strong>
+         <div style="border-bottom:1px solid var(--chalk-dim);padding:9px 2px;font-size:12.5px;">
+           <strong style="color:var(--heading);">${esc(g.zostaje.c.name)}</strong>
            <span class="note">— zostaje (${g.zostaje.ile} zaw.${g.zostaje.herb?', z herbem':''})</span>
            ${g.doScalenia.map(d=>`<div style="color:var(--clay-dark);margin-left:12px;">↳ ${esc(d.c.name)} — dołączam ${d.ile} zaw.${d.herb&&!g.zostaje.herb?' i herb':''}</div>`).join('')}
          </div>`).join('')}
@@ -10208,7 +10240,7 @@ function openLeagueStatsModal(league){
     wszystkie kluby do tego samego pola. Nie musisz wskazywać klubu: dopasowuję po nazwisku
     do ${pool.length} zawodników z ${clubs.length} klubów tej ligi.</p>
 
-    <div style="max-height:150px;overflow:auto;border:1px solid #E3DECE;border-radius:8px;padding:8px;margin-bottom:12px;">
+    <div style="max-height:150px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:12px;">
       <table style="width:100%;font-size:12px;">
         <tr><th style="text-align:left;">Klub</th><th style="text-align:right;">Zawodników</th><th style="text-align:right;">Statystyki z</th></tr>
         ${clubs.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'','pl')).map(c=>{
@@ -10276,7 +10308,7 @@ function openLeagueStatsModal(league){
         <p class="note" style="margin:0 0 6px;">Rozpoznano <strong>${parsed.results.length}</strong> zawodników w ${Object.keys(byClub).length} klubach:</p>
         <div style="max-height:240px;overflow:auto;">
         ${Object.keys(byClub).sort((a,b)=>a.localeCompare(b,'pl')).map(cn=>`
-          <div style="font-weight:700;color:var(--pitch);font-size:12.5px;margin-top:6px;">${esc(cn)} <span style="font-weight:400;color:var(--ink-soft);">(${byClub[cn].length})</span></div>
+          <div style="font-weight:700;color:var(--heading);font-size:12.5px;margin-top:6px;">${esc(cn)} <span style="font-weight:400;color:var(--ink-soft);">(${byClub[cn].length})</span></div>
           <table style="width:100%;font-size:12px;">
             ${byClub[cn].map(r=>`<tr><td>${esc(r.player.lastName)} ${esc(r.player.firstName)}</td>
               <td style="text-align:right;">${r.stats.matches??'—'} m.</td>
@@ -10307,6 +10339,345 @@ function openLeagueStatsModal(league){
   document.body.appendChild(overlay);
 }
 
+// SKŁADY DO OBSERWACJI MECZU (online i wideo).
+//
+// SKĄD BRAĆ SKŁAD — dwie drogi, bo zależy to od tego, czy mecz już się odbył:
+//
+//   PRZED MECZEM nie ma publicznego źródła składów. Kluby ogłaszają wyjściową jedenastkę mniej
+//   więcej godzinę przed gwizdkiem, w mediach społecznościowych, i nie trafia to do żadnego
+//   serwisu, który dałoby się odczytać. Dlatego bierzemy KADRĘ KLUBU z naszej bazy — masz przed
+//   sobą wszystkich zawodników obu drużyn i zaznaczasz tych, którzy wyszli na boisko.
+//
+//   PO MECZU (i przy obserwacji z wideo, która i tak jest późniejsza) 90minut publikuje protokół:
+//   kto faktycznie zagrał, z numerami, podziałem na podstawowy skład i rezerwę oraz minutami
+//   zejścia. To jest źródło dokładniejsze i wtedy warto go użyć.
+//
+// Wyróżnienia zapisujemy przy OBSERWACJI, a nie przy meczu — to notatka konkretnego skauta
+// z konkretnego oglądania, a dwóch obserwatorów może wskazać kogo innego.
+const liczbaWyroznionych = (o) => {
+  const s = o && o.skladMeczu;
+  if(!s) return 0;
+  return ['gospodarze','goscie'].reduce((suma,strona)=>
+    suma + (((s[strona]||{}).zawodnicy)||[]).filter(z=>z.wyrozniony).length, 0);
+};
+
+// „Pogoń Szczecin - Motor Lublin" -> obie nazwy. Rozdzielamy po myślniku OTOCZONYM spacjami,
+// bo w nazwach klubów myślnik występuje na stałe („Błękitni Stargard - Wda Świecie" kontra
+// „Bielsko-Biała"). Doklejoną datę po przecinku ucinamy.
+function paraDruzynZObserwacji(tekst){
+  const czysty = String(tekst||'').replace(/\s+/g,' ').trim();
+  const czesci = czysty.split(/\s+[-–—]\s+/);
+  if(czesci.length < 2) return null;
+  const gospodarz = czesci[0].trim();
+  const gosc = czesci[1].split(',')[0].trim();
+  return (gospodarz && gosc) ? {gospodarz, gosc} : null;
+}
+
+function openObsSkladModal(obsId){
+  const obs = DB.observations.find(o=>o.id===obsId);
+  if(!obs) return;
+  const para = paraDruzynZObserwacji(obs.match);
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  let pracuje = false, komunikat = '', bladPobrania = '';
+
+  // Kadra z naszej bazy — dostępna od razu, także przed meczem.
+  function zBazy(nazwaDruzyny){
+    const klub = DB.clubs.find(c=>importNorm(c.name) === importNorm(nazwaDruzyny))
+      || DB.clubs.find(c=>{
+        const a = importNorm(c.name), b = importNorm(nazwaDruzyny);
+        return a.length>=5 && b.length>=5 && (a.includes(b) || b.includes(a));
+      });
+    if(!klub) return null;
+    const kadra = DB.players.filter(p=>p.clubId===klub.id)
+      .sort((a,b)=>(a.lastName||'').localeCompare(b.lastName||'','pl'));
+    return {nazwa: klub.name, zawodnicy: kadra.map(p=>({
+      playerId: p.id, nazwa: `${p.firstName||''} ${p.lastName||''}`.trim(),
+      numer: null, pozycja: p.position||'', rocznik: p.birthYear||'', wyrozniony: false,
+    }))};
+  }
+
+  function wczytajZBazy(){
+    if(!para){ bladPobrania = 'Pole „Mecz" nie zawiera dwóch drużyn rozdzielonych myślnikiem.'; draw(); return; }
+    const g = zBazy(para.gospodarz), s = zBazy(para.gosc);
+    if(!g && !s){
+      bladPobrania = `Nie mam w bazie ani „${para.gospodarz}", ani „${para.gosc}". Zaimportuj skład klubu w zakładce Kluby.`;
+      draw(); return;
+    }
+    obs.skladMeczu = {
+      zrodlo: 'baza', pobrano: new Date().toISOString().slice(0,10),
+      gospodarze: g || {nazwa: para.gospodarz, zawodnicy: []},
+      goscie: s || {nazwa: para.gosc, zawodnicy: []},
+    };
+    bladPobrania = '';
+    komunikat = (!g || !s)
+      ? `Wczytałem tylko jedną drużynę — drugiej („${g?para.gosc:para.gospodarz}") nie ma w bazie klubów.`
+      : 'Wczytałem kadry obu drużyn z bazy SBS.';
+    zapisz();
+  }
+
+  async function wczytajZ90minut(){
+    if(!para){ bladPobrania = 'Pole „Mecz" nie zawiera dwóch drużyn rozdzielonych myślnikiem.'; draw(); return; }
+    pracuje = true; bladPobrania = ''; komunikat = ''; draw();
+    try{
+      const klubGosp = DB.clubs.find(c=>importNorm(c.name)===importNorm(para.gospodarz));
+      const res = await fetch('/api/sklad-meczu?home=' + encodeURIComponent(para.gospodarz)
+        + '&away=' + encodeURIComponent(para.gosc)
+        + (klubGosp && klubGosp.league ? '&league=' + encodeURIComponent(klubGosp.league) : ''));
+      const dane = await res.json();
+      if(!res.ok || dane.error){
+        bladPobrania = (dane.error || ('Serwer odpowiedział kodem ' + res.status + '.'))
+          + (dane.podpowiedz ? ' ' + dane.podpowiedz : '');
+      } else {
+        // Zachowujemy dotychczasowe wyróżnienia — wczytanie protokołu po meczu nie może skasować
+        // tego, co skaut zaznaczył w trakcie oglądania.
+        const bylo = obs.skladMeczu || {};
+        const przenies = (strona, zawodnicy)=>{
+          const wczesniej = new Map((((bylo[strona]||{}).zawodnicy)||[])
+            .map(z=>[importNorm(z.nazwa), !!z.wyrozniony]));
+          return zawodnicy.map(z=>({
+            nazwa: z.nazwa, numer: z.numer, podstawowy: z.podstawowy, zszedl: z.zszedl,
+            zolte: z.zolte, czerwone: z.czerwone,
+            wyrozniony: wczesniej.get(importNorm(z.nazwa)) || false,
+          }));
+        };
+        obs.skladMeczu = {
+          zrodlo: '90minut', pobrano: new Date().toISOString().slice(0,10),
+          wynik: dane.wynik || '', link: dane.zrodlo || '',
+          gospodarze: {nazwa: dane.gospodarzeNazwa, zawodnicy: przenies('gospodarze', dane.gospodarze)},
+          goscie: {nazwa: dane.goscieNazwa, zawodnicy: przenies('goscie', dane.goscie)},
+        };
+        komunikat = 'Wczytałem protokół — to zawodnicy, którzy faktycznie zagrali.';
+        await zapisz();
+        return;
+      }
+    }catch(e){
+      bladPobrania = 'Nie udało się połączyć z serwerem: ' + (e && e.message ? e.message : e);
+    }finally{
+      pracuje = false; draw();
+    }
+  }
+
+  async function zapisz(){
+    pracuje = true; draw();
+    const ok = await saveObservations();
+    pracuje = false;
+    if(!ok) komunikat = 'UWAGA: nie udało się zapisać do bazy. Sprawdź połączenie.';
+    draw();
+  }
+
+  function kolumnaHtml(strona, tytulZapasowy){
+    const dane = (obs.skladMeczu||{})[strona];
+    const zawodnicy = (dane && dane.zawodnicy) || [];
+    return `<div style="flex:1;min-width:250px;">
+      <h4 style="margin:0 0 6px;color:var(--heading);font-size:13px;">${esc((dane&&dane.nazwa)||tytulZapasowy||'—')}
+        <span class="meta" style="font-weight:400;">(${zawodnicy.length})</span></h4>
+      ${zawodnicy.length ? zawodnicy.map((z,i)=>`
+        <label style="display:flex;align-items:center;gap:7px;padding:3px 4px;border-radius:5px;cursor:pointer;font-size:12.5px;${z.wyrozniony?'background:var(--card-warm);font-weight:700;':''}">
+          <input type="checkbox" class="obs-wyroz" data-strona="${strona}" data-i="${i}" ${z.wyrozniony?'checked':''}>
+          <span style="color:var(--ink-soft);min-width:20px;">${z.numer!=null?esc(String(z.numer)):''}</span>
+          <span style="flex:1;">${esc(z.nazwa)}</span>
+          <span class="meta" style="font-size:10.5px;white-space:nowrap;">${
+            z.podstawowy===false ? 'ław.' : (z.zszedl ? z.zszedl+"'" : '')
+          }${z.zolte?' 🟨':''}${z.czerwone?' 🟥':''}${z.pozycja?esc(z.pozycja):''}${z.rocznik?' '+esc(String(z.rocznik)):''}</span>
+        </label>`).join('')
+      : `<p class="note" style="font-size:11.5px;">Brak — wczytaj skład przyciskiem powyżej.</p>`}
+    </div>`;
+  }
+
+  function draw(){
+    const s = obs.skladMeczu;
+    overlay.innerHTML = `
+    <div class="modal" style="max-width:820px;">
+      <h3>👥 Skład meczu</h3>
+      <p class="note" style="margin-bottom:4px;">${esc(obs.match||'brak danych meczu')}
+        &middot; ${esc(obs.date||'')}${obs.matchTime?' '+esc(obs.matchTime):''}</p>
+      <p class="note" style="font-size:11.5px;margin-bottom:10px;">
+        <strong>Przed meczem</strong> składów nie ma nigdzie publicznie — kluby ogłaszają je na godzinę przed gwizdkiem.
+        Weź wtedy <strong>kadrę z bazy SBS</strong>. <strong>Po meczu</strong> (i przy oglądaniu z wideo)
+        użyj <strong>protokołu z 90minut</strong> — pokaże, kto faktycznie zagrał, z numerami i minutami zejścia.</p>
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+        <button class="secondary" data-x="baza" ${pracuje?'disabled':''}>📋 Kadry z bazy SBS</button>
+        <button class="gold" data-x="protokol" ${pracuje?'disabled':''}>${pracuje?'Pobieram…':'⚽ Kto zagrał (90minut)'}</button>
+      </div>
+
+      ${bladPobrania?`<div class="empty" style="text-align:left;padding:12px;border-color:var(--clay-dark);">
+        <strong style="color:var(--clay-dark);">${esc(bladPobrania)}</strong></div>`:''}
+      ${komunikat?`<p class="note" style="font-size:12px;color:var(--heading);">${esc(komunikat)}</p>`:''}
+
+      ${s?`<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;">
+        Źródło: <strong>${s.zrodlo==='90minut'?'protokół 90minut':'kadra z bazy SBS'}</strong>
+        &middot; pobrano ${esc(s.pobrano||'')}${s.wynik?' &middot; '+esc(s.wynik):''}
+        ${s.link?` &middot; <a class="ext-link" href="${esc(s.link)}" target="_blank" rel="noopener">protokół &rarr;</a>`:''}
+        <br>Zaznacz zawodników, którzy się wyróżnili — zaznaczenia zapisują się od razu.</div>
+        <div style="display:flex;gap:22px;flex-wrap:wrap;">
+          ${kolumnaHtml('gospodarze', para&&para.gospodarz)}
+          ${kolumnaHtml('goscie', para&&para.gosc)}
+        </div>
+        <p class="note" style="font-size:11.5px;margin-top:10px;">Wyróżnionych: <strong>${liczbaWyroznionych(obs)}</strong></p>
+      `:''}
+
+      <div style="display:flex;justify-content:flex-end;margin-top:14px;">
+        <button class="secondary" data-x="zamknij">Zamknij</button>
+      </div>
+    </div>`;
+
+    overlay.querySelector('[data-x="zamknij"]').onclick = ()=>{ overlay.remove(); render(); };
+    overlay.querySelector('[data-x="baza"]').onclick = wczytajZBazy;
+    overlay.querySelector('[data-x="protokol"]').onclick = wczytajZ90minut;
+    overlay.querySelectorAll('.obs-wyroz').forEach(inp=>inp.onchange = ()=>{
+      const lista = obs.skladMeczu[inp.dataset.strona].zawodnicy;
+      lista[Number(inp.dataset.i)].wyrozniony = inp.checked;
+      zapisz();
+    });
+  }
+
+  overlay.addEventListener('click', e=>{ if(e.target===overlay){ overlay.remove(); render(); } });
+  document.body.appendChild(overlay);
+  draw();
+}
+
+// Pobranie statystyk całego składu z 90minut — bez kopiowania czegokolwiek.
+//
+// Cała robota dzieje się na serwerze (/api/stats-90minut): strona ligi → protokoły meczów tego
+// klubu → strony zawodników, z których bierzemy GOTOWE sumy sezonowe. Dlatego dwukrotne
+// uruchomienie niczego nie podwaja — nie dopisujemy meczu do meczu, tylko przepisujemy sumę.
+//
+// Najpierw pokazujemy podgląd, a dopiero potem zapisujemy. Przy pierwszym uruchomieniu na klubie
+// zmian bywa kilkadziesiąt i warto zobaczyć je przed dotknięciem bazy.
+function open90minutStatsModal(clubId){
+  const club = DB.clubs.find(c=>c.id===clubId);
+  if(!club) return;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  let wynik = null, pracuje = false, blad = '';
+
+  function tabelaZmian(r){
+    if(!r.zmiany.length) return `<p class="note" style="margin:10px 0;">Wszystkie liczby są już aktualne — nie ma czego zapisywać.</p>`;
+    return `<table style="width:100%;font-size:12px;border-collapse:collapse;margin:10px 0;">
+      <tr style="text-align:left;color:var(--ink-soft);"><th style="padding:4px;">Zawodnik</th><th style="padding:4px;">Rocznik</th><th style="padding:4px;">Było</th><th style="padding:4px;">Będzie</th></tr>
+      ${r.zmiany.map(z=>`<tr style="border-top:1px solid var(--border);">
+        <td style="padding:4px;font-weight:600;">${esc(z.kto)}</td>
+        <td style="padding:4px;">${z.rocznik?`<strong style="color:var(--heading);">${esc(String(z.rocznik))}</strong>${Number(z.rocznik)>=2006?youthBadge():''}`:'<span class="meta">—</span>'}</td>
+        <td style="padding:4px;color:var(--ink-soft);">${esc(z.bylo)}</td>
+        <td style="padding:4px;">${esc(z.bedzie)}</td></tr>`).join('')}
+    </table>`;
+  }
+
+  function draw(){
+    overlay.innerHTML = `
+    <div class="modal" style="max-width:760px;">
+      <h3>⏱ Statystyki z 90minut — ${esc(club.name)}</h3>
+      <p class="note" style="margin-bottom:10px;">Pobieram z 90minut protokoły meczów tego klubu, a z nich
+      <strong>mecze, minuty, bramki i kartki</strong> każdego zawodnika. Liczby są gotowymi sumami za sezon,
+      więc ponowne uruchomienie niczego nie podwoi.
+      <br><strong>Asyst nie pobieram</strong> — 90minut ich nie publikuje, więc to pole zostaje nietknięte.</p>
+
+      ${blad ? `<div class="empty" style="text-align:left;padding:12px;border-color:var(--clay-dark);">
+        <strong style="color:var(--clay-dark);">${esc(blad)}</strong>
+        ${wynik && wynik.podpowiedz ? `<p style="margin:8px 0 0;">${esc(wynik.podpowiedz)}</p>` : ''}
+      </div>` : ''}
+
+      ${wynik && wynik.ok ? `
+        <div style="background:var(--card-soft);border:1px solid var(--border);border-radius:8px;padding:10px;font-size:12.5px;">
+          <div>${esc(wynik.rozgrywki || wynik.liga || '')}</div>
+          <div style="margin-top:4px;">Sprawdzonych meczów: <strong>${wynik.sprawdzoneMecze}</strong>
+          &middot; zawodników odczytanych z 90minut: <strong>${wynik.zawodnikowNa90minut}</strong>
+          &middot; do zapisania: <strong>${wynik.doZapisu}</strong>
+          ${wynik.zapisani ? ` &middot; <span style="color:var(--heading);font-weight:700;">zapisanych: ${wynik.zapisani}</span>` : ''}</div>
+        </div>
+        ${tabelaZmian(wynik)}
+        ${wynik.spozaBazy.length ? `<div style="border-left:3px solid var(--gold-dark);padding:8px 12px;margin-top:10px;background:var(--card-soft);font-size:12px;">
+          <strong>Zagrali w tym klubie, ale nie ma ich w kartotece — ${wynik.spozaBazy.length}:</strong>
+          <div style="margin-top:6px;line-height:1.8;">
+          ${wynik.spozaBazy.map(x=>`${esc(x.kto)}${x.rocznik?` <strong>${x.rocznik}</strong>${Number(x.rocznik)>=2006?youthBadge():''}`:''} — ${x.minuty} min`).join('<br>')}</div>
+          <button class="gold" data-x="dopisz" style="margin-top:10px;">+ Dopisz całą tę ${wynik.spozaBazy.length}-osobową listę do klubu</button>
+        </div>` : ''}
+        ${wynik.niejednoznaczni.length ? `<div style="border-left:3px solid var(--clay-dark);padding:8px 12px;margin-top:10px;background:var(--card-alert);font-size:12px;">
+          <strong>Pominąłem ${wynik.niejednoznaczni.length} — nie wiem, o kogo chodzi:</strong>
+          ${wynik.niejednoznaczni.map(n=>`<div style="margin-top:5px;">
+            <strong>${esc(n.kto)}</strong> — ${esc(n.powod)}<br>
+            <span class="meta">w bazie: ${esc((n.wBazie||[]).join(' &nbsp;•&nbsp; '))}</span></div>`).join('')}
+          <p style="margin:8px 0 0;">Jeśli to ten sam zawodnik wpisany dwa razy, usuń zbędny wpis
+          na liście składu poniżej — wtedy rocznik i statystyki wejdą przy kolejnym pobraniu.</p>
+        </div>` : ''}
+        ${wynik.bledyZapisu && wynik.bledyZapisu.length ? `<p class="note" style="font-size:11.5px;margin-top:8px;color:var(--clay-dark);">
+          Nie udało się zapisać: ${wynik.bledyZapisu.map(b=>esc(b.kto)).join(', ')}</p>` : ''}
+      ` : ''}
+
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+        <button class="secondary" data-x="zamknij">Zamknij</button>
+        <button class="secondary" data-x="sprawdz" ${pracuje?'disabled':''}>${pracuje?'Pobieram…':'Sprawdź, co się zmieni'}</button>
+        ${wynik && wynik.ok && wynik.doZapisu && !wynik.zapisani ? `<button class="gold" data-x="zapisz" ${pracuje?'disabled':''}>Zapisz ${wynik.doZapisu} zmian</button>` : ''}
+      </div>
+    </div>`;
+
+    overlay.querySelector('[data-x="zamknij"]').onclick = ()=>{ overlay.remove(); render(); };
+    const sprawdz = overlay.querySelector('[data-x="sprawdz"]');
+    if(sprawdz) sprawdz.onclick = ()=>pobierz(false);
+    const zapisz = overlay.querySelector('[data-x="zapisz"]');
+    if(zapisz) zapisz.onclick = ()=>pobierz(true);
+
+    // Dopisanie zawodników, którzy zagrali, ale nie ma ich w kartotece. To siatka bezpieczeństwa:
+    // wystarczy, że ktoś wejdzie na boisko choć na minutę, a nie przepadnie tylko dlatego,
+    // że nie było go na liście, z której importowano skład.
+    const dopisz = overlay.querySelector('[data-x="dopisz"]');
+    if(dopisz) dopisz.onclick = async ()=>{
+      const nowi = (wynik.spozaBazy||[]).filter(x=>{
+        const slowa = String(x.kto||'').trim().split(/\s+/);
+        if(slowa.length < 2) return false;
+        // Ostatnia kontrola po stronie przeglądarki — gdyby ktoś w międzyczasie został dodany ręcznie.
+        return !DB.players.some(p=> p.clubId===clubId
+          && importNorm(p.firstName+p.lastName) === importNorm(slowa[0]+slowa.slice(1).join('')));
+      });
+      if(!nowi.length){ komunikat = 'Wszyscy są już w kartotece.'; draw(); return; }
+      nowi.forEach(x=>{
+        const slowa = String(x.kto).trim().split(/\s+/);
+        DB.players.push({
+          id: uid('Z'), firstName: slowa[0], lastName: slowa.slice(1).join(' '),
+          birthDate: '', birthYear: x.rocznik ? String(x.rocznik) : '', nationality: '',
+          position: '', foot: '', height: null, status: '', clubId, scout: currentScout || '',
+          videoLink: '', lnpLink: '', tmLink: x.adres || '',
+          hasAgent: false, agencyName: '', formation: '', customFields: {},
+          notes: 'Dopisany automatycznie — zagrał w meczu, a nie było go w kartotece.',
+          dateAdded: new Date().toISOString().slice(0,10),
+        });
+      });
+      pracuje = true; draw();
+      const ok = await savePlayers();
+      pracuje = false;
+      komunikat = ok ? `Dopisano ${nowi.length} zawodników. Kliknij ponownie „Sprawdź, co się zmieni", żeby wciągnąć ich statystyki.`
+                     : 'Nie udało się zapisać — sprawdź baner u góry strony.';
+      if(ok) wynik.spozaBazy = [];
+      draw();
+    };
+  }
+
+  async function pobierz(zapisujemy){
+    pracuje = true; blad = ''; draw();
+    try{
+      const res = await fetch('/api/stats-90minut?clubId=' + encodeURIComponent(clubId) + (zapisujemy?'&apply=1':''));
+      const dane = await res.json();
+      wynik = dane;
+      if(!res.ok || dane.error) blad = dane.error || ('Serwer odpowiedział kodem ' + res.status + '.');
+      // Po zapisie odświeżamy dane w aplikacji, żeby nowe liczby były widoczne od razu,
+      // a nie dopiero po przeładowaniu strony.
+      if(zapisujemy && dane.zapisani) await loadAll();
+    }catch(e){
+      blad = 'Nie udało się połączyć z serwerem: ' + (e && e.message ? e.message : e);
+    }finally{
+      pracuje = false; draw();
+    }
+  }
+
+  overlay.addEventListener('click', e=>{ if(e.target===overlay){ overlay.remove(); render(); } });
+  document.body.appendChild(overlay);
+  draw();
+}
+
 function openSquadStatsModal(clubId){
   const club = DB.clubs.find(c=>c.id===clubId);
   if(!club) return;
@@ -10318,7 +10689,7 @@ function openSquadStatsModal(clubId){
   <div class="modal" style="max-width:680px;">
     <h3>⏱ Statystyki drużyny — ${esc(club.name)}</h3>
     ${club.profileTm ? '' : `
-    <div style="border:1px solid #E3DECE;border-radius:8px;padding:10px;margin-bottom:10px;background:#FBF9F3;">
+    <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;background:var(--card-soft);">
       <label class="field" style="display:block;margin-bottom:5px;">Jednorazowo: wklej adres tego klubu z Transfermarktu</label>
       <div style="display:flex;gap:8px;">
         <input id="tm-club-url" placeholder="https://www.transfermarkt.pl/lech-posen/startseite/verein/238" style="flex:1;font-size:11.5px;">
@@ -10337,8 +10708,11 @@ function openSquadStatsModal(clubId){
     <p class="note" style="font-size:11.5px;">Potrzebne kolumny to <strong>Mecze</strong>, <strong>Bramki</strong> i
     <strong>Minuty</strong> (liczby z apostrofem, np. <code>1.980'</code>). Nagłówków nie musisz zaznaczać —
     wiersze dopasowuję po nazwisku do ${squad.length} zawodników tego klubu, a czego nie rozpoznam, to pominę i wypiszę.</p>
-    <p class="note" style="font-size:11px;color:var(--ink-soft);">Dlaczego ręcznie: 90minut nie publikuje minut,
-    a Transfermarkt rysuje tę tabelę JavaScriptem — w kodzie strony jej nie ma, więc serwer nie ma czego pobrać.</p>
+    <div style="border-left:3px solid var(--gold-dark);padding:8px 12px;margin:10px 0;background:var(--card-soft);font-size:12px;">
+      <strong>Dla polskich lig nie musisz tego robić.</strong> Zamknij to okno i kliknij
+      <strong>⏱ Statystyki z 90minut</strong> — mecze, minuty, bramki i kartki pobiorą się same.
+      Ta wklejka jest zapasem dla klubów zagranicznych, których 90minut nie prowadzi.
+    </div>
     <div class="field-wrap" style="margin-bottom:14px;">
       <textarea id="squad-stats-paste" rows="12" placeholder="Lewandowski   24   18   5   3   1   1.980'&#10;Zieliński     22    4   7   2   0   1.755'" style="font-size:12px;font-family:monospace;"></textarea>
     </div>
@@ -10465,7 +10839,7 @@ function openPasteStatsModal(playerId){
       status.innerHTML = `✓ Pobrano z 90minut.pl (sezon ${esc(data.season||'—')}):
         <strong>${data.matches!=null?data.matches:'—'}</strong> mecze,
         <strong>${data.goals!=null?data.goals:'—'}</strong> goli.<br>
-        <span style="color:var(--ink-soft);">90minut nie publikuje minut, asyst ani kartek — te uzupełnij w kroku 2.</span>`;
+        <span style="color:var(--ink-soft);">To tabela kariery — bez minut i kartek. Po nie wejdź w klub i kliknij „⏱ Statystyki z 90minut".</span>`;
       render();
     }catch(e){
       status.innerHTML = `<span style="color:var(--clay-dark);">Nie udało się pobrać: ${esc(e.message)}</span>`;
@@ -10479,7 +10853,7 @@ function openPasteStatsModal(playerId){
     <div class="modal" style="max-width:600px;">
       <h3>Statystyki — ${esc(p.firstName)} ${esc(p.lastName)}</h3>
 
-      <div style="border:1px solid #E3DECE;border-radius:8px;padding:12px;margin-bottom:16px;background:#FBF9F3;">
+      <div style="border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:16px;background:var(--card-soft);">
         <label class="field" style="display:block;margin-bottom:6px;">1. Wklej link do profilu zawodnika</label>
         <div style="display:flex;gap:8px;">
           <input id="stats-link" placeholder="http://www.90minut.pl/kariera.php?id=..." value="${esc(p.lnpLink||p.tmLink||'')}" style="flex:1;font-size:12px;">
@@ -10888,132 +11262,6 @@ function openRocznikExcelImport(rocznikGroup){
 }
 
 const TRANSFER_HISTORY_TYPES = ['Transfer definitywny','Wypożyczenie','Wolny transfer','Debiut w klubie (juniorzy)','Powrót z wypożyczenia'];
-// Zakładka czytająca PROTOKÓŁ MECZOWY z Łączy nas piłką (laczynaspilka.pl).
-//
-// To jedyne źródło, które podaje III ligę i rozgrywki młodzieżowe na poziomie zawodnika:
-// obie jedenastki, ławkę, minuty wejść i zejść, bramki oraz kartki. Transfermarkt tych rozgrywek
-// nie prowadzi, a 90minut nie publikuje minut. Strona renderuje treść JavaScriptem, więc serwer
-// niczego by z niej nie odczytał — czytamy DOM w przeglądarce użytkownika, na stronie, którą
-// ma otwartą. Nie omijamy przy tym żadnego zabezpieczenia: protokół jest publiczny.
-//
-// Układ kolumn na stronie (odczytany ze zrzutu protokołu):
-//   skład wyjściowy: [zawodnik][bramki][żółta][czerwona][zejście]
-//   skład rezerwowy: [zawodnik][bramki][żółta][czerwona][wejście][zejście]
-// Rozróżniamy je po LICZBIE kolumn, a nie po ikonach — ikony są obrazkami bez tekstu.
-const LNP_PROTOKOL_BOOKMARKLET = `javascript:(function(){try{
-function tx(e){return e?(e.textContent||'').replace(/\\u00a0/g,' ').replace(/\\s+/g,' ').trim():'';}
-function minuty(s){var m=String(s||'').match(/\\d{1,3}(?=\\s*['\\u2019])/g);return m||[];}
-var naglowki=[].slice.call(document.querySelectorAll('h1,h2,h3,h4,h5,div,span,p'));
-var wyjsciowe=naglowki.filter(function(e){return e.children.length===0&&/^Sk\\u0142ad wyj\\u015bciowy$/i.test(tx(e));});
-var rezerwowe=naglowki.filter(function(e){return e.children.length===0&&/^Sk\\u0142ad rezerwowy$/i.test(tx(e));});
-if(!wyjsciowe.length){alert('SBS: nie widze skladow na tej stronie.\\n\\nOtworz PROTOKOL MECZU na laczynaspilka.pl (sekcja \\u201eSklady\\u201d) i kliknij ponownie.');return;}
-// Nazwa druzyny: najblizszy wczesniejszy naglowek, ktory nie jest etykieta skladu.
-function druzynaDla(el){
-var w=el;
-while(w){
-var p=w.previousElementSibling;
-while(p){
-var t=tx(p);
-if(t&&t.length<60&&!/^Sk\\u0142ad (wyj\\u015bciowy|rezerwowy)$/i.test(t)&&!/^Zawodnik$/i.test(t)&&/[A-Za-z\\u0104-\\u017c]/.test(t))return t;
-p=p.previousElementSibling;}
-w=w.parentElement;}
-return '';}
-function wiersze(etykieta){
-// Tabela stoi zaraz za etykieta — szukamy w kolejnych elementach rodzica.
-var kontener=etykieta.parentElement,tab=null,glebokosc=0;
-while(kontener&&!tab&&glebokosc<4){tab=kontener.querySelector('table');kontener=kontener.parentElement;glebokosc++;}
-if(tab){
-var zTabeli=[].slice.call(tab.querySelectorAll('tr')).map(function(tr){
-return [].slice.call(tr.querySelectorAll('td,th')).map(tx);}).filter(function(k){return k.length>=5;});
-if(zTabeli.length)return zTabeli;}
-// Zapas: nowoczesne strony budują takie zestawienia SIATKĄ BLOKÓW, nie tabelą. Wtedy wierszem
-// jest element, którego dzieci odpowiadają kolumnom — szukamy pojemnika, w którym powtarza się
-// kilka takich elementów o tej samej liczbie dzieci. Pusta kolumna nadal jest osobnym dzieckiem,
-// więc układ kolumn zostaje zachowany — a to jest tu najważniejsze.
-var szukaj=etykieta.parentElement,poziom=0;
-while(szukaj&&poziom<5){
-var dzieci=[].slice.call(szukaj.children);
-for(var d=0;d<dzieci.length;d++){
-var kandydat=dzieci[d];
-var podwiersze=[].slice.call(kandydat.children).filter(function(w){return w.children.length>=5;});
-if(podwiersze.length>=3){
-return podwiersze.map(function(w){return [].slice.call(w.children).map(tx);});}}
-szukaj=szukaj.parentElement;poziom++;}
-return [];}
-var linie=[];
-function zbierz(lista,rola){
-for(var i=0;i<lista.length;i++){
-var klub=druzynaDla(lista[i]);
-var w=wiersze(lista[i]);
-for(var r=0;r<w.length;r++){
-var k=w[r];
-var nazwa=k[0];
-if(!nazwa||/^zawodnik$/i.test(nazwa))continue;
-// Numer stoi przed nazwiskiem w tej samej komorce („8 Maciej Budawski").
-var mn=nazwa.match(/^(\\d{1,2})\\s+(.+)$/);
-var numer=mn?mn[1]:'';
-if(mn)nazwa=mn[2];
-nazwa=nazwa.replace(/\\s*\\((C|B|M|K)\\)\\s*$/i,'').trim();
-if(nazwa.length<3)continue;
-var gole,zolta,czerwona,wejscie,zejscie;
-if(k.length>=6){gole=minuty(k[1]).length;zolta=minuty(k[2]).length?1:0;czerwona=minuty(k[3]).length?1:0;wejscie=minuty(k[4])[0]||'';zejscie=minuty(k[5])[0]||'';}
-else{gole=minuty(k[1]).length;zolta=minuty(k[2]).length?1:0;czerwona=minuty(k[3]).length?1:0;wejscie='';zejscie=minuty(k[4])[0]||'';}
-linie.push([rola,klub,numer,nazwa,gole,zolta,czerwona,wejscie,zejscie].join('|'));}}}
-zbierz(wyjsciowe,'P');
-zbierz(rezerwowe,'R');
-if(!linie.length){alert('SBS: znalazlem sekcje skladow, ale nie odczytalem zadnego wiersza zawodnika.');return;}
-var tytul=(document.title||'').replace(/\\s+/g,' ').trim();
-var caly='### PROTOKOL: '+tytul+' | '+location.href+' ###\\n'+linie.join('\\n');
-navigator.clipboard.writeText(caly).then(function(){
-var d=document.createElement('div');
-d.innerHTML='<b>SBS: protokol odczytany</b><br>zawodnikow: '+linie.length+' \\u2014 schowek gotowy<br><span style="opacity:.75;font-weight:400">Wklej w SBS: Zawodnicy \\u2192 Protokol meczu</span>';
-d.style.cssText='position:fixed;top:16px;right:16px;z-index:999999;background:#16302A;color:#C69B3C;padding:12px 18px;border-radius:8px;font:600 13px sans-serif;line-height:1.5;box-shadow:0 4px 16px rgba(0,0,0,.3)';
-document.body.appendChild(d);setTimeout(function(){d.remove()},4200);
-}).catch(function(e){alert('Nie udalo sie skopiowac: '+e.message)})}catch(e){alert('Blad: '+e.message)}})();`;
-
-// Rozbiór wklejonego protokołu. Minuty liczymy z wejść i zejść: podstawowy bez zmiany gra 90,
-// zdjęty w 56' gra 56, wchodzący w 74' gra 16. Doliczonego czasu NIE dodajemy — protokół go nie
-// podaje, a zgadywanie zaburzyłoby porównywalność między meczami.
-function parseProtokolMeczu(text){
-  const linie = String(text||'').split(/\r?\n/);
-  let tytul = '', link = '';
-  const zawodnicy = [];
-  linie.forEach(l=>{
-    const s = l.trim();
-    if(!s) return;
-    const m = s.match(/^###\s*PROTOKOL:\s*(.*?)\s*###$/i);
-    if(m){
-      const cz = m[1].split('|').map(x=>x.trim());
-      tytul = cz[0] || '';
-      link = cz.find(x=>/^https?:\/\//i.test(x)) || '';
-      return;
-    }
-    if(/^###/.test(s)) return;
-    const k = s.split('|').map(x=>x.trim());
-    if(k.length < 9) return;
-    const [rola, klub, numer, nazwa, gole, zolta, czerwona, wejscie, zejscie] = k;
-    if(!nazwa || nazwa.length < 3) return;
-    const wszedl = wejscie ? parseInt(wejscie,10) : null;
-    const zszedl = zejscie ? parseInt(zejscie,10) : null;
-    // Rezerwowy, który nie wszedł, NIE zalicza występu — to nie to samo, co gra 0 minut.
-    const wystapil = rola === 'P' || wszedl != null;
-    let minuty = 0;
-    if(wystapil){
-      const od = rola === 'P' ? 0 : (wszedl || 0);
-      const do_ = zszedl != null ? zszedl : 90;
-      minuty = Math.max(0, Math.min(90, do_ - od));
-    }
-    zawodnicy.push({
-      rola, klub, numer, nazwa,
-      gole: parseInt(gole,10) || 0,
-      zolte: parseInt(zolta,10) || 0,
-      czerwone: parseInt(czerwona,10) || 0,
-      wszedl, zszedl, wystapil, minuty,
-    });
-  });
-  return {tytul, link, zawodnicy};
-}
-
 // Zakładka czytająca TABELĘ TRANSFERÓW z profilu zawodnika na Transfermarkcie.
 //
 // Powstała, bo wklejenie tej tabeli jest nie do rozczytania: przeglądarka kopiuje ją PIONOWO,
@@ -11223,7 +11471,7 @@ function openTransferHistoryModal(playerId){
       <h3>Historia transferowa — ${esc(p.firstName)} ${esc(p.lastName)}</h3>
       <div style="margin-bottom:16px;max-height:240px;overflow:auto;">
         ${sorted.length ? sorted.map(({t,i})=>`
-          <div class="obs-item"${editIdx===i?' style="background:#FBF6E9;border-radius:8px;"':''}>
+          <div class="obs-item"${editIdx===i?' style="background:var(--card-warm);border-radius:8px;"':''}>
             <div class="toolbar" style="margin-bottom:2px;">
               <strong>${esc(t.fromClub||t.club||'—')} &rarr; ${esc(t.toClub||'—')}</strong>
               <span style="display:flex;gap:8px;">
@@ -11235,13 +11483,13 @@ function openTransferHistoryModal(playerId){
             ${t.note?`<div style="font-size:12px;margin-top:3px;">${esc(t.note)}</div>`:''}
           </div>`).join('') : '<div class="empty">Brak wpisów — dodaj pierwszy poniżej.</div>'}
       </div>
-      <details style="border-top:1px solid #E3DECE;padding-top:12px;margin-bottom:12px;">
+      <details style="border-top:1px solid var(--border);padding-top:12px;margin-bottom:12px;">
         <summary style="cursor:pointer;font-weight:700;color:var(--gold-dark);">📋 Wklej całą historię z Transfermarktu</summary>
         <p class="note" style="margin:8px 0;">Transfermarkt kopiuje tę tabelę <strong>pionowo, po jednej komórce w linijce</strong>
         — ginie wtedy podział na kolumny i nie da się odróżnić klubu opuszczanego od docelowego. Dlatego użyj zakładki,
         która czyta tabelę wprost ze strony:</p>
         <p style="margin:8px 0;">
-          <a href="${esc(TM_TRANSFERS_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;padding:8px 16px;background:#C69B3C;color:#16302A;border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">↔ Transfery do SBS</a>
+          <a href="${esc(TM_TRANSFERS_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">↔ Transfery do SBS</a>
           <span class="note" style="display:block;font-size:11px;margin-top:4px;">Przeciągnij na pasek zakładek (Ctrl+Shift+B), wejdź na profil zawodnika, kliknij — i wklej poniżej.</span>
         </p>
         <details style="margin-bottom:6px;">
@@ -11254,7 +11502,7 @@ function openTransferHistoryModal(playerId){
         </div>
         <div id="th-preview"></div>
       </details>
-      <div style="border-top:1px solid #E3DECE;margin-bottom:14px;padding-top:12px;${editing?'background:#FBF6E9;border-radius:8px;padding:12px;':''}">
+      <div style="border-top:1px solid var(--border);margin-bottom:14px;padding-top:12px;${editing?'background:var(--card-warm);border-radius:8px;padding:12px;':''}">
         <label class="field" style="display:block;margin-bottom:8px;">${editing?'✎ Edytuj wpis':'Dodaj wpis'}</label>
         <div class="grid grid-2">
           <div class="field-wrap"><label class="field">Z klubu</label><input id="th-from-club" placeholder="np. Podhale Nowy Targ" value="${editing?esc(editing.fromClub||editing.club||''):''}"></div>
@@ -11383,7 +11631,7 @@ function openPlayerAttachmentsModal(playerId){
             <a href="${a.dataUrl}" download="${esc(a.name)}" class="attach-thumb attach-thumb-sm" title="Pobierz ${esc(a.name)}">${attachmentThumbInner(a)}</a>
             <div style="flex:1;min-width:0;">
               <div class="toolbar" style="margin-bottom:2px;">
-                <a href="${a.dataUrl}" download="${esc(a.name)}" style="font-weight:700;color:var(--pitch);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📎 ${esc(a.name)}</a>
+                <a href="${a.dataUrl}" download="${esc(a.name)}" style="font-weight:700;color:var(--heading);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📎 ${esc(a.name)}</a>
                 <button class="link-btn attach-delete-btn" data-idx="${i}" style="color:var(--clay-dark);font-size:11px;">usuń</button>
               </div>
               <div class="meta">${fmtSize(a.size)} &middot; dodano ${esc(a.uploadedAt)}</div>
@@ -11569,72 +11817,72 @@ async function generatePlayerPDF(playerId){
   <style>
     @page { margin: 16mm 14mm; }
     *{box-sizing:border-box;}
-    body{font-family:Arial,Helvetica,sans-serif;color:#1B2420;background:#fff;margin:0;padding:0 14mm;font-size:13px;line-height:1.5;}
-    .report-header{display:flex;align-items:center;gap:18px;padding-bottom:16px;border-bottom:4px solid #C69B3C;margin-bottom:0;}
+    body{font-family:Arial,Helvetica,sans-serif;color:var(--ink);background:var(--card);margin:0;padding:0 14mm;font-size:13px;line-height:1.5;}
+    .report-header{display:flex;align-items:center;gap:18px;padding-bottom:16px;border-bottom:4px solid var(--gold);margin-bottom:0;}
     .report-header img{width:52px;height:52px;border-radius:12px;flex-shrink:0;}
     .brand-block{flex:1;}
-    .brand-name{font-family:Arial,'Arial Narrow',sans-serif;font-weight:700;font-size:22px;color:#16302A;letter-spacing:.02em;margin:0;}
-    .brand-sub{font-size:11px;color:#8A857A;text-transform:uppercase;letter-spacing:.06em;margin:3px 0 0;}
-    .brand-signature{font-size:11px;color:#3C4640;margin:4px 0 0;font-weight:600;}
-    .report-date{font-size:11px;color:#8A857A;text-align:right;white-space:nowrap;}
-    .title-bar{display:flex;align-items:center;gap:14px;padding:18px 20px;background:#16302A;margin:16px -14mm 0;}
-    .pos-badge-lg{width:44px;height:44px;border-radius:50%;background:#C69B3C;color:#16302A;display:flex;align-items:center;justify-content:center;
-      font-family:Arial,'Arial Narrow',sans-serif;font-weight:700;font-size:20px;flex-shrink:0;border:3px solid #F6F3EA;}
-    .title-text h1{font-family:Arial,'Arial Narrow',sans-serif;font-weight:700;font-size:24px;color:#F6F3EA;margin:0;}
+    .brand-name{font-family:Arial,'Arial Narrow',sans-serif;font-weight:700;font-size:22px;color:var(--heading);letter-spacing:.02em;margin:0;}
+    .brand-sub{font-size:11px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.06em;margin:3px 0 0;}
+    .brand-signature{font-size:11px;color:var(--ink);margin:4px 0 0;font-weight:600;}
+    .report-date{font-size:11px;color:var(--ink-faint);text-align:right;white-space:nowrap;}
+    .title-bar{display:flex;align-items:center;gap:14px;padding:18px 20px;background:var(--pitch);margin:16px -14mm 0;}
+    .pos-badge-lg{width:44px;height:44px;border-radius:50%;background:var(--gold);color:var(--heading);display:flex;align-items:center;justify-content:center;
+      font-family:Arial,'Arial Narrow',sans-serif;font-weight:700;font-size:20px;flex-shrink:0;border:3px solid var(--chalk);}
+    .title-text h1{font-family:Arial,'Arial Narrow',sans-serif;font-weight:700;font-size:24px;color:var(--on-pitch);margin:0;}
     .title-text p{font-size:12px;color:#C6D9CE;margin:3px 0 0;text-transform:uppercase;letter-spacing:.03em;}
-    .player-meta{display:flex;flex-wrap:wrap;padding:14px 0;background:#F6F3EA;margin:0 -14mm;padding-left:14mm;padding-right:14mm;border-bottom:1px solid #E7E2D3;}
-    .meta-item{flex:1;min-width:110px;padding:4px 14px;border-left:1px solid #E7E2D3;}
+    .player-meta{display:flex;flex-wrap:wrap;padding:14px 0;background:var(--chalk);margin:0 -14mm;padding-left:14mm;padding-right:14mm;border-bottom:1px solid var(--chalk-dim);}
+    .meta-item{flex:1;min-width:110px;padding:4px 14px;border-left:1px solid var(--chalk-dim);}
     .meta-item:first-child{border-left:none;padding-left:0;}
-    .meta-item .lbl{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#8A857A;font-weight:600;}
-    .meta-item .val{font-size:13px;color:#1B2420;font-weight:700;margin-top:2px;}
+    .meta-item .lbl{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);font-weight:600;}
+    .meta-item .val{font-size:13px;color:var(--ink);font-weight:700;margin-top:2px;}
     .section{padding:18px 0;}
-    .section-title{font-family:Arial,'Arial Narrow',sans-serif;font-weight:700;font-size:14px;color:#16302A;text-transform:uppercase;
-      letter-spacing:.04em;border-left:4px solid #C69B3C;padding-left:10px;margin:0 0 12px;}
+    .section-title{font-family:Arial,'Arial Narrow',sans-serif;font-weight:700;font-size:14px;color:var(--heading);text-transform:uppercase;
+      letter-spacing:.04em;border-left:4px solid var(--gold);padding-left:10px;margin:0 0 12px;}
     .attr-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;}
-    .attr-card{background:#F6F3EA;border-radius:8px;padding:10px 6px;text-align:center;border:1px solid #E7E2D3;}
+    .attr-card{background:var(--chalk);border-radius:8px;padding:10px 6px;text-align:center;border:1px solid var(--chalk-dim);}
     .attr-card .score{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;
-      font-family:Arial,'Arial Narrow',sans-serif;font-weight:700;font-size:15px;margin:0 auto 6px;color:#fff;}
-    .score-high{background:#3E7D4C;} .score-mid{background:#C69B3C;} .score-low{background:#B6503F;}
-    .attr-card .lbl{font-size:9.5px;color:#5B6560;text-transform:uppercase;letter-spacing:.02em;font-weight:600;}
+      font-family:Arial,'Arial Narrow',sans-serif;font-weight:700;font-size:15px;margin:0 auto 6px;color:var(--card);}
+    .score-high{background:var(--good);} .score-mid{background:var(--gold);} .score-low{background:var(--clay);}
+    .attr-card .lbl{font-size:9.5px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.02em;font-weight:600;}
     .attr5-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;}
     .attr5-col{display:flex;flex-direction:column;}
-    .attr5-head{background:#16302A;color:#F6F3EA;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.02em;
+    .attr5-head{background:var(--pitch);color:var(--on-pitch);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.02em;
       padding:7px 6px;border-radius:6px 6px 0 0;text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px;}
-    .attr5-score{background:#C69B3C;color:#16302A;border-radius:10px;padding:1px 9px;font-size:13px;font-weight:700;}
-    .attr5-body{background:#F6F3EA;border:1px solid #E7E2D3;border-top:none;border-radius:0 0 6px 6px;
-      padding:8px 8px;font-size:10.5px;color:#3C4640;line-height:1.4;flex:1;min-height:46px;}
-    .attr5-empty{color:#B0AB9E;}
-    .metric-section-label{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#8A857A;font-weight:600;margin:10px 0 5px;}
+    .attr5-score{background:var(--gold);color:var(--heading);border-radius:10px;padding:1px 9px;font-size:13px;font-weight:700;}
+    .attr5-body{background:var(--chalk);border:1px solid var(--chalk-dim);border-top:none;border-radius:0 0 6px 6px;
+      padding:8px 8px;font-size:10.5px;color:var(--ink);line-height:1.4;flex:1;min-height:46px;}
+    .attr5-empty{color:var(--ink-faint);}
+    .metric-section-label{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);font-weight:600;margin:10px 0 5px;}
     .attr5-grid.metric4{grid-template-columns:repeat(4,1fr);}
-    .metric-num-body{background:#F6F3EA;border:1px solid #E7E2D3;border-top:none;border-radius:0 0 6px 6px;
-      padding:9px 8px;text-align:center;font-size:22px;font-weight:800;color:#16302A;line-height:1;
+    .metric-num-body{background:var(--chalk);border:1px solid var(--chalk-dim);border-top:none;border-radius:0 0 6px 6px;
+      padding:9px 8px;text-align:center;font-size:22px;font-weight:800;color:var(--heading);line-height:1;
       flex:1;display:flex;align-items:center;justify-content:center;min-height:30px;}
     .gauge-wrap{display:flex;flex-direction:column;align-items:center;gap:5px;}
     .gauge-ring{position:relative;}
     .gauge-ring svg{display:block;}
     .gauge-value{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-      font-family:Arial,'Arial Narrow',sans-serif;font-weight:700;font-size:15px;color:#16302A;}
-    .gauge-label{font-size:9.5px;color:#5B6560;text-transform:uppercase;letter-spacing:.02em;font-weight:600;text-align:center;}
-    .gauge-desc{font-size:10.5px;color:#3C4640;text-align:center;margin-top:6px;line-height:1.35;}
+      font-family:Arial,'Arial Narrow',sans-serif;font-weight:700;font-size:15px;color:var(--heading);}
+    .gauge-label{font-size:9.5px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.02em;font-weight:600;text-align:center;}
+    .gauge-desc{font-size:10.5px;color:var(--ink);text-align:center;margin-top:6px;line-height:1.35;}
     .persp-badge-report{display:inline-block;padding:5px 14px;border-radius:6px;font-family:Arial,'Arial Narrow',sans-serif;
-      font-weight:700;font-size:13px;color:#fff;letter-spacing:.03em;}
-    .overall-strip{display:flex;align-items:center;gap:12px;background:#16302A;border-radius:8px;padding:12px 16px;margin-bottom:14px;}
-    .overall-strip .big-num{font-family:Arial,'Arial Narrow',sans-serif;font-weight:700;font-size:28px;color:#C69B3C;line-height:1;}
-    .overall-strip .txt{color:#F6F3EA;font-size:12px;line-height:1.4;}
+      font-weight:700;font-size:13px;color:var(--card);letter-spacing:.03em;}
+    .overall-strip{display:flex;align-items:center;gap:12px;background:var(--pitch);border-radius:8px;padding:12px 16px;margin-bottom:14px;}
+    .overall-strip .big-num{font-family:Arial,'Arial Narrow',sans-serif;font-weight:700;font-size:28px;color:var(--gold);line-height:1;}
+    .overall-strip .txt{color:var(--on-pitch);font-size:12px;line-height:1.4;}
     .overall-strip .txt strong{display:block;font-size:13px;margin-bottom:1px;}
-    .notes-box{background:#F6F3EA;border-left:4px solid #C69B3C;border-radius:0 6px 6px 0;padding:12px 14px;font-size:12.5px;color:#3C4640;}
+    .notes-box{background:var(--chalk);border-left:4px solid var(--gold);border-radius:0 6px 6px 0;padding:12px 14px;font-size:12.5px;color:var(--ink);}
     .obs-table{width:100%;border-collapse:collapse;}
-    .obs-table th{background:#16302A;color:#F6F3EA;font-size:10px;text-transform:uppercase;letter-spacing:.03em;padding:7px 10px;text-align:left;}
-    .obs-table td{padding:7px 10px;border-bottom:1px solid #E7E2D3;font-size:11.5px;}
+    .obs-table th{background:var(--pitch);color:var(--on-pitch);font-size:10px;text-transform:uppercase;letter-spacing:.03em;padding:7px 10px;text-align:left;}
+    .obs-table td{padding:7px 10px;border-bottom:1px solid var(--chalk-dim);font-size:11.5px;}
     .obs-table tr:nth-child(even) td{background:#FAF8F2;}
-    .recommend-box{background:#DEEBDF;border-radius:8px;padding:12px 14px;}
-    .recommend-box .lbl{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#3E7D4C;font-weight:700;margin-bottom:5px;}
-    .recommend-box .val{font-size:13px;color:#1B2420;font-weight:700;}
-    .agent-box{background:#F4E3C4;border-radius:8px;padding:12px 14px;margin-top:12px;}
-    .agent-box .lbl{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#8C6C21;font-weight:700;margin-bottom:5px;}
-    .agent-box .val{font-size:12.5px;color:#1B2420;font-weight:600;}
-    .report-footer{text-align:center;padding:14px 0 0;font-size:10px;color:#B0AB9E;border-top:1px solid #E7E2D3;margin-top:18px;}
-    .empty-note{font-size:12px;color:#8A857A;font-style:italic;}
+    .recommend-box{background:var(--good-bg);border-radius:8px;padding:12px 14px;}
+    .recommend-box .lbl{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--good);font-weight:700;margin-bottom:5px;}
+    .recommend-box .val{font-size:13px;color:var(--ink);font-weight:700;}
+    .agent-box{background:var(--warn-bg);border-radius:8px;padding:12px 14px;margin-top:12px;}
+    .agent-box .lbl{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--gold-dark);font-weight:700;margin-bottom:5px;}
+    .agent-box .val{font-size:12.5px;color:var(--ink);font-weight:600;}
+    .report-footer{text-align:center;padding:14px 0 0;font-size:10px;color:var(--ink-faint);border-top:1px solid var(--chalk-dim);margin-top:18px;}
+    .empty-note{font-size:12px;color:var(--ink-faint);font-style:italic;}
     @media print{ body{-webkit-print-color-adjust:exact;print-color-adjust:exact;} }
   </style>
   </head>
@@ -11666,7 +11914,7 @@ async function generatePlayerPDF(playerId){
     <div class="meta-item"><div class="lbl">Status</div><div class="val">${esc(p.status||"—")}</div></div>
     <div class="meta-item"><div class="lbl">Kontrakt</div><div class="val">${p.hasContract? ('Tak'+(p.contractUntil?' — do '+esc(p.contractUntil):'')) : 'Nie'}</div></div>
     <div class="meta-item"><div class="lbl">Mecze / gole / asysty</div><div class="val">${p.matches!=null?p.matches:"—"} / ${p.goals!=null?p.goals:"—"} / ${p.assists!=null?p.assists:"—"}</div></div>
-    <div class="meta-item"><div class="lbl">Kartki żółte / czerwone</div><div class="val"><span style="color:#B8860B;">▮</span> ${p.yellowCards!=null?p.yellowCards:"—"} / <span style="color:#B6503F;">▮</span> ${p.redCards!=null?p.redCards:"—"}</div></div>
+    <div class="meta-item"><div class="lbl">Kartki żółte / czerwone</div><div class="val"><span style="color:#B8860B;">▮</span> ${p.yellowCards!=null?p.yellowCards:"—"} / <span style="color:var(--clay);">▮</span> ${p.redCards!=null?p.redCards:"—"}</div></div>
   </div>
 
   <div class="section">
@@ -11746,7 +11994,7 @@ async function generatePlayerPDF(playerId){
     });
 
     const targetEl = idoc.body;
-    const canvas = await html2canvas(targetEl, {scale:2, useCORS:true, backgroundColor:'#ffffff', windowWidth:794});
+    const canvas = await html2canvas(targetEl, {scale:2, useCORS:true, backgroundColor:'var(--card)', windowWidth:794});
     const imgData = canvas.toDataURL('image/jpeg', 0.95);
 
     const pdf = new jsPDF('p', 'mm', 'a4');
@@ -12157,7 +12405,7 @@ function loginScreenHtml(tryb, komunikat, blad){
         <button class="link-btn" data-action="lg-tryb-reset">Nie pamiętam hasła</button>
         <button class="gold" data-action="lg-login">Zaloguj się</button>
       </div>
-      <p class="note" style="margin-top:14px;border-top:1px solid #E3DECE;padding-top:12px;font-size:11.5px;">
+      <p class="note" style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px;font-size:11.5px;">
         Nie masz konta? Dostęp nadaje administrator systemu — napisz na
         <strong>system@scoutbasesystem.com</strong>, podając imię, nazwisko i klub.
       </p>`;

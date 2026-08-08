@@ -73,7 +73,11 @@ const objFromRow = (row: Record<string, unknown>): Record<string, unknown> => {
 // transferowa, monitoring, kartki) i dystans obserwacji zapisują się OD RAZU, bez żadnej migracji
 // ani działań użytkownika. Przy odczycie wyciągamy je z powrotem na wierzch obiektu.
 // hostField = nazwa (camelCase) jsonb-owego pola w tej tabeli, do którego chowamy `__ext`.
-const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }> = {
+// Eksportowane, bo panel mobilny (src/mobile/db.ts) zapisuje te same wiersze WŁASNĄ ścieżką
+// (pojedynczy upsert zamiast całej kolekcji) i musi chować pola dokładnie tam samo. Własna
+// kopia tej listy po jednej stronie rozjechałaby się przy pierwszym nowym polu — a wtedy pole
+// spoza listy poleciałoby jako nieistniejąca kolumna i zapis z telefonu przestałby przechodzić.
+export const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }> = {
   sbs_players: {
     hostField: "customFields",
     fields: [
@@ -102,7 +106,14 @@ const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }> = {
   sbs_observations: {
     // sbs_observations nie ma osobnej kolumny custom_fields — używamy istniejącej `ratings` (jsonb).
     hostField: "ratings",
-    fields: ["startLocation", "distanceKm", "obsType"],
+    // skladMeczu: obsada obu drużyn na potrzeby obserwacji online i wideo, razem ze znacznikiem
+    // zawodników wyróżniających się. Trzymamy to przy obserwacji, a nie przy meczu, bo to notatka
+    // konkretnego skauta z konkretnego oglądania — dwóch obserwatorów może wyróżnić kogo innego.
+    // googleEventId MUSI tu być. packExt odtwarza __ext wyłącznie z pól wymienionych na tej
+    // liście, więc identyfikator wydarzenia zapisany przez serwer zniknąłby przy pierwszym
+    // zapisie obserwacji z przeglądarki — a wtedy synchronizacja zakładałaby w kalendarzu
+    // drugie wydarzenie dla tej samej obserwacji.
+    fields: ["startLocation", "distanceKm", "obsType", "skladMeczu", "googleEventId"],
   },
 };
 
