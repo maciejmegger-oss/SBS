@@ -2201,7 +2201,7 @@ function crestImg(url, size, name){
   const fs = size==='lg' ? 15 : size==='xs' ? 7 : 9;
   return `<svg class="${cls}" viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg" style="background:var(--card);">
     <path d="M22 3 L38 8 L38 21 C38 30.5 31 37.5 22 40.5 C13 37.5 6 30.5 6 21 L6 8 Z" fill="var(--pitch)" stroke="var(--gold)" stroke-width="1.6"/>
-    <text x="22" y="${size==='lg'?27:26}" text-anchor="middle" font-family="'Barlow Condensed',sans-serif" font-weight="700" font-size="${fs*2}" fill="var(--chalk)">${esc(initials)}</text>
+    <text x="22" y="${size==='lg'?27:26}" text-anchor="middle" font-family="'Barlow Condensed',sans-serif" font-weight="700" font-size="${fs*2}" fill="var(--on-pitch)">${esc(initials)}</text>
   </svg>`;
 }
 function playerObs(playerId){ return DB.observations.filter(o=>o.playerId===playerId).sort((a,b)=> a.date.localeCompare(b.date)); }
@@ -2799,7 +2799,7 @@ function polandVoivodeshipMap(){
   const tops = items.map(s=>`<g class="voiv-shape" data-region="${esc(s.v.region)}">
       <path d="${s.v.d}" fill="${s.fill}" stroke="#0E241E" stroke-width="1.1"/>
       <path d="${s.v.d}" fill="url(#voivGloss)" stroke="none"/>
-      <text x="${s.center.x}" y="${s.center.y}" text-anchor="middle" font-size="10" font-weight="800" fill="var(--chalk)" style="pointer-events:none;paint-order:stroke;stroke:#0B1F19;stroke-width:3px;">${s.count}</text>
+      <text x="${s.center.x}" y="${s.center.y}" text-anchor="middle" font-size="10" font-weight="800" fill="var(--on-pitch)" style="pointer-events:none;paint-order:stroke;stroke:#0B1F19;stroke-width:3px;">${s.count}</text>
     </g>`).join('');
   return `<svg viewBox="0 -4 612 592" class="poland-map" style="width:100%;height:auto;max-width:440px;display:block;margin:0 auto;">
     <defs>

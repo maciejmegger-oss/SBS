@@ -32,6 +32,16 @@
   --heading:#16302A;
   --on-pitch:#F6F3EA;
 
+  /* Podświetlenia wierszy w Komitecie Transferowym — razem z kolorem tekstu, który na nich leży. */
+  --row-transfer-a:#FBEFC9;
+  --row-transfer-b:#FCF8EC;
+  --row-trial:#EEF3FA;
+  --row-reco:#EDF5EE;
+  --row-rejected:#F8EEEA;
+  --row-watching:#FAF7EF;
+  --row-ink:#1B2420;
+  --warn-ink:#7A5A15;
+
   --radius:10px;
   font-family:'Inter',sans-serif;
   color-scheme:light;
@@ -67,6 +77,16 @@
   --good-bg:#1C3323;
   --warn-bg:#3A3018;
   --bad-bg:#3A2320;
+  /* Te same podświetlenia, przyciemnione — zachowują rozróżnienie statusów, ale zostawiają
+     jasnemu tekstowi wystarczający kontrast. */
+  --row-transfer-a:#3A2F12;
+  --row-transfer-b:#241E10;
+  --row-trial:#182430;
+  --row-reco:#16281B;
+  --row-rejected:#2E1D19;
+  --row-watching:#26221A;
+  --row-ink:#F2EEE2;
+  --warn-ink:#E3C273;
   color-scheme:dark;
 }
 
@@ -132,7 +152,7 @@ tr:hover td{background:var(--card-soft);}
 .badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;}
 .badge.new{background:#E0E4EC;color:#2E3A56;}
 .badge.tab-chip{background:var(--chalk-dim);color:var(--heading);border:1px solid var(--gold);}
-.badge.watching{background:var(--warn-bg);color:#7A5A15;}
+.badge.watching{background:var(--warn-bg);color:var(--warn-ink);}
 .badge.reco{background:var(--good-bg);color:var(--good);}
 .badge.trial{background:#DCEAF3;color:#1D5A78;}
 .badge.signed{background:var(--gold);color:#3A2C0C;}
@@ -290,7 +310,7 @@ tr:hover td{background:var(--card-soft);}
 
 /* Sekcja "Kluby w bazie" na dashboardzie — karty klubów z herbem, klik → zawodnicy klubu. */
 .club-crest-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;}
-.club-crest-card{display:flex;align-items:center;gap:12px;padding:10px 12px;background:#FAF8F1;border:1px solid #ECE7D8;border-radius:10px;cursor:pointer;transition:transform .1s ease, box-shadow .1s ease, border-color .1s ease;}
+.club-crest-card{display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--card-soft);border:1px solid var(--border);border-radius:10px;cursor:pointer;transition:transform .1s ease, box-shadow .1s ease, border-color .1s ease;}
 .club-crest-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(10,23,18,.10);border-color:var(--gold);}
 .club-crest-card:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
 
@@ -316,7 +336,7 @@ tr:hover td{background:var(--card-soft);}
 /* Typ obserwacji (Live/Online/Video) — odcienie niebieskiego, wyraźnie inna paleta niż status/ocena. */
 .obstype-picker{display:flex;flex-wrap:wrap;gap:8px;}
 .obstype-btn{border:2px solid #3B6FA0;background:var(--card);color:#3B6FA0;border-radius:8px;padding:8px 18px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:14px;letter-spacing:.03em;cursor:pointer;transition:background .12s,color .12s,transform .1s;}
-.obstype-btn:hover{transform:translateY(-1px);background:#EAF1FA;}
+.obstype-btn:hover{transform:translateY(-1px);background:var(--chalk-dim);}
 .obstype-btn.active{background:#2F6FED;color:var(--card);border-color:#1E4FA8;box-shadow:0 2px 8px rgba(10,23,18,.18);}
 
 /* Punktowe ocenianie 1-6 w raportach — skala kolorów od czerwieni (1) do złota (6). */
@@ -391,7 +411,7 @@ tr:hover td{background:var(--card-soft);}
 .report-row-body .meta{font-size:11px;}
 .report-row-actions{display:flex;gap:4px;flex:0 0 auto;}
 .report-row-actions button{padding:3px 7px;font-size:11px;line-height:1;}
-.danger-btn{background:var(--card);border:1px solid #E3C9C2;color:var(--clay-dark);border-radius:7px;cursor:pointer;}
+.danger-btn{background:var(--card);border:1px solid var(--border-strong);color:var(--clay-dark);border-radius:7px;cursor:pointer;}
 .danger-btn:hover{background:var(--clay-dark);color:var(--card);border-color:var(--clay-dark);}
 @media(max-width:1000px){ .reports-layout{grid-template-columns:1fr;} .reports-aside{position:static;margin-top:0;} .reports-list{max-height:none;} }
 
@@ -446,9 +466,9 @@ tr:hover td{background:var(--card-soft);}
 .login-sub{color:var(--ink-soft);font-size:13px;margin:0 0 20px;}
 .login-card .field-wrap{margin-bottom:14px;}
 .login-card input{width:100%;box-sizing:border-box;}
-.login-error{background:#FBEDEA;border:1px solid #E3C9C2;color:var(--clay-dark);
+.login-error{background:var(--bad-bg);border:1px solid var(--border-strong);color:var(--clay-dark);
   padding:9px 12px;border-radius:8px;font-size:12.5px;margin-bottom:14px;}
-.login-info{background:#F1F6EE;border:1px solid #CFE0C6;color:#2F5D3A;
+.login-info{background:var(--good-bg);border:1px solid var(--border-strong);color:var(--good);
   padding:9px 12px;border-radius:8px;font-size:12.5px;margin-bottom:14px;}
 
 /* Pasek porównawczy w porównywarce: długość = udział względem najlepszego wyniku,
@@ -504,7 +524,7 @@ tr.player-row:hover{background:var(--card-warm);}
 /* Tabela ligowa pod kafelkami lig na dashboardzie — zwarta, żeby 18 drużyn mieściło się bez
    przewijania w pionie; przewijanie w bok obsługuje kontener. */
 .tabela-ligowa{width:100%;border-collapse:collapse;font-size:12.5px;}
-.tabela-ligowa th{background:var(--pitch);color:var(--chalk);padding:5px 8px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.03em;}
+.tabela-ligowa th{background:var(--pitch);color:var(--on-pitch);padding:5px 8px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.03em;}
 .tabela-ligowa td{padding:4px 8px;border-bottom:1px solid #EFEADC;}
 .tabela-ligowa tbody tr:last-child td{border-bottom:none;}
 
@@ -515,12 +535,18 @@ tr.player-row:hover{background:var(--card-warm);}
 .agent-toggle:hover{border-color:var(--gold-dark);}
 
 /* Kolory wierszy w Komitecie Transferowym (jak w raporcie): Do transferu = złoto, reszta wg statusu. */
-tr.crow-transfer{background:linear-gradient(90deg,#FBEFC9 0%,#FCF8EC 55%);}
+/* Podświetlenia wierszy komitetu. Wpisane liczbą były zawsze jasne, więc na ciemnym motywie
+   jasny tekst lądował na jasnym tle i nazwiska znikały. Teraz idą przez zmienne. */
+tr.crow-transfer{background:linear-gradient(90deg,var(--row-transfer-a) 0%,var(--row-transfer-b) 55%);}
 tr.crow-transfer td:first-child{box-shadow:inset 4px 0 0 var(--gold);}
-tr.crow-trial{background:#EEF3FA;}
-tr.crow-reco{background:#EDF5EE;}
-tr.crow-rejected{background:#F8EEEA;}
-tr.crow-watching{background:#FAF7EF;}
+tr.crow-trial{background:var(--row-trial);}
+tr.crow-reco{background:var(--row-reco);}
+tr.crow-rejected{background:var(--row-rejected);}
+tr.crow-watching{background:var(--row-watching);}
+/* Kolor tekstu MUSI iść razem z tłem — samo przyciemnienie tła bez tego zostawiłoby
+   ciemny tekst z motywu jasnego na ciemnym podświetleniu. */
+tr.crow-transfer td,tr.crow-trial td,tr.crow-reco td,
+tr.crow-rejected td,tr.crow-watching td{color:var(--row-ink);}
 
 /* Miniatury załączników (JPG/PDF) — czytelny mały podgląd zamiast samej nazwy pliku. */
 .attach-grid{display:flex;flex-wrap:wrap;gap:12px;}
@@ -561,7 +587,7 @@ tr.crow-watching{background:#FAF7EF;}
 .league-tile-logo{display:inline-flex;cursor:pointer;}
 .league-tile-logo-all{width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;background:var(--pitch);color:var(--gold);border-radius:9px;font-weight:800;font-size:14px;cursor:default;}
 .league-tile-label{font-size:12px;font-weight:700;color:var(--heading);text-align:center;line-height:1.15;}
-.league-tile-count{font-size:11px;color:var(--ink-soft);background:#F0ECDE;border-radius:10px;padding:1px 8px;}
+.league-tile-count{font-size:11px;color:var(--ink-soft);background:var(--chalk-dim);border-radius:10px;padding:1px 8px;}
 .league-tile.active .league-tile-count{background:var(--gold);color:#3A2C0C;font-weight:700;}
 
 @media (max-width: 780px){
