@@ -12,6 +12,19 @@
 <meta name="apple-mobile-web-app-title" content="Scout Base">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script>
+  // Motyw ustawiamy PRZED narysowaniem strony. Zrobione później, po starcie aplikacji, dawałoby
+  // mrugnięcie bielą przy każdym wejściu — na ciemnym motywie wyjątkowo nieprzyjemne.
+  (function(){
+    try{
+      var zapisany = localStorage.getItem('sbs-motyw');
+      var ciemny = zapisany
+        ? zapisany === 'dark'
+        : window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if(ciemny) document.documentElement.setAttribute('data-theme','dark');
+    }catch(e){ /* tryb prywatny bez localStorage — zostaje motyw jasny */ }
+  })();
+</script>
 </head>
 <body>
 <div id="save-failure-banner"></div>
@@ -23,6 +36,7 @@
       <p>III / IV liga &middot; juniorzy</p>
     </div>
     <div id="nav"></div>
+    <button id="theme-toggle" class="theme-toggle" type="button"></button>
     <div class="scout-box">
       <button class="link-btn" data-action="logout" style="color:#CBD9D1;width:100%;text-align:left;font-size:11px;border:none;background:none;cursor:pointer;padding:8px 20px;">Wyloguj się →</button>
     </div>
