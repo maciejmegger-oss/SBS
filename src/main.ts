@@ -8854,17 +8854,23 @@ let agencySort = 'wartosc';   // wartosc | zawodnicy | nazwa
 
 // Logo agencji. Adres wskazuje na serwer Transfermarktu, więc może się nie wczytać (blokada
 // odsyłacza, zmiana adresu) — wtedy pokazujemy inicjały, tak jak przy klubach bez herbu.
+// Logotypy agencji na JASNEJ płytce — zawsze, niezależnie od motywu.
+//
+// Logotypy przychodzą z zewnątrz i są nieprzewidywalne: większość to ciemna kreska na
+// przezroczystym tle, część jest biała. Na ciemnym tle te pierwsze znikały zupełnie. Biała
+// płytka z marginesem to rozwiązanie, które stosują wszystkie serwisy transferowe — działa
+// dla każdego logotypu, bo nie zakłada niczego o jego kolorze.
 function agencyLogoHtml(a, size){
-  const s = size || 26;
+  const s = size || 34;
   const inicjaly = String(a && a.name || '?').split(/\s+/).filter(Boolean).slice(0,2)
     .map(w=>w[0]).join('').toUpperCase();
-  const zastepcze = `<span style="width:${s}px;height:${s}px;display:inline-flex;align-items:center;justify-content:center;background:var(--pitch);color:var(--gold);border-radius:6px;font-weight:800;font-size:${Math.round(s*0.38)}px;flex:0 0 auto;">${esc(inicjaly)}</span>`;
+  const zastepcze = `<span class="agency-logo agency-logo-fallback" style="width:${s}px;height:${s}px;font-size:${Math.round(s*0.36)}px;">${esc(inicjaly)}</span>`;
   // Pierwszeństwo ma logo WGRANE RĘCZNIE — adres z Transfermarktu bywa niedostępny (hotlink),
   // a plik wgrany przez użytkownika jest jego i zawsze się wyświetli.
   const zrodlo = agencyLogo(a);
   if(!zrodlo) return zastepcze;
   return `<img src="${esc(zrodlo)}" alt="" referrerpolicy="no-referrer" loading="lazy"
-    style="width:${s}px;height:${s}px;object-fit:contain;border-radius:6px;background:var(--card);flex:0 0 auto;"
+    class="agency-logo" style="width:${s}px;height:${s}px;"
     onerror="this.outerHTML=this.dataset.fallback" data-fallback="${esc(zastepcze)}">`;
 }
 

@@ -251,49 +251,90 @@ tr:hover td{background:var(--card-soft);}
   .pitch-slot .p-rating{font-size:9px;}
   .pitch-slot .p-role{font-size:7.5px;}
 }
-.position-map-pitch{background:repeating-linear-gradient(to bottom, var(--turf) 0, var(--turf) 10%, var(--pitch-2) 10%, var(--pitch-2) 20%);
-  width:100%;max-width:900px;margin:0 auto;box-sizing:border-box;position:relative;
-  aspect-ratio:5/6;clip-path:polygon(20% 0%, 80% 0%, 100% 100%, 0% 100%);
-  filter:drop-shadow(0 3px 10px rgba(0,0,0,.25));}
+/* MAPA RANKINGOWA — boisko w ujęciu telewizyjnym.
+   Murawa ma WŁASNE kolory, niezależne od motywu: w transmisjach trawa jest zawsze zielona,
+   niezależnie od tego, czy studio jest jasne czy ciemne. Dzięki temu plakietki z nazwiskami
+   mogą mieć jeden, dobrany kontrast — zamiast przełączać się razem z resztą aplikacji. */
+:root{
+  --turf-a:#2F6B48;          /* jaśniejszy pas koszenia */
+  --turf-b:#275C3D;          /* ciemniejszy pas koszenia */
+  --turf-line:rgba(255,255,255,.72);
+}
+.position-map-pitch{
+  width:100%;max-width:1240px;margin:0 auto;box-sizing:border-box;position:relative;
+  aspect-ratio:1/1.12;
+  /* Węższe ścięcie u góry niż wcześniej (14% zamiast 20%) — perspektywa zostaje, ale przy
+     bramce przeciwnika robi się miejsce na nazwiska, które dotąd się tam nie mieściły. */
+  clip-path:polygon(14% 0%, 86% 0%, 100% 100%, 0% 100%);
+  background:
+    /* Przyciemnienie brzegów: oko czyta środek jako bliższy, co pogłębia wrażenie przestrzeni. */
+    radial-gradient(120% 85% at 50% 100%, rgba(255,255,255,.16) 0%, rgba(255,255,255,0) 45%, rgba(0,0,0,.34) 100%),
+    repeating-linear-gradient(to bottom, var(--turf-a) 0, var(--turf-a) 8.33%, var(--turf-b) 8.33%, var(--turf-b) 16.66%);
+  box-shadow:0 18px 44px rgba(0,0,0,.45), inset 0 0 90px rgba(0,0,0,.28);
+}
 .position-map-content{position:absolute;inset:0;z-index:2;}
 .pitch-deco{position:absolute;inset:0;z-index:1;pointer-events:none;}
-.pitch-watermark{position:absolute;left:50%;top:50%;width:46%;transform:translate(-50%,-50%);opacity:.08;z-index:0;pointer-events:none;}
-.pitch-deco-line{position:absolute;left:0;right:0;top:50%;height:2px;background:rgba(255,255,255,.4);}
+.pitch-watermark{position:absolute;left:50%;top:50%;width:38%;transform:translate(-50%,-50%);opacity:.07;z-index:0;pointer-events:none;}
+/* Linie boiska: jaśniejsze i z delikatnym cieniem, jak wapno na trawie w świetle jupiterów. */
+.pitch-deco-line{position:absolute;left:0;right:0;top:50%;height:3px;background:var(--turf-line);box-shadow:0 1px 3px rgba(0,0,0,.35);}
 .pitch-deco-circle{position:absolute;left:50%;top:50%;width:30%;height:16%;transform:translate(-50%,-50%);
-  border:2px solid rgba(255,255,255,.4);border-radius:50%;}
-.pitch-deco-box{position:absolute;left:50%;width:52%;height:13%;border:2px solid rgba(255,255,255,.4);transform:translateX(-50%);}
+  border:3px solid var(--turf-line);border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.3);}
+.pitch-deco-box{position:absolute;left:50%;width:52%;height:13%;border:3px solid var(--turf-line);transform:translateX(-50%);box-shadow:0 1px 3px rgba(0,0,0,.3);}
 .pitch-deco-box-top{top:0;border-top:none;}
 .pitch-deco-box-bottom{bottom:0;border-bottom:none;}
-.pitch-deco-goal{position:absolute;left:50%;width:16%;height:4%;border:2px solid rgba(255,255,255,.55);background:rgba(255,255,255,.08);transform:translateX(-50%);}
+.pitch-deco-goal{position:absolute;left:50%;width:16%;height:4%;border:3px solid rgba(255,255,255,.88);background:rgba(255,255,255,.14);transform:translateX(-50%);}
 .pitch-deco-goal-top{top:-3%;border-bottom:none;}
 .pitch-deco-goal-bottom{bottom:-3%;border-top:none;}
-.pitch-deco-arc{position:absolute;left:50%;width:20%;height:7%;border:2px solid rgba(255,255,255,.4);border-radius:50%;transform:translateX(-50%);}
+.pitch-deco-arc{position:absolute;left:50%;width:20%;height:7%;border:3px solid var(--turf-line);border-radius:50%;transform:translateX(-50%);}
 .pitch-deco-arc-top{top:13%;border-top:none;clip-path:inset(50% 0 0 0);}
 .pitch-deco-arc-bottom{bottom:13%;border-bottom:none;clip-path:inset(0 0 50% 0);}
-.pos-marker{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;background:none;border:none;padding:0;z-index:3;}
-.pos-marker-dot{width:26px;height:26px;border-radius:50%;background:var(--clay);color:var(--card);display:flex;align-items:center;justify-content:center;
-  font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:13px;border:2px solid var(--card);box-shadow:0 2px 5px rgba(0,0,0,.3);flex-shrink:0;}
-.pos-marker-dot.gk{background:var(--gold);color:var(--heading);}
-.pos-marker-tag{background:var(--card);border:1px solid var(--chalk-dim);border-radius:5px;padding:2px;box-shadow:0 2px 5px rgba(0,0,0,.2);min-width:78px;}
-.pos-marker-row{display:flex;align-items:center;gap:3px;padding:1.5px 3px;white-space:nowrap;}
-.pos-marker-row + .pos-marker-row{border-top:1px solid #F0EDE3;}
-.pos-marker-row .crest-xs{width:11px;height:11px;object-fit:contain;border-radius:2px;background:var(--card);flex-shrink:0;}
-.pmr-name{font-size:9px;font-weight:700;color:var(--ink);overflow:hidden;text-overflow:ellipsis;}
-.pmr-year{font-size:7.5px;color:var(--ink-soft);font-weight:600;margin-left:auto;padding-left:2px;}
-.pmr-empty{justify-content:center;color:var(--ink-soft);font-size:10px;padding:3px;}
+
+.pos-marker{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;background:none;border:none;padding:0;z-index:3;}
+.pos-marker:hover{z-index:9;}
+.pos-marker-dot{width:34px;height:34px;border-radius:50%;background:var(--clay);color:#fff;display:flex;align-items:center;justify-content:center;
+  font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:18px;border:2.5px solid rgba(255,255,255,.92);
+  box-shadow:0 3px 9px rgba(0,0,0,.5);flex-shrink:0;}
+.pos-marker-dot.gk{background:var(--gold);color:#3A2C0C;}
+
+/* Plakietka z nazwiskami w stylu paska transmisyjnego: ciemne, półprzezroczyste tło i biały
+   tekst. Na trawie czyta się to znacznie lepiej niż jasny prostokąt, bo nie konkuruje jasnością
+   z murawą, tylko się od niej odcina. */
+.pos-marker-tag{background:rgba(10,18,15,.86);border:1px solid rgba(255,255,255,.16);border-radius:7px;
+  padding:3px;box-shadow:0 6px 18px rgba(0,0,0,.55);min-width:150px;backdrop-filter:blur(2px);}
+.pos-marker-row{display:flex;align-items:center;gap:6px;padding:3px 6px;white-space:nowrap;border-radius:4px;}
+.pos-marker-row + .pos-marker-row{border-top:1px solid rgba(255,255,255,.1);}
+.pos-marker-row .crest-xs{width:16px;height:16px;object-fit:contain;border-radius:3px;background:rgba(255,255,255,.9);flex-shrink:0;}
+.pmr-name{font-size:13px;font-weight:700;color:#F4F1E6;overflow:hidden;text-overflow:ellipsis;letter-spacing:.01em;}
+.pmr-year{font-size:11px;color:#9FB3A6;font-weight:600;margin-left:auto;padding-left:6px;}
+.pmr-empty{justify-content:center;color:#9FB3A6;font-size:13px;padding:4px;}
 /* Status na mapie rankingowej: „Do transferu" = złote podświetlenie; „Na Testy"/inne = bez koloru. */
-.pos-marker-row.pmr-transfer{background:linear-gradient(180deg,#FBF0CE 0%,#F3E1A6 100%);border-radius:4px;box-shadow:inset 0 0 0 1px var(--gold);}
-.pos-marker-row.pmr-transfer .pmr-name{color:#6B5312;font-weight:800;}
-.pos-marker-row.pmr-transfer .pmr-year{color:#8A6D1E;}
+.pos-marker-row.pmr-transfer{background:linear-gradient(180deg,#E8C766 0%,#C69B3C 100%);box-shadow:inset 0 0 0 1px rgba(255,255,255,.35);}
+.pos-marker-row.pmr-transfer .pmr-name{color:#2A1F05;font-weight:800;}
+.pos-marker-row.pmr-transfer .pmr-year{color:#5A4410;}
+/* Logotypy agencji. Biel jest tu ŚWIADOMA i nie idzie przez zmienną motywu: logotypy przychodzą
+   z zewnątrz i w większości są ciemną kreską na przezroczystym tle. Płytka w kolorze karty
+   znikała razem z nimi na ciemnym motywie. Margines wewnętrzny odsuwa kreskę od krawędzi,
+   dzięki czemu drobne znaki nie zlewają się z obramowaniem. */
+.agency-logo{object-fit:contain;border-radius:7px;background:#FFFFFF;padding:3px;
+  border:1px solid rgba(0,0,0,.10);box-shadow:0 1px 3px rgba(0,0,0,.28);flex:0 0 auto;box-sizing:border-box;}
+.agency-logo-fallback{display:inline-flex;align-items:center;justify-content:center;
+  background:var(--pitch);color:var(--gold);border:1px solid var(--line);font-weight:800;padding:0;}
+
 .pitch-wrap-outer{width:100%;}
+@media (max-width:980px){
+  .pos-marker-tag{min-width:118px;}
+  .pmr-name{font-size:11px;}
+  .pmr-year{font-size:9.5px;}
+  .pos-marker-dot{width:28px;height:28px;font-size:15px;}
+}
 @media (max-width:780px){
   .pitch-wrap-outer{width:calc(100% + 32px);margin-left:-16px;padding:0 6px;box-sizing:border-box;}
-  .position-map-pitch{max-width:none;}
-  .pos-marker-dot{width:20px;height:20px;font-size:10.5px;}
-  .pos-marker-tag{min-width:56px;}
-  .pmr-name{font-size:7.2px;}
-  .pmr-year{font-size:6px;}
-  .pos-marker-row .crest-xs{width:8px;height:8px;}
+  .position-map-pitch{max-width:none;aspect-ratio:1/1.25;}
+  .pos-marker-dot{width:22px;height:22px;font-size:12px;}
+  .pos-marker-tag{min-width:88px;}
+  .pmr-name{font-size:9px;}
+  .pmr-year{font-size:7.5px;}
+  .pos-marker-row .crest-xs{width:11px;height:11px;}
 }
 .club-cell{display:flex;align-items:center;gap:8px;}
 .ext-link{display:inline-flex;align-items:center;gap:4px;color:var(--gold-dark);font-weight:600;text-decoration:none;font-size:12.5px;}
