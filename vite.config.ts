@@ -48,13 +48,36 @@ function vercelApiDevPlugin() {
   };
 }
 
+// Panel mobilny stoi pod adresem /m — na produkcji załatwia to przekierowanie w vercel.json.
+// Serwer deweloperski Vite nic o nim nie wie i oddawał pod /m stronę aplikacji na komputerze,
+// więc ta sama ścieżka działała inaczej lokalnie i po wdrożeniu. Ta wtyczka wyrównuje jedno z drugim.
+function mobileRouteDevPlugin() {
+  return {
+    name: "mobile-route-dev",
+    configureServer(server) {
+      server.middlewares.use((req, _res, next) => {
+        if (req.url === "/m" || req.url === "/m/") req.url = "/mobile.html";
+        next();
+      });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [vercelApiDevPlugin()],
+  plugins: [vercelApiDevPlugin(), mobileRouteDevPlugin()],
   server: {
     port: 5173,
     hmr: process.env.NODE_ENV === 'production' ? false : undefined,
   },
   build: {
     sourcemap: false,
+    rollupOptions: {
+      // Dwa wejścia, jedna baza: aplikacja na komputerze i panel mobilny. Wspólny kod
+      // (klient Supabase, logowanie, typy) Vite wydzieli sam do osobnej paczki.
+      input: {
+        main: "index.html",
+        mobile: "mobile.html",
+      },
+    },
   },
 });

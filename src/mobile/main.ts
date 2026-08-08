@@ -1,0 +1,951 @@
+// SBS Scout Live — panel mobilny do obserwacji w trakcie meczu.
+//
+// Osobne wejście obok aplikacji na komputerze (index.html), ta sama baza, to samo logowanie.
+// Podział pracy jest celowy: telefon REJESTRUJE (zdarzenia z minutą meczu, oceny w skalach),
+// komputer REDAGUJE (opisy, PDF, analizy). Dlatego nie ma tu prób odtworzenia całego SBS —
+// są cztery ekrany, które da się obsłużyć jedną ręką, stojąc.
+
+import "./style.css";
+import { currentUser, signIn, signOut, requestPasswordReset } from "../data/auth";
+import {
+  uid, getCache, refreshCache, patchCache, flushQueue, queueLength,
+  saveObservation, saveReport, savePlayerStatus, saveLiveEvents,
+  getLive, setLive, getScout, setScout,
+  type Cache, type LiveEvent, type LiveState, type Period,
+} from "./db";
+import type { Observation, Report } from "../types";
+
+// ---------------------------------------------------------------------------
+// Stałe — CELOWO identyczne z aplikacją na komputerze (src/main.ts).
+// Klucze muszą się zgadzać co do znaku, bo na nich opierają się radar, średnie i wykresy w SBS.
+// ---------------------------------------------------------------------------
+
+const RATING_KEYS = ["technika", "taktyka", "motoryka", "mentalnosc", "potencjal"] as const;
+const RATING_LABELS: Record<string, string> = {
+  technika: "Technika", taktyka: "Taktyka", motoryka: "Motoryka",
+  mentalnosc: "Mentalność", potencjal: "Potencjał",
+};
+const REPORT_PHASES = [
+  { key: "fazaAtaku", label: "Faza ataku" },
+  { key: "fazaPrzejsciaAtakObrona", label: "Przejście atak → obrona" },
+  { key: "fazaObrony", label: "Faza obrony" },
+  { key: "fazaPrzejsciaObronaAtak", label: "Przejście obrona → atak" },
+];
+const REPORT_SET_PIECES = [
+  { key: "rzutRoznyObrona", label: "Rzut rożny — obrona" },
+  { key: "rzutRoznyAtak", label: "Rzut rożny — atak" },
+  { key: "rzutWolnyAtak", label: "Rzut wolny — atak" },
+  { key: "rzutWolnyObrona", label: "Rzut wolny — obrona" },
+];
+const STATUS_OPTIONS = [
+  { value: "Do Obserwacji", label: "Do obserwacji" },
+  { value: "Na Testy", label: "Testy" },
+  { value: "Do transferu", label: "Do transferu" },
+  { value: "Z polecenia", label: "Z polecenia" },
+  { value: "Odrzucony", label: "Odrzucony" },
+];
+const PERSPEKTYWA = ["WYSOKA", "ŚREDNIA", "NISKA"];
+
+// Części meczu. `offset` to minuta, od której zaczyna się liczenie w danej części — dzięki temu
+// zdarzenie z dogrywki ma minutę 97, a nie 7, i zgadza się z tym, co pokazuje tablica na stadionie.
+// Doliczony czas nie wymaga osobnej obsługi: zegar nie zatrzymuje się na 45:00 ani 90:00, tylko
+// biegnie dalej, więc gol w doliczonym czasie pierwszej połowy zapisze się jako 46' lub 47'.
+const PERIODS: { n: Period; label: string; offset: number }[] = [
+  { n: 1, label: "1. połowa", offset: 0 },
+  { n: 2, label: "2. połowa", offset: 45 },
+  { n: 3, label: "1. dogrywka", offset: 90 },
+  { n: 4, label: "2. dogrywka", offset: 105 },
+];
+const periodOf = (n: Period) => PERIODS.find((p) => p.n === n) || PERIODS[0];
+
+// Zdarzenia rejestrowane jednym dotknięciem. Dziewięć kafli to maksimum, jakie mieści się na
+// ekranie telefonu bez przewijania — a przewijanie w trakcie akcji oznacza przegapioną akcję.
+const EVENT_TAGS = [
+  { key: "podanie_kluczowe", label: "Podanie kluczowe" },
+  { key: "strzal", label: "Strzał" },
+  { key: "drybling", label: "Drybling" },
+  { key: "pojedynek", label: "Pojedynek" },
+  { key: "gra_glowa", label: "Gra głową" },
+  { key: "odbior", label: "Odbiór" },
+  { key: "strata", label: "Strata" },
+  { key: "ustawienie", label: "Ustawienie" },
+  { key: "gol_asysta", label: "Gol / asysta" },
+];
+
+// ---------------------------------------------------------------------------
+// Pomocnicze
+// ---------------------------------------------------------------------------
+
+const esc = (s: unknown): string =>
+  String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+
+const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T | null;
+const pad = (n: number) => (n < 10 ? "0" : "") + n;
+const todayISO = () => new Date().toISOString().slice(0, 10);
+
+// ---------------------------------------------------------------------------
+// Motyw jasny / ciemny
+// ---------------------------------------------------------------------------
+//
+// Mecze gra się o różnych porach: ciemny ekran wieczorem nie oślepia i oszczędza baterię,
+// ale w pełnym słońcu jest nieczytelny. Wybór zapamiętujemy w telefonie, bo scout ustawia go
+// raz na dane warunki, a nie przy każdym uruchomieniu.
+//
+// Domyślnie idziemy za ustawieniem systemu — telefony same przełączają się na ciemny o zmroku,
+// więc bez wskazania użytkownika to najlepsze przybliżenie pory dnia, jakie mamy.
+
+const THEME_KEY = "sbs-m:theme";
+type Theme = "light" | "dark";
+
+const systemTheme = (): Theme =>
+  window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+
+const storedTheme = (): Theme | null => {
+  const v = localStorage.getItem(THEME_KEY);
+  return v === "light" || v === "dark" ? v : null;
+};
+
+const activeTheme = (): Theme => storedTheme() || systemTheme();
+
+function applyTheme(t: Theme) {
+  document.documentElement.dataset.theme = t;
+  // Pasek stanu telefonu ma kolor z tego znacznika. Bez podmiany w trybie jasnym zostawałby
+  // ciemnozielony i odcinał się od reszty ekranu.
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", t === "light" ? "#F6F3EA" : "#16302A");
+}
+
+// Przełączenie NIE przerysowuje widoku. Cały wygląd wisi na zmiennych CSS, więc podmiana
+// znacznika wystarcza — a przerysowanie skasowałoby to, co scout ma właśnie wpisane w notatce
+// do minuty albo w opisie po meczu. Poprawiamy tylko sam przycisk.
+function themeButtonHtml(): string {
+  const jasny = activeTheme() === "light";
+  return `<button class="theme-btn" data-act="theme" aria-label="${jasny ? "Przełącz na ciemny ekran" : "Przełącz na jasny ekran"}">${jasny ? ICON_MOON : ICON_SUN}</button>`;
+}
+
+function updateThemeButton() {
+  const btn = document.querySelector(".topbar .theme-btn");
+  if (btn) btn.outerHTML = themeButtonHtml();
+}
+
+function toggleTheme() {
+  const nowy: Theme = activeTheme() === "light" ? "dark" : "light";
+  localStorage.setItem(THEME_KEY, nowy);
+  applyTheme(nowy);
+  updateThemeButton();
+}
+
+// Ustawiamy motyw natychmiast przy wczytaniu skryptu, przed pierwszym rysowaniem — inaczej
+// przy jasnym motywie mignęłoby ciemne tło.
+applyTheme(activeTheme());
+
+// Zmiana ustawienia systemowego (zachód słońca, tryb nocny) przestawia panel tylko wtedy, gdy
+// scout nie wybrał wariantu sam. Własny wybór jest ważniejszy niż podpowiedź systemu.
+window.matchMedia?.("(prefers-color-scheme: light)").addEventListener?.("change", () => {
+  if (!storedTheme()) { applyTheme(systemTheme()); updateThemeButton(); }
+});
+
+let toastTimer: number | undefined;
+function toast(msg: string) {
+  let el = $("toast");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "toast";
+    el.className = "toast";
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.classList.add("show");
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => el!.classList.remove("show"), 2200);
+}
+
+// ---------------------------------------------------------------------------
+// Stan aplikacji
+// ---------------------------------------------------------------------------
+
+type ViewName = "dzis" | "live" | "ocena" | "baza" | "nowa";
+
+let cache: Cache = getCache();
+let view: ViewName = "dzis";
+let live: LiveState | null = getLive();
+let polarity: 1 | -1 = 1;
+let searchQuery = "";
+let clockTimer: number | undefined;
+
+// Formularz oceny — trzymany w pamięci, żeby przełączenie zakładki go nie kasowało.
+interface OcenaState {
+  observationId: string;
+  ratings: Record<string, number>;
+  phases: Record<string, number>;
+  setPieces: Record<string, number>;
+  perspektywa: string;
+  status: string;
+  description: string;
+  setPieceComment: string;
+}
+let ocena: OcenaState | null = null;
+
+const playerById = (id?: string) => cache.players.find((p) => p.id === id);
+const clubName = (id?: string) => cache.clubs.find((c) => c.id === id)?.name || "";
+const playerLabel = (id?: string) => {
+  const p = playerById(id);
+  return p ? [p.firstName, p.lastName].filter(Boolean).join(" ") : "";
+};
+
+function startOcena(obsId: string) {
+  const obs = cache.observations.find((o) => o.id === obsId);
+  const r = (obs?.ratings || {}) as Record<string, number>;
+  ocena = {
+    observationId: obsId,
+    // Puste, nie „domyślne 5". Wstępnie wypełniona ocena jest gorsza niż jej brak — kusi, żeby
+    // zostawić ją bez zmian, i w bazie ląduje liczba, której nikt nie wystawił.
+    ratings: Object.fromEntries(RATING_KEYS.map((k) => [k, Number(r[k]) || 0])),
+    phases: Object.fromEntries(REPORT_PHASES.map((f) => [f.key, 0])),
+    setPieces: Object.fromEntries(REPORT_SET_PIECES.map((f) => [f.key, 0])),
+    perspektywa: "",
+    status: "",
+    description: "",
+    setPieceComment: "",
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Zegar meczu
+// ---------------------------------------------------------------------------
+
+// Czas liczymy ze znacznika startu, a nie przez dodawanie sekundy co tyknięcie. Przeglądarka na
+// telefonie usypia karty w tle i tyknięcia przestają przychodzić — po powrocie zegar musi pokazać
+// czas rzeczywisty, a nie ten, który zdążył naliczyć.
+function liveSeconds(s: LiveState): number {
+  if (!s.running || !s.startedAt) return s.seconds;
+  return s.seconds + Math.floor((Date.now() - s.startedAt) / 1000);
+}
+const liveMinute = (s: LiveState): number => Math.floor(liveSeconds(s) / 60) + periodOf(s.half).offset;
+
+function paintClock() {
+  if (!live) return;
+  const el = $("clock-time");
+  if (!el) return;
+  el.textContent = liveMinute(live) + ":" + pad(liveSeconds(live) % 60);
+}
+
+function startClockTicker() {
+  window.clearInterval(clockTimer);
+  clockTimer = window.setInterval(paintClock, 1000);
+}
+
+// ---------------------------------------------------------------------------
+// Widoki
+// ---------------------------------------------------------------------------
+
+function viewDzis(): string {
+  const today = todayISO();
+  const wczoraj = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+  const lista = cache.observations
+    .filter((o) => (o.date || "") >= wczoraj)
+    .sort((a, b) => ((a.date || "") + (a.matchTime || "")).localeCompare((b.date || "") + (b.matchTime || "")))
+    .slice(0, 40);
+
+  const karta = (o: Observation) => {
+    const oceniona = !!o.statsFilledIn;
+    const trwa = live && live.observationId === o.id;
+    const dzis = o.date === today;
+    return `
+    <div class="card ${trwa ? "selected" : ""}">
+      <div class="row">
+        <div>
+          <div class="name">${esc(o.match || "Mecz bez nazwy")}</div>
+          <div class="sub">${esc(o.date)}${o.matchTime ? " · " + esc(o.matchTime) : ""}${o.location ? " · " + esc(o.location) : ""}</div>
+        </div>
+        <span class="tag ${trwa ? "live" : oceniona ? "done" : ""}">${trwa ? "W toku" : oceniona ? "Oceniona" : dzis ? "Dziś" : "Plan"}</span>
+      </div>
+      <div class="sub" style="margin-top:8px;">
+        ${o.playerId ? "Obserwowany: <strong style=\"color:var(--chalk)\">" + esc(playerLabel(o.playerId)) + "</strong>" : "Obserwacja zespołu"}
+        ${o.scout ? " · " + esc(o.scout) : ""}
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn ${trwa ? "" : "ghost"}" data-act="start-live" data-id="${esc(o.id)}">${trwa ? "Wróć do meczu" : "Rozpocznij"}</button>
+        <button class="btn ghost" data-act="open-ocena" data-id="${esc(o.id)}">Oceń</button>
+      </div>
+    </div>`;
+  };
+
+  return `
+    <h2>Obserwacje</h2>
+    <p class="hint">Plany z SBS · od wczoraj wzwyż${cache.fetchedAt ? " · kopia z " + new Date(cache.fetchedAt).toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}</p>
+    ${lista.length ? lista.map(karta).join("") : '<div class="empty">Brak zaplanowanych obserwacji.<br>Załóż nową albo odśwież kopię bazy w zakładce Baza.</div>'}
+    <button class="btn ghost" data-act="go-nowa">+ Obserwacja spoza planu</button>`;
+}
+
+function viewNowa(): string {
+  const scouts = cache.scouts.length
+    ? cache.scouts.map((s) => `<option ${s === getScout() ? "selected" : ""}>${esc(s)}</option>`).join("")
+    : "";
+  const players = cache.players
+    .slice()
+    .sort((a, b) => (a.lastName || "").localeCompare(b.lastName || "", "pl"))
+    .map((p) => `<option value="${esc(p.id)}">${esc(p.lastName)} ${esc(p.firstName)} — ${esc(clubName(p.clubId))}</option>`)
+    .join("");
+
+  return `
+    <h2>Nowa obserwacja</h2>
+    <p class="hint">Dla meczu, którego nie było w planie.</p>
+    <div class="field"><span class="label">Mecz (gospodarz - gość)</span>
+      <input id="n-match" placeholder="np. Chemik Bydgoszcz - Zawisza"></div>
+    <div class="field"><span class="label">Zawodnik</span>
+      <select id="n-player"><option value="">— obserwacja zespołu —</option>${players}</select></div>
+    <div class="field"><span class="label">Data</span><input type="date" id="n-date" value="${todayISO()}"></div>
+    <div class="field"><span class="label">Godzina</span><input type="time" id="n-time" value="15:00"></div>
+    <div class="field"><span class="label">Miejsce</span><input id="n-location" placeholder="np. ul. Gdańska 163, Bydgoszcz"></div>
+    <div class="field"><span class="label">Scout</span>
+      ${scouts ? `<select id="n-scout">${scouts}</select>` : `<input id="n-scout" value="${esc(getScout())}" placeholder="Imię i nazwisko">`}</div>
+    <button class="btn" data-act="save-nowa">Utwórz i rozpocznij</button>
+    <button class="btn ghost" data-act="go-dzis">Anuluj</button>`;
+}
+
+function viewLive(): string {
+  if (!live) {
+    return `
+      <h2>Live</h2>
+      <p class="hint">Nie trwa żadna obserwacja.</p>
+      <div class="empty">Wybierz mecz w zakładce Obserwacje i naciśnij „Rozpocznij".</div>
+      <button class="btn ghost" data-act="go-dzis">Przejdź do obserwacji</button>`;
+  }
+
+  const counts: Record<string, number> = {};
+  live.events.forEach((e) => (counts[e.type] = (counts[e.type] || 0) + 1));
+  const secs = liveSeconds(live);
+  const okres = periodOf(live.half);
+  const nastepny = PERIODS.find((p) => p.n === ((live!.half + 1) as Period));
+
+  return `
+    <div class="row" style="margin-bottom:10px;">
+      <div>
+        <div class="name">${esc(live.playerId ? playerLabel(live.playerId) : "Obserwacja zespołu")}</div>
+        <div class="sub">${esc(live.matchLabel)}</div>
+      </div>
+      <span class="tag live">Live</span>
+    </div>
+
+    <div class="clock">
+      <div>
+        <div class="clock-time" id="clock-time">${liveMinute(live)}:${pad(secs % 60)}</div>
+        <div class="clock-half">${esc(okres.label)}</div>
+      </div>
+      <div class="clock-btns">
+        <button class="clock-btn ${live.running ? "run" : ""}" data-act="clock-toggle">${live.running ? "Pauza" : "Start"}</button>
+        ${nastepny ? `<button class="clock-btn" data-act="next-period">${esc(nastepny.label)}</button>` : ""}
+      </div>
+    </div>
+
+    <div class="polarity">
+      <button class="pol plus" data-act="pol" data-v="1" aria-pressed="${polarity === 1}">+ udane</button>
+      <button class="pol minus" data-act="pol" data-v="-1" aria-pressed="${polarity === -1}">− nieudane</button>
+    </div>
+
+    <div class="tags">
+      ${EVENT_TAGS.map((t) => `
+        <button class="tagbtn ${counts[t.key] ? "hit" : ""}" data-act="tag" data-k="${t.key}">
+          <span class="cnt">${counts[t.key] || ""}</span>${esc(t.label)}
+        </button>`).join("")}
+    </div>
+
+    <div class="field" style="margin-top:12px;">
+      <input id="quick-note" placeholder="Notatka do bieżącej minuty…">
+    </div>
+
+    <div class="row" style="margin-bottom:6px;">
+      <span class="label" style="margin:0;">Oś zdarzeń · ${live.events.length}</span>
+      <span style="display:flex; gap:8px;">
+        <button class="btn ghost small" data-act="undo">Cofnij</button>
+        <button class="btn small" data-act="finish">Zakończ</button>
+      </span>
+    </div>
+    <div class="timeline">
+      ${live.events.slice().reverse().slice(0, 40).map((e) => `
+        <div class="ev ${e.quality === 1 ? "plus" : "minus"}">
+          <span class="min">${e.minute}'</span>
+          <span class="txt">${esc(e.label)}${e.note ? " — " + esc(e.note) : ""}</span>
+          <span class="sign">${e.quality === 1 ? "+" : "−"}</span>
+        </div>`).join("") || '<div class="empty">Jeszcze nic nie zarejestrowano.</div>'}
+    </div>`;
+}
+
+function skala(host: string, key: string, label: string, value: number, max: number): string {
+  const cls = max === 6 ? "six" : "";
+  return `
+    <div class="scale">
+      <div class="scale-head"><span class="nm">${esc(label)}</span><span class="val">${value || "—"}/${max}</span></div>
+      <div class="dots">
+        ${Array.from({ length: max }, (_, i) => i + 1).map((n) =>
+          `<button class="dot ${n <= value ? "on " + cls : ""}" data-act="rate" data-host="${host}" data-k="${key}" data-v="${n}">${n}</button>`).join("")}
+      </div>
+    </div>`;
+}
+
+function viewOcena(): string {
+  if (!ocena) {
+    return `
+      <h2>Ocena</h2>
+      <p class="hint">Nie wybrano obserwacji.</p>
+      <div class="empty">Wybierz obserwację w zakładce Obserwacje („Oceń") albo zakończ trwający mecz.</div>
+      <button class="btn ghost" data-act="go-dzis">Przejdź do obserwacji</button>`;
+  }
+  const obs = cache.observations.find((o) => o.id === ocena!.observationId);
+  const eventsInfo = live && live.observationId === ocena.observationId ? live.events.length : 0;
+
+  return `
+    <h2>Po gwizdku</h2>
+    <p class="hint">${esc(obs?.match || "")}${obs?.playerId ? " · " + esc(playerLabel(obs.playerId)) : " · obserwacja zespołu"}${eventsInfo ? " · " + eventsInfo + " zdarzeń" : ""}</p>
+
+    <span class="label">Atrybuty · skala 1–10</span>
+    ${RATING_KEYS.map((k) => skala("ratings", k, RATING_LABELS[k], ocena!.ratings[k], 10)).join("")}
+
+    <div class="section">
+      <span class="label">Fazy gry · skala 1–6</span>
+      ${REPORT_PHASES.map((f) => skala("phases", f.key, f.label, ocena!.phases[f.key], 6)).join("")}
+    </div>
+
+    <div class="section">
+      <span class="label">Stałe fragmenty · skala 1–6</span>
+      ${REPORT_SET_PIECES.map((f) => skala("setPieces", f.key, f.label, ocena!.setPieces[f.key], 6)).join("")}
+      <div class="field" style="margin-top:8px;">
+        <textarea id="o-sfg" placeholder="Uwagi o stałych fragmentach…" style="min-height:60px;">${esc(ocena.setPieceComment)}</textarea>
+      </div>
+    </div>
+
+    <div class="section">
+      <span class="label">Perspektywa</span>
+      <div class="chips">
+        ${PERSPEKTYWA.map((p) => `<button class="chip persp" data-act="persp" data-v="${esc(p)}" aria-pressed="${ocena!.perspektywa === p}">${esc(p)}</button>`).join("")}
+      </div>
+    </div>
+
+    <div class="section">
+      <span class="label">Decyzja / status zawodnika</span>
+      <div class="chips">
+        ${STATUS_OPTIONS.map((s) => `<button class="chip" data-act="status" data-v="${esc(s.value)}" aria-pressed="${ocena!.status === s.value}">${esc(s.label)}</button>`).join("")}
+      </div>
+      <p class="hint" style="margin-top:8px;">Status przypisze się zawodnikowi po zapisaniu — tak samo jak przy raporcie na komputerze.</p>
+    </div>
+
+    <div class="section">
+      <div class="row" style="margin-bottom:6px;">
+        <span class="label" style="margin:0;">Opis</span>
+        <button class="btn ghost small" data-act="dictate" id="dictate-btn">Dyktuj</button>
+      </div>
+      <textarea id="o-desc" placeholder="Wrażenie ogólne, kontekst meczu…">${esc(ocena.description)}</textarea>
+    </div>
+
+    <button class="btn" data-act="save-ocena">Zapisz i wyślij do SBS</button>
+    <p class="hint" style="text-align:center; margin-top:8px;">Bez zasięgu trafi do kolejki i pójdzie samo.</p>`;
+}
+
+function viewBaza(): string {
+  const q = searchQuery.trim().toLowerCase();
+  const lista = (q
+    ? cache.players.filter((p) =>
+        ([p.firstName, p.lastName, clubName(p.clubId)].join(" ").toLowerCase().includes(q)))
+    : cache.players.filter((p) => p.monitored || p.status === "Do transferu")
+  ).slice(0, 30);
+
+  const srednia = (playerId: string): string => {
+    const oceny = cache.observations.filter(
+      (o) => o.playerId === playerId && o.statsFilledIn && o.ratings &&
+        RATING_KEYS.some((k) => Number((o.ratings as Record<string, number>)[k]) > 0));
+    if (!oceny.length) return "—";
+    const suma = oceny.reduce((acc, o) =>
+      acc + RATING_KEYS.reduce((a, k) => a + (Number((o.ratings as Record<string, number>)[k]) || 0), 0) / RATING_KEYS.length, 0);
+    return (suma / oceny.length).toFixed(1).replace(".", ",");
+  };
+
+  const n = queueLength();
+  return `
+    <h2>Baza</h2>
+    <p class="hint">${q ? "Wyniki wyszukiwania" : "Monitoring i zawodnicy do transferu"} · ${cache.players.length} zawodników w kopii</p>
+    <div class="field"><input id="search" placeholder="Szukaj zawodnika lub klubu…" value="${esc(searchQuery)}"></div>
+    ${lista.map((p) => `
+      <div class="card">
+        <div class="row">
+          <div>
+            <div class="name">${esc(p.firstName)} ${esc(p.lastName)}</div>
+            <div class="sub">${esc(clubName(p.clubId))}${p.position ? " · " + esc(p.position) : ""}${p.birthYear ? " · " + esc(p.birthYear) : ""}</div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-family:var(--data); color:var(--gold-soft); font-size:17px;">${srednia(p.id)}</div>
+            <div class="sub" style="font-size:11px;">średnia</div>
+          </div>
+        </div>
+        ${p.status ? `<div style="margin-top:8px;"><span class="tag">${esc(p.status)}</span></div>` : ""}
+      </div>`).join("") || '<div class="empty">Brak wyników.</div>'}
+
+    <div class="section">
+      <span class="label">Synchronizacja</span>
+      <div class="card">
+        <div class="row"><span class="sub">Czeka na wysyłkę</span>
+          <strong style="font-family:var(--data); color:${n ? "var(--gold-soft)" : "#8FD3A2"};">${n}</strong></div>
+        <div class="row" style="margin-top:6px;"><span class="sub">Kopia bazy</span>
+          <strong style="font-family:var(--data); font-size:13px; color:var(--muted);">${cache.fetchedAt ? new Date(cache.fetchedAt).toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "brak"}</strong></div>
+        <button class="btn ghost" data-act="refresh">Odśwież kopię bazy</button>
+        ${n ? '<button class="btn ghost" data-act="flush">Wyślij teraz</button>' : ""}
+      </div>
+      <button class="btn danger" data-act="logout">Wyloguj się</button>
+    </div>`;
+}
+
+// ---------------------------------------------------------------------------
+// Szkielet i przerysowanie
+// ---------------------------------------------------------------------------
+
+// Herb SBS. Ten sam plik służy za ikonę na ekranie głównym telefonu (public/manifest.webmanifest),
+// więc po instalacji panelu ikona i logo w aplikacji są tym samym znakiem.
+const LOGO = "/icon-192.png";
+
+const ICON_SUN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.1 5.1l1.4 1.4M17.5 17.5l1.4 1.4M18.9 5.1l-1.4 1.4M6.5 17.5l-1.4 1.4"/></svg>';
+const ICON_MOON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></svg>';
+
+const TABS: { id: ViewName; label: string; icon: string }[] = [
+  { id: "dzis", label: "Obserwacje", icon: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>' },
+  { id: "live", label: "Live", icon: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6"/>' },
+  { id: "ocena", label: "Ocena", icon: '<path d="M5 21V9M12 21V4M19 21v-7"/>' },
+  { id: "baza", label: "Baza", icon: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4.3-4.3"/>' },
+];
+
+function syncPill(): string {
+  const n = queueLength();
+  if (!navigator.onLine) return `<span class="sync offline">Offline${n ? " · " + n : ""}</span>`;
+  if (n) return `<span class="sync pending">W kolejce · ${n}</span>`;
+  // Krótko, bo pasek dzieli szerokość z nazwą aplikacji i przyciskiem motywu.
+  return '<span class="sync">Wysłane</span>';
+}
+
+function render() {
+  const app = $("app");
+  if (!app) return;
+  const body =
+    view === "dzis" ? viewDzis() :
+    view === "nowa" ? viewNowa() :
+    view === "live" ? viewLive() :
+    view === "ocena" ? viewOcena() :
+    viewBaza();
+
+  app.innerHTML = `
+    <div class="topbar">
+      <img class="mark" src="${LOGO}" alt="">
+      <h1>SBS Scout Live</h1>
+      ${syncPill()}
+      ${themeButtonHtml()}
+    </div>
+    <main id="main">${body}</main>
+    <nav class="tabbar">
+      ${TABS.map((t) => `
+        <button class="tab" data-act="go" data-v="${t.id}" aria-selected="${view === t.id || (view === "nowa" && t.id === "dzis")}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">${t.icon}</svg>
+          ${t.label}
+        </button>`).join("")}
+    </nav>`;
+
+  if (view === "live" && live) startClockTicker();
+  else window.clearInterval(clockTimer);
+}
+
+// Odświeżenie samego paska stanu — bez przerysowania widoku, żeby nie kasować tego, co scout
+// właśnie wpisuje w pole tekstowe.
+function refreshSyncPill() {
+  const bar = document.querySelector(".topbar .sync");
+  if (bar) bar.outerHTML = syncPill();
+}
+
+// ---------------------------------------------------------------------------
+// Obsługa dotknięć
+// ---------------------------------------------------------------------------
+
+function beginLive(obsId: string) {
+  const obs = cache.observations.find((o) => o.id === obsId);
+  if (!obs) return;
+  if (live && live.observationId !== obsId) {
+    // Zdarzenia poprzedniego meczu odkładamy do wysyłki, zanim stan zostanie zastąpiony —
+    // inaczej przełączenie meczu skasowałoby całą poprzednią oś.
+    saveLiveEvents(live.observationId, live.events);
+  }
+  if (!live || live.observationId !== obsId) {
+    live = {
+      observationId: obsId,
+      playerId: obs.playerId,
+      matchLabel: obs.match || obs.date || "",
+      half: 1, seconds: 0, running: false, startedAt: null, events: [],
+    };
+    setLive(live);
+  }
+  view = "live";
+  render();
+}
+
+function addEvent(key: string) {
+  if (!live) return;
+  const tag = EVENT_TAGS.find((t) => t.key === key);
+  if (!tag) return;
+  const noteEl = $<HTMLInputElement>("quick-note");
+  const ev: LiveEvent = {
+    id: uid("lev"),
+    observationId: live.observationId,
+    playerId: live.playerId,
+    half: live.half,
+    minute: liveMinute(live),
+    type: tag.key,
+    label: tag.label,
+    quality: polarity,
+    note: noteEl?.value.trim() || undefined,
+    createdAt: new Date().toISOString(),
+  };
+  live.events.push(ev);
+  setLive(live);
+  if (noteEl) noteEl.value = "";
+  if (navigator.vibrate) navigator.vibrate(12);
+  render();
+}
+
+function finishLive() {
+  if (!live) return;
+  saveLiveEvents(live.observationId, live.events);
+  startOcena(live.observationId);
+  live.running = false;
+  setLive(live);
+  view = "ocena";
+  render();
+  toast("Zdarzenia zapisane — wystaw oceny");
+}
+
+function saveOcena() {
+  if (!ocena) return;
+  const obs = cache.observations.find((o) => o.id === ocena!.observationId);
+  if (!obs) { toast("Nie znaleziono obserwacji"); return; }
+
+  const wystawione = RATING_KEYS.filter((k) => ocena!.ratings[k] > 0);
+  if (!wystawione.length) { toast("Wystaw przynajmniej jedną ocenę atrybutu"); return; }
+
+  const descEl = $<HTMLTextAreaElement>("o-desc");
+  const sfgEl = $<HTMLTextAreaElement>("o-sfg");
+  const description = descEl?.value.trim() || "";
+  const setPieceComment = sfgEl?.value.trim() || "";
+  const scout = obs.scout || getScout();
+
+  // 1. Oceny atrybutów — na istniejącej obserwacji. Zapisujemy tylko te faktycznie wystawione,
+  // żeby nie wstawiać zer, które w SBS liczą się do średnich.
+  const ratings: Record<string, number> = { ...((obs.ratings as Record<string, number>) || {}) };
+  wystawione.forEach((k) => (ratings[k] = ocena!.ratings[k]));
+  const updated: Observation = { ...obs, ratings, statsFilledIn: true, notes: description || obs.notes };
+  saveObservation(updated);
+
+  // 2. Raport — ten sam rekord, który potem otwiera się na komputerze. Fazy i stałe fragmenty
+  // wchodzą tylko wtedy, gdy scout je ocenił; pominięte zostają puste, a nie wyzerowane.
+  const phases: Record<string, number> = {};
+  REPORT_PHASES.forEach((f) => { if (ocena!.phases[f.key] > 0) phases[f.key] = ocena!.phases[f.key]; });
+  const setPieces: Record<string, number> = {};
+  REPORT_SET_PIECES.forEach((f) => { if (ocena!.setPieces[f.key] > 0) setPieces[f.key] = ocena!.setPieces[f.key]; });
+
+  const maRaport = Object.keys(phases).length || Object.keys(setPieces).length ||
+    ocena.perspektywa || description || setPieceComment;
+  if (maRaport) {
+    const rep: Report = {
+      id: uid("rep"),
+      playerId: obs.playerId,
+      date: obs.date || todayISO(),
+      scout,
+      description,
+      perspektywa: ocena.perspektywa,
+      obsType: (obs.obsType as string) === "online" ? "Online" : (obs.obsType as string) === "video" ? "Video" : "Live",
+      phases, setPieces, setPieceComment,
+    };
+    saveReport(rep);
+  }
+
+  // 3. Status zawodnika — tylko przy obserwacji konkretnego zawodnika i tylko gdy wybrano decyzję.
+  if (ocena.status && obs.playerId) savePlayerStatus(obs.playerId, ocena.status);
+
+  if (live && live.observationId === ocena.observationId) {
+    saveLiveEvents(live.observationId, live.events);
+    live = null;
+    setLive(null);
+  }
+  ocena = null;
+  cache = getCache();
+  view = "dzis";
+  render();
+  toast(navigator.onLine ? "Zapisano i wysłano do SBS" : "Zapisano — wyślę, gdy wróci zasięg");
+}
+
+function saveNowa() {
+  const match = $<HTMLInputElement>("n-match")?.value.trim() || "";
+  if (!match) { toast("Podaj nazwę meczu"); return; }
+  const scout = ($<HTMLInputElement | HTMLSelectElement>("n-scout")?.value || "").trim();
+  if (scout) setScout(scout);
+  const obs: Observation = {
+    id: uid("obs"),
+    playerId: $<HTMLSelectElement>("n-player")?.value || "",
+    date: $<HTMLInputElement>("n-date")?.value || todayISO(),
+    matchTime: $<HTMLInputElement>("n-time")?.value || "",
+    match,
+    location: $<HTMLInputElement>("n-location")?.value.trim() || "",
+    scout,
+    ratings: {},
+    statsFilledIn: false,
+    obsType: "live",
+  };
+  saveObservation(obs);
+  cache = getCache();
+  beginLive(obs.id);
+  toast("Obserwacja utworzona");
+}
+
+function dictate() {
+  const Rozpoznawanie =
+    (window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).SpeechRecognition ||
+    (window as unknown as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition;
+  if (!Rozpoznawanie) { toast("Ta przeglądarka nie obsługuje dyktowania"); return; }
+  const rec = new (Rozpoznawanie as new () => any)();
+  rec.lang = "pl-PL";
+  rec.interimResults = false;
+  rec.continuous = true;
+  const btn = $("dictate-btn");
+  const ta = $<HTMLTextAreaElement>("o-desc");
+  if (btn) btn.textContent = "Słucham…";
+  rec.onresult = (e: any) => {
+    let tekst = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) tekst += e.results[i][0].transcript;
+    if (ta) {
+      ta.value = (ta.value ? ta.value.trim() + " " : "") + tekst.trim();
+      if (ocena) ocena.description = ta.value;
+    }
+  };
+  rec.onend = () => { if (btn) btn.textContent = "Dyktuj"; };
+  rec.onerror = () => { if (btn) btn.textContent = "Dyktuj"; toast("Nie udało się nagrać"); };
+  rec.start();
+}
+
+document.addEventListener("click", (e) => {
+  const el = (e.target as HTMLElement).closest<HTMLElement>("[data-act]");
+  if (!el) return;
+  const act = el.dataset.act;
+  const v = el.dataset.v;
+
+  switch (act) {
+    case "go": view = v as ViewName; render(); break;
+    case "go-dzis": view = "dzis"; render(); break;
+    case "go-nowa": view = "nowa"; render(); break;
+    case "start-live": beginLive(el.dataset.id!); break;
+    case "open-ocena": startOcena(el.dataset.id!); view = "ocena"; render(); break;
+    case "save-nowa": saveNowa(); break;
+
+    case "clock-toggle":
+      if (!live) break;
+      if (live.running) { live.seconds = liveSeconds(live); live.running = false; live.startedAt = null; }
+      else { live.running = true; live.startedAt = Date.now(); }
+      setLive(live); render();
+      break;
+    case "next-period": {
+      if (!live) break;
+      const nast = PERIODS.find((p) => p.n === ((live!.half + 1) as Period));
+      if (!nast) break;
+      // Przejście do kolejnej części zeruje zegar i jest nieodwracalne, a przycisk stoi tuż obok
+      // pauzy. Jedno pytanie trzy razy w meczu jest tańsze niż pomyłkowo skasowany czas gry.
+      if (!window.confirm("Rozpocząć: " + nast.label + "?")) break;
+      live.seconds = 0; live.half = nast.n; live.running = false; live.startedAt = null;
+      setLive(live); render();
+      break;
+    }
+    case "pol": polarity = Number(v) === -1 ? -1 : 1; render(); break;
+    case "tag": addEvent(el.dataset.k!); break;
+    case "undo":
+      if (!live || !live.events.length) { toast("Nie ma czego cofnąć"); break; }
+      toast("Cofnięto: " + live.events.pop()!.label);
+      setLive(live); render();
+      break;
+    case "finish": finishLive(); break;
+
+    case "rate": {
+      if (!ocena) break;
+      const host = el.dataset.host as "ratings" | "phases" | "setPieces";
+      const key = el.dataset.k!;
+      const val = Number(v);
+      // Ponowne dotknięcie tej samej wartości ją zdejmuje — bez tego omyłkowego kliknięcia
+      // nie dałoby się wycofać, a pusta ocena to inna informacja niż ocena „1".
+      ocena[host][key] = ocena[host][key] === val ? 0 : val;
+      // Zapisujemy treść pól tekstowych przed przerysowaniem, inaczej przepadnie.
+      ocena.description = $<HTMLTextAreaElement>("o-desc")?.value ?? ocena.description;
+      ocena.setPieceComment = $<HTMLTextAreaElement>("o-sfg")?.value ?? ocena.setPieceComment;
+      render();
+      break;
+    }
+    case "persp":
+      if (!ocena) break;
+      ocena.perspektywa = ocena.perspektywa === v ? "" : v!;
+      ocena.description = $<HTMLTextAreaElement>("o-desc")?.value ?? ocena.description;
+      ocena.setPieceComment = $<HTMLTextAreaElement>("o-sfg")?.value ?? ocena.setPieceComment;
+      render();
+      break;
+    case "status":
+      if (!ocena) break;
+      ocena.status = ocena.status === v ? "" : v!;
+      ocena.description = $<HTMLTextAreaElement>("o-desc")?.value ?? ocena.description;
+      ocena.setPieceComment = $<HTMLTextAreaElement>("o-sfg")?.value ?? ocena.setPieceComment;
+      render();
+      break;
+    case "theme": toggleTheme(); break;
+    case "dictate": dictate(); break;
+    case "save-ocena": saveOcena(); break;
+
+    case "refresh":
+      toast("Pobieram…");
+      refreshCache().then((c) => { cache = c; render(); toast("Kopia bazy odświeżona"); })
+        .catch((err) => toast("Nie udało się pobrać: " + err.message));
+      break;
+    case "flush":
+      flushQueue().then((left) => { refreshSyncPill(); render(); toast(left ? "Zostało " + left : "Wszystko wysłane"); });
+      break;
+    case "logout":
+      signOut().then(() => location.reload());
+      break;
+  }
+});
+
+document.addEventListener("input", (e) => {
+  const t = e.target as HTMLInputElement;
+  if (t.id === "search") {
+    searchQuery = t.value;
+    // Przerysowujemy tylko listę wyników, żeby pole nie traciło ogniska przy każdej literze.
+    const main = $("main");
+    if (main) {
+      const pos = t.selectionStart;
+      main.innerHTML = viewBaza();
+      const nowy = $<HTMLInputElement>("search");
+      if (nowy) { nowy.focus(); nowy.setSelectionRange(pos ?? 0, pos ?? 0); }
+    }
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Ekran logowania
+// ---------------------------------------------------------------------------
+
+function renderLogin(info?: string) {
+  const app = $("app")!;
+  app.innerHTML = `
+    <div class="login">
+      <div class="login-brand">
+        <img src="${LOGO}" alt="Scout Base System" width="88" height="88">
+        <h1>SBS Scout Live</h1>
+        <p class="hint">Zaloguj się tym samym kontem, co w Scout Base System.</p>
+      </div>
+      <div id="login-error"></div>
+      ${info ? `<div class="error" style="background:rgba(78,154,99,.14); border-color:var(--good); color:#8FD3A2;">${esc(info)}</div>` : ""}
+      <div class="field"><input id="l-email" type="email" inputmode="email" autocomplete="username" placeholder="E-mail"></div>
+      <div class="field"><input id="l-pass" type="password" autocomplete="current-password" placeholder="Hasło"></div>
+      <button class="btn" id="l-submit">Zaloguj się</button>
+      <button class="link" id="l-reset">Nie pamiętam hasła</button>
+    </div>`;
+
+  const err = (msg: string) => { $("login-error")!.innerHTML = msg ? `<div class="error">${esc(msg)}</div>` : ""; };
+
+  $("l-submit")!.addEventListener("click", async () => {
+    const email = $<HTMLInputElement>("l-email")!.value;
+    const pass = $<HTMLInputElement>("l-pass")!.value;
+    if (!email || !pass) { err("Podaj e-mail i hasło."); return; }
+    const btn = $<HTMLButtonElement>("l-submit")!;
+    btn.disabled = true; btn.textContent = "Loguję…";
+    const r = await signIn(email, pass);
+    btn.disabled = false; btn.textContent = "Zaloguj się";
+    if (r.ok) start();
+    else err(r.error || "Nie udało się zalogować.");
+  });
+
+  $("l-reset")!.addEventListener("click", async () => {
+    const email = $<HTMLInputElement>("l-email")!.value;
+    if (!email) { err("Wpisz najpierw swój e-mail."); return; }
+    await requestPasswordReset(email);
+    renderLogin("Jeśli konto istnieje, wysłaliśmy link do zmiany hasła.");
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && $("l-submit")) ($("l-submit") as HTMLButtonElement).click();
+  }, { once: true });
+}
+
+// ---------------------------------------------------------------------------
+// Ekran powitalny
+// ---------------------------------------------------------------------------
+//
+// Herb wchodzi obrotem w trzech wymiarach, obiega go złota obręcz. Trwa to sekundę i nie
+// wstrzymuje niczego: logowanie i pobieranie danych idą pod spodem, a ekran znika sam.
+// Dotknięcie kończy go od razu — scout, który wraca do trwającego meczu, nie ma na co czekać.
+
+function splash() {
+  const el = document.createElement("div");
+  el.className = "splash";
+  el.innerHTML = `
+    <div class="splash-stage">
+      <div class="splash-orbit"></div>
+      <div class="splash-logo"><img src="${LOGO}" alt="Scout Base System"></div>
+    </div>
+    <div class="splash-word">SBS Scout <span>Live</span></div>`;
+  document.body.appendChild(el);
+
+  let zamkniete = false;
+  const zamknij = () => {
+    if (zamkniete) return;
+    zamkniete = true;
+    el.classList.add("done");
+    // Element usuwamy dopiero po wygaszeniu, żeby nie uciął się w połowie przejścia.
+    window.setTimeout(() => el.remove(), 450);
+  };
+  el.addEventListener("click", zamknij);
+  window.setTimeout(zamknij, 1600);
+}
+
+// ---------------------------------------------------------------------------
+// Start
+// ---------------------------------------------------------------------------
+
+async function start() {
+  cache = getCache();
+  live = getLive();
+  if (live) view = "live";
+  render();
+
+  // Kopię bazy pobieramy w tle. Panel jest użyteczny natychmiast — z tym, co zostało w telefonie
+  // z poprzedniego razu — a świeże dane dochodzą, gdy dojdą.
+  void flushQueue().then(refreshSyncPill);
+  try {
+    cache = await refreshCache();
+    render();
+  } catch (e) {
+    console.warn("Nie udało się odświeżyć kopii bazy:", (e as Error).message);
+    if (!cache.players.length) toast("Brak połączenia i pustej kopii bazy — zaloguj się przy zasięgu");
+  }
+}
+
+window.addEventListener("online", () => { void flushQueue().then(refreshSyncPill); });
+window.addEventListener("offline", refreshSyncPill);
+
+// Zegar bywa zatrzymywany przez system, gdy karta idzie w tło. Po powrocie przeliczamy czas
+// i odświeżamy wyświetlanie, zamiast pokazywać wartość sprzed uśpienia.
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) { paintClock(); void flushQueue().then(refreshSyncPill); }
+});
+
+// Znacznik dla czujnika nieudanego startu z mobile.html. Jeśli którykolwiek z importów wyżej
+// wywali się przy wczytywaniu, ta linia nigdy się nie wykona i czujnik pokaże treść błędu
+// zamiast pustego ekranu.
+(window as unknown as { __sbsStart?: boolean }).__sbsStart = true;
+
+splash();
+currentUser().then((user) => (user ? start() : renderLogin()));
+
+// Rejestracja mechanizmu offline tylko w wersji wdrożonej — w trybie deweloperskim przeszkadzałby
+// w podmianie plików na gorąco.
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch((e) => console.warn("Offline niedostępne:", e));
+  });
+}

@@ -5,5 +5,8 @@
     { "path": "/api/refresh-stats?apply=1", "schedule": "0 5 * * *" },
     { "path": "/api/refresh-stats?apply=1", "schedule": "0 17 * * *" },
     { "path": "/api/kalendarz-sync", "schedule": "*/15 * * * *" }
+  ],
+  "rewrites": [
+    { "source": "/m", "destination": "/mobile.html" }
   ]
 }

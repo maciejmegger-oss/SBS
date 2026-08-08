@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<!-- viewport-fit=cover — panel sięga pod „wysepkę" i pasek gestów, a marginesy bezpieczne
+     dokłada CSS przez env(safe-area-inset-*). Bez tego dolna nawigacja chowa się pod paskiem. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#16302A">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SBS Live">
+<title>SBS Scout Live</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/icon-192.png">
+</head>
+<body>
+<div class="app" id="app"></div>
+
+<!--
+  CZUJNIK NIEUDANEGO STARTU.
+
+  Gdy moduł aplikacji wywali się przy wczytywaniu (najczęściej: brak kluczy do bazy w danym
+  środowisku — klient Supabase zgłasza wtedy błąd, zanim cokolwiek się narysuje), przeglądarka
+  zostawia PUSTĄ stronę w kolorze tła. Z takiego ekranu nie da się odczytać, co poszło nie tak,
+  ani na trybunie, ani przez telefon.
+
+  Ten skrypt jest zwykłym <script>, nie modułem, więc wykonuje się niezależnie od tamtego błędu:
+  zapamiętuje treść błędu i po czterech sekundach — jeśli aplikacja nie zdążyła wystartować —
+  pokazuje ją na ekranie zamiast pustki.
+-->
+<script>
+window.__sbsStart = false;
+window.__sbsBlad = "";
+window.addEventListener("error", function (e) {
+  window.__sbsBlad = window.__sbsBlad || (e.message || "") + (e.filename ? " (" + e.filename + ")" : "");
+}, true);
+window.addEventListener("unhandledrejection", function (e) {
+  window.__sbsBlad = window.__sbsBlad || String(e.reason);
+});
+setTimeout(function () {
+  if (window.__sbsStart) return;
+  var brakKluczy = /supabaseUrl|supabaseKey|is required/i.test(window.__sbsBlad);
+  document.getElementById("app").innerHTML =
+    '<div style="padding:28px 24px;font-family:ui-sans-serif,system-ui,sans-serif;color:#E4EBE6;line-height:1.5;">' +
+    '<h1 style="font-size:20px;margin:0 0 12px;color:#F6F3EA;">Panel się nie uruchomił</h1>' +
+    (brakKluczy
+      ? '<p style="margin:0 0 14px;">Brakuje kluczy dostępu do bazy w tym środowisku. W Vercelu, w ustawieniach projektu, ' +
+        'zmienne <b>VITE_SUPABASE_URL</b> i <b>VITE_SUPABASE_ANON_KEY</b> muszą być włączone także dla <b>Preview</b>, ' +
+        'nie tylko dla Production — a po ich dodaniu trzeba wdrożyć wersję ponownie.</p>'
+      : '<p style="margin:0 0 14px;">Aplikacja nie wystartowała. Treść błędu poniżej.</p>') +
+    '<pre style="white-space:pre-wrap;word-break:break-word;background:#1E4237;border:1px solid #33564A;' +
+    'border-radius:10px;padding:12px;font-size:12px;margin:0;color:#C6D5CD;">' +
+    (window.__sbsBlad || "Brak treści błędu — sprawdź połączenie z internetem i odśwież stronę.") +
+    "</pre></div>";
+}, 4000);
+</script>
+<script type="module" src="/src/mobile/main.ts"></script>
+</body>
+</html>

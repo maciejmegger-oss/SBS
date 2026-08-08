@@ -73,7 +73,11 @@ const objFromRow = (row: Record<string, unknown>): Record<string, unknown> => {
 // transferowa, monitoring, kartki) i dystans obserwacji zapisują się OD RAZU, bez żadnej migracji
 // ani działań użytkownika. Przy odczycie wyciągamy je z powrotem na wierzch obiektu.
 // hostField = nazwa (camelCase) jsonb-owego pola w tej tabeli, do którego chowamy `__ext`.
-const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }> = {
+// Eksportowane, bo panel mobilny (src/mobile/db.ts) zapisuje te same wiersze WŁASNĄ ścieżką
+// (pojedynczy upsert zamiast całej kolekcji) i musi chować pola dokładnie tam samo. Własna
+// kopia tej listy po jednej stronie rozjechałaby się przy pierwszym nowym polu — a wtedy pole
+// spoza listy poleciałoby jako nieistniejąca kolumna i zapis z telefonu przestałby przechodzić.
+export const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }> = {
   sbs_players: {
     hostField: "customFields",
     fields: [
