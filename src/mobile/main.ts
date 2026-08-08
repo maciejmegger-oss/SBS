@@ -934,6 +934,11 @@ document.addEventListener("visibilitychange", () => {
   if (!document.hidden) { paintClock(); void flushQueue().then(refreshSyncPill); }
 });
 
+// Znacznik dla czujnika nieudanego startu z mobile.html. Jeśli którykolwiek z importów wyżej
+// wywali się przy wczytywaniu, ta linia nigdy się nie wykona i czujnik pokaże treść błędu
+// zamiast pustego ekranu.
+(window as unknown as { __sbsStart?: boolean }).__sbsStart = true;
+
 splash();
 currentUser().then((user) => (user ? start() : renderLogin()));
 
