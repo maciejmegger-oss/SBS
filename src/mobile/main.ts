@@ -170,6 +170,8 @@ let cache: Cache = getCache();
 let view: ViewName = "dzis";
 let live: LiveState | null = getLive();
 let polarity: 1 | -1 = 1;
+// Która zakładka ekranu Live jest widoczna: rejestrowanie zdarzeń czy składy meczu.
+let liveTab: "zdarzenia" | "sklady" = "zdarzenia";
 let searchQuery = "";
 let clockTimer: number | undefined;
 // Czy panel pracuje na sesji użytkownika. Bez niej też działa — dopóki baza oddaje dane
@@ -345,6 +347,12 @@ function viewLive(): string {
       </div>
     </div>
 
+    <div class="polarity" style="grid-template-columns:1fr 1fr; margin-bottom:10px;">
+      <button class="pol seg" data-act="live-tab" data-v="zdarzenia" aria-pressed="${liveTab === "zdarzenia"}">Zdarzenia</button>
+      <button class="pol seg" data-act="live-tab" data-v="sklady" aria-pressed="${liveTab === "sklady"}">Składy${skladLiczba(live.observationId) ? " · " + skladLiczba(live.observationId) : ""}</button>
+    </div>
+
+    ${liveTab === "sklady" ? viewSklady() : `
     <div class="polarity">
       <button class="pol plus" data-act="pol" data-v="1" aria-pressed="${polarity === 1}">+ udane</button>
       <button class="pol minus" data-act="pol" data-v="-1" aria-pressed="${polarity === -1}">− nieudane</button>
@@ -375,7 +383,98 @@ function viewLive(): string {
           <span class="txt">${esc(e.label)}${e.note ? " — " + esc(e.note) : ""}</span>
           <span class="sign">${e.quality === 1 ? "+" : "−"}</span>
         </div>`).join("") || '<div class="empty">Jeszcze nic nie zarejestrowano.</div>'}
-    </div>`;
+    </div>`}`;
+}
+
+// ---------------------------------------------------------------------------
+// Składy meczu
+// ---------------------------------------------------------------------------
+//
+// Ten sam zapis, którego używa aplikacja na komputerze (sbs_observations → ratings.__ext.skladMeczu):
+//   { gospodarze: { nazwa, zawodnicy: [{ nazwa, numer, wyrozniony, … }] }, goscie: { … } }
+//
+// Wyróżnienie należy do OBSERWACJI, nie do meczu — dwóch skautów oglądających ten sam mecz
+// wskaże kogo innego, i tak samo trzyma to komputer. Dlatego zaznaczenie z trybuny trafia
+// dokładnie tam, gdzie szuka go potem raport.
+
+interface SkladZawodnik { nazwa: string; numer?: string; podstawowy?: boolean; zszedl?: boolean; wyrozniony?: boolean }
+interface SkladStrona { nazwa?: string; zawodnicy: SkladZawodnik[] }
+interface Sklad { gospodarze?: SkladStrona; goscie?: SkladStrona }
+
+const STRONY: ("gospodarze" | "goscie")[] = ["gospodarze", "goscie"];
+
+const skladObserwacji = (obsId: string): Sklad | null => {
+  const obs = cache.observations.find((o) => o.id === obsId) as (Observation & { skladMeczu?: Sklad }) | undefined;
+  return obs?.skladMeczu || null;
+};
+
+// Liczba wyróżnionych — pokazywana przy zakładce, żeby było widać z ekranu zdarzeń, że coś tam jest.
+function skladLiczba(obsId: string): number {
+  const s = skladObserwacji(obsId);
+  if (!s) return 0;
+  return STRONY.reduce((suma, strona) => suma + (s[strona]?.zawodnicy || []).filter((z) => z.wyrozniony).length, 0);
+}
+
+// Nazwy drużyn z pola „Mecz" (gospodarz - gość). Kluby bywają wpisywane z różnymi kreskami,
+// więc rozdzielamy po każdej z nich — tak samo jak aplikacja na komputerze.
+function druzynyZMeczu(match?: string): [string, string] {
+  const czesci = String(match || "").split(/\s[-–—]\s/);
+  return [czesci[0]?.trim() || "Gospodarze", czesci[1]?.trim() || "Goście"];
+}
+
+function viewSklady(): string {
+  if (!live) return "";
+  const obs = cache.observations.find((o) => o.id === live!.observationId);
+  const sklad = skladObserwacji(live.observationId);
+  const [gosp, gosc] = druzynyZMeczu(obs?.match);
+
+  if (!sklad || !STRONY.some((s) => (sklad[s]?.zawodnicy || []).length)) {
+    return `
+      <p class="hint">Wklej składy — po jednym zawodniku w wierszu. Numer na początku wiersza jest rozpoznawany.
+      Na iPhonie tekst da się skopiować wprost ze zdjęcia: przytrzymaj palec na zrzucie ekranu i zaznacz.</p>
+      <div class="field">
+        <span class="label">${esc(gosp)}</span>
+        <textarea id="sklad-gospodarze" placeholder="1 Kowalski&#10;4 Nowak&#10;…"></textarea>
+      </div>
+      <div class="field">
+        <span class="label">${esc(gosc)}</span>
+        <textarea id="sklad-goscie" placeholder="1 Wiśniewski&#10;5 Zieliński&#10;…"></textarea>
+      </div>
+      <button class="btn" data-act="wczytaj-sklady">Wczytaj składy</button>`;
+  }
+
+  const strona = (klucz: "gospodarze" | "goscie", tytul: string) => {
+    const lista = sklad[klucz]?.zawodnicy || [];
+    if (!lista.length) return "";
+    return `
+      <div class="section" style="${klucz === "gospodarze" ? "border-top:none; margin-top:0; padding-top:0;" : ""}">
+        <span class="label">${esc(sklad[klucz]?.nazwa || tytul)} · ${lista.length}</span>
+        ${lista.map((z, i) => `
+          <button class="sklad-row ${z.wyrozniony ? "on" : ""}" data-act="wyroznij" data-strona="${klucz}" data-i="${i}">
+            <span class="sklad-nr">${esc(z.numer || "")}</span>
+            <span class="sklad-nazwa">${esc(z.nazwa)}</span>
+            <span class="sklad-znak">${z.wyrozniony ? "★" : "☆"}</span>
+          </button>`).join("")}
+      </div>`;
+  };
+
+  return `
+    <p class="hint">Dotknij zawodnika, żeby go wyróżnić. Zaznaczenia trafiają do tej obserwacji w SBS.</p>
+    ${strona("gospodarze", gosp)}
+    ${strona("goscie", gosc)}`;
+}
+
+// Wklejony skład: jeden zawodnik w wierszu, numer opcjonalnie na początku.
+function parsujSklad(tekst: string): SkladZawodnik[] {
+  return tekst
+    .split("\n")
+    .map((w) => w.trim())
+    .filter((w) => w.length > 1)
+    .map((w) => {
+      const m = w.match(/^(\d{1,2})[.)\s]+(.+)$/);
+      return m ? { nazwa: m[2].trim(), numer: m[1] } : { nazwa: w };
+    })
+    .filter((z) => z.nazwa.length > 1);
 }
 
 function skala(host: string, key: string, label: string, value: number, max: number): string {
@@ -834,6 +933,42 @@ document.addEventListener("click", (e) => {
       break;
     }
     case "pol": polarity = Number(v) === -1 ? -1 : 1; render(); break;
+    case "live-tab": liveTab = v === "sklady" ? "sklady" : "zdarzenia"; render(); break;
+
+    case "wyroznij": {
+      if (!live) break;
+      const obs = cache.observations.find((o) => o.id === live!.observationId) as (Observation & { skladMeczu?: Sklad }) | undefined;
+      const lista = obs?.skladMeczu?.[el.dataset.strona as "gospodarze" | "goscie"]?.zawodnicy;
+      const z = lista?.[Number(el.dataset.i)];
+      if (!obs || !z) break;
+      z.wyrozniony = !z.wyrozniony;
+      // Zapis idzie od razu, a nie dopiero po meczu: telefon potrafi ubić kartę w tle, a wyróżnienia
+      // to jedyna rzecz na tym ekranie, której nie da się odtworzyć z pamięci po powrocie.
+      saveObservation(obs);
+      if (navigator.vibrate) navigator.vibrate(10);
+      render();
+      break;
+    }
+
+    case "wczytaj-sklady": {
+      if (!live) break;
+      const obs = cache.observations.find((o) => o.id === live!.observationId) as (Observation & { skladMeczu?: Sklad }) | undefined;
+      if (!obs) break;
+      const gospodarze = parsujSklad($<HTMLTextAreaElement>("sklad-gospodarze")?.value || "");
+      const goscie = parsujSklad($<HTMLTextAreaElement>("sklad-goscie")?.value || "");
+      if (!gospodarze.length && !goscie.length) { toast("Nie rozpoznałem żadnego zawodnika"); break; }
+      const [ng, ns] = druzynyZMeczu(obs.match);
+      // Dopisujemy do tego, co ewentualnie przyszło z komputera, zamiast nadpisywać całość:
+      // skaut mógł wcześniej wpisać jedną drużynę i teraz uzupełniać drugą.
+      obs.skladMeczu = {
+        gospodarze: gospodarze.length ? { nazwa: ng, zawodnicy: gospodarze } : obs.skladMeczu?.gospodarze,
+        goscie: goscie.length ? { nazwa: ns, zawodnicy: goscie } : obs.skladMeczu?.goscie,
+      };
+      saveObservation(obs);
+      render();
+      toast(`Wczytano ${gospodarze.length + goscie.length} zawodników`);
+      break;
+    }
     case "tag": addEvent(el.dataset.k!); break;
     case "undo":
       if (!live || !live.events.length) { toast("Nie ma czego cofnąć"); break; }

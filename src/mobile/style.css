@@ -190,6 +190,9 @@ textarea{resize:vertical; min-height:84px;}
   font-weight:650; font-size:14px; color:var(--text-2);
 }
 .pol[aria-pressed="true"]{color:#fff; border-color:transparent;}
+/* Przełącznik zakładek Live używa tego samego kształtu co udane/nieudane, ale NIE dostaje ich
+   kolorów — bez własnej reguły zaznaczona zakładka miała biały tekst na jasnym tle i znikała. */
+.pol.seg[aria-pressed="true"]{background:var(--accent); border-color:var(--accent); color:var(--accent-ink);}
 .pol.plus[aria-pressed="true"]{background:var(--pol-plus);}
 .pol.minus[aria-pressed="true"]{background:var(--pol-minus);}
 
@@ -348,3 +351,19 @@ textarea{resize:vertical; min-height:84px;}
   .splash-orbit{display:none;}
   .splash{transition:none;}
 }
+
+/* ---------- składy meczu ---------- */
+/* Wiersz jest przyciskiem na całą szerokość: w trakcie meczu celuje się kciukiem, bez patrzenia,
+   więc pole dotyku musi być całym wierszem, a nie samą gwiazdką. */
+.sklad-row{
+  display:flex; align-items:center; gap:10px; width:100%; text-align:left;
+  padding:12px; margin-bottom:6px; border-radius:10px;
+  background:var(--surface); border:1px solid var(--border); font-size:14.5px; color:var(--text);
+}
+.sklad-row.on{background:var(--accent-bg); border-color:var(--accent); font-weight:700;}
+.sklad-nr{
+  font-family:var(--data); font-size:12px; color:var(--text-2); min-width:22px; text-align:right;
+  font-variant-numeric:tabular-nums;
+}
+.sklad-nazwa{flex:1;}
+.sklad-znak{font-size:17px; color:var(--accent-fg);}
