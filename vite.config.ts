@@ -63,7 +63,13 @@ function mobileRouteDevPlugin() {
   };
 }
 
+// Znacznik wersji wstrzykiwany przy budowaniu. Panel pokazuje go w zakładce Baza, żeby dało się
+// jednym spojrzeniem stwierdzić, czy telefon pracuje na świeżo wdrożonej wersji — bez tego
+// rozstrzygnięcie „czy poprawka doszła" sprowadzało się do zgadywania po wyglądzie ekranu.
+const WERSJA = new Date().toISOString().slice(0, 16).replace("T", " ");
+
 export default defineConfig({
+  define: { __WERSJA__: JSON.stringify(WERSJA) },
   plugins: [vercelApiDevPlugin(), mobileRouteDevPlugin()],
   server: {
     port: 5173,

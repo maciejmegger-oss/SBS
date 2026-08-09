@@ -774,6 +774,8 @@ function viewBaza(): string {
       <div class="card">
         <div class="row"><span class="sub">Czeka na wysyłkę</span>
           <strong style="font-family:var(--data); color:${n ? "var(--gold-soft)" : "#8FD3A2"};">${n}</strong></div>
+        <div class="row" style="margin-top:6px;"><span class="sub">Wersja panelu</span>
+          <strong style="font-family:var(--data); font-size:12.5px; color:var(--text-2);">${esc(WERSJA_PANELU)}</strong></div>
         <div class="row" style="margin-top:6px;"><span class="sub">Kopia bazy</span>
           <strong style="font-family:var(--data); font-size:13px; color:var(--muted);">${cache.fetchedAt ? new Date(cache.fetchedAt).toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "brak"}</strong></div>
         <button class="btn ghost" data-act="refresh">Odśwież kopię bazy</button>
@@ -850,6 +852,9 @@ function instalacjaHtml(): string {
 // Herb SBS. Ten sam plik służy za ikonę na ekranie głównym telefonu (public/manifest.webmanifest),
 // więc po instalacji panelu ikona i logo w aplikacji są tym samym znakiem.
 const LOGO = "/icon-192.png";
+
+// Data zbudowania wdrożonej wersji. W trybie deweloperskim podstawienia nie ma, stąd zabezpieczenie.
+const WERSJA_PANELU = typeof __WERSJA__ === "string" ? __WERSJA__ : "wersja robocza";
 
 const ICON_SUN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.1 5.1l1.4 1.4M17.5 17.5l1.4 1.4M18.9 5.1l-1.4 1.4M6.5 17.5l-1.4 1.4"/></svg>';
 const ICON_MOON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></svg>';

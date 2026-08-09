@@ -48,19 +48,25 @@ self.addEventListener("fetch", (e) => {
     return;
   }
 
-  // Pozostałe pliki (skrypty, style, ikony): z cache natychmiast, w tle odświeżane.
+  // Pozostałe pliki (skrypty, style, ikony): NAJPIERW SIEĆ, zapisana kopia dopiero gdy sieci brak.
+  //
+  // Wcześniej było odwrotnie — kopia natychmiast, odświeżenie w tle — i to okazało się złe.
+  // Wdrożona poprawka docierała dopiero przy KOLEJNYM uruchomieniu, więc scout, któremu kazano
+  // odświeżyć stronę, po odświeżeniu widział dokładnie to samo, co przed. Przy zasięgu nie ma
+  // powodu podawać starego pliku: cała aplikacja to kilkadziesiąt kilobajtów, a pewność, że
+  // pracuje się na aktualnej wersji, jest warta więcej niż zaoszczędzone pół sekundy.
+  //
+  // Praca bez zasięgu nie ucierpiała: gdy sieci nie ma, zapytanie kończy się błędem i wtedy
+  // sięgamy po kopię — dokładnie tak jak dotąd.
   e.respondWith(
-    caches.match(req).then((hit) => {
-      const zSieci = fetch(req)
-        .then((res) => {
-          if (res && res.status === 200) {
-            const kopia = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, kopia));
-          }
-          return res;
-        })
-        .catch(() => hit);
-      return hit || zSieci;
-    }),
+    fetch(req)
+      .then((res) => {
+        if (res && res.status === 200) {
+          const kopia = res.clone();
+          caches.open(CACHE).then((c) => c.put(req, kopia));
+        }
+        return res;
+      })
+      .catch(() => caches.match(req)),
   );
 });
