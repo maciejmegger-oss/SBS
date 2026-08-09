@@ -1,15 +1,23 @@
 # SBS Scout Live — panel mobilny
 
 Aplikacja na telefon do robienia raportu z obserwacji **w trakcie meczu**. Osobne wejście obok
-aplikacji na komputerze, ta sama baza i to samo logowanie.
+aplikacji na komputerze, ta sama baza i te same zasady dostępu.
 
 ## Jak wejść na telefonie
 
 1. Otwórz w przeglądarce telefonu adres wdrożonej aplikacji z końcówką **`/m`**
    (np. `https://twoj-adres.vercel.app/m`).
-2. Zaloguj się tym samym e-mailem i hasłem, co w Scout Base System.
-3. **Android (Chrome):** menu ⋮ → „Dodaj do ekranu głównego".
+2. **Android (Chrome):** menu ⋮ → „Dodaj do ekranu głównego".
    **iPhone (Safari):** przycisk udostępniania → „Do ekranu początkowego".
+
+Logowanie pojawia się tylko wtedy, gdy baza go wymaga. Dziś reguły dostępu w Supabase pozwalają
+czytać dane bez logowania — tak samo działa aplikacja na komputerze — więc panel wchodzi od razu
+na listę obserwacji. Wymuszanie hasła w samym panelu niczego by nie chroniło: klucz dostępu jest
+wpisany w kod każdej strony i można go stamtąd odczytać.
+
+Gdy dostęp do bazy zostanie zamknięty (`supabase/rls_only_logged_in.sql`), panel sam zacznie
+pytać o hasło — nie ma tu żadnej flagi do przestawiania. Zalogować się można też wcześniej,
+przyciskiem w zakładce Baza.
 
 Po dodaniu panel otwiera się jak zwykła aplikacja — bez paska adresu, na pełnym ekranie.
 

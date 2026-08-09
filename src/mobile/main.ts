@@ -172,6 +172,9 @@ let live: LiveState | null = getLive();
 let polarity: 1 | -1 = 1;
 let searchQuery = "";
 let clockTimer: number | undefined;
+// Czy panel pracuje na sesji użytkownika. Bez niej też działa — dopóki baza oddaje dane
+// bez logowania — więc to informacja dla widoku, a nie warunek wejścia.
+let zalogowany = false;
 
 // Formularz oceny — trzymany w pamięci, żeby przełączenie zakładki go nie kasowało.
 interface OcenaState {
@@ -490,7 +493,9 @@ function viewBaza(): string {
         <button class="btn ghost" data-act="refresh">Odśwież kopię bazy</button>
         ${n ? '<button class="btn ghost" data-act="flush">Wyślij teraz</button>' : ""}
       </div>
-      <button class="btn danger" data-act="logout">Wyloguj się</button>
+      ${zalogowany
+        ? '<button class="btn danger" data-act="logout">Wyloguj się</button>'
+        : '<button class="btn ghost" data-act="go-login">Zaloguj się</button>'}
     </div>`;
 }
 
@@ -807,6 +812,7 @@ document.addEventListener("click", (e) => {
     case "logout":
       signOut().then(() => location.reload());
       break;
+    case "go-login": renderLogin(); break;
   }
 });
 
@@ -907,22 +913,60 @@ function splash() {
 // Start
 // ---------------------------------------------------------------------------
 
-async function start() {
-  cache = getCache();
+async function start(pobranaKopia?: Cache) {
+  cache = pobranaKopia || getCache();
   live = getLive();
   if (live) view = "live";
   render();
 
+  void flushQueue().then(refreshSyncPill);
+  if (pobranaKopia) return; // kopia przyszła już przy sprawdzaniu dostępu — nie pobieramy drugi raz
+
   // Kopię bazy pobieramy w tle. Panel jest użyteczny natychmiast — z tym, co zostało w telefonie
   // z poprzedniego razu — a świeże dane dochodzą, gdy dojdą.
-  void flushQueue().then(refreshSyncPill);
   try {
     cache = await refreshCache();
     render();
   } catch (e) {
     console.warn("Nie udało się odświeżyć kopii bazy:", (e as Error).message);
-    if (!cache.players.length) toast("Brak połączenia i pustej kopii bazy — zaloguj się przy zasięgu");
+    if (!cache.players.length) toast("Brak połączenia i pustej kopii bazy — spróbuj przy zasięgu");
   }
+}
+
+// KIEDY PANEL PYTA O HASŁO.
+//
+// Nie zawsze — tylko wtedy, gdy baza rzeczywiście tego wymaga. Reguły dostępu (RLS) w bazie są
+// dziś takie, że dane czyta się bez logowania; tak samo działa aplikacja na komputerze
+// (WYMAGAJ_LOGOWANIA w src/main.ts). Wymuszanie logowania w samym panelu niczego by nie chroniło:
+// klucz dostępu jest wpisany w kod każdej strony i można go stamtąd odczytać. Blokowałoby tylko
+// scouta, który stoi na trybunie i chce zacząć obserwację.
+//
+// Dlatego zamiast flagi do ręcznego przestawiania panel po prostu SPRAWDZA, czy dane przychodzą.
+// Gdy przyjdą — wchodzi od razu na listę obserwacji. Gdy baza nic nie odda (bo ktoś włączył
+// reguły dostępu tylko dla zalogowanych) — pokazuje ekran logowania. Nie ma tu nic do
+// przestawiania po zamknięciu dostępu: panel dostosuje się sam, przy pierwszym uruchomieniu.
+async function boot() {
+  const user = await currentUser();
+  if (user) { zalogowany = true; start(); return; }
+
+  // Bez sesji nie da się odróżnić „brak dostępu" od „pusta tabela" po samym błędzie — reguły
+  // dostępu w Postgresie nie zgłaszają odmowy, tylko oddają zero wierszy. Dlatego rozstrzyga
+  // wynik: cokolwiek przyszło, znaczy że dostęp jest.
+  try {
+    const kopia = await refreshCache();
+    if (kopia.players.length || kopia.clubs.length || kopia.observations.length) {
+      start(kopia);
+      return;
+    }
+  } catch (e) {
+    console.warn("Odczyt bez logowania nie powiódł się:", (e as Error).message);
+  }
+
+  // Została jeszcze kopia z poprzedniego uruchomienia — na stadionie bez zasięgu to ona jest
+  // wszystkim, co mamy, i szkoda byłoby zamiast niej pokazać ekran logowania.
+  if (getCache().players.length) { start(); return; }
+
+  renderLogin();
 }
 
 window.addEventListener("online", () => { void flushQueue().then(refreshSyncPill); });
@@ -940,7 +984,7 @@ document.addEventListener("visibilitychange", () => {
 (window as unknown as { __sbsStart?: boolean }).__sbsStart = true;
 
 splash();
-currentUser().then((user) => (user ? start() : renderLogin()));
+void boot();
 
 // Rejestracja mechanizmu offline tylko w wersji wdrożonej — w trybie deweloperskim przeszkadzałby
 // w podmianie plików na gorąco.
