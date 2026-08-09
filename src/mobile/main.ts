@@ -172,6 +172,11 @@ let live: LiveState | null = getLive();
 let polarity: 1 | -1 = 1;
 // Która zakładka ekranu Live jest widoczna: rejestrowanie zdarzeń czy składy meczu.
 let liveTab: "zdarzenia" | "sklady" = "zdarzenia";
+// Zakładka Składy ma trzy stany: lista nazwisk, plansza z ustawieniem i panel jednego zawodnika.
+let skladWidok: "lista" | "mapa" = "lista";
+let skladStrona: "gospodarze" | "goscie" = "gospodarze";
+let obsadzanaPozycja: number | null = null;   // wybrane puste pole na planszy — czeka na zawodnika
+let ocenianyZawodnik: number | null = null;   // indeks zawodnika, którego panel oceny jest otwarty
 let searchQuery = "";
 let clockTimer: number | undefined;
 // Czy panel pracuje na sesji użytkownika. Bez niej też działa — dopóki baza oddaje dane
@@ -397,11 +402,50 @@ function viewLive(): string {
 // wskaże kogo innego, i tak samo trzyma to komputer. Dlatego zaznaczenie z trybuny trafia
 // dokładnie tam, gdzie szuka go potem raport.
 
-interface SkladZawodnik { nazwa: string; numer?: string; podstawowy?: boolean; zszedl?: boolean; wyrozniony?: boolean }
-interface SkladStrona { nazwa?: string; zawodnicy: SkladZawodnik[] }
+interface SkladZawodnik {
+  nazwa: string; numer?: string; podstawowy?: boolean; zszedl?: boolean; wyrozniony?: boolean;
+  // Pola dokładane przez panel mobilny: pozycja na mapie (numer z POZYCJE), szybka ocena
+  // i notatka. Żyją razem z resztą składu w ratings.__ext.skladMeczu, więc nie wymagają
+  // zmian w bazie. Uwaga: ponowny import składu na komputerze przebudowuje zawodników
+  // i te pola by wtedy przepadły — dlatego mapę układa się po wczytaniu składu, nie przed.
+  pozycja?: number;
+  ocena?: Record<string, number>;
+  notatka?: string;
+}
+interface SkladStrona { nazwa?: string; zawodnicy: SkladZawodnik[]; formacja?: string }
 interface Sklad { gospodarze?: SkladStrona; goscie?: SkladStrona }
 
 const STRONY: ("gospodarze" | "goscie")[] = ["gospodarze", "goscie"];
+
+// Systemy gry i rozmieszczenie jedenastu pozycji na boisku — przepisane z aplikacji na komputerze
+// (FORMATIONS, POSITION_NUMBERS i FORMATION_COORDS w src/main.ts), żeby plansza na telefonie
+// pokrywała się z klubową planszą co do pozycji. Współrzędne to procent szerokości i wysokości.
+const FORMACJE = ["1-4-4-2", "1-4-3-3", "1-3-4-3", "1-3-5-2", "1-4-5-1", "1-5-4-1", "1-4-2-3-1"];
+
+const POZYCJE: Record<number, string> = {
+  1: "BR", 2: "PO", 3: "LO", 4: "ŚO", 5: "ŚO", 6: "DP", 7: "PS", 8: "ŚP", 9: "NAP", 10: "OP", 11: "LS",
+};
+const POZYCJE_PELNE: Record<number, string> = {
+  1: "Bramkarz", 2: "Prawy obrońca", 3: "Lewy obrońca", 4: "Stoper (prawy)", 5: "Stoper (lewy)",
+  6: "Defensywny pomocnik", 7: "Prawy skrzydłowy", 8: "Środkowy pomocnik", 9: "Napastnik",
+  10: "Ofensywny pomocnik", 11: "Lewy skrzydłowy",
+};
+
+type Punkt = { x: number; y: number };
+const FORMACJA_WSPOLRZEDNE: Record<string, Record<number, Punkt>> = {
+  "": { 11:{x:22,y:13}, 9:{x:50,y:10}, 7:{x:78,y:13}, 8:{x:37,y:33}, 10:{x:63,y:33}, 6:{x:50,y:53}, 3:{x:18,y:66}, 2:{x:82,y:66}, 5:{x:37,y:79}, 4:{x:63,y:79}, 1:{x:50,y:93} },
+  "1-4-3-3": { 11:{x:22,y:13}, 9:{x:50,y:10}, 7:{x:78,y:13}, 8:{x:37,y:33}, 10:{x:63,y:33}, 6:{x:50,y:53}, 3:{x:18,y:66}, 2:{x:82,y:66}, 5:{x:37,y:79}, 4:{x:63,y:79}, 1:{x:50,y:93} },
+  "1-4-4-2": { 9:{x:39,y:10}, 10:{x:61,y:10}, 11:{x:18,y:33}, 7:{x:82,y:33}, 6:{x:61,y:51}, 8:{x:39,y:51}, 3:{x:18,y:66}, 2:{x:82,y:66}, 5:{x:37,y:79}, 4:{x:63,y:79}, 1:{x:50,y:93} },
+  "1-3-4-3": { 11:{x:22,y:13}, 9:{x:50,y:10}, 7:{x:78,y:13}, 3:{x:16,y:38}, 8:{x:39,y:38}, 10:{x:61,y:38}, 2:{x:84,y:38}, 5:{x:31,y:72}, 6:{x:50,y:72}, 4:{x:69,y:72}, 1:{x:50,y:93} },
+  "1-3-5-2": { 9:{x:39,y:10}, 10:{x:61,y:10}, 11:{x:20,y:36}, 8:{x:50,y:36}, 7:{x:80,y:36}, 3:{x:15,y:54}, 2:{x:85,y:54}, 5:{x:31,y:74}, 6:{x:50,y:74}, 4:{x:69,y:74}, 1:{x:50,y:93} },
+  "1-4-5-1": { 9:{x:50,y:10}, 11:{x:20,y:29}, 7:{x:80,y:29}, 8:{x:32,y:46}, 6:{x:50,y:46}, 10:{x:68,y:46}, 3:{x:18,y:66}, 2:{x:82,y:66}, 5:{x:37,y:79}, 4:{x:63,y:79}, 1:{x:50,y:93} },
+  "1-5-4-1": { 9:{x:50,y:10}, 11:{x:22,y:36}, 8:{x:41,y:36}, 10:{x:59,y:36}, 7:{x:78,y:36}, 3:{x:14,y:70}, 5:{x:32,y:70}, 6:{x:50,y:70}, 4:{x:68,y:70}, 2:{x:86,y:70}, 1:{x:50,y:93} },
+  "1-4-2-3-1": { 9:{x:50,y:10}, 11:{x:20,y:29}, 10:{x:50,y:29}, 7:{x:80,y:29}, 6:{x:38,y:49}, 8:{x:62,y:49}, 3:{x:18,y:66}, 2:{x:82,y:66}, 5:{x:37,y:79}, 4:{x:63,y:79}, 1:{x:50,y:93} },
+};
+
+// Skala szybkiej oceny na mapie — trzy z pięciu atrybutów SBS. Mentalność i potencjał zostają
+// w pełnej ocenie po meczu: na trybunie, przy jednym epizodzie, nie ma ich z czego wystawić.
+const OCENA_MAPY = ["technika", "taktyka", "motoryka"];
 
 const skladObserwacji = (obsId: string): Sklad | null => {
   const obs = cache.observations.find((o) => o.id === obsId) as (Observation & { skladMeczu?: Sklad }) | undefined;
@@ -458,10 +502,150 @@ function viewSklady(): string {
       </div>`;
   };
 
+  const przelacznik = `
+    <div class="polarity" style="margin-bottom:10px;">
+      <button class="pol seg" data-act="sklad-widok" data-v="lista" aria-pressed="${skladWidok === "lista"}">Lista</button>
+      <button class="pol seg" data-act="sklad-widok" data-v="mapa" aria-pressed="${skladWidok === "mapa"}">Ustawienie</button>
+    </div>`;
+
+  if (skladWidok === "mapa") return przelacznik + viewMapa(sklad, gosp, gosc);
+
   return `
+    ${przelacznik}
     <p class="hint">Dotknij zawodnika, żeby go wyróżnić. Zaznaczenia trafiają do tej obserwacji w SBS.</p>
     ${strona("gospodarze", gosp)}
     ${strona("goscie", gosc)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Plansza ustawienia
+// ---------------------------------------------------------------------------
+
+function viewMapa(sklad: Sklad, gosp: string, gosc: string): string {
+  const dane = sklad[skladStrona];
+  const lista = dane?.zawodnicy || [];
+  const formacja = dane?.formacja || "";
+  const wspolrzedne = FORMACJA_WSPOLRZEDNE[formacja] || FORMACJA_WSPOLRZEDNE[""];
+
+  // Panel oceny zajmuje cały ekran zamiast planszy — na telefonie okno nakładkowe nad boiskiem
+  // zasłaniałoby to, na co scout właśnie patrzy, i trzeba by je zamykać jednym palcem w biegu.
+  if (ocenianyZawodnik !== null && lista[ocenianyZawodnik]) return viewOcenaZawodnika(lista[ocenianyZawodnik]);
+
+  const wyborStrony = `
+    <div class="polarity" style="margin-bottom:10px;">
+      ${STRONY.map((k) => `<button class="pol seg" data-act="sklad-strona" data-v="${k}" aria-pressed="${skladStrona === k}">${esc(k === "gospodarze" ? gosp : gosc)}</button>`).join("")}
+    </div>`;
+
+  const wyborFormacji = `
+    <div class="field">
+      <span class="label">System gry</span>
+      <select id="wybor-formacji" data-act="zmien-formacje">
+        <option value="" ${formacja ? "" : "selected"}>— wybierz system —</option>
+        ${FORMACJE.map((f) => `<option value="${f}" ${f === formacja ? "selected" : ""}>${f}</option>`).join("")}
+      </select>
+    </div>`;
+
+  // Wybieranie zawodnika na wskazane pole: lista tej drużyny, numer przed nazwiskiem.
+  if (obsadzanaPozycja !== null) {
+    const wolni = lista.map((z, i) => ({ z, i })).filter(({ z }) => z.pozycja !== obsadzanaPozycja);
+    return `
+      ${wyborStrony}
+      <div class="row" style="margin-bottom:8px;">
+        <span class="label" style="margin:0;">${esc(POZYCJE_PELNE[obsadzanaPozycja])}</span>
+        <button class="btn ghost small" data-act="anuluj-obsade">Anuluj</button>
+      </div>
+      ${wolni.map(({ z, i }) => `
+        <button class="sklad-row" data-act="obsadz" data-i="${i}">
+          <span class="sklad-nr">${esc(z.numer || "")}</span>
+          <span class="sklad-nazwa">${esc(z.nazwa)}</span>
+          ${z.pozycja ? `<span class="sklad-znak" style="font-size:12px;">${esc(POZYCJE[z.pozycja])}</span>` : ""}
+        </button>`).join("") || '<div class="empty">Brak zawodników w składzie tej drużyny.</div>'}
+      ${lista.some((z) => z.pozycja === obsadzanaPozycja)
+        ? '<button class="btn ghost" data-act="zwolnij-pozycje">Zdejmij z tej pozycji</button>' : ""}`;
+  }
+
+  const pola = Object.keys(wspolrzedne).map(Number).map((numer) => {
+    const p = wspolrzedne[numer];
+    const idx = lista.findIndex((z) => z.pozycja === numer);
+    const z = idx >= 0 ? lista[idx] : null;
+    const oceniony = z && z.ocena && OCENA_MAPY.some((k) => Number(z.ocena![k]) > 0);
+    return `
+      <button class="slot ${z ? "obsadzony" : ""} ${z?.wyrozniony ? "gwiazda" : ""}"
+              style="left:${p.x}%; top:${p.y}%;"
+              data-act="${z ? "otworz-zawodnika" : "wybierz-pozycje"}" data-numer="${numer}" data-i="${idx}">
+        <span class="slot-poz">${esc(POZYCJE[numer])}</span>
+        <span class="slot-nazwa">${z ? esc(skrotNazwiska(z)) : "+"}</span>
+        ${oceniony ? '<span class="slot-kropka"></span>' : ""}
+      </button>`;
+  }).join("");
+
+  const obsadzeni = lista.filter((z) => z.pozycja).length;
+
+  return `
+    ${wyborStrony}
+    ${wyborFormacji}
+    <div class="boisko">
+      <div class="boisko-linie"></div>
+      ${pola}
+    </div>
+    <p class="hint" style="margin-top:10px;">
+      Ustawionych: ${obsadzeni} z 11. Puste pole otwiera listę drużyny, obsadzone — panel oceny.
+    </p>`;
+}
+
+// Na polu wielkości kciuka mieści się numer i nazwisko, nie imię. Imię i tak jest w liście.
+function skrotNazwiska(z: SkladZawodnik): string {
+  const czesci = z.nazwa.trim().split(/\s+/);
+  const nazwisko = czesci.length > 1 ? czesci[czesci.length - 1] : czesci[0];
+  return (z.numer ? z.numer + " " : "") + nazwisko;
+}
+
+function viewOcenaZawodnika(z: SkladZawodnik): string {
+  const ocena = z.ocena || {};
+  return `
+    <div class="row" style="margin-bottom:10px;">
+      <div>
+        <div class="name">${esc(z.nazwa)}</div>
+        <div class="sub">${z.numer ? "nr " + esc(z.numer) + " · " : ""}${z.pozycja ? esc(POZYCJE_PELNE[z.pozycja]) : "poza ustawieniem"}</div>
+      </div>
+      <button class="btn ghost small" data-act="zamknij-zawodnika">Wróć</button>
+    </div>
+
+    <button class="btn ${z.wyrozniony ? "" : "ghost"}" style="margin-top:0;" data-act="wyroznij-otwartego">
+      ${z.wyrozniony ? "★ Wyróżniony" : "☆ Wyróżnij"}
+    </button>
+
+    <div class="section">
+      <span class="label">Ocena · skala 1–10</span>
+      ${OCENA_MAPY.map((k) => skala("mapa", k, RATING_LABELS[k], Number(ocena[k]) || 0, 10)).join("")}
+    </div>
+
+    <div class="section">
+      <div class="row" style="margin-bottom:6px;">
+        <span class="label" style="margin:0;">Notatka</span>
+        <button class="btn ghost small" data-act="dyktuj-notatke" id="dyktuj-btn">Dyktuj</button>
+      </div>
+      <textarea id="notatka-zawodnika" placeholder="Co zwróciło uwagę…">${esc(z.notatka || "")}</textarea>
+      <p class="hint" style="margin-top:6px;">Zapisuje się samo — po wpisaniu możesz od razu wrócić na planszę.</p>
+    </div>`;
+}
+
+// Obserwacja z bieżącego meczu wraz ze składem — wołane przy każdej zmianie na planszy.
+function biezacyObsSklad(): { obs: Observation & { skladMeczu?: Sklad }; strona: SkladStrona } | null {
+  if (!live) return null;
+  const obs = cache.observations.find((o) => o.id === live!.observationId) as (Observation & { skladMeczu?: Sklad }) | undefined;
+  const strona = obs?.skladMeczu?.[skladStrona];
+  return obs && strona ? { obs, strona } : null;
+}
+
+// Treść pól tekstowych żyje w DOM, nie w stanie — przed każdym przerysowaniem trzeba ją przepisać
+// do zawodnika, inaczej notatka przepada przy pierwszym dotknięciu kropki oceny.
+function zabezpieczNotatke() {
+  if (ocenianyZawodnik === null) return;
+  const pole = $<HTMLTextAreaElement>("notatka-zawodnika");
+  const dane = biezacyObsSklad();
+  const z = dane?.strona.zawodnicy[ocenianyZawodnik];
+  if (pole && z) z.notatka = pole.value;
 }
 
 // Wklejony skład: jeden zawodnik w wierszu, numer opcjonalnie na początku.
@@ -864,24 +1048,34 @@ function saveNowa() {
   toast("Obserwacja utworzona");
 }
 
-function dictate() {
+// Dyktowanie notatek. Rozpoznawanie mowy w przeglądarce wysyła dźwięk na serwer producenta,
+// więc BEZ ZASIĘGU nie zadziała — na stadionie bez sieci trzeba pisać ręcznie. Wynik trafia
+// do wskazanego pola, żeby ta sama funkcja obsłużyła opis po meczu i notatkę przy zawodniku.
+function dictate(poleId = "o-desc", przyciskId = "dictate-btn") {
   const Rozpoznawanie =
     (window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).SpeechRecognition ||
     (window as unknown as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition;
   if (!Rozpoznawanie) { toast("Ta przeglądarka nie obsługuje dyktowania"); return; }
+  if (!navigator.onLine) { toast("Dyktowanie wymaga sieci — wpisz ręcznie"); return; }
   const rec = new (Rozpoznawanie as new () => any)();
   rec.lang = "pl-PL";
   rec.interimResults = false;
   rec.continuous = true;
-  const btn = $("dictate-btn");
-  const ta = $<HTMLTextAreaElement>("o-desc");
+  const btn = $(przyciskId);
+  const ta = $<HTMLTextAreaElement>(poleId);
   if (btn) btn.textContent = "Słucham…";
   rec.onresult = (e: any) => {
     let tekst = "";
     for (let i = e.resultIndex; i < e.results.length; i++) tekst += e.results[i][0].transcript;
-    if (ta) {
-      ta.value = (ta.value ? ta.value.trim() + " " : "") + tekst.trim();
-      if (ocena) ocena.description = ta.value;
+    if (!ta) return;
+    ta.value = (ta.value ? ta.value.trim() + " " : "") + tekst.trim();
+    // Wynik od razu w danych, nie tylko na ekranie — dyktowanie kończy się często razem
+    // z odłożeniem telefonu, a wtedy nikt już niczego nie kliknie.
+    if (poleId === "o-desc" && ocena) ocena.description = ta.value;
+    if (poleId === "notatka-zawodnika") {
+      zabezpieczNotatke();
+      const dane = biezacyObsSklad();
+      if (dane) saveObservation(dane.obs);
     }
   };
   rec.onend = () => { if (btn) btn.textContent = "Dyktuj"; };
@@ -934,6 +1128,58 @@ document.addEventListener("click", (e) => {
     }
     case "pol": polarity = Number(v) === -1 ? -1 : 1; render(); break;
     case "live-tab": liveTab = v === "sklady" ? "sklady" : "zdarzenia"; render(); break;
+    case "sklad-widok": skladWidok = v === "mapa" ? "mapa" : "lista"; ocenianyZawodnik = null; obsadzanaPozycja = null; render(); break;
+    case "sklad-strona": skladStrona = v === "goscie" ? "goscie" : "gospodarze"; ocenianyZawodnik = null; obsadzanaPozycja = null; render(); break;
+
+    case "wybierz-pozycje": obsadzanaPozycja = Number(el.dataset.numer); render(); break;
+    case "anuluj-obsade": obsadzanaPozycja = null; render(); break;
+
+    case "obsadz": {
+      const dane = biezacyObsSklad();
+      if (!dane || obsadzanaPozycja === null) break;
+      // Jedna pozycja to jeden zawodnik: kto stał tu wcześniej, schodzi z planszy, a nie dubluje się.
+      dane.strona.zawodnicy.forEach((z) => { if (z.pozycja === obsadzanaPozycja) delete z.pozycja; });
+      dane.strona.zawodnicy[Number(el.dataset.i)].pozycja = obsadzanaPozycja;
+      obsadzanaPozycja = null;
+      saveObservation(dane.obs);
+      render();
+      break;
+    }
+
+    case "zwolnij-pozycje": {
+      const dane = biezacyObsSklad();
+      if (!dane || obsadzanaPozycja === null) break;
+      dane.strona.zawodnicy.forEach((z) => { if (z.pozycja === obsadzanaPozycja) delete z.pozycja; });
+      obsadzanaPozycja = null;
+      saveObservation(dane.obs);
+      render();
+      break;
+    }
+
+    case "otworz-zawodnika": ocenianyZawodnik = Number(el.dataset.i); render(); break;
+
+    case "zamknij-zawodnika": {
+      zabezpieczNotatke();
+      const dane = biezacyObsSklad();
+      if (dane) saveObservation(dane.obs);
+      ocenianyZawodnik = null;
+      render();
+      break;
+    }
+
+    case "wyroznij-otwartego": {
+      zabezpieczNotatke();
+      const dane = biezacyObsSklad();
+      const z = dane?.strona.zawodnicy[ocenianyZawodnik ?? -1];
+      if (!dane || !z) break;
+      z.wyrozniony = !z.wyrozniony;
+      saveObservation(dane.obs);
+      if (navigator.vibrate) navigator.vibrate(10);
+      render();
+      break;
+    }
+
+    case "dyktuj-notatke": dictate("notatka-zawodnika", "dyktuj-btn"); break;
 
     case "wyroznij": {
       if (!live) break;
@@ -978,6 +1224,19 @@ document.addEventListener("click", (e) => {
     case "finish": finishLive(); break;
 
     case "rate": {
+      if (el.dataset.host === "mapa") {
+        zabezpieczNotatke();
+        const dane = biezacyObsSklad();
+        const z = dane?.strona.zawodnicy[ocenianyZawodnik ?? -1];
+        if (!dane || !z) break;
+        z.ocena = z.ocena || {};
+        const klucz = el.dataset.k!;
+        const wartosc = Number(v);
+        z.ocena[klucz] = z.ocena[klucz] === wartosc ? 0 : wartosc;
+        saveObservation(dane.obs);
+        render();
+        break;
+      }
       if (!ocena) break;
       const host = el.dataset.host as "ratings" | "phases" | "setPieces";
       const key = el.dataset.k!;
@@ -1036,6 +1295,26 @@ document.addEventListener("click", (e) => {
       break;
     }
   }
+});
+
+document.addEventListener("blur", (e) => {
+  if ((e.target as HTMLElement)?.id !== "notatka-zawodnika") return;
+  zabezpieczNotatke();
+  const dane = biezacyObsSklad();
+  if (dane) saveObservation(dane.obs);
+}, true);
+
+document.addEventListener("change", (e) => {
+  const el = e.target as HTMLSelectElement;
+  if (el.id !== "wybor-formacji") return;
+  const dane = biezacyObsSklad();
+  if (!dane) return;
+  // System gry zapamiętujemy przy drużynie w tej obserwacji. Zmiana układu NIE zdejmuje nikogo
+  // z planszy: te same jedenaście numerów obowiązuje w każdym systemie, zmienia się tylko ich
+  // rozmieszczenie — dokładnie tak, jak działa plansza na komputerze.
+  dane.strona.formacja = el.value;
+  saveObservation(dane.obs);
+  render();
 });
 
 document.addEventListener("input", (e) => {
