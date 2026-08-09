@@ -419,6 +419,14 @@ textarea{resize:vertical; min-height:84px;}
    zagnieżdżanie przycisku w przycisku jest niepoprawne i na telefonie kończy się tym, że
    dotknięcie krzyżyka wyróżnia zawodnika zamiast go usunąć. */
 .sklad-wiersz{display:flex; gap:6px; align-items:stretch; margin-bottom:6px;}
+/* Numer jest polem, nie napisem: parser gubi go przy niektórych układach składu, a bez numeru
+   nie da się rozpoznać zawodnika z trybuny. Wpisanie ręcznie musi być szybsze niż wklejanie
+   składu od nowa. */
+.sklad-nr-pole{
+  width:52px; flex-shrink:0; text-align:center; padding:0; font-family:var(--data);
+  font-size:15px; border-radius:10px;
+}
+.sklad-nr-pole::placeholder{color:var(--text-3);}
 .sklad-wiersz .sklad-row{flex:1; margin-bottom:0;}
 .sklad-del{
   width:46px; flex-shrink:0; border-radius:10px;
