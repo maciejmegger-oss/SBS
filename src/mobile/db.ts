@@ -28,6 +28,10 @@ export interface LiveEvent {
   type: string;      // klucz zdarzenia, np. "strzal"
   label: string;     // etykieta pokazywana scoutowi, np. "Strzał"
   quality: 1 | -1;   // 1 = udane, -1 = nieudane
+  // Kogo dotyczy zdarzenie. Zawodnicy ze składu meczu nie mają identyfikatorów w bazie —
+  // skład bywa wklejony z kartki albo ze strony meczu — więc zapisujemy nazwę tak, jak
+  // widnieje na liście („10 Mosek"). Puste = zdarzenie zespołu.
+  zawodnik?: string;
   note?: string;
   createdAt: string;
 }
@@ -239,6 +243,7 @@ async function pushLiveEvents(observationId: string, events: LiveEvent[]): Promi
       minute: e.minute,
       type: e.type,
       quality: e.quality,
+      zawodnik: e.zawodnik || null,
       note: e.note || null,
       created_at: e.createdAt,
     }));
@@ -249,8 +254,11 @@ async function pushLiveEvents(observationId: string, events: LiveEvent[]): Promi
     }
     // Brak tabeli to jedyny błąd, który wolno obejść. Każdy inny (np. odmowa dostępu) musi
     // wrócić do kolejki, żeby próba się powtórzyła, zamiast po cichu wylądować w kv.
-    const brakTabeli = /relation .* does not exist|could not find the table|schema cache/i.test(error.message);
-    if (!brakTabeli) throw new Error(error.message);
+    // Obejściem obejmujemy też brakującą KOLUMNĘ, nie tylko brakującą tabelę: tabela mogła
+    // powstać ze starszej wersji migracji, bez kolumny `zawodnik`, i wtedy zapis kończyłby się
+    // błędem przy każdej próbie — a oś zdarzeń z meczu jest zbyt cenna, żeby ją na tym stracić.
+    const doObejscia = /relation .* does not exist|could not find the table|schema cache|column .* does not exist/i.test(error.message);
+    if (!doObejscia) throw new Error(error.message);
     liveEventsTable = false;
   }
   const { error } = await sb
@@ -364,6 +372,9 @@ export interface LiveState {
   seconds: number;         // czas bieżącej części meczu
   running: boolean;
   startedAt: number | null; // znacznik czasu telefonu przy ostatnim starcie zegara
+  // Komu przypisują się kolejne zdarzenia (nazwa ze składu). Puste = zespół. Trzymane w stanie
+  // meczu, a nie w pamięci widoku, bo wybór ma przetrwać zamknięcie karty w trakcie gry.
+  wybranyZawodnik?: string;
   events: LiveEvent[];
 }
 

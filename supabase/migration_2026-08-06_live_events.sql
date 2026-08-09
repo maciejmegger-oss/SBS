@@ -16,9 +16,13 @@ create table if not exists sbs_live_events (
   minute         integer,       -- minuta MECZU (2. połowa od 45, dogrywka od 90), nie godzina zegarowa
   type           text,          -- klucz zdarzenia: 'strzal', 'podanie_kluczowe', 'pojedynek'…
   quality        smallint,      -- 1 = udane, -1 = nieudane
+  zawodnik       text,          -- kogo dotyczy, tak jak widnieje w składzie („10 Mosek"); puste = zespół
   note           text,
   created_at     timestamptz not null default now()
 );
+
+-- Kolumna dołożona po pierwszym wdrożeniu — dla baz, w których tabela już istnieje.
+alter table sbs_live_events add column if not exists zawodnik text;
 
 create index if not exists sbs_live_events_obs_idx on sbs_live_events(observation_id);
 create index if not exists sbs_live_events_player_idx on sbs_live_events(player_id);

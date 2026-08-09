@@ -323,8 +323,12 @@ function viewLive(): string {
       <button class="btn ghost" data-act="go-dzis">Przejdź do obserwacji</button>`;
   }
 
+  // Licznik na kaflu mówi, ile zarejestrowano DLA WYBRANEGO podmiotu — przy tagowaniu kilku
+  // zawodników suma z całego meczu nie niosłaby żadnej informacji.
+  const dlaKogo = live.wybranyZawodnik || "";
   const counts: Record<string, number> = {};
-  live.events.forEach((e) => (counts[e.type] = (counts[e.type] || 0) + 1));
+  live.events.filter((e) => (e.zawodnik || "") === dlaKogo)
+    .forEach((e) => (counts[e.type] = (counts[e.type] || 0) + 1));
   const secs = liveSeconds(live);
   const okres = periodOf(live.half);
   const nastepny = PERIODS.find((p) => p.n === ((live!.half + 1) as Period));
@@ -358,6 +362,7 @@ function viewLive(): string {
     </div>
 
     ${liveTab === "sklady" ? viewSklady() : `
+    ${pasekZawodnikow()}
     <div class="polarity">
       <button class="pol plus" data-act="pol" data-v="1" aria-pressed="${polarity === 1}">+ udane</button>
       <button class="pol minus" data-act="pol" data-v="-1" aria-pressed="${polarity === -1}">− nieudane</button>
@@ -385,7 +390,7 @@ function viewLive(): string {
       ${live.events.slice().reverse().slice(0, 40).map((e) => `
         <div class="ev ${e.quality === 1 ? "plus" : "minus"}">
           <span class="min">${e.minute}'</span>
-          <span class="txt">${esc(e.label)}${e.note ? " — " + esc(e.note) : ""}</span>
+          <span class="txt">${e.zawodnik ? `<strong>${esc(e.zawodnik)}</strong> · ` : ""}${esc(e.label)}${e.note ? " — " + esc(e.note) : ""}</span>
           <span class="sign">${e.quality === 1 ? "+" : "−"}</span>
         </div>`).join("") || '<div class="empty">Jeszcze nic nie zarejestrowano.</div>'}
     </div>`}`;
@@ -600,11 +605,19 @@ function viewMapa(sklad: Sklad, gosp: string, gosc: string): string {
     </p>`;
 }
 
-// Na polu wielkości kciuka mieści się numer i nazwisko, nie imię. Imię i tak jest w liście.
+// KLUCZ zawodnika — pełny zapis z numerem. Musi być jednoznaczny, bo po nim przypisujemy
+// zdarzenia: samo nazwisko zlewałoby dwóch Kowalskich w jednego, a numer rozróżnia ich zawsze.
+function kluczZawodnika(z: SkladZawodnik): string {
+  return (z.numer ? z.numer + " " : "") + z.nazwa.trim();
+}
+
+// SKRÓT do wyświetlenia na polu wielkości kciuka. Bierzemy PIERWSZY wyraz nazwy, nie ostatni:
+// składy meczowe zapisuje się „Nazwisko Imię", więc ostatni wyraz to zwykle imię — po tej
+// pomyłce na planszy widniało „10 Filip" zamiast „10 Mosek". Pełny zapis jest na liście
+// i na pasku wyboru, więc skrót nie musi być jednoznaczny — ma się zmieścić.
 function skrotNazwiska(z: SkladZawodnik): string {
-  const czesci = z.nazwa.trim().split(/\s+/);
-  const nazwisko = czesci.length > 1 ? czesci[czesci.length - 1] : czesci[0];
-  return (z.numer ? z.numer + " " : "") + nazwisko;
+  const pierwszy = z.nazwa.trim().split(/\s+/)[0];
+  return (z.numer ? z.numer + " " : "") + pierwszy;
 }
 
 function viewOcenaZawodnika(z: SkladZawodnik): string {
@@ -722,6 +735,40 @@ function parsujSklad(tekst: string): SkladZawodnik[] {
     wynik.push(numer ? { nazwa: w, numer } : { nazwa: w });
   }
   return wynik;
+}
+
+// KOGO DOTYCZY ZDARZENIE.
+//
+// Bez tego każde dotknięcie kafla lądowało „gdzieś w meczu": obserwacja zespołu nie wskazuje
+// nikogo, a przy jednym wskazanym zawodniku i tak nie da się tagować drugiego. Wyróżnieni ze
+// składu trafiają więc na pasek nad kaflami — dotknięcie przełącza, komu przypisują się kolejne
+// zdarzenia. Wybór zostaje aż do zmiany, bo w trakcie akcji nie ma czasu na potwierdzanie.
+function wyroznieniZawodnicy(): { klucz: string; etykieta: string }[] {
+  if (!live) return [];
+  const sklad = skladObserwacji(live.observationId);
+  if (!sklad) return [];
+  const wynik: { klucz: string; etykieta: string }[] = [];
+  STRONY.forEach((strona) => {
+    (sklad[strona]?.zawodnicy || []).forEach((z) => {
+      if (z.wyrozniony) wynik.push({ klucz: kluczZawodnika(z), etykieta: kluczZawodnika(z) });
+    });
+  });
+  return wynik;
+}
+
+function pasekZawodnikow(): string {
+  const lista = wyroznieniZawodnicy();
+  if (!lista.length) {
+    return '<p class="hint">Wyróżnij zawodników w zakładce Składy, a pojawią się tutaj — wtedy zdarzenia przypiszesz konkretnej osobie.</p>';
+  }
+  const wybrany = live?.wybranyZawodnik || "";
+  return `
+    <span class="label">Tagujesz</span>
+    <div class="tagujesz">
+      <button class="chip ${wybrany ? "" : "wybrany"}" data-act="taguj-kogo" data-v="" aria-pressed="${!wybrany}">Zespół</button>
+      ${lista.map((z) => `
+        <button class="chip ${wybrany === z.klucz ? "wybrany" : ""}" data-act="taguj-kogo" data-v="${esc(z.klucz)}" aria-pressed="${wybrany === z.klucz}">${esc(z.etykieta)}</button>`).join("")}
+    </div>`;
 }
 
 function skala(host: string, key: string, label: string, value: number, max: number): string {
@@ -1013,6 +1060,7 @@ function addEvent(key: string) {
     type: tag.key,
     label: tag.label,
     quality: polarity,
+    zawodnik: live.wybranyZawodnik || undefined,
     note: noteEl?.value.trim() || undefined,
     createdAt: new Date().toISOString(),
   };
@@ -1195,6 +1243,12 @@ document.addEventListener("click", (e) => {
       break;
     }
     case "pol": polarity = Number(v) === -1 ? -1 : 1; render(); break;
+    case "taguj-kogo":
+      if (!live) break;
+      live.wybranyZawodnik = v || undefined;
+      setLive(live);
+      render();
+      break;
     case "live-tab": liveTab = v === "sklady" ? "sklady" : "zdarzenia"; render(); break;
     case "usun-zawodnika": {
       if (!live) break;
