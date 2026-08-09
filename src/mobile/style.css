@@ -425,3 +425,13 @@ textarea{resize:vertical; min-height:84px;}
   background:var(--surface); border:1px solid var(--border); color:var(--text-2); font-size:16px;
 }
 .sklad-del:active{background:var(--bad-bg); color:var(--bad-fg); border-color:var(--clay);}
+
+/* Pasek „Tagujesz" — przewijany poziomo, bo wyróżnionych bywa kilkunastu, a zawijanie ich
+   w wiersze zepchnęłoby kafle zdarzeń poza ekran. */
+.tagujesz{
+  display:flex; gap:7px; overflow-x:auto; padding-bottom:6px; margin-bottom:8px;
+  scrollbar-width:none;
+}
+.tagujesz::-webkit-scrollbar{display:none;}
+.tagujesz .chip{flex-shrink:0; padding:10px 13px;}
+.tagujesz .chip.wybrany{background:var(--accent); border-color:var(--accent); color:var(--accent-ink);}
