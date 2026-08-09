@@ -611,13 +611,35 @@ function kluczZawodnika(z: SkladZawodnik): string {
   return (z.numer ? z.numer + " " : "") + z.nazwa.trim();
 }
 
-// SKRÓT do wyświetlenia na polu wielkości kciuka. Bierzemy PIERWSZY wyraz nazwy, nie ostatni:
-// składy meczowe zapisuje się „Nazwisko Imię", więc ostatni wyraz to zwykle imię — po tej
-// pomyłce na planszy widniało „10 Filip" zamiast „10 Mosek". Pełny zapis jest na liście
-// i na pasku wyboru, więc skrót nie musi być jednoznaczny — ma się zmieścić.
+// Popularne polskie imiona męskie. Służą do jednego: rozstrzygnięcia, który wyraz jest
+// nazwiskiem. Składy bywają zapisane w obu kolejnościach — protokoły podają „Nazwisko Imię",
+// aplikacje z wynikami „Imię Nazwisko" — więc branie któregoś skraju na sztywno myli się w
+// połowie przypadków. Gdy jeden z wyrazów jest znanym imieniem, nazwiskiem jest ten drugi.
+const IMIONA = new Set([
+  "adam","adrian","albert","aleksander","aleks","alan","antoni","arkadiusz","artur","bartosz",
+  "bartłomiej","błażej","borys","cezary","czesław","damian","daniel","dariusz","dawid","denis",
+  "dominik","emil","eryk","fabian","filip","franciszek","gabriel","grzegorz","gustaw","hubert",
+  "igor","ireneusz","jacek","jakub","jan","januszz","janusz","jarosław","jerzy","józef","julian",
+  "juliusz","kacper","kamil","karol","kazimierz","konrad","kornel","krystian","krzysztof","leszek",
+  "łukasz","maciej","marcel","marcin","marek","mariusz","mateusz","michał","mikołaj","miłosz",
+  "mirosław","nikodem","norbert","olaf","oliwier","oskar","patryk","paweł","piotr","przemysław",
+  "radosław","rafał","remigiusz","robert","roman","ryszard","sebastian","seweryn","sławomir",
+  "stanisław","szymon","tadeusz","tomasz","tymon","tymoteusz","wiktor","witold","władysław",
+  "wojciech","zbigniew","zdzisław","ziemowit","alex","david","denys","maksym","mykhailo","serhii",
+]);
+
+// SKRÓT do wyświetlenia na polu wielkości kciuka — sam numer i nazwisko. Pełny zapis jest
+// na liście i na pasku wyboru, więc skrót nie musi być jednoznaczny, ma się zmieścić.
 function skrotNazwiska(z: SkladZawodnik): string {
-  const pierwszy = z.nazwa.trim().split(/\s+/)[0];
-  return (z.numer ? z.numer + " " : "") + pierwszy;
+  const slowa = z.nazwa.trim().split(/\s+/);
+  let nazwisko = slowa[slowa.length - 1];
+  if (slowa.length > 1) {
+    const pierwszeToImie = IMIONA.has(slowa[0].toLowerCase());
+    const ostatnieToImie = IMIONA.has(slowa[slowa.length - 1].toLowerCase());
+    if (pierwszeToImie && !ostatnieToImie) nazwisko = slowa[slowa.length - 1];
+    else if (ostatnieToImie && !pierwszeToImie) nazwisko = slowa[0];
+  }
+  return (z.numer ? z.numer + " " : "") + nazwisko;
 }
 
 function viewOcenaZawodnika(z: SkladZawodnik): string {
@@ -695,13 +717,24 @@ const WIELKA_MALE = /[A-ZĄĆĘŁŃÓŚŹŻ][a-ząćęłńóśźż]{2,}/;
 function parsujSklad(tekst: string): SkladZawodnik[] {
   const wynik: SkladZawodnik[] = [];
   const juzJest = new Set<string>();
+  // Numer z POPRZEDNIEGO wiersza. W aplikacjach z wynikami numer stoi we własnej komórce tabeli,
+  // więc po skopiowaniu ląduje w osobnym wierszu, nad nazwiskiem:
+  //     8
+  //     Tomasz Boczek
+  // Sam numer nie jest zawodnikiem, ale wyrzucenie go razem ze śmieciami kosztowało najważniejszą
+  // informację na liście — bez numeru nie da się rozpoznać zawodnika z trybuny.
+  let numerZPoprzedniego: string | undefined;
 
   for (const surowy of tekst.split("\n")) {
     let w = surowy.trim();
+
+    // Wiersz będący wyłącznie liczbą to numer koszulki czekający na nazwisko. Minuty zmian
+    // („70 '") mają apostrof i tu nie wpadną — inaczej podmieniałyby numery kolejnym zawodnikom.
+    if (/^\d{1,2}$/.test(w)) { numerZPoprzedniego = w; continue; }
+
     if (w.length < 3 || w.length > 60) continue;
 
-    // Numer z początku wiersza zdejmujemy od razu — to jedyna liczba, która nas interesuje.
-    let numer: string | undefined;
+    let numer = numerZPoprzedniego;
     const zNumerem = w.match(/^(\d{1,2})[.)\s]+(.+)$/);
     if (zNumerem) { numer = zNumerem[1]; w = zNumerem[2].trim(); }
 
@@ -709,8 +742,7 @@ function parsujSklad(tekst: string): SkladZawodnik[] {
     w = w.replace(/\(.*?\)/g, " ").replace(/\d{1,3}\s*['’]/g, " ").replace(/\s{2,}/g, " ").trim();
     if (w.length < 3) continue;
 
-    // Wersaliki to nazwa klubu albo nagłówek, nigdy zapis nazwiska na liście składu.
-    if (w === w.toUpperCase()) continue;
+    if (w === w.toUpperCase()) continue;                       // wersaliki = klub albo nagłówek
     if (!WIELKA_MALE.test(w)) continue;
     if (/\d{1,2}:\d{2}/.test(w)) continue;                    // godzina
     if (/^\d+\s*[-–—]\s*\d+$/.test(w)) continue;              // wynik
@@ -718,24 +750,19 @@ function parsujSklad(tekst: string): SkladZawodnik[] {
     const slowa = w.split(/\s+/);
     if (slowa.length > 4) continue;                            // zdanie, nie nazwisko
 
-    // Etykietę rozpoznajemy po PIERWSZYM słowie, nie po całym wierszu: „Widzów: 1200" i
-    // „Trener Nowak" wyglądają jak nazwisko z dopiskiem, a nagłówkiem są tak samo jak samo
-    // „Widzów". Interpunkcję z końca słowa zdejmujemy, bo dwukropek przyklejony do etykiety
-    // wystarczał, żeby ominęła listę.
     const pierwsze = slowa[0].replace(/[.:,;)\]]+$/, "").toLowerCase();
     if (NIE_ZAWODNIK.has(pierwsze)) continue;
-
-    // Liczba trzycyfrowa i dłuższa nie występuje w nazwisku — numer z początku wiersza już
-    // zdjęliśmy, więc to zawsze frekwencja, rok albo identyfikator.
     if (/\d{3,}/.test(w)) continue;
 
     const klucz = w.toLowerCase();
-    if (juzJest.has(klucz)) continue;
+    if (juzJest.has(klucz)) { numerZPoprzedniego = undefined; continue; }
     juzJest.add(klucz);
     wynik.push(numer ? { nazwa: w, numer } : { nazwa: w });
+    numerZPoprzedniego = undefined;   // numer zużyty — nie może spłynąć na następne nazwisko
   }
   return wynik;
 }
+
 
 // KOGO DOTYCZY ZDARZENIE.
 //
