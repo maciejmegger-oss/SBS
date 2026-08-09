@@ -499,6 +499,64 @@ function viewBaza(): string {
       ${zalogowany
         ? '<button class="btn danger" data-act="logout">Wyloguj się</button>'
         : '<button class="btn ghost" data-act="go-login">Zaloguj się</button>'}
+    </div>
+
+    ${instalacjaHtml()}`;
+}
+
+// ---------------------------------------------------------------------------
+// Ikona na ekranie telefonu
+// ---------------------------------------------------------------------------
+//
+// Instrukcja musi być W APLIKACJI, bo pokazuje się dokładnie tam, gdzie stoi ten, kto jej
+// potrzebuje. Dodania ikony nie da się wykonać kodem — iOS dopuszcza to wyłącznie ręcznie,
+// z Safari. Dlatego jedyne, co możemy zrobić, to nazwać właściwy przycisk, powiedzieć, gdzie
+// go szukać, i podać adres w postaci gotowej do wklejenia.
+//
+// Rozróżnienie przeglądarek na iOS opiera się na `navigator.standalone`:
+//   true      — panel działa już z ikony, nie ma czego dodawać,
+//   false     — prawdziwe Safari, instrukcja ma sens,
+//   undefined — przeglądarka osadzona w innej aplikacji (Claude, Messenger, Instagram),
+//               gdzie opcji dodania po prostu nie ma i trzeba najpierw przejść do Safari.
+function instalacjaHtml(): string {
+  const nav = navigator as Navigator & { standalone?: boolean };
+  const zIkony = nav.standalone === true || window.matchMedia?.("(display-mode: standalone)").matches;
+  if (zIkony) return "";
+
+  const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const wObcejPrzegladarce = iOS && nav.standalone === undefined;
+  const adres = location.origin + "/m";
+
+  const kroki = wObcejPrzegladarce
+    ? `<p class="sub" style="margin:0 0 8px;">Jesteś w przeglądarce wbudowanej w inną aplikację — tutaj iPhone nie pozwala dodać ikony. Trzeba przejść do Safari:</p>
+       <ol style="margin:0; padding-left:18px; font-size:13.5px; color:var(--text-2); line-height:1.7;">
+         <li>Skopiuj adres przyciskiem poniżej</li>
+         <li>Wyjdź na ekran główny i otwórz <strong>Safari</strong> (niebieski kompas)</li>
+         <li>Wklej adres w pasku i otwórz stronę</li>
+         <li>Dotknij <strong>kwadratu ze strzałką w górę</strong> ⬆︎ (jeśli pasek adresu masz na dole — dotknij go raz, żeby pokazały się ikony)</li>
+         <li>Przewiń listę w dół → <strong>„Do ekranu początkowego"</strong> → <strong>Dodaj</strong></li>
+       </ol>`
+    : iOS
+    ? `<ol style="margin:0; padding-left:18px; font-size:13.5px; color:var(--text-2); line-height:1.7;">
+         <li>Dotknij <strong>kwadratu ze strzałką w górę</strong> ⬆︎ na pasku Safari (jeśli pasek masz na dole — dotknij go raz, żeby pokazały się ikony)</li>
+         <li>Przewiń listę w dół — pozycja jest dość nisko</li>
+         <li><strong>„Do ekranu początkowego"</strong> → <strong>Dodaj</strong></li>
+       </ol>`
+    : `<ol style="margin:0; padding-left:18px; font-size:13.5px; color:var(--text-2); line-height:1.7;">
+         <li>Menu przeglądarki <strong>⋮</strong></li>
+         <li><strong>„Zainstaluj aplikację"</strong> albo <strong>„Dodaj do ekranu głównego"</strong></li>
+       </ol>`;
+
+  return `
+    <div class="section">
+      <span class="label">Ikona na ekranie telefonu</span>
+      <div class="card">
+        ${kroki}
+        <div class="field" style="margin:12px 0 0;">
+          <input id="adres-panelu" readonly value="${esc(adres)}" style="font-size:13px;">
+        </div>
+        <button class="btn ghost" data-act="kopiuj-adres">Kopiuj adres</button>
+      </div>
     </div>`;
 }
 
@@ -828,6 +886,20 @@ document.addEventListener("click", (e) => {
       signOut().then(() => location.reload());
       break;
     case "go-login": renderLogin(); break;
+
+    case "kopiuj-adres": {
+      const pole = $<HTMLInputElement>("adres-panelu");
+      if (!pole) break;
+      // Zaznaczenie tekstu robimy zawsze, nie tylko przy niepowodzeniu: gdy schowek jest
+      // niedostępny (starsze Safari, brak zgody), adres zostaje przynajmniej gotowy do
+      // przytrzymania i skopiowania palcem.
+      pole.select();
+      pole.setSelectionRange(0, pole.value.length);
+      navigator.clipboard?.writeText(pole.value)
+        .then(() => toast("Adres skopiowany — wklej go w Safari"))
+        .catch(() => toast("Przytrzymaj adres i wybierz Kopiuj"));
+      break;
+    }
   }
 });
 
