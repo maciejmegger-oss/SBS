@@ -113,7 +113,11 @@ export const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }>
     // liście, więc identyfikator wydarzenia zapisany przez serwer zniknąłby przy pierwszym
     // zapisie obserwacji z przeglądarki — a wtedy synchronizacja zakładałaby w kalendarzu
     // drugie wydarzenie dla tej samej obserwacji.
-    fields: ["startLocation", "distanceKm", "obsType", "skladMeczu", "googleEventId"],
+    // poziomMeczu / warunki / notatkaMeczu: ocena SAMEGO SPOTKANIA, nie zawodnika. Przy jednej
+    // obserwacji na mecz to ona jest kontekstem dla wszystkich ocen indywidualnych — poziom rywalizacji
+    // i pogoda zmieniają wagę tego, co zawodnik pokazał.
+    fields: ["startLocation", "distanceKm", "obsType", "skladMeczu", "googleEventId",
+             "poziomMeczu", "warunki", "notatkaMeczu"],
   },
 };
 

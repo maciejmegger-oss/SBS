@@ -46,6 +46,11 @@ const STATUS_OPTIONS = [
 ];
 const PERSPEKTYWA = ["WYSOKA", "ŚREDNIA", "NISKA"];
 
+// OCENA SPOTKANIA, nie zawodnika. Przy jednej obserwacji na mecz to ona jest kontekstem dla
+// wszystkich ocen indywidualnych: te same osiem na dziesięć znaczy co innego w rywalizacji
+// o czubek tabeli i co innego w meczu rozstrzygniętym do przerwy, i co innego w ulewie.
+const WARUNKI = ["Słonecznie", "Pochmurno", "Deszcz", "Silny wiatr", "Upał", "Mróz", "Śnieg", "Sztuczne światło"];
+
 // Części meczu. `offset` to minuta, od której zaczyna się liczenie w danej części — dzięki temu
 // zdarzenie z dogrywki ma minutę 97, a nie 7, i zgadza się z tym, co pokazuje tablica na stadionie.
 // Doliczony czas nie wymaga osobnej obsługi: zegar nie zatrzymuje się na 45:00 ani 90:00, tylko
@@ -69,7 +74,8 @@ const EVENT_TAGS = [
   { key: "odbior", label: "Odbiór" },
   { key: "strata", label: "Strata" },
   { key: "ustawienie", label: "Ustawienie" },
-  { key: "gol_asysta", label: "Gol / asysta" },
+  { key: "gol", label: "Gol" },
+  { key: "asysta", label: "Asysta" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -419,6 +425,7 @@ interface SkladZawodnik {
   pozycja?: number;
   ocena?: Record<string, number>;
   notatka?: string;
+  noga?: string;
 }
 interface SkladStrona { nazwa?: string; zawodnicy: SkladZawodnik[]; formacja?: string }
 interface Sklad { gospodarze?: SkladStrona; goscie?: SkladStrona }
@@ -454,6 +461,14 @@ const FORMACJA_WSPOLRZEDNE: Record<string, Record<number, Punkt>> = {
 // Skala szybkiej oceny na mapie — trzy z pięciu atrybutów SBS. Mentalność i potencjał zostają
 // w pełnej ocenie po meczu: na trybunie, przy jednym epizodzie, nie ma ich z czego wystawić.
 const OCENA_MAPY = ["technika", "taktyka", "motoryka"];
+
+// Gra głową osobno w ataku i w obronie: to dwie różne umiejętności, a przy stałych fragmentach
+// rozstrzyga często jedna z nich. Trzymane razem z resztą oceny zawodnika przy składzie.
+const OCENA_GLOWA = [
+  { key: "glowaAtak", label: "Gra głową — atak" },
+  { key: "glowaObrona", label: "Gra głową — obrona" },
+];
+const NOGI = ["prawa", "lewa", "obie"];
 
 const skladObserwacji = (obsId: string): Sklad | null => {
   const obs = cache.observations.find((o) => o.id === obsId) as (Observation & { skladMeczu?: Sklad }) | undefined;
@@ -658,13 +673,24 @@ function viewOcenaZawodnika(z: SkladZawodnik): string {
       <button class="btn ghost small" data-act="zamknij-zawodnika">Wróć</button>
     </div>
 
+    ${z.pozycja ? `<button class="btn ghost" style="margin-top:0;" data-act="zmien-na-pozycji" data-numer="${z.pozycja}">
+      Zmiana — wstaw innego na ${esc(POZYCJE_PELNE[z.pozycja])}</button>` : ""}
+
     <button class="btn ${z.wyrozniony ? "" : "ghost"}" style="margin-top:0;" data-act="wyroznij-otwartego">
       ${z.wyrozniony ? "★ Wyróżniony" : "☆ Wyróżnij"}
     </button>
 
     <div class="section">
+      <span class="label">Noga</span>
+      <div class="chips">
+        ${NOGI.map((n) => `<button class="chip" data-act="noga" data-v="${n}" aria-pressed="${z.noga === n}">${n}</button>`).join("")}
+      </div>
+    </div>
+
+    <div class="section">
       <span class="label">Ocena · skala 1–10</span>
       ${OCENA_MAPY.map((k) => skala("mapa", k, RATING_LABELS[k], Number(ocena[k]) || 0, 10)).join("")}
+      ${OCENA_GLOWA.map((f) => skala("mapa", f.key, f.label, Number(ocena[f.key]) || 0, 10)).join("")}
     </div>
 
     <div class="section">
@@ -826,12 +852,32 @@ function viewOcena(): string {
   const obs = cache.observations.find((o) => o.id === ocena!.observationId);
   const eventsInfo = live && live.observationId === ocena.observationId ? live.events.length : 0;
 
+  const o = obs as (Observation & { poziomMeczu?: number; warunki?: string[]; notatkaMeczu?: string }) | undefined;
+  const warunki = o?.warunki || [];
+  const oceniony = ocenieniZeSkladu(obs);
+
   return `
     <h2>Po gwizdku</h2>
-    <p class="hint">${esc(obs?.match || "")}${obs?.playerId ? " · " + esc(playerLabel(obs.playerId)) : " · obserwacja zespołu"}${eventsInfo ? " · " + eventsInfo + " zdarzeń" : ""}</p>
+    <p class="hint">${esc(obs?.match || "")}${eventsInfo ? " · " + eventsInfo + " zdarzeń" : ""}</p>
 
-    <span class="label">Atrybuty · skala 1–10</span>
+    <span class="label">Ocena meczu</span>
+    ${skala("mecz", "poziom", "Poziom meczu", Number(o?.poziomMeczu) || 0, 10)}
+    <div class="field">
+      <span class="label">Warunki</span>
+      <div class="chips">
+        ${WARUNKI.map((w) => `<button class="chip" data-act="warunki" data-v="${esc(w)}" aria-pressed="${warunki.includes(w)}">${esc(w)}</button>`).join("")}
+      </div>
+    </div>
+    <div class="field">
+      <textarea id="o-mecz-notatka" placeholder="Krótka notatka o meczu…" style="min-height:58px;">${esc(o?.notatkaMeczu || "")}</textarea>
+    </div>
+
+    ${oceniony}
+
+    <div class="section">
+    <span class="label">Ocena zawodnika · skala 1–10</span>
     ${RATING_KEYS.map((k) => skala("ratings", k, RATING_LABELS[k], ocena!.ratings[k], 10)).join("")}
+    </div>
 
     <div class="section">
       <span class="label">Fazy gry · skala 1–6</span>
@@ -881,8 +927,9 @@ function viewOcena(): string {
 // gotową obserwację nie było. Dane szły do bazy, ale scout tego nie widział — a to jest
 // dokładnie ta chwila, w której chce się jeszcze raz spojrzeć na to, co się zapisało.
 function viewPodglad(): string {
-  const obs = cache.observations.find((o) => o.id === podgladObsId) as (Observation & { skladMeczu?: Sklad }) | undefined;
+  const obs = cache.observations.find((x) => x.id === podgladObsId) as (Observation & { skladMeczu?: Sklad }) | undefined;
   if (!obs) return '<h2>Obserwacja</h2><div class="empty">Nie znaleziono tej obserwacji.</div>';
+  const o = obs as Observation & { poziomMeczu?: number; warunki?: string[]; notatkaMeczu?: string };
 
   const oceny = (obs.ratings || {}) as Record<string, number>;
   const wystawione = RATING_KEYS.filter((k) => Number(oceny[k]) > 0);
@@ -903,8 +950,8 @@ function viewPodglad(): string {
 
   const skladHtml = STRONY.map((strona) => {
     const dane = obs.skladMeczu?.[strona];
-    const oznaczeni = (dane?.zawodnicy || []).filter((z) => z.wyrozniony || z.pozycja || z.notatka ||
-      (z.ocena && OCENA_MAPY.some((k) => Number(z.ocena![k]) > 0)));
+    const oznaczeni = (dane?.zawodnicy || []).filter((z) => z.wyrozniony || z.pozycja || z.notatka || z.noga ||
+      (z.ocena && Object.values(z.ocena).some((n) => Number(n) > 0)));
     if (!oznaczeni.length) return "";
     return `
       <div class="section">
@@ -915,10 +962,13 @@ function viewPodglad(): string {
               <div class="name" style="font-size:15px;">${z.wyrozniony ? "★ " : ""}${esc(kluczZawodnika(z))}</div>
               ${z.pozycja ? `<span class="tag">${esc(POZYCJE[z.pozycja])}</span>` : ""}
             </div>
-            ${z.ocena && OCENA_MAPY.some((k) => Number(z.ocena![k]) > 0)
-              ? `<div class="sub" style="margin-top:5px; font-family:var(--data);">${OCENA_MAPY
-                  .filter((k) => Number(z.ocena![k]) > 0)
-                  .map((k) => RATING_LABELS[k] + " " + z.ocena![k]).join(" · ")}</div>` : ""}
+            ${z.noga ? `<div class="sub" style="margin-top:4px;">noga: ${esc(z.noga)}</div>` : ""}
+            ${z.ocena && Object.values(z.ocena).some((n) => Number(n) > 0)
+              ? `<div class="sub" style="margin-top:5px; font-family:var(--data);">${[
+                  ...OCENA_MAPY.map((k) => ({ k, l: RATING_LABELS[k] })),
+                  ...OCENA_GLOWA.map((f) => ({ k: f.key, l: f.label })),
+                ].filter((x) => Number(z.ocena![x.k]) > 0)
+                  .map((x) => x.l + " " + z.ocena![x.k]).join(" · ")}</div>` : ""}
             ${z.notatka ? `<div class="sub" style="margin-top:5px;">${esc(z.notatka)}</div>` : ""}
           </div>`).join("")}
       </div>`;
@@ -928,8 +978,19 @@ function viewPodglad(): string {
     <h2>${esc(obs.match || "Obserwacja")}</h2>
     <p class="hint">${esc(obs.date)}${obs.matchTime ? " · " + esc(obs.matchTime) : ""}${obs.scout ? " · " + esc(obs.scout) : ""}</p>
 
-    ${wystawione.length ? `
+    ${(o as any).poziomMeczu || ((o as any).warunki || []).length || (o as any).notatkaMeczu ? `
       <div class="section" style="border-top:none; margin-top:0; padding-top:0;">
+        <span class="label">Mecz</span>
+        <div class="card">
+          ${(o as any).poziomMeczu ? `<div class="row" style="margin-bottom:4px;"><span class="sub">Poziom meczu</span>
+            <strong style="font-family:var(--data); color:var(--accent-fg);">${(o as any).poziomMeczu}/10</strong></div>` : ""}
+          ${((o as any).warunki || []).length ? `<div class="chips" style="margin:6px 0;">${((o as any).warunki as string[]).map((w) => `<span class="tag">${esc(w)}</span>`).join("")}</div>` : ""}
+          ${(o as any).notatkaMeczu ? `<div class="sub">${esc((o as any).notatkaMeczu)}</div>` : ""}
+        </div>
+      </div>` : ""}
+
+    ${wystawione.length ? `
+      <div class="section">
         <span class="label">Oceny obserwacji</span>
         <div class="card">
           ${wystawione.map((k) => `
@@ -963,6 +1024,26 @@ function viewPodglad(): string {
 
     <button class="btn ghost" data-act="podglad-ocen">Popraw oceny</button>
     <button class="btn ghost" data-act="go-dzis">Wróć do listy</button>`;
+}
+
+// Po gwizdku warto widzieć, kto ma już ocenę ze składu — inaczej łatwo ocenić kogoś dwa razy
+// albo pominąć zmiennika, który wszedł na dziesięć minut.
+function ocenieniZeSkladu(obs?: Observation): string {
+  const sklad = (obs as (Observation & { skladMeczu?: Sklad }) | undefined)?.skladMeczu;
+  if (!sklad) return "";
+  const lista: string[] = [];
+  STRONY.forEach((strona) => {
+    (sklad[strona]?.zawodnicy || []).forEach((z) => {
+      const ma = z.ocena && [...OCENA_MAPY, ...OCENA_GLOWA.map((f) => f.key)].some((k) => Number(z.ocena![k]) > 0);
+      if (ma || z.wyrozniony) lista.push((z.wyrozniony ? "★ " : "") + kluczZawodnika(z));
+    });
+  });
+  if (!lista.length) return "";
+  return `
+    <div class="section">
+      <span class="label">Ze składu · ${lista.length}</span>
+      <p class="hint" style="margin:0;">${lista.map(esc).join(" · ")}</p>
+    </div>`;
 }
 
 function viewBaza(): string {
@@ -1208,14 +1289,34 @@ function finishLive() {
   toast("Zdarzenia zapisane — wystaw oceny");
 }
 
+// Treść pól tekstowych ekranu oceny żyje w DOM — przed przerysowaniem trzeba ją przepisać
+// do stanu, inaczej znika przy pierwszym dotknięciu kropki.
+function zabezpieczOcene() {
+  if (!ocena) return;
+  ocena.description = $<HTMLTextAreaElement>("o-desc")?.value ?? ocena.description;
+  ocena.setPieceComment = $<HTMLTextAreaElement>("o-sfg")?.value ?? ocena.setPieceComment;
+  const notatka = $<HTMLTextAreaElement>("o-mecz-notatka");
+  const obs = cache.observations.find((x) => x.id === ocena!.observationId) as (Observation & { notatkaMeczu?: string }) | undefined;
+  if (notatka && obs) obs.notatkaMeczu = notatka.value;
+}
+
 function saveOcena() {
   if (!ocena) return;
   const obs = cache.observations.find((o) => o.id === ocena!.observationId);
   if (!obs) { toast("Nie znaleziono obserwacji"); return; }
 
   const wystawione = RATING_KEYS.filter((k) => ocena!.ratings[k] > 0);
-  if (!wystawione.length) { toast("Wystaw przynajmniej jedną ocenę atrybutu"); return; }
 
+  // Przy JEDNEJ OBSERWACJI NA MECZ oceny indywidualne powstają przy składzie, a nie tutaj —
+  // wymaganie atrybutu na poziomie obserwacji blokowałoby zapis meczu, w którym oceniono
+  // trzech zmienników i poziom spotkania. Wystarczy, że cokolwiek zostało wypełnione.
+  const o = cache.observations.find((x) => x.id === ocena!.observationId) as (Observation & { poziomMeczu?: number; warunki?: string[]; notatkaMeczu?: string; skladMeczu?: Sklad }) | undefined;
+  const cosZeSkladu = STRONY.some((strona) => (o?.skladMeczu?.[strona]?.zawodnicy || [])
+    .some((z) => z.wyrozniony || z.notatka || (z.ocena && Object.values(z.ocena).some((n) => Number(n) > 0))));
+  const cosJest = wystawione.length || o?.poziomMeczu || (o?.warunki || []).length || o?.notatkaMeczu || cosZeSkladu;
+  if (!cosJest) { toast("Nie ma czego zapisać — wystaw ocenę albo opisz mecz"); return; }
+
+  zabezpieczOcene();
   const descEl = $<HTMLTextAreaElement>("o-desc");
   const sfgEl = $<HTMLTextAreaElement>("o-sfg");
   const description = descEl?.value.trim() || "";
@@ -1441,6 +1542,15 @@ document.addEventListener("click", (e) => {
 
     case "otworz-zawodnika": ocenianyZawodnik = Number(el.dataset.i); render(); break;
 
+    // ZMIANA W SKŁADZIE. Po zmianie zawodnika na planszy stał ten z pierwszego składu i nie było
+    // jak ocenić tego, który wszedł. Wstawienie kogoś na zajętą pozycję zdejmuje z niej poprzednika,
+    // ale jego oceny i notatki ZOSTAJĄ przy nim — zszedł z boiska, nie z obserwacji.
+    case "zmien-na-pozycji":
+      obsadzanaPozycja = Number(el.dataset.numer);
+      ocenianyZawodnik = null;
+      render();
+      break;
+
     case "zamknij-zawodnika": {
       zabezpieczNotatke();
       const dane = biezacyObsSklad();
@@ -1463,6 +1573,17 @@ document.addEventListener("click", (e) => {
     }
 
     case "dyktuj-notatke": dictate("notatka-zawodnika", "dyktuj-btn"); break;
+
+    case "noga": {
+      zabezpieczNotatke();
+      const dane = biezacyObsSklad();
+      const z = dane?.strona.zawodnicy[ocenianyZawodnik ?? -1];
+      if (!dane || !z) break;
+      z.noga = z.noga === v ? undefined : v;
+      saveObservation(dane.obs);
+      render();
+      break;
+    }
 
     case "wyroznij": {
       if (!live) break;
@@ -1507,6 +1628,16 @@ document.addEventListener("click", (e) => {
     case "finish": finishLive(); break;
 
     case "rate": {
+      if (el.dataset.host === "mecz") {
+        const obs = cache.observations.find((x) => x.id === ocena?.observationId) as (Observation & { poziomMeczu?: number }) | undefined;
+        if (!obs) break;
+        const wartosc = Number(v);
+        obs.poziomMeczu = obs.poziomMeczu === wartosc ? undefined : wartosc;
+        zabezpieczOcene();
+        saveObservation(obs);
+        render();
+        break;
+      }
       if (el.dataset.host === "mapa") {
         zabezpieczNotatke();
         const dane = biezacyObsSklad();
@@ -1533,18 +1664,28 @@ document.addEventListener("click", (e) => {
       render();
       break;
     }
+    case "warunki": {
+      const obs = cache.observations.find((x) => x.id === ocena?.observationId) as (Observation & { warunki?: string[] }) | undefined;
+      if (!obs) break;
+      const lista = obs.warunki || [];
+      // Wielokrotny wybór: deszcz z silnym wiatrem to inny mecz niż sam deszcz.
+      obs.warunki = lista.includes(v!) ? lista.filter((x) => x !== v) : [...lista, v!];
+      zabezpieczOcene();
+      saveObservation(obs);
+      render();
+      break;
+    }
+
     case "persp":
       if (!ocena) break;
       ocena.perspektywa = ocena.perspektywa === v ? "" : v!;
-      ocena.description = $<HTMLTextAreaElement>("o-desc")?.value ?? ocena.description;
-      ocena.setPieceComment = $<HTMLTextAreaElement>("o-sfg")?.value ?? ocena.setPieceComment;
+      zabezpieczOcene();
       render();
       break;
     case "status":
       if (!ocena) break;
       ocena.status = ocena.status === v ? "" : v!;
-      ocena.description = $<HTMLTextAreaElement>("o-desc")?.value ?? ocena.description;
-      ocena.setPieceComment = $<HTMLTextAreaElement>("o-sfg")?.value ?? ocena.setPieceComment;
+      zabezpieczOcene();
       render();
       break;
     case "theme": toggleTheme(); break;
