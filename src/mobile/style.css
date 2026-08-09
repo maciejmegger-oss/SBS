@@ -414,3 +414,14 @@ textarea{resize:vertical; min-height:84px;}
   position:absolute; top:4px; right:5px; width:6px; height:6px; border-radius:50%;
   background:var(--good);
 }
+
+/* Wiersz składu z osobnym kasowaniem. Przycisk usuwania stoi obok, a nie w środku wiersza:
+   zagnieżdżanie przycisku w przycisku jest niepoprawne i na telefonie kończy się tym, że
+   dotknięcie krzyżyka wyróżnia zawodnika zamiast go usunąć. */
+.sklad-wiersz{display:flex; gap:6px; align-items:stretch; margin-bottom:6px;}
+.sklad-wiersz .sklad-row{flex:1; margin-bottom:0;}
+.sklad-del{
+  width:46px; flex-shrink:0; border-radius:10px;
+  background:var(--surface); border:1px solid var(--border); color:var(--text-2); font-size:16px;
+}
+.sklad-del:active{background:var(--bad-bg); color:var(--bad-fg); border-color:var(--clay);}

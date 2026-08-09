@@ -492,13 +492,20 @@ function viewSklady(): string {
     if (!lista.length) return "";
     return `
       <div class="section" style="${klucz === "gospodarze" ? "border-top:none; margin-top:0; padding-top:0;" : ""}">
-        <span class="label">${esc(sklad[klucz]?.nazwa || tytul)} · ${lista.length}</span>
+        <div class="row" style="margin-bottom:6px;">
+          <span class="label" style="margin:0;">${esc(sklad[klucz]?.nazwa || tytul)} · ${lista.length}</span>
+          <button class="btn ghost small" data-act="wyczysc-sklad" data-strona="${klucz}">Wyczyść</button>
+        </div>
         ${lista.map((z, i) => `
-          <button class="sklad-row ${z.wyrozniony ? "on" : ""}" data-act="wyroznij" data-strona="${klucz}" data-i="${i}">
-            <span class="sklad-nr">${esc(z.numer || "")}</span>
-            <span class="sklad-nazwa">${esc(z.nazwa)}</span>
-            <span class="sklad-znak">${z.wyrozniony ? "★" : "☆"}</span>
-          </button>`).join("")}
+          <div class="sklad-wiersz">
+            <button class="sklad-row ${z.wyrozniony ? "on" : ""}" data-act="wyroznij" data-strona="${klucz}" data-i="${i}">
+              <span class="sklad-nr">${esc(z.numer || "")}</span>
+              <span class="sklad-nazwa">${esc(z.nazwa)}</span>
+              <span class="sklad-znak">${z.wyrozniony ? "★" : "☆"}</span>
+            </button>
+            <button class="sklad-del" data-act="usun-zawodnika" data-strona="${klucz}" data-i="${i}"
+                    aria-label="Usuń ${esc(z.nazwa)}">✕</button>
+          </div>`).join("")}
       </div>`;
   };
 
@@ -648,17 +655,73 @@ function zabezpieczNotatke() {
   if (pole && z) z.notatka = pole.value;
 }
 
-// Wklejony skład: jeden zawodnik w wierszu, numer opcjonalnie na początku.
+// ROZPOZNAWANIE WKLEJONEGO SKŁADU.
+//
+// Ze strony meczu kopiuje się nie samą listę, tylko wszystko, co stoi na drodze: godzinę,
+// wynik, nazwy zakładek („Przebieg", „Składy", „Statystyki"), nazwę klubu wersalikami.
+// Wcześniej każdy taki wiersz stawał się „zawodnikiem" i po wklejeniu strony meczu w składzie
+// lądowały trzydzieści trzy pozycje, z których żadna nie była człowiekiem.
+//
+// Rozpoznajemy więc po tym, jak wygląda nazwisko, a nie po tym, że wiersz jest niepusty:
+// musi zawierać wyraz zapisany wielką literą i dalej małymi (Kowalski, Wójcik, Żmuda-Trzebiatowski).
+// To odrzuca i „3- 1", i „BTS REKORD BIELSKO-BIAŁA", i „15:02 Y1".
+
+// Nagłówki i etykiety, które na stronach meczowych wyglądają jak nazwisko — jedno słowo
+// zapisane z wielkiej litery. Bez tej listy „Przebieg" czy „Sędzia" przechodzą przez sito.
+const NIE_ZAWODNIK = new Set([
+  "przebieg", "sklady", "skład", "składy", "szczegoly", "szczegóły", "statystyki", "sedzia",
+  "sędzia", "sedziowie", "sędziowie", "widzow", "widzów", "widzowie", "trener", "trenerzy",
+  "rezerwowi", "lawka", "ławka", "zmiany", "kartki", "gole", "bramki", "mecz", "tabela",
+  "terminarz", "komentarze", "relacja", "wynik", "stadion", "data", "godzina", "kolejka",
+  "liga", "runda", "sezon", "druzyna", "drużyna", "zawodnik", "zawodnicy", "minuta", "minuty",
+  "asysta", "asysty", "obserwator", "delegat", "widownia", "podsumowanie", "poczatek", "początek",
+]);
+
+const WIELKA_MALE = /[A-ZĄĆĘŁŃÓŚŹŻ][a-ząćęłńóśźż]{2,}/;
+
 function parsujSklad(tekst: string): SkladZawodnik[] {
-  return tekst
-    .split("\n")
-    .map((w) => w.trim())
-    .filter((w) => w.length > 1)
-    .map((w) => {
-      const m = w.match(/^(\d{1,2})[.)\s]+(.+)$/);
-      return m ? { nazwa: m[2].trim(), numer: m[1] } : { nazwa: w };
-    })
-    .filter((z) => z.nazwa.length > 1);
+  const wynik: SkladZawodnik[] = [];
+  const juzJest = new Set<string>();
+
+  for (const surowy of tekst.split("\n")) {
+    let w = surowy.trim();
+    if (w.length < 3 || w.length > 60) continue;
+
+    // Numer z początku wiersza zdejmujemy od razu — to jedyna liczba, która nas interesuje.
+    let numer: string | undefined;
+    const zNumerem = w.match(/^(\d{1,2})[.)\s]+(.+)$/);
+    if (zNumerem) { numer = zNumerem[1]; w = zNumerem[2].trim(); }
+
+    // Ogony po nazwisku: minuty, kartki, nawiasy ze zmianą.
+    w = w.replace(/\(.*?\)/g, " ").replace(/\d{1,3}\s*['’]/g, " ").replace(/\s{2,}/g, " ").trim();
+    if (w.length < 3) continue;
+
+    // Wersaliki to nazwa klubu albo nagłówek, nigdy zapis nazwiska na liście składu.
+    if (w === w.toUpperCase()) continue;
+    if (!WIELKA_MALE.test(w)) continue;
+    if (/\d{1,2}:\d{2}/.test(w)) continue;                    // godzina
+    if (/^\d+\s*[-–—]\s*\d+$/.test(w)) continue;              // wynik
+
+    const slowa = w.split(/\s+/);
+    if (slowa.length > 4) continue;                            // zdanie, nie nazwisko
+
+    // Etykietę rozpoznajemy po PIERWSZYM słowie, nie po całym wierszu: „Widzów: 1200" i
+    // „Trener Nowak" wyglądają jak nazwisko z dopiskiem, a nagłówkiem są tak samo jak samo
+    // „Widzów". Interpunkcję z końca słowa zdejmujemy, bo dwukropek przyklejony do etykiety
+    // wystarczał, żeby ominęła listę.
+    const pierwsze = slowa[0].replace(/[.:,;)\]]+$/, "").toLowerCase();
+    if (NIE_ZAWODNIK.has(pierwsze)) continue;
+
+    // Liczba trzycyfrowa i dłuższa nie występuje w nazwisku — numer z początku wiersza już
+    // zdjęliśmy, więc to zawsze frekwencja, rok albo identyfikator.
+    if (/\d{3,}/.test(w)) continue;
+
+    const klucz = w.toLowerCase();
+    if (juzJest.has(klucz)) continue;
+    juzJest.add(klucz);
+    wynik.push(numer ? { nazwa: w, numer } : { nazwa: w });
+  }
+  return wynik;
 }
 
 function skala(host: string, key: string, label: string, value: number, max: number): string {
@@ -1133,6 +1196,36 @@ document.addEventListener("click", (e) => {
     }
     case "pol": polarity = Number(v) === -1 ? -1 : 1; render(); break;
     case "live-tab": liveTab = v === "sklady" ? "sklady" : "zdarzenia"; render(); break;
+    case "usun-zawodnika": {
+      if (!live) break;
+      const obs = cache.observations.find((o) => o.id === live!.observationId) as (Observation & { skladMeczu?: Sklad }) | undefined;
+      const lista = obs?.skladMeczu?.[el.dataset.strona as "gospodarze" | "goscie"]?.zawodnicy;
+      if (!obs || !lista) break;
+      // Bez pytania: pojedynczy wiersz to drobiazg, a przy trzydziestu śmieciach do skasowania
+      // potwierdzanie każdego z osobna byłoby gorsze niż sam problem.
+      lista.splice(Number(el.dataset.i), 1);
+      saveObservation(obs);
+      render();
+      break;
+    }
+
+    case "wyczysc-sklad": {
+      if (!live) break;
+      const obs = cache.observations.find((o) => o.id === live!.observationId) as (Observation & { skladMeczu?: Sklad }) | undefined;
+      const strona = el.dataset.strona as "gospodarze" | "goscie";
+      const ile = obs?.skladMeczu?.[strona]?.zawodnicy.length || 0;
+      if (!obs || !ile) break;
+      // Tu pytamy — to kasuje razem z wyróżnieniami, ocenami i ustawieniem na planszy.
+      if (!window.confirm(`Usunąć cały skład (${ile})? Zniknie razem z wyróżnieniami i ocenami.`)) break;
+      delete obs.skladMeczu![strona];
+      saveObservation(obs);
+      ocenianyZawodnik = null;
+      obsadzanaPozycja = null;
+      render();
+      toast("Skład usunięty");
+      break;
+    }
+
     case "sklad-widok": skladWidok = v === "mapa" ? "mapa" : "lista"; ocenianyZawodnik = null; obsadzanaPozycja = null; render(); break;
     case "sklad-strona": skladStrona = v === "goscie" ? "goscie" : "gospodarze"; ocenianyZawodnik = null; obsadzanaPozycja = null; render(); break;
 
