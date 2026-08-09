@@ -503,8 +503,10 @@ function viewSklady(): string {
         </div>
         ${lista.map((z, i) => `
           <div class="sklad-wiersz">
+            <input class="sklad-nr-pole" data-numer-strona="${klucz}" data-numer-i="${i}"
+                   value="${esc(z.numer || "")}" placeholder="—"
+                   inputmode="numeric" maxlength="2" aria-label="Numer: ${esc(z.nazwa)}">
             <button class="sklad-row ${z.wyrozniony ? "on" : ""}" data-act="wyroznij" data-strona="${klucz}" data-i="${i}">
-              <span class="sklad-nr">${esc(z.numer || "")}</span>
               <span class="sklad-nazwa">${esc(z.nazwa)}</span>
               <span class="sklad-znak">${z.wyrozniony ? "★" : "☆"}</span>
             </button>
@@ -1484,6 +1486,22 @@ document.addEventListener("blur", (e) => {
 }, true);
 
 document.addEventListener("change", (e) => {
+  const pole = e.target as HTMLInputElement;
+  if (pole.dataset.numerStrona) {
+    // Numeru nie zgadnie żaden parser we wszystkich układach — bywa w osobnej komórce, bywa
+    // przy ikonie gola albo kartki, bywa go po prostu brak. Dlatego da się go dopisać ręcznie,
+    // zamiast kasować zawodnika i wklejać skład od nowa.
+    if (!live) return;
+    const obs = cache.observations.find((o) => o.id === live!.observationId) as (Observation & { skladMeczu?: Sklad }) | undefined;
+    const z = obs?.skladMeczu?.[pole.dataset.numerStrona as "gospodarze" | "goscie"]?.zawodnicy[Number(pole.dataset.numerI)];
+    if (!obs || !z) return;
+    const nowy = pole.value.replace(/\D/g, "").slice(0, 2);
+    if (nowy) z.numer = nowy; else delete z.numer;
+    saveObservation(obs);
+    render();
+    return;
+  }
+
   const el = e.target as HTMLSelectElement;
   if (el.id !== "wybor-formacji") return;
   const dane = biezacyObsSklad();
