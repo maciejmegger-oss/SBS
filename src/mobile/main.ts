@@ -339,6 +339,9 @@ function viewLive(): string {
       <div class="clock-btns">
         <button class="clock-btn ${live.running ? "run" : ""}" data-act="clock-toggle">${live.running ? "Pauza" : "Start"}</button>
         ${nastepny ? `<button class="clock-btn" data-act="next-period">${esc(nastepny.label)}</button>` : ""}
+        ${/* Zerowanie pokazujemy TYLKO przy zatrzymanym zegarze, który zdążył coś naliczyć.
+              W trakcie gry ten przycisk nie ma po co istnieć, a stoi tuż obok pauzy. */
+          !live.running && secs > 0 ? '<button class="clock-btn" data-act="clock-reset">Zeruj</button>' : ""}
       </div>
     </div>
 
@@ -749,6 +752,18 @@ document.addEventListener("click", (e) => {
       else { live.running = true; live.startedAt = Date.now(); }
       setLive(live); render();
       break;
+    // Zegar puszczony przed pierwszym gwizdkiem — przy sprawdzaniu panelu albo przez pomyłkę —
+    // przesuwał minuty WSZYSTKICH zdarzeń do końca meczu, bo minuta liczy się od jego startu.
+    // Poza przejściem do kolejnej połowy nie było czego cofnąć. Zdarzenia zostają nietknięte:
+    // zerujemy sam czas.
+    case "clock-reset":
+      if (!live) break;
+      if (!window.confirm("Wyzerować zegar? Zarejestrowane zdarzenia zostają.")) break;
+      live.seconds = 0; live.running = false; live.startedAt = null;
+      setLive(live); render();
+      toast("Zegar wyzerowany");
+      break;
+
     case "next-period": {
       if (!live) break;
       const nast = PERIODS.find((p) => p.n === ((live!.half + 1) as Period));
