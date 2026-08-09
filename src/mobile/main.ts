@@ -10,7 +10,7 @@ import { currentUser, signIn, signOut, requestPasswordReset } from "../data/auth
 import {
   uid, getCache, refreshCache, patchCache, flushQueue, queueLength,
   saveObservation, saveReport, savePlayerStatus, saveLiveEvents,
-  getLive, setLive, getScout, setScout,
+  getLive, setLive, getScout, setScout, zarchiwizujZdarzenia, zdarzeniaObserwacji,
   type Cache, type LiveEvent, type LiveState, type Period,
 } from "./db";
 import type { Observation, Report } from "../types";
@@ -164,7 +164,8 @@ function toast(msg: string) {
 // Stan aplikacji
 // ---------------------------------------------------------------------------
 
-type ViewName = "dzis" | "live" | "ocena" | "baza" | "nowa";
+type ViewName = "dzis" | "live" | "ocena" | "baza" | "nowa" | "podglad";
+let podgladObsId: string | null = null;
 
 let cache: Cache = getCache();
 let view: ViewName = "dzis";
@@ -262,21 +263,23 @@ function viewDzis(): string {
     const trwa = live && live.observationId === o.id;
     const dzis = o.date === today;
     return `
-    <div class="card ${trwa ? "selected" : ""}">
+    <div class="card obs-card ${trwa ? "selected" : ""}">
       <div class="row">
-        <div>
+        <div style="min-width:0;">
           <div class="name">${esc(o.match || "Mecz bez nazwy")}</div>
-          <div class="sub">${esc(o.date)}${o.matchTime ? " · " + esc(o.matchTime) : ""}${o.location ? " · " + esc(o.location) : ""}</div>
+          <div class="sub" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(o.date)}${o.matchTime ? " · " + esc(o.matchTime) : ""}${o.location ? " · " + esc(o.location) : ""}</div>
         </div>
         <span class="tag ${trwa ? "live" : oceniona ? "done" : ""}">${trwa ? "W toku" : oceniona ? "Oceniona" : dzis ? "Dziś" : "Plan"}</span>
       </div>
-      <div class="sub" style="margin-top:8px;">
-        ${o.playerId ? "Obserwowany: <strong style=\"color:var(--chalk)\">" + esc(playerLabel(o.playerId)) + "</strong>" : "Obserwacja zespołu"}
+      <div class="sub" style="margin-top:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+        ${o.playerId ? "<strong style=\"color:var(--text-strong)\">" + esc(playerLabel(o.playerId)) + "</strong>" : "Obserwacja zespołu"}
         ${o.scout ? " · " + esc(o.scout) : ""}
       </div>
       <div style="display:flex; gap:8px;">
-        <button class="btn ${trwa ? "" : "ghost"}" data-act="start-live" data-id="${esc(o.id)}">${trwa ? "Wróć do meczu" : "Rozpocznij"}</button>
-        <button class="btn ghost" data-act="open-ocena" data-id="${esc(o.id)}">Oceń</button>
+        <button class="btn ${trwa ? "" : "ghost"}" data-act="start-live" data-id="${esc(o.id)}">${trwa ? "Wróć" : "Rozpocznij"}</button>
+        ${oceniona
+          ? `<button class="btn ghost" data-act="podglad" data-id="${esc(o.id)}">Otwórz</button>`
+          : `<button class="btn ghost" data-act="open-ocena" data-id="${esc(o.id)}">Oceń</button>`}
       </div>
     </div>`;
   };
@@ -870,6 +873,98 @@ function viewOcena(): string {
     <p class="hint" style="text-align:center; margin-top:8px;">Bez zasięgu trafi do kolejki i pójdzie samo.</p>`;
 }
 
+// ---------------------------------------------------------------------------
+// Zakończona obserwacja
+// ---------------------------------------------------------------------------
+//
+// Po zapisaniu ocen dorobek meczu znikał z telefonu: stan meczu był kasowany, a wejścia w
+// gotową obserwację nie było. Dane szły do bazy, ale scout tego nie widział — a to jest
+// dokładnie ta chwila, w której chce się jeszcze raz spojrzeć na to, co się zapisało.
+function viewPodglad(): string {
+  const obs = cache.observations.find((o) => o.id === podgladObsId) as (Observation & { skladMeczu?: Sklad }) | undefined;
+  if (!obs) return '<h2>Obserwacja</h2><div class="empty">Nie znaleziono tej obserwacji.</div>';
+
+  const oceny = (obs.ratings || {}) as Record<string, number>;
+  const wystawione = RATING_KEYS.filter((k) => Number(oceny[k]) > 0);
+  const raport = cache.reports
+    .filter((r) => r.date === obs.date && (!obs.playerId || r.playerId === obs.playerId))
+    .slice(-1)[0];
+  const zdarzenia = zdarzeniaObserwacji(obs.id);
+
+  // Zestawienie zdarzeń wg zawodnika — to jest zapłata za stukanie w kafle w trakcie meczu.
+  const wgZawodnika = new Map<string, Map<string, number>>();
+  zdarzenia.forEach((e) => {
+    const kto = e.zawodnik || "Zespół";
+    if (!wgZawodnika.has(kto)) wgZawodnika.set(kto, new Map());
+    const licznik = wgZawodnika.get(kto)!;
+    const klucz = e.label + (e.quality === 1 ? " +" : " −");
+    licznik.set(klucz, (licznik.get(klucz) || 0) + 1);
+  });
+
+  const skladHtml = STRONY.map((strona) => {
+    const dane = obs.skladMeczu?.[strona];
+    const oznaczeni = (dane?.zawodnicy || []).filter((z) => z.wyrozniony || z.pozycja || z.notatka ||
+      (z.ocena && OCENA_MAPY.some((k) => Number(z.ocena![k]) > 0)));
+    if (!oznaczeni.length) return "";
+    return `
+      <div class="section">
+        <span class="label">${esc(dane?.nazwa || strona)}${dane?.formacja ? " · " + esc(dane.formacja) : ""}</span>
+        ${oznaczeni.map((z) => `
+          <div class="card" style="padding:11px 12px;">
+            <div class="row">
+              <div class="name" style="font-size:15px;">${z.wyrozniony ? "★ " : ""}${esc(kluczZawodnika(z))}</div>
+              ${z.pozycja ? `<span class="tag">${esc(POZYCJE[z.pozycja])}</span>` : ""}
+            </div>
+            ${z.ocena && OCENA_MAPY.some((k) => Number(z.ocena![k]) > 0)
+              ? `<div class="sub" style="margin-top:5px; font-family:var(--data);">${OCENA_MAPY
+                  .filter((k) => Number(z.ocena![k]) > 0)
+                  .map((k) => RATING_LABELS[k] + " " + z.ocena![k]).join(" · ")}</div>` : ""}
+            ${z.notatka ? `<div class="sub" style="margin-top:5px;">${esc(z.notatka)}</div>` : ""}
+          </div>`).join("")}
+      </div>`;
+  }).join("");
+
+  return `
+    <h2>${esc(obs.match || "Obserwacja")}</h2>
+    <p class="hint">${esc(obs.date)}${obs.matchTime ? " · " + esc(obs.matchTime) : ""}${obs.scout ? " · " + esc(obs.scout) : ""}</p>
+
+    ${wystawione.length ? `
+      <div class="section" style="border-top:none; margin-top:0; padding-top:0;">
+        <span class="label">Oceny obserwacji</span>
+        <div class="card">
+          ${wystawione.map((k) => `
+            <div class="row" style="margin-bottom:4px;">
+              <span class="sub">${esc(RATING_LABELS[k])}</span>
+              <strong style="font-family:var(--data); color:var(--accent-fg);">${oceny[k]}/10</strong>
+            </div>`).join("")}
+        </div>
+      </div>` : ""}
+
+    ${raport?.description || raport?.perspektywa ? `
+      <div class="section">
+        <span class="label">Raport</span>
+        <div class="card">
+          ${raport.perspektywa ? `<div style="margin-bottom:6px;"><span class="tag">${esc(raport.perspektywa)}</span></div>` : ""}
+          ${raport.description ? `<div class="sub">${esc(raport.description)}</div>` : ""}
+        </div>
+      </div>` : ""}
+
+    ${wgZawodnika.size ? `
+      <div class="section">
+        <span class="label">Zdarzenia · ${zdarzenia.length}</span>
+        ${[...wgZawodnika.entries()].map(([kto, licznik]) => `
+          <div class="card" style="padding:11px 12px;">
+            <div class="name" style="font-size:15px;">${esc(kto)}</div>
+            <div class="sub" style="margin-top:5px;">${[...licznik.entries()].map(([co, ile]) => `${esc(co)} ${ile}`).join(" · ")}</div>
+          </div>`).join("")}
+      </div>` : ""}
+
+    ${skladHtml}
+
+    <button class="btn ghost" data-act="podglad-ocen">Popraw oceny</button>
+    <button class="btn ghost" data-act="go-dzis">Wróć do listy</button>`;
+}
+
 function viewBaza(): string {
   const q = searchQuery.trim().toLowerCase();
   const lista = (q
@@ -1021,6 +1116,7 @@ function render() {
     view === "nowa" ? viewNowa() :
     view === "live" ? viewLive() :
     view === "ocena" ? viewOcena() :
+    view === "podglad" ? viewPodglad() :
     viewBaza();
 
   app.innerHTML = `
@@ -1103,6 +1199,7 @@ function addEvent(key: string) {
 function finishLive() {
   if (!live) return;
   saveLiveEvents(live.observationId, live.events);
+  zarchiwizujZdarzenia(live.observationId, live.events);
   startOcena(live.observationId);
   live.running = false;
   setLive(live);
@@ -1160,6 +1257,9 @@ function saveOcena() {
 
   if (live && live.observationId === ocena.observationId) {
     saveLiveEvents(live.observationId, live.events);
+    // Oś zdarzeń zostaje w telefonie po skasowaniu stanu meczu — inaczej cały dorobek meczu
+    // znikał z ekranu w chwili zapisania ocen, choć w bazie był.
+    zarchiwizujZdarzenia(live.observationId, live.events);
     live = null;
     setLive(null);
   }
@@ -1240,6 +1340,8 @@ document.addEventListener("click", (e) => {
     case "go-nowa": view = "nowa"; render(); break;
     case "start-live": beginLive(el.dataset.id!); break;
     case "open-ocena": startOcena(el.dataset.id!); view = "ocena"; render(); break;
+    case "podglad": podgladObsId = el.dataset.id!; view = "podglad"; render(); break;
+    case "podglad-ocen": startOcena(podgladObsId!); view = "ocena"; render(); break;
     case "save-nowa": saveNowa(); break;
 
     case "clock-toggle":

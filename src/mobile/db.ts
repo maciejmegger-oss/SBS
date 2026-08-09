@@ -52,6 +52,7 @@ const LS = {
   cache: "sbs-m:cache",          // kopia bazy do pracy offline
   queue: "sbs-m:queue",          // zadania czekające na sieć
   live: "sbs-m:live",            // stan trwającej obserwacji (zdarzenia, zegar)
+  archiwum: "sbs-m:zdarzenia",   // zdarzenia zakończonych meczów, wg obserwacji
   scout: "sbs-m:scout",          // ostatnio wybrany scout
 };
 
@@ -380,6 +381,25 @@ export interface LiveState {
 
 export const getLive = (): LiveState | null => readLS<LiveState | null>(LS.live, null);
 export const setLive = (s: LiveState | null) => (s ? writeLS(LS.live, s) : localStorage.removeItem(LS.live));
+
+// ZDARZENIA ZAKOŃCZONYCH MECZÓW.
+//
+// Po zapisaniu ocen stan meczu jest kasowany — i razem z nim znikała z telefonu cała oś zdarzeń.
+// Dane szły do bazy, ale panel nie miał ich skąd odczytać, więc z perspektywy scouta przepadał
+// dorobek całego meczu. Trzymamy je więc osobno, pod identyfikatorem obserwacji, żeby dało się
+// do nich wrócić — także bez zasięgu, w drodze powrotnej ze stadionu.
+export const archiwumZdarzen = (): Record<string, LiveEvent[]> =>
+  readLS<Record<string, LiveEvent[]>>(LS.archiwum, {});
+
+export const zdarzeniaObserwacji = (observationId: string): LiveEvent[] =>
+  archiwumZdarzen()[observationId] || [];
+
+export function zarchiwizujZdarzenia(observationId: string, events: LiveEvent[]): void {
+  if (!events.length) return;
+  const wszystkie = archiwumZdarzen();
+  wszystkie[observationId] = events;
+  writeLS(LS.archiwum, wszystkie);
+}
 
 export const getScout = (): string => localStorage.getItem(LS.scout) || "";
 export const setScout = (s: string) => localStorage.setItem(LS.scout, s);
