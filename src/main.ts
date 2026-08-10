@@ -7168,31 +7168,55 @@ function parseSquadKratka(rawText){
 // odróżnia zawodnika od nagłówków i stopki, w których też trafiają się dwa słowa z wielkiej litery
 // („Nazwa drużyny", „Akademia Juniora"). Sprawdzamy obie strony, bo przy kopiowaniu bez formatowania
 // znika czasem jedna z linii.
+// Znacznik traktujemy jako SEPARATOR, a nie jako sąsiada nazwiska.
+//
+// Poprzednia wersja wymagała, żeby nazwisko stało dokładnie w następnej linijce po znaczniku —
+// i nie zadziałała, choć znacznik w tekście był. Nie wiadomo z góry, co ŁNP wstawi pomiędzy:
+// numer koszulki, pustą linię, obrazek. Dlatego po każdym znaczniku szukamy PIERWSZEJ linii,
+// która wygląda na nazwisko, przeglądając kilka kolejnych i pomijając to, co nazwiskiem nie jest.
 function parseSquadLnp(rawText){
   const linie = rawText.split('\n').map(l=>l.replace(/\s+/g,' ').trim());
-  const znacznikPrzed = (i)=> /numer zawodnika pochodzi/i.test(linie[i-1] || '');
-  const znacznikPo    = (i)=> /zobacz profil zawodnika/i.test(linie[i+1] || '');
+  const smiec = (l)=> !l
+    || /zobacz profil|numer zawodnika|wi[eę]cej o klubie|nazwa dru[żz]yny|rozgrywki|sezon|^\d+$/i.test(l)
+    || /https?:\/\//i.test(l)
+    || isSquadPositionLine(l);
+
+  // Nazwisko w wykazie ŁNP bywa opakowane w odnośnik, więc zdejmujemy nawiasy Markdowna
+  // i strzałkę, którą serwis dokleja do linków.
+  const oczysc = (l)=> l.replace(/\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/[➔→»]/g,'').replace(/^[\s*\-\d.]+/,'').trim();
+
   const znalezieni = [];
-  for(let i=0;i<linie.length;i++){
-    const l = linie[i];
-    if(!l || !(znacznikPrzed(i) || znacznikPo(i))) continue;
-    // Sama linia z odnośnikiem też sąsiaduje ze znacznikiem — odsiewamy ją i nazwy pozycji.
-    if(/zobacz profil|numer zawodnika|https?:\/\//i.test(l) || isSquadPositionLine(l)) continue;
-    const nazwa = l.replace(/^\[|\]$/g,'').trim();
-    if(!WYGLADA_NA_NAZWISKO.test(nazwa)) continue;
-    const slowa = nazwa.split(/\s+/);
-    znalezieni.push({
-      ok:true, firstName: slowa[0], lastName: slowa.slice(1).join(' '),
-      position:'', birthYear:'', nationality:'', raw:nazwa,
-    });
-  }
-  return znalezieni.length >= 5 ? znalezieni : null;
+  const uzyte = new Set();
+  linie.forEach((l,i)=>{
+    if(!/numer zawodnika pochodzi/i.test(l)) return;
+    // Zaglądamy maksymalnie cztery linijki w przód — dalej to już następny zawodnik.
+    for(let j=i+1;j<Math.min(i+5,linie.length);j++){
+      if(uzyte.has(j)) continue;
+      const nazwa = oczysc(linie[j]);
+      if(smiec(nazwa) || !WYGLADA_NA_NAZWISKO.test(nazwa)) continue;
+      const slowa = nazwa.split(/\s+/);
+      znalezieni.push({
+        ok:true, firstName: slowa[0], lastName: slowa.slice(1).join(' '),
+        position:'', birthYear:'', nationality:'', raw:nazwa,
+      });
+      uzyte.add(j);
+      break;
+    }
+  });
+  return znalezieni.length >= 3 ? znalezieni : null;
 }
 
 // Punkt wejścia używany przez importer. Kolejność od najbardziej charakterystycznego układu do
 // najogólniejszego: blokowy z Transfermarktu, wykaz z ŁNP, kratka koszulek, a na końcu
 // "jedna linia = zawodnik".
 function parseSquadText(rawText){
+  // Wykaz z ŁNP rozpoznajemy PO ZNACZNIKU, zanim spróbujemy czegokolwiek innego. Parser blokowy
+  // potrafi zaczepić się o słowo „Trener" w stopce PZPN i zwrócić garść śmieci, a wtedy właściwy
+  // czytnik nigdy by nie dostał szansy — kolejność prób ma tu znaczenie.
+  if(/numer zawodnika pochodzi/i.test(rawText)){
+    const lnp = parseSquadLnp(rawText);
+    if(lnp) return lnp;
+  }
   return parseSquadBlocks(rawText)
     || parseSquadLnp(rawText)
     || parseSquadKratka(rawText)
