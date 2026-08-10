@@ -295,7 +295,7 @@ function viewDzis(): string {
     <h2>Obserwacje</h2>
     <p class="hint">Plany z SBS · od wczoraj wzwyż${cache.fetchedAt ? " · kopia z " + new Date(cache.fetchedAt).toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}</p>
     ${lista.length ? lista.map(karta).join("") : '<div class="empty">Brak zaplanowanych obserwacji.<br>Załóż nową albo odśwież kopię bazy w zakładce Baza.</div>'}
-    <button class="btn ghost" data-act="go-nowa">+ Obserwacja spoza planu</button>`;
+    <button class="btn ghost" data-act="go-nowa">+ Zaplanuj obserwację</button>`;
 }
 
 function viewNowa(): string {
@@ -309,18 +309,30 @@ function viewNowa(): string {
     .join("");
 
   return `
-    <h2>Nowa obserwacja</h2>
-    <p class="hint">Dla meczu, którego nie było w planie.</p>
+    <h2>Zaplanuj obserwację</h2>
+    <p class="hint">To samo, co „Plan Obserwacji" na komputerze — żeby dało się umówić wyjazd bez siadania do biurka.</p>
+
     <div class="field"><span class="label">Mecz (gospodarz - gość)</span>
-      <input id="n-match" placeholder="np. Chemik Bydgoszcz - Zawisza"></div>
-    <div class="field"><span class="label">Zawodnik</span>
-      <select id="n-player"><option value="">— obserwacja zespołu —</option>${players}</select></div>
-    <div class="field"><span class="label">Data</span><input type="date" id="n-date" value="${todayISO()}"></div>
-    <div class="field"><span class="label">Godzina</span><input type="time" id="n-time" value="15:00"></div>
-    <div class="field"><span class="label">Miejsce</span><input id="n-location" placeholder="np. ul. Gdańska 163, Bydgoszcz"></div>
+      <input id="n-match" placeholder="np. Chojniczanka Chojnice - Znicz Pruszków"></div>
+    <div class="grid-2">
+      <div class="field"><span class="label">Data</span><input type="date" id="n-date" value="${todayISO()}"></div>
+      <div class="field"><span class="label">Godzina</span><input type="time" id="n-time" value="17:00"></div>
+    </div>
+    <div class="field"><span class="label">Miejsce</span>
+      <input id="n-location" placeholder="np. ul. Mickiewicza 12, Chojnice"></div>
+    <div class="field"><span class="label">Zawodnik (opcjonalnie)</span>
+      <select id="n-player"><option value="">— obserwacja meczu —</option>${players}</select></div>
+    <div class="field"><span class="label">Rodzaj</span>
+      <select id="n-typ">
+        <option value="live">Live — na stadionie</option>
+        <option value="online">Online</option>
+        <option value="video">Video</option>
+      </select></div>
     <div class="field"><span class="label">Scout</span>
       ${scouts ? `<select id="n-scout">${scouts}</select>` : `<input id="n-scout" value="${esc(getScout())}" placeholder="Imię i nazwisko">`}</div>
-    <button class="btn" data-act="save-nowa">Utwórz i rozpocznij</button>
+
+    <button class="btn" data-act="save-nowa" data-start="1">Zapisz i rozpocznij teraz</button>
+    <button class="btn ghost" data-act="save-nowa">Zapisz na później</button>
     <button class="btn ghost" data-act="go-dzis">Anuluj</button>`;
 }
 
@@ -1097,55 +1109,32 @@ function ocenieniZeSkladu(obs?: Observation): string {
 }
 
 function viewBaza(): string {
-  const q = searchQuery.trim().toLowerCase();
-  const lista = (q
-    ? cache.players.filter((p) =>
-        ([p.firstName, p.lastName, clubName(p.clubId)].join(" ").toLowerCase().includes(q)))
-    : cache.players.filter((p) => p.monitored || p.status === "Do transferu")
-  ).slice(0, 30);
-
-  const srednia = (playerId: string): string => {
-    const oceny = cache.observations.filter(
-      (o) => o.playerId === playerId && o.statsFilledIn && o.ratings &&
-        RATING_KEYS.some((k) => Number((o.ratings as Record<string, number>)[k]) > 0));
-    if (!oceny.length) return "—";
-    const suma = oceny.reduce((acc, o) =>
-      acc + RATING_KEYS.reduce((a, k) => a + (Number((o.ratings as Record<string, number>)[k]) || 0), 0) / RATING_KEYS.length, 0);
-    return (suma / oceny.length).toFixed(1).replace(".", ",");
-  };
-
   const n = queueLength();
+  const ostatnia = cache.fetchedAt
+    ? new Date(cache.fetchedAt).toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+    : "brak";
+
   return `
-    <h2>Baza</h2>
-    <p class="hint">${q ? "Wyniki wyszukiwania" : "Monitoring i zawodnicy do transferu"} · ${cache.players.length} zawodników w kopii</p>
-    <div class="field"><input id="search" placeholder="Szukaj zawodnika lub klubu…" value="${esc(searchQuery)}"></div>
-    ${lista.map((p) => `
-      <div class="card">
-        <div class="row">
-          <div>
-            <div class="name">${esc(p.firstName)} ${esc(p.lastName)}</div>
-            <div class="sub">${esc(clubName(p.clubId))}${p.position ? " · " + esc(p.position) : ""}${p.birthYear ? " · " + esc(p.birthYear) : ""}</div>
-          </div>
-          <div style="text-align:right;">
-            <div style="font-family:var(--data); color:var(--gold-soft); font-size:17px;">${srednia(p.id)}</div>
-            <div class="sub" style="font-size:11px;">średnia</div>
-          </div>
-        </div>
-        ${p.status ? `<div style="margin-top:8px;"><span class="tag">${esc(p.status)}</span></div>` : ""}
-      </div>`).join("") || '<div class="empty">Brak wyników.</div>'}
+    <h2>Ustawienia</h2>
+    <p class="hint">Stan aplikacji i kopii danych w telefonie.</p>
+
+    <div class="card">
+      <div class="row"><span class="sub">Czeka na wysyłkę</span>
+        <strong style="font-family:var(--data); color:${n ? "var(--accent-fg)" : "var(--good-fg)"};">${n}</strong></div>
+      <div class="row" style="margin-top:6px;"><span class="sub">Kopia bazy</span>
+        <strong style="font-family:var(--data); font-size:12.5px; color:var(--text-2);">${esc(ostatnia)}</strong></div>
+      <div class="row" style="margin-top:6px;"><span class="sub">Zawodników w kopii</span>
+        <strong style="font-family:var(--data); font-size:12.5px; color:var(--text-2);">${cache.players.length}</strong></div>
+      <div class="row" style="margin-top:6px;"><span class="sub">Wersja panelu</span>
+        <strong style="font-family:var(--data); font-size:12.5px; color:var(--text-2);">${esc(WERSJA_PANELU)}</strong></div>
+      <button class="btn ghost" data-act="refresh">Odśwież kopię bazy</button>
+      ${n ? '<button class="btn ghost" data-act="flush">Wyślij teraz</button>' : ""}
+    </div>
+
+    <p class="hint">Kopia bazy to zawodnicy, kluby i plany trzymane w telefonie. Z niej bierze się
+    kadra klubu przy składzie — odśwież ją przy zasięgu, zanim pojedziesz na mecz.</p>
 
     <div class="section">
-      <span class="label">Synchronizacja</span>
-      <div class="card">
-        <div class="row"><span class="sub">Czeka na wysyłkę</span>
-          <strong style="font-family:var(--data); color:${n ? "var(--gold-soft)" : "#8FD3A2"};">${n}</strong></div>
-        <div class="row" style="margin-top:6px;"><span class="sub">Wersja panelu</span>
-          <strong style="font-family:var(--data); font-size:12.5px; color:var(--text-2);">${esc(WERSJA_PANELU)}</strong></div>
-        <div class="row" style="margin-top:6px;"><span class="sub">Kopia bazy</span>
-          <strong style="font-family:var(--data); font-size:13px; color:var(--muted);">${cache.fetchedAt ? new Date(cache.fetchedAt).toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "brak"}</strong></div>
-        <button class="btn ghost" data-act="refresh">Odśwież kopię bazy</button>
-        ${n ? '<button class="btn ghost" data-act="flush">Wyślij teraz</button>' : ""}
-      </div>
       ${zalogowany
         ? '<button class="btn danger" data-act="logout">Wyloguj się</button>'
         : '<button class="btn ghost" data-act="go-login">Zaloguj się</button>'}
@@ -1224,11 +1213,16 @@ const WERSJA_PANELU = typeof __WERSJA__ === "string" ? __WERSJA__ : "wersja robo
 const ICON_SUN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.1 5.1l1.4 1.4M17.5 17.5l1.4 1.4M18.9 5.1l-1.4 1.4M6.5 17.5l-1.4 1.4"/></svg>';
 const ICON_MOON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></svg>';
 
+// TRZY ZAKŁADKI, NIE CZTERY.
+//
+// „Ocena" i „Baza" zajmowały połowę paska, a wchodziło się w nie rzadko albo wcale: ocena ma sens
+// wyłącznie po gwizdku konkretnego meczu i dojście do niej prowadzi przez obserwację, a nie przez
+// stały przycisk. Wyszukiwarka bazy okazała się w terenie zbędna — zawodnika szuka się przy
+// planowaniu i przy składzie, czyli tam, gdzie jest do czegoś potrzebny.
 const TABS: { id: ViewName; label: string; icon: string }[] = [
   { id: "dzis", label: "Obserwacje", icon: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>' },
   { id: "live", label: "Live", icon: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6"/>' },
-  { id: "ocena", label: "Ocena", icon: '<path d="M5 21V9M12 21V4M19 21v-7"/>' },
-  { id: "baza", label: "Baza", icon: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4.3-4.3"/>' },
+  { id: "baza", label: "Ustawienia", icon: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/>' },
 ];
 
 function syncPill(): string {
@@ -1423,7 +1417,7 @@ function saveOcena() {
   toast(navigator.onLine ? "Zapisano i wysłano do SBS" : "Zapisano — wyślę, gdy wróci zasięg");
 }
 
-function saveNowa() {
+function saveNowa(odRazu: boolean) {
   const match = $<HTMLInputElement>("n-match")?.value.trim() || "";
   if (!match) { toast("Podaj nazwę meczu"); return; }
   const scout = ($<HTMLInputElement | HTMLSelectElement>("n-scout")?.value || "").trim();
@@ -1438,12 +1432,15 @@ function saveNowa() {
     scout,
     ratings: {},
     statsFilledIn: false,
-    obsType: "live",
+    obsType: $<HTMLSelectElement>("n-typ")?.value || "live",
   };
   saveObservation(obs);
   cache = getCache();
-  beginLive(obs.id);
-  toast("Obserwacja utworzona");
+  if (odRazu) { beginLive(obs.id); toast("Obserwacja utworzona"); return; }
+  // Plan na później zostaje na liście — scout umawia wyjazd i wraca do niego w dniu meczu.
+  view = "dzis";
+  render();
+  toast("Zaplanowane na " + (obs.date || ""));
 }
 
 // Dyktowanie notatek. Rozpoznawanie mowy w przeglądarce wysyła dźwięk na serwer producenta,
@@ -1495,7 +1492,7 @@ document.addEventListener("click", (e) => {
     case "open-ocena": startOcena(el.dataset.id!); view = "ocena"; render(); break;
     case "podglad": podgladObsId = el.dataset.id!; view = "podglad"; render(); break;
     case "podglad-ocen": startOcena(podgladObsId!); view = "ocena"; render(); break;
-    case "save-nowa": saveNowa(); break;
+    case "save-nowa": saveNowa(el.dataset.start === "1"); break;
 
     case "clock-toggle":
       if (!live) break;

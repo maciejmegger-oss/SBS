@@ -458,3 +458,7 @@ textarea{resize:vertical; min-height:84px;}
   color:var(--text-3); font-size:14px; line-height:1;
 }
 .ev-del:active{background:var(--bad-bg); color:var(--bad-fg);}
+
+/* Dwa pola obok siebie — data i godzina zajmują razem tyle, co jedno pełne, a plan obserwacji
+   ma się mieścić na jednym ekranie. */
+.grid-2{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
