@@ -182,6 +182,7 @@ let liveTab: "zdarzenia" | "sklady" = "zdarzenia";
 // Zakładka Składy ma trzy stany: lista nazwisk, plansza z ustawieniem i panel jednego zawodnika.
 let skladWidok: "lista" | "mapa" = "lista";
 let skladStrona: "gospodarze" | "goscie" = "gospodarze";
+let wyborZKadry: "gospodarze" | "goscie" | null = null;   // otwarta lista kadry klubu z bazy
 let obsadzanaPozycja: number | null = null;   // wybrane puste pole na planszy — czeka na zawodnika
 let ocenianyZawodnik: number | null = null;   // indeks zawodnika, którego panel oceny jest otwarty
 let searchQuery = "";
@@ -401,6 +402,7 @@ function viewLive(): string {
           <span class="min">${e.minute}'</span>
           <span class="txt">${e.zawodnik ? `<strong>${esc(e.zawodnik)}</strong> · ` : ""}${esc(e.label)}${e.note ? " — " + esc(e.note) : ""}</span>
           <span class="sign">${e.quality === 1 ? "+" : "−"}</span>
+          <button class="ev-del" data-act="usun-zdarzenie" data-id="${esc(e.id)}" aria-label="Usuń zdarzenie">✕</button>
         </div>`).join("") || '<div class="empty">Jeszcze nic nie zarejestrowano.</div>'}
     </div>`}`;
 }
@@ -426,6 +428,9 @@ interface SkladZawodnik {
   ocena?: Record<string, number>;
   notatka?: string;
   noga?: string;
+  // Wskazanie na zawodnika z bazy, gdy skład powstał z kadry klubu, a nie z wklejki. Dzięki temu
+  // oceny z trybuny da się później przypisać do prawdziwego profilu, a nie do samego nazwiska.
+  playerId?: string;
 }
 interface SkladStrona { nazwa?: string; zawodnicy: SkladZawodnik[]; formacja?: string }
 interface Sklad { gospodarze?: SkladStrona; goscie?: SkladStrona }
@@ -489,14 +494,53 @@ function druzynyZMeczu(match?: string): [string, string] {
   return [czesci[0]?.trim() || "Gospodarze", czesci[1]?.trim() || "Goście"];
 }
 
+// Klub z bazy odpowiadający nazwie drużyny z pola „Mecz". Nazwy bywają zapisane skrótowo
+// („Chojniczanka" kontra „Chojniczanka Chojnice"), więc po dokładnym trafieniu próbujemy zawierania.
+function klubZNazwy(nazwa: string) {
+  const n = nazwa.toLowerCase().trim();
+  if (!n) return null;
+  return cache.clubs.find((c) => (c.name || "").toLowerCase().trim() === n)
+    || cache.clubs.find((c) => {
+      const k = (c.name || "").toLowerCase().trim();
+      return k && (k.includes(n) || n.includes(k));
+    })
+    || null;
+}
+
 function viewSklady(): string {
   if (!live) return "";
   const obs = cache.observations.find((o) => o.id === live!.observationId);
   const sklad = skladObserwacji(live.observationId);
   const [gosp, gosc] = druzynyZMeczu(obs?.match);
 
+  // Wybór z kadry klubu — najszybsza droga, gdy zawodnicy są już w bazie. Wklejanie zostaje
+  // dla tych, których w bazie nie ma: składy pojawiają się 45 minut przed meczem, a kopiowanie
+  // ze strony wyniku, bez rezerwowych na jednym ekranie, robi się na raty i zjada ten czas.
+  if (wyborZKadry) {
+    const klub = klubZNazwy(wyborZKadry === "gospodarze" ? gosp : gosc);
+    const kadra = klub ? cache.players.filter((pl) => pl.clubId === klub.id) : [];
+    const juzWSkladzie = new Set((sklad?.[wyborZKadry]?.zawodnicy || []).map((z) => z.playerId).filter(Boolean));
+    return `
+      <div class="row" style="margin-bottom:8px;">
+        <span class="label" style="margin:0;">${esc(klub?.name || (wyborZKadry === "gospodarze" ? gosp : gosc))}</span>
+        <button class="btn ghost small" data-act="zamknij-kadre">Gotowe</button>
+      </div>
+      ${klub ? "" : '<p class="hint">Nie znalazłem tego klubu w bazie — nazwa w polu „Mecz" musi się zgadzać z nazwą klubu w SBS.</p>'}
+      ${kadra.length
+        ? kadra.slice().sort((a, b) => (a.lastName || "").localeCompare(b.lastName || "", "pl")).map((pl) => `
+            <button class="sklad-row ${juzWSkladzie.has(pl.id) ? "on" : ""}" data-act="z-kadry" data-id="${esc(pl.id)}">
+              <span class="sklad-nazwa">${esc(pl.lastName)} ${esc(pl.firstName)}</span>
+              <span class="sub" style="font-size:11.5px;">${esc(pl.position || "")}${pl.birthYear ? " · " + esc(pl.birthYear) : ""}</span>
+              <span class="sklad-znak">${juzWSkladzie.has(pl.id) ? "✓" : "+"}</span>
+            </button>`).join("")
+        : klub ? '<div class="empty">Ten klub nie ma zawodników w bazie.</div>' : ""}`;
+  }
+
   if (!sklad || !STRONY.some((s) => (sklad[s]?.zawodnicy || []).length)) {
     return `
+      <div style="display:flex; gap:6px; margin-bottom:10px;">
+        ${STRONY.map((k) => `<button class="btn ghost" style="margin-top:0;" data-act="otworz-kadre" data-strona="${k}">Kadra: ${esc(k === "gospodarze" ? gosp : gosc)}</button>`).join("")}
+      </div>
       <p class="hint">Wklej składy — po jednym zawodniku w wierszu. Numer na początku wiersza jest rozpoznawany.
       Na iPhonie tekst da się skopiować wprost ze zdjęcia: przytrzymaj palec na zrzucie ekranu i zaznacz.</p>
       <div class="field">
@@ -534,6 +578,11 @@ function viewSklady(): string {
       </div>`;
   };
 
+  const dopiszZKadry = `
+    <div style="display:flex; gap:6px; margin-bottom:8px;">
+      ${STRONY.map((k) => `<button class="btn ghost small" style="flex:1;" data-act="otworz-kadre" data-strona="${k}">+ kadra: ${esc(k === "gospodarze" ? gosp : gosc)}</button>`).join("")}
+    </div>`;
+
   const przelacznik = `
     <div class="polarity" style="margin-bottom:10px;">
       <button class="pol seg" data-act="sklad-widok" data-v="lista" aria-pressed="${skladWidok === "lista"}">Lista</button>
@@ -544,6 +593,7 @@ function viewSklady(): string {
 
   return `
     ${przelacznik}
+    ${dopiszZKadry}
     <p class="hint">Dotknij zawodnika, żeby go wyróżnić. Zaznaczenia trafiają do tej obserwacji w SBS.</p>
     ${strona("gospodarze", gosp)}
     ${strona("goscie", gosc)}`;
@@ -1279,6 +1329,8 @@ function addEvent(key: string) {
 
 function finishLive() {
   if (!live) return;
+  live.running = false;
+  void pilnujEkranu();
   saveLiveEvents(live.observationId, live.events);
   zarchiwizujZdarzenia(live.observationId, live.events);
   startOcena(live.observationId);
@@ -1598,7 +1650,7 @@ document.addEventListener("click", (e) => {
       if (!live) break;
       if (live.running) { live.seconds = liveSeconds(live); live.running = false; live.startedAt = null; }
       else { live.running = true; live.startedAt = Date.now(); }
-      setLive(live); render();
+      setLive(live); void pilnujEkranu(); render();
       break;
     // Zegar puszczony przed pierwszym gwizdkiem — przy sprawdzaniu panelu albo przez pomyłkę —
     // przesuwał minuty WSZYSTKICH zdarzeń do końca meczu, bo minuta liczy się od jego startu.
@@ -1661,7 +1713,35 @@ document.addEventListener("click", (e) => {
       break;
     }
 
-    case "sklad-widok": skladWidok = v === "mapa" ? "mapa" : "lista"; ocenianyZawodnik = null; obsadzanaPozycja = null; render(); break;
+    case "otworz-kadre": wyborZKadry = el.dataset.strona as "gospodarze" | "goscie"; render(); break;
+    case "zamknij-kadre": wyborZKadry = null; render(); break;
+
+    case "z-kadry": {
+      if (!live || !wyborZKadry) break;
+      const obs = cache.observations.find((o) => o.id === live!.observationId) as (Observation & { skladMeczu?: Sklad }) | undefined;
+      const pl = cache.players.find((x) => x.id === el.dataset.id);
+      if (!obs || !pl) break;
+      obs.skladMeczu = obs.skladMeczu || {};
+      const [ng, ns] = druzynyZMeczu(obs.match);
+      const strona = obs.skladMeczu[wyborZKadry] || { nazwa: wyborZKadry === "gospodarze" ? ng : ns, zawodnicy: [] };
+      const i = strona.zawodnicy.findIndex((z) => z.playerId === pl.id);
+      // Ponowne dotknięcie zdejmuje ze składu, ale tylko dopóki nic przy nim nie zapisano —
+      // inaczej jedno omyłkowe dotknięcie kasowałoby ocenę wystawioną w trakcie meczu.
+      if (i >= 0) {
+        const z = strona.zawodnicy[i];
+        const cosMa = z.wyrozniony || z.notatka || z.pozycja || (z.ocena && Object.values(z.ocena).some((n) => Number(n) > 0));
+        if (cosMa) { toast("Ten zawodnik ma już ocenę — usuń go krzyżykiem na liście"); break; }
+        strona.zawodnicy.splice(i, 1);
+      } else {
+        strona.zawodnicy.push({ nazwa: [pl.firstName, pl.lastName].filter(Boolean).join(" "), playerId: pl.id });
+      }
+      obs.skladMeczu[wyborZKadry] = strona;
+      saveObservation(obs);
+      render();
+      break;
+    }
+
+    case "sklad-widok": skladWidok = v === "mapa" ? "mapa" : "lista"; ocenianyZawodnik = null; obsadzanaPozycja = null; wyborZKadry = null; render(); break;
     case "sklad-strona": skladStrona = v === "goscie" ? "goscie" : "gospodarze"; ocenianyZawodnik = null; obsadzanaPozycja = null; render(); break;
 
     case "wybierz-pozycje": obsadzanaPozycja = Number(el.dataset.numer); render(); break;
@@ -1774,6 +1854,19 @@ document.addEventListener("click", (e) => {
       toast("Cofnięto: " + live.events.pop()!.label);
       setLive(live); render();
       break;
+    // „Cofnij" zdejmuje ostatnie zdarzenie, ale pomyłka sprzed dziesięciu minut zostawała na osi
+    // na zawsze — a przy tagowaniu kilku zawodników łatwo przypisać akcję nie temu, komu trzeba.
+    case "usun-zdarzenie": {
+      if (!live) break;
+      const i = live.events.findIndex((e) => e.id === el.dataset.id);
+      if (i < 0) break;
+      const usuniete = live.events.splice(i, 1)[0];
+      setLive(live);
+      render();
+      toast("Usunięto: " + usuniete.minute + "' " + usuniete.label);
+      break;
+    }
+
     case "finish": finishLive(); break;
 
     case "rate": {
@@ -1969,6 +2062,39 @@ function renderLogin(info?: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Ekran nie gaśnie w trakcie meczu
+// ---------------------------------------------------------------------------
+//
+// Telefon usypia po minucie, więc przez dziewięćdziesiąt minut scout odblokowuje go przy każdej
+// akcji — a akcja nie czeka. Blokadę trzymamy WYŁĄCZNIE gdy zegar meczu biegnie: poza tym byłaby
+// zwykłym zjadaczem baterii, której na stadionie i tak brakuje.
+//
+// System zdejmuje blokadę sam, gdy karta idzie w tło, dlatego po powrocie trzeba ją odtworzyć.
+let blokadaEkranu: { release: () => Promise<void> } | null = null;
+
+async function pilnujEkranu() {
+  const nav = navigator as Navigator & { wakeLock?: { request: (t: "screen") => Promise<any> } };
+  const powinna = !!(live && live.running);
+
+  if (powinna && !blokadaEkranu && nav.wakeLock) {
+    try {
+      blokadaEkranu = await nav.wakeLock.request("screen");
+      // Zwolniona przez system (wygaszenie, przejście w tło) — pamiętamy o tym, żeby przy
+      // powrocie poprosić o nią jeszcze raz zamiast myśleć, że wciąż działa.
+      (blokadaEkranu as any).addEventListener?.("release", () => { blokadaEkranu = null; });
+    } catch {
+      /* odmowa systemu albo brak obsługi — mecz idzie dalej, tylko ekran będzie gasł */
+    }
+    return;
+  }
+
+  if (!powinna && blokadaEkranu) {
+    try { await blokadaEkranu.release(); } catch { /* już zwolniona */ }
+    blokadaEkranu = null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Ekran powitalny
 // ---------------------------------------------------------------------------
 //
@@ -2082,6 +2208,7 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) { ukryteOd = Date.now(); return; }
 
   paintClock();
+  void pilnujEkranu();
   void flushQueue().then(refreshSyncPill);
 
   const przerwa = ukryteOd ? Date.now() - ukryteOd : 0;

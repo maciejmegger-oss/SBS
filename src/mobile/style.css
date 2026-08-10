@@ -450,3 +450,11 @@ textarea{resize:vertical; min-height:84px;}
 .obs-card .name{font-size:15px; line-height:1.25;}
 .obs-card .sub{font-size:12px; line-height:1.35;}
 .obs-card .btn{margin-top:7px; padding:9px; font-size:13px; min-height:40px;}
+
+/* Kasowanie pojedynczego zdarzenia z osi. Mały, bo oś czyta się w trakcie meczu, a nie edytuje —
+   ale musi być, bo „Cofnij" sięga tylko ostatniego wpisu. */
+.ev-del{
+  width:30px; height:30px; flex-shrink:0; border-radius:8px; margin-left:2px;
+  color:var(--text-3); font-size:14px; line-height:1;
+}
+.ev-del:active{background:var(--bad-bg); color:var(--bad-fg);}
