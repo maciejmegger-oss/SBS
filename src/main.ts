@@ -3600,7 +3600,10 @@ function leagueLogoImg(topLevel, size){
 function viewClubs(){
   if(viewingClubId) return viewClubDetail(viewingClubId);
 
-  let list = DB.clubs.slice();
+  // Alfabetycznie, po polsku — kolejność importu nie niesie żadnej informacji, a przy 18 klubach
+  // w grupie szukanie wzrokiem konkretnej nazwy w przypadkowej kolejności jest mozolne.
+  // localeCompare z 'pl' ustawia Ł po L, a nie na końcu alfabetu, jak zrobiłoby zwykłe porównanie.
+  let list = DB.clubs.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'','pl'));
   if(clubBrowse.top) list = list.filter(c=>topLevelOf(c.league)===clubBrowse.top);
   if(clubBrowse.group) list = list.filter(c=>c.league===clubBrowse.group);
 
@@ -7152,10 +7155,46 @@ function parseSquadKratka(rawText){
   return (najlepszy && najlepszy.length >= 8) ? najlepszy : null;
 }
 
+// Skład skopiowany z Łączy nas piłką.
+//
+// ŁNP powtarza przy każdym zawodniku dwie linijki i między nimi wstawia nazwisko:
+//     Numer zawodnika pochodzi z ostatniego meczu
+//     Maciej Andrzejewski
+//     Zobacz profil zawodnika ➔
+// Nazwiska NIE stoją więc obok siebie i żaden z wcześniejszych układów ich nie widział —
+// stąd „Rozpoznano 0 ze 146 linii" mimo poprawnie skopiowanej strony.
+//
+// Kotwiczymy się na tych stałych zdaniach, a nie na wyglądzie samej linii z nazwiskiem. To
+// odróżnia zawodnika od nagłówków i stopki, w których też trafiają się dwa słowa z wielkiej litery
+// („Nazwa drużyny", „Akademia Juniora"). Sprawdzamy obie strony, bo przy kopiowaniu bez formatowania
+// znika czasem jedna z linii.
+function parseSquadLnp(rawText){
+  const linie = rawText.split('\n').map(l=>l.replace(/\s+/g,' ').trim());
+  const znacznikPrzed = (i)=> /numer zawodnika pochodzi/i.test(linie[i-1] || '');
+  const znacznikPo    = (i)=> /zobacz profil zawodnika/i.test(linie[i+1] || '');
+  const znalezieni = [];
+  for(let i=0;i<linie.length;i++){
+    const l = linie[i];
+    if(!l || !(znacznikPrzed(i) || znacznikPo(i))) continue;
+    // Sama linia z odnośnikiem też sąsiaduje ze znacznikiem — odsiewamy ją i nazwy pozycji.
+    if(/zobacz profil|numer zawodnika|https?:\/\//i.test(l) || isSquadPositionLine(l)) continue;
+    const nazwa = l.replace(/^\[|\]$/g,'').trim();
+    if(!WYGLADA_NA_NAZWISKO.test(nazwa)) continue;
+    const slowa = nazwa.split(/\s+/);
+    znalezieni.push({
+      ok:true, firstName: slowa[0], lastName: slowa.slice(1).join(' '),
+      position:'', birthYear:'', nationality:'', raw:nazwa,
+    });
+  }
+  return znalezieni.length >= 5 ? znalezieni : null;
+}
+
 // Punkt wejścia używany przez importer. Kolejność od najbardziej charakterystycznego układu do
-// najogólniejszego: blokowy z Transfermarktu, kratka koszulek, a na końcu "jedna linia = zawodnik".
+// najogólniejszego: blokowy z Transfermarktu, wykaz z ŁNP, kratka koszulek, a na końcu
+// "jedna linia = zawodnik".
 function parseSquadText(rawText){
   return parseSquadBlocks(rawText)
+    || parseSquadLnp(rawText)
     || parseSquadKratka(rawText)
     || rawText.split('\n').map(parseSquadLine).filter(Boolean);
 }
