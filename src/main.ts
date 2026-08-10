@@ -4268,7 +4268,13 @@ function viewReports(){
   const allReports = DB.reports.slice().sort((a,b)=> (b.date||'').localeCompare(a.date||'') || (ordinalOf[b.id]-ordinalOf[a.id]));
   const listHtml = allReports.length ? allReports.map(r=>{
     const pl = DB.players.find(p=>p.id===r.playerId);
-    const name = pl ? (esc(pl.lastName)+' '+esc(pl.firstName)) : '<span style="color:var(--clay-dark);">(zawodnik usunięty)</span>';
+    // Raport z CAŁEGO MECZU nie ma jednego zawodnika i to jest w porządku — nosi opis spotkania.
+    // Odróżniamy go po znaczniku kind, a nie po samym braku zawodnika: brak zawodnika znaczy też
+    // „skasowany z kartoteki", a to zupełnie inna sytuacja i inny komunikat.
+    const name = pl ? (esc(pl.lastName)+' '+esc(pl.firstName))
+      : (r.kind==='mecz'
+          ? `<span class="badge tab-chip" style="margin-right:6px;">MECZ</span>${esc(r.match||'Obserwacja meczu')}`
+          : '<span style="color:var(--clay-dark);">(zawodnik usunięty)</span>');
     return `<div class="report-row${editingReportId===r.id?' editing':''}">
       <span class="report-num" title="Numer porządkowy (kolejność utworzenia)">${ordinalOf[r.id]}</span>
       <div class="report-row-body">
@@ -5278,7 +5284,12 @@ function viewMonitoring(){
       <td>${fmtAvg(a)}</td>
       <td>${a? a.last.date : "—"}</td>
       <td>${ds!==null? ds+" dni" : "—"}</td>
-      <td>${p.hasAgent? `<span class="agent-yes">Tak</span>` : `<span class="agent-no">Nie</span>`}</td>
+      <td>${p.hasAgent
+        ? `<span class="agent-yes">Tak</span>`
+        // Gwiazdka przy „Nie" w Monitoringu: zawodnik jest już na Twojej liście i NIKT go nie
+        // reprezentuje. To najkrótsze okno na kontakt, więc musi rzucać się w oczy bez czytania
+        // całego wiersza.
+        : `<span class="agent-no">Nie</span> <span title="Bez menedżera, a jest w Monitoringu — otwarte pole do kontaktu" style="color:var(--gold);font-size:15px;line-height:1;">★</span>`}</td>
       <td><span class="badge ${pillClass}" style="border-radius:6px;">${priority}</span></td>
       <td style="white-space:nowrap;">
         <button class="link-btn" data-action="monitoring-plan-obs" data-id="${p.id}" style="color:var(--gold-dark);">📅 Zaplanuj obserwację</button>

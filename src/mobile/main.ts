@@ -1300,6 +1300,73 @@ function zabezpieczOcene() {
   if (notatka && obs) obs.notatkaMeczu = notatka.value;
 }
 
+// Dopasowanie zawodnika ze SKŁADU do kartoteki.
+//
+// Skład trzyma samo nazwisko — nie ma w nim identyfikatora, bo powstaje z wklejonej strony meczu
+// albo z protokołu. Bez tego dopasowania oceny wystawione z trybun zostają przy obserwacji
+// i nigdy nie trafiają do profilu zawodnika.
+//
+// Porównujemy ZBIÓR słów, nie napis: protokoły podają raz „Jan Kowalski", raz „Kowalski Jan”.
+// Polskie znaki pomijamy, bo część źródeł zapisuje nazwiska bez nich.
+const normImie = (s: string) => String(s || "").toLowerCase()
+  .replace(/[łøđ]/g, (c) => ({ "ł": "l", "ø": "o", "đ": "d" }[c] as string))
+  .normalize("NFD").replace(/\p{M}/gu, "").replace(/[^a-z0-9]/g, "");
+const kluczOsoby = (s: string) => String(s || "").split(/\s+/).map(normImie).filter(Boolean).sort().join(" ");
+
+function znajdzZawodnika(nazwa: string, nazwaKlubu?: string): string | null {
+  const szukany = kluczOsoby(nazwa);
+  if (!szukany) return null;
+  let kandydaci = cache.players.filter((p) => kluczOsoby(`${p.firstName || ""} ${p.lastName || ""}`) === szukany);
+  if (!kandydaci.length) return null;
+  if (kandydaci.length === 1) return kandydaci[0].id;
+  // Imiennicy: rozstrzyga klub, po której stronie składu zawodnik wystąpił.
+  if (nazwaKlubu) {
+    const k = normImie(nazwaKlubu);
+    const wKlubie = kandydaci.filter((p) => {
+      const c = cache.clubs.find((x) => x.id === p.clubId);
+      const n = normImie(c?.name || "");
+      return n && (n === k || (n.length >= 5 && k.length >= 5 && (n.includes(k) || k.includes(n))));
+    });
+    if (wKlubie.length === 1) return wKlubie[0].id;
+  }
+  // Dalej niejednoznacznie — świadomie NIE zgadujemy. Lepiej pominąć i powiedzieć o tym,
+  // niż dopisać ocenę niewłaściwej osobie.
+  return null;
+}
+
+// Ocena zawodnika wystawiona ze składu ląduje jako JEGO WŁASNA OBSERWACJA.
+//
+// W SBS średnia zawodnika liczy się z obserwacji — gdyby ocena została tylko w składzie meczu,
+// nie podniosłaby ani średniej, ani licznika obserwacji, ani nie wypełniła mapy rankingowej.
+// Obejrzenie dziewięciu zawodników w jednym meczu to dziewięć obserwacji i tak też to zapisujemy.
+//
+// Identyfikator jest WYLICZANY z obserwacji meczowej i zawodnika, a nie losowy. Dzięki temu
+// ponowny zapis tego samego meczu poprawia istniejący wpis, zamiast dokładać drugi.
+function savePlayerRatingsFromSquad(
+  playerId: string, oceny: Record<string, number>, data: string, scout: string,
+  obs: Observation, z: SkladZawodnik,
+): void {
+  const ratings: Record<string, number> = {};
+  RATING_KEYS.forEach((k) => { if (Number(oceny[k]) > 0) ratings[k] = Number(oceny[k]); });
+  const notatki = [z.wyrozniony ? "Wyróżnił się." : "", z.notatka || ""].filter(Boolean).join(" ");
+  // Bez ocen liczbowych obserwacji nie zakładamy — samo wyróżnienie zostaje w składzie meczu
+  // i w raporcie. Pusta obserwacja psułaby licznik, sugerując pracę, której nie było.
+  if (!Object.keys(ratings).length && !notatki) return;
+  saveObservation({
+    id: `${obs.id}:${playerId}`,
+    playerId,
+    date: data,
+    matchTime: obs.matchTime,
+    match: obs.match,
+    location: obs.location,
+    scout,
+    ratings,
+    notes: notatki,
+    statsFilledIn: true,
+    obsType: obs.obsType,
+  } as Observation);
+}
+
 function saveOcena() {
   if (!ocena) return;
   const obs = cache.observations.find((o) => o.id === ocena!.observationId);
@@ -1353,23 +1420,86 @@ function saveOcena() {
   // „(zawodnik usunięty)", czyli gorzej niż jego brak. Praca z takiego meczu i tak nie ginie:
   // zapisuje się przy obserwacji, razem ze składem i wyróżnionymi zawodnikami.
   const zOceny = (k: string) => ocena!.ratings[k] > 0 ? `Ocena z obserwacji: ${ocena!.ratings[k]}/10` : "";
+  const typObs = (obs.obsType as string) === "online" ? "Online" : (obs.obsType as string) === "video" ? "Video" : "Live";
+  const dataRap = obs.date || todayISO();
+
   if (obs.playerId) {
-  const rep: Report = {
-    id: uid("rep"),
-    playerId: obs.playerId,
-    date: obs.date || todayISO(),
-    scout,
-    description,
-    technika: zOceny("technika"),
-    taktyka: zOceny("taktyka"),
-    motoryka: zOceny("motoryka"),
-    mentalnoscOpis: zOceny("mentalnosc"),
-    potencjalOpis: zOceny("potencjal"),
-    perspektywa: ocena.perspektywa,
-    obsType: (obs.obsType as string) === "online" ? "Online" : (obs.obsType as string) === "video" ? "Video" : "Live",
-    phases, setPieces, setPieceComment,
-  };
-  saveReport(rep);
+    // Obserwacja JEDNEGO zawodnika — jeden raport, jak dotąd.
+    saveReport({
+      // Identyfikator WYLICZANY z obserwacji, nie losowy: ponowny zapis tego samego meczu ma
+      // poprawić istniejący raport, a nie dołożyć drugi o tym samym.
+      id: `rep:${obs.id}`,
+      playerId: obs.playerId,
+      date: dataRap, scout, description,
+      technika: zOceny("technika"),
+      taktyka: zOceny("taktyka"),
+      motoryka: zOceny("motoryka"),
+      mentalnoscOpis: zOceny("mentalnosc"),
+      potencjalOpis: zOceny("potencjal"),
+      perspektywa: ocena.perspektywa,
+      obsType: typObs,
+      phases, setPieces, setPieceComment,
+      fromObservationId: obs.id,
+    });
+  } else {
+    // Obserwacja CAŁEGO MECZU. Powstają dwie rzeczy naraz, bo to dwa różne dokumenty:
+    //   1. raport meczowy — ocena samego spotkania, faz gry i stałych fragmentów,
+    //   2. raport każdego zawodnika, którego oceniono lub wyróżniono ze składu.
+    // Bez tego drugiego cała praca z trybun zostawała w składzie i nie docierała do profilu.
+    saveReport({
+      id: `rep:${obs.id}:mecz`,
+      date: dataRap, scout, description,
+      match: obs.match || "", kind: "mecz",
+      perspektywa: ocena.perspektywa,
+      obsType: typObs,
+      phases, setPieces, setPieceComment,
+      fromObservationId: obs.id,
+    });
+
+    const sklad = (o?.skladMeczu || {}) as Sklad;
+    const nierozpoznani: string[] = [];
+    let zapisanych = 0;
+    STRONY.forEach((strona) => {
+      const dane = sklad[strona];
+      (dane?.zawodnicy || []).forEach((z) => {
+        const oceny = z.ocena || {};
+        const maOcene = Object.values(oceny).some((n) => Number(n) > 0);
+        if (!maOcene && !z.wyrozniony && !z.notatka) return;
+
+        const playerId = znajdzZawodnika(z.nazwa, dane?.nazwa);
+        if (!playerId) { nierozpoznani.push(z.nazwa); return; }
+
+        // Ocena z trybun trafia też na SAM PROFIL zawodnika, nie tylko do raportu — po to,
+        // żeby liczyła się do jego średniej tak samo jak ocena z obserwacji indywidualnej.
+        savePlayerRatingsFromSquad(playerId, oceny, dataRap, scout, obs, z);
+
+        const opis = [
+          z.wyrozniony ? "Wyróżnił się w tym meczu." : "",
+          z.notatka || "",
+          z.noga ? `Noga: ${z.noga}.` : "",
+          z.numer ? `Nr ${z.numer}.` : "",
+        ].filter(Boolean).join(" ");
+        const zSkladu = (k: string) => Number(oceny[k]) > 0 ? `Ocena z meczu: ${oceny[k]}/10` : "";
+        saveReport({
+          id: `rep:${obs.id}:${playerId}`,
+          playerId,
+          date: dataRap, scout,
+          description: [opis, obs.match ? `Mecz: ${obs.match}` : ""].filter(Boolean).join(" "),
+          technika: zSkladu("technika"),
+          taktyka: zSkladu("taktyka"),
+          motoryka: zSkladu("motoryka"),
+          obsType: typObs,
+          match: obs.match || "",
+          fromObservationId: obs.id,
+        });
+        zapisanych++;
+      });
+    });
+    // Mówimy wprost, kogo nie dało się dopasować. Milczenie sprawiłoby, że scout byłby
+    // przekonany, że ocenił kogoś, kto w kartotece nic nie dostał.
+    if (nierozpoznani.length) {
+      toast(`Zapisano ${zapisanych}. Nie ma w bazie: ${nierozpoznani.slice(0, 3).join(", ")}${nierozpoznani.length > 3 ? ` i ${nierozpoznani.length - 3} in.` : ""}`);
+    }
   }
 
   // 3. Status zawodnika — tylko przy obserwacji konkretnego zawodnika i tylko gdy wybrano decyzję.

@@ -101,6 +101,12 @@ export interface Report {
   setPieces?: Record<string, unknown>;
   setPieceComment?: string;
   obsType?: string;
+  // Raport z CAŁEGO MECZU: nie dotyczy jednego zawodnika, więc zamiast nazwiska nosi opis
+  // spotkania. kind='mecz' odróżnia go od raportu indywidualnego, którego zawodnik zniknął
+  // z kartoteki — z zewnątrz oba wyglądają tak samo (puste playerId), a to dwie różne rzeczy.
+  match?: string;
+  kind?: string;
+  fromObservationId?: string;
 }
 
 export interface Talent {

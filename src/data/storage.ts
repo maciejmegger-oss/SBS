@@ -119,6 +119,19 @@ export const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }>
     fields: ["startLocation", "distanceKm", "obsType", "skladMeczu", "googleEventId",
              "poziomMeczu", "warunki", "notatkaMeczu"],
   },
+  sbs_reports: {
+    // sbs_reports nie ma kolumny custom_fields — chowamy w istniejącej `phases` (jsonb).
+    // To bezpieczne: odczyt wyciąga __ext z powrotem na wierzch, więc widok faz gry dostaje
+    // czysty obiekt, a nie dodatkowy klucz do pominięcia.
+    hostField: "phases",
+    // match: opis spotkania przy raporcie MECZOWYM, który z natury nie ma jednego zawodnika.
+    //   Bez tego pola lista raportów pokazywałaby go jako „(zawodnik usunięty)".
+    // kind: „mecz" albo puste dla raportu indywidualnego — rozróżnienie musi być jawne,
+    //   bo brak zawodnika sam w sobie znaczy też „zawodnik skasowany z kartoteki".
+    // fromObservationId: z której obserwacji raport powstał — pozwala ponowny zapis tej samej
+    //   obserwacji potraktować jako aktualizację zamiast dokładać drugi raport o tym samym.
+    fields: ["match", "kind", "fromObservationId"],
+  },
 };
 
 function packExt(table: string, item: Record<string, unknown>): Record<string, unknown> {
