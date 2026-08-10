@@ -3202,7 +3202,7 @@ function viewDashboard(){
 }
 
 // ---------- PLAYERS ----------
-let playerFilters = {region:"",league:"",status:"",position:"",search:"",birthYear:"",agent:""};
+let playerFilters = {region:"",league:"",status:"",position:"",search:"",birthYear:"",agent:"",club:""};
 function viewPlayers(){
   if(viewingPlayerId) return viewPlayerDetail(viewingPlayerId);
 
@@ -3229,6 +3229,13 @@ function viewPlayers(){
   if(playerFilters.search){
     const q = playerFilters.search.toLowerCase();
     list = list.filter(p=> (p.firstName+" "+p.lastName).toLowerCase().includes(q));
+  }
+  // Szukanie po klubie — po fragmencie nazwy i bez oglądania się na polskie znaki, żeby „lecz"
+  // trafiało w „Górnik Łęczna". Lista lig zawęża do poziomu rozgrywek, a to zawęża do jednego
+  // klubu, czego samą listą rozwijaną nie da się zrobić przy kilkuset klubach w bazie.
+  if(playerFilters.club){
+    const q = importNorm(playerFilters.club);
+    list = list.filter(p=> importNorm(clubName(p.clubId)).includes(q));
   }
   // Lista wg alfabetu (nazwisko, potem imię) — nie wg klubu/kolejności importu.
   list.sort((a,b)=> (a.lastName||a.firstName||'').localeCompare(b.lastName||b.firstName||'','pl') || (a.firstName||'').localeCompare(b.firstName||'','pl'));
@@ -3290,6 +3297,7 @@ function viewPlayers(){
         <option value="mlodzi-bez" ${playerFilters.agent==='mlodzi-bez'?'selected':''}>⭐ Młodzieżowcy bez menedżera</option>
       </select>
       <input id="f-birthyear" type="text" inputmode="numeric" maxlength="4" placeholder="Rocznik np. 2005" value="${esc(playerFilters.birthYear)}" style="max-width:140px;">
+      <input id="f-club" placeholder="Szukaj po klubie..." value="${esc(playerFilters.club)}" style="max-width:200px;">
       <input id="f-search" placeholder="Szukaj po nazwisku..." value="${esc(playerFilters.search)}">
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -6586,6 +6594,9 @@ function attachHandlers(){
   const fby = document.getElementById('f-birthyear'); if(fby) fby.oninput=()=>{playerFilters.birthYear=fby.value.replace(/\D/g,''); render();};
   const fag = document.getElementById('f-agent'); if(fag) fag.onchange=()=>{playerFilters.agent=fag.value; render();};
   const fq = document.getElementById('f-search'); if(fq) fq.oninput=()=>{playerFilters.search=fq.value; render();};
+  // Przerysowanie zabiera ognisko z pola, więc po każdej literze trzeba by w nie klikać na nowo.
+  const fcl = document.getElementById('f-club');
+  if(fcl) fcl.oninput=()=>{ playerFilters.club=fcl.value; zachowajKursorPoPrzerysowaniu(document, '#f-club', render); };
 
   // settings add/remove
   main.querySelectorAll('[data-action="add-setting"]').forEach(b=>b.onclick=async()=>{

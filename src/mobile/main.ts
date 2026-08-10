@@ -1337,20 +1337,39 @@ function saveOcena() {
   const setPieces: Record<string, number> = {};
   REPORT_SET_PIECES.forEach((f) => { if (ocena!.setPieces[f.key] > 0) setPieces[f.key] = ocena!.setPieces[f.key]; });
 
-  const maRaport = Object.keys(phases).length || Object.keys(setPieces).length ||
-    ocena.perspektywa || description || setPieceComment;
-  if (maRaport) {
-    const rep: Report = {
-      id: uid("rep"),
-      playerId: obs.playerId,
-      date: obs.date || todayISO(),
-      scout,
-      description,
-      perspektywa: ocena.perspektywa,
-      obsType: (obs.obsType as string) === "online" ? "Online" : (obs.obsType as string) === "video" ? "Video" : "Live",
-      phases, setPieces, setPieceComment,
-    };
-    saveReport(rep);
+  // Raport powstaje ZAWSZE przy zapisie oceny.
+  //
+  // Wcześniej wymagał czegoś specyficznie raportowego — fazy gry, stałych fragmentów,
+  // perspektywy albo opisu. Skutek był mylący: scout wystawiał oceny zawodnika w skali 1–10,
+  // zapisywał, a w zakładce Raporty widział „Brak zapisanych raportów" i nie miał jak się
+  // domyślić, czego zabrakło. Warunek `cosJest` wyżej i tak nie przepuści pustego zapisu,
+  // więc raport ma tu z czego powstać.
+  //
+  // Oceny liczbowe przepisujemy do opisowych pól raportu, żeby na komputerze było widać, co
+  // faktycznie oceniono, zamiast pustych rubryk. Klucze ocen odpowiadają polom raportu jeden
+  // do jednego — poza mentalnością i potencjałem, które w raporcie mają przyrostek „Opis".
+  // Raport MUSI dotyczyć konkretnego zawodnika. Przy obserwacji całego meczu, bez wskazanego
+  // zawodnika, raport nie miałby o kim być — na liście w SBS wyświetliłby się jako
+  // „(zawodnik usunięty)", czyli gorzej niż jego brak. Praca z takiego meczu i tak nie ginie:
+  // zapisuje się przy obserwacji, razem ze składem i wyróżnionymi zawodnikami.
+  const zOceny = (k: string) => ocena!.ratings[k] > 0 ? `Ocena z obserwacji: ${ocena!.ratings[k]}/10` : "";
+  if (obs.playerId) {
+  const rep: Report = {
+    id: uid("rep"),
+    playerId: obs.playerId,
+    date: obs.date || todayISO(),
+    scout,
+    description,
+    technika: zOceny("technika"),
+    taktyka: zOceny("taktyka"),
+    motoryka: zOceny("motoryka"),
+    mentalnoscOpis: zOceny("mentalnosc"),
+    potencjalOpis: zOceny("potencjal"),
+    perspektywa: ocena.perspektywa,
+    obsType: (obs.obsType as string) === "online" ? "Online" : (obs.obsType as string) === "video" ? "Video" : "Live",
+    phases, setPieces, setPieceComment,
+  };
+  saveReport(rep);
   }
 
   // 3. Status zawodnika — tylko przy obserwacji konkretnego zawodnika i tylko gdy wybrano decyzję.
