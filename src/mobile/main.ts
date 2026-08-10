@@ -177,6 +177,8 @@ let podgladObsId: string | null = null;
 let planMecz = "", planData = "", planGodzina = "", planMiejsce = "";
 let terminarzLiga = "";
 let terminarzSzukaj = "";
+// Która część listy obserwacji jest widoczna: to, co przed nami, czy to, co już rozliczone.
+let listaTryb: "nadchodzace" | "zakonczone" = "nadchodzace";
 
 let cache: Cache = getCache();
 let view: ViewName = "dzis";
@@ -262,26 +264,24 @@ function startClockTicker() {
 // Widoki
 // ---------------------------------------------------------------------------
 
-function viewDzis(): string {
-  const today = todayISO();
-  const wczoraj = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
-  const lista = cache.observations
-    .filter((o) => (o.date || "") >= wczoraj)
-    .sort((a, b) => ((a.date || "") + (a.matchTime || "")).localeCompare((b.date || "") + (b.matchTime || "")))
-    .slice(0, 40);
+// Miesiąc po polsku, do nagłówków w zakończonych („Sierpień 2026").
+const miesiacPl = (iso: string) => {
+  const d = new Date(iso + "T00:00:00");
+  const nazwa = d.toLocaleDateString("pl-PL", { month: "long", year: "numeric" });
+  return nazwa.charAt(0).toUpperCase() + nazwa.slice(1);
+};
 
-  const karta = (o: Observation) => {
-    const oceniona = !!o.statsFilledIn;
-    const trwa = live && live.observationId === o.id;
-    const dzis = o.date === today;
-    return `
+function kartaObserwacji(o: Observation, dzis: string): string {
+  const oceniona = !!o.statsFilledIn;
+  const trwa = live && live.observationId === o.id;
+  return `
     <div class="card obs-card ${trwa ? "selected" : ""}">
       <div class="row">
         <div style="min-width:0;">
           <div class="name">${esc(o.match || "Mecz bez nazwy")}</div>
           <div class="sub" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(o.date)}${o.matchTime ? " · " + esc(o.matchTime) : ""}${o.location ? " · " + esc(o.location) : ""}</div>
         </div>
-        <span class="tag ${trwa ? "live" : oceniona ? "done" : ""}">${trwa ? "W toku" : oceniona ? "Oceniona" : dzis ? "Dziś" : "Plan"}</span>
+        <span class="tag ${trwa ? "live" : oceniona ? "done" : ""}">${trwa ? "W toku" : oceniona ? "Oceniona" : o.date === dzis ? "Dziś" : "Plan"}</span>
       </div>
       <div class="sub" style="margin-top:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
         ${o.playerId ? "<strong style=\"color:var(--text-strong)\">" + esc(playerLabel(o.playerId)) + "</strong>" : "Obserwacja zespołu"}
@@ -294,12 +294,54 @@ function viewDzis(): string {
           : `<button class="btn ghost" data-act="open-ocena" data-id="${esc(o.id)}">Oceń</button>`}
       </div>
     </div>`;
-  };
+}
+
+function viewDzis(): string {
+  const dzis = todayISO();
+  const wczoraj = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+
+  const przelacznik = `
+    <div class="polarity" style="margin-bottom:10px;">
+      <button class="pol seg" data-act="lista-tryb" data-v="nadchodzace" aria-pressed="${listaTryb === "nadchodzace"}">Nadchodzące</button>
+      <button class="pol seg" data-act="lista-tryb" data-v="zakonczone" aria-pressed="${listaTryb === "zakonczone"}">Zakończone</button>
+    </div>`;
+
+  // ZAKOŃCZONE — pogrupowane miesiącami, od najnowszych. Kalendarz na telefonie zajmuje pół
+  // ekranu i pokazuje mniej niż zwykła lista; miesiąc jako nagłówek daje ten sam porządek taniej.
+  if (listaTryb === "zakonczone") {
+    const skonczone = cache.observations
+      .filter((o) => o.statsFilledIn || (o.date || "") < wczoraj)
+      .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+    const wgMiesiaca = new Map<string, Observation[]>();
+    skonczone.forEach((o) => {
+      const klucz = (o.date || "").slice(0, 7) || "bez daty";
+      if (!wgMiesiaca.has(klucz)) wgMiesiaca.set(klucz, []);
+      wgMiesiaca.get(klucz)!.push(o);
+    });
+
+    return `
+      <h2>Obserwacje</h2>
+      <p class="hint">Zakończone i minione · ${skonczone.length}</p>
+      ${przelacznik}
+      ${skonczone.length
+        ? [...wgMiesiaca.entries()].map(([klucz, lista]) => `
+            <div class="section" style="${[...wgMiesiaca.keys()][0] === klucz ? "border-top:none; margin-top:0; padding-top:0;" : ""}">
+              <span class="label">${esc(klucz === "bez daty" ? "Bez daty" : miesiacPl(klucz + "-01"))} · ${lista.length}</span>
+              ${lista.map((o) => kartaObserwacji(o, dzis)).join("")}
+            </div>`).join("")
+        : '<div class="empty">Nic jeszcze nie zostało zakończone.</div>'}`;
+  }
+
+  const lista = cache.observations
+    .filter((o) => (o.date || "") >= wczoraj && !o.statsFilledIn)
+    .sort((a, b) => ((a.date || "") + (a.matchTime || "")).localeCompare((b.date || "") + (b.matchTime || "")));
 
   return `
     <h2>Obserwacje</h2>
-    <p class="hint">Plany z SBS · od wczoraj wzwyż${cache.fetchedAt ? " · kopia z " + new Date(cache.fetchedAt).toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}</p>
-    ${lista.length ? lista.map(karta).join("") : '<div class="empty">Brak zaplanowanych obserwacji.<br>Załóż nową albo odśwież kopię bazy w zakładce Baza.</div>'}
+    <p class="hint">Zaplanowane${cache.fetchedAt ? " · kopia z " + new Date(cache.fetchedAt).toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}</p>
+    ${przelacznik}
+    ${lista.length ? lista.map((o) => kartaObserwacji(o, dzis)).join("") : '<div class="empty">Nic nie czeka.<br>Zaplanuj obserwację albo zajrzyj do zakończonych.</div>'}
     <button class="btn ghost" data-act="go-nowa">+ Zaplanuj obserwację</button>`;
 }
 
@@ -1627,6 +1669,9 @@ function saveOcena() {
   }
   ocena = null;
   cache = getCache();
+  // Zapisana obserwacja przechodzi do zakończonych — pokazujemy WŁAŚNIE tę część listy.
+  // Powrót na „Nadchodzące", gdzie jej już nie ma, wyglądałby jak zniknięcie całej pracy z meczu.
+  listaTryb = "zakonczone";
   view = "dzis";
   render();
   toast(navigator.onLine ? "Zapisano i wysłano do SBS" : "Zapisano — wyślę, gdy wróci zasięg");
@@ -1711,6 +1756,7 @@ document.addEventListener("click", (e) => {
   switch (act) {
     case "go": view = v as ViewName; render(); break;
     case "go-dzis": view = "dzis"; render(); break;
+    case "lista-tryb": listaTryb = v === "zakonczone" ? "zakonczone" : "nadchodzace"; render(); break;
     case "go-nowa": planMecz = planData = planGodzina = planMiejsce = ""; view = "nowa"; render(); break;
 
     case "otworz-terminarz":
