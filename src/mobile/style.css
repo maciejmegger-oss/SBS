@@ -343,14 +343,19 @@ textarea{resize:vertical; min-height:84px;}
   to{opacity:1; letter-spacing:.14em; transform:none;}
 }
 
-/* Ruch bywa źle znoszony, a ekran powitalny nie niesie żadnej treści poza marką — przy włączonym
-   ograniczeniu animacji herb po prostu się pojawia. */
+/* OGRANICZONY RUCH — łagodnie, nie do zera.
+   Przy włączonym „Ogranicz ruch" w telefonie obrót i obiegająca obręcz odpadają: to ruch, który
+   bywa źle znoszony. Ale wygaszenie animacji do zera dawało nieruchomy obrazek i wrażenie, że
+   aplikacja się zacięła. Zostaje więc samo rozjaśnienie — zmiana przezroczystości nie jest ruchem
+   i pod tym ustawieniem uchodzi za dopuszczalną. */
 @media (prefers-reduced-motion:reduce){
   .toast{transition:none;}
-  .splash-logo, .splash-word{animation:none; opacity:1; transform:none;}
   .splash-orbit{display:none;}
-  .splash{transition:none;}
+  .splash-logo{animation:logo-lagodnie .7s ease both;}
+  .splash-word{animation:slowo-lagodnie .7s ease .25s both;}
 }
+@keyframes logo-lagodnie{ from{opacity:0;} to{opacity:1;} }
+@keyframes slowo-lagodnie{ from{opacity:0; letter-spacing:.2em;} to{opacity:1; letter-spacing:.14em;} }
 
 /* ---------- składy meczu ---------- */
 /* Wiersz jest przyciskiem na całą szerokość: w trakcie meczu celuje się kciukiem, bez patrzenia,
