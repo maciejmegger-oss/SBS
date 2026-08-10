@@ -4943,14 +4943,70 @@ async function reorderPositionMapPlayer(league, formation, number, playerId, tar
   positionMapAssignments[key] = ids;
   await savePositionMapAssignments();
 }
+// Klucz listy zawodników RĘCZNIE USUNIĘTYCH z danej pozycji.
+//
+// Bez niej usuwanie z mapy nie działało: kasowanie zdejmowało zawodnika z przypisań, ale przy
+// najbliższym przerysowaniu automat wstawiał go z powrotem, bo wciąż spełniał warunki. Z zewnątrz
+// wyglądało to tak, jakby przycisk „usuń" był martwy.
+const kluczWykluczonych = (key) => key + '|||wykluczeni';
+
+// Wyróżnieni zawodnicy Z OBSERWACJI MECZOWYCH trafiają na mapę — do systemu, którym grał ich
+// zespół, i na pozycję wskazaną na planszy w telefonie.
+//
+// Liczy się to przy każdym wejściu na mapę, a nie w chwili zapisu z telefonu. Dzięki temu działa
+// także dla meczów obejrzanych WCZEŚNIEJ, bez powtarzania pracy — a jedna implementacja obsługuje
+// obie drogi zamiast dwóch, które musiałyby się zgadzać.
+function wyroznieniZMeczow(liga, system){
+  if(!system) return {};       // „Wszystkie systemy" — bez przypisań do konkretnych pozycji
+  const wg = {};               // numer pozycji -> [playerId]
+  const kluczOsoby = (s)=> String(s||'').split(/\s+/).map(importNorm).filter(Boolean).sort().join(' ');
+
+  DB.observations.forEach(o=>{
+    const sklad = o.skladMeczu;
+    if(!sklad) return;
+    ['gospodarze','goscie'].forEach(strona=>{
+      const dane = sklad[strona];
+      if(!dane || dane.formacja !== system) return;
+      (dane.zawodnicy||[]).forEach(z=>{
+        if(!z.pozycja) return;
+        const oceniony = z.ocena && Object.values(z.ocena).some(n=>Number(n)>0);
+        if(!oceniony && !z.wyrozniony && !z.notatka) return;
+        // Dopasowanie po ZBIORZE słów — protokoły podają raz „Jan Kowalski", raz „Kowalski Jan".
+        const szukany = kluczOsoby(z.nazwa);
+        let kand = DB.players.filter(p=> kluczOsoby(`${p.firstName||''} ${p.lastName||''}`) === szukany);
+        if(kand.length > 1 && dane.nazwa){
+          const k = importNorm(dane.nazwa);
+          const wKlubie = kand.filter(p=>{
+            const n = importNorm(clubName(p.clubId));
+            return n && (n===k || (n.length>=5 && k.length>=5 && (n.includes(k)||k.includes(n))));
+          });
+          if(wKlubie.length === 1) kand = wKlubie;
+        }
+        // Niejednoznaczność zostawiamy bez rozstrzygnięcia — lepiej nie pokazać nikogo,
+        // niż postawić na mapie niewłaściwego zawodnika.
+        if(kand.length !== 1) return;
+        if(clubLeague(kand[0].clubId) !== liga) return;
+        (wg[z.pozycja] = wg[z.pozycja] || []).push(kand[0].id);
+      });
+    });
+  });
+  return wg;
+}
+
 function viewRankingNumbersMode(){
   // Zbierz WSZYSTKIE automatyczne uzupełnienia w jednym przebiegu i zapisz JEDEN raz — wywoływanie zapisu
   // osobno dla każdej z 11 pozycji powodowało równoczesne zapisy do tego samego klucza i błędy magazynu.
   let anyChanged = false;
   let anyRealCandidatesFound = false;
+  const zMeczow = wyroznieniZMeczow(rankingLeague, rankingFormationFilter);
   POSITION_NUMBERS.forEach(posDef=>{
     const key = positionMapKey(rankingLeague, rankingFormationFilter, posDef.number);
-    const auto = buildAutoPositionCandidates(rankingLeague, rankingFormationFilter, posDef.number);
+    const wykluczeni = positionMapAssignments[kluczWykluczonych(key)] || [];
+    // Zawodnicy wskazani na planszy w telefonie idą PRZED podpowiedziami automatu: to konkretna
+    // decyzja skauta z konkretnego meczu, a nie wynik sortowania po średniej.
+    const zMeczu = (zMeczow[posDef.number] || []).filter(id=> !wykluczeni.includes(id));
+    const auto = [...zMeczu, ...buildAutoPositionCandidates(rankingLeague, rankingFormationFilter, posDef.number)
+      .filter(id=> !wykluczeni.includes(id) && !zMeczu.includes(id))];
     if(positionMapAssignments[key] === undefined){
       positionMapAssignments[key] = auto;
       anyChanged = true;
@@ -4964,6 +5020,11 @@ function viewRankingNumbersMode(){
       // Zawodnika przypisanego RĘCZNIE to nie dotyczy tylko wtedy, gdy ma zgodny system.
       if(rankingFormationFilter){
         const przefiltrowane = cur.filter(id=>{
+          // Zawodnik wskazany na planszy w tym systemie zostaje, nawet jeśli w profilu nie ma
+          // wpisanego systemu gry. Zaznaczenie go na boisku w telefonie JEST tą informacją —
+          // odsianie go tutaj kasowałoby dopiero co wykonaną pracę.
+          if(zMeczu.includes(id)) return true;
+          if(wykluczeni.includes(id)) return false;
           const pl = DB.players.find(p=>p.id===id);
           return !pl || pl.formation === rankingFormationFilter;
         });
@@ -11789,6 +11850,12 @@ function openPositionSlotModal(league, formation, number){
     });
     overlay.querySelectorAll('.posmodal-remove-btn').forEach(b=>b.onclick=async()=>{
       positionMapAssignments[key] = currentIds().filter(id => id !== b.dataset.id);
+      // Zapamiętujemy DECYZJĘ o usunięciu, nie tylko jej skutek. Samo zdjęcie z listy nie
+      // wystarczało: automat dopełniający pozycje wstawiał zawodnika z powrotem przy najbliższym
+      // przerysowaniu i przycisk wyglądał na niedziałający.
+      const kw = kluczWykluczonych(key);
+      const wykluczeni = positionMapAssignments[kw] || [];
+      if(!wykluczeni.includes(b.dataset.id)) positionMapAssignments[kw] = [...wykluczeni, b.dataset.id];
       await savePositionMapAssignments();
       draw();
     });
@@ -11811,6 +11878,11 @@ function openPositionSlotModal(league, formation, number){
       const ids = currentIds();
       if(ids.length >= 6 || ids.includes(row.dataset.playerId)) return;
       positionMapAssignments[key] = [...ids, row.dataset.playerId];
+      // Ponowne dodanie cofa wcześniejsze usunięcie — inaczej zawodnik zniknąłby zaraz po dodaniu.
+      const kw = kluczWykluczonych(key);
+      if((positionMapAssignments[kw]||[]).length){
+        positionMapAssignments[kw] = positionMapAssignments[kw].filter(id => id !== row.dataset.playerId);
+      }
       await savePositionMapAssignments();
       draw();
     });
