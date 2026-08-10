@@ -170,8 +170,13 @@ function toast(msg: string) {
 // Stan aplikacji
 // ---------------------------------------------------------------------------
 
-type ViewName = "dzis" | "live" | "ocena" | "baza" | "nowa" | "podglad";
+type ViewName = "dzis" | "live" | "ocena" | "baza" | "nowa" | "podglad" | "terminarz";
 let podgladObsId: string | null = null;
+// Wybór z terminarza wypełnia formularz planowania, więc jego treść musi przeżyć przejście
+// do listy meczów i z powrotem.
+let planMecz = "", planData = "", planGodzina = "", planMiejsce = "";
+let terminarzLiga = "";
+let terminarzSzukaj = "";
 
 let cache: Cache = getCache();
 let view: ViewName = "dzis";
@@ -313,13 +318,14 @@ function viewNowa(): string {
     <p class="hint">To samo, co „Plan Obserwacji" na komputerze — żeby dało się umówić wyjazd bez siadania do biurka.</p>
 
     <div class="field"><span class="label">Mecz (gospodarz - gość)</span>
-      <input id="n-match" placeholder="np. Chojniczanka Chojnice - Znicz Pruszków"></div>
+      <input id="n-match" value="${esc(planMecz)}" placeholder="np. Chojniczanka Chojnice - Znicz Pruszków">
+      <button class="btn ghost small" style="margin-top:6px;" data-act="otworz-terminarz">📅 Wybierz z terminarza</button></div>
     <div class="grid-2">
-      <div class="field"><span class="label">Data</span><input type="date" id="n-date" value="${todayISO()}"></div>
-      <div class="field"><span class="label">Godzina</span><input type="time" id="n-time" value="17:00"></div>
+      <div class="field"><span class="label">Data</span><input type="date" id="n-date" value="${esc(planData || todayISO())}"></div>
+      <div class="field"><span class="label">Godzina</span><input type="time" id="n-time" value="${esc(planGodzina || "17:00")}"></div>
     </div>
     <div class="field"><span class="label">Miejsce</span>
-      <input id="n-location" placeholder="np. ul. Mickiewicza 12, Chojnice"></div>
+      <input id="n-location" value="${esc(planMiejsce)}" placeholder="np. ul. Mickiewicza 12, Chojnice"></div>
     <div class="field"><span class="label">Zawodnik (opcjonalnie)</span>
       <select id="n-player"><option value="">— obserwacja meczu —</option>${players}</select></div>
     <div class="field"><span class="label">Rodzaj</span>
@@ -334,6 +340,57 @@ function viewNowa(): string {
     <button class="btn" data-act="save-nowa" data-start="1">Zapisz i rozpocznij teraz</button>
     <button class="btn ghost" data-act="save-nowa">Zapisz na później</button>
     <button class="btn ghost" data-act="go-dzis">Anuluj</button>`;
+}
+
+// TERMINARZ.
+//
+// Rozgrywki bierzemy z pola `competition` przy meczu — pełnej nazwy ze strony 90minut, która
+// zawiera grupę („III liga, grupa 2", „IV liga kujawsko-pomorska"). Bez tego podziału trzy ligi
+// zlewałyby się w jedną listę kilkuset spotkań, a scout szuka meczu w SWOJEJ grupie.
+function rozgrywkiZTerminarza(): string[] {
+  const zbior = new Map<string, number>();
+  cache.matches.forEach((m) => {
+    const nazwa = (m.competition || m.league || "").trim();
+    if (nazwa) zbior.set(nazwa, (zbior.get(nazwa) || 0) + 1);
+  });
+  return [...zbior.keys()].sort((a, b) => a.localeCompare(b, "pl"));
+}
+
+function viewTerminarz(): string {
+  const dzis = todayISO();
+  const q = terminarzSzukaj.trim().toLowerCase();
+
+  const wszystkie = cache.matches
+    .filter((m) => (m.date || "") >= dzis)
+    .filter((m) => !terminarzLiga || (m.competition || m.league || "") === terminarzLiga)
+    .filter((m) => !q || `${m.homeTeam} ${m.awayTeam} ${m.city || ""}`.toLowerCase().includes(q))
+    .sort((a, b) => ((a.date || "") + (a.time || "")).localeCompare((b.date || "") + (b.time || "")));
+
+  const lista = wszystkie.slice(0, 60);
+  const rozgrywki = rozgrywkiZTerminarza();
+
+  return `
+    <div class="row" style="margin-bottom:8px;">
+      <h2 style="margin:0;">Terminarz</h2>
+      <button class="btn ghost small" data-act="zamknij-terminarz">Wróć</button>
+    </div>
+    <p class="hint">${cache.matches.length ? wszystkie.length + " spotkań od dziś" : "Terminarz jest pusty — pobierz go w aplikacji na komputerze."}</p>
+
+    <div class="field">
+      <select id="t-liga" data-act="terminarz-liga">
+        <option value="">— wszystkie rozgrywki —</option>
+        ${rozgrywki.map((r) => `<option value="${esc(r)}" ${r === terminarzLiga ? "selected" : ""}>${esc(r)}</option>`).join("")}
+      </select>
+    </div>
+    <div class="field"><input id="t-szukaj" placeholder="Szukaj drużyny albo miasta…" value="${esc(terminarzSzukaj)}"></div>
+
+    ${lista.map((m) => `
+      <button class="sklad-row" style="flex-direction:column; align-items:flex-start; gap:3px;"
+              data-act="wybierz-mecz" data-id="${esc(m.id)}">
+        <span class="sklad-nazwa" style="font-weight:650;">${esc(m.homeTeam)} - ${esc(m.awayTeam)}</span>
+        <span class="sub" style="font-size:11.5px;">${esc(m.date)}${m.time ? " · " + esc(m.time) : ""}${m.city ? " · " + esc(m.city) : ""}</span>
+      </button>`).join("") || '<div class="empty">Brak spotkań spełniających warunki.</div>'}
+    ${wszystkie.length > lista.length ? `<p class="hint">Pokazano ${lista.length} z ${wszystkie.length} — zawęź wyszukiwaniem.</p>` : ""}`;
 }
 
 function viewLive(): string {
@@ -1250,6 +1307,7 @@ function render() {
     view === "live" ? viewLive() :
     view === "ocena" ? viewOcena() :
     view === "podglad" ? viewPodglad() :
+    view === "terminarz" ? viewTerminarz() :
     viewBaza();
 
   app.innerHTML = `
@@ -1574,6 +1632,15 @@ function saveOcena() {
   toast(navigator.onLine ? "Zapisano i wysłano do SBS" : "Zapisano — wyślę, gdy wróci zasięg");
 }
 
+// Treść formularza planowania żyje w polach DOM — przed odejściem do terminarza trzeba ją przenieść
+// do stanu, inaczej wypełnione pola przepadają przy powrocie.
+function zapamietajPlan() {
+  planMecz = $<HTMLInputElement>("n-match")?.value ?? planMecz;
+  planData = $<HTMLInputElement>("n-date")?.value ?? planData;
+  planGodzina = $<HTMLInputElement>("n-time")?.value ?? planGodzina;
+  planMiejsce = $<HTMLInputElement>("n-location")?.value ?? planMiejsce;
+}
+
 function saveNowa(odRazu: boolean) {
   const match = $<HTMLInputElement>("n-match")?.value.trim() || "";
   if (!match) { toast("Podaj nazwę meczu"); return; }
@@ -1644,7 +1711,29 @@ document.addEventListener("click", (e) => {
   switch (act) {
     case "go": view = v as ViewName; render(); break;
     case "go-dzis": view = "dzis"; render(); break;
-    case "go-nowa": view = "nowa"; render(); break;
+    case "go-nowa": planMecz = planData = planGodzina = planMiejsce = ""; view = "nowa"; render(); break;
+
+    case "otworz-terminarz":
+      // Zapamiętujemy, co już wpisane — powrót z terminarza nie może wyczyścić formularza.
+      zapamietajPlan();
+      view = "terminarz";
+      render();
+      break;
+
+    case "zamknij-terminarz": view = "nowa"; render(); break;
+
+    case "wybierz-mecz": {
+      const m = cache.matches.find((x) => x.id === el.dataset.id);
+      if (!m) break;
+      planMecz = `${m.homeTeam} - ${m.awayTeam}`;
+      planData = m.date || "";
+      planGodzina = m.time || "";
+      // Adres stadionu bywa pusty w terminarzu — wtedy zostaje miasto, i tak lepsze niż nic.
+      planMiejsce = [m.stadium, m.city].filter(Boolean).join(", ");
+      view = "nowa";
+      render();
+      break;
+    }
     case "start-live": beginLive(el.dataset.id!); break;
     case "open-ocena": startOcena(el.dataset.id!); view = "ocena"; render(); break;
     case "podglad": podgladObsId = el.dataset.id!; view = "podglad"; render(); break;
@@ -1976,6 +2065,9 @@ document.addEventListener("blur", (e) => {
 }, true);
 
 document.addEventListener("change", (e) => {
+  const wyborLigi = e.target as HTMLSelectElement;
+  if (wyborLigi.id === "t-liga") { terminarzLiga = wyborLigi.value; render(); return; }
+
   const pole = e.target as HTMLInputElement;
   if (pole.dataset.numerStrona) {
     // Numeru nie zgadnie żaden parser we wszystkich układach — bywa w osobnej komórce, bywa
@@ -2006,6 +2098,17 @@ document.addEventListener("change", (e) => {
 
 document.addEventListener("input", (e) => {
   const t = e.target as HTMLInputElement;
+  if (t.id === "t-szukaj") {
+    terminarzSzukaj = t.value;
+    const main = $("main");
+    if (main) {
+      const pos = t.selectionStart;
+      main.innerHTML = viewTerminarz();
+      const nowe = $<HTMLInputElement>("t-szukaj");
+      if (nowe) { nowe.focus(); nowe.setSelectionRange(pos ?? 0, pos ?? 0); }
+    }
+    return;
+  }
   if (t.id === "search") {
     searchQuery = t.value;
     // Przerysowujemy tylko listę wyników, żeby pole nie traciło ogniska przy każdej literze.
