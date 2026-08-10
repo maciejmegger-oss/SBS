@@ -61,7 +61,10 @@ const rowFromObj = (obj: Record<string, unknown>): Record<string, unknown> => {
   return row;
 };
 
-const objFromRow = (row: Record<string, unknown>): Record<string, unknown> => {
+// Eksportowane, bo panel mobilny (src/mobile/db.ts) czyta te same tabele własną ścieżką i musi
+// zamieniać wiersze na obiekty DOKŁADNIE tak samo. Własna kopia po tamtej stronie już raz się
+// rozjechała — patrz komentarz przy EXT_CONFIG.
+export const objFromRow = (row: Record<string, unknown>): Record<string, unknown> => {
   const obj: Record<string, unknown> = {};
   for (const k in row) if (k !== "updated_at") obj[snakeToCamel(k)] = row[k];
   return obj;
@@ -134,7 +137,7 @@ export const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }>
   },
 };
 
-function packExt(table: string, item: Record<string, unknown>): Record<string, unknown> {
+export function packExt(table: string, item: Record<string, unknown>): Record<string, unknown> {
   const cfg = EXT_CONFIG[table];
   if (!cfg) return item;
   const clone: Record<string, unknown> = { ...item };
@@ -149,7 +152,7 @@ function packExt(table: string, item: Record<string, unknown>): Record<string, u
   return clone;
 }
 
-function liftExt(table: string, obj: Record<string, unknown>): void {
+export function liftExt(table: string, obj: Record<string, unknown>): void {
   const cfg = EXT_CONFIG[table];
   if (!cfg) return;
   const host = obj[cfg.hostField] as Record<string, unknown> | undefined;
@@ -158,6 +161,29 @@ function liftExt(table: string, obj: Record<string, unknown>): void {
     for (const k in ext) if (obj[k] === undefined || obj[k] === null) obj[k] = ext[k];
     delete host.__ext;
   }
+}
+
+// OBIEKT APLIKACJI -> WIERSZ GOTOWY DO ZAPISU. Jedna droga dla obu aplikacji.
+//
+// Do tej pory panel mobilny składał wiersz sam: chował pola rozszerzone tylko dla obserwacji,
+// a raporty wysyłał bez żadnego pakowania. Skutek był kosztowny i całkowicie niewidoczny na
+// telefonie: sbs_reports nie ma kolumn `match`, `kind` ani `from_observation_id` (są po to
+// w EXT_CONFIG), więc KAŻDY raport z telefonu baza odrzucała — a że kolejka zatrzymywała się
+// na pierwszym niepowodzeniu, za tym raportem stawało wszystko, co scout zapisał później.
+// Panel pokazywał „Zapisano i wysłano do SBS", a na komputerze nie pojawiało się nic.
+//
+// Dlatego wiersz składa się TYLKO tutaj. Nowe pole dopisane do EXT_CONFIG działa od razu po
+// obu stronach i nie ma gdzie się rozjechać.
+export const prepareRow = (table: string, item: Record<string, unknown>): Record<string, unknown> =>
+  rowFromObj(packExt(table, item));
+
+// Czy błąd zapisu mówi o BRAKUJĄCEJ KOLUMNIE (migracja niewykonana)? Supabase-js zgłasza to na
+// dwa sposoby zależnie od ścieżki — surowy Postgres 42703 albo PostgREST z cache schematu.
+// Zwraca nazwę kolumny albo null.
+export function missingColumn(message: string): string | null {
+  const m = message.match(/column [\w".]*\.(\w+) does not exist/) ||
+            message.match(/Could not find the '(\w+)' column/);
+  return m ? m[1] : null;
 }
 
 // Supabase/PostgREST zwraca maksymalnie 1000 wierszy na żądanie. Przy >1000 zawodników brakująca
@@ -233,17 +259,12 @@ async function setCollection(table: string, jsonValue: string): Promise<void> {
     if (!chunk.length) continue;
     // To jeden wsad obejmujący WSZYSTKICH zawodników (całościowy upsert) — jedno pole spoza
     // aktualnego schematu Supabase (np. `nationality` przed uruchomieniem migracji) nie może
-    // blokować zapisu reszty. Supabase-js zgłasza brakującą kolumnę na dwa różne sposoby zależnie
-    // od ścieżki (surowy Postgres 42703 "column X.Y does not exist", albo PostgREST z cache schematu
-    // "Could not find the 'Y' column of 'X' in the schema cache") — sprawdzamy oba warianty.
+    // blokować zapisu reszty.
     for (;;) {
       const { error } = await sb.from(table).upsert(chunk, { onConflict: "id" });
       if (!error) break;
-      const missing =
-        error.message.match(/column [\w".]*\.(\w+) does not exist/) ||
-        error.message.match(/Could not find the '(\w+)' column/);
-      if (!missing) throw new Error("Wsad " + (i / BATCH_SIZE + 1) + ": " + error.message);
-      const col = missing[1];
+      const col = missingColumn(error.message);
+      if (!col) throw new Error("Wsad " + (i / BATCH_SIZE + 1) + ": " + error.message);
       console.warn(`Kolumna "${col}" nie istnieje jeszcze w ${table} (migracja niewykonana) — pomijam to pole w tym zapisie.`);
       chunk = chunk.map((r) => {
         const rest = { ...r };
@@ -350,15 +371,13 @@ export const storage = {
   async saveOne(key: string, item: Record<string, unknown>): Promise<boolean> {
     const table = COLLECTION_TABLES[key];
     if (!table) throw new Error("saveOne obsługuje tylko kolekcje tabelowe, nie " + key);
-    const row = rowFromObj(packExt(table, item));
+    const row = prepareRow(table, item);
     for (;;) {
       const { error } = await sb.from(table).upsert(row, { onConflict: "id" });
       if (!error) return true;
-      const missing =
-        error.message.match(/column [\w".]*\.(\w+) does not exist/) ||
-        error.message.match(/Could not find the '(\w+)' column/);
-      if (!missing) throw new Error(error.message);
-      delete row[missing[1]];
+      const col = missingColumn(error.message);
+      if (!col) throw new Error(error.message);
+      delete row[col];
     }
   },
 

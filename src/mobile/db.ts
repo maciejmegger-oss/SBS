@@ -11,36 +11,22 @@
 // zwykle nie ma. Każdy zapis ląduje najpierw w pamięci telefonu, a dopiero potem — gdy się da —
 // idzie na serwer. Nic nie ginie po zamknięciu przeglądarki ani po rozładowaniu telefonu.
 
-import { sb, EXT_CONFIG } from "../data/storage";
+import { sb, objFromRow, liftExt, prepareRow, missingColumn } from "../data/storage";
+import { pushLiveEvents, type LiveEvent, type Period } from "../data/liveEvents";
 import type { Player, Club, Observation, Report } from "../types";
 
-// Część meczu: 1 i 2 to połowy regulaminowe, 3 i 4 to dogrywka. Doliczonego czasu nie liczymy
-// osobno — zegar po prostu biegnie dalej, więc zdarzenie z 47. minuty pierwszej połowy zapisuje
-// się jako 47', tak jak podałby je sprawozdawca.
-export type Period = 1 | 2 | 3 | 4;
-
-export interface LiveEvent {
-  id: string;
-  observationId: string;
-  playerId?: string;
-  half: Period;
-  minute: number;
-  type: string;      // klucz zdarzenia, np. "strzal"
-  label: string;     // etykieta pokazywana scoutowi, np. "Strzał"
-  quality: 1 | -1;   // 1 = udane, -1 = nieudane
-  // Kogo dotyczy zdarzenie. Zawodnicy ze składu meczu nie mają identyfikatorów w bazie —
-  // skład bywa wklejony z kartki albo ze strony meczu — więc zapisujemy nazwę tak, jak
-  // widnieje na liście („10 Mosek"). Puste = zdarzenie zespołu.
-  zawodnik?: string;
-  note?: string;
-  createdAt: string;
-}
+export type { LiveEvent, Period };
 
 // Zadanie w kolejce wysyłki. Każde jest samodzielne i idempotentne (upsert po id), więc powtórna
 // próba po zerwaniu połączenia niczego nie zdubluje.
+//
+// W kolejce leży OBIEKT APLIKACJI, nie gotowy wiersz bazy. Różnica jest praktyczna: wiersz
+// składany w chwili dodania do kolejki zamraża sposób pakowania z tamtej wersji panelu, więc
+// zapis, który baza odrzuciła z powodu błędu w tym pakowaniu, byłby odrzucany także po poprawce —
+// scout musiałby wpisać cały mecz od nowa. Obiekt zamienia się w wiersz dopiero przy wysyłce.
 type QueueJobPayload =
-  | { kind: "observation"; row: Record<string, unknown> }
-  | { kind: "report"; row: Record<string, unknown> }
+  | { kind: "observation"; item: Record<string, unknown> }
+  | { kind: "report"; item: Record<string, unknown> }
   | { kind: "playerStatus"; playerId: string; status: string }
   | { kind: "liveEvents"; observationId: string; events: LiveEvent[] };
 
@@ -51,6 +37,7 @@ type QueueJob = QueueJobPayload & { id: string };
 const LS = {
   cache: "sbs-m:cache",          // kopia bazy do pracy offline
   queue: "sbs-m:queue",          // zadania czekające na sieć
+  blad: "sbs-m:blad",            // ostatnia odmowa bazy przy wysyłce
   live: "sbs-m:live",            // stan trwającej obserwacji (zdarzenia, zegar)
   archiwum: "sbs-m:zdarzenia",   // zdarzenia zakończonych meczów, wg obserwacji
   scout: "sbs-m:scout",          // ostatnio wybrany scout
@@ -94,60 +81,20 @@ const EMPTY_CACHE: Cache = { players: [], clubs: [], observations: [], reports: 
 
 export const getCache = (): Cache => readLS<Cache>(LS.cache, EMPTY_CACHE);
 
-const snakeToCamel = (k: string) => k.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
-const camelToSnake = (k: string) => k.replace(/[A-Z]/g, (m) => "_" + m.toLowerCase());
-
-const objFromRow = (row: Record<string, unknown>): Record<string, unknown> => {
-  const obj: Record<string, unknown> = {};
-  for (const k in row) if (k !== "updated_at") obj[snakeToCamel(k)] = row[k];
-  return obj;
-};
-
 // Pola dopisane do aplikacji po założeniu bazy nie mają własnych kolumn — aplikacja na komputerze
 // chowa je w polu jsonb pod kluczem `__ext` (patrz src/data/storage.ts). Przy odczycie trzeba je
 // wyciągnąć na wierzch, przy zapisie — schować z powrotem, inaczej rodzaj obserwacji i punkt
 // startowy znikałyby po każdej edycji z telefonu.
 //
-// Listę bierzemy WPROST z warstwy aplikacji na komputerze, zamiast trzymać tu jej odpowiednik.
-// Własna kopia już raz się rozjechała: doszły tam `skladMeczu` i `googleEventId`, o których ten
-// plik nie wiedział — a pole spoza listy nie trafia do `__ext`, tylko leci jako osobna kolumna,
-// której w tabeli nie ma. Zapis obserwacji z telefonu kończyłby się wtedy błędem i zawieszał
-// kolejkę wysyłki, a przy okazji gubił powiązanie z wydarzeniem w Kalendarzu Google.
-const OBS_EXT_FIELDS = EXT_CONFIG.sbs_observations.fields;
-
-const liftObsExt = (o: Record<string, unknown>) => {
-  const host = o.ratings as Record<string, unknown> | undefined;
-  if (host && host.__ext) {
-    const ext = host.__ext as Record<string, unknown>;
-    for (const k in ext) if (o[k] === undefined || o[k] === null) o[k] = ext[k];
-    delete host.__ext;
-  }
-  return o;
-};
-
-const packObsExt = (o: Record<string, unknown>): Record<string, unknown> => {
-  const clone = { ...o };
-  const ext: Record<string, unknown> = {};
-  for (const f of OBS_EXT_FIELDS) {
-    if (f in clone && clone[f] !== undefined) ext[f] = clone[f];
-    delete clone[f];
-  }
-  const ratings: Record<string, unknown> = { ...((clone.ratings as Record<string, unknown>) || {}) };
-  if (Object.keys(ext).length) ratings.__ext = ext;
-  clone.ratings = ratings;
-  return clone;
-};
-
-const rowFromObj = (obj: Record<string, unknown>): Record<string, unknown> => {
-  const row: Record<string, unknown> = {};
-  for (const k in obj) {
-    const col = camelToSnake(k);
-    const val = obj[k];
-    // Puste odwołanie musi być NULL-em, nie pustym tekstem — inaczej Postgres szuka rekordu
-    // o identyfikatorze "" i odrzuca zapis. Dotyczy obserwacji zespołu (bez wskazanego zawodnika).
-    row[col] = col.endsWith("_id") && val === "" ? null : val;
-  }
-  return row;
+// Zamiana obiektu na wiersz i z powrotem idzie WPROST przez warstwę aplikacji na komputerze
+// (objFromRow / liftExt / prepareRow), zamiast przez odpowiedniki trzymane tutaj. Własne kopie
+// już się rozjechały, i to dwa razy: raz o `skladMeczu` i `googleEventId` przy obserwacjach,
+// drugi raz — dotkliwiej — przy raportach, których ten plik w ogóle nie pakował, przez co baza
+// odrzucała każdy raport z telefonu i zatrzymywała całą kolejkę wysyłki.
+const czytaj = (table: string, row: Record<string, unknown>): Record<string, unknown> => {
+  const obj = objFromRow(row);
+  liftExt(table, obj);
+  return obj;
 };
 
 const page = async (table: string, columns = "*"): Promise<Record<string, unknown>[]> => {
@@ -183,10 +130,10 @@ export async function refreshCache(): Promise<Cache> {
   }
 
   const cache: Cache = {
-    players: players.map(objFromRow) as unknown as Player[],
-    clubs: clubs.map(objFromRow) as unknown as Club[],
-    observations: observations.map((r) => liftObsExt(objFromRow(r))) as unknown as Observation[],
-    reports: reports.map(objFromRow) as unknown as Report[],
+    players: players.map((r) => czytaj("sbs_players", r)) as unknown as Player[],
+    clubs: clubs.map((r) => czytaj("sbs_clubs", r)) as unknown as Club[],
+    observations: observations.map((r) => czytaj("sbs_observations", r)) as unknown as Observation[],
+    reports: reports.map((r) => czytaj("sbs_reports", r)) as unknown as Report[],
     scouts,
     fetchedAt: new Date().toISOString(),
   };
@@ -219,8 +166,8 @@ function enqueue(job: QueueJobPayload) {
   // AKTUALNY, a nie historia poprawek. Bez tego trzykrotna zmiana oceny wysyłałaby trzy zapisy.
   const sameTarget = (a: QueueJob, b: QueueJob) => {
     if (a.kind !== b.kind) return false;
-    if (a.kind === "observation" && b.kind === "observation") return a.row.id === b.row.id;
-    if (a.kind === "report" && b.kind === "report") return a.row.id === b.row.id;
+    if (a.kind === "observation" && b.kind === "observation") return a.item.id === b.item.id;
+    if (a.kind === "report" && b.kind === "report") return a.item.id === b.item.id;
     if (a.kind === "playerStatus" && b.kind === "playerStatus") return a.playerId === b.playerId;
     if (a.kind === "liveEvents" && b.kind === "liveEvents") return a.observationId === b.observationId;
     return false;
@@ -228,55 +175,44 @@ function enqueue(job: QueueJobPayload) {
   setQueue([...q.filter((j) => !sameTarget(j, pelne)), pelne]);
 }
 
-// Czy tabela zdarzeń na żywo istnieje w bazie? Migracja (supabase/migration_2026-08-06_live_events.sql)
-// może nie być jeszcze uruchomiona, a panel ma działać od razu. Gdy tabeli nie ma, oś zdarzeń
-// zapisuje się w sbs_kv — tej tabeli używa aplikacja na komputerze do terminarza i ustawień, więc
-// istnieje na pewno. Po uruchomieniu migracji nowe mecze zapisują się już właściwą drogą.
-let liveEventsTable: boolean | null = null;
-
-async function pushLiveEvents(observationId: string, events: LiveEvent[]): Promise<void> {
-  if (liveEventsTable !== false) {
-    const rows = events.map((e) => ({
-      id: e.id,
-      observation_id: observationId,
-      player_id: e.playerId || null,
-      half: e.half,
-      minute: e.minute,
-      type: e.type,
-      quality: e.quality,
-      zawodnik: e.zawodnik || null,
-      note: e.note || null,
-      created_at: e.createdAt,
-    }));
-    const { error } = await sb.from("sbs_live_events").upsert(rows, { onConflict: "id" });
-    if (!error) {
-      liveEventsTable = true;
-      return;
-    }
-    // Brak tabeli to jedyny błąd, który wolno obejść. Każdy inny (np. odmowa dostępu) musi
-    // wrócić do kolejki, żeby próba się powtórzyła, zamiast po cichu wylądować w kv.
-    // Obejściem obejmujemy też brakującą KOLUMNĘ, nie tylko brakującą tabelę: tabela mogła
-    // powstać ze starszej wersji migracji, bez kolumny `zawodnik`, i wtedy zapis kończyłby się
-    // błędem przy każdej próbie — a oś zdarzeń z meczu jest zbyt cenna, żeby ją na tym stracić.
-    const doObejscia = /relation .* does not exist|could not find the table|schema cache|column .* does not exist/i.test(error.message);
-    if (!doObejscia) throw new Error(error.message);
-    liveEventsTable = false;
+// Zapis JEDNEGO wiersza z pominięciem kolumn, których w bazie jeszcze nie ma.
+//
+// Aplikacja na komputerze robi to od dawna (storage.saveOne): pole spoza aktualnego schematu
+// jest pomijane, a rekord i tak zostaje zapisany. Telefon tego nie robił i wychodził na tym
+// najgorzej z obu — na komputerze nieudany zapis widać od razu, a tu kończył się cichym
+// zatrzymaniem kolejki na stadionie, gdzie nikt nie zagląda w konsolę.
+async function upsertRow(table: string, item: Record<string, unknown>): Promise<void> {
+  const row = prepareRow(table, item);
+  for (;;) {
+    const { error } = await sb.from(table).upsert(row, { onConflict: "id" });
+    if (!error) return;
+    const col = missingColumn(error.message);
+    if (!col) throw new Error(error.message);
+    console.warn(`Kolumna "${col}" nie istnieje w ${table} — pomijam to pole, żeby reszta zapisu doszła.`);
+    delete row[col];
   }
-  const { error } = await sb
-    .from("sbs_kv")
-    .upsert({ key: "scouting:liveEvents:" + observationId, value: JSON.stringify(events) }, { onConflict: "key" });
-  if (error) throw new Error(error.message);
+}
+
+// Zadania zapisane starszą wersją panelu niosą gotowy WIERSZ (`row`), nie obiekt. Zamieniamy go
+// z powrotem na obiekt, zamiast wysyłać jak leży: to właśnie w składaniu wiersza był błąd, przez
+// który te zadania utknęły w kolejce. Wysłanie ich bez przeróbki oznaczałoby, że poprawka
+// naprawia dopiero następny mecz, a ten, który scout ma w telefonie, przepada.
+function itemZZadania(job: QueueJob & { kind: "observation" | "report" }): Record<string, unknown> {
+  const table = job.kind === "observation" ? "sbs_observations" : "sbs_reports";
+  if (job.item) return job.item;
+  const legacy = (job as unknown as { row?: Record<string, unknown> }).row || {};
+  const obj = objFromRow(legacy);
+  liftExt(table, obj);   // rozpakowujemy __ext, bo prepareRow zapakuje je z powrotem
+  return obj;
 }
 
 async function runJob(job: QueueJob): Promise<void> {
   if (job.kind === "observation") {
-    const { error } = await sb.from("sbs_observations").upsert(job.row, { onConflict: "id" });
-    if (error) throw new Error(error.message);
+    await upsertRow("sbs_observations", itemZZadania(job));
     return;
   }
   if (job.kind === "report") {
-    const { error } = await sb.from("sbs_reports").upsert(job.row, { onConflict: "id" });
-    if (error) throw new Error(error.message);
+    await upsertRow("sbs_reports", itemZZadania(job));
     return;
   }
   if (job.kind === "playerStatus") {
@@ -289,35 +225,75 @@ async function runJob(job: QueueJob): Promise<void> {
   await pushLiveEvents(job.observationId, job.events);
 }
 
-let flushing = false;
+let flushing: Promise<number> | null = null;
 
-// Próba opróżnienia kolejki. Zwraca liczbę zadań, które zostały. Zadania idą po kolei i pierwsze
-// niepowodzenie przerywa przetwarzanie — jeśli sieci nie ma, nie ma sensu dobijać się resztą.
+// ODMOWA BAZY MUSI BYĆ WIDOCZNA.
 //
-// Kolejkę czytamy ZE ŹRÓDŁA przed każdym zadaniem i usuwamy wykonane po identyfikatorze, zamiast
-// pracować na migawce z początku pętli. Zapis oceny dokłada trzy zadania jedno po drugim
-// (obserwacja, raport, status zawodnika) — a wysyłka pierwszego z nich trwa na tyle długo, że
-// pozostałe dwa trafiają do kolejki już w trakcie. Odłożenie migawki pomniejszonej o wykonane
-// zadanie kasowałoby je bezgłośnie: raport i status nigdy nie docierały do bazy.
-export async function flushQueue(): Promise<number> {
-  if (flushing) return queueLength();
-  if (!navigator.onLine) return queueLength();
-  flushing = true;
-  try {
-    for (;;) {
-      const q = getQueue();
-      if (!q.length) return 0;
-      try {
-        await runJob(q[0]);
-      } catch (e) {
-        console.warn("Wysyłka wstrzymana:", (e as Error).message);
+// Kolejka rosnąca w milczeniu wygląda dokładnie tak samo jak brak zasięgu — a to dwie różne
+// sytuacje: pierwsza sama nie minie. Trzymamy więc ostatnią odmowę w pamięci telefonu, żeby
+// przetrwała zamknięcie panelu, i pokazujemy ją w pasku górnym oraz w zakładce Baza.
+export interface QueueProblem {
+  message: string;
+  kind: string;
+  at: string;
+}
+
+export const queueProblem = (): QueueProblem | null => readLS<QueueProblem | null>(LS.blad, null);
+const setProblem = (p: QueueProblem | null) => {
+  if (p) writeLS(LS.blad, p);
+  else localStorage.removeItem(LS.blad);
+};
+
+// Brak sieci wygląda inaczej niż odmowa bazy: przeglądarka przerywa samo połączenie i nie ma
+// czego pokazywać scoutowi — wysyłka po prostu poczeka na zasięg.
+const bladSieci = (msg: string) =>
+  !navigator.onLine || /failed to fetch|networkerror|load failed|network request failed|timeout|aborted/i.test(msg);
+
+// Próba opróżnienia kolejki. Zwraca liczbę zadań, które zostały.
+//
+// JEDNO ODRZUCONE ZADANIE NIE MOŻE ZATRZYMAĆ RESZTY. Wcześniej pętla przerywała się na pierwszym
+// niepowodzeniu — sensowne przy braku zasięgu, zgubne przy odmowie bazy: zapis, którego baza nie
+// przyjmie nigdy (brakująca kolumna, złamany klucz obcy), stawał na czele kolejki i blokował
+// WSZYSTKO, co scout zapisał po nim. Panel meldował „wysłano", a na komputerze nie było niczego.
+// Dlatego rozstrzyga rodzaj błędu: brak sieci przerywa wysyłkę (nie ma sensu dobijać się resztą),
+// odmowa bazy odkłada tylko to jedno zadanie i przepuszcza kolejne. Odłożone zostaje w kolejce
+// i wraca przy następnej próbie — po uruchomieniu migracji albo poprawce w kodzie dojdzie samo.
+//
+// Kolejkę czytamy ZE ŹRÓDŁA przed każdym zadaniem, zamiast pracować na migawce z początku pętli.
+// Zapis oceny dokłada zadania jedno po drugim (obserwacja, raport, status zawodnika) — a wysyłka
+// pierwszego z nich trwa na tyle długo, że pozostałe trafiają do kolejki już w trakcie.
+// Wywołanie w trakcie trwającej wysyłki DOŁĄCZA SIĘ do niej, zamiast od razu oddawać stan sprzed
+// jej zakończenia. Inaczej ekran meldowałby wynik poprzedniej próby: zapis oceny woła wysyłkę
+// trzy razy pod rząd (obserwacja, raport, status), więc dwa ostatnie wywołania wracały
+// natychmiast, z liczbą zadań sprzed wysłania czegokolwiek.
+export function flushQueue(): Promise<number> {
+  if (flushing) return flushing;
+  if (!navigator.onLine) return Promise.resolve(queueLength());
+  flushing = wykonajWysylke().finally(() => { flushing = null; });
+  return flushing;
+}
+
+async function wykonajWysylke(): Promise<number> {
+  const odlozone = new Set<string>();
+  for (;;) {
+    const job = getQueue().find((j) => !odlozone.has(j.id));
+    if (!job) break;
+    try {
+      await runJob(job);
+      setQueue(getQueue().filter((j) => j.id !== job.id));
+    } catch (e) {
+      const msg = (e as Error).message || String(e);
+      if (bladSieci(msg)) {
+        console.warn("Wysyłka wstrzymana — brak połączenia:", msg);
         return getQueue().length;
       }
-      setQueue(getQueue().filter((j) => j.id !== q[0].id));
+      odlozone.add(job.id);
+      setProblem({ message: msg, kind: job.kind, at: new Date().toISOString() });
+      console.error(`Baza odrzuciła zapis (${job.kind}):`, msg);
     }
-  } finally {
-    flushing = false;
   }
+  if (!odlozone.size) setProblem(null);
+  return getQueue().length;
 }
 
 // ---------------------------------------------------------------------------
@@ -329,7 +305,7 @@ export function saveObservation(obs: Observation): void {
     const i = c.observations.findIndex((o) => o.id === obs.id);
     if (i >= 0) c.observations[i] = obs; else c.observations.push(obs);
   });
-  enqueue({ kind: "observation", row: rowFromObj(packObsExt(obs as unknown as Record<string, unknown>)) });
+  enqueue({ kind: "observation", item: obs as unknown as Record<string, unknown> });
   void flushQueue();
 }
 
@@ -338,7 +314,7 @@ export function saveReport(rep: Report): void {
     const i = c.reports.findIndex((r) => r.id === rep.id);
     if (i >= 0) c.reports[i] = rep; else c.reports.push(rep);
   });
-  enqueue({ kind: "report", row: rowFromObj(rep as unknown as Record<string, unknown>) });
+  enqueue({ kind: "report", item: rep as unknown as Record<string, unknown> });
   void flushQueue();
 }
 

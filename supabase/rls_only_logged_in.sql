@@ -22,7 +22,7 @@ declare
   t text;
   tabele text[] := array[
     'sbs_players','sbs_clubs','sbs_observations','sbs_reports',
-    'sbs_talents','sbs_contacts','sbs_club_crests','sbs_kv'
+    'sbs_talents','sbs_contacts','sbs_club_crests','sbs_kv','sbs_live_events'
   ];
 begin
   foreach t in array tabele loop
@@ -46,7 +46,10 @@ declare
   p record;
   tabele text[] := array[
     'sbs_players','sbs_clubs','sbs_observations','sbs_reports',
-    'sbs_talents','sbs_contacts','sbs_club_crests','sbs_kv','sbs_matches'
+    'sbs_talents','sbs_contacts','sbs_club_crests','sbs_kv','sbs_matches',
+    -- Zdarzenia z panelu mobilnego. Zamykamy je RAZEM z resztą bazy, a nie osobno: tabela
+    -- zamknięta w pojedynkę odcinała telefon od zapisu, choć wszystko inne stało otworem.
+    'sbs_live_events'
   ];
 begin
   foreach t in array tabele loop

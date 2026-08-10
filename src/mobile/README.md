@@ -62,21 +62,47 @@ a nie awarią:
 - zapisy czekają w kolejce i idą na serwer same, gdy wróci sieć; licznik kolejki widać w pasku
   u góry i w zakładce Baza.
 
+## Co widać na komputerze
+
+Wszystko, co zapisze telefon, trafia do tej samej bazy, z której czyta aplikacja na komputerze:
+
+| Z telefonu | Gdzie szukać w SBS |
+| --- | --- |
+| oceny atrybutów | obserwacja zawodnika — liczą się do średniej i do mapy rankingowej |
+| raport (fazy, stałe fragmenty, perspektywa, opis) | zakładka **Raporty** |
+| decyzja o zawodniku | status w kartotece |
+| skład meczu i wyróżnieni | obserwacja → **👥 Skład** |
+| oś zdarzeń z meczu | obserwacja → **⏱ Zdarzenia** (podsumowanie, oś wg połów, kopiowanie do raportu) |
+
+Wysyłka nie jest niczym więcej niż zapisem w tych samych tabelach — nie ma tu osobnego
+„eksportu" ani kroku do wykonania ręcznie. Gdy baza odmówi zapisu (np. brak kolumny po
+niewykonanej migracji), panel mówi to wprost w zakładce Baza i miga na czerwono w pasku górnym.
+Odrzucone zadanie czeka w telefonie i idzie samo, gdy przyczyna zniknie — **nie blokuje przy tym
+pozostałych zapisów**, bo jedno zadanie nie może zatrzymać całej kolejki.
+
 ## Tabela zdarzeń — nieobowiązkowa
 
 Panel działa od razu, bez żadnej migracji. Oś zdarzeń zapisuje się wtedy w `sbs_kv` pod kluczem
-`scouting:liveEvents:<id obserwacji>`. Gdy zdarzenia mają być przeszukiwalne w SQL albo widoczne
-w aplikacji na komputerze, uruchom w Supabase (SQL Editor → New query → Run):
+`scouting:liveEvents:<id obserwacji>`. Gdy zdarzenia mają być dodatkowo przeszukiwalne
+zapytaniem SQL, uruchom w Supabase (SQL Editor → New query → Run):
 
 ```
 supabase/migration_2026-08-06_live_events.sql
 ```
 
-Panel sam wykryje, że tabela istnieje, i od następnego meczu zapisze się właściwą drogą.
+Panel sam wykryje, że tabela istnieje, i od następnego meczu zapisze się właściwą drogą. Okno
+zdarzeń na komputerze czyta OBA miejsca, więc mecze sprzed migracji wyglądają w nim tak samo
+jak te po niej i nic nie trzeba przenosić.
 
 ## Pliki
 
 - `main.ts` — widoki, obsługa dotknięć, zegar meczu
 - `db.ts` — dostęp do bazy, kopia offline, kolejka wysyłki
+- `../data/liveEvents.ts` — zdarzenia na żywo: kafle, zapis i odczyt. WSPÓLNE z aplikacją na
+  komputerze, bo etykiety zdarzeń nie idą do bazy (tabela trzyma sam klucz) — dwie listy
+  po dwóch stronach zamieniłyby oś zdarzeń w SBS w listę surowych identyfikatorów
+- `../data/storage.ts` — składanie wierszy (`prepareRow`) i rozpakowywanie pól `__ext`. Też
+  wspólne: własna kopia tej logiki w panelu już raz sprawiła, że baza odrzucała każdy raport
+  z telefonu
 - `style.css` — wygląd (ciemne tło, pola dotyku min. 44 px)
 - `../../mobile.html` — wejście, `../../public/sw.js` — mechanizm offline, `../../public/manifest.webmanifest` — instalacja na ekranie głównym

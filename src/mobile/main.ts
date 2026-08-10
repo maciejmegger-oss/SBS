@@ -8,11 +8,12 @@
 import "./style.css";
 import { currentUser, signIn, signOut, requestPasswordReset } from "../data/auth";
 import {
-  uid, getCache, refreshCache, patchCache, flushQueue, queueLength,
+  uid, getCache, refreshCache, patchCache, flushQueue, queueLength, queueProblem,
   saveObservation, saveReport, savePlayerStatus, saveLiveEvents,
   getLive, setLive, getScout, setScout, zarchiwizujZdarzenia, zdarzeniaObserwacji,
   type Cache, type LiveEvent, type LiveState, type Period,
 } from "./db";
+import { EVENT_TAGS } from "../data/liveEvents";
 import type { Observation, Report } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -63,20 +64,9 @@ const PERIODS: { n: Period; label: string; offset: number }[] = [
 ];
 const periodOf = (n: Period) => PERIODS.find((p) => p.n === n) || PERIODS[0];
 
-// Zdarzenia rejestrowane jednym dotknięciem. Dziewięć kafli to maksimum, jakie mieści się na
-// ekranie telefonu bez przewijania — a przewijanie w trakcie akcji oznacza przegapioną akcję.
-const EVENT_TAGS = [
-  { key: "podanie_kluczowe", label: "Podanie kluczowe" },
-  { key: "strzal", label: "Strzał" },
-  { key: "drybling", label: "Drybling" },
-  { key: "pojedynek", label: "Pojedynek" },
-  { key: "gra_glowa", label: "Gra głową" },
-  { key: "odbior", label: "Odbiór" },
-  { key: "strata", label: "Strata" },
-  { key: "ustawienie", label: "Ustawienie" },
-  { key: "gol", label: "Gol" },
-  { key: "asysta", label: "Asysta" },
-];
+// Kafle zdarzeń (EVENT_TAGS) siedzą w ../data/liveEvents — razem z odczytem, którego używa
+// aplikacja na komputerze. Etykiety nie idą do bazy, więc obie strony muszą czytać je z jednego
+// miejsca, inaczej oś zdarzeń na komputerze pokazałaby surowe klucze zamiast nazw.
 
 // ---------------------------------------------------------------------------
 // Pomocnicze
@@ -1065,6 +1055,7 @@ function viewBaza(): string {
   };
 
   const n = queueLength();
+  const problem = queueProblem();
   return `
     <h2>Baza</h2>
     <p class="hint">${q ? "Wyniki wyszukiwania" : "Monitoring i zawodnicy do transferu"} · ${cache.players.length} zawodników w kopii</p>
@@ -1096,6 +1087,15 @@ function viewBaza(): string {
         <button class="btn ghost" data-act="refresh">Odśwież kopię bazy</button>
         ${n ? '<button class="btn ghost" data-act="flush">Wyślij teraz</button>' : ""}
       </div>
+      ${problem ? `
+      <div class="card" style="border-color:var(--bad-fg);">
+        <div class="row"><span class="label" style="margin:0;">Baza odrzuciła zapis</span>
+          <span class="sub">${esc(new Date(problem.at).toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }))}</span></div>
+        <p class="sub" style="margin:8px 0 0; word-break:break-word;">${esc(problem.message)}</p>
+        <p class="sub" style="margin:8px 0 0; color:var(--text-2);">
+          Nic nie przepadło — zapis czeka w telefonie i pójdzie sam, gdy przyczyna zniknie.
+          Pozostałe zapisy idą normalnie, ten jeden ich nie blokuje.</p>
+      </div>` : ""}
       ${zalogowany
         ? '<button class="btn danger" data-act="logout">Wyloguj się</button>'
         : '<button class="btn ghost" data-act="go-login">Zaloguj się</button>'}
@@ -1184,9 +1184,26 @@ const TABS: { id: ViewName; label: string; icon: string }[] = [
 function syncPill(): string {
   const n = queueLength();
   if (!navigator.onLine) return `<span class="sync offline">Offline${n ? " · " + n : ""}</span>`;
+  // Odmowa bazy wygląda w kolejce tak samo jak brak zasięgu, a jest czymś zupełnie innym: sama
+  // nie minie. Musi się różnić na pierwszy rzut oka, bo to jedyny sygnał, że praca z meczu stoi
+  // w telefonie zamiast być w SBS.
+  if (queueProblem()) return `<span class="sync problem">Odmowa bazy${n ? " · " + n : ""}</span>`;
   if (n) return `<span class="sync pending">W kolejce · ${n}</span>`;
   // Krótko, bo pasek dzieli szerokość z nazwą aplikacji i przyciskiem motywu.
   return '<span class="sync">Wysłane</span>';
+}
+
+// Co pokazać po zakończonej próbie wysyłki. Wołane wszędzie tam, gdzie panel próbuje opróżnić
+// kolejkę — także w tle (powrót zasięgu, powrót do karty), stąd warunek na powtórki: ten sam
+// komunikat wyświetlony po raz piąty niczego nie dodaje, a zasłania ekran w trakcie meczu.
+let pokazanyBlad = "";
+function poWysylce() {
+  refreshSyncPill();
+  const p = queueProblem();
+  if (!p) { pokazanyBlad = ""; return; }
+  if (p.message === pokazanyBlad) return;
+  pokazanyBlad = p.message;
+  toast("Baza odrzuciła zapis — szczegóły w zakładce Baza");
 }
 
 function render() {
@@ -1517,7 +1534,11 @@ function saveOcena() {
   cache = getCache();
   view = "dzis";
   render();
-  toast(navigator.onLine ? "Zapisano i wysłano do SBS" : "Zapisano — wyślę, gdy wróci zasięg");
+  // „Zapisano i wysłano" było meldunkiem na wyrost: wysyłka dopiero się zaczyna, a jej wynik
+  // znamy sekundę później. Mówimy więc, co się dzieje, a o rezultacie — dobrym czy złym —
+  // melduje poWysylce().
+  toast(navigator.onLine ? "Zapisano — wysyłam do SBS" : "Zapisano — wyślę, gdy wróci zasięg");
+  void flushQueue().then(poWysylce);
 }
 
 function saveNowa() {
@@ -1847,7 +1868,13 @@ document.addEventListener("click", (e) => {
         .catch((err) => toast("Nie udało się pobrać: " + err.message));
       break;
     case "flush":
-      flushQueue().then((left) => { refreshSyncPill(); render(); toast(left ? "Zostało " + left : "Wszystko wysłane"); });
+      flushQueue().then((left) => {
+        const p = queueProblem();
+        refreshSyncPill(); render();
+        // „Zostało 3" bez powodu brzmi jak chwilowy brak zasięgu. Gdy to baza odmówiła, mówimy
+        // to wprost — inaczej scout czeka na wysyłkę, która sama nie ruszy.
+        toast(p ? "Baza odrzuciła zapis — szczegóły niżej" : left ? "Zostało " + left : "Wszystko wysłane");
+      });
       break;
     case "logout":
       signOut().then(() => location.reload());
@@ -2009,7 +2036,7 @@ async function start(pobranaKopia?: Cache) {
   if (live) view = "live";
   render();
 
-  void flushQueue().then(refreshSyncPill);
+  void flushQueue().then(poWysylce);
   if (pobranaKopia) return; // kopia przyszła już przy sprawdzaniu dostępu — nie pobieramy drugi raz
 
   // Kopię bazy pobieramy w tle. Panel jest użyteczny natychmiast — z tym, co zostało w telefonie
@@ -2059,13 +2086,13 @@ async function boot() {
   renderLogin();
 }
 
-window.addEventListener("online", () => { void flushQueue().then(refreshSyncPill); });
+window.addEventListener("online", () => { void flushQueue().then(poWysylce); });
 window.addEventListener("offline", refreshSyncPill);
 
 // Zegar bywa zatrzymywany przez system, gdy karta idzie w tło. Po powrocie przeliczamy czas
 // i odświeżamy wyświetlanie, zamiast pokazywać wartość sprzed uśpienia.
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) { paintClock(); void flushQueue().then(refreshSyncPill); }
+  if (!document.hidden) { paintClock(); void flushQueue().then(poWysylce); }
 });
 
 // Znacznik dla czujnika nieudanego startu z mobile.html. Jeśli którykolwiek z importów wyżej

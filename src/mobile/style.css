@@ -116,6 +116,11 @@ button{background:none; border:none; cursor:pointer;}
 }
 .sync.pending{background:var(--accent-bg); color:var(--accent-fg);}
 .sync.offline{background:var(--bad-bg); color:var(--bad-fg);}
+/* Odmowa bazy — w odróżnieniu od kolejki i offline'u sama nie minie, więc miga, żeby nie dało
+   się jej przeoczyć w trakcie meczu. */
+.sync.problem{background:var(--bad-bg); color:var(--bad-fg); animation:sync-alarm 1.6s ease-in-out infinite;}
+@keyframes sync-alarm{50%{opacity:.45;}}
+@media (prefers-reduced-motion: reduce){.sync.problem{animation:none;}}
 .sync::before{content:''; width:6px; height:6px; border-radius:50%; background:currentColor;}
 
 /* ---------- treść ---------- */

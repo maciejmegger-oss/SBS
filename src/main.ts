@@ -1,5 +1,6 @@
 import "./style.css";
 import { storage } from "./data/storage";
+import { getLiveEvents, eventLabel, PERIOD_LABELS } from "./data/liveEvents";
 import { currentUser, signIn, signOut, requestPasswordReset, setNewPassword, isPasswordRecoveryLink } from "./data/auth";
 import { VOIVODESHIP_PATHS } from "./data/voivodeships";
 import type { Database } from "./types";
@@ -3954,6 +3955,7 @@ function obsMonthListHtml(){
           <span class="obs-type-tag" style="background:${obsTypeMeta(obsTypeOf(o)).color};">${esc(obsTypeMeta(obsTypeOf(o)).label)}</span>
           <span class="meta">${esc(o.date)}${o.matchTime?' &middot; '+esc(o.matchTime):''}</span>
           <button class="link-btn" data-action="obs-sklad" data-id="${o.id}" style="font-size:11px;" title="Składy obu drużyn i zaznaczanie zawodników wyróżniających się">👥 Skład${liczbaWyroznionych(o)?' ('+liczbaWyroznionych(o)+')':''}</button>
+          <button class="link-btn" data-action="obs-zdarzenia" data-id="${o.id}" style="font-size:11px;" title="Oś zdarzeń zarejestrowana na telefonie w trakcie meczu">⏱ Zdarzenia</button>
           <button class="link-btn" data-action="edit-obs" data-id="${o.id}" style="font-size:11px;">✎ Edytuj</button>
           <button class="link-btn" data-action="delete-obs" data-id="${o.id}" style="font-size:11px;color:var(--clay-dark);">Usuń</button>
         </span>
@@ -4023,6 +4025,7 @@ function obsCalendarHtml(){
         <span>${pl ? `<strong>${esc(pl.firstName+' '+pl.lastName)}</strong> — ${esc(o.match||'brak danych meczu')}`
           : `<strong>${esc(o.match || 'Obserwacja meczu')}</strong>`} <span class="meta">(${esc(o.scout)})</span></span>
         <span style="flex-shrink:0;white-space:nowrap;">
+          <button class="link-btn" data-action="obs-zdarzenia" data-id="${o.id}" style="font-size:11px;" title="Oś zdarzeń z telefonu">⏱</button>
           <button class="link-btn" data-action="edit-obs" data-id="${o.id}" style="font-size:11px;">✎</button>
           <button class="link-btn" data-action="delete-obs" data-id="${o.id}" style="font-size:11px;color:var(--clay-dark);">✕</button>
         </span>
@@ -6439,6 +6442,7 @@ function attachHandlers(){
     const card = document.querySelector('.main .card'); if(card) card.scrollIntoView({behavior:'smooth', block:'start'});
   });
   main.querySelectorAll('[data-action="obs-sklad"]').forEach(b=>b.onclick=()=>openObsSkladModal(b.dataset.id));
+  main.querySelectorAll('[data-action="obs-zdarzenia"]').forEach(b=>b.onclick=()=>openObsZdarzeniaModal(b.dataset.id));
   main.querySelectorAll('[data-action="cancel-edit-obs"]').forEach(b=>b.onclick=()=>{ editingObsId = null; render(); });
   main.querySelectorAll('[data-action="delete-obs"]').forEach(b=>b.onclick=async()=>{
     if(!confirm('Usunąć tę obserwację?')) return;
@@ -10694,6 +10698,124 @@ function openObsSkladModal(obsId){
   overlay.addEventListener('click', e=>{ if(e.target===overlay){ overlay.remove(); render(); } });
   document.body.appendChild(overlay);
   draw();
+}
+
+// OŚ ZDARZEŃ Z TELEFONU — druga połowa drogi, której dotąd nie było.
+//
+// Panel mobilny (/m) zapisuje każde dotknięcie kafla jako zdarzenie z minutą meczu: strzał,
+// pojedynek, odbiór, gol. Zapisywał je do bazy od początku, ale aplikacja na komputerze nie
+// czytała ich w ogóle — cała praca z trybun kończyła się w bazie i nie było gdzie jej zobaczyć.
+// Scout stojący na meczu rejestruje, a przy biurku redaguje; bez tego okna drugi krok nie miał
+// z czego korzystać.
+//
+// Zdarzenia leżą w jednym z dwóch miejsc, zależnie od tego, czy migracja tabeli była uruchomiona
+// w chwili meczu — czytamy oba (patrz src/data/liveEvents.ts), więc mecze sprzed i po migracji
+// wyglądają tu tak samo.
+function openObsZdarzeniaModal(obsId){
+  const obs = DB.observations.find(o=>o.id===obsId);
+  if(!obs) return;
+  const pl = DB.players.find(p=>p.id===obs.playerId);
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  let zdarzenia = null, blad = '';
+
+  const minuta = (e)=> `${e.minute}'`;
+
+  // Podsumowanie: ile razy każde zdarzenie i z jakim skutkiem. To ono odpowiada na pytanie,
+  // które zadaje się przy pisaniu raportu — „ile miał celnych pojedynków" — a nie sama lista.
+  function podsumowanieHtml(lista){
+    const wgTypu = new Map();
+    lista.forEach(e=>{
+      const w = wgTypu.get(e.type) || {udane:0, nieudane:0};
+      if(e.quality < 0) w.nieudane++; else w.udane++;
+      wgTypu.set(e.type, w);
+    });
+    const wiersze = [...wgTypu.entries()].sort((a,b)=> (b[1].udane+b[1].nieudane)-(a[1].udane+a[1].nieudane));
+    return `<table style="width:100%;font-size:12.5px;border-collapse:collapse;margin:0 0 14px;">
+      <tr style="text-align:left;color:var(--ink-soft);">
+        <th style="padding:4px;">Zdarzenie</th><th style="padding:4px;width:70px;">Udane</th>
+        <th style="padding:4px;width:80px;">Nieudane</th><th style="padding:4px;width:60px;">Razem</th></tr>
+      ${wiersze.map(([typ, w])=>`<tr style="border-top:1px solid var(--border);">
+        <td style="padding:4px;font-weight:600;">${esc(eventLabel(typ))}</td>
+        <td style="padding:4px;color:var(--good);">${w.udane || '—'}</td>
+        <td style="padding:4px;color:var(--clay-dark);">${w.nieudane || '—'}</td>
+        <td style="padding:4px;">${w.udane + w.nieudane}</td></tr>`).join('')}
+    </table>`;
+  }
+
+  function osHtml(lista){
+    // Grupujemy po częściach meczu, bo tak się mecz pamięta i tak się o nim pisze.
+    const wgPolowy = new Map();
+    lista.forEach(e=>{
+      const arr = wgPolowy.get(e.half) || [];
+      arr.push(e);
+      wgPolowy.set(e.half, arr);
+    });
+    return [...wgPolowy.keys()].sort((a,b)=>a-b).map(h=>`
+      <h4 style="margin:12px 0 4px;color:var(--heading);font-size:13px;">${esc(PERIOD_LABELS[h] || ('Część ' + h))}</h4>
+      ${wgPolowy.get(h).map(e=>`
+        <div style="display:flex;gap:8px;align-items:baseline;padding:3px 4px;border-top:1px solid var(--border);font-size:12.5px;">
+          <span style="font-variant-numeric:tabular-nums;min-width:34px;color:var(--ink-soft);">${esc(minuta(e))}</span>
+          <span style="color:${e.quality < 0 ? 'var(--clay-dark)' : 'var(--good)'};">${e.quality < 0 ? '✕' : '✓'}</span>
+          <span style="font-weight:600;">${esc(eventLabel(e.type))}</span>
+          ${e.zawodnik ? `<span class="meta">${esc(e.zawodnik)}</span>` : ''}
+          ${e.note ? `<span class="meta" style="flex:1;">„${esc(e.note)}"</span>` : ''}
+        </div>`).join('')}`).join('');
+  }
+
+  // Oś w postaci tekstu — do wklejenia w opis raportu. Raport pisze się przy biurku, z osi
+  // przed oczami; przepisywanie jej ręcznie z ekranu byłoby jedyną rzeczą, którą to okno
+  // by pogorszyło.
+  function jakoTekst(lista){
+    return lista.map(e=>[
+      minuta(e), e.quality < 0 ? '✕' : '✓', eventLabel(e.type),
+      e.zawodnik || '', e.note ? '— ' + e.note : '',
+    ].filter(Boolean).join(' ')).join('\n');
+  }
+
+  function draw(){
+    const naglowek = pl ? esc(pl.firstName + ' ' + pl.lastName) : esc(obs.match || 'Obserwacja meczu');
+    overlay.innerHTML = `
+    <div class="modal" style="max-width:720px;">
+      <h3>⏱ Zdarzenia z meczu — ${naglowek}</h3>
+      <p class="note" style="margin-bottom:10px;">${esc(obs.date || '')}${obs.match && pl ? ' · ' + esc(obs.match) : ''}${obs.scout ? ' · scout: ' + esc(obs.scout) : ''}
+      <br>Rejestrowane na telefonie w panelu <strong>/m</strong> w trakcie spotkania.</p>
+
+      ${blad ? `<div class="empty" style="text-align:left;padding:12px;border-color:var(--clay-dark);">
+        Nie udało się pobrać zdarzeń: ${esc(blad)}</div>`
+      : zdarzenia === null ? `<div class="empty">Wczytuję zdarzenia…</div>`
+      : !zdarzenia.length ? `<div class="empty" style="text-align:left;padding:14px;">
+          Do tej obserwacji nie zarejestrowano żadnych zdarzeń.<br>
+          <span class="meta">Powstają w panelu mobilnym: zakładka <strong>Live</strong> → kafle zdarzeń w trakcie meczu.</span></div>`
+      : `${podsumowanieHtml(zdarzenia)}
+         <div style="max-height:46vh;overflow:auto;">${osHtml(zdarzenia)}</div>`}
+
+      <div class="modal-actions">
+        ${zdarzenia && zdarzenia.length ? `<button class="secondary" data-x="kopiuj">Kopiuj oś jako tekst</button>` : ''}
+        <button class="secondary" data-x="zamknij">Zamknij</button>
+      </div>
+    </div>`;
+
+    overlay.querySelector('[data-x="zamknij"]').onclick = ()=>overlay.remove();
+    const kop = overlay.querySelector('[data-x="kopiuj"]');
+    if(kop) kop.onclick = async()=>{
+      try{
+        await navigator.clipboard.writeText(jakoTekst(zdarzenia));
+        kop.textContent = 'Skopiowano';
+      }catch(e){
+        kop.textContent = 'Przeglądarka nie pozwoliła skopiować';
+      }
+    };
+  }
+
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+  draw();
+
+  getLiveEvents(obsId)
+    .then(lista=>{ zdarzenia = lista; draw(); })
+    .catch(e=>{ blad = (e && e.message) ? e.message : String(e); draw(); });
 }
 
 // Pobranie statystyk całego składu z 90minut — bez kopiowania czegokolwiek.
