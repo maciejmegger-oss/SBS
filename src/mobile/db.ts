@@ -12,7 +12,7 @@
 // idzie na serwer. Nic nie ginie po zamknięciu przeglądarki ani po rozładowaniu telefonu.
 
 import { sb, EXT_CONFIG } from "../data/storage";
-import type { Player, Club, Observation, Report } from "../types";
+import type { Player, Club, Observation, Report, Match } from "../types";
 
 // Część meczu: 1 i 2 to połowy regulaminowe, 3 i 4 to dogrywka. Doliczonego czasu nie liczymy
 // osobno — zegar po prostu biegnie dalej, więc zdarzenie z 47. minuty pierwszej połowy zapisuje
@@ -86,11 +86,15 @@ export interface Cache {
   clubs: Club[];
   observations: Observation[];
   reports: Report[];
+  // Terminarz z SBS. Leży w sbs_kv, a nie we własnej tabeli (patrz src/data/storage.ts), więc
+  // czytamy go tak samo jak ustawienia. Przy meczu zachowane jest pole `competition` — pełna
+  // nazwa rozgrywek z 90minut, wraz z grupą, bo III liga ma cztery grupy, a IV liga szesnaście.
+  matches: (Match & { competition?: string })[];
   scouts: string[];
   fetchedAt: string | null;
 }
 
-const EMPTY_CACHE: Cache = { players: [], clubs: [], observations: [], reports: [], scouts: [], fetchedAt: null };
+const EMPTY_CACHE: Cache = { players: [], clubs: [], observations: [], reports: [], matches: [], scouts: [], fetchedAt: null };
 
 export const getCache = (): Cache => readLS<Cache>(LS.cache, EMPTY_CACHE);
 
@@ -166,12 +170,13 @@ const page = async (table: string, columns = "*"): Promise<Record<string, unknow
 // Pobranie kopii bazy. Wołane po zalogowaniu i z przycisku „Odśwież" — świadomie, a nie przy
 // każdym wejściu do widoku, żeby nie zjadać transferu na stadionie.
 export async function refreshCache(): Promise<Cache> {
-  const [players, clubs, observations, reports, kv] = await Promise.all([
+  const [players, clubs, observations, reports, kv, kvMecze] = await Promise.all([
     page("sbs_players"),
     page("sbs_clubs"),
     page("sbs_observations"),
     page("sbs_reports"),
     sb.from("sbs_kv").select("value").eq("key", "scouting:settings").maybeSingle(),
+    sb.from("sbs_kv").select("value").eq("key", "scouting:matches").maybeSingle(),
   ]);
 
   let scouts: string[] = [];
@@ -182,11 +187,20 @@ export async function refreshCache(): Promise<Cache> {
     /* ustawienia w nieoczekiwanym kształcie — lista scoutów zostaje pusta, da się ją wpisać ręcznie */
   }
 
+  let matches: (Match & { competition?: string })[] = [];
+  try {
+    const surowe = kvMecze.data ? JSON.parse((kvMecze.data as { value: string }).value) : null;
+    if (Array.isArray(surowe)) matches = surowe;
+  } catch {
+    /* terminarz w nieoczekiwanym kształcie — lista zostaje pusta, mecz da się wpisać ręcznie */
+  }
+
   const cache: Cache = {
     players: players.map(objFromRow) as unknown as Player[],
     clubs: clubs.map(objFromRow) as unknown as Club[],
     observations: observations.map((r) => liftObsExt(objFromRow(r))) as unknown as Observation[],
     reports: reports.map(objFromRow) as unknown as Report[],
+    matches,
     scouts,
     fetchedAt: new Date().toISOString(),
   };
