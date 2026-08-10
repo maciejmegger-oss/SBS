@@ -1828,6 +1828,9 @@ function renderLogin(info?: string) {
 // Dotknięcie kończy go od razu — scout, który wraca do trwającego meczu, nie ma na co czekać.
 
 function splash() {
+  // Dwa ekrany powitalne naraz nie mają jak powstać przy zwykłym starcie, ale przy powrocie
+  // do karty zdarzenia potrafią przyjść parami — a drugi herb nad pierwszym wygląda jak usterka.
+  if (document.querySelector(".splash")) return;
   const el = document.createElement("div");
   el.className = "splash";
   el.innerHTML = `
@@ -1915,8 +1918,26 @@ window.addEventListener("offline", refreshSyncPill);
 
 // Zegar bywa zatrzymywany przez system, gdy karta idzie w tło. Po powrocie przeliczamy czas
 // i odświeżamy wyświetlanie, zamiast pokazywać wartość sprzed uśpienia.
+// POWRÓT DO APLIKACJI.
+//
+// Na telefonie karta zostaje otwarta tygodniami — moduł wykonuje się raz, więc ekran powitalny
+// pokazywał się praktycznie tylko za pierwszym razem. „Otwarcie aplikacji" w odczuciu scouta to
+// jednak powrót do niej po godzinach, nie przeładowanie strony; stąd wrażenie, że animacji nie ma.
+//
+// Powtarzamy ją więc po dłuższej nieobecności — ale NIGDY w trakcie biegnącego meczu. Wtedy
+// powrót do telefonu oznacza akcję do zarejestrowania i sekunda z herbem to sekunda za dużo.
+const PRZERWA_NA_POWITANIE = 20 * 60 * 1000;
+let ukryteOd: number | null = null;
+
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) { paintClock(); void flushQueue().then(refreshSyncPill); }
+  if (document.hidden) { ukryteOd = Date.now(); return; }
+
+  paintClock();
+  void flushQueue().then(refreshSyncPill);
+
+  const przerwa = ukryteOd ? Date.now() - ukryteOd : 0;
+  ukryteOd = null;
+  if (przerwa > PRZERWA_NA_POWITANIE && !(live && live.running)) splash();
 });
 
 // Znacznik dla czujnika nieudanego startu z mobile.html. Jeśli którykolwiek z importów wyżej
