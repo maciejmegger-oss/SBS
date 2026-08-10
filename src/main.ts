@@ -3224,6 +3224,8 @@ function viewPlayers(){
   if(playerFilters.agent==='tak') list = list.filter(p=>!!p.hasAgent);
   else if(playerFilters.agent==='nie') list = list.filter(p=>!p.hasAgent);
   else if(playerFilters.agent==='niesprawdzone') list = list.filter(p=>!p.hasAgent && !p.agentCheckedAt);
+  // Ta sama grupa, którą podświetlamy na żółto — tu do wyfiltrowania na osobną listę.
+  else if(playerFilters.agent==='mlodzi-bez') list = list.filter(p=>p.birthYear && isYouthPlayer(p) && !p.hasAgent);
   if(playerFilters.search){
     const q = playerFilters.search.toLowerCase();
     list = list.filter(p=> (p.firstName+" "+p.lastName).toLowerCase().includes(q));
@@ -3236,7 +3238,12 @@ function viewPlayers(){
     const cls = STATUS_CLASS[p.status]||"new";
     // Cały wiersz otwiera profil — tabela jest szeroka i przy węższym ekranie kolumna z przyciskami
     // („Zobacz", „✕") bywa poza kadrem, więc samo kliknięcie w nazwisko musi wystarczyć.
-    return `<tr class="player-row" data-action="row-open-player" data-id="${p.id}" style="cursor:pointer;" title="Kliknij, aby otworzyć profil">
+    // Młodzieżowiec BEZ menedżera — wiersz podświetlony na żółto. To jedyne połączenie tych dwóch
+    // kolumn, które ma wartość handlową: zawodnik jest młody, a jeszcze nikt go nie reprezentuje.
+    // Rocznik bywa pusty, więc wymagamy go wprost — brak rocznika to niewiedza, nie okazja,
+    // i podświetlanie takiego wiersza byłoby myleniem jednego z drugim.
+    const okazja = p.birthYear && isYouthPlayer(p) && !p.hasAgent;
+    return `<tr class="player-row${okazja?' prow-okazja':''}" data-action="row-open-player" data-id="${p.id}" style="cursor:pointer;" title="${okazja?'Młodzieżowiec bez menedżera — ':''}Kliknij, aby otworzyć profil">
       <td><input type="checkbox" class="player-checkbox" data-id="${p.id}"></td>
       <td style="color:var(--ink-soft);font-size:12px;text-align:right;">${idx+1}</td>
       <td>${p.nationality?`<span title="${esc(p.nationality)}">${nationalityFlag(p.nationality)}</span> `:''}<strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</td>
@@ -3261,7 +3268,10 @@ function viewPlayers(){
 
   return `
   <h2 class="view-title">${viewingRocznikGroup ? esc(viewingRocznikGroup) : 'Zawodnicy'}</h2>
-  <p class="view-sub">${viewingRocznikGroup ? 'Zawodnicy z tego rocznika.' : 'Kartoteka wszystkich obserwowanych zawodników.'}</p>
+  <p class="view-sub">${viewingRocznikGroup ? 'Zawodnicy z tego rocznika.' : 'Kartoteka wszystkich obserwowanych zawodników.'}
+    <span style="display:inline-flex;align-items:center;gap:6px;margin-left:8px;">
+      <span style="display:inline-block;width:22px;height:12px;border-radius:3px;background:var(--row-okazja);box-shadow:inset 3px 0 0 var(--gold);"></span>
+      młodzieżowiec bez menedżera</span></p>
   ${viewingRocznikGroup ? `<div style="display:flex;gap:8px;margin-bottom:12px;">
     <button class="secondary" data-action="back-rocznik">← Wróć do roczników</button>
     <button class="danger" data-action="delete-rocznik" data-year="${viewingRocznikGroup.match(/\d{4}/)[0]}" title="Usuń wszystkich zawodników z tego rocznika">🗑️ Usuń cały rocznik</button>
@@ -3277,6 +3287,7 @@ function viewPlayers(){
         <option value="tak" ${playerFilters.agent==='tak'?'selected':''}>Menedżer: Tak</option>
         <option value="nie" ${playerFilters.agent==='nie'?'selected':''}>Menedżer: Nie</option>
         <option value="niesprawdzone" ${playerFilters.agent==='niesprawdzone'?'selected':''}>Menedżer: niesprawdzone</option>
+        <option value="mlodzi-bez" ${playerFilters.agent==='mlodzi-bez'?'selected':''}>⭐ Młodzieżowcy bez menedżera</option>
       </select>
       <input id="f-birthyear" type="text" inputmode="numeric" maxlength="4" placeholder="Rocznik np. 2005" value="${esc(playerFilters.birthYear)}" style="max-width:140px;">
       <input id="f-search" placeholder="Szukaj po nazwisku..." value="${esc(playerFilters.search)}">
