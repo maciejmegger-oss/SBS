@@ -11125,9 +11125,20 @@ function open90minutStatsModal(clubId){
       const dane = await res.json();
       wynik = dane;
       if(!res.ok || dane.error) blad = dane.error || ('Serwer odpowiedział kodem ' + res.status + '.');
-      // Po zapisie odświeżamy dane w aplikacji, żeby nowe liczby były widoczne od razu,
-      // a nie dopiero po przeładowaniu strony.
-      if(zapisujemy && dane.zapisani) await loadAll();
+      // Po udanym zapisie okno zamyka się samo. Zostawianie go otwartego zmuszało do
+      // dodatkowego kliknięcia i nie niosło już żadnej informacji — wynik widać w tabeli.
+      if(zapisujemy && dane.zapisani){
+        await loadAll();
+        pracuje = false;
+        overlay.remove();
+        render();
+        const ile = dane.zapisani;
+        const roczniki = dane.rocznikiDoUzupelnienia ? ` Uzupełniłem też ${dane.rocznikiDoUzupelnienia} roczników.` : '';
+        const pominiete = (dane.pominietiGorsze||[]).length
+          ? ` Pominąłem ${dane.pominietiGorsze.length}, bo 90minut podaje mniej niż już mamy.` : '';
+        alert(`Zapisano dorobek ${ile} zawodnikom.${roczniki}${pominiete}`);
+        return;
+      }
     }catch(e){
       blad = (e && e.name === 'TimeoutError')
         ? 'Przekroczono czas oczekiwania (90 s). Pobieranie z 90minut trwało za długo — spróbuj ponownie.'

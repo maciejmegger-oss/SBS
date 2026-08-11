@@ -64,11 +64,20 @@ export function poziomRozgrywek(nazwa) {
   return "";
 }
 
+// Encje HTML rozkodowujemy WSZYSTKIE, nie tylko dwie najczęstsze.
+//
+// 90minut zapisuje znaki spoza łaciny podstawowej numerycznie, więc „Conceição" przychodzi jako
+// „Conceiç&#227;o". Bez rozkodowania nazwisko nie dopasowuje się do kartoteki i zawodnik, który
+// tam JEST, ląduje na liście „zagrali, ale nie ma ich w bazie" — a przy dopisaniu powstałby
+// duplikat z połamanym nazwiskiem.
+const encje = { nbsp: " ", amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
+
 const strip = (s) =>
   String(s || "")
     .replace(/<[^>]*>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(parseInt(n, 10)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&([a-z]+);/gi, (m, n) => encje[n.toLowerCase()] ?? m)
     .replace(/\s+/g, " ")
     .trim();
 
