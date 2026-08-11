@@ -3,29 +3,36 @@
 Krótka instrukcja obsługi dla administratora systemu. Wszystko, co trzeba zrobić raz przy
 wdrożeniu, jest w części „Uruchomienie". Codzienna praca to jedna zakładka w aplikacji.
 
-## Stan na dziś: blokada jest przygotowana, ale NIE włączona
+## Stan na dziś: ekran logowania WŁĄCZONY, reguły w bazie czekają
 
-Wszystko poniżej jest już w kodzie i czeka na jedno słowo. Dopóki nie zrobisz kroków z części
-„Uruchomienie":
+- `/app` i `/m` **pytają o hasło** — osoba z zewnątrz nie zobaczy już ani jednego ekranu systemu.
+- Po zalogowaniu masz **pełen dostęp, dokładnie jak dotąd** — żadnych nowych ograniczeń w środku.
+- Adres główny (`/`) jest otwarty i taki ma być: to wizytówka, bez danych.
+- **Zostaje jeden krok po Twojej stronie** — uruchomienie migracji w Supabase (część
+  „Uruchomienie"). Dopóki tego nie zrobisz, zamknięty jest *widok*, a nie *dane*: kto zna adres
+  bazy i klucz ze strony, ten wciąż może odpytać ją z pominięciem aplikacji.
 
-- `/app` i `/m` **otwierają się bez logowania** — dokładnie jak dotąd, praca idzie normalnie;
-- ekran logowania, zakładka „Dostęp" i formularz zgłoszenia już działają dla kont, które istnieją;
-- **nie wysyłaj jeszcze linku do `/app`** osobom spoza klubu — zamknięty jest dopiero po kroku 1.
-
-Sam adres główny (`/`) możesz pokazywać od zaraz: to strona wizytówkowa, nie ma na niej danych.
+Czego ta blokada z natury nie obejmuje: kod strony zawiera wbudowane listy klubów i składów
+(dane jawne, z ogólnodostępnych serwisów) — one są w pliku aplikacji i da się je odczytać.
+Praca klubu, czyli obserwacje, oceny, raporty i opinie, jest wyłącznie w bazie i to ją zamyka
+migracja.
 
 ## Jak Ty się logujesz
 
 Logowanie idzie przez konto w Supabase Auth — nie ma osobnego hasła „do strony". Zanim cokolwiek
 zamkniemy, upewnij się, że masz konto i że wchodzisz.
 
-**Raz, przed zamknięciem:**
+**Raz, zanim wejdziesz pierwszy raz po zamknięciu:**
 
 1. Supabase → **Authentication → Users → Add user**: podaj swój adres (`maciejmegger@gmail.com`)
    i hasło, zaznacz **Auto Confirm User**. Bez tego konto czeka na potwierdzenie z maila.
-2. Wejdź na `/app` → w panelu bocznym, na dole, kliknij **„Zaloguj się →"** → wpisz ten adres
-   i hasło. Powinno wpuścić bez błędu (dziś i tak wchodzisz bez logowania, ale to jest test hasła).
-3. Dopiero gdy to działa, robimy kroki z części „Uruchomienie".
+2. Wejdź na `/app` i zaloguj się tym adresem i hasłem. Powinno wpuścić od razu na dashboard.
+3. Potem dopiero migracja z części „Uruchomienie" — w tej kolejności, bo migracja otwiera
+   dostęp kontom, które w tym momencie już istnieją.
+
+Gdyby konto powstało dopiero PO migracji, wejdzie ono ze stanem „oczekuje" i zobaczysz ekran
+„Konto czeka na akceptację". Naprawa: uruchom skrypt migracji jeszcze raz — jest do tego
+przystosowany i przy każdym przebiegu ustawia Twój adres jako administratora z dostępem.
 
 **Na co dzień, po zamknięciu:**
 
@@ -82,13 +89,10 @@ projekt.
    Włączone (zalecane) oznacza, że zgłaszający musi kliknąć link ze swojej skrzynki — dzięki temu
    nikt nie zgłasza się z cudzego adresu. Zgłoszenie i tak trafia do Ciebie od razu.
 
-5. **Włącz ekran logowania.** W `src/main.ts` ustaw `WYMAGAJ_LOGOWANIA = true` (przełącznik stoi
-   tuż nad funkcją `startApp`, z opisem). Panel mobilny nie ma własnego przełącznika — sam
-   zauważy, że baza przestała oddawać dane bez sesji, i poprosi o hasło.
-
-   Punkty 1 i 5 są od siebie niezależne i tylko punkt 1 naprawdę zamyka dane. Przełącznik bez
-   reguł byłby zasłoną (dane wciąż do wzięcia z pominięciem aplikacji), reguły bez przełącznika
-   działają w pełni — pokazywałyby tylko brzydszy komunikat zamiast ekranu logowania.
+Ekran logowania jest już włączony (`WYMAGAJ_LOGOWANIA = true` w `src/main.ts`, przełącznik stoi
+tuż nad funkcją `startApp`); panel mobilny pyta o hasło tak samo. Te dwie rzeczy — ekran i reguły
+w bazie — są od siebie niezależne i tylko reguły naprawdę zamykają dane. Ekran bez reguł jest
+zasłoną, reguły bez ekranu działają w pełni.
 
 ## Codzienna praca: zakładka „Dostęp"
 

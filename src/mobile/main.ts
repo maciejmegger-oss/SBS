@@ -2347,52 +2347,34 @@ function renderCzekaNaZgode(konto: Konto) {
   });
 }
 
-// KIEDY PANEL PYTA O HASŁO.
+// KIEDY PANEL PYTA O HASŁO: ZAWSZE.
 //
-// Wtedy, gdy baza rzeczywiście tego wymaga — panel nie ma własnego przełącznika i nie trzeba go
-// przestawiać po zamknięciu dostępu. Rozstrzyga wynik zapytania: gdy dane przychodzą bez sesji
-// (reguły dostępu jeszcze otwarte), scout wchodzi od razu na listę obserwacji. Gdy baza nie odda
-// nic — pokazuje się ekran logowania. Wymuszanie hasła wcześniej niczego by nie chroniło (klucz
-// dostępu jest wpisany w kod każdej strony), a blokowałoby scouta stojącego na trybunie.
+// Adres /m jest publiczny tak samo jak /app, więc zostawienie panelu otwartego znaczyłoby, że
+// zamknięcie systemu na komputerze niczego nie daje — obserwacje i kadra byłyby do obejrzenia
+// z telefonu. Po zalogowaniu panel działa bez żadnych dalszych ograniczeń, dokładnie jak dotąd.
 //
-// Zalogowanemu sprawdzamy jeszcze zgodę administratora — po to, żeby konto oczekujące dostało
-// wyjaśnienie zamiast pustych list.
+// Zalogowanemu sprawdzamy jeszcze zgodę administratora, żeby konto oczekujące dostało wyjaśnienie
+// zamiast pustych list.
 //
-// Praca bez zasięgu nie ucierpiała: sesję Supabase trzyma w pamięci telefonu, a kopia bazy leży
-// w pamięci urządzenia.
+// Praca bez zasięgu nie ucierpiała: sesję Supabase trzyma w pamięci telefonu, więc scout, który
+// zalogował się przed wyjazdem, wchodzi na stadionie do swojej kopii bazy bez sieci — hasła nie
+// trzeba wpisywać drugi raz.
 async function boot() {
   const user = await currentUser();
-  if (user) {
-    zalogowany = true;
-    let konto: Konto | null = null;
-    try {
-      konto = await mojeKonto();
-    } catch (e) {
-      console.warn("Nie udało się sprawdzić stanu konta:", (e as Error).message);
-    }
-    if (konto && konto.status !== "zatwierdzone") { renderCzekaNaZgode(konto); return; }
-    start();
-    return;
-  }
+  if (!user) { renderLogin(); return; }
+  zalogowany = true;
 
-  // Bez sesji nie da się odróżnić „brak dostępu" od „pusta tabela" po samym błędzie — reguły
-  // dostępu w Postgresie nie zgłaszają odmowy, tylko oddają zero wierszy. Dlatego rozstrzyga
-  // wynik: cokolwiek przyszło, znaczy że dostęp jest.
+  // Stan konta czytamy z bazy; bez sieci pytanie się nie uda i wtedy wchodzimy do zapisanej kopii.
+  // To nie jest zabezpieczenie (tym są reguły dostępu w bazie), tylko wyjaśnienie dla użytkownika.
+  let konto: Konto | null = null;
   try {
-    const kopia = await refreshCache();
-    if (kopia.players.length || kopia.clubs.length || kopia.observations.length) {
-      start(kopia);
-      return;
-    }
+    konto = await mojeKonto();
   } catch (e) {
-    console.warn("Odczyt bez logowania nie powiódł się:", (e as Error).message);
+    console.warn("Nie udało się sprawdzić stanu konta:", (e as Error).message);
   }
+  if (konto && konto.status !== "zatwierdzone") { renderCzekaNaZgode(konto); return; }
 
-  // Została jeszcze kopia z poprzedniego uruchomienia — na stadionie bez zasięgu to ona jest
-  // wszystkim, co mamy, i szkoda byłoby zamiast niej pokazać ekran logowania.
-  if (getCache().players.length) { start(); return; }
-
-  renderLogin();
+  start();
 }
 
 window.addEventListener("online", () => { void flushQueue().then(refreshSyncPill); });

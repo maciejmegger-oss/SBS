@@ -13191,16 +13191,16 @@ function renderKontoScreen(konto){
 // supabase/migration_2026-08-11_konta_i_zgoda.sql. Bez nich sam ekran niczego by nie chronił:
 // klucz dostępu jest wpisany w kod strony i każdy może odpytać bazę z pominięciem aplikacji.
 //
-// PRZEŁĄCZNIK: false = system otwiera się bez logowania (stan na życzenie właściciela, dopóki
-// wdrożenie nie jest domknięte); true = ekran logowania jest warunkiem wejścia.
+// PRZEŁĄCZNIK: true = ekran logowania jest warunkiem wejścia; false = system otwiera się bez hasła.
 //
-// Włączenie na stałe — trzy kroki, w tej kolejności:
-//   1. Uruchom w Supabase supabase/migration_2026-08-11_konta_i_zgoda.sql (instrukcja: DOSTEP.md).
-//   2. Sprawdź, że logujesz się na /app i widzisz dane — konta sprzed wdrożenia zostają otwarte.
-//   3. Dopiero wtedy ustaw tu true.
-// Sam przełącznik NIE zamyka bazy: dopóki nie ma reguł z punktu 1, dane da się czytać z pominięciem
-// aplikacji. I odwrotnie — po punkcie 1 baza jest zamknięta niezależnie od tego, co stoi tutaj.
-const WYMAGAJ_LOGOWANIA = false;
+// Włączony na życzenie właściciela: system ma być zamknięty dla osób z zewnątrz. Po zalogowaniu
+// nie ma żadnych dalszych ograniczeń — zalogowany widzi dokładnie to, co dotąd widział każdy.
+//
+// UWAGA: sam przełącznik zamyka WIDOK, nie dane. Dopóki nie jest uruchomiona migracja
+// supabase/migration_2026-08-11_konta_i_zgoda.sql, bazę da się czytać z pominięciem aplikacji
+// (klucz dostępu jest wpisany w kod strony). Po uruchomieniu migracji baza jest zamknięta
+// niezależnie od tego przełącznika. Instrukcja: DOSTEP.md.
+const WYMAGAJ_LOGOWANIA = true;
 
 async function startApp(){
   // Wejście z linku resetującego: Supabase tworzy tymczasową sesję, więc zanim wpuścimy do
