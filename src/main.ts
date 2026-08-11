@@ -12749,6 +12749,7 @@ async function generatePlayerPDF(playerId){
     .obs-table th{background:var(--pitch);color:var(--on-pitch);font-size:10px;text-transform:uppercase;letter-spacing:.03em;padding:7px 10px;text-align:left;}
     .obs-table td{padding:7px 10px;border-bottom:1px solid var(--chalk-dim);font-size:11.5px;}
     .obs-table tr:nth-child(even) td{background:#FAF8F2;}
+    .page-break{height:0;overflow:hidden;}
     .recommend-box{background:var(--good-bg);border-radius:8px;padding:12px 14px;}
     .recommend-box .lbl{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--good);font-weight:700;margin-bottom:5px;}
     .recommend-box .val{font-size:12.5px;color:var(--ink);font-weight:600;line-height:1.5;}
@@ -12791,6 +12792,34 @@ async function generatePlayerPDF(playerId){
     <div class="meta-item"><div class="lbl">Kartki żółte / czerwone</div><div class="val"><span style="color:#B8860B;">▮</span> ${p.yellowCards!=null?p.yellowCards:"—"} / <span style="color:var(--clay);">▮</span> ${p.redCards!=null?p.redCards:"—"}</div></div>
   </div>
 
+  ${latestReport?`<div class="section" style="padding-top:0;">
+    <div class="section-title">Raport taktyczny${latestReport.date?' — '+esc(latestReport.date):''}${latestReport.perspektywa?' &middot; perspektywa '+esc(latestReport.perspektywa):''}</div>
+    ${latestReport.description?`<div class="notes-box" style="margin-bottom:10px;">${esc(latestReport.description)}</div>`:''}
+    ${(latestReport.phases&&Object.keys(latestReport.phases).length)?`<div class="metric-section-label">Fazy gry (1-6)</div><div class="attr5-grid metric4">${REPORT_PHASES.map(f=>`<div class="attr5-col"><div class="attr5-head"><span>${esc(f.label)}</span></div><div class="metric-num-body">${latestReport.phases[f.key]!=null?latestReport.phases[f.key]:'—'}</div></div>`).join('')}</div>`:''}
+    ${(latestReport.setPieces&&Object.keys(latestReport.setPieces).length)?`<div class="metric-section-label">Stałe fragmenty (1-6)</div><div class="attr5-grid metric4">${REPORT_SET_PIECES.map(f=>`<div class="attr5-col"><div class="attr5-head"><span>${esc(f.label)}</span></div><div class="metric-num-body">${latestReport.setPieces[f.key]!=null?latestReport.setPieces[f.key]:'—'}</div></div>`).join('')}</div>`:''}
+    ${latestReport.setPieceComment?`<div class="notes-box" style="margin-top:10px;">${esc(latestReport.setPieceComment)}</div>`:''}
+  </div>`:''}
+
+  ${p.notes?`<div class="section" style="padding-top:0;">
+    <div class="section-title">Notatki scouta</div>
+    <div class="notes-box">${esc(p.notes)}</div>
+  </div>`:''}
+
+  <!-- Wymuszony podział: strona pierwsza to treść raportu, druga zaczyna się od historii. -->
+  <div class="page-break"></div>
+
+  <div class="section" style="padding-top:0;">
+    <div class="section-title">Historia obserwacji (${obs.length})</div>
+    ${obs.length?`<table class="obs-table">
+      <tr><th>Data</th><th>Mecz</th><th>Scout</th><th>Ocena</th><th>Rekomendacja</th></tr>
+      ${obs.map(o=>{
+        const hasHist = o.statsFilledIn && o.ratings && RATING_KEYS.some(k=>Number(o.ratings[k])>0);
+        const rowAvg = hasHist ? RATING_KEYS.reduce((s,k)=>s+(Number(o.ratings[k])||0),0)/RATING_KEYS.length : null;
+        return `<tr><td>${esc(o.date)}</td><td>${esc(o.match||'—')}</td><td>${esc(o.scout)}</td><td>${rowAvg!=null?fmt1(rowAvg):'—'}</td><td>${esc(o.recommendation||'—')}</td></tr>`;
+      }).join('')}
+    </table>`:`<p class="empty-note">Brak zarejestrowanych obserwacji.</p>`}
+  </div>
+
   <div class="section">
     <div class="section-title">Oceny scoutingowe</div>
     ${a && a.overall!=null?`
@@ -12805,31 +12834,6 @@ async function generatePlayerPDF(playerId){
         <div class="attr5-body">${reportTextByKey[k]?esc(reportTextByKey[k]):'<span class="attr5-empty">—</span>'}</div>
       </div>`).join('')}
     </div>` : `<p class="empty-note">Brak obserwacji i raportu — oceny oraz opisy pojawią się po pierwszej wizycie scoutingowej.</p>`}
-  </div>
-
-  ${latestReport?`<div class="section" style="padding-top:0;">
-    <div class="section-title">Raport taktyczny${latestReport.date?' — '+esc(latestReport.date):''}${latestReport.perspektywa?' &middot; perspektywa '+esc(latestReport.perspektywa):''}</div>
-    ${latestReport.description?`<div class="notes-box" style="margin-bottom:10px;">${esc(latestReport.description)}</div>`:''}
-    ${(latestReport.phases&&Object.keys(latestReport.phases).length)?`<div class="metric-section-label">Fazy gry (1-6)</div><div class="attr5-grid metric4">${REPORT_PHASES.map(f=>`<div class="attr5-col"><div class="attr5-head"><span>${esc(f.label)}</span></div><div class="metric-num-body">${latestReport.phases[f.key]!=null?latestReport.phases[f.key]:'—'}</div></div>`).join('')}</div>`:''}
-    ${(latestReport.setPieces&&Object.keys(latestReport.setPieces).length)?`<div class="metric-section-label">Stałe fragmenty (1-6)</div><div class="attr5-grid metric4">${REPORT_SET_PIECES.map(f=>`<div class="attr5-col"><div class="attr5-head"><span>${esc(f.label)}</span></div><div class="metric-num-body">${latestReport.setPieces[f.key]!=null?latestReport.setPieces[f.key]:'—'}</div></div>`).join('')}</div>`:''}
-    ${latestReport.setPieceComment?`<div class="notes-box" style="margin-top:10px;">${esc(latestReport.setPieceComment)}</div>`:''}
-  </div>`:''}
-
-  ${p.notes?`<div class="section" style="padding-top:0;">
-    <div class="section-title">Notatki scouta</div>
-    <div class="notes-box">${esc(p.notes)}</div>
-  </div>`:''}
-
-  <div class="section" style="padding-top:0;">
-    <div class="section-title">Historia obserwacji (${obs.length})</div>
-    ${obs.length?`<table class="obs-table">
-      <tr><th>Data</th><th>Mecz</th><th>Scout</th><th>Ocena</th><th>Rekomendacja</th></tr>
-      ${obs.map(o=>{
-        const hasHist = o.statsFilledIn && o.ratings && RATING_KEYS.some(k=>Number(o.ratings[k])>0);
-        const rowAvg = hasHist ? RATING_KEYS.reduce((s,k)=>s+(Number(o.ratings[k])||0),0)/RATING_KEYS.length : null;
-        return `<tr><td>${esc(o.date)}</td><td>${esc(o.match||'—')}</td><td>${esc(o.scout)}</td><td>${rowAvg!=null?fmt1(rowAvg):'—'}</td><td>${esc(o.recommendation||'—')}</td></tr>`;
-      }).join('')}
-    </table>`:`<p class="empty-note">Brak zarejestrowanych obserwacji.</p>`}
   </div>
 
   <div class="section" style="padding-top:0;">
@@ -12929,6 +12933,9 @@ async function generatePlayerPDF(playerId){
     // najniższym dozwolonym dnie elementu przed końcem strony.
     const zakazane = [];   // [{od, do}] w pikselach obrazu
     const dna = [];        // dopuszczalne miejsca cięcia
+    // Miejsca, w których podział MA nastąpić — znacznik .page-break w szablonie. Dzięki temu
+    // druga strona zaczyna się od historii, a nie od tego, co akurat wypadło po 297 mm.
+    const wymuszone = [];
     idoc.body.querySelectorAll('*').forEach(el=>{
       const r = el.getBoundingClientRect();
       if(r.height <= 0) return;
@@ -12937,7 +12944,9 @@ async function generatePlayerPDF(playerId){
       dna.push(doo);
       // Bloki wyższe niż pół strony i tak trzeba kiedyś przeciąć — one nie blokują.
       if((doo - od) < stronaPx * 0.5) zakazane.push({od, do: doo});
+      if(el.classList && el.classList.contains('page-break')) wymuszone.push(od);
     });
+    wymuszone.sort((a,b)=>a-b);
     dna.sort((a,b)=>a-b);
 
     const wolnoCiac = (y)=> !zakazane.some(z=> y > z.od + 1 && y < z.do - 1);
@@ -12946,7 +12955,11 @@ async function generatePlayerPDF(playerId){
     while(y < canvas.height){
       const koniecIdealny = Math.min(y + stronaPx, canvas.height);
       let ciecie = koniecIdealny;
-      if(koniecIdealny < canvas.height){
+      // Wymuszony podział ma pierwszeństwo przed szukaniem bezpiecznego miejsca.
+      const wymuszony = wymuszone.find(w => w > y + 4 && w <= koniecIdealny);
+      if(wymuszony){
+        ciecie = wymuszony;
+      } else if(koniecIdealny < canvas.height){
         // Najniższe dno elementu przed końcem strony, przy którym nie przecinamy niczego w pół.
         // Nie schodzimy poniżej 45% strony — inaczej jedna wysoka tabela zostawiałaby po sobie
         // kartkę zapełnioną w jednej trzeciej.
