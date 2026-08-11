@@ -1,16 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "//": [
-    "UWAGA CO DO LICZBY ZADAŃ: plan Hobby w Vercelu dopuszcza DWA zadania cykliczne i uruchamia",
-    "je raz na dobę. Przy pięciu wpisach część nie zostaje w ogóle zarejestrowana — i to jest",
-    "najbardziej prawdopodobny powód, dla którego statystyki Ekstraklasy stały na drugiej kolejce.",
-    "Sprawdź w Vercelu: Project -> Settings -> Cron Jobs. Widoczne tam są tylko te, które naprawdę",
-    "działają. Jeśli brakuje któregoś z poniższych, potrzebny jest plan Pro.",
-    "",
-    "Żaden z tych adresów nie ma już ciągu zapytania. Endpointy zapisują domyślnie, a podgląd",
-    "wymaga ?dry=1 — dzięki temu zgubienie parametru przez harmonogram nie zamienia przebiegu",
-    "w bezczynność."
-  ],
   "crons": [
     { "path": "/api/refresh-stats", "schedule": "0 5 * * *" },
     { "path": "/api/refresh-schedule", "schedule": "0 21 * * 5" }
@@ -18,11 +7,6 @@
   "rewrites": [
     { "source": "/m", "destination": "/mobile.html" },
     { "source": "/app", "destination": "/app.html" }
-  ],
-  "//trasy": [
-    "Adres główny (/) to strona publiczna — wizytówka systemu, bez żadnych danych z bazy.",
-    "System stoi pod /app, panel mobilny pod /m. Oba wymagają zalogowania na koncie",
-    "zatwierdzonym przez administratora (patrz supabase/migration_2026-08-11_konta_i_zgoda.sql)."
   ],
   "headers": [
     {
@@ -35,7 +19,6 @@
       ]
     },
     {
-      "//": "Systemu i panelu nie wolno indeksować ani podawać z pamięci pośredniej — to część zamknięta.",
       "source": "/(app|m|app.html|mobile.html)",
       "headers": [
         { "key": "X-Robots-Tag", "value": "noindex, nofollow" },
