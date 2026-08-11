@@ -12660,6 +12660,18 @@ async function generatePlayerPDF(playerId){
   <title>Raport - ${esc(p.firstName)} ${esc(p.lastName)}</title>
   <meta charset="UTF-8">
   <style>
+    /* PALETA WPISANA WPROST — RAPORT NIE MA DOSTĘPU DO ARKUSZA APLIKACJI.
+       Szablon idzie do osobnej ramki, w której nie ma naszego style.css, więc każde var(--…)
+       zostawało niezdefiniowane: kolory spadały do domyślnych, a html2canvas przerywał pracę
+       komunikatem „unsupported color function var". Stąd wartości podane tutaj, na sztywno i
+       zawsze w wersji jasnej — wydruk ma być czytelny na papierze niezależnie od tego, czy w
+       aplikacji włączony jest ciemny motyw. */
+    :root{
+      --card:#FFFFFF; --chalk:#F6F3EA; --chalk-dim:#E7E2D3; --clay:#B6503F;
+      --gold:#C69B3C; --gold-dark:#8C6C21; --good:#3E7D4C; --good-bg:#DEEBDF;
+      --heading:#16302A; --ink:#1B2420; --ink-faint:#8A857A; --ink-soft:#5B6560;
+      --on-pitch:#F6F3EA; --pitch:#16302A; --warn-bg:#F4E3C4;
+    }
     @page { margin: 16mm 14mm; }
     *{box-sizing:border-box;}
     body{font-family:Arial,Helvetica,sans-serif;color:var(--ink);background:var(--card);margin:0;padding:0 14mm;font-size:13px;line-height:1.5;}
@@ -12839,7 +12851,9 @@ async function generatePlayerPDF(playerId){
     });
 
     const targetEl = idoc.body;
-    const canvas = await html2canvas(targetEl, {scale:2, useCORS:true, backgroundColor:'var(--card)', windowWidth:794});
+    // Tło podajemy literalnie. html2canvas parsuje tę wartość sam i nie zna funkcji var() —
+    // przekazanie jej tutaj kończyło każde generowanie PDF błędem, niezależnie od treści raportu.
+    const canvas = await html2canvas(targetEl, {scale:2, useCORS:true, backgroundColor:'#FFFFFF', windowWidth:794});
     const imgData = canvas.toDataURL('image/jpeg', 0.95);
 
     const pdf = new jsPDF('p', 'mm', 'a4');
@@ -13059,6 +13073,15 @@ function wireLastModal(){
     const wrap = ov.querySelector('#pm-agency-wrap');
     const checked = ov.querySelector('input[name="pm-agent"]:checked');
     wrap.style.display = (checked && checked.value==='tak') ? '' : 'none';
+    // ODPOWIEDŹ NA TO PYTANIE JEST SPRAWDZENIEM.
+    //
+    // Profil rozróżnia trzy stany: „Tak", „Nie" i „niesprawdzone" — a to ostatnie znaczy tylko
+    // tyle, że nikt się jeszcze tym zawodnikiem nie zajął. Zaznaczenie „Nie" w edycji nie
+    // zostawiało po sobie żadnego śladu, więc profil dalej pisał „niesprawdzone", choć odpowiedź
+    // padła. Zapamiętujemy więc dotknięcie pola i przy zapisie stemplujemy datę sprawdzenia.
+    // Sam fakt otwarcia okna nie wystarcza: domyślnie zaznaczone jest „Nie", a stemplowanie
+    // każdego zapisu opróżniłoby kolejkę „młodzieżowiec bez menedżera" z nikim niesprawdzonym.
+    ov.dataset.agentOdpowiedziano = '1';
   });
   const contractRadios = ov.querySelectorAll('input[name="pm-contract"]');
   contractRadios.forEach(r=> r.onchange = ()=>{
@@ -13077,10 +13100,17 @@ function wireLastModal(){
     const birthDate = document.getElementById('pm-birth').value;
     const agentChecked = ov.querySelector('input[name="pm-agent"]:checked');
     const hasAgent = agentChecked ? agentChecked.value==='tak' : false;
+    // Data sprawdzenia: albo ta, którą zawodnik już miał, albo dzisiejsza — gdy odpowiedź padła
+    // teraz (dotknięto pola) lub gdy menedżer jest wskazany, bo to samo w sobie jest odpowiedzią.
+    const wczesniejSprawdzone = p && p.agentCheckedAt ? p.agentCheckedAt : '';
+    const agentCheckedAt = (ov.dataset.agentOdpowiedziano === '1' || hasAgent)
+      ? new Date().toISOString().slice(0,10)
+      : wczesniejSprawdzone;
     const customFields = {};
     ov.querySelectorAll('.pm-custom').forEach(inp=>{ customFields[inp.dataset.field] = inp.value.trim(); });
     const data = {
       firstName: first, lastName: last,
+      agentCheckedAt,
       birthDate, birthYear: birthDate? String(new Date(birthDate).getFullYear()) : '',
       position: document.getElementById('pm-position').value,
       foot: document.getElementById('pm-foot').value,
