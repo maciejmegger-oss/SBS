@@ -62,9 +62,17 @@ export default async function handler(req, res) {
   if (!KLUCZ) return res.status(500).json({ error: "Brak FOOTBALL_API_KEY." });
   if (!BAZA || !KLUCZ_BAZY) return res.status(500).json({ error: "Brak konfiguracji bazy." });
 
-  // Domyślnie NIE zapisujemy. Pierwszy przebieg ma być podglądem — przy 500 zawodnikach
-  // dopasowanie po nazwisku trzeba zobaczyć, zanim się je utrwali.
-  const zapisz = String(req.query.apply || "") === "1";
+  // ZAPISUJEMY DOMYŚLNIE, podgląd trzeba wywołać wprost przez ?dry=1.
+  //
+  // Wcześniej było odwrotnie: zapis wymagał ?apply=1 w adresie, a zadanie cykliczne miało ten
+  // parametr wpisany w vercel.json. Wystarczyło, że nie dotarł — bo Vercel gubi ciąg zapytania
+  // albo zadanie w ogóle się nie zarejestrowało — a przebieg kończył się „podglądem", czyli
+  // niczym. Z zewnątrz wyglądało to jak działający automat, który po cichu nic nie robi;
+  // trzy kolejki Ekstraklasy nie weszły do bazy właśnie z tego powodu.
+  //
+  // Domyślne zachowanie ma odpowiadać temu, po co ten endpoint istnieje. Podgląd jest wyjątkiem
+  // i dlatego to on wymaga jawnego parametru.
+  const zapisz = String(req.query.dry || "") !== "1";
   const sezon = parseInt(req.query.season, 10) || new Date().getFullYear();
 
   let zuzyteZapytania = 0;
