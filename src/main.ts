@@ -2690,6 +2690,14 @@ function renderNav(){
     brand.onclick = ()=>{ currentView='dashboard'; editingPlayerId=null; viewingPlayerId=null; render(); };
   }
   odswiezPrzelacznikMotywu();
+  // Przycisk sesji na dole panelu bocznego. Gość widzi „Zaloguj się" także wtedy, gdy logowanie
+  // nie jest jeszcze wymagane — inaczej nie dałoby się sprawdzić hasła przed zamknięciem systemu.
+  const sesjaBtn = document.getElementById('sesja-btn');
+  if(sesjaBtn){
+    const zalogowany = !!sesjaUzytkownika;
+    sesjaBtn.textContent = zalogowany ? 'Wyloguj się →' : 'Zaloguj się →';
+    sesjaBtn.dataset.action = zalogowany ? 'logout' : 'login-screen';
+  }
   const nav = document.getElementById('nav');
   // Zakładka „Dostęp" tylko dla administratora — reszcie nie ma czego pokazywać, bo baza i tak
   // odda im wyłącznie ich własny wiersz.
@@ -6153,6 +6161,7 @@ function attachHandlers(){
   });
 
   document.querySelectorAll('[data-action="logout"]').forEach(b=>b.onclick=()=>performLogout());
+  document.querySelectorAll('[data-action="login-screen"]').forEach(b=>b.onclick=()=>renderLoginScreen());
 
   // Zakładka „Dostęp": decyzje administratora o kontach.
   main.querySelectorAll('[data-action="konta-odswiez"]').forEach(b=>b.onclick=()=>{ odswiezKonta(); render(); });
@@ -13032,6 +13041,10 @@ function loginScreenHtml(tryb, komunikat, blad){
         <button class="link-btn" data-action="lg-tryb-reset">Nie pamiętam hasła</button>
         <button class="gold" data-action="lg-login">Zaloguj się</button>
       </div>
+      ${WYMAGAJ_LOGOWANIA ? '' : `<p class="note" style="margin-top:10px;">
+        <button class="link-btn" data-action="lg-wroc" style="padding:0;">← Wróć do systemu bez logowania</button>
+        — logowanie nie jest jeszcze wymagane, ten ekran służy na razie do sprawdzenia hasła.
+      </p>`}
       <p class="note" style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px;font-size:11.5px;">
         Nie masz konta? Zgłoś się przez <a href="/#dostep">formularz na stronie głównej</a> —
         dostęp otwiera administrator systemu po sprawdzeniu zgłoszenia.
@@ -13050,6 +13063,9 @@ let loginTryb = 'login', loginKomunikat = '', loginBlad = '';
 // Konto zalogowanego użytkownika (rola i zgoda administratora). Null, gdy nikt nie jest zalogowany
 // albo gdy baza nie ma jeszcze tabeli kont — patrz wpuscZalogowanego().
 let kontoUzytkownika = null;
+// Sama sesja (e-mail i identyfikator). Rozdzielone od konta, bo sesja może istnieć także wtedy,
+// gdy wiersza w sbs_konta jeszcze nie ma — a przycisk w panelu bocznym pyta właśnie o sesję.
+let sesjaUzytkownika = null;
 
 function renderLoginScreen(){
   document.querySelector('.app').style.display = 'none';
@@ -13064,6 +13080,11 @@ function renderLoginScreen(){
   const przeladuj = ()=>renderLoginScreen();
   const q = id => document.getElementById(id);
 
+  host.querySelectorAll('[data-action="lg-wroc"]').forEach(b=>b.onclick=()=>{
+    host.remove();
+    document.querySelector('.app').style.display='';
+    render();
+  });
   host.querySelectorAll('[data-action="lg-tryb-reset"]').forEach(b=>b.onclick=()=>{
     loginTryb='reset'; loginBlad=''; loginKomunikat=''; przeladuj();
   });
@@ -13190,6 +13211,7 @@ async function startApp(){
     return;
   }
   const user = await currentUser();
+  sesjaUzytkownika = user;
   // Zalogowanego sprawdzamy zawsze — także przy wyłączonym przełączniku. Dzięki temu zakładka
   // „Dostęp" i stan konta działają już teraz, bez zamykania systemu przed nikim.
   if(user){ await wpuscZalogowanego(); return; }
@@ -13199,6 +13221,7 @@ async function startApp(){
 
 // Sprawdzenie zgody administratora — wołane po każdym udanym logowaniu i przy starcie z sesją.
 async function wpuscZalogowanego(){
+  sesjaUzytkownika = await currentUser();
   kontoUzytkownika = await mojeKonto();
   // Brak wiersza w sbs_konta oznacza bazę sprzed wdrożenia tabeli kont (skrypt migracji nie został
   // jeszcze uruchomiony). Blokowanie takiego konta odcięłoby właściciela od własnych danych, a nic

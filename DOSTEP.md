@@ -14,6 +14,38 @@ Wszystko poniżej jest już w kodzie i czeka na jedno słowo. Dopóki nie zrobis
 
 Sam adres główny (`/`) możesz pokazywać od zaraz: to strona wizytówkowa, nie ma na niej danych.
 
+## Jak Ty się logujesz
+
+Logowanie idzie przez konto w Supabase Auth — nie ma osobnego hasła „do strony". Zanim cokolwiek
+zamkniemy, upewnij się, że masz konto i że wchodzisz.
+
+**Raz, przed zamknięciem:**
+
+1. Supabase → **Authentication → Users → Add user**: podaj swój adres (`maciejmegger@gmail.com`)
+   i hasło, zaznacz **Auto Confirm User**. Bez tego konto czeka na potwierdzenie z maila.
+2. Wejdź na `/app` → w panelu bocznym, na dole, kliknij **„Zaloguj się →"** → wpisz ten adres
+   i hasło. Powinno wpuścić bez błędu (dziś i tak wchodzisz bez logowania, ale to jest test hasła).
+3. Dopiero gdy to działa, robimy kroki z części „Uruchomienie".
+
+**Na co dzień, po zamknięciu:**
+
+- komputer: `/app` → adres e-mail + hasło;
+- telefon: `/m` → to samo konto, ten sam e-mail i hasło;
+- zapomniane hasło: „Nie pamiętam hasła" na ekranie logowania wysyła link (wymaga adresów
+  ustawionych w punkcie 3 „Uruchomienia").
+
+**Gdyby coś poszło nie tak** — hasło zawsze zmienisz w Supabase (Authentication → Users → menu
+przy koncie → *Reset password* albo *Send magic link*), a dostęp przywrócisz jednym zapytaniem
+w SQL Editorze:
+
+```sql
+update sbs_konta set status = 'zatwierdzone', rola = 'admin'
+where lower(email) = 'maciejmegger@gmail.com';
+```
+
+Nie da się więc zamknąć na zewnątrz na stałe: klucz do bazy masz w panelu Supabase, a panel
+Supabase ma własne logowanie, niezależne od tego systemu.
+
 ## Co jest publiczne, a co zamknięte
 
 | Adres | Co tam jest | Kto ma dostęp |

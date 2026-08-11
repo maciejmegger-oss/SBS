@@ -40,8 +40,11 @@
     </div>
     <div id="nav"></div>
     <button id="theme-toggle" class="theme-toggle" type="button"></button>
+    <!-- Napis i działanie ustawia renderNav() w src/main.ts: „Wyloguj się" dla zalogowanego,
+         „Zaloguj się" dla gościa. Dzięki temu ekran logowania da się otworzyć także wtedy, gdy
+         nie jest jeszcze wymagany — i sprawdzić hasło przed zamknięciem systemu. -->
     <div class="scout-box">
-      <button class="link-btn" data-action="logout" style="color:#CBD9D1;width:100%;text-align:left;font-size:11px;border:none;background:none;cursor:pointer;padding:8px 20px;">Wyloguj się →</button>
+      <button id="sesja-btn" class="link-btn" data-action="logout" style="color:#CBD9D1;width:100%;text-align:left;font-size:11px;border:none;background:none;cursor:pointer;padding:8px 20px;">Wyloguj się →</button>
     </div>
   </div>
   <div class="main" id="main"></div>
