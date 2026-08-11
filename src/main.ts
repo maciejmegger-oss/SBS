@@ -3798,6 +3798,64 @@ function viewClubs(){
   </div>`;
 }
 
+// ---------- MINI TABELA: GDZIE KLUB STOI W SWOICH ROZGRYWKACH ----------
+//
+// Pozycja w tabeli jest pierwszą rzeczą, o którą pyta się przy klubie („z kim gramy i jak im
+// idzie"), a dotąd trzeba było po nią wychodzić na 90minut. Bierzemy ją z tego samego źródła,
+// co pełne tabele w widoku lig — więc jedno pobranie obsługuje oba miejsca.
+//
+// Pokazujemy wycinek: dwie drużyny nad i dwie pod, żeby od razu było widać dystans do sąsiadów.
+function miniTabelaKlubuHtml(c){
+  // Kartoteka trzyma pełną nazwę z grupą („IV liga (kujawsko-pomorska)", „III liga, gr. II"),
+  // a adresy na 90minut są zapisane per POZIOM rozgrywek. Bez sprowadzenia do poziomu funkcja
+  // nie znajdowała adresu i karta w ogóle się nie pokazywała.
+  const etykieta = c.league || '';
+  const liga = scheduleUrlsFor(etykieta).length ? etykieta : topLevelOf(etykieta);
+  if(!liga || !scheduleUrlsFor(liga).length) return '';
+
+  const ramka = (tresc)=>`<div class="card">
+    <h4 style="margin-top:0;color:var(--heading);">Pozycja w tabeli</h4>${tresc}</div>`;
+
+  const stan = tabeleLigowe[liga];
+  if(!stan){ pobierzTabeleLigowe(liga); return ramka('<div class="note">Wczytuję tabelę z 90minut…</div>'); }
+  if(stan.stan === 'ladowanie') return ramka('<div class="note">Wczytuję tabelę z 90minut…</div>');
+  if(stan.stan === 'blad') return ramka(`<div class="note">Nie udało się pobrać tabeli: ${esc(stan.blad||'')}</div>`);
+
+  // Nazwy po obu stronach bywają zapisane inaczej („KP Wda Świecie" kontra „Wda Świecie"),
+  // więc dopuszczamy zawieranie — ale dopiero od pięciu znaków, żeby krótka nazwa nie sklejała
+  // się z pierwszym lepszym klubem.
+  const nk = szukajNorm(c.name).replace(/[^a-z0-9]/g,'');
+  const toSam = (nazwa)=>{
+    const x = szukajNorm(nazwa).replace(/[^a-z0-9]/g,'');
+    return x === nk || (x.length >= 5 && nk.length >= 5 && (x.includes(nk) || nk.includes(x)));
+  };
+  let grupa = null, idx = -1;
+  for(const g of (stan.grupy||[])){
+    const i = (g.wiersze||[]).findIndex(w=> toSam(w.nazwa));
+    if(i >= 0){ grupa = g; idx = i; break; }
+  }
+  if(!grupa) return ramka(`<div class="note">Nie znalazłem tego klubu w tabelach rozgrywek „${esc(etykieta || liga)}".
+    Sprawdź, czy nazwa i liga w kartotece zgadzają się z zapisem na 90minut.</div>`);
+
+  const wiersze = grupa.wiersze;
+  const nasz = wiersze[idx];
+  const od = Math.max(0, idx - 2), dokad = Math.min(wiersze.length, idx + 3);
+  const wycinek = wiersze.slice(od, dokad);
+
+  return ramka(`
+    <p class="note" style="margin:-2px 0 10px;">${esc(grupa.nazwa||liga)} · <strong>${nasz.miejsce}. miejsce</strong>
+      z ${wiersze.length} · ${nasz.punkty} pkt po ${nasz.mecze} ${nasz.mecze===1?'meczu':'meczach'} · źródło: 90minut.pl</p>
+    <div class="tabela-przewijana"><table>
+      <thead><tr><th style="width:34px;">Lp</th><th>Klub</th><th style="width:44px;">M</th><th style="width:44px;">Pkt</th><th style="width:70px;">Bramki</th></tr></thead>
+      <tbody>${wycinek.map(w=>{
+        const nasza = toSam(w.nazwa);
+        return `<tr${nasza?' style="background:var(--card-warm);font-weight:600;"':''}>
+          <td>${w.miejsce}</td><td>${esc(w.nazwa)}</td><td>${w.mecze}</td><td>${w.punkty}</td><td>${esc(w.bramki||'—')}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>`);
+}
+
 function viewClubDetail(id){
   const c = DB.clubs.find(x=>x.id===id);
   if(!c){ viewingClubId=null; return viewClubs(); }
@@ -3850,6 +3908,7 @@ function viewClubDetail(id){
       ${c.profileTm? `<a class="ext-link" href="${esc(c.profileTm)}" target="_blank" rel="noopener">Transfermarkt &rarr;</a>` : `<span class="note">Brak linku do Transfermarkt — dodaj w edycji klubu</span>`}
     </div>
   </div>
+  ${miniTabelaKlubuHtml(c)}
   <div class="card">
     <div class="toolbar" style="margin-bottom:8px;">
       <h4 style="margin:0;color:var(--heading);">Zawodnicy scoutowani w tym klubie (${squad.length})</h4>

@@ -92,7 +92,7 @@ export default async function handler(req, res) {
 
   // --- KLUB Z NASZEJ BAZY ---
   const rK = await fetch(
-    `${BAZA}/rest/v1/sbs_clubs?select=id,name,league&id=eq.${encodeURIComponent(idKlubu)}`,
+    `${BAZA}/rest/v1/sbs_clubs?select=id,name,league,profile_lnp&id=eq.${encodeURIComponent(idKlubu)}`,
     { headers: naglowki }
   );
   if (!rK.ok) return res.status(502).json({ error: "Odczyt klubu: " + rK.status });
@@ -128,7 +128,25 @@ export default async function handler(req, res) {
   // Do wyboru meczów wystarczy sprawdzić, czy nazwa klubu w podpowiedzi w ogóle występuje.
   const nazwaKlubu = normalizujNazwe(klub.name);
   let mecze = [], stronaLigi = "";
-  for (const adres of adresy) {
+
+  // NAJPIERW PROFIL KLUBU NA 90MINUT, JEŚLI JEST W KARTOTECE.
+  //
+  // Szukanie po stronach ligi jest zgadywanką po nazwie: wystarczy, że 90minut pisze klub inaczej
+  // niż my („GKS Mustang" kontra „Mustang Ostaszewo"), albo że dana grupa ma w tym sezonie inny
+  // adres, i przebieg kończy się słowami „nie znalazłem meczów" — choć klub gra. Link do profilu
+  // omija cały ten problem: mecze bierzemy wprost ze strony klubu.
+  const profil = String(klub.profile_lnp || "").trim();
+  if (/90minut\.pl/i.test(profil)) {
+    try {
+      const html = await pobierzZ90minut(profil);
+      const zProfilu = parseLinkiMeczow(html);
+      if (zProfilu.length) { mecze = zProfilu; stronaLigi = profil; }
+    } catch {
+      /* profil nieosiągalny — schodzimy do szukania po stronach ligi */
+    }
+  }
+
+  for (const adres of mecze.length ? [] : adresy) {
     let html;
     try { html = await pobierzZ90minut(adres); } catch { continue; }
     const trafione = parseLinkiMeczow(html).filter((m) => normalizujNazwe(m.tytul).includes(nazwaKlubu));
@@ -137,7 +155,11 @@ export default async function handler(req, res) {
   if (!mecze.length) {
     return res.status(404).json({
       error: `Nie znalazłem rozegranych meczów klubu „${klub.name}" w rozgrywkach ${klub.league}.`,
-      podpowiedz: "Albo klub jeszcze nie grał w tym sezonie, albo jego nazwa u nas różni się od tej na 90minut.",
+      podpowiedz: profil
+        ? "Sprawdź, czy link do 90minut w edycji klubu prowadzi do strony klubu z listą meczów tego sezonu."
+        : "Najpewniejsza droga: otwórz klub na 90minut.pl i wklej jego adres w „Edytuj klub” → pole 90minut. " +
+          "Wtedy biorę mecze wprost ze strony klubu, zamiast szukać go po nazwie na stronach ligi — " +
+          "a nazwa u nas potrafi się różnić od tej na 90minut. Druga możliwość: klub jeszcze nie grał w tym sezonie.",
       przeszukaneStrony: adresy.length,
     });
   }
