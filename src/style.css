@@ -661,3 +661,15 @@ tr.crow-rejected td,tr.crow-watching td{color:var(--row-ink);}
   .grid-3,.grid-2{grid-template-columns:1fr;}
   .filters select,.filters input{min-width:0;flex:1 1 130px;}
 }
+
+/* ---------- ZAKŁADKA „DOSTĘP" (panel administratora) ---------- */
+/* Stan konta czyta się kolorem: żółty czeka na decyzję, zielony ma dostęp, szary go nie ma. */
+.badge.stan-oczekuje{background:var(--warn-bg);color:var(--warn-ink);}
+.badge.stan-zatwierdzone{background:var(--good-bg);color:var(--good);}
+.badge.stan-odrzucone{background:var(--chalk-dim);color:var(--ink-faint);}
+/* Na wąskim ekranie tabela kont ma się przewijać w bok, a nie rozpychać całego widoku. */
+.tabela-przewijana{overflow-x:auto;}
+.tabela-przewijana table{min-width:640px;}
+/* Odnośnik w stopce ekranu logowania (np. do formularza zgłoszenia na stronie głównej) —
+   domyślny błękit przeglądarki odcinał się tu od reszty jak plama. */
+.login-card .note a{color:var(--gold-dark);font-weight:600;}

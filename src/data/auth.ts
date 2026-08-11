@@ -74,3 +74,120 @@ export function onAuthChange(cb: (user: SessionUser | null) => void): void {
     cb(session?.user ? { id: session.user.id, email: session.user.email || "" } : null);
   });
 }
+
+// ---------------------------------------------------------------------------
+// KONTA I ZGODA ADMINISTRATORA
+// ---------------------------------------------------------------------------
+//
+// Samo założenie konta NIE otwiera systemu. Każde nowe konto powstaje ze stanem „oczekuje" i
+// dopiero administrator przestawia je na „zatwierdzone". Rozstrzyga o tym baza, nie ekran:
+// reguły dostępu (supabase/migration_2026-08-11_konta_i_zgoda.sql) wpuszczają do danych wyłącznie
+// konta zatwierdzone. Ekran poniżej jest tylko uprzejmym komunikatem — gdyby ktoś go ominął,
+// baza i tak nie odda ani jednego wiersza.
+
+export type StatusKonta = "oczekuje" | "zatwierdzone" | "odrzucone";
+
+export interface Konto {
+  userId: string;
+  email: string;
+  imieNazwisko: string;
+  klub: string;
+  rolaWKlubie: string;
+  telefon: string;
+  rola: "admin" | "scout";
+  status: StatusKonta;
+  utworzoneAt: string;
+  zdecydowaneAt: string;
+}
+
+function mapujKonto(r: any): Konto {
+  return {
+    userId: r.user_id,
+    email: r.email || "",
+    imieNazwisko: r.imie_nazwisko || "",
+    klub: r.klub || "",
+    rolaWKlubie: r.rola_w_klubie || "",
+    telefon: r.telefon || "",
+    rola: r.rola === "admin" ? "admin" : "scout",
+    status: (r.status as StatusKonta) || "oczekuje",
+    utworzoneAt: r.utworzone_at || "",
+    zdecydowaneAt: r.zdecydowane_at || "",
+  };
+}
+
+export interface WniosekODostep {
+  imieNazwisko: string;
+  klub: string;
+  rolaWKlubie: string;
+  telefon: string;
+  email: string;
+  haslo: string;
+}
+
+// Zgłoszenie po dostęp ze strony publicznej. Zakłada konto w Supabase Auth i przekazuje dane
+// zgłaszającego w metadanych — wyzwalacz w bazie przepisuje je do tabeli sbs_konta ze stanem
+// „oczekuje". Hasło ustala sam zgłaszający i nie przechodzi przez żadną naszą tabelę.
+export async function zglosDostep(w: WniosekODostep): Promise<{ ok: boolean; error?: string }> {
+  const { error } = await sb.auth.signUp({
+    email: w.email.trim(),
+    password: w.haslo,
+    options: {
+      data: {
+        imie_nazwisko: w.imieNazwisko.trim(),
+        klub: w.klub.trim(),
+        rola_w_klubie: w.rolaWKlubie.trim(),
+        telefon: w.telefon.trim(),
+      },
+      emailRedirectTo: window.location.origin + "/app",
+    },
+  });
+  if (!error) return { ok: true };
+  const m = (error.message || "").toLowerCase();
+  if (m.includes("already registered") || m.includes("already been registered")) {
+    // Świadomie neutralnie: odpowiedź nie ma służyć do sprawdzania, kto ma już konto.
+    return { ok: true };
+  }
+  if (m.includes("password")) {
+    return { ok: false, error: "Hasło jest za słabe — użyj co najmniej 8 znaków." };
+  }
+  if (m.includes("email") && m.includes("invalid")) {
+    return { ok: false, error: "Podany adres e-mail wygląda na nieprawidłowy." };
+  }
+  return { ok: false, error: "Nie udało się wysłać zgłoszenia: " + error.message };
+}
+
+// Konto zalogowanego użytkownika — stan zgody i rola. Zwraca null, gdy nie ma sesji albo gdy
+// wiersza jeszcze nie ma (konto założone przed wdrożeniem tabeli).
+export async function mojeKonto(): Promise<Konto | null> {
+  const { data: sesja } = await sb.auth.getSession();
+  const uid = sesja.session?.user?.id;
+  if (!uid) return null;
+  const { data, error } = await sb.from("sbs_konta").select("*").eq("user_id", uid).maybeSingle();
+  if (error || !data) return null;
+  return mapujKonto(data);
+}
+
+// Lista kont do panelu administratora. Reguły dostępu w bazie i tak oddadzą tu wyłącznie
+// własny wiersz komuś, kto administratorem nie jest — panel nie jest więc jedynym zabezpieczeniem.
+export async function listaKont(): Promise<Konto[]> {
+  const { data, error } = await sb.from("sbs_konta").select("*").order("utworzone_at", { ascending: false });
+  // Błąd zgłaszamy dalej, zamiast oddać pustą listę: „nie udało się pobrać" i „nikt się nie zgłosił"
+  // wyglądają wtedy tak samo, a to dwie zupełnie różne wiadomości dla administratora.
+  if (error) throw new Error(error.message);
+  return (data || []).map(mapujKonto);
+}
+
+export async function ustawStatusKonta(userId: string, status: StatusKonta): Promise<{ ok: boolean; error?: string }> {
+  const { error } = await sb
+    .from("sbs_konta")
+    .update({ status, zdecydowane_at: new Date().toISOString() })
+    .eq("user_id", userId);
+  if (error) return { ok: false, error: "Nie udało się zapisać decyzji: " + error.message };
+  return { ok: true };
+}
+
+export async function ustawRoleKonta(userId: string, rola: "admin" | "scout"): Promise<{ ok: boolean; error?: string }> {
+  const { error } = await sb.from("sbs_konta").update({ rola }).eq("user_id", userId);
+  if (error) return { ok: false, error: "Nie udało się zmienić roli: " + error.message };
+  return { ok: true };
+}

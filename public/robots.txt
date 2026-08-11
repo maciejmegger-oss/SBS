@@ -1,0 +1,11 @@
+# Strona publiczna ma być widoczna w wyszukiwarkach — część zamknięta nie.
+# To nie jest zabezpieczenie (wyszukiwarki tylko prosimy), tylko higiena: samo wejście pod /app
+# i tak nic nie pokaże bez zalogowania i zgody administratora.
+
+User-agent: *
+Allow: /$
+Disallow: /app
+Disallow: /app.html
+Disallow: /m
+Disallow: /mobile.html
+Disallow: /api/

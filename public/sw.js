@@ -8,7 +8,10 @@
 // z góry. Dlatego zamiast listy zapisujemy to, co przeglądarka faktycznie pobrała, przy pierwszym
 // udanym pobraniu.
 
-const CACHE = "sbs-live-v1";
+// Podniesiona wersja czyści starą pamięć przy pierwszym uruchomieniu po wdrożeniu (activate
+// kasuje wszystkie klucze poza bieżącym). Konieczne przy zmianie adresów: pod "/m" mogła zostać
+// zapisana strona z czasów, gdy aplikacja na komputerze stała pod adresem głównym.
+const CACHE = "sbs-live-v2";
 
 self.addEventListener("install", (e) => {
   // Panel ma działać od razu po pierwszym wejściu, bez odświeżania strony.
@@ -35,7 +38,13 @@ self.addEventListener("fetch", (e) => {
 
   // Wejście na adres panelu: najpierw sieć (żeby wdrożona poprawka doszła od razu), a gdy jej
   // nie ma — zapisana wersja.
+  //
+  // WYŁĄCZNIE panel. Ten sam mechanizm obsługuje cały adres (zakres "/"), więc bez tego warunku
+  // wejście na stronę publiczną albo do systemu na komputerze nadpisywałoby zapisaną kopię panelu
+  // — i scout bez zasięgu dostawałby pod /m nie ten ekran, co trzeba.
   if (req.mode === "navigate") {
+    const panel = url.pathname === "/m" || url.pathname === "/m/" || url.pathname === "/mobile.html";
+    if (!panel) return;   // strona publiczna i system na komputerze idą wprost do sieci
     e.respondWith(
       fetch(req)
         .then((res) => {

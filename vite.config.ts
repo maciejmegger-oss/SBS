@@ -48,15 +48,21 @@ function vercelApiDevPlugin() {
   };
 }
 
-// Panel mobilny stoi pod adresem /m — na produkcji załatwia to przekierowanie w vercel.json.
-// Serwer deweloperski Vite nic o nim nie wie i oddawał pod /m stronę aplikacji na komputerze,
-// więc ta sama ścieżka działała inaczej lokalnie i po wdrożeniu. Ta wtyczka wyrównuje jedno z drugim.
-function mobileRouteDevPlugin() {
+// Adresy przyjazne, bez końcówki .html — na produkcji załatwiają je przekierowania w vercel.json.
+// Serwer deweloperski Vite nic o nich nie wie i oddawał pod /m czy /app stronę główną, więc ta sama
+// ścieżka działała inaczej lokalnie i po wdrożeniu. Ta wtyczka wyrównuje jedno z drugim.
+//
+//   /      → index.html   (strona publiczna, bez logowania)
+//   /app   → app.html     (system — wyłącznie po zalogowaniu)
+//   /m     → mobile.html  (panel mobilny — wyłącznie po zalogowaniu)
+function friendlyRoutesDevPlugin() {
+  const TRASY: Record<string, string> = { "/m": "/mobile.html", "/app": "/app.html" };
   return {
-    name: "mobile-route-dev",
+    name: "friendly-routes-dev",
     configureServer(server) {
       server.middlewares.use((req, _res, next) => {
-        if (req.url === "/m" || req.url === "/m/") req.url = "/mobile.html";
+        const czysty = (req.url || "").replace(/\/$/, "") || "/";
+        if (TRASY[czysty]) req.url = TRASY[czysty];
         next();
       });
     },
@@ -70,7 +76,7 @@ const WERSJA = new Date().toISOString().slice(0, 16).replace("T", " ");
 
 export default defineConfig({
   define: { __WERSJA__: JSON.stringify(WERSJA) },
-  plugins: [vercelApiDevPlugin(), mobileRouteDevPlugin()],
+  plugins: [vercelApiDevPlugin(), friendlyRoutesDevPlugin()],
   server: {
     port: 5173,
     hmr: process.env.NODE_ENV === 'production' ? false : undefined,
@@ -78,10 +84,11 @@ export default defineConfig({
   build: {
     sourcemap: false,
     rollupOptions: {
-      // Dwa wejścia, jedna baza: aplikacja na komputerze i panel mobilny. Wspólny kod
-      // (klient Supabase, logowanie, typy) Vite wydzieli sam do osobnej paczki.
+      // Trzy wejścia, jedna baza: strona publiczna, aplikacja na komputerze i panel mobilny.
+      // Wspólny kod (klient Supabase, logowanie, typy) Vite wydzieli sam do osobnej paczki.
       input: {
-        main: "index.html",
+        site: "index.html",
+        main: "app.html",
         mobile: "mobile.html",
       },
     },

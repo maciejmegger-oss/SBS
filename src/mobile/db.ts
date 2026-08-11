@@ -98,6 +98,20 @@ const EMPTY_CACHE: Cache = { players: [], clubs: [], observations: [], reports: 
 
 export const getCache = (): Cache => readLS<Cache>(LS.cache, EMPTY_CACHE);
 
+// Wylogowanie musi zabrać ze sobą kopię bazy z telefonu. Inaczej „wyloguj się" znaczyłoby tylko
+// tyle, że znika przycisk: nazwiska zawodników, kluby i plany zostawały w pamięci urządzenia i
+// pokazałyby się pierwszej osobie, która je otworzy. Kolejki wysyłki NIE ruszamy — czeka w niej
+// praca scouta, której jeszcze nie przyjęła baza, i skasowanie jej byłoby utratą danych.
+export function wyczyscKopieBazy(): void {
+  try {
+    localStorage.removeItem(LS.cache);
+    localStorage.removeItem(LS.live);
+    localStorage.removeItem(LS.archiwum);
+  } catch {
+    /* tryb prywatny bez localStorage — nie ma czego czyścić */
+  }
+}
+
 const snakeToCamel = (k: string) => k.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
 const camelToSnake = (k: string) => k.replace(/[A-Z]/g, (m) => "_" + m.toLowerCase());
 

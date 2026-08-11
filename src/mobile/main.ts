@@ -6,11 +6,12 @@
 // są cztery ekrany, które da się obsłużyć jedną ręką, stojąc.
 
 import "./style.css";
-import { currentUser, signIn, signOut, requestPasswordReset } from "../data/auth";
+import { currentUser, signIn, signOut, requestPasswordReset, mojeKonto, type Konto } from "../data/auth";
 import {
   uid, getCache, refreshCache, patchCache, flushQueue, queueLength,
   saveObservation, saveReport, savePlayerStatus, saveLiveEvents,
   getLive, setLive, getScout, setScout, zarchiwizujZdarzenia, zdarzeniaObserwacji,
+  wyczyscKopieBazy,
   type Cache, type LiveEvent, type LiveState, type Period,
 } from "./db";
 import type { Observation, Report } from "../types";
@@ -194,8 +195,8 @@ let obsadzanaPozycja: number | null = null;   // wybrane puste pole na planszy �
 let ocenianyZawodnik: number | null = null;   // indeks zawodnika, którego panel oceny jest otwarty
 let searchQuery = "";
 let clockTimer: number | undefined;
-// Czy panel pracuje na sesji użytkownika. Bez niej też działa — dopóki baza oddaje dane
-// bez logowania — więc to informacja dla widoku, a nie warunek wejścia.
+// Czy panel pracuje na sesji użytkownika. Od zamknięcia systemu jest to WARUNEK WEJŚCIA:
+// bez sesji panel pokazuje ekran logowania i nic poza nim.
 let zalogowany = false;
 
 // Formularz oceny — trzymany w pamięci, żeby przełączenie zakładki go nie kasowało.
@@ -2083,7 +2084,8 @@ document.addEventListener("click", (e) => {
       flushQueue().then((left) => { refreshSyncPill(); render(); toast(left ? "Zostało " + left : "Wszystko wysłane"); });
       break;
     case "logout":
-      signOut().then(() => location.reload());
+      // Kopię bazy zabieramy z telefonu razem z sesją — patrz wyczyscKopieBazy() w db.ts.
+      signOut().then(() => { wyczyscKopieBazy(); location.reload(); });
       break;
     case "go-login": renderLogin(); break;
 
@@ -2187,6 +2189,10 @@ function renderLogin(info?: string) {
       <div class="field"><input id="l-pass" type="password" autocomplete="current-password" placeholder="Hasło"></div>
       <button class="btn" id="l-submit">Zaloguj się</button>
       <button class="link" id="l-reset">Nie pamiętam hasła</button>
+      <p class="hint" style="text-align:center;margin-top:14px;">
+        Nie masz konta? Zgłoś się na <a href="/" style="color:var(--gold);">scoutbasesystem.com</a> —
+        dostęp otwiera administrator systemu.
+      </p>
     </div>`;
 
   const err = (msg: string) => { $("login-error")!.innerHTML = msg ? `<div class="error">${esc(msg)}</div>` : ""; };
@@ -2199,7 +2205,9 @@ function renderLogin(info?: string) {
     btn.disabled = true; btn.textContent = "Loguję…";
     const r = await signIn(email, pass);
     btn.disabled = false; btn.textContent = "Zaloguj się";
-    if (r.ok) start();
+    // Po zalogowaniu wracamy do boot(), a nie wprost do panelu: dostęp otwiera dopiero zgoda
+    // administratora i to boot() ją sprawdza.
+    if (r.ok) void boot();
     else err(r.error || "Nie udało się zalogować.");
   });
 
@@ -2306,40 +2314,66 @@ async function start(pobranaKopia?: Cache) {
   }
 }
 
-// KIEDY PANEL PYTA O HASŁO.
+// ---------------------------------------------------------------------------
+// Ekran „konto czeka na akceptację"
+// ---------------------------------------------------------------------------
+
+function renderCzekaNaZgode(konto: Konto) {
+  const odrzucone = konto.status === "odrzucone";
+  const app = $("app")!;
+  app.innerHTML = `
+    <div class="login">
+      <div class="login-brand">
+        <img src="${LOGO}" alt="Scout Base System" width="88" height="88">
+        <h1>${odrzucone ? "Brak dostępu" : "Konto czeka na akceptację"}</h1>
+        <p class="hint">${odrzucone
+          ? "Administrator systemu nie przyznał dostępu temu kontu."
+          : "Zgłoszenie dotarło. Panel otworzy się, gdy administrator systemu przyzna dostęp."}</p>
+      </div>
+      <p class="hint" style="text-align:center;">Zalogowano jako ${esc(konto.email)}</p>
+      <button class="btn" id="z-sprawdz">Sprawdź ponownie</button>
+      <button class="link" id="z-wyloguj">Wyloguj się</button>
+    </div>`;
+
+  $("z-sprawdz")!.addEventListener("click", async () => {
+    const b = $<HTMLButtonElement>("z-sprawdz")!;
+    b.disabled = true; b.textContent = "Sprawdzam…";
+    const swieze = await mojeKonto();
+    if (swieze && swieze.status === "zatwierdzone") { start(); return; }
+    renderCzekaNaZgode(swieze || konto);
+  });
+  $("z-wyloguj")!.addEventListener("click", () => {
+    signOut().then(() => { wyczyscKopieBazy(); location.reload(); });
+  });
+}
+
+// KIEDY PANEL PYTA O HASŁO: ZAWSZE.
 //
-// Nie zawsze — tylko wtedy, gdy baza rzeczywiście tego wymaga. Reguły dostępu (RLS) w bazie są
-// dziś takie, że dane czyta się bez logowania; tak samo działa aplikacja na komputerze
-// (WYMAGAJ_LOGOWANIA w src/main.ts). Wymuszanie logowania w samym panelu niczego by nie chroniło:
-// klucz dostępu jest wpisany w kod każdej strony i można go stamtąd odczytać. Blokowałoby tylko
-// scouta, który stoi na trybunie i chce zacząć obserwację.
+// Wcześniej pytał tylko wtedy, gdy baza nie oddała danych bez logowania — bo i baza wpuszczała
+// wtedy każdego. Od zamknięcia systemu (supabase/migration_2026-08-11_konta_i_zgoda.sql) warunki
+// są dwa i oba obowiązują tak samo na telefonie, jak na komputerze: sesja oraz zgoda
+// administratora. Bez nich baza nie odda ani jednego wiersza, więc udawanie, że panel działa,
+// kończyłoby się pustymi listami bez wyjaśnienia.
 //
-// Dlatego zamiast flagi do ręcznego przestawiania panel po prostu SPRAWDZA, czy dane przychodzą.
-// Gdy przyjdą — wchodzi od razu na listę obserwacji. Gdy baza nic nie odda (bo ktoś włączył
-// reguły dostępu tylko dla zalogowanych) — pokazuje ekran logowania. Nie ma tu nic do
-// przestawiania po zamknięciu dostępu: panel dostosuje się sam, przy pierwszym uruchomieniu.
+// Praca bez zasięgu nie ucierpiała: sesję Supabase trzyma w pamięci telefonu, więc scout, który
+// zalogował się przed wyjazdem, wchodzi na stadionie do swojej kopii bazy bez sieci.
 async function boot() {
   const user = await currentUser();
-  if (user) { zalogowany = true; start(); return; }
+  if (!user) { renderLogin(); return; }
+  zalogowany = true;
 
-  // Bez sesji nie da się odróżnić „brak dostępu" od „pusta tabela" po samym błędzie — reguły
-  // dostępu w Postgresie nie zgłaszają odmowy, tylko oddają zero wierszy. Dlatego rozstrzyga
-  // wynik: cokolwiek przyszło, znaczy że dostęp jest.
+  // Stan konta czytamy z bazy — a gdy nie ma sieci, wchodzimy do zapisanej kopii. Ta odpowiedź nie
+  // jest zabezpieczeniem (tym są reguły dostępu w bazie), tylko wyjaśnieniem dla użytkownika;
+  // konto niezatwierdzone i tak nie pobierze niczego świeżego.
+  let konto: Konto | null = null;
   try {
-    const kopia = await refreshCache();
-    if (kopia.players.length || kopia.clubs.length || kopia.observations.length) {
-      start(kopia);
-      return;
-    }
+    konto = await mojeKonto();
   } catch (e) {
-    console.warn("Odczyt bez logowania nie powiódł się:", (e as Error).message);
+    console.warn("Nie udało się sprawdzić stanu konta:", (e as Error).message);
   }
+  if (konto && konto.status !== "zatwierdzone") { renderCzekaNaZgode(konto); return; }
 
-  // Została jeszcze kopia z poprzedniego uruchomienia — na stadionie bez zasięgu to ona jest
-  // wszystkim, co mamy, i szkoda byłoby zamiast niej pokazać ekran logowania.
-  if (getCache().players.length) { start(); return; }
-
-  renderLogin();
+  start();
 }
 
 window.addEventListener("online", () => { void flushQueue().then(refreshSyncPill); });

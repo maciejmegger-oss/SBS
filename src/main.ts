@@ -1,6 +1,7 @@
 import "./style.css";
 import { storage } from "./data/storage";
-import { currentUser, signIn, signOut, requestPasswordReset, setNewPassword, isPasswordRecoveryLink } from "./data/auth";
+import { currentUser, signIn, signOut, requestPasswordReset, setNewPassword, isPasswordRecoveryLink,
+         mojeKonto, listaKont, ustawStatusKonta, ustawRoleKonta } from "./data/auth";
 import { VOIVODESHIP_PATHS } from "./data/voivodeships";
 import type { Database } from "./types";
 import * as XLSX from "xlsx";
@@ -2541,6 +2542,112 @@ function viewCompare(){
   </div>` : '<div class="card"><div class="empty">Wybierz zawodników powyżej, aby zobaczyć porównanie.</div></div>'}`;
 }
 
+// ---------- DOSTĘP: KTO WCHODZI DO SYSTEMU (panel administratora) ----------
+//
+// Zgłoszenia ze strony publicznej zakładają konto ze stanem „oczekuje". Tutaj administrator je
+// otwiera albo odrzuca. Zakładka jest widoczna wyłącznie dla roli 'admin', ale nie na tym opiera
+// się bezpieczeństwo: reguły dostępu w bazie oddają zwykłemu użytkownikowi wyłącznie jego własny
+// wiersz i nie pozwolą mu zmienić niczyjego statusu, choćby wywołał zapytanie ręcznie.
+
+let kontaLista = null;          // null = jeszcze nie pobrano z bazy
+let kontaWczytywanie = false;
+let kontaBlad = '';
+
+async function odswiezKonta(){
+  kontaWczytywanie = true; kontaBlad = '';
+  try{
+    kontaLista = await listaKont();
+  }catch(e){
+    kontaBlad = e.message || String(e);
+    kontaLista = kontaLista || [];
+  }
+  kontaWczytywanie = false;
+  if(currentView === 'access') render();
+}
+
+const STATUS_ETYKIETY = {oczekuje:'Oczekuje', zatwierdzone:'Ma dostęp', odrzucone:'Bez dostępu'};
+
+function kontoWiersz(k){
+  const kiedy = (k.utworzoneAt||'').slice(0,10);
+  const jaSam = kontoUzytkownika && kontoUzytkownika.userId === k.userId;
+  const przyciski = [];
+  if(k.status !== 'zatwierdzone'){
+    przyciski.push(`<button class="gold" data-action="konto-decyzja" data-id="${esc(k.userId)}" data-status="zatwierdzone">Przyznaj dostęp</button>`);
+  }
+  if(k.status !== 'odrzucone' && !jaSam){
+    // Własnego konta administrator nie odbiera sobie jednym kliknięciem — to pewna droga do
+    // zamknięcia się na zewnątrz systemu bez możliwości powrotu.
+    przyciski.push(`<button class="secondary" data-action="konto-decyzja" data-id="${esc(k.userId)}" data-status="odrzucone">${k.status==='zatwierdzone'?'Cofnij dostęp':'Odrzuć'}</button>`);
+  }
+  if(k.status === 'zatwierdzone' && !jaSam){
+    przyciski.push(k.rola === 'admin'
+      ? `<button class="secondary" data-action="konto-rola" data-id="${esc(k.userId)}" data-rola="scout">Odbierz prawa administratora</button>`
+      : `<button class="secondary" data-action="konto-rola" data-id="${esc(k.userId)}" data-rola="admin">Zrób administratorem</button>`);
+  }
+  const opis = [k.klub, k.rolaWKlubie].filter(Boolean).map(esc).join(' · ');
+  return `<tr>
+    <td>
+      <strong>${esc(k.imieNazwisko || '—')}</strong>${k.rola==='admin'?' <span class="badge tab-chip">administrator</span>':''}${jaSam?' <span class="badge new">to Ty</span>':''}
+      <div class="note" style="margin:2px 0 0;">${esc(k.email)}</div>
+    </td>
+    <td>${opis || '<span class="note">—</span>'}</td>
+    <td>${esc(k.telefon || '—')}</td>
+    <td>${esc(kiedy || '—')}</td>
+    <td><span class="badge stan-${esc(k.status)}">${STATUS_ETYKIETY[k.status] || esc(k.status)}</span></td>
+    <td style="white-space:nowrap;">${przyciski.join(' ')}</td>
+  </tr>`;
+}
+
+function kontaTabela(lista){
+  if(!lista.length) return '';
+  return `<div class="tabela-przewijana"><table>
+    <thead><tr><th>Osoba</th><th>Klub / rola</th><th>Telefon</th><th>Zgłoszenie</th><th>Stan</th><th></th></tr></thead>
+    <tbody>${lista.map(kontoWiersz).join('')}</tbody>
+  </table></div>`;
+}
+
+function viewAccess(){
+  if(!(kontoUzytkownika && kontoUzytkownika.rola === 'admin')){
+    return `<h2 class="view-title">Dostęp</h2>
+      <div class="card"><div class="empty">Tę zakładkę widzi wyłącznie administrator systemu.</div></div>`;
+  }
+  if(kontaLista === null){
+    if(!kontaWczytywanie) odswiezKonta();     // pierwsze wejście — dociągnij w tle, widok odświeży się sam
+    return `<h2 class="view-title">Dostęp</h2><div class="card"><div class="empty">Wczytuję listę kont…</div></div>`;
+  }
+
+  const wg = (s)=>kontaLista.filter(k=>k.status===s);
+  const oczekujace = wg('oczekuje'), zatwierdzone = wg('zatwierdzone'), odrzucone = wg('odrzucone');
+
+  return `
+  <h2 class="view-title">Dostęp do systemu</h2>
+  <p class="view-sub">Zgłoszenia ze strony publicznej trafiają tutaj. Nowe konto nie widzi żadnych danych,
+    dopóki nie przyznasz mu dostępu — a cofnięcie działa od razu.</p>
+
+  ${kontaBlad ? `<div class="card" style="border-color:var(--clay);"><strong>Nie udało się pobrać listy kont.</strong>
+    <div class="note">${esc(kontaBlad)}</div></div>` : ''}
+
+  <div class="toolbar" style="margin-bottom:14px;">
+    <button class="secondary" data-action="konta-odswiez">${kontaWczytywanie ? 'Odświeżam…' : '↻ Odśwież listę'}</button>
+    <span class="note">Oczekujących: <strong>${oczekujace.length}</strong> · z dostępem: <strong>${zatwierdzone.length}</strong></span>
+  </div>
+
+  <div class="card">
+    <h4 style="margin-top:0;color:var(--heading);">Czekają na decyzję (${oczekujace.length})</h4>
+    ${oczekujace.length ? kontaTabela(oczekujace) : '<div class="empty">Brak nowych zgłoszeń.</div>'}
+  </div>
+
+  <div class="card" style="margin-top:18px;">
+    <h4 style="margin-top:0;color:var(--heading);">Mają dostęp (${zatwierdzone.length})</h4>
+    ${zatwierdzone.length ? kontaTabela(zatwierdzone) : '<div class="empty">Nikt nie ma jeszcze dostępu.</div>'}
+  </div>
+
+  ${odrzucone.length ? `<div class="card" style="margin-top:18px;">
+    <h4 style="margin-top:0;color:var(--heading);">Bez dostępu (${odrzucone.length})</h4>
+    ${kontaTabela(odrzucone)}
+  </div>` : ''}`;
+}
+
 const NAV_ITEMS = [
   {id:"dashboard", label:"Dashboard"},
   {id:"clubs", label:"Kluby"},
@@ -2584,7 +2691,12 @@ function renderNav(){
   }
   odswiezPrzelacznikMotywu();
   const nav = document.getElementById('nav');
-  nav.innerHTML = NAV_ITEMS.map(it => `
+  // Zakładka „Dostęp" tylko dla administratora — reszcie nie ma czego pokazywać, bo baza i tak
+  // odda im wyłącznie ich własny wiersz.
+  const pozycje = (kontoUzytkownika && kontoUzytkownika.rola === 'admin')
+    ? NAV_ITEMS.concat([{id:'access', label:'Dostęp'}])
+    : NAV_ITEMS;
+  nav.innerHTML = pozycje.map(it => `
     <div class="nav-item ${currentView===it.id?'active':''}" data-view="${it.id}">
       <span class="nav-dot"></span>${it.label}
     </div>`).join('');
@@ -2657,6 +2769,7 @@ function render(){
   else if(currentView==="contacts") main.innerHTML = viewContacts();
   else if(currentView==="settings") main.innerHTML = viewSettings();
   else if(currentView==="compare") main.innerHTML = viewCompare();
+  else if(currentView==="access") main.innerHTML = viewAccess();
   attachHandlers();
   if(focusRestore){
     const el = document.getElementById(focusRestore.id);
@@ -6040,6 +6153,34 @@ function attachHandlers(){
   });
 
   document.querySelectorAll('[data-action="logout"]').forEach(b=>b.onclick=()=>performLogout());
+
+  // Zakładka „Dostęp": decyzje administratora o kontach.
+  main.querySelectorAll('[data-action="konta-odswiez"]').forEach(b=>b.onclick=()=>{ odswiezKonta(); render(); });
+  main.querySelectorAll('[data-action="konto-decyzja"]').forEach(b=>b.onclick=async()=>{
+    const id = b.dataset.id, status = b.dataset.status;
+    const konto = (kontaLista||[]).find(k=>k.userId===id);
+    const kto = konto ? (konto.imieNazwisko || konto.email) : 'to konto';
+    if(status === 'zatwierdzone'){
+      if(!confirm(`Przyznać dostęp do całego systemu: ${kto}?`)) return;
+    } else if(!confirm(`Zamknąć dostęp: ${kto}? Konto przestanie widzieć dane natychmiast.`)) return;
+    const napis = b.textContent;
+    b.disabled = true; b.textContent = 'Zapisuję…';
+    const r = await ustawStatusKonta(id, status);
+    if(!r.ok){ alert(r.error); b.disabled=false; b.textContent=napis; return; }
+    await odswiezKonta();   // sam przerysowuje listę po pobraniu
+  });
+  main.querySelectorAll('[data-action="konto-rola"]').forEach(b=>b.onclick=async()=>{
+    const id = b.dataset.id, rola = b.dataset.rola;
+    const konto = (kontaLista||[]).find(k=>k.userId===id);
+    const kto = konto ? (konto.imieNazwisko || konto.email) : 'to konto';
+    if(!confirm(rola==='admin'
+      ? `Nadać prawa administratora: ${kto}? Będzie mógł przyznawać i odbierać dostęp innym.`
+      : `Odebrać prawa administratora: ${kto}?`)) return;
+    b.disabled = true;
+    const r = await ustawRoleKonta(id, rola);
+    if(!r.ok){ alert(r.error); b.disabled=false; return; }
+    await odswiezKonta();   // sam przerysowuje listę po pobraniu
+  });
 
   main.querySelectorAll('.quick-crest-input').forEach(inp=>inp.onchange = async ()=>{
     const file = inp.files[0];
@@ -12892,8 +13033,8 @@ function loginScreenHtml(tryb, komunikat, blad){
         <button class="gold" data-action="lg-login">Zaloguj się</button>
       </div>
       <p class="note" style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px;font-size:11.5px;">
-        Nie masz konta? Dostęp nadaje administrator systemu — napisz na
-        <strong>system@scoutbasesystem.com</strong>, podając imię, nazwisko i klub.
+        Nie masz konta? Zgłoś się przez <a href="/#dostep">formularz na stronie głównej</a> —
+        dostęp otwiera administrator systemu po sprawdzeniu zgłoszenia.
       </p>`;
 
   return `<div class="login-wrap"><div class="login-card">
@@ -12906,6 +13047,9 @@ function loginScreenHtml(tryb, komunikat, blad){
 }
 
 let loginTryb = 'login', loginKomunikat = '', loginBlad = '';
+// Konto zalogowanego użytkownika (rola i zgoda administratora). Null, gdy nikt nie jest zalogowany
+// albo gdy baza nie ma jeszcze tabeli kont — patrz wpuscZalogowanego().
+let kontoUzytkownika = null;
 
 function renderLoginScreen(){
   document.querySelector('.app').style.display = 'none';
@@ -12932,7 +13076,7 @@ function renderLoginScreen(){
     if(!email || !haslo){ loginBlad='Podaj adres e-mail i hasło.'; przeladuj(); return; }
     b.disabled=true; b.textContent='Loguję…';
     const r = await signIn(email, haslo);
-    if(r.ok){ host.remove(); document.querySelector('.app').style.display=''; loadAll(); return; }
+    if(r.ok){ await wpuscZalogowanego(); return; }
     loginBlad = r.error || 'Nie udało się zalogować.'; loginKomunikat=''; przeladuj();
   });
 
@@ -12955,7 +13099,7 @@ function renderLoginScreen(){
     const r = await setNewPassword(h1);
     if(r.ok){
       history.replaceState(null,'',window.location.pathname);   // usuń token z adresu
-      host.remove(); document.querySelector('.app').style.display=''; loadAll(); return;
+      await wpuscZalogowanego(); return;
     }
     loginBlad = r.error || 'Nie udało się zmienić hasła.'; przeladuj();
   });
@@ -12974,23 +13118,58 @@ async function performLogout(){
   window.location.reload();
 }
 
-// PRZEŁĄCZNIK LOGOWANIA.
-//
-// false = aplikacja otwarta, bez ekranu logowania (stan na życzenie właściciela, żeby móc pracować,
-//         dopóki nie ma jeszcze założonego konta).
-// true  = wymagane logowanie.
-//
-// Co trzeba zrobić, żeby włączyć logowanie na stałe:
-//   1. Supabase → Authentication → Users → Add user (e-mail + hasło, zaznacz „Auto Confirm User").
-//   2. Ustaw tu true i sprawdź, że logowanie działa oraz że widzisz dane.
-//   3. Dopiero na końcu uruchom supabase/rls_only_logged_in.sql, żeby zamknąć dostęp w bazie.
-//
-// UWAGA, dopóki jest false: dane w bazie są dostępne bez uwierzytelnienia — ten przełącznik
-// dotyczy tylko ekranu w aplikacji, nie reguł dostępu po stronie Supabase.
-const WYMAGAJ_LOGOWANIA = false;
+// ---------- EKRAN „KONTO CZEKA NA AKCEPTACJĘ" ----------
+// Samo zalogowanie nie wystarcza: konto musi być jeszcze zatwierdzone przez administratora.
+// Rozstrzyga o tym baza (reguły dostępu wpuszczają wyłącznie konta zatwierdzone), a ten ekran
+// mówi o tym po ludzku — zamiast pokazywać pusty system bez jednego wiersza danych.
+function renderKontoScreen(konto){
+  document.querySelector('.app').style.display = 'none';
+  let host = document.getElementById('login-host');
+  if(!host){
+    host = document.createElement('div');
+    host.id = 'login-host';
+    document.body.appendChild(host);
+  }
+  const odrzucone = konto && konto.status === 'odrzucone';
+  host.innerHTML = `<div class="login-wrap"><div class="login-card">
+    <h1 class="login-title">Scout Base System</h1>
+    <p class="login-sub">${odrzucone ? 'Dostęp nie został przyznany' : 'Konto czeka na akceptację'}</p>
+    <div class="${odrzucone ? 'login-error' : 'login-info'}">
+      ${odrzucone
+        ? 'Administrator systemu nie przyznał dostępu temu kontu.'
+        : 'Zgłoszenie dotarło. Dostęp do danych otwiera administrator systemu — dostaniesz wiadomość, gdy podejmie decyzję.'}
+    </div>
+    <p class="note">
+      Zalogowano jako <strong>${esc((konto && konto.email) || '')}</strong>.
+      W pilnej sprawie napisz na <strong>system@scoutbasesystem.com</strong>.
+    </p>
+    <div class="modal-actions" style="justify-content:space-between;">
+      <button class="link-btn" data-action="konto-wyloguj">Wyloguj się</button>
+      <button class="gold" data-action="konto-sprawdz">Sprawdź ponownie</button>
+    </div>
+  </div></div>`;
 
+  host.querySelectorAll('[data-action="konto-wyloguj"]').forEach(b=>b.onclick=async()=>{
+    await signOut();
+    window.location.reload();
+  });
+  host.querySelectorAll('[data-action="konto-sprawdz"]').forEach(b=>b.onclick=async()=>{
+    b.disabled = true; b.textContent = 'Sprawdzam…';
+    const swieze = await mojeKonto();
+    if(swieze && swieze.status === 'zatwierdzone'){
+      host.remove(); document.querySelector('.app').style.display=''; kontoUzytkownika = swieze; loadAll(); return;
+    }
+    renderKontoScreen(swieze || konto);
+  });
+}
+
+// WEJŚCIE DO SYSTEMU.
+//
+// Dwa warunki, oba obowiązkowe: sesja (logowanie) i zgoda administratora (status konta).
+// Ekran to tylko uprzejma forma — właściwą blokadą są reguły dostępu w bazie, wgrywane skryptem
+// supabase/migration_2026-08-11_konta_i_zgoda.sql. Bez nich sam ekran niczego by nie chronił:
+// klucz dostępu jest wpisany w kod strony i każdy może odpytać bazę z pominięciem aplikacji.
 async function startApp(){
-  if(!WYMAGAJ_LOGOWANIA){ loadAll(); return; }
   // Wejście z linku resetującego: Supabase tworzy tymczasową sesję, więc zanim wpuścimy do
   // aplikacji, prosimy o ustawienie nowego hasła.
   if(isPasswordRecoveryLink()){
@@ -13000,6 +13179,22 @@ async function startApp(){
   }
   const user = await currentUser();
   if(!user){ renderLoginScreen(); return; }
+  await wpuscZalogowanego();
+}
+
+// Sprawdzenie zgody administratora — wołane po każdym udanym logowaniu i przy starcie z sesją.
+async function wpuscZalogowanego(){
+  kontoUzytkownika = await mojeKonto();
+  // Brak wiersza w sbs_konta oznacza bazę sprzed wdrożenia tabeli kont (skrypt migracji nie został
+  // jeszcze uruchomiony). Blokowanie takiego konta odcięłoby właściciela od własnych danych, a nic
+  // by nie dało: skoro nie ma tabeli kont, nie ma też reguł, które by o nią pytały.
+  if(kontoUzytkownika && kontoUzytkownika.status !== 'zatwierdzone'){
+    renderKontoScreen(kontoUzytkownika);
+    return;
+  }
+  const host = document.getElementById('login-host');
+  if(host) host.remove();
+  document.querySelector('.app').style.display = '';
   loadAll();
 }
 

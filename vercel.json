@@ -16,6 +16,31 @@
     { "path": "/api/refresh-schedule", "schedule": "0 21 * * 5" }
   ],
   "rewrites": [
-    { "source": "/m", "destination": "/mobile.html" }
+    { "source": "/m", "destination": "/mobile.html" },
+    { "source": "/app", "destination": "/app.html" }
+  ],
+  "//trasy": [
+    "Adres główny (/) to strona publiczna — wizytówka systemu, bez żadnych danych z bazy.",
+    "System stoi pod /app, panel mobilny pod /m. Oba wymagają zalogowania na koncie",
+    "zatwierdzonym przez administratora (patrz supabase/migration_2026-08-11_konta_i_zgoda.sql)."
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains" }
+      ]
+    },
+    {
+      "//": "Systemu i panelu nie wolno indeksować ani podawać z pamięci pośredniej — to część zamknięta.",
+      "source": "/(app|m|app.html|mobile.html)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" },
+        { "key": "Cache-Control", "value": "no-store" }
+      ]
+    }
   ]
 }
