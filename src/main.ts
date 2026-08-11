@@ -2263,10 +2263,30 @@ function playerAvg(playerId){
     rated.forEach(o=> RATING_KEYS.forEach(k=> sums[k]+= (Number(o.ratings[k])||0) ));
     avgs = {}; RATING_KEYS.forEach(k=> avgs[k]= sums[k]/rated.length );
   }
-  if(!obs.length && overall===null && !avgs) return null;
+  // METRYKI Z RAPORTÓW — TO ONE ZASILAJĄ RADAR.
+  //
+  // Radar żywił się dotąd wyłącznie ocenami z obserwacji, a te zniknęły razem z suwakami w oknie
+  // obserwacji (ocenia się w zakładce Raporty). Stąd sprzeczność w profilu: „średnia 4.6 z 1 rap."
+  // obok komunikatu „brak ocen". Ocen liczbowych dostarczają dziś raporty: cztery fazy gry i
+  // cztery stałe fragmenty, wszystkie w skali 1-6 — i to jest osiem osi radaru.
+  const metryki = [];
+  if(reps.length){
+    const zbierz = (pole, lista)=> lista.forEach(f=>{
+      const wartosci = reps.map(r=> Number((r[pole]||{})[f.key])).filter(v=>Number.isFinite(v) && v>0);
+      if(wartosci.length) metryki.push({
+        key: f.key, label: f.krotko || f.label,
+        wartosc: wartosci.reduce((x,y)=>x+y,0)/wartosci.length,
+        zIlu: wartosci.length,
+      });
+    });
+    zbierz('phases', REPORT_PHASES);
+    zbierz('setPieces', REPORT_SET_PIECES);
+  }
+
+  if(!obs.length && overall===null && !avgs && !metryki.length) return null;
   const last = obs.length ? obs[obs.length-1]
     : {date: reps.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||'')).map(r=>r.date).pop() || ''};
-  return {avgs, overall, count: obs.length, reportCount: ratedReports, last};
+  return {avgs, overall, metryki, count: obs.length, reportCount: ratedReports, last};
 }
 // "śr. ocena" w listach: kreska, dopóki nie ma żadnego raportu z ocenami.
 function fmtAvg(a){ return a && a.overall!=null ? fmt1(a.overall) : "—"; }
@@ -3514,7 +3534,12 @@ function viewPlayerDetail(id){
   if(!p){ viewingPlayerId=null; return viewPlayers(); }
   const a = playerAvg(id);
   const obs = playerObs(id).slice().reverse();
-  const radarChartHtml = (a && a.avgs) ? radarChart(a.avgs) : `<p class="note">Brak ocen — średnia i profil pojawią się po wypełnieniu raportu w zakładce „Raporty".</p>`;
+  // Radar rysujemy z ocen w raportach (fazy gry + stałe fragmenty, 1-6). Stary radar z pięciu
+  // atrybutów obserwacji zostaje tylko dla zawodników ocenianych, zanim to okno zniknęło.
+  const radarChartHtml = (a && a.metryki && a.metryki.length >= 3)
+    ? radarRaportow(a.metryki) + `<p class="note" style="flex-basis:100%;margin:2px 0 0;">Skala 1-6 &middot; średnia z ${a.reportCount} ${a.reportCount===1?'raportu':'raportów'} tego zawodnika.</p>`
+    : (a && a.avgs) ? radarChart(a.avgs)
+    : `<p class="note">Brak ocen — średnia i profil pojawią się po wypełnieniu raportu w zakładce „Raporty".</p>`;
 
   return `
   <button class="secondary" data-action="back-players" style="margin-bottom:14px;">&larr; Wróć do listy</button>
@@ -3633,7 +3658,10 @@ function viewPlayerDetail(id){
   </div>
   <div class="card">
     <h4 style="margin-top:0;color:var(--heading);">Profil ocen — radar</h4>
-    ${(()=>{ const a = playerAvg(p.id); return (a && a.avgs) ? radarSvg([{label:p.lastName, avgs:a.avgs, count:a.count}]) + `<p class="note" style="text-align:center;margin-top:6px;">Radar z historycznych ocen obserwacji (skala 1–10)${a.overall!=null?` &middot; śr. ocena z raportów: ${fmt1(a.overall)}`:''}</p>` : '<div class="empty">Brak ocen — średnia pojawi się po wypełnieniu raportu w zakładce „Raporty".</div>'; })()}
+    ${(()=>{ const a = playerAvg(p.id);
+      if(a && a.metryki && a.metryki.length >= 3) return `<div style="text-align:center;">${radarRaportow(a.metryki)}</div><p class="note" style="text-align:center;margin-top:6px;">Skala 1-6, średnia z ${a.reportCount} ${a.reportCount===1?'raportu':'raportów'}${a.overall!=null?` &middot; śr. ocena: ${fmt1(a.overall)}`:''}</p>`;
+      if(a && a.avgs) return radarSvg([{label:p.lastName, avgs:a.avgs, count:a.count}]) + `<p class="note" style="text-align:center;margin-top:6px;">Radar z historycznych ocen obserwacji (skala 1–10)${a.overall!=null?` &middot; śr. ocena z raportów: ${fmt1(a.overall)}`:''}</p>`;
+      return '<div class="empty">Brak ocen — średnia pojawi się po wypełnieniu raportu w zakładce „Raporty".</div>'; })()}
   </div>
   <div class="card">
     <h4 style="margin-top:0;color:var(--heading);">Raporty taktyczne (${playerReports(p.id).length})</h4>
@@ -3740,6 +3768,65 @@ function radarChart(avgs){
     <polygon points="${dataPts}" fill="var(--gold)" fill-opacity="0.35" stroke="var(--gold-dark)" stroke-width="2"/>
     ${labels}
     </g>
+  </svg>`;
+}
+
+// RADAR Z RAPORTÓW — osiem osi (4 fazy gry + 4 stałe fragmenty), skala 1-6.
+// Rysowany w czystym SVG, bez bibliotek: ten sam kod obsługuje ekran i PDF, więc wykres w pobranym
+// raporcie wygląda dokładnie tak, jak w profilu. Kolory przyjmujemy parametrem, bo generator PDF
+// renderuje wycinek strony przez html2canvas, który nie zna zmiennych CSS spoza wstrzykniętej palety.
+function radarRaportow(metryki, opcje){
+  const o = opcje || {};
+  const R = o.r || 92;                 // promień „szóstki" (maksimum skali)
+  // Podpis osi to dwie linijki (nazwa + wartość) ustawione NA ZEWNĄTRZ wykresu, więc ramka SVG
+  // musi być wyraźnie większa od samego koła — inaczej „Atak" u góry i „Rożny obr." u dołu
+  // zostają ucięte krawędzią obrazka.
+  const marginesBok = o.etykiety === false ? 14 : 100;
+  const marginesGora = o.etykiety === false ? 14 : 50;
+  const w = R*2 + marginesBok*2, h = R*2 + marginesGora*2;
+  const cx = w/2, cy = h/2;
+  const n = metryki.length;
+  const MAX = 6, MIN = 1;
+  const kolorSiatka = o.siatka || 'var(--border-strong)';
+  const kolorPodpis = o.podpis || 'var(--ink-soft)';
+  const kolorPole   = o.pole   || 'var(--gold)';
+  const kolorLinia  = o.linia  || 'var(--gold-dark)';
+
+  // Skala zaczyna się od 1 (najniższa możliwa ocena), więc „1" to nie środek wykresu, tylko mały
+  // wielokąt wokół niego — inaczej ocena 1 i brak oceny wyglądałyby identycznie.
+  const promien = (v)=> (Math.max(MIN, Math.min(MAX, v)) - MIN) / (MAX - MIN) * (R - 14) + 14;
+  const kat = (i)=> -Math.PI/2 + i*(2*Math.PI/n);
+  const pkt = (i, v)=>{ const a = kat(i), rr = promien(v); return [cx + rr*Math.cos(a), cy + rr*Math.sin(a)]; };
+  const wielokat = (v)=> metryki.map((_,i)=> pkt(i, v).map(x=>x.toFixed(1)).join(',')).join(' ');
+
+  const siatka = [2,3,4,5,6].map(lvl=>
+    `<polygon points="${wielokat(lvl)}" fill="none" stroke="${kolorSiatka}" stroke-width="${lvl===6?1.4:0.8}"/>`
+  ).join('');
+  const osie = metryki.map((_,i)=>{
+    const [x,y] = pkt(i, MAX);
+    return `<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="${kolorSiatka}" stroke-width="0.8"/>`;
+  }).join('');
+  const dane = metryki.map((m,i)=> pkt(i, m.wartosc).map(x=>x.toFixed(1)).join(',')).join(' ');
+  const kropki = metryki.map((m,i)=>{
+    const [x,y] = pkt(i, m.wartosc);
+    return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.2" fill="${kolorLinia}"/>`;
+  }).join('');
+  const podpisy = o.etykiety === false ? '' : metryki.map((m,i)=>{
+    const a = kat(i);
+    const lx = cx + (R+22)*Math.cos(a), ly = cy + (R+22)*Math.sin(a);
+    // Podpis odsuwamy w stronę, w którą „patrzy" oś: na prawej połowie tekst od lewej,
+    // na lewej od prawej, na górze i dole wyśrodkowany. Bez tego dłuższe nazwy wchodzą na wykres.
+    const cosA = Math.cos(a);
+    const anchor = cosA > 0.25 ? 'start' : cosA < -0.25 ? 'end' : 'middle';
+    const dy = Math.sin(a) > 0.6 ? 10 : Math.sin(a) < -0.6 ? -3 : 4;
+    return `<text x="${lx.toFixed(1)}" y="${(ly+dy).toFixed(1)}" font-size="10.5" font-weight="600" fill="${kolorPodpis}" text-anchor="${anchor}" font-family="Inter,Arial,sans-serif">${esc(m.label)}</text>
+      <text x="${lx.toFixed(1)}" y="${(ly+dy+12).toFixed(1)}" font-size="10" fill="${kolorLinia}" text-anchor="${anchor}" font-family="Inter,Arial,sans-serif" font-weight="700">${fmt1(m.wartosc)}</text>`;
+  }).join('');
+
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="Profil ocen zawodnika w skali 1-6">
+    ${siatka}${osie}
+    <polygon points="${dane}" fill="${kolorPole}" fill-opacity="0.32" stroke="${kolorLinia}" stroke-width="2" stroke-linejoin="round"/>
+    ${kropki}${podpisy}
   </svg>`;
 }
 
@@ -4351,17 +4438,19 @@ async function saveNewObservation(){
 
 function playerReports(playerId){ return DB.reports.filter(r=>r.playerId===playerId).sort((a,b)=>a.date.localeCompare(b.date)); }
 
+// `krotko` — podpis na osi radaru. Pełne nazwy („Faza przejścia z ataku do obrony") nie mieszczą
+// się przy wierzchołku wykresu i zlewają się z sąsiednimi, więc na radarze i w PDF używamy skrótu.
 const REPORT_PHASES = [
-  {key:'fazaAtaku', label:'Faza ataku'},
-  {key:'fazaPrzejsciaAtakObrona', label:'Faza przejścia z ataku do obrony'},
-  {key:'fazaObrony', label:'Faza obrony'},
-  {key:'fazaPrzejsciaObronaAtak', label:'Faza przejścia z obrony do ataku'},
+  {key:'fazaAtaku', label:'Faza ataku', krotko:'Atak'},
+  {key:'fazaPrzejsciaAtakObrona', label:'Faza przejścia z ataku do obrony', krotko:'Przejście A→O'},
+  {key:'fazaObrony', label:'Faza obrony', krotko:'Obrona'},
+  {key:'fazaPrzejsciaObronaAtak', label:'Faza przejścia z obrony do ataku', krotko:'Przejście O→A'},
 ];
 const REPORT_SET_PIECES = [
-  {key:'rzutRoznyObrona', label:'Rzut rożny — obrona'},
-  {key:'rzutRoznyAtak', label:'Rzut rożny — atak'},
-  {key:'rzutWolnyAtak', label:'Rzut wolny — atak'},
-  {key:'rzutWolnyObrona', label:'Rzut wolny — obrona'},
+  {key:'rzutRoznyObrona', label:'Rzut rożny — obrona', krotko:'Rożny obr.'},
+  {key:'rzutRoznyAtak', label:'Rzut rożny — atak', krotko:'Rożny atak'},
+  {key:'rzutWolnyAtak', label:'Rzut wolny — atak', krotko:'Wolny atak'},
+  {key:'rzutWolnyObrona', label:'Rzut wolny — obrona', krotko:'Wolny obr.'},
 ];
 
 // Młodzieżowiec — rocznik 2006 i młodszy, we wszystkich ligach. Odznaka w stylu "3D" (gradient +
@@ -5448,8 +5537,14 @@ function analyzePlayer(p){
   const age = p.birthYear ? (new Date().getFullYear() - Number(p.birthYear)) : null;
   const overall = a ? a.overall : null;
 
+  // Mocne i słabe strony liczymy z tego samego materiału co radar: ocen w raportach (fazy gry +
+  // stałe fragmenty). Stare oceny obserwacji zostają awaryjnie, dla zawodników sprzed zmiany.
   let strengths = [], weaknesses = [];
-  if(a && a.avgs){
+  if(a && a.metryki && a.metryki.length >= 3){
+    const e = a.metryki.map(m=>({k:m.key, etykieta:m.label, v:m.wartosc})).sort((x,y)=>y.v-x.v);
+    strengths = e.slice(0,2);
+    weaknesses = e.slice(-2).reverse();
+  } else if(a && a.avgs){
     const e = RATING_KEYS.map(k=>({k, v:a.avgs[k]})).sort((x,y)=>y.v-x.v);
     strengths = e.slice(0,2);
     weaknesses = e.slice(-2).reverse();
@@ -5520,10 +5615,12 @@ function openPlayerAnalysisModal(playerId){
         <div class="note" style="margin-top:4px;">Śr. ocena (z raportów): <strong>${an.overall!=null?fmt1(an.overall):'—'}/6</strong> · Trend: ${trendTxt} · Pewność: <strong>${esc(an.confidence)}</strong> (granica błędu: ${esc(an.errorMargin)})</div>
       </div>
     </div>
-    ${(an.a && an.a.avgs) ? radarSvg([{label:p.lastName, avgs:an.a.avgs, count:an.a.count}]) : '<div class="empty">Brak ocen liczbowych — wypełnij raport, aby analiza była pełna.</div>'}
+    ${(an.a && an.a.metryki && an.a.metryki.length>=3) ? `<div style="text-align:center;">${radarRaportow(an.a.metryki)}</div>`
+      : (an.a && an.a.avgs) ? radarSvg([{label:p.lastName, avgs:an.a.avgs, count:an.a.count}])
+      : '<div class="empty">Brak ocen liczbowych — wypełnij raport, aby analiza była pełna.</div>'}
     <div class="grid grid-2" style="margin-top:12px;">
-      <div><label class="field">Mocne strony</label>${an.strengths.length? `<ul style="margin:4px 0;padding-left:18px;">${an.strengths.map(s=>`<li>${esc(RATING_LABELS[s.k]||s.k)} (${fmt1(s.v)})</li>`).join('')}</ul>` : '<div class="note">Brak danych</div>'}</div>
-      <div><label class="field">Do poprawy</label>${an.weaknesses.length? `<ul style="margin:4px 0;padding-left:18px;">${an.weaknesses.map(s=>`<li>${esc(RATING_LABELS[s.k]||s.k)} (${fmt1(s.v)})</li>`).join('')}</ul>` : '<div class="note">Brak danych</div>'}</div>
+      <div><label class="field">Mocne strony</label>${an.strengths.length? `<ul style="margin:4px 0;padding-left:18px;">${an.strengths.map(s=>`<li>${esc(s.etykieta||RATING_LABELS[s.k]||s.k)} (${fmt1(s.v)})</li>`).join('')}</ul>` : '<div class="note">Brak danych</div>'}</div>
+      <div><label class="field">Do poprawy</label>${an.weaknesses.length? `<ul style="margin:4px 0;padding-left:18px;">${an.weaknesses.map(s=>`<li>${esc(s.etykieta||RATING_LABELS[s.k]||s.k)} (${fmt1(s.v)})</li>`).join('')}</ul>` : '<div class="note">Brak danych</div>'}</div>
     </div>
     <div style="margin-top:10px;"><label class="field">Potencjał rozwoju</label><div style="font-size:13px;">${esc(an.devNote)}</div></div>
     <div class="note" style="margin-top:10px;">Podstawa: ${an.a?an.a.count:0} obserwacji, ${an.reports.length} raportów.${an.nData<3?' ⚠️ Mała próba — oprzyj decyzję też na obserwacji na żywo.':''}</div>
@@ -12750,6 +12847,8 @@ async function generatePlayerPDF(playerId){
     .obs-table td{padding:7px 10px;border-bottom:1px solid var(--chalk-dim);font-size:11.5px;}
     .obs-table tr:nth-child(even) td{background:#FAF8F2;}
     .page-break{height:0;overflow:hidden;}
+    .radar-box{background:var(--chalk);border:1px solid var(--chalk-dim);border-radius:8px;padding:10px 8px 12px;
+      display:flex;flex-direction:column;align-items:center;gap:6px;}
     .recommend-box{background:var(--good-bg);border-radius:8px;padding:12px 14px;}
     .recommend-box .lbl{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--good);font-weight:700;margin-bottom:5px;}
     .recommend-box .val{font-size:12.5px;color:var(--ink);font-weight:600;line-height:1.5;}
@@ -12819,6 +12918,14 @@ async function generatePlayerPDF(playerId){
       }).join('')}
     </table>`:`<p class="empty-note">Brak zarejestrowanych obserwacji.</p>`}
   </div>
+
+  ${(a && a.metryki && a.metryki.length >= 3) ? `<div class="section" style="padding-top:0;">
+    <div class="section-title">Profil ocen — radar (skala 1-6)</div>
+    <div class="radar-box">
+      ${radarRaportow(a.metryki, {r:96, siatka:'#E7E2D3', podpis:'#5B6560', pole:'#C69B3C', linia:'#8C6C21'})}
+      <p class="empty-note" style="margin:0;text-align:center;">Średnia ocen z ${a.reportCount} ${a.reportCount===1?'raportu':'raportów'} — cztery fazy gry i cztery stałe fragmenty.</p>
+    </div>
+  </div>` : ''}
 
   <div class="section">
     <div class="section-title">Oceny scoutingowe</div>
@@ -12948,13 +13055,16 @@ async function generatePlayerPDF(playerId){
     const wymuszone = [];
     idoc.body.querySelectorAll('*').forEach(el=>{
       const r = el.getBoundingClientRect();
-      if(r.height <= 0) return;
       const od = Math.round((r.top + idoc.documentElement.scrollTop) * SKALA);
       const doo = Math.round((r.bottom + idoc.documentElement.scrollTop) * SKALA);
+      // Znacznik podziału sprawdzamy PRZED odsianiem elementów o zerowej wysokości — sam
+      // .page-break jest właśnie taki (to pusty div), więc wcześniej wypadał z listy i wymuszony
+      // podział nigdy nie działał: druga strona zaczynała się tam, gdzie akurat skończyła pierwsza.
+      if(el.classList && el.classList.contains('page-break')){ wymuszone.push(od); return; }
+      if(r.height <= 0) return;
       dna.push(doo);
       // Bloki wyższe niż pół strony i tak trzeba kiedyś przeciąć — one nie blokują.
       if((doo - od) < stronaPx * 0.5) zakazane.push({od, do: doo});
-      if(el.classList && el.classList.contains('page-break')) wymuszone.push(od);
     });
     wymuszone.sort((a,b)=>a-b);
     dna.sort((a,b)=>a-b);
