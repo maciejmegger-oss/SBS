@@ -101,6 +101,11 @@ export const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }>
       // opiera się cała dotychczasowa aplikacja. Tutaj trzymamy archiwum, żeby odświeżenie
       // z API nie kasowało tego, co zawodnik uzbierał wcześniej.
       "seasonStats",
+      // Znacznik młodzieżowca wprost z protokołu PZPN — na ŁNP zawodnik ma przy nazwisku „(M)".
+      // Trzymamy go osobno od rocznika, bo w IV lidze rocznika NIE MA skąd wziąć, a to właśnie
+      // tam młodzież gra najwięcej. Protokół związkowy jest tu źródłem pewniejszym niż data
+      // urodzenia przepisana z czyjegoś profilu.
+      "mlodziezowiec",
     ],
   },
   sbs_observations: {

@@ -4167,6 +4167,9 @@ function poprzednieSezonyHtml(p){
 }
 
 function isYouthPlayer(p){
+  // Protokół PZPN oznacza młodzieżowca wprost — i to źródło jest pewniejsze niż rocznik, bo
+  // w IV lidze rocznika nie ma skąd wziąć, a przepis o młodzieżowcu obowiązuje tam tak samo.
+  if(p && p.mlodziezowiec) return true;
   const y = Number(p.birthYear);
   return Number.isFinite(y) && y >= 2006;
 }
@@ -7209,7 +7212,77 @@ function parseSquadLnp(rawText){
 // Punkt wejścia używany przez importer. Kolejność od najbardziej charakterystycznego układu do
 // najogólniejszego: blokowy z Transfermarktu, wykaz z ŁNP, kratka koszulek, a na końcu
 // "jedna linia = zawodnik".
-function parseSquadText(rawText){
+// PROTOKÓŁ MECZOWY z Łączy nas piłką.
+//
+// Zawiera obie drużyny, więc bierzemy tylko tę, do której importujemy — inaczej połowa
+// zawodników trafiłaby do niewłaściwego klubu.
+//
+// Układ jest stały: nazwa drużyny, „Skład wyjściowy", nagłówek „Zawodnik", a potem naprzemiennie
+// numer koszulki i nazwisko. Po nazwisku bywają minuty zdarzeń (65', 90' +3').
+//
+// PRZYROSTKI PRZY NAZWISKU są tu najcenniejsze:
+//   (M) — MŁODZIEŻOWIEC. Protokół związkowy mówi to wprost, więc w IV lidze, gdzie rocznika
+//         nie ma skąd wziąć, to jedyne pewne źródło tej informacji.
+//   (B) — bramkarz,  (C) — kapitan.
+//
+// Czego stąd NIE bierzemy: minut gry, bramek i kartek. Rodzaj zdarzenia jest na stronie IKONĄ,
+// a po skopiowaniu zostaje sama liczba — nie da się odróżnić gola od kartki ani od zejścia
+// z boiska. Poprzednia wersja tego importu zgadywała i wpisywała rezerwowym odwrotność ich
+// dorobku; lepiej nie podać nic niż podać liczbę, która wygląda wiarygodnie i jest nieprawdziwa.
+function parseLnpProtokol(rawText, nazwaKlubu){
+  const linie = rawText.split('\n').map(l=>l.replace(/\s+/g,' ').trim());
+  const start = linie.findIndex(l=>/^Składy$/i.test(l));
+  if(start < 0 || !nazwaKlubu) return null;
+
+  const bezOzdob = (l)=> l.replace(/\[([^\]]*)\]\([^)]*\)/g,'$1').trim();
+  const szukany = importNorm(nazwaKlubu);
+
+  // Granice sekcji naszej drużyny: od jej nazwy do „Sztab" (dalej idzie sztab i druga drużyna).
+  let od = -1;
+  for(let i=start;i<linie.length;i++){
+    if(importNorm(bezOzdob(linie[i])) === szukany && /skład wyjściowy/i.test(linie[i+1]||'')){ od = i; break; }
+  }
+  if(od < 0) return null;
+  let doIdx = linie.findIndex((l,i)=> i>od && /^Sztab$/i.test(l));
+  if(doIdx < 0) doIdx = linie.length;
+
+  const znalezieni = [];
+  let rezerwa = false;
+  for(let i=od+1;i<doIdx;i++){
+    const l = linie[i];
+    if(/skład rezerwowy/i.test(l)){ rezerwa = true; continue; }
+    if(!/^\d{1,2}$/.test(l)) continue;                       // szukamy numeru koszulki
+    const numer = parseInt(l,10);
+    // Nazwisko to pierwsza kolejna linia, która nie jest minutą zdarzenia ani pusta.
+    let nazwa = '';
+    for(let j=i+1;j<Math.min(i+4,doIdx);j++){
+      const kandydat = bezOzdob(linie[j]);
+      if(!kandydat || /^\d{1,3}'(\s*\+\s*\d+')?$/.test(kandydat)) continue;
+      nazwa = kandydat; i = j; break;
+    }
+    if(!nazwa) continue;
+    const mlodziezowiec = /\(M\)/.test(nazwa);
+    const bramkarz = /\(B\)/.test(nazwa);
+    const czyste = nazwa.replace(/\((?:M|B|C)\)/g,'').replace(/\s+/g,' ').trim();
+    if(!WYGLADA_NA_NAZWISKO.test(czyste)) continue;
+    const slowa = czyste.split(/\s+/);
+    znalezieni.push({
+      ok:true, firstName: slowa[0], lastName: slowa.slice(1).join(' '),
+      position: bramkarz ? 'Bramkarz' : '', birthYear:'', nationality:'',
+      mlodziezowiec, numer, rezerwa,
+      raw: `${numer} ${czyste}${mlodziezowiec?' [młodzieżowiec]':''}`,
+    });
+  }
+  return znalezieni.length >= 5 ? znalezieni : null;
+}
+
+function parseSquadText(rawText, nazwaKlubu){
+  // Protokół meczowy poznajemy po sekcji „Składy" — sprawdzamy go pierwszego, bo zawiera
+  // najwięcej informacji (numery, podział na jedenastkę i ławkę, oznaczenie młodzieżowca).
+  if(/^\s*Składy\s*$/m.test(rawText)){
+    const prot = parseLnpProtokol(rawText, nazwaKlubu);
+    if(prot) return prot;
+  }
   // Wykaz z ŁNP rozpoznajemy PO ZNACZNIKU, zanim spróbujemy czegokolwiek innego. Parser blokowy
   // potrafi zaczepić się o słowo „Trener" w stopce PZPN i zwrócić garść śmieci, a wtedy właściwy
   // czytnik nigdy by nie dostał szansy — kolejność prób ma tu znaczenie.
@@ -7497,7 +7570,9 @@ function openSquadImportModal(clubId){
     overlay.querySelectorAll('[data-action="squad-parse"]').forEach(b=>b.onclick=()=>{
       const text = overlay.querySelector('#squad-import-text').value;
       pastedText = text;
-      parsed = parseSquadText(text);
+      // Nazwa klubu jest potrzebna przy protokole meczowym — zawiera obie drużyny i bez niej
+      // nie wiadomo, którą z nich importujemy.
+      parsed = parseSquadText(text, club.name);
       draw();
     });
     overlay.querySelectorAll('[data-action="squad-diag"]').forEach(b=>b.onclick=()=>{
@@ -7558,6 +7633,9 @@ function openSquadImportModal(clubId){
           status: '', clubId: club.id, scout: currentScout || '',
           videoLink: '', lnpLink: '', tmLink: '',
           hasAgent: p.hasAgent === true, agencyName: p.agencyName || '',
+          // Znacznik z protokołu PZPN — jedyna pewna informacja o młodzieżowcu tam, gdzie
+          // rocznika nie ma skąd wziąć.
+          mlodziezowiec: p.mlodziezowiec === true,
           formation: '', customFields: {}, notes: '',
           dateAdded: new Date().toISOString().slice(0,10)
         });
