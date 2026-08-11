@@ -7497,7 +7497,19 @@ function openSquadImportModal(clubId){
     overlay.innerHTML = `
     <div class="modal" style="max-width:680px;">
       <h3>Import składu — ${esc(club.name)}</h3>
-      <p class="note" style="margin-top:-4px;">Otwórz skład klubu na Transfermarkt/90minut/ŁNP we własnej przeglądarce, zaznacz i skopiuj widoczną tabelę, wklej poniżej (jeden zawodnik na linię). Nie pobieramy niczego automatycznie — to Ty decydujesz, co wkleić.</p>
+      <p class="note" style="margin-top:-4px;">Otwórz źródło we własnej przeglądarce, zaznacz stronę (<strong>Ctrl+A</strong>), skopiuj i wklej poniżej.
+      Nie pobieramy niczego automatycznie — to Ty decydujesz, co wkleić.</p>
+      <div style="border-left:3px solid var(--gold-dark);padding:8px 12px;margin:0 0 12px;background:var(--card-soft);font-size:12px;">
+        <strong>Można wkleić trzy rzeczy:</strong>
+        <div style="margin-top:5px;line-height:1.7;">
+          📋 <strong>Wykaz składu z ŁNP</strong> — pełna lista zgłoszonych, same nazwiska.<br>
+          ⚽ <strong>Protokół meczowy z ŁNP</strong> — dodatkowo numery, podział na jedenastkę i ławkę
+          oraz <strong>oznaczenie młodzieżowca</strong> „(M)". Protokół zawiera obie drużyny — wezmę z niego tylko ${esc(club.name)}.<br>
+          📊 <strong>Tabela składu z Transfermarktu</strong> — z rocznikami i pozycjami.
+        </div>
+        <div class="note" style="margin-top:6px;font-size:11.5px;">Wklejenie protokołu po wgraniu listy składu <strong>uzupełni</strong>
+        istniejących zawodników o to, czego wcześniej nie było — nic nie zostanie zdublowane ani nadpisane.</div>
+      </div>
       <div class="grid grid-2" style="align-items:start;">
         <div class="field-wrap">
           <textarea id="squad-import-text" rows="8" placeholder="np.&#10;1 Rafał Grocholski Bramkarz 9 gru 2004 (21) Polska -&#10;3 Jonatan Straus Środkowy obrońca 30 cze 1994 (32) Polska -">${esc(pastedText)}</textarea>
@@ -7611,17 +7623,29 @@ function openSquadImportModal(clubId){
       const toAdd = checked.map(i=>parsed[i]).filter(p=>p && p.ok);
       if(!toAdd.length){ alert('Brak zaznaczonych zawodników do zaimportowania.'); return; }
       const origLabel = b.textContent; b.disabled = true; b.textContent = 'Importowanie...';
-      let added = 0, skipped = 0, bezRocznika = 0, zWieku = 0;
+      let added = 0, skipped = 0, uzupelnieni = 0, bezRocznika = 0, zWieku = 0;
       toAdd.forEach(p=>{
         // Porównanie z pominięciem polskich znaków. Dosłowne zestawienie napisów uznawało
         // „Głowicki" i „Glowicki" za dwie różne osoby i zakładało bliźniaczy wpis — a taki
         // duplikat psuje potem pobieranie statystyk, bo przy dwóch kandydatach o tym samym
         // nazwisku nie da się rozstrzygnąć, którego z nich dotyczą liczby.
-        const exists = DB.players.some(pl=>
+        const istniejacy = DB.players.find(pl=>
           pl.clubId===club.id
           && importNorm(pl.firstName)===importNorm(p.firstName)
           && importNorm(pl.lastName)===importNorm(p.lastName));
-        if(exists){ skipped++; return; }
+        if(istniejacy){
+          // Zawodnik już jest — ale wklejka może nieść coś, czego wcześniej nie było.
+          // Zwykłe pominięcie oznaczałoby, że wklejenie protokołu PO wgraniu listy składu
+          // nie dokłada oznaczenia młodzieżowca ani pozycji bramkarza, choć protokół je podaje.
+          // Uzupełniamy WYŁĄCZNIE puste pola — nic wpisanego wcześniej nie jest nadpisywane.
+          let zmienione = false;
+          if(p.mlodziezowiec === true && !istniejacy.mlodziezowiec){ istniejacy.mlodziezowiec = true; zmienione = true; }
+          if(p.position && !istniejacy.position){ istniejacy.position = p.position; zmienione = true; }
+          if(p.birthYear && !istniejacy.birthYear){ istniejacy.birthYear = p.birthYear; zmienione = true; }
+          if(p.nationality && !istniejacy.nationality){ istniejacy.nationality = p.nationality; zmienione = true; }
+          if(zmienione) uzupelnieni++; else skipped++;
+          return;
+        }
         if(!p.birthYear) bezRocznika++;
         else if(p.birthYearFromAge) zWieku++;
         DB.players.push({
@@ -7648,7 +7672,8 @@ function openSquadImportModal(clubId){
         const ok = await savePlayers();
         if(ok){
           alert(`Zaimportowano ${added} zawodników.` +
-            (skipped ? ` Pominięto ${skipped} (już byli w bazie w tym klubie).` : '') +
+            (uzupelnieni ? ` Uzupełniono dane ${uzupelnieni} istniejącym — np. oznaczenie młodzieżowca z protokołu.` : '') +
+            (skipped ? ` Pominięto ${skipped} (byli już w bazie i nie wnosili nic nowego).` : '') +
             (zWieku ? `\n\n${zWieku} rocznik(ów) wyliczono z wieku — mogą być o rok wcześniejsze,` +
               ` zależnie od tego, czy zawodnik miał już urodziny. Sprawdź, jeśli to istotne.` : '') +
             (bezRocznika ? `\n\nUWAGA: ${bezRocznika} bez rocznika — w skopiowanym tekście nie było ani daty urodzenia, ani wieku.` +
