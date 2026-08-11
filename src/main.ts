@@ -1,7 +1,7 @@
 import "./style.css";
 import { storage } from "./data/storage";
 import { currentUser, signIn, signOut, requestPasswordReset, setNewPassword, isPasswordRecoveryLink,
-         mojeKonto, listaKont, ustawStatusKonta, ustawRoleKonta } from "./data/auth";
+         mojeKonto, listaKont, ustawStatusKonta, ustawRoleKonta, tokenSesji } from "./data/auth";
 import { VOIVODESHIP_PATHS } from "./data/voivodeships";
 import type { Database } from "./types";
 import * as XLSX from "xlsx";
@@ -11266,11 +11266,16 @@ function open90minutStatsModal(clubId){
   async function pobierz(zapisujemy){
     pracuje = true; blad = ''; draw();
     try{
+      // Token sesji jedzie razem z żądaniem: dzięki niemu serwer pyta bazę W TWOIM IMIENIU i
+      // reguły dostępu wpuszczają go tak samo, jak przeglądarkę. Bez tego zamknięta baza nie
+      // oddałaby serwerowi ani jednego wiersza.
+      const token = await tokenSesji();
       // Limit czasu po stronie przeglądarki. Bez niego nieudane wywołanie zostawiało przycisk
       // na „Pobieram…" bez końca i wyglądało to dokładnie jak „nie zapisuje" — użytkownik nie
       // miał jak odróżnić trwającej pracy od zawieszenia.
       const res = await fetch('/api/stats-90minut?clubId=' + encodeURIComponent(clubId) + (zapisujemy?'&apply=1':''),
-        { signal: AbortSignal.timeout(90000) });
+        { signal: AbortSignal.timeout(90000),
+          headers: token ? { Authorization: 'Bearer ' + token } : {} });
       const typ = res.headers.get('content-type') || '';
       if(!typ.includes('application/json')){
         throw new Error('serwer nie zwrócił danych (prawdopodobnie przekroczony limit czasu funkcji). Spróbuj ponownie — druga próba jest szybsza, bo część stron jest już w pamięci podręcznej.');

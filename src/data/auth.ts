@@ -68,6 +68,17 @@ export function isPasswordRecoveryLink(): boolean {
   return /type=recovery/.test(hash) || /access_token=/.test(hash);
 }
 
+// Token bieżącej sesji — do wywołań własnych funkcji serwerowych (/api/...).
+//
+// Po zamknięciu bazy serwer nie ma jak sięgnąć po dane „od siebie": klucz publiczny nie widzi nic,
+// a klucza serwisowego nie chcemy wymagać do zwykłej pracy. Rozwiązanie jest prostsze i
+// bezpieczniejsze: żądanie niesie token zalogowanego, a baza traktuje je tak samo jak zapytanie
+// z przeglądarki — czyli sprawdza, czy to konto ma prawo do tych danych.
+export async function tokenSesji(): Promise<string> {
+  const { data } = await sb.auth.getSession();
+  return data.session?.access_token || "";
+}
+
 // Powiadomienie o zmianie stanu logowania (np. wygaśnięcie sesji w innej karcie).
 export function onAuthChange(cb: (user: SessionUser | null) => void): void {
   sb.auth.onAuthStateChange((_event, session) => {

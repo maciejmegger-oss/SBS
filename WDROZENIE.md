@@ -25,6 +25,24 @@ główną. Ten sam podział odtwarza lokalnie wtyczka `friendlyRoutesDevPlugin` 
   po co trafiać do wyszukiwarek ani zostawać w pamięci pośredniej. To higiena, nie zabezpieczenie —
   zabezpieczeniem jest logowanie i reguły dostępu w bazie (patrz `DOSTEP.md`).
 
+## Czym funkcje serwerowe pytają bazę
+
+Po zamknięciu dostępu (patrz `DOSTEP.md`) klucz publiczny nie widzi w bazie ani jednego wiersza.
+Funkcje z katalogu `api/` mają więc dwie drogi — wybiera je `api/_baza.js`:
+
+1. **Token zalogowanego użytkownika.** Gdy żądanie przychodzi z aplikacji, przeglądarka dokłada
+   nagłówek `Authorization: Bearer <token sesji>`. Serwer podaje go dalej do bazy, więc reguły
+   dostępu widzą, kto pyta, i wpuszczają go tak samo jak w przeglądarce. Tą drogą działa ręczne
+   pobieranie statystyk z 90minut — **bez żadnej dodatkowej konfiguracji**.
+2. **Klucz serwisowy `SUPABASE_SERVICE_KEY`.** Potrzebny tam, gdzie żadnego użytkownika nie ma:
+   zadania cykliczne (`/api/refresh-stats`, `/api/refresh-schedule`) i synchronizacja z Kalendarzem
+   Google. Bez niego te przebiegi kończą się jasnym błędem zamiast cichego „zapisano 0".
+
+Klucz serwisowy omija wszystkie reguły dostępu, więc **nigdy** nie może mieć przedrostka `VITE_` —
+tylko zmienne z tym przedrostkiem Vite wkleja do kodu strony, a stamtąd odczytałby go każdy.
+Ustawia się go w Vercelu: Project → Settings → Environment Variables → `SUPABASE_SERVICE_KEY`,
+wartość z Supabase → Project Settings → API Keys → `service_role`.
+
 ## Zadania cykliczne (`crons`)
 
 **Uwaga co do liczby zadań:** plan Hobby dopuszcza dwa zadania i uruchamia je raz na dobę. Przy

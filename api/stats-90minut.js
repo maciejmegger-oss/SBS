@@ -20,7 +20,7 @@ import {
   parseWystepyZawodnika, normalizujNazwe,
 } from "./_90minut.js";
 
-import { BAZA, KLUCZ_BAZY, naglowkiBazy, PODPOWIEDZ_BRAK_KLUCZA } from "./_baza.js";
+import { BAZA, KLUCZ_BAZY, naglowkiDlaZadania, maDostepDoBazy, PODPOWIEDZ_BRAK_KLUCZA } from "./_baza.js";
 
 const kluczNazwiska = (s) =>
   String(s || "").split(/\s+/).map(normalizujNazwe).filter(Boolean).sort().join(" ");
@@ -52,6 +52,11 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Brak konfiguracji bazy (SUPABASE_URL / SUPABASE_SERVICE_KEY)." });
   }
 
+  // Kluczem, którym pytamy bazę, rozstrzyga to, kto przysłał żądanie: zalogowany użytkownik
+  // pracuje na swoim tokenie (reguły dostępu widzą jego konto), a zadanie cykliczne — na kluczu
+  // serwisowym. Ustalamy to raz, na początku, żeby wszystkie zapytania szły tą samą drogą.
+  const naglowki = naglowkiDlaZadania(req);
+
   const pierwszy = (v) => (Array.isArray(v) ? v[0] : v) || "";
   const idKlubu = pierwszy(req.query.clubId);
   const zapisz = String(pierwszy(req.query.apply)) === "1";
@@ -61,18 +66,20 @@ export default async function handler(req, res) {
   // --- KLUB Z NASZEJ BAZY ---
   const rK = await fetch(
     `${BAZA}/rest/v1/sbs_clubs?select=id,name,league&id=eq.${encodeURIComponent(idKlubu)}`,
-    { headers: naglowkiBazy() }
+    { headers: naglowki }
   );
   if (!rK.ok) return res.status(502).json({ error: "Odczyt klubu: " + rK.status });
   const klub = (await rK.json())[0];
   if (!klub) {
     // Pusta odpowiedź ma dwie zupełnie różne przyczyny, a Postgres ich nie rozróżnia: albo klubu
-    // faktycznie nie ma, albo reguły dostępu nie oddały wiersza, bo serwer pyta kluczem publicznym.
-    return res.status(404).json({
-      error: PODPOWIEDZ_BRAK_KLUCZA
-        ? "Serwer nie ma dostępu do bazy."
-        : "Nie ma takiego klubu w bazie.",
-      podpowiedz: PODPOWIEDZ_BRAK_KLUCZA || undefined,
+    // faktycznie nie ma, albo reguły dostępu nie oddały wiersza — bo żądanie przyszło bez sesji,
+    // a serwer nie ma klucza serwisowego.
+    const bezDostepu = !maDostepDoBazy(req);
+    return res.status(bezDostepu ? 401 : 404).json({
+      error: bezDostepu ? "Serwer nie ma dostępu do bazy." : "Nie ma takiego klubu w bazie.",
+      podpowiedz: bezDostepu
+        ? "Zaloguj się w aplikacji i spróbuj ponownie. " + PODPOWIEDZ_BRAK_KLUCZA
+        : undefined,
     });
   }
 
@@ -164,7 +171,7 @@ export default async function handler(req, res) {
   // --- 4. DOPASOWANIE DO NASZEJ BAZY ---
   const rZ = await fetch(
     `${BAZA}/rest/v1/sbs_players?select=id,first_name,last_name,birth_year,position,matches,minutes,goals,custom_fields&club_id=eq.${encodeURIComponent(idKlubu)}&limit=200`,
-    { headers: naglowkiBazy() }
+    { headers: naglowki }
   );
   if (!rZ.ok) return res.status(502).json({ error: "Odczyt zawodników: " + rZ.status });
   const nasiZawodnicy = await rZ.json();
@@ -290,7 +297,7 @@ export default async function handler(req, res) {
     for (let i = 0; i < zadaniaZapisu.length; i += 8) {
       await Promise.all(zadaniaZapisu.slice(i, i + 8).map(async ({ p, doWyslania }) => {
         const r = await fetch(`${BAZA}/rest/v1/sbs_players?id=eq.${encodeURIComponent(p.id)}`, {
-          method: "PATCH", headers: naglowkiBazy(), body: JSON.stringify(doWyslania),
+          method: "PATCH", headers: naglowki, body: JSON.stringify(doWyslania),
         });
         if (r.ok) zapisani++;
         else bledyZapisu.push({ kto: p.kto, status: r.status, tresc: (await r.text()).slice(0, 200) });
