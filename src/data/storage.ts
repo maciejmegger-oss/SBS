@@ -189,13 +189,30 @@ async function fetchServerIds(table: string): Promise<Set<string>> {
 
 async function getCollection(table: string): Promise<string> {
   const PAGE = 1000;
+  const RÓWNOLEGLE = 4;   // ile stron ciągniemy naraz
+
+  // STRONY POBIERAMY FALAMI, NIE JEDNA PO DRUGIEJ.
+  //
+  // PostgREST oddaje najwyżej tysiąc wierszy na żądanie, więc przy czterech i pół tysiąca
+  // zawodników to pięć zapytań. Puszczane kolejno sumowały się w czasie — każde czekało, aż
+  // skończy się poprzednie, choć nic od niego nie potrzebuje. Fala po cztery skraca to niemal
+  // do czasu jednego zapytania.
+  //
+  // Warunek końca zostaje ten sam: gdy w fali trafi się strona krótsza niż tysiąc wierszy, dalej
+  // nic już nie ma. Puste żądania na końcu (gdy liczba wierszy dzieli się równo przez tysiąc)
+  // są nieszkodliwe i zdarzają się raz.
   const all: Record<string, unknown>[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await sb.from(table).select("*").range(from, from + PAGE - 1);
-    if (error) throw new Error(error.message);
-    const batch = data || [];
-    all.push(...batch);
-    if (batch.length < PAGE) break;
+  for (let fala = 0; ; fala += RÓWNOLEGLE) {
+    const zakresy = Array.from({ length: RÓWNOLEGLE }, (_, i) => (fala + i) * PAGE);
+    const strony = await Promise.all(
+      zakresy.map(async (from) => {
+        const { data, error } = await sb.from(table).select("*").range(from, from + PAGE - 1);
+        if (error) throw new Error(error.message);
+        return data || [];
+      }),
+    );
+    strony.forEach((batch) => all.push(...batch));
+    if (strony.some((batch) => batch.length < PAGE)) break;
   }
   const objs = all.map(objFromRow);
   objs.forEach((o) => liftExt(table, o));

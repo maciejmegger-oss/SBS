@@ -1775,19 +1775,34 @@ async function loadAllInner(){
   // Faza 1: równoległe wczytanie WSZYSTKICH kolekcji i flag jednorazowych. Wcześniej ~16 odczytów szło
   // sekwencyjnie (każdy to osobny round-trip do Supabase) — przy dużej bazie sumowało się do kilkunastu
   // sekund. Promise.all robi je naraz; każdy z własnym .catch, więc pojedynczy błąd nie wywraca całości.
-  const [p, c, cc, o, rp, tl, ct, mt, ag, agt, agLogo, pmaRow, s,
+  // Pomiar czasu i wielkości każdego odczytu. Bez niego „długo się ładuje" pozostaje wrażeniem,
+  // a przy kilkunastu kolekcjach nie ma jak zgadnąć, która z nich ciąży. Wynik ląduje w konsoli
+  // przeglądarki (F12 → Console) jako tabelka: ile milisekund i ile kilobajtów.
+  const pomiar = [];
+  const czytaj = async (klucz)=>{
+    const start = performance.now();
+    try{
+      const wiersz = await storage.get(klucz, true);
+      pomiar.push({ kolekcja: klucz.replace('scouting:',''), ms: Math.round(performance.now()-start),
+                    kB: Math.round(((wiersz && wiersz.value ? wiersz.value.length : 0)/1024)) });
+      return wiersz;
+    }catch(e){
+      pomiar.push({ kolekcja: klucz.replace('scouting:',''), ms: Math.round(performance.now()-start), kB: 0 });
+      return null;
+    }
+  };
+
+  const [p, c, o, rp, tl, ct, mt, ag, agt, pmaRow, s,
     seedFlag, enrichFlag, enrichAviaFlag, enrichGornikFlag, enrichAviaV2Flag, recoMigrationFlag, statusMigrationFlag] = await Promise.all([
-    storage.get('scouting:players', true).catch(()=>null),
-    storage.get('scouting:clubs', true).catch(()=>null),
-    storage.get('scouting:club_crests', true).catch(()=>null),
-    storage.get('scouting:observations', true).catch(()=>null),
-    storage.get('scouting:reports', true).catch(()=>null),
-    storage.get('scouting:talents', true).catch(()=>null),
-    storage.get('scouting:contacts', true).catch(()=>null),
-    storage.get('scouting:matches', true).catch(()=>null),
-    storage.get('scouting:agencies', true).catch(()=>null),
-    storage.get('scouting:agents', true).catch(()=>null),
-    storage.get('scouting:agency_logos', true).catch(()=>null),
+    czytaj('scouting:players'),
+    czytaj('scouting:clubs'),
+    czytaj('scouting:observations'),
+    czytaj('scouting:reports'),
+    czytaj('scouting:talents'),
+    czytaj('scouting:contacts'),
+    czytaj('scouting:matches'),
+    czytaj('scouting:agencies'),
+    czytaj('scouting:agents'),
     storage.get('scouting:position_map_assignments', true).catch(()=>null),
     storage.get('scouting:settings', true).catch(()=>null),
     storage.get('scouting:seed_rosters_v9', true).catch(()=>null),
@@ -1800,7 +1815,6 @@ async function loadAllInner(){
   ]);
   try{ DB.players = p ? JSON.parse(p.value) : []; }catch(e){ DB.players = []; }
   try{ DB.clubs = c ? JSON.parse(c.value) : []; }catch(e){ DB.clubs = []; }
-  try{ DB.clubCrests = cc ? JSON.parse(cc.value) : {}; }catch(e){ DB.clubCrests = {}; }
   try{ DB.observations = o ? JSON.parse(o.value) : []; }catch(e){ DB.observations = []; }
   try{ DB.reports = rp ? JSON.parse(rp.value) : []; }catch(e){ DB.reports = []; }
   try{ DB.talents = tl ? JSON.parse(tl.value) : []; }catch(e){ DB.talents = []; }
@@ -1808,15 +1822,6 @@ async function loadAllInner(){
   try{ DB.matches = mt ? JSON.parse(mt.value) : []; }catch(e){ DB.matches = []; }
   try{ DB.agencies = ag ? JSON.parse(ag.value) : []; }catch(e){ DB.agencies = []; }
   try{ DB.agents = agt ? JSON.parse(agt.value) : []; }catch(e){ DB.agents = []; }
-  try{ DB.agencyLogos = agLogo ? JSON.parse(agLogo.value) : {}; }catch(e){ DB.agencyLogos = {}; }
-  // Ratunek dla logotypów, które trafiły do mapy herbów, zanim dostały własny magazyn.
-  // Do bazy i tak nie doszły (klucz obcy je odrzucał), ale jeśli któreś siedzi jeszcze
-  // w pamięci otwartej karty, przenosimy je zamiast gubić.
-  Object.keys(DB.clubCrests||{}).forEach(id=>{
-    if(!id.startsWith('AG')) return;
-    if(!DB.agencyLogos[id]) DB.agencyLogos[id] = DB.clubCrests[id];
-    delete DB.clubCrests[id];
-  });
   try{ positionMapAssignments = pmaRow ? JSON.parse(pmaRow.value) : {}; }catch(e){ positionMapAssignments = {}; }
   try{
     const loaded = s ? JSON.parse(s.value) : {};
@@ -1827,19 +1832,44 @@ async function loadAllInner(){
   // (poniżej) na istniejącej instalacji są prawie natychmiastowe i i tak wywołają końcowe render().
   try{ render(); }catch(e){ console.error('Wczesny render() nie powiódł się (niekrytyczny):', e); }
 
-  // Jednorazowa migracja: herby (base64) zapisane wprost w polu crestUrl klubu -> osobny magazyn.
-  let migratedAnyCrest = false;
-  DB.clubs.forEach(club=>{
-    if(club.crestUrl && club.crestUrl.startsWith('data:image')){
-      DB.clubCrests[club.id] = club.crestUrl;
-      club.crestUrl = '';
-      migratedAnyCrest = true;
+  // HERBY I LOGOTYPY DOCHODZĄ W TLE.
+  //
+  // To obrazki zapisane jako base64 — najcięższa rzecz w całej bazie, kilka megabajtów przy
+  // komplecie klubów. Wstrzymywanie na nie PIERWSZEGO widoku znaczyło, że po zalogowaniu patrzy
+  // się w pustkę, czekając na ozdobniki: lista klubów i zawodników jest czytelna także bez nich,
+  // a herby pojawią się same, gdy dojdą. Migracja starych herbów też idzie tutaj — musi widzieć
+  // wczytaną mapę, inaczej nadpisałaby ją niepełną.
+  void (async ()=>{
+    const [cc, agLogo] = await Promise.all([
+      czytaj('scouting:club_crests'),
+      czytaj('scouting:agency_logos'),
+    ]);
+    try{ DB.clubCrests = cc ? JSON.parse(cc.value) : {}; }catch(e){ DB.clubCrests = {}; }
+    try{ DB.agencyLogos = agLogo ? JSON.parse(agLogo.value) : {}; }catch(e){ DB.agencyLogos = {}; }
+    // Ratunek dla logotypów, które trafiły do mapy herbów, zanim dostały własny magazyn.
+    Object.keys(DB.clubCrests||{}).forEach(id=>{
+      if(!id.startsWith('AG')) return;
+      if(!DB.agencyLogos[id]) DB.agencyLogos[id] = DB.clubCrests[id];
+      delete DB.clubCrests[id];
+    });
+
+    // Jednorazowa migracja: herby (base64) zapisane wprost w polu crestUrl klubu -> osobny magazyn.
+    let migratedAnyCrest = false;
+    DB.clubs.forEach(club=>{
+      if(club.crestUrl && club.crestUrl.startsWith('data:image')){
+        DB.clubCrests[club.id] = club.crestUrl;
+        club.crestUrl = '';
+        migratedAnyCrest = true;
+      }
+    });
+    if(migratedAnyCrest){
+      try{ await saveClubCrests(); }catch(e){ console.error('Migracja herbów (zapis) nie powiodła się', e); }
+      try{ await saveClubs(); }catch(e){ console.error('Migracja herbów (czyszczenie starego pola) nie powiodła się', e); }
     }
-  });
-  if(migratedAnyCrest){
-    try{ await saveClubCrests(); }catch(e){ console.error('Migracja herbów (zapis) nie powiodła się', e); }
-    try{ await saveClubs(); }catch(e){ console.error('Migracja herbów (czyszczenie starego pola) nie powiodła się', e); }
-  }
+
+    try{ render(); }catch(e){ /* widok mógł się w międzyczasie zmienić — nic pilnego */ }
+    console.table(pomiar.slice().sort((a,b)=> b.ms - a.ms));
+  })();
   // Lista startowa klubów wstawia się TYLKO RAZ, przy pierwszym uruchomieniu na danej bazie.
   //
   // Wcześniej przebiegała przy każdym starcie i dokładała wszystko, czego akurat nie było — więc
