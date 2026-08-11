@@ -12834,14 +12834,48 @@ async function generatePlayerPDF(playerId){
 
   <div class="section" style="padding-top:0;">
     <div class="recommend-box">
-      <div class="lbl">Opinia końcowa</div>
-      <div class="val">${
-        p.opisKoncowy
-          ? esc(p.opisKoncowy).replace(/\n/g,'<br>')
-          : (lastObs && lastObs.recommendation
-              ? esc(lastObs.recommendation) + ' <span style="font-weight:400;font-size:11px;color:var(--ink-faint);">(rekomendacja z ostatniej obserwacji)</span>'
-              : 'Brak opinii — wpisz ją w profilu zawodnika, w polu „Opis Końcowy".')
-      }</div>
+      <div class="lbl">Opinia skautingu</div>
+      <div class="val">${(()=>{
+        // OPINIA SKAUTINGU TO GŁOS KILKU OSÓB, NIE JEDNEJ.
+        //
+        // Jeden raport to obserwacja jednego meczu przez jednego człowieka — na tej podstawie klub
+        // nie podejmuje decyzji. Dlatego opinia pojawia się dopiero przy co najmniej dwóch
+        // raportach i mówi wprost, z ilu raportów i od ilu skautów pochodzi. Przy jednym raporcie
+        // nie udajemy, że opinia już istnieje: piszemy, czego brakuje.
+        const raporty = DB.reports.filter(r=>r.playerId===p.id);
+        const skauci = [...new Set(raporty.map(r=>String(r.scout||'').trim()).filter(Boolean))];
+        const oceny = raporty.map(r=>{
+          const v = [...Object.values(r.phases||{}), ...Object.values(r.setPieces||{})]
+            .map(Number).filter(x=>Number.isFinite(x) && x>0);
+          return v.length ? v.reduce((x,y)=>x+y,0)/v.length : null;
+        }).filter(x=>x!=null);
+        const srednia = oceny.length ? oceny.reduce((x,y)=>x+y,0)/oceny.length : null;
+
+        // Perspektywa: ta, która powtarza się najczęściej w raportach.
+        const licznik = {};
+        raporty.forEach(r=>{ if(r.perspektywa) licznik[r.perspektywa] = (licznik[r.perspektywa]||0)+1; });
+        const perspektywa = Object.keys(licznik).sort((x,y)=>licznik[y]-licznik[x])[0] || '';
+
+        const podsumowanie = `<div style="font-weight:400;font-size:11px;color:var(--ink-soft);margin-top:6px;">`
+          + `Na podstawie ${raporty.length} ${raporty.length===1?'raportu':'raportów'}`
+          + (skauci.length ? ` · ${skauci.length} ${skauci.length===1?'skaut':'skautów'}: ${esc(skauci.join(', '))}` : '')
+          + (srednia!=null ? ` · średnia ocena ${fmt1(srednia)}/6` : '')
+          + (perspektywa ? ` · perspektywa ${esc(perspektywa)}` : '')
+          + `</div>`;
+
+        if(raporty.length < 2){
+          return `Opinia skautingu powstaje z co najmniej dwóch raportów — ten zawodnik ma na razie `
+            + `${raporty.length === 0 ? 'zero' : 'jeden'}.`
+            + (p.opisKoncowy ? `<div style="font-weight:400;margin-top:8px;">${esc(p.opisKoncowy).replace(/\n/g,'<br>')}`
+                + `<span style="font-size:11px;color:var(--ink-faint);"> — opis końcowy z profilu, jeszcze nie opinia skautingu</span></div>` : '')
+            + (raporty.length ? podsumowanie : '');
+        }
+        return (p.opisKoncowy
+                  ? esc(p.opisKoncowy).replace(/\n/g,'<br>')
+                  : `Zawodnik oglądany przez ${skauci.length>1?'kilku skautów':'skauta'}; wnioski szczegółowe w raportach powyżej. `
+                    + `Opis końcowy nie został jeszcze wpisany w profilu.`)
+               + podsumowanie;
+      })()}</div>
     </div>
     ${p.hasAgent?`<div class="agent-box">
       <div class="lbl">Menedżer / agent</div>
