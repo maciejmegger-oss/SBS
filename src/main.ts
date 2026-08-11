@@ -11053,6 +11053,11 @@ function open90minutStatsModal(clubId){
           <p style="margin:8px 0 0;">Jeśli to ten sam zawodnik wpisany dwa razy, usuń zbędny wpis
           na liście składu poniżej — wtedy rocznik i statystyki wejdą przy kolejnym pobraniu.</p>
         </div>` : ''}
+        ${wynik.pominietiGorsze && wynik.pominietiGorsze.length ? `<div style="border-left:3px solid var(--good);padding:8px 12px;margin-top:10px;background:var(--good-bg);font-size:12px;">
+          <strong>Pominąłem ${wynik.pominietiGorsze.length} — 90minut podaje MNIEJ niż już mamy.</strong>
+          <p style="margin:6px 0 0;">Dla Ekstraklasy dokładniejsze jest płatne API (liczy doliczony czas), więc nie cofam
+          jego danych. ${wynik.pominietiGorsze.slice(0,6).map(x=>`${esc(x.kto)} <span class="meta">(mamy ${esc(x.mamy)}, 90minut ${esc(x.z90)})</span>`).join(' &nbsp;·&nbsp; ')}</p>
+        </div>` : ''}
         ${wynik.bledyZapisu && wynik.bledyZapisu.length ? `<p class="note" style="font-size:11.5px;margin-top:8px;color:var(--clay-dark);">
           Nie udało się zapisać: ${wynik.bledyZapisu.map(b=>esc(b.kto)).join(', ')}</p>` : ''}
       ` : ''}
@@ -11108,7 +11113,15 @@ function open90minutStatsModal(clubId){
   async function pobierz(zapisujemy){
     pracuje = true; blad = ''; draw();
     try{
-      const res = await fetch('/api/stats-90minut?clubId=' + encodeURIComponent(clubId) + (zapisujemy?'&apply=1':''));
+      // Limit czasu po stronie przeglądarki. Bez niego nieudane wywołanie zostawiało przycisk
+      // na „Pobieram…" bez końca i wyglądało to dokładnie jak „nie zapisuje" — użytkownik nie
+      // miał jak odróżnić trwającej pracy od zawieszenia.
+      const res = await fetch('/api/stats-90minut?clubId=' + encodeURIComponent(clubId) + (zapisujemy?'&apply=1':''),
+        { signal: AbortSignal.timeout(90000) });
+      const typ = res.headers.get('content-type') || '';
+      if(!typ.includes('application/json')){
+        throw new Error('serwer nie zwrócił danych (prawdopodobnie przekroczony limit czasu funkcji). Spróbuj ponownie — druga próba jest szybsza, bo część stron jest już w pamięci podręcznej.');
+      }
       const dane = await res.json();
       wynik = dane;
       if(!res.ok || dane.error) blad = dane.error || ('Serwer odpowiedział kodem ' + res.status + '.');
@@ -11116,7 +11129,9 @@ function open90minutStatsModal(clubId){
       // a nie dopiero po przeładowaniu strony.
       if(zapisujemy && dane.zapisani) await loadAll();
     }catch(e){
-      blad = 'Nie udało się połączyć z serwerem: ' + (e && e.message ? e.message : e);
+      blad = (e && e.name === 'TimeoutError')
+        ? 'Przekroczono czas oczekiwania (90 s). Pobieranie z 90minut trwało za długo — spróbuj ponownie.'
+        : 'Nie udało się połączyć z serwerem: ' + (e && e.message ? e.message : e);
     }finally{
       pracuje = false; draw();
     }

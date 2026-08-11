@@ -233,21 +233,22 @@ async function setCollection(table: string, jsonValue: string): Promise<void> {
 
   const prepared = items.map((it) => packExt(table, it));
   const rows = prepared.map(rowFromObj);
-  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-    let chunk = rows.slice(i, i + BATCH_SIZE);
-    if (!chunk.length) continue;
-    // To jeden wsad obejmujący WSZYSTKICH zawodników (całościowy upsert) — jedno pole spoza
-    // aktualnego schematu Supabase (np. `nationality` przed uruchomieniem migracji) nie może
-    // blokować zapisu reszty. Supabase-js zgłasza brakującą kolumnę na dwa różne sposoby zależnie
-    // od ścieżki (surowy Postgres 42703 "column X.Y does not exist", albo PostgREST z cache schematu
-    // "Could not find the 'Y' column of 'X' in the schema cache") — sprawdzamy oba warianty.
+
+  // Jeden wsad. Wydzielone z pętli, żeby wsady mogły lecieć RÓWNOLEGLE — obsługa braku kolumny
+  // musi zostać per wsad, bo dotyczy konkretnego zestawu wierszy.
+  const zapiszWsad = async (nrWsadu: number, wiersze: Record<string, unknown>[]) => {
+    let chunk = wiersze;
+    // Jedno pole spoza aktualnego schematu Supabase (np. `nationality` przed uruchomieniem
+    // migracji) nie może blokować zapisu reszty. Supabase-js zgłasza brakującą kolumnę na dwa
+    // różne sposoby zależnie od ścieżki (surowy Postgres 42703 "column X.Y does not exist", albo
+    // PostgREST z cache schematu "Could not find the 'Y' column of 'X'") — sprawdzamy oba.
     for (;;) {
       const { error } = await sb.from(table).upsert(chunk, { onConflict: "id" });
-      if (!error) break;
+      if (!error) return;
       const missing =
         error.message.match(/column [\w".]*\.(\w+) does not exist/) ||
         error.message.match(/Could not find the '(\w+)' column/);
-      if (!missing) throw new Error("Wsad " + (i / BATCH_SIZE + 1) + ": " + error.message);
+      if (!missing) throw new Error("Wsad " + nrWsadu + ": " + error.message);
       const col = missing[1];
       console.warn(`Kolumna "${col}" nie istnieje jeszcze w ${table} (migracja niewykonana) — pomijam to pole w tym zapisie.`);
       chunk = chunk.map((r) => {
@@ -256,6 +257,25 @@ async function setCollection(table: string, jsonValue: string): Promise<void> {
         return rest;
       });
     }
+  };
+
+  // WSADY RÓWNOLEGLE, falami po kilka.
+  //
+  // Wcześniej szły jeden po drugim: przy 4000 zawodników to dwadzieścia jeden przejść tam
+  // i z powrotem, każde czekające na poprzednie — zapis potrafił trwać kilkanaście sekund
+  // i wyglądał jak zawieszenie. Czas jest tu prawie w całości oczekiwaniem na sieć, więc
+  // równoległość skraca go niemal proporcjonalnie.
+  //
+  // Fala jest ograniczona świadomie: kilkadziesiąt jednoczesnych zapytań do tej samej tabeli
+  // potrafi skończyć się odrzuceniem po stronie bazy i wtedy zapis nie udaje się w całości.
+  const RÓWNOLEGLE = 6;
+  const wsady: Record<string, unknown>[][] = [];
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const chunk = rows.slice(i, i + BATCH_SIZE);
+    if (chunk.length) wsady.push(chunk);
+  }
+  for (let i = 0; i < wsady.length; i += RÓWNOLEGLE) {
+    await Promise.all(wsady.slice(i, i + RÓWNOLEGLE).map((w, j) => zapiszWsad(i + j + 1, w)));
   }
   // UWAGA: setCollection TYLKO dopisuje/aktualizuje (upsert) — nigdy nie usuwa rekordów, których
   // nie ma w przekazanej tablicy. Wcześniej robiła to przez "różnicę" (usuń z bazy to, czego nie

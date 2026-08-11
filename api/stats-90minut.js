@@ -175,7 +175,7 @@ export default async function handler(req, res) {
     wgNazwiska.get(k).push(g);
   });
 
-  const doZapisu = [], spozaBazy = [], niejednoznaczni = [];
+  const doZapisu = [], spozaBazy = [], niejednoznaczni = [], pominietiGorsze = [];
   for (const z of zeStatystykami) {
     let kandydaci = wgNazwiska.get(kluczNazwiska(z.nazwaPelna)) || [];
     if (!kandydaci.length && z.nazwa) kandydaci = wgNazwiska.get(kluczNazwiska(z.nazwa)) || [];
@@ -207,6 +207,21 @@ export default async function handler(req, res) {
     const g = kandydaci[0];
     const ext = ((g.custom_fields || {}).__ext) || {};
 
+    // NIE OBNIŻAMY danych pochodzących z API-Football.
+    //
+    // Dla Ekstraklasy płatne API jest źródłem dokładniejszym — liczy doliczony czas, którego
+    // 90minut nie podaje. Bez tej blokady kliknięcie „Statystyki z 90minut" na klubie
+    // ekstraklasowym cofałoby dorobek: 219 minut na 218, 234 na 233, 262 na 261. Wygląda to
+    // niewinnie, a jest cichym psuciem lepszych danych gorszymi.
+    const zApiFootball = /API-Football/i.test(ext.statsSource || "");
+    const gorszeNizMamy = zApiFootball
+      && ((g.minutes || 0) > z.minuty || (g.matches || 0) > z.wystepy || (g.goals || 0) > z.gole);
+    if (gorszeNizMamy) {
+      pominietiGorsze.push({ kto: `${g.last_name} ${g.first_name}`,
+        mamy: `${g.matches} m / ${g.minutes} min`, z90: `${z.wystepy} m / ${z.minuty} min` });
+      continue;
+    }
+
     // ROCZNIK. 90minut podaje datę urodzenia na stronie zawodnika, więc wypełniamy nim PUSTE pole
     // — bez rocznika nie da się oznaczyć młodzieżowca, a to jedna z ważniejszych informacji
     // w skautingu. Istniejącego rocznika NIE nadpisujemy: mógł zostać poprawiony ręcznie,
@@ -229,6 +244,7 @@ export default async function handler(req, res) {
 
   // --- 5. ZAPIS ---
   let zapisani = 0;
+  const zadaniaZapisu = [];
   const bledyZapisu = [];
   if (zapisz) {
     const dzis = new Date().toISOString().slice(0, 10);
@@ -259,11 +275,24 @@ export default async function handler(req, res) {
         custom_fields: { ...(p.custom_fields || {}), __ext: ext },
       };
       if (p.rocznik) doWyslania.birth_year = p.rocznik;
-      const r = await fetch(`${BAZA}/rest/v1/sbs_players?id=eq.${encodeURIComponent(p.id)}`, {
-        method: "PATCH", headers: naglowkiBazy(), body: JSON.stringify(doWyslania),
-      });
-      if (r.ok) zapisani++;
-      else bledyZapisu.push({ kto: p.kto, status: r.status, tresc: (await r.text()).slice(0, 200) });
+      zadaniaZapisu.push({ p, doWyslania });
+    }
+
+    // ZAPISY RÓWNOLEGLE, falami po osiem.
+    //
+    // Wcześniej każdy zawodnik szedł osobnym zapytaniem, jeden po drugim. Przy dwudziestu
+    // zawodnikach to dwadzieścia przejść tam i z powrotem doliczonych do czasu, który już zszedł
+    // na pobieranie z 90minut — a funkcja w Vercelu ma na wszystko limit czasu. Po jego
+    // przekroczeniu przeglądarka nie dostawała odpowiedzi i przycisk zostawał na „Pobieram…",
+    // co wyglądało dokładnie jak „nie zapisuje".
+    for (let i = 0; i < zadaniaZapisu.length; i += 8) {
+      await Promise.all(zadaniaZapisu.slice(i, i + 8).map(async ({ p, doWyslania }) => {
+        const r = await fetch(`${BAZA}/rest/v1/sbs_players?id=eq.${encodeURIComponent(p.id)}`, {
+          method: "PATCH", headers: naglowkiBazy(), body: JSON.stringify(doWyslania),
+        });
+        if (r.ok) zapisani++;
+        else bledyZapisu.push({ kto: p.kto, status: r.status, tresc: (await r.text()).slice(0, 200) });
+      }));
     }
   }
 
@@ -288,6 +317,7 @@ export default async function handler(req, res) {
     spozaBazy,
     niejednoznaczni,
     bledyZapisu,
+    pominietiGorsze,
     uwaga: "90minut nie publikuje asyst — to pole zostaje bez zmian.",
   });
 }
