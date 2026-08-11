@@ -11292,7 +11292,28 @@ function open90minutStatsModal(clubId){
             body: JSON.stringify({ pakiet: wynik.pakiet }) });
         const odp = await zapis.json().catch(()=>({ error: 'Serwer nie zwrócił danych.' }));
         if(!zapis.ok || odp.error){ blad = odp.error || ('Serwer odpowiedział kodem ' + zapis.status + '.'); return; }
-        await loadAll();
+
+        // ZAPISANE LICZBY NANOSIMY NA PAMIĘĆ APLIKACJI, ZAMIAST WCZYTYWAĆ CAŁĄ BAZĘ OD NOWA.
+        //
+        // loadAll() ściąga wszystkich zawodników, kluby, obserwacje i raporty — przy tej wielkości
+        // bazy to kilka sekund czekania po zapisie, który sam trwa chwilę. A wiemy dokładnie, co
+        // się zmieniło: to ten sam ładunek, który przed sekundą poszedł na serwer.
+        wynik.pakiet.forEach(poz=>{
+          const gracz = DB.players.find(x=>x.id===poz.id);
+          if(!gracz || !poz.dane) return;
+          const dane = poz.dane;
+          if(dane.matches !== undefined) gracz.matches = dane.matches;
+          if(dane.minutes !== undefined) gracz.minutes = dane.minutes;
+          if(dane.goals !== undefined) gracz.goals = dane.goals;
+          if(dane.birth_year) gracz.birthYear = String(dane.birth_year);
+          // Pola schowane w __ext (kartki, dorobek sezonowy, znacznik źródła) leżą na zawodniku
+          // płasko — dokładnie tak, jak rozpakowuje je warstwa odczytu przy wczytywaniu bazy.
+          const cf = { ...(dane.custom_fields || {}) };
+          const ext = cf.__ext || {};
+          delete cf.__ext;
+          gracz.customFields = cf;
+          Object.keys(ext).forEach(k=>{ gracz[k] = ext[k]; });
+        });
         pracuje = false;
         overlay.remove();
         render();
