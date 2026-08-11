@@ -11,14 +11,7 @@
 // fałszowaniem historii pracy.
 import { fetchLeagueSchedule, kluczMeczu, normalizujNazwe, ZRODLA_LIG as ZRODLA } from "./_90minut.js";
 
-const BAZA = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-const KLUCZ = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-
-const naglowki = () => ({
-  apikey: KLUCZ,
-  Authorization: "Bearer " + KLUCZ,
-  "Content-Type": "application/json",
-});
+import { BAZA, KLUCZ_BAZY as KLUCZ, naglowkiBazy as naglowki, PODPOWIEDZ_BRAK_KLUCZA } from "./_baza.js";
 
 async function czytajKv(klucz) {
   const r = await fetch(`${BAZA}/rest/v1/sbs_kv?select=value&key=eq.${encodeURIComponent(klucz)}`, {
@@ -66,6 +59,11 @@ export default async function handler(req, res) {
   }
   if (!BAZA || !KLUCZ) {
     return res.status(500).json({ error: "Brak konfiguracji bazy (SUPABASE_URL / SUPABASE_SERVICE_KEY)." });
+  }
+  if (PODPOWIEDZ_BRAK_KLUCZA) {
+    // Zapis terminarza kluczem publicznym i tak zostałby odrzucony przez reguły dostępu — lepiej
+    // powiedzieć wprost, czego brakuje, niż zakończyć przebieg „zapisano 0 meczów".
+    return res.status(500).json({ error: "Serwer nie ma dostępu do bazy.", podpowiedz: PODPOWIEDZ_BRAK_KLUCZA });
   }
 
   const tylkoLiga = Array.isArray(req.query.league) ? req.query.league[0] : req.query.league;

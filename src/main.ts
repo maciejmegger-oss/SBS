@@ -2737,6 +2737,9 @@ function renderNav(){
     } else {
       banner.innerHTML = '';
     }
+    // Przycisk sesji stoi w prawym górnym rogu, czyli dokładnie tam, gdzie baner. Klasa na <body>
+    // przesuwa go pod baner na czas, gdy baner jest widoczny.
+    document.body.classList.toggle('baner-zapisu', !!lastSaveFailure);
   }
 }
 
@@ -11274,7 +11277,12 @@ function open90minutStatsModal(clubId){
       }
       const dane = await res.json();
       wynik = dane;
-      if(!res.ok || dane.error) blad = dane.error || ('Serwer odpowiedział kodem ' + res.status + '.');
+      // Podpowiedź z serwera mówi, CO ZROBIĆ (np. brakuje klucza serwisowego w Vercelu) — bez niej
+      // zostawał sam komunikat „nie ma takiego klubu", z którego nic nie wynika.
+      if(!res.ok || dane.error){
+        blad = (dane.error || ('Serwer odpowiedział kodem ' + res.status + '.'))
+             + (dane.podpowiedz ? ' ' + dane.podpowiedz : '');
+      }
       // Po udanym zapisie okno zamyka się samo. Zostawianie go otwartego zmuszało do
       // dodatkowego kliknięcia i nie niosło już żadnej informacji — wynik widać w tabeli.
       if(zapisujemy && dane.zapisani){

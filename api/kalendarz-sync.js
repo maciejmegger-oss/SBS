@@ -17,14 +17,7 @@ import {
   konfiguracjaGoogle, tokenDostepowy, kalendarzGoogle, wydarzenieZObserwacji, naCzasWarszawski,
 } from "./_google.js";
 
-const BAZA = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-const KLUCZ_BAZY = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-
-const naglowkiBazy = () => ({
-  apikey: KLUCZ_BAZY,
-  Authorization: "Bearer " + KLUCZ_BAZY,
-  "Content-Type": "application/json",
-});
+import { BAZA, KLUCZ_BAZY, naglowkiBazy } from "./_baza.js";
 
 const KLUCZ_ZNACZNIKA = "sbs:google:ostatniaSynchronizacja";
 

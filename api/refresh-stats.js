@@ -9,16 +9,9 @@
 // Przy limicie 7500 dziennie zmieściłoby się to prawie 200 razy.
 
 const KLUCZ = process.env.FOOTBALL_API_KEY;
-const BAZA = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-const KLUCZ_BAZY = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+import { BAZA, KLUCZ_BAZY, naglowkiBazy, PODPOWIEDZ_BRAK_KLUCZA } from "./_baza.js";
 
 const LIGA_EKSTRAKLASA = 106;
-
-const naglowkiBazy = () => ({
-  apikey: KLUCZ_BAZY,
-  Authorization: "Bearer " + KLUCZ_BAZY,
-  "Content-Type": "application/json",
-});
 
 const norm = (s) =>
   String(s || "")
@@ -61,6 +54,7 @@ export default async function handler(req, res) {
   }
   if (!KLUCZ) return res.status(500).json({ error: "Brak FOOTBALL_API_KEY." });
   if (!BAZA || !KLUCZ_BAZY) return res.status(500).json({ error: "Brak konfiguracji bazy." });
+  if (PODPOWIEDZ_BRAK_KLUCZA) return res.status(500).json({ error: "Serwer nie ma dostępu do bazy.", podpowiedz: PODPOWIEDZ_BRAK_KLUCZA });
 
   // ZAPISUJEMY DOMYŚLNIE, podgląd trzeba wywołać wprost przez ?dry=1.
   //

@@ -20,14 +20,7 @@ import {
   parseWystepyZawodnika, normalizujNazwe,
 } from "./_90minut.js";
 
-const BAZA = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-const KLUCZ_BAZY = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-
-const naglowkiBazy = () => ({
-  apikey: KLUCZ_BAZY,
-  Authorization: "Bearer " + KLUCZ_BAZY,
-  "Content-Type": "application/json",
-});
+import { BAZA, KLUCZ_BAZY, naglowkiBazy, PODPOWIEDZ_BRAK_KLUCZA } from "./_baza.js";
 
 const kluczNazwiska = (s) =>
   String(s || "").split(/\s+/).map(normalizujNazwe).filter(Boolean).sort().join(" ");
@@ -72,7 +65,16 @@ export default async function handler(req, res) {
   );
   if (!rK.ok) return res.status(502).json({ error: "Odczyt klubu: " + rK.status });
   const klub = (await rK.json())[0];
-  if (!klub) return res.status(404).json({ error: "Nie ma takiego klubu w bazie." });
+  if (!klub) {
+    // Pusta odpowiedź ma dwie zupełnie różne przyczyny, a Postgres ich nie rozróżnia: albo klubu
+    // faktycznie nie ma, albo reguły dostępu nie oddały wiersza, bo serwer pyta kluczem publicznym.
+    return res.status(404).json({
+      error: PODPOWIEDZ_BRAK_KLUCZA
+        ? "Serwer nie ma dostępu do bazy."
+        : "Nie ma takiego klubu w bazie.",
+      podpowiedz: PODPOWIEDZ_BRAK_KLUCZA || undefined,
+    });
+  }
 
   // Kartoteka trzyma pełną nazwę z grupą („IV liga (mazowiecka)"), a adresy są per poziom —
   // stąd sprowadzenie do poziomu. Grupy nie musimy odgadywać: przeszukujemy wszystkie strony

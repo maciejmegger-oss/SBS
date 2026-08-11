@@ -673,3 +673,32 @@ tr.crow-rejected td,tr.crow-watching td{color:var(--row-ink);}
 /* Odnośnik w stopce ekranu logowania (np. do formularza zgłoszenia na stronie głównej) —
    domyślny błękit przeglądarki odcinał się tu od reszty jak plama. */
 .login-card .note a{color:var(--gold-dark);font-weight:600;}
+
+/* ---------- PRZYCISK SESJI W PRAWYM GÓRNYM ROGU ---------- */
+/* Wylogowanie stało na samym dole panelu bocznego, poniżej dwunastu zakładek — na krótszym ekranie
+   trzeba było do niego przewijać. Na szerokim ekranie wyjmujemy je więc z panelu i przyklejamy w
+   prawym górnym rogu, gdzie takich rzeczy się szuka. Na wąskim ekranie panel boczny zmienia się w
+   poziomy pasek u góry i przycisk zostaje w nim, tak jak dotąd. */
+@media (min-width: 781px){
+  .scout-box{
+    position:fixed; top:12px; right:18px; z-index:30;
+    margin:0; padding:0; border-top:none; width:auto;
+  }
+  .scout-box .link-btn{
+    /* Styl w app.html jest wpisany w atrybut style (kolor panelu bocznego), dlatego tutaj musimy go
+       przebić — inaczej jasny napis zostałby na jasnym tle. */
+    width:auto !important; padding:7px 14px !important; font-size:12px !important;
+    color:var(--heading) !important;
+    background:var(--card) !important;
+    border:1px solid var(--border-strong) !important;
+    border-radius:20px;
+    box-shadow:0 1px 3px rgba(20,30,25,.08);
+  }
+  .scout-box .link-btn:hover{
+    color:var(--gold-dark) !important;
+    border-color:var(--gold) !important;
+    text-decoration:none;
+  }
+  /* Gdy u góry stoi czerwony baner nieudanego zapisu, przycisk zjeżdża pod niego, żeby go nie zasłaniać. */
+  body.baner-zapisu .scout-box{ top:60px; }
+}
