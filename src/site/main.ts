@@ -8,6 +8,41 @@
 const rok = document.getElementById("rok");
 if (rok) rok.textContent = String(new Date().getFullYear());
 
+// ---------------------------------------------------------------------------
+// Odsłanianie sekcji przy przewijaniu
+// ---------------------------------------------------------------------------
+//
+// Klasę „js" nakładamy dopiero tutaj, i to jest cała ostrożność tego rozwiązania: stan początkowy
+// (przezroczystość) opisuje reguła `.js [data-anim]`, więc gdy skrypt się nie wykona — bo przeglądarka
+// go zablokowała albo plik nie doszedł — strona po prostu jest widoczna, zamiast zostać pustą kartką.
+//
+// Ruch dostają elementy raz: po odsłonięciu przestajemy je obserwować. Karty wracające do widoku przy
+// każdym przewinięciu w górę i w dół migają, a to męczy przy dłuższym czytaniu.
+const doOdsloniecia = Array.from(document.querySelectorAll<HTMLElement>("[data-anim]"));
+const ruchDozwolony = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+if (doOdsloniecia.length && ruchDozwolony && "IntersectionObserver" in window) {
+  document.documentElement.classList.add("js");
+
+  const obserwator = new IntersectionObserver(
+    (wpisy) => {
+      wpisy.forEach((wpis) => {
+        if (!wpis.isIntersecting) return;
+        const el = wpis.target as HTMLElement;
+        // Drobne opóźnienie wg kolejności w rzędzie — sąsiadujące karty wchodzą jedna po drugiej,
+        // zamiast wskakiwać wszystkie naraz jak jeden blok.
+        const rodzenstwo = Array.from(el.parentElement?.children || []);
+        el.style.transitionDelay = Math.min(rodzenstwo.indexOf(el), 5) * 70 + "ms";
+        el.classList.add("widoczne");
+        obserwator.unobserve(el);
+      });
+    },
+    { rootMargin: "0px 0px -12% 0px", threshold: 0.15 },
+  );
+
+  doOdsloniecia.forEach((el) => obserwator.observe(el));
+}
+
 const form = document.getElementById("form-dostep") as HTMLFormElement | null;
 // Nazwa „status" jest zajęta przez globalne window.status (zwykły tekst) — stąd przyrostek.
 const statusEl = document.getElementById("form-status");
