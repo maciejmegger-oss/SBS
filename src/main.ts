@@ -8370,6 +8370,126 @@ function detectStatsSource(raw){
 // Dlatego czytamy blokami: linia z nazwiskiem otwiera blok zawodnika, a liczby zbieramy z
 // kolejnych linii aż do nazwiska następnego. Kotwicą minut jest apostrof ("222'", "1.980'") —
 // to jedyne pewne oznaczenie, jakie w ogóle zostaje po ikonach.
+// MINUTY GRY z protokołu ŁNP.
+//
+// Rodzaju zdarzenia protokół po skopiowaniu nie zdradza — ikony znikają i zostaje sama liczba.
+// Ale zmiany mają cechę, której gole i kartki nie mają: w TEJ SAMEJ minucie schodzi zawodnik
+// z jedenastki i wchodzi zawodnik z ławki. Parujemy je po minucie i stąd wiemy, kto ile zagrał.
+// Liczba samotna — bez pary po drugiej stronie — to gol albo kartka i takiej NIE ruszamy.
+//
+// Wynik sprawdzamy sumą: jedenastu zawodników przez cały mecz to 990 minut. Jeśli suma się nie
+// zgadza, parowanie zawiodło i wtedy NIE zapisujemy nic, zamiast wpisywać liczby, które wyglądają
+// wiarygodnie i są zmyślone. Poprzednia wersja tego importu nie miała takiej kontroli i wpisywała
+// rezerwowym odwrotność ich dorobku.
+const DLUGOSC_MECZU = 90;
+
+function parseLnpProtokolMinuty(rawText, nazwaKlubu){
+  const zawodnicy = parseLnpProtokol(rawText, nazwaKlubu);
+  if(!zawodnicy) return null;
+
+  // Minuty zapisane przy każdym nazwisku — wyciągamy je ponownie, tym razem z przypisaniem.
+  const linie = rawText.split('\n').map(l=>l.replace(/\s+/g,' ').trim());
+  const bezOzdob = (l)=> l.replace(/\[([^\]]*)\]\([^)]*\)/g,'$1').trim();
+  const szukany = importNorm(nazwaKlubu);
+  let od = -1;
+  for(let i=0;i<linie.length;i++){
+    if(importNorm(bezOzdob(linie[i])) === szukany && /skład wyjściowy/i.test(linie[i+1]||'')){ od = i; break; }
+  }
+  if(od < 0) return null;
+  let doIdx = linie.findIndex((l,i)=> i>od && /^Sztab$/i.test(l));
+  if(doIdx < 0) doIdx = linie.length;
+
+  // Do każdego zawodnika dopisujemy minuty stojące pod jego nazwiskiem, aż do następnego numeru.
+  const wgNazwiska = new Map(zawodnicy.map(z=>[importNorm(z.firstName+z.lastName), z]));
+  let biezacy = null;
+  for(let i=od+1;i<doIdx;i++){
+    const l = bezOzdob(linie[i]);
+    if(/^\d{1,2}$/.test(l)){ biezacy = null; continue; }
+    const minuta = l.match(/^(\d{1,3})'(?:\s*\+\s*(\d+)')?$/);
+    if(minuta && biezacy){ biezacy.minuty.push(minuta[2] ? `${minuta[1]}+${minuta[2]}` : minuta[1]); continue; }
+    const czyste = l.replace(/\((?:M|B|C)\)/g,'').replace(/\s+/g,' ').trim();
+    const trafiony = wgNazwiska.get(importNorm(czyste));
+    if(trafiony){ trafiony.minuty = trafiony.minuty || []; biezacy = trafiony; }
+  }
+
+  // Parowanie zmian: w danej minucie tylu schodzi, ilu wchodzi.
+  const wgMinuty = new Map();
+  zawodnicy.forEach(z=>(z.minuty||[]).forEach(m=>{
+    if(!wgMinuty.has(m)) wgMinuty.set(m, {z11:[], zLawki:[]});
+    (z.rezerwa ? wgMinuty.get(m).zLawki : wgMinuty.get(m).z11).push(z);
+  }));
+  wgMinuty.forEach((grupa, m)=>{
+    const par = Math.min(grupa.z11.length, grupa.zLawki.length);
+    const minuta = parseInt(m,10);
+    for(let i=0;i<par;i++){
+      grupa.z11[i].zszedl = minuta;
+      // Wchodzący bierze najwcześniejsze wejście — kolejne liczby przy jego nazwisku
+      // to już zdarzenia z czasu, gdy był na boisku.
+      if(grupa.zLawki[i].wszedl == null || minuta < grupa.zLawki[i].wszedl) grupa.zLawki[i].wszedl = minuta;
+    }
+  });
+
+  const wynik = zawodnicy.map(z=>{
+    const minuty = z.rezerwa
+      ? (z.wszedl != null ? Math.max(0, DLUGOSC_MECZU - z.wszedl) : 0)
+      : (z.zszedl != null ? z.zszedl : DLUGOSC_MECZU);
+    return { ...z, minutyGry: minuty, zagral: minuty > 0 };
+  });
+
+  const suma = wynik.reduce((n,z)=>n+z.minutyGry, 0);
+  const oczekiwana = 11 * DLUGOSC_MECZU;
+  return { zawodnicy: wynik, suma, oczekiwana, zgodne: suma === oczekiwana };
+}
+
+// Nazwy obu drużyn z protokołu — stoją tuż przed „Skład wyjściowy".
+function nazwyDruzynZProtokolu(rawText){
+  const linie = rawText.split('\n').map(l=>l.replace(/\s+/g,' ').trim());
+  const bez = (l)=> l.replace(/\[([^\]]*)\]\([^)]*\)/g,'$1').trim();
+  const out = [];
+  linie.forEach((l,i)=>{
+    if(!/skład wyjściowy/i.test(linie[i+1]||'')) return;
+    const n = bez(l);
+    if(n && !out.includes(n)) out.push(n);
+  });
+  return out;
+}
+
+// Tożsamość meczu — do pilnowania, żeby ten sam protokół wklejony dwa razy nie policzył
+// dorobku podwójnie. Statystyki z protokołów SUMUJĄ SIĘ mecz po meczu, więc bez tego
+// drugie kliknięcie podwoiłoby każdemu minuty.
+const kluczProtokolu = (druzyny, rawText)=>{
+  const data = (rawText.match(/(\d{1,2})\s+(stycznia|lutego|marca|kwietnia|maja|czerwca|lipca|sierpnia|września|października|listopada|grudnia)/i)||[]).slice(1).join(' ');
+  return 'lnp|' + druzyny.map(importNorm).join('|') + (data ? '|'+importNorm(data) : '');
+};
+
+// Przetworzenie protokołu dla OBU drużyn naraz. Protokół sam podaje nazwy zespołów, więc
+// nie trzeba wskazywać klubu — to jedno wklejenie zamiast dwóch.
+function przetworzProtokolLnp(rawText){
+  const druzyny = nazwyDruzynZProtokolu(rawText);
+  if(druzyny.length < 1) return {blad:'W tej wklejce nie widzę sekcji „Skład wyjściowy" — to chyba nie jest protokół meczu.'};
+  const klucz = kluczProtokolu(druzyny, rawText);
+  const strony = [];
+
+  for(const nazwa of druzyny){
+    const dane = parseLnpProtokolMinuty(rawText, nazwa);
+    if(!dane){ strony.push({nazwa, blad:'nie udało się odczytać składu'}); continue; }
+    // Klub dopasowujemy po nazwie, z pominięciem polskich znaków i skrótów typu „KS".
+    const n = importNorm(nazwa);
+    let klub = DB.clubs.find(c=>importNorm(c.name)===n)
+      || DB.clubs.find(c=>{ const a=importNorm(c.name); return a.length>=5 && n.length>=5 && (a.includes(n)||n.includes(a)); });
+    if(!klub){ strony.push({nazwa, dane, blad:'nie ma takiego klubu w bazie'}); continue; }
+
+    const wiersze = dane.zawodnicy.map(z=>{
+      const zawodnik = DB.players.find(p=>p.clubId===klub.id
+        && importNorm(p.firstName+p.lastName) === importNorm(z.firstName+z.lastName));
+      const juzPoliczony = zawodnik && (zawodnik.rozliczoneMecze||[]).includes(klucz);
+      return {...z, zawodnik, juzPoliczony};
+    });
+    strony.push({nazwa, klub, dane, wiersze});
+  }
+  return {klucz, druzyny, strony};
+}
+
 function parseSquadStatsText(text, squad){
   // Nazwiska w składach bywają skandynawskie, tureckie czy portugalskie (Håkans, Thórdarson,
   // Håkans), więc zamiast wyliczać znaki, rozkładamy je Unicode'em i zdejmujemy znaki diakrytyczne.
@@ -10484,6 +10604,8 @@ function openLeagueStatsModal(league){
   overlay.className = 'modal-overlay';
   const close = ()=>{ overlay.remove(); render(); };
   let parsed = null;
+  // Odczytany protokół z ŁNP czeka tu na potwierdzenie — drugie kliknięcie go zapisuje.
+  let protokol = null;
 
   // Świeżość liczymy z najnowszego zapisu statystyk wśród zawodników klubu.
   const clubFreshness = (c)=>{
@@ -10533,9 +10655,76 @@ function openLeagueStatsModal(league){
   const btn = overlay.querySelector('[data-action="league-stats-parse"]');
 
   btn.onclick = async ()=>{
+    // Drugie kliknięcie po odczytaniu protokołu = zapis. Dorobek z protokołów SUMUJE SIĘ mecz
+    // po meczu, więc każdy mecz musi być policzony dokładnie raz — stąd znacznik rozliczonych.
+    if(protokol){
+      let dopisanych = 0, klubow = 0;
+      protokol.strony.forEach(s=>{
+        if(s.blad || !s.dane.zgodne) return;
+        klubow++;
+        s.wiersze.forEach(w=>{
+          if(!w.zawodnik || w.juzPoliczony) return;
+          const p = w.zawodnik;
+          if(w.mlodziezowiec && !p.mlodziezowiec) p.mlodziezowiec = true;
+          if(w.position && !p.position) p.position = w.position;
+          if(!w.zagral) return;                       // był w kadrze meczowej, ale nie wszedł
+          p.matches = (p.matches || 0) + 1;
+          p.minutes = (p.minutes || 0) + w.minutyGry;
+          p.rozliczoneMecze = [...(p.rozliczoneMecze || []), protokol.klucz];
+          p.statsUpdatedAt = new Date().toISOString().slice(0,10);
+          p.statsSource = 'protokół ŁNP';
+          dopisanych++;
+        });
+      });
+      const pominiete = protokol.strony.filter(s=>s.dane && !s.dane.zgodne).map(s=>s.nazwa);
+      if(!dopisanych){
+        alert('Nie zapisałem nic — wszyscy byli już policzeni z tego meczu albo suma minut się nie zgadzała.');
+        return;
+      }
+      const ok = await savePlayers();
+      alert(ok
+        ? `Dopisano dorobek ${dopisanych} zawodnikom z ${klubow} klubów.`
+          + (pominiete.length ? `\n\nPOMINIĘTE (suma minut się nie zgadzała): ${pominiete.join(', ')}.` : '')
+        : 'Nie udało się zapisać — sprawdź baner u góry strony.');
+      if(ok){ protokol = null; close(); }
+      return;
+    }
     if(!parsed){
       const text = (overlay.querySelector('#league-stats-paste') as HTMLTextAreaElement).value.trim();
       if(!text){ alert('Wklej najpierw tabele statystyk.'); return; }
+
+      // PROTOKÓŁ Z ŁNP — jedyne źródło statystyk IV ligi, bo ani Transfermarkt, ani 90minut
+      // tej ligi nie prowadzą. Protokół podaje obie drużyny, więc jedno wklejenie aktualizuje
+      // oba zespoły naraz i nie trzeba wskazywać klubu.
+      if(/skład wyjściowy/i.test(text)){
+        const wynik = przetworzProtokolLnp(text);
+        if(wynik.blad){ preview.innerHTML = `<div class="empty" style="text-align:left;padding:14px;color:var(--clay-dark);">${esc(wynik.blad)}</div>`; parsed = null; return; }
+        protokol = wynik;
+        preview.innerHTML = wynik.strony.map(s=>{
+          if(s.blad) return `<div class="empty" style="text-align:left;padding:10px;margin-bottom:8px;">
+            <strong>${esc(s.nazwa)}</strong> — ${esc(s.blad)}</div>`;
+          const doZapisu = s.wiersze.filter(w=>w.zawodnik && w.zagral && !w.juzPoliczony);
+          const brakWBazie = s.wiersze.filter(w=>!w.zawodnik);
+          return `<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;">
+            <strong>${esc(s.klub.name)}</strong>
+            ${s.dane.zgodne
+              ? `<span class="badge reco" style="margin-left:8px;">minuty się zgadzają (${s.dane.suma})</span>`
+              : `<span class="badge rejected" style="margin-left:8px;">suma minut ${s.dane.suma} zamiast ${s.dane.oczekiwana} — NIE ZAPISZĘ</span>`}
+            <div class="note" style="margin-top:6px;font-size:12px;">
+              do dopisania: <strong>${doZapisu.length}</strong>
+              ${s.wiersze.filter(w=>w.juzPoliczony).length ? ` &middot; już policzonych wcześniej: ${s.wiersze.filter(w=>w.juzPoliczony).length}` : ''}
+              ${brakWBazie.length ? ` &middot; <span style="color:var(--clay-dark);">spoza kartoteki: ${brakWBazie.length}</span>` : ''}
+            </div>
+            <div style="font-size:11.5px;line-height:1.7;margin-top:6px;">
+              ${doZapisu.slice(0,24).map(w=>`${esc(w.lastName)} ${esc(w.firstName)} <strong>${w.minutyGry}′</strong>${w.mlodziezowiec?' <span class="youth-badge-3d">MŁ</span>':''}`).join(' &nbsp;·&nbsp; ')}
+            </div>
+            ${brakWBazie.length ? `<div class="note" style="font-size:11px;margin-top:6px;">Nie ma w kartotece: ${brakWBazie.map(w=>esc(w.firstName+' '+w.lastName)).join(', ')}</div>` : ''}
+          </div>`;
+        }).join('');
+        btn.textContent = 'Zapisz statystyki obu drużyn';
+        parsed = null; return;
+      }
+
       if(wygladaNaProtokolMeczu(text)){
         preview.innerHTML = komunikatOProtokole();
         parsed = null; return;
