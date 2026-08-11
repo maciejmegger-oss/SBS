@@ -112,17 +112,17 @@ p{margin:0 0 12px;}
   filter:drop-shadow(0 18px 40px rgba(0,0,0,.45));
 }
 .badge-ring{
-  position:absolute; inset:0; border-radius:50%; padding:2px;
+  position:absolute; inset:0; border-radius:50%; padding:2.5px;
   background:conic-gradient(from 0deg,
     rgba(198,155,60,0) 0deg,
-    rgba(226,192,113,.95) 55deg,
+    rgba(226,192,113,1) 55deg,
     rgba(198,155,60,.25) 130deg,
     rgba(198,155,60,0) 250deg);
   -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite:xor;
           mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
           mask-composite:exclude;
-  animation:obreczObrot 11s linear infinite;
+  animation:obreczObrot 8s linear infinite;
 }
 /* Druga obręcz — szersza, bledsza i w drugą stronę. Daje głębię, sama z siebie nie zwraca uwagi. */
 .badge-ring--wolny{
@@ -274,10 +274,12 @@ section[id]{scroll-margin-top:80px;}
 .foot p{font-size:14px;margin:0 0 8px;}
 .foot a{color:var(--gold-soft);text-decoration:none;}
 .foot a:hover{text-decoration:underline;}
-.foot-name{font-family:'Barlow Condensed',sans-serif;letter-spacing:1.6px;color:var(--chalk);margin-top:10px;font-size:16px;}
-/* Podpis pod nazwą ma brzmieć tak samo jak w pasku górnym — jedna marka mówi jednym zdaniem,
-   a nie dwoma różnymi. Stąd i ten sam krój zapisu: wersaliki z rozstrzeleniem. */
-.foot-sub{max-width:34ch;font-size:11px;letter-spacing:1.6px;text-transform:uppercase;color:#9FB6AB;}
+/* Znak w stopce to ten sam układ, co w pasku górnym — te same rozmiary, ten sam podpis.
+   Powtórzenie marki na obu końcach strony ma wyglądać jak powtórzenie, a nie jak druga wersja. */
+.foot-mark{display:flex;align-items:center;gap:10px;text-decoration:none;}
+.foot-mark strong{display:block;font-family:'Barlow Condensed',sans-serif;font-size:17px;letter-spacing:1.4px;color:var(--chalk);}
+.foot-mark small{display:block;font-size:10.5px;letter-spacing:1.6px;text-transform:uppercase;color:#9FB6AB;}
+.foot-mark img{width:44px;height:44px;border-radius:11px;}
 .foot-legal{
   margin:36px 0 0;padding-top:18px;font-size:12px;color:#7E9389;
   border-top:1px solid rgba(246,243,234,.1);
