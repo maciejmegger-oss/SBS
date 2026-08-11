@@ -2728,6 +2728,14 @@ function renderNav(){
     sesjaBtn.textContent = zalogowany ? 'Wyloguj się →' : 'Zaloguj się →';
     sesjaBtn.dataset.action = zalogowany ? 'logout' : 'login-screen';
   }
+  // ZNACZNIK WERSJI.
+  //
+  // Po każdej poprawce wraca to samo pytanie: „czy ja już mam nową wersję?". Przeglądarka potrafi
+  // trzymać stary plik nawet po wdrożeniu, a wtedy naprawiony błąd wygląda dokładnie tak, jakby
+  // poprawki nie było. Data zbudowania w panelu bocznym rozstrzyga to jednym spojrzeniem — tak
+  // samo, jak w panelu mobilnym (zakładka Baza).
+  const znacznik = document.getElementById('wersja-znacznik');
+  if(znacznik) znacznik.textContent = 'wersja ' + (typeof __WERSJA__ === 'string' ? __WERSJA__ : 'robocza');
   const nav = document.getElementById('nav');
   // Zakładka „Dostęp" tylko dla administratora — reszcie nie ma czego pokazywać, bo baza i tak
   // odda im wyłącznie ich własny wiersz.
@@ -12711,6 +12719,15 @@ async function generatePlayerPDF(playerId){
     .attr5-empty{color:var(--ink-faint);}
     .metric-section-label{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);font-weight:600;margin:10px 0 5px;}
     .attr5-grid.metric4{grid-template-columns:repeat(4,1fr);}
+    /* ZIELONE NAGŁÓWKI RÓWNEJ WYSOKOŚCI.
+       „Faza przejścia z ataku do obrony" łamie się na dwie linie, „Faza obrony" mieści się w
+       jednej — przy wysokości zależnej od treści sąsiadujące kafelki miały różne nagłówki i rząd
+       wyglądał na rozjechany. Stała wysokość z wyśrodkowaniem w pionie wyrównuje je niezależnie
+       od długości podpisu; dwie linie mieszczą się bez ucinania. */
+    .attr5-grid.metric4 .attr5-head{
+      height:38px; padding:4px 6px; line-height:1.15; font-size:10.5px;
+      justify-content:center; gap:0;
+    }
     .metric-num-body{background:var(--chalk);border:1px solid var(--chalk-dim);border-top:none;border-radius:0 0 6px 6px;
       padding:9px 8px;text-align:center;font-size:22px;font-weight:800;color:var(--heading);line-height:1;
       flex:1;display:flex;align-items:center;justify-content:center;min-height:30px;}
@@ -12734,7 +12751,7 @@ async function generatePlayerPDF(playerId){
     .obs-table tr:nth-child(even) td{background:#FAF8F2;}
     .recommend-box{background:var(--good-bg);border-radius:8px;padding:12px 14px;}
     .recommend-box .lbl{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--good);font-weight:700;margin-bottom:5px;}
-    .recommend-box .val{font-size:13px;color:var(--ink);font-weight:700;}
+    .recommend-box .val{font-size:12.5px;color:var(--ink);font-weight:600;line-height:1.5;}
     .agent-box{background:var(--warn-bg);border-radius:8px;padding:12px 14px;margin-top:12px;}
     .agent-box .lbl{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--gold-dark);font-weight:700;margin-bottom:5px;}
     .agent-box .val{font-size:12.5px;color:var(--ink);font-weight:600;}
@@ -12817,8 +12834,14 @@ async function generatePlayerPDF(playerId){
 
   <div class="section" style="padding-top:0;">
     <div class="recommend-box">
-      <div class="lbl">Rekomendacja</div>
-      <div class="val">${esc(lastObs && lastObs.recommendation ? lastObs.recommendation : 'Brak rekomendacji')}</div>
+      <div class="lbl">Opinia końcowa</div>
+      <div class="val">${
+        p.opisKoncowy
+          ? esc(p.opisKoncowy).replace(/\n/g,'<br>')
+          : (lastObs && lastObs.recommendation
+              ? esc(lastObs.recommendation) + ' <span style="font-weight:400;font-size:11px;color:var(--ink-faint);">(rekomendacja z ostatniej obserwacji)</span>'
+              : 'Brak opinii — wpisz ją w profilu zawodnika, w polu „Opis Końcowy".')
+      }</div>
     </div>
     ${p.hasAgent?`<div class="agent-box">
       <div class="lbl">Menedżer / agent</div>
@@ -12851,26 +12874,70 @@ async function generatePlayerPDF(playerId){
     });
 
     const targetEl = idoc.body;
+    const SKALA = 2;
     // Tło podajemy literalnie. html2canvas parsuje tę wartość sam i nie zna funkcji var() —
     // przekazanie jej tutaj kończyło każde generowanie PDF błędem, niezależnie od treści raportu.
-    const canvas = await html2canvas(targetEl, {scale:2, useCORS:true, backgroundColor:'#FFFFFF', windowWidth:794});
-    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+    const canvas = await html2canvas(targetEl, {scale:SKALA, useCORS:true, backgroundColor:'#FFFFFF', windowWidth:794});
 
     const pdf = new jsPDF('p', 'mm', 'a4');
     const pageWidthMm = pdf.internal.pageSize.getWidth();
     const pageHeightMm = pdf.internal.pageSize.getHeight();
-    const imgWidthMm = pageWidthMm;
-    const imgHeightMm = (canvas.height * imgWidthMm) / canvas.width;
+    // Wysokość strony przeliczona na piksele obrazu — obraz ma szerokość kartki, więc skala
+    // wynika wprost z proporcji.
+    const stronaPx = Math.floor(canvas.width * (pageHeightMm / pageWidthMm));
 
-    let heightLeftMm = imgHeightMm;
-    let positionMm = 0;
-    pdf.addImage(imgData, 'JPEG', 0, positionMm, imgWidthMm, imgHeightMm);
-    heightLeftMm -= pageHeightMm;
-    while(heightLeftMm > 0){
-      positionMm = heightLeftMm - imgHeightMm;
-      pdf.addPage();
-      pdf.addImage(imgData, 'JPEG', 0, positionMm, imgWidthMm, imgHeightMm);
-      heightLeftMm -= pageHeightMm;
+    // ---------- GDZIE WOLNO PRZECIĄĆ ----------
+    //
+    // Wcześniej raport szedł jako jeden wysoki obraz cięty co 297 mm — a że treść nic o tym nie
+    // wiedziała, cięcie wypadało w połowie nagłówka albo wiersza tabeli. Teraz pytamy o to sam
+    // dokument: każdy element, który mieści się na stronie (nagłówek sekcji, wiersz tabeli, karta
+    // oceny), wyznacza strefę zakazaną — nie wolno przez niego przejść. Cięcie robimy na
+    // najniższym dozwolonym dnie elementu przed końcem strony.
+    const zakazane = [];   // [{od, do}] w pikselach obrazu
+    const dna = [];        // dopuszczalne miejsca cięcia
+    idoc.body.querySelectorAll('*').forEach(el=>{
+      const r = el.getBoundingClientRect();
+      if(r.height <= 0) return;
+      const od = Math.round((r.top + idoc.documentElement.scrollTop) * SKALA);
+      const doo = Math.round((r.bottom + idoc.documentElement.scrollTop) * SKALA);
+      dna.push(doo);
+      // Bloki wyższe niż pół strony i tak trzeba kiedyś przeciąć — one nie blokują.
+      if((doo - od) < stronaPx * 0.5) zakazane.push({od, do: doo});
+    });
+    dna.sort((a,b)=>a-b);
+
+    const wolnoCiac = (y)=> !zakazane.some(z=> y > z.od + 1 && y < z.do - 1);
+
+    let y = 0, pierwsza = true;
+    while(y < canvas.height){
+      const koniecIdealny = Math.min(y + stronaPx, canvas.height);
+      let ciecie = koniecIdealny;
+      if(koniecIdealny < canvas.height){
+        // Najniższe dno elementu przed końcem strony, przy którym nie przecinamy niczego w pół.
+        // Nie schodzimy poniżej 45% strony — inaczej jedna wysoka tabela zostawiałaby po sobie
+        // kartkę zapełnioną w jednej trzeciej.
+        const minimum = y + stronaPx * 0.45;
+        let najlepsze = 0;
+        for(const d of dna){
+          if(d <= y) continue;
+          if(d > koniecIdealny) break;
+          if(d >= minimum && wolnoCiac(d)) najlepsze = d;
+        }
+        if(najlepsze) ciecie = najlepsze;
+      }
+
+      const wysokoscWycinka = Math.max(1, ciecie - y);
+      const kawalek = document.createElement('canvas');
+      kawalek.width = canvas.width;
+      kawalek.height = wysokoscWycinka;
+      kawalek.getContext('2d').drawImage(canvas, 0, y, canvas.width, wysokoscWycinka, 0, 0, canvas.width, wysokoscWycinka);
+
+      if(!pierwsza) pdf.addPage();
+      pierwsza = false;
+      pdf.addImage(kawalek.toDataURL('image/jpeg', 0.95), 'JPEG', 0,
+        0, pageWidthMm, (wysokoscWycinka * pageWidthMm) / canvas.width);
+
+      y = ciecie;
     }
 
     const safeName = ((p.firstName||'')+'_'+(p.lastName||'')).trim().replace(/\s+/g,'_').replace(/[^\w\-]/g,'') || 'zawodnik';
