@@ -12920,9 +12920,19 @@ async function generatePlayerPDF(playerId){
     const pdf = new jsPDF('p', 'mm', 'a4');
     const pageWidthMm = pdf.internal.pageSize.getWidth();
     const pageHeightMm = pdf.internal.pageSize.getHeight();
-    // Wysokość strony przeliczona na piksele obrazu — obraz ma szerokość kartki, więc skala
-    // wynika wprost z proporcji.
-    const stronaPx = Math.floor(canvas.width * (pageHeightMm / pageWidthMm));
+
+    // MARGINESY DRUKU.
+    //
+    // Obraz szedł dotąd od krawędzi do krawędzi kartki. Na ekranie wygląda to dobrze, ale każda
+    // drukarka ma obszar niezadrukowywalny przy brzegach — treść przy górnej krawędzi i przy
+    // bokach albo ginie, albo ląduje tuż przy cięciu. Zostawiamy więc oddech: treść zaczyna się
+    // niżej i nie dotyka boków, a wysokość strony liczymy już po odjęciu marginesów.
+    const marginesGoraMm = 12;
+    const marginesBokMm = 7;
+    const obrazSzerMm = pageWidthMm - 2 * marginesBokMm;
+    const obrazWysMm = pageHeightMm - 2 * marginesGoraMm;
+    // Ile pikseli obrazu mieści się na jednej stronie przy tej szerokości.
+    const stronaPx = Math.floor(canvas.width * (obrazWysMm / obrazSzerMm));
 
     // ---------- GDZIE WOLNO PRZECIĄĆ ----------
     //
@@ -12981,8 +12991,8 @@ async function generatePlayerPDF(playerId){
 
       if(!pierwsza) pdf.addPage();
       pierwsza = false;
-      pdf.addImage(kawalek.toDataURL('image/jpeg', 0.95), 'JPEG', 0,
-        0, pageWidthMm, (wysokoscWycinka * pageWidthMm) / canvas.width);
+      pdf.addImage(kawalek.toDataURL('image/jpeg', 0.95), 'JPEG', marginesBokMm,
+        marginesGoraMm, obrazSzerMm, (wysokoscWycinka * obrazSzerMm) / canvas.width);
 
       y = ciecie;
     }
