@@ -5462,7 +5462,13 @@ function viewMonitoring(){
   });
   rows.sort((a,b)=>{
     const rank = {"Pilne":0,"Top talent":1,"Standardowy":2,"Brak obserwacji":3};
-    return rank[a.priority]-rank[b.priority];
+    const wgPriorytetu = rank[a.priority]-rank[b.priority];
+    if(wgPriorytetu) return wgPriorytetu;
+    // W obrębie tego samego priorytetu — alfabetycznie po nazwisku (a przy równych nazwiskach po
+    // imieniu). Dotąd zostawała tu kolejność dodawania do bazy, czyli dla oka przypadkowa:
+    // na liście kilkuset zawodników nie dało się znaleźć nikogo wzrokiem.
+    return (a.p.lastName||a.p.firstName||'').localeCompare(b.p.lastName||b.p.firstName||'','pl')
+        || (a.p.firstName||'').localeCompare(b.p.firstName||'','pl');
   });
   const trs = rows.map(({p,a,ds,priority})=>{
     const pillClass = priority==="Pilne"?"pill-urgent": priority==="Top talent"?"pill-top":"pill-ok";
@@ -6672,7 +6678,7 @@ function attachHandlers(){
     const search = document.getElementById('rep-player-search');
     const list = document.getElementById('rep-player-list');
     if(!hidden || !search || !list) return;
-    const norm = s => (s||'').toString().toLowerCase().normalize('NFD').replace(/\p{M}/gu,'');
+    const norm = szukajNorm;
     const gracze = DB.players.slice().sort((a,b)=>
       (a.lastName||a.firstName||'').localeCompare(b.lastName||b.firstName||'','pl')
       || (a.firstName||'').localeCompare(b.firstName||'','pl'));
@@ -6701,16 +6707,35 @@ function attachHandlers(){
         if(norm(p.firstName||'').startsWith(slowa[0])) return 2;
         return 3;
       };
-      const trafienia = gracze.filter(pasuje)
+      let trafienia = gracze.filter(pasuje)
         .sort((a,b)=> ranga(a) - ranga(b))     // sort stabilny — w obrębie rangi zostaje alfabet
         .slice(0,60);
-      list.innerHTML = trafienia.length ? trafienia.map(p=>{
+
+      // LITERÓWKA NIE MOŻE UKRYWAĆ ZAWODNIKA.
+      //
+      // Nazwiska pisze się z pamięci i jedna litera nie tam ("Jedliński" zamiast "Jeleński")
+      // kończyła się komunikatem „brak zawodnika" — a zawodnik jest w bazie i nie ma jak tego
+      // zgadnąć. Gdy dokładnych trafień nie ma, pokazujemy najbliższe nazwiska.
+      let podpowiedzi = false;
+      if(!trafienia.length && slowa.length && slowa[0].length >= 4){
+        const proba = slowa[0];
+        const limit = proba.length <= 5 ? 1 : 2;   // krótkie nazwiska są czulsze na pomyłkę
+        trafienia = gracze
+          .map(p=>({ p, d: odlegloscEdycyjna(proba, norm(p.lastName||'')) }))
+          .filter(x=> x.d <= limit)
+          .sort((a,b)=> a.d - b.d)
+          .slice(0,10)
+          .map(x=> x.p);
+        podpowiedzi = trafienia.length > 0;
+      }
+
+      list.innerHTML = (podpowiedzi ? '<div class="club-combo-empty" style="text-align:left;">Nie ma dokładnego trafienia — może chodzi o:</div>' : '') + (trafienia.length ? trafienia.map(p=>{
         const rocznik = p.birthYear ? p.birthYear : '—';
         return `<div class="club-combo-item" data-id="${esc(p.id)}">
           <strong>${esc(p.lastName||'')} ${esc(p.firstName||'')}</strong>
           <span class="club-combo-reg">${esc(clubName(p.clubId))} · ${esc(rocznik)}</span>
         </div>`;
-      }).join('') : '<div class="club-combo-empty">Brak zawodnika pasującego do frazy.</div>';
+      }).join('') : '<div class="club-combo-empty">Brak zawodnika pasującego do frazy.</div>');
       list.style.display = 'block';
       list.querySelectorAll('.club-combo-item').forEach(it=>it.onmousedown=(e)=>{
         e.preventDefault();                       // wybór przed zdarzeniem blur pola
@@ -6751,7 +6776,7 @@ function attachHandlers(){
     multiLogo.onchange = async ()=>{
       const files = Array.from(multiLogo.files||[]);
       if(!files.length) return;
-      const normName = s => (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'');
+      const normName = s => szukajNorm(s).replace(/[^a-z0-9]/g,'');
       const matchedPairs = []; const unmatched = [];
       for(const file of files){
         const fn = normName(file.name.replace(/\.[^.]+$/,''));
@@ -7464,6 +7489,38 @@ function matchKnownStatus(raw){
     .normalize('NFD').replace(/\p{M}/gu,'').replace(/[^a-z]/g,'');
   const key = norm(v);
   return (DB.settings.statuses||[]).find(s=> norm(s) === key) || '';
+}
+
+// NORMALIZACJA DO WYSZUKIWANIA.
+//
+// Znaki diakrytyczne zdejmuje NFD — ale „ł", „ø" i „đ" wcale się nie rozkładają i zostają w tekście.
+// Bez ich ręcznego zmapowania wpisanie „holuj" nie znajdowało „Hołuj", a „glowinski" nie znajdowało
+// „Głowińskiego": zawodnik po prostu nie pojawiał się na liście, choć jest w bazie. Spacje
+// zostawiamy, żeby dało się szukać dwoma słowami („kowalski legia").
+const szukajNorm = (s)=> String(s||'').toLowerCase()
+  .replace(/[łøđ]/g, c=>({'ł':'l','ø':'o','đ':'d'}[c]))
+  .normalize('NFD').replace(/\p{M}/gu,'');
+
+// Odległość edycyjna (Levenshtein) — ile liter trzeba zmienić, żeby jedno słowo stało się drugim.
+// Służy do podpowiedzi przy literówce w nazwisku: „Jedliński" wpisane zamiast „Jeleński" to
+// odległość 2, więc zawodnik nadal daje się znaleźć.
+function odlegloscEdycyjna(a, b){
+  if(a === b) return 0;
+  if(!a.length) return b.length;
+  if(!b.length) return a.length;
+  let poprzedni = Array.from({length: b.length + 1}, (_, i)=>i);
+  for(let i = 1; i <= a.length; i++){
+    const biezacy = [i];
+    for(let j = 1; j <= b.length; j++){
+      biezacy[j] = Math.min(
+        poprzedni[j] + 1,                                   // usunięcie
+        biezacy[j-1] + 1,                                   // wstawienie
+        poprzedni[j-1] + (a[i-1] === b[j-1] ? 0 : 1),       // zamiana
+      );
+    }
+    poprzedni = biezacy;
+  }
+  return poprzedni[b.length];
 }
 
 const importNorm = (s)=> String(s||'').toLowerCase()
@@ -12813,7 +12870,7 @@ function wireLastModal(){
   const clubList = ov.querySelector('#pm-club-list');
   const crestWrap = ov.querySelector('#pm-crest-preview');
   if(clubHidden && clubSearch && clubList){
-    const norm = s => (s||'').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+    const norm = szukajNorm;
     const clubs = DB.clubs.slice().sort((a,b)=> (a.name||'').localeCompare(b.name||'','pl'));
     function setClub(c){
       clubHidden.value = c ? c.id : '';
