@@ -13165,10 +13165,22 @@ function renderKontoScreen(konto){
 
 // WEJŚCIE DO SYSTEMU.
 //
-// Dwa warunki, oba obowiązkowe: sesja (logowanie) i zgoda administratora (status konta).
+// Docelowo dwa warunki, oba obowiązkowe: sesja (logowanie) i zgoda administratora (status konta).
 // Ekran to tylko uprzejma forma — właściwą blokadą są reguły dostępu w bazie, wgrywane skryptem
 // supabase/migration_2026-08-11_konta_i_zgoda.sql. Bez nich sam ekran niczego by nie chronił:
 // klucz dostępu jest wpisany w kod strony i każdy może odpytać bazę z pominięciem aplikacji.
+//
+// PRZEŁĄCZNIK: false = system otwiera się bez logowania (stan na życzenie właściciela, dopóki
+// wdrożenie nie jest domknięte); true = ekran logowania jest warunkiem wejścia.
+//
+// Włączenie na stałe — trzy kroki, w tej kolejności:
+//   1. Uruchom w Supabase supabase/migration_2026-08-11_konta_i_zgoda.sql (instrukcja: DOSTEP.md).
+//   2. Sprawdź, że logujesz się na /app i widzisz dane — konta sprzed wdrożenia zostają otwarte.
+//   3. Dopiero wtedy ustaw tu true.
+// Sam przełącznik NIE zamyka bazy: dopóki nie ma reguł z punktu 1, dane da się czytać z pominięciem
+// aplikacji. I odwrotnie — po punkcie 1 baza jest zamknięta niezależnie od tego, co stoi tutaj.
+const WYMAGAJ_LOGOWANIA = false;
+
 async function startApp(){
   // Wejście z linku resetującego: Supabase tworzy tymczasową sesję, więc zanim wpuścimy do
   // aplikacji, prosimy o ustawienie nowego hasła.
@@ -13178,8 +13190,11 @@ async function startApp(){
     return;
   }
   const user = await currentUser();
-  if(!user){ renderLoginScreen(); return; }
-  await wpuscZalogowanego();
+  // Zalogowanego sprawdzamy zawsze — także przy wyłączonym przełączniku. Dzięki temu zakładka
+  // „Dostęp" i stan konta działają już teraz, bez zamykania systemu przed nikim.
+  if(user){ await wpuscZalogowanego(); return; }
+  if(!WYMAGAJ_LOGOWANIA){ loadAll(); return; }
+  renderLoginScreen();
 }
 
 // Sprawdzenie zgody administratora — wołane po każdym udanym logowaniu i przy starcie z sesją.

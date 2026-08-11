@@ -2347,33 +2347,52 @@ function renderCzekaNaZgode(konto: Konto) {
   });
 }
 
-// KIEDY PANEL PYTA O HASŁO: ZAWSZE.
+// KIEDY PANEL PYTA O HASŁO.
 //
-// Wcześniej pytał tylko wtedy, gdy baza nie oddała danych bez logowania — bo i baza wpuszczała
-// wtedy każdego. Od zamknięcia systemu (supabase/migration_2026-08-11_konta_i_zgoda.sql) warunki
-// są dwa i oba obowiązują tak samo na telefonie, jak na komputerze: sesja oraz zgoda
-// administratora. Bez nich baza nie odda ani jednego wiersza, więc udawanie, że panel działa,
-// kończyłoby się pustymi listami bez wyjaśnienia.
+// Wtedy, gdy baza rzeczywiście tego wymaga — panel nie ma własnego przełącznika i nie trzeba go
+// przestawiać po zamknięciu dostępu. Rozstrzyga wynik zapytania: gdy dane przychodzą bez sesji
+// (reguły dostępu jeszcze otwarte), scout wchodzi od razu na listę obserwacji. Gdy baza nie odda
+// nic — pokazuje się ekran logowania. Wymuszanie hasła wcześniej niczego by nie chroniło (klucz
+// dostępu jest wpisany w kod każdej strony), a blokowałoby scouta stojącego na trybunie.
 //
-// Praca bez zasięgu nie ucierpiała: sesję Supabase trzyma w pamięci telefonu, więc scout, który
-// zalogował się przed wyjazdem, wchodzi na stadionie do swojej kopii bazy bez sieci.
+// Zalogowanemu sprawdzamy jeszcze zgodę administratora — po to, żeby konto oczekujące dostało
+// wyjaśnienie zamiast pustych list.
+//
+// Praca bez zasięgu nie ucierpiała: sesję Supabase trzyma w pamięci telefonu, a kopia bazy leży
+// w pamięci urządzenia.
 async function boot() {
   const user = await currentUser();
-  if (!user) { renderLogin(); return; }
-  zalogowany = true;
-
-  // Stan konta czytamy z bazy — a gdy nie ma sieci, wchodzimy do zapisanej kopii. Ta odpowiedź nie
-  // jest zabezpieczeniem (tym są reguły dostępu w bazie), tylko wyjaśnieniem dla użytkownika;
-  // konto niezatwierdzone i tak nie pobierze niczego świeżego.
-  let konto: Konto | null = null;
-  try {
-    konto = await mojeKonto();
-  } catch (e) {
-    console.warn("Nie udało się sprawdzić stanu konta:", (e as Error).message);
+  if (user) {
+    zalogowany = true;
+    let konto: Konto | null = null;
+    try {
+      konto = await mojeKonto();
+    } catch (e) {
+      console.warn("Nie udało się sprawdzić stanu konta:", (e as Error).message);
+    }
+    if (konto && konto.status !== "zatwierdzone") { renderCzekaNaZgode(konto); return; }
+    start();
+    return;
   }
-  if (konto && konto.status !== "zatwierdzone") { renderCzekaNaZgode(konto); return; }
 
-  start();
+  // Bez sesji nie da się odróżnić „brak dostępu" od „pusta tabela" po samym błędzie — reguły
+  // dostępu w Postgresie nie zgłaszają odmowy, tylko oddają zero wierszy. Dlatego rozstrzyga
+  // wynik: cokolwiek przyszło, znaczy że dostęp jest.
+  try {
+    const kopia = await refreshCache();
+    if (kopia.players.length || kopia.clubs.length || kopia.observations.length) {
+      start(kopia);
+      return;
+    }
+  } catch (e) {
+    console.warn("Odczyt bez logowania nie powiódł się:", (e as Error).message);
+  }
+
+  // Została jeszcze kopia z poprzedniego uruchomienia — na stadionie bez zasięgu to ona jest
+  // wszystkim, co mamy, i szkoda byłoby zamiast niej pokazać ekran logowania.
+  if (getCache().players.length) { start(); return; }
+
+  renderLogin();
 }
 
 window.addEventListener("online", () => { void flushQueue().then(refreshSyncPill); });

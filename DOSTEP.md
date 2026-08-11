@@ -3,6 +3,17 @@
 Krótka instrukcja obsługi dla administratora systemu. Wszystko, co trzeba zrobić raz przy
 wdrożeniu, jest w części „Uruchomienie". Codzienna praca to jedna zakładka w aplikacji.
 
+## Stan na dziś: blokada jest przygotowana, ale NIE włączona
+
+Wszystko poniżej jest już w kodzie i czeka na jedno słowo. Dopóki nie zrobisz kroków z części
+„Uruchomienie":
+
+- `/app` i `/m` **otwierają się bez logowania** — dokładnie jak dotąd, praca idzie normalnie;
+- ekran logowania, zakładka „Dostęp" i formularz zgłoszenia już działają dla kont, które istnieją;
+- **nie wysyłaj jeszcze linku do `/app`** osobom spoza klubu — zamknięty jest dopiero po kroku 1.
+
+Sam adres główny (`/`) możesz pokazywać od zaraz: to strona wizytówkowa, nie ma na niej danych.
+
 ## Co jest publiczne, a co zamknięte
 
 | Adres | Co tam jest | Kto ma dostęp |
@@ -15,7 +26,7 @@ Na stronie publicznej nie ma ani jednego rekordu z bazy — żadnych nazwisk, kl
 więc bez obaw wysłać adres główny w wizytówce e-mail: kto wejdzie, zobaczy opis systemu, a nie
 projekt.
 
-## Uruchomienie (jednorazowo)
+## Uruchomienie (jednorazowo, gdy zdecydujesz, że zamykamy)
 
 1. **Wgraj reguły dostępu do bazy.** Supabase → SQL Editor → New query → wklej całą zawartość
    `supabase/migration_2026-08-11_konta_i_zgoda.sql` → Run.
@@ -38,6 +49,14 @@ projekt.
 4. **Zdecyduj o potwierdzaniu adresu.** Authentication → Providers → Email → *Confirm email*.
    Włączone (zalecane) oznacza, że zgłaszający musi kliknąć link ze swojej skrzynki — dzięki temu
    nikt nie zgłasza się z cudzego adresu. Zgłoszenie i tak trafia do Ciebie od razu.
+
+5. **Włącz ekran logowania.** W `src/main.ts` ustaw `WYMAGAJ_LOGOWANIA = true` (przełącznik stoi
+   tuż nad funkcją `startApp`, z opisem). Panel mobilny nie ma własnego przełącznika — sam
+   zauważy, że baza przestała oddawać dane bez sesji, i poprosi o hasło.
+
+   Punkty 1 i 5 są od siebie niezależne i tylko punkt 1 naprawdę zamyka dane. Przełącznik bez
+   reguł byłby zasłoną (dane wciąż do wzięcia z pominięciem aplikacji), reguły bez przełącznika
+   działają w pełni — pokazywałyby tylko brzydszy komunikat zamiast ekranu logowania.
 
 ## Codzienna praca: zakładka „Dostęp"
 
