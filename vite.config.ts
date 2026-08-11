@@ -25,6 +25,17 @@ function vercelApiDevPlugin() {
         }
         if (typeof handler !== "function") return next();
 
+        // Treść żądania POST. Na produkcji parsuje ją Vercel i podaje w req.body; serwer
+        // deweloperski nie robi nic, więc szybki zapis statystyk (przeglądarka odsyła policzony
+        // ładunek) działałby wyłącznie po wdrożeniu. Ta pętla wyrównuje jedno z drugim.
+        let body = undefined;
+        if (req.method === "POST" || req.method === "PUT" || req.method === "PATCH") {
+          const kawalki = [];
+          for await (const k of req) kawalki.push(k);
+          const tekst = Buffer.concat(kawalki).toString("utf8");
+          try { body = tekst ? JSON.parse(tekst) : undefined; } catch { body = undefined; }
+        }
+
         const query = Object.fromEntries(url.searchParams.entries());
         const shim = {
           status(code) { res.statusCode = code; return this; },
@@ -37,7 +48,7 @@ function vercelApiDevPlugin() {
         };
 
         try {
-          await handler({ query, method: req.method, headers: req.headers }, shim);
+          await handler({ query, method: req.method, headers: req.headers, body }, shim);
         } catch (e) {
           res.statusCode = 500;
           res.setHeader("Content-Type", "application/json");

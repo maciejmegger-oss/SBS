@@ -11196,7 +11196,7 @@ function open90minutStatsModal(clubId){
           <strong>Zagrali w tym klubie, ale nie ma ich w kartotece — ${wynik.spozaBazy.length}:</strong>
           <div style="margin-top:6px;line-height:1.8;">
           ${wynik.spozaBazy.map(x=>`${esc(x.kto)}${x.rocznik?` <strong>${x.rocznik}</strong>${Number(x.rocznik)>=2006?youthBadge():''}`:''} — ${x.minuty} min`).join('<br>')}</div>
-          <button class="gold" data-x="dopisz" style="margin-top:10px;">+ Dopisz całą tę ${wynik.spozaBazy.length}-osobową listę do klubu</button>
+          <button class="gold" data-x="dopisz" style="margin-top:10px;" ${pracuje?'disabled':''}>${pracuje==='zapis'?'Dopisuję…':`+ Dopisz całą tę ${wynik.spozaBazy.length}-osobową listę do klubu`}</button>
         </div>` : ''}
         ${wynik.niejednoznaczni.length ? `<div style="border-left:3px solid var(--clay-dark);padding:8px 12px;margin-top:10px;background:var(--card-alert);font-size:12px;">
           <strong>Pominąłem ${wynik.niejednoznaczni.length} — nie wiem, o kogo chodzi:</strong>
@@ -11211,14 +11211,21 @@ function open90minutStatsModal(clubId){
           <p style="margin:6px 0 0;">Dla Ekstraklasy dokładniejsze jest płatne API (liczy doliczony czas), więc nie cofam
           jego danych. ${wynik.pominietiGorsze.slice(0,6).map(x=>`${esc(x.kto)} <span class="meta">(mamy ${esc(x.mamy)}, 90minut ${esc(x.z90)})</span>`).join(' &nbsp;·&nbsp; ')}</p>
         </div>` : ''}
+        ${wynik.bezDanych && wynik.bezDanych.length ? `<details style="margin-top:10px;font-size:12px;">
+          <summary style="cursor:pointer;color:var(--ink-soft);">Bez liczb z tego pobrania — ${wynik.bezDanych.length} zawodników (kliknij, żeby sprawdzić)</summary>
+          <p class="note" style="margin:8px 0 6px;">90minut nie wymienił ich w sprawdzonych protokołach. Zwykle znaczy to,
+          że nie zagrali — ale jeśli ktoś tu jest, a wiesz, że grał, to znak, że jego nazwisko w kartotece
+          różni się od zapisu na 90minut. Wtedy popraw pisownię w profilu i pobierz jeszcze raz.</p>
+          <div>${wynik.bezDanych.map(x=>`${esc(x.kto)}${x.rocznik?` <span class="meta">(${esc(String(x.rocznik))})</span>`:''}`).join(' &nbsp;·&nbsp; ')}</div>
+        </details>` : ''}
         ${wynik.bledyZapisu && wynik.bledyZapisu.length ? `<p class="note" style="font-size:11.5px;margin-top:8px;color:var(--clay-dark);">
           Nie udało się zapisać: ${wynik.bledyZapisu.map(b=>esc(b.kto)).join(', ')}</p>` : ''}
       ` : ''}
 
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
         <button class="secondary" data-x="zamknij">Zamknij</button>
-        <button class="secondary" data-x="sprawdz" ${pracuje?'disabled':''}>${pracuje?'Pobieram…':'Sprawdź, co się zmieni'}</button>
-        ${wynik && wynik.ok && wynik.doZapisu && !wynik.zapisani ? `<button class="gold" data-x="zapisz" ${pracuje?'disabled':''}>Zapisz ${wynik.doZapisu} zmian</button>` : ''}
+        <button class="secondary" data-x="sprawdz" ${pracuje?'disabled':''}>${pracuje==='pobieranie'?'Pobieram…':'Sprawdź, co się zmieni'}</button>
+        ${wynik && wynik.ok && wynik.doZapisu && !wynik.zapisani ? `<button class="gold" data-x="zapisz" ${pracuje?'disabled':''}>${pracuje==='zapis'?'Zapisuję…':`Zapisz ${wynik.doZapisu} zmian`}</button>` : ''}
       </div>
     </div>`;
 
@@ -11253,7 +11260,7 @@ function open90minutStatsModal(clubId){
           dateAdded: new Date().toISOString().slice(0,10),
         });
       });
-      pracuje = true; draw();
+      pracuje = 'zapis'; komunikat = ''; draw();
       const ok = await savePlayers();
       pracuje = false;
       komunikat = ok ? `Dopisano ${nowi.length} zawodników. Kliknij ponownie „Sprawdź, co się zmieni", żeby wciągnąć ich statystyki.`
@@ -11264,18 +11271,40 @@ function open90minutStatsModal(clubId){
   }
 
   async function pobierz(zapisujemy){
-    pracuje = true; blad = ''; draw();
+    pracuje = zapisujemy ? 'zapis' : 'pobieranie'; blad = ''; draw();
     try{
       // Token sesji jedzie razem z żądaniem: dzięki niemu serwer pyta bazę W TWOIM IMIENIU i
       // reguły dostępu wpuszczają go tak samo, jak przeglądarkę. Bez tego zamknięta baza nie
       // oddałaby serwerowi ani jednego wiersza.
       const token = await tokenSesji();
+      const naglowkiZadania = token ? { Authorization: 'Bearer ' + token } : {};
+
+      // ZAPIS NIE POWTARZA POBIERANIA.
+      //
+      // Podgląd policzył już wszystko i oddał gotowy ładunek. Odsyłamy go z powrotem, więc serwer
+      // ma tylko zapisać — kilka zapytań do bazy zamiast ponownego czytania kilkudziesięciu stron
+      // 90minut. Wcześniej „Zapisz" trwał tyle samo, co „Sprawdź", i potrafił przekroczyć limit
+      // czasu funkcji, zostawiając przycisk w bezruchu.
+      if(zapisujemy && wynik && Array.isArray(wynik.pakiet) && wynik.pakiet.length){
+        const zapis = await fetch('/api/stats-90minut?clubId=' + encodeURIComponent(clubId) + '&apply=1',
+          { method: 'POST', signal: AbortSignal.timeout(60000),
+            headers: { ...naglowkiZadania, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pakiet: wynik.pakiet }) });
+        const odp = await zapis.json().catch(()=>({ error: 'Serwer nie zwrócił danych.' }));
+        if(!zapis.ok || odp.error){ blad = odp.error || ('Serwer odpowiedział kodem ' + zapis.status + '.'); return; }
+        await loadAll();
+        pracuje = false;
+        overlay.remove();
+        render();
+        const nieudane = (odp.bledyZapisu||[]).length;
+        alert(`Zapisano dorobek ${odp.zapisani} zawodnikom.` + (nieudane ? ` Nie udało się zapisać ${nieudane}.` : ''));
+        return;
+      }
       // Limit czasu po stronie przeglądarki. Bez niego nieudane wywołanie zostawiało przycisk
       // na „Pobieram…" bez końca i wyglądało to dokładnie jak „nie zapisuje" — użytkownik nie
       // miał jak odróżnić trwającej pracy od zawieszenia.
       const res = await fetch('/api/stats-90minut?clubId=' + encodeURIComponent(clubId) + (zapisujemy?'&apply=1':''),
-        { signal: AbortSignal.timeout(90000),
-          headers: token ? { Authorization: 'Bearer ' + token } : {} });
+        { signal: AbortSignal.timeout(90000), headers: naglowkiZadania });
       const typ = res.headers.get('content-type') || '';
       if(!typ.includes('application/json')){
         throw new Error('serwer nie zwrócił danych (prawdopodobnie przekroczony limit czasu funkcji). Spróbuj ponownie — druga próba jest szybsza, bo część stron jest już w pamięci podręcznej.');

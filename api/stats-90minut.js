@@ -57,6 +57,33 @@ export default async function handler(req, res) {
   // serwisowym. Ustalamy to raz, na początku, żeby wszystkie zapytania szły tą samą drogą.
   const naglowki = naglowkiDlaZadania(req);
 
+  // --- SZYBKI ZAPIS ---
+  //
+  // Przeglądarka odsyła gotowy ładunek policzony przy podglądzie, więc tutaj zostaje samo
+  // zapisanie: kilka zapytań do bazy zamiast ponownego czytania kilkudziesięciu stron 90minut.
+  // Dzięki temu „Zapisz" kończy się w sekundę, a nie po minucie — i nie ryzykuje limitu czasu
+  // funkcji, po którym przycisk zostawał w bezruchu.
+  const cialo = req.body && typeof req.body === "object" ? req.body : null;
+  const pakiet = req.method === "POST" && cialo && Array.isArray(cialo.pakiet) ? cialo.pakiet : null;
+  if (pakiet) {
+    if (!pakiet.length) return res.status(200).json({ ok: true, zapisani: 0, szybkiZapis: true });
+    let zapisaneSzybko = 0;
+    const bledySzybkie = [];
+    for (let i = 0; i < pakiet.length; i += 8) {
+      await Promise.all(pakiet.slice(i, i + 8).map(async (poz) => {
+        if (!poz || !poz.id || !poz.dane) return;
+        const r = await fetch(`${BAZA}/rest/v1/sbs_players?id=eq.${encodeURIComponent(poz.id)}`, {
+          method: "PATCH", headers: naglowki, body: JSON.stringify(poz.dane),
+        });
+        if (r.ok) zapisaneSzybko++;
+        else bledySzybkie.push({ kto: poz.kto || poz.id, status: r.status, tresc: (await r.text()).slice(0, 200) });
+      }));
+    }
+    return res.status(200).json({
+      ok: true, szybkiZapis: true, zapisani: zapisaneSzybko, bledyZapisu: bledySzybkie,
+    });
+  }
+
   const pierwszy = (v) => (Array.isArray(v) ? v[0] : v) || "";
   const idKlubu = pierwszy(req.query.clubId);
   const zapisz = String(pierwszy(req.query.apply)) === "1";
@@ -189,10 +216,22 @@ export default async function handler(req, res) {
     let kandydaci = wgNazwiska.get(kluczNazwiska(z.nazwaPelna)) || [];
     if (!kandydaci.length && z.nazwa) kandydaci = wgNazwiska.get(kluczNazwiska(z.nazwa)) || [];
     if (!kandydaci.length) {
-      const slowa = String(z.nazwaPelna || "").split(/\s+/).filter(Boolean);
-      const samoNazwisko = slowa.length > 1 ? normalizujNazwe(slowa[slowa.length - 1]) : "";
-      if (samoNazwisko.length >= 4) {
-        kandydaci = nasiZawodnicy.filter((g) => normalizujNazwe(g.last_name) === samoNazwisko);
+      // DOPASOWANIE PO SAMYM NAZWISKU — potrzebne, gdy imię zapisane jest inaczej po obu stronach
+      // („Mateusz" kontra „Mateusz Robert", zdrobnienia, drugie imię).
+      //
+      // Porównujemy KAŻDY człon nazwy, nie tylko ostatni. 90minut pisze „Nazwisko Imię", nasza
+      // baza trzyma „Imię Nazwisko" — branie ostatniego słowa oznaczało szukanie zawodnika
+      // o nazwisku „Mateusz" i cichy brak trafienia przy każdym takim wpisie.
+      const czlony = String(z.nazwaPelna || "")
+        .split(/\s+/).map(normalizujNazwe).filter((w) => w.length >= 4);
+      if (czlony.length) {
+        kandydaci = nasiZawodnicy.filter((g) => czlony.includes(normalizujNazwe(g.last_name)));
+        // Nazwisko bywa czyimś imieniem, więc gdy obie strony znają rocznik i on się nie zgadza,
+        // trafienie odrzucamy — lepiej zgłosić „nie znalazłem" niż wpisać komuś cudzy dorobek.
+        if (kandydaci.length && z.rocznik) {
+          const zgodni = kandydaci.filter((g) => !g.birth_year || Number(g.birth_year) === Number(z.rocznik));
+          kandydaci = zgodni;
+        }
       }
     }
     if (!kandydaci.length) { spozaBazy.push({ kto: z.nazwaPelna, rocznik: z.rocznik, minuty: z.minuty, adres: z.adres }); continue; }
@@ -251,11 +290,16 @@ export default async function handler(req, res) {
     });
   }
 
-  // --- 5. ZAPIS ---
+  // --- 5. PRZYGOTOWANIE ZAPISU ---
+  //
+  // Ładunek liczymy ZAWSZE, także w podglądzie — to sama arytmetyka na już pobranych danych,
+  // bez ani jednego zapytania do sieci. Podgląd oddaje go przeglądarce, więc „Zapisz" nie musi
+  // powtarzać całego pobierania z 90minut (kilkadziesiąt stron) tylko po to, żeby dojść do tych
+  // samych liczb. Wcześniej właśnie tak było i zapis trwał tyle samo, co pobieranie.
   let zapisani = 0;
   const zadaniaZapisu = [];
   const bledyZapisu = [];
-  if (zapisz) {
+  {
     const dzis = new Date().toISOString().slice(0, 10);
     // Etykieta sezonu z nagłówka protokołu („... III liga 2026/2027 ..."), a nie z dzisiejszej
     // daty — inaczej pobranie zaległych statystyk w lipcu podpisałoby je złym sezonem.
@@ -294,7 +338,7 @@ export default async function handler(req, res) {
     // na pobieranie z 90minut — a funkcja w Vercelu ma na wszystko limit czasu. Po jego
     // przekroczeniu przeglądarka nie dostawała odpowiedzi i przycisk zostawał na „Pobieram…",
     // co wyglądało dokładnie jak „nie zapisuje".
-    for (let i = 0; i < zadaniaZapisu.length; i += 8) {
+    for (let i = 0; zapisz && i < zadaniaZapisu.length; i += 8) {
       await Promise.all(zadaniaZapisu.slice(i, i + 8).map(async ({ p, doWyslania }) => {
         const r = await fetch(`${BAZA}/rest/v1/sbs_players?id=eq.${encodeURIComponent(p.id)}`, {
           method: "PATCH", headers: naglowki, body: JSON.stringify(doWyslania),
@@ -304,6 +348,20 @@ export default async function handler(req, res) {
       }));
     }
   }
+
+  // KTO ZOSTAŁ BEZ LICZB.
+  //
+  // Dotąd raport mówił, kogo 90minut ma, a my nie — ale nie odwrotnie. Zawodnik z naszej bazy,
+  // którego przebieg w ogóle nie dotknął, przechodził bez śladu: w tabeli miał zera i nie było
+  // jak zgadnąć, czy nie grał, czy tylko nie został rozpoznany. Ta lista zamyka tę lukę.
+  const dotknieci = new Set(doZapisu.map((p) => p.id));
+  const bezDanych = nasiZawodnicy
+    .filter((g) => !dotknieci.has(g.id))
+    .map((g) => ({
+      kto: `${g.last_name || ""} ${g.first_name || ""}`.trim(),
+      rocznik: g.birth_year || null,
+      mamy: `${g.matches ?? "—"} m / ${g.minutes ?? "—"} min`,
+    }));
 
   return res.status(200).json({
     ok: true,
@@ -325,6 +383,9 @@ export default async function handler(req, res) {
     })),
     spozaBazy,
     niejednoznaczni,
+    bezDanych,
+    // Gotowe do wysłania z powrotem pod „Zapisz" — patrz ścieżka szybkiego zapisu na górze pliku.
+    pakiet: zapisz ? undefined : zadaniaZapisu.map(({ p, doWyslania }) => ({ id: p.id, kto: p.kto, dane: doWyslania })),
     bledyZapisu,
     pominietiGorsze,
     uwaga: "90minut nie publikuje asyst — to pole zostaje bez zmian.",
