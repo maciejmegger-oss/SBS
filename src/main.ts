@@ -3995,6 +3995,7 @@ function openGrupaStatsModal(){
   const stan = kluby.map(c=>({ id:c.id, nazwa:c.name, etap:'czeka', opis:'' }));
   let pracuje = false, przerwane = false, zakonczone = false;
   let zapisanychRazem = 0;
+  const zapisaneWPrzebiegu = [];
 
   const ikona = (e)=> e==='ok' ? '✔' : e==='blad' ? '✖' : e==='pracuje' ? '⏳' : '·';
   const rysuj = ()=>{
@@ -4011,7 +4012,8 @@ function openGrupaStatsModal(){
       </div>
       <div class="modal-actions">
         ${zakonczone
-          ? `<button class="gold" data-action="zamknij-grupe">Zamknij</button>`
+          ? `${stan.some(p=>p.etap==='blad') ? `<button class="secondary" data-action="ponow-grupe">Ponów nieudane (${stan.filter(p=>p.etap==='blad').length})</button>` : ''}
+             <button class="gold" data-action="zamknij-grupe">Zamknij</button>`
           : pracuje
             ? `<button class="secondary" data-action="przerwij-grupe">Przerwij po tym klubie</button>`
             : `<button class="secondary" data-action="zamknij-grupe">Anuluj</button>
@@ -4023,7 +4025,8 @@ function openGrupaStatsModal(){
       if(zapisanychRazem) render();
     });
     overlay.querySelectorAll('[data-action="przerwij-grupe"]').forEach(b=>b.onclick=()=>{ przerwane = true; });
-    overlay.querySelectorAll('[data-action="start-grupa"]').forEach(b=>b.onclick=()=>{ void przebiegnij(); });
+    overlay.querySelectorAll('[data-action="start-grupa"]').forEach(b=>b.onclick=()=>{ void przebiegnij(false); });
+    overlay.querySelectorAll('[data-action="ponow-grupe"]').forEach(b=>b.onclick=()=>{ void przebiegnij(true); });
   };
 
   async function jedenKlub(poz){
@@ -4034,7 +4037,13 @@ function openGrupaStatsModal(){
     const typ = res.headers.get('content-type') || '';
     if(!typ.includes('application/json')) throw new Error('przekroczony limit czasu funkcji');
     const dane = await res.json();
-    if(!res.ok || dane.error) throw new Error(dane.error || ('kod ' + res.status));
+    // Odmowa serwisu przy większym ruchu (503) to co innego niż „nie znalazłem klubu" — taki klub
+    // ma sens ponowić, więc oznaczamy błąd jako chwilowy.
+    if(!res.ok || dane.error){
+      const e = new Error(dane.error || ('kod ' + res.status));
+      e.chwilowy = res.status === 503 || res.status === 429;
+      throw e;
+    }
     if(!Array.isArray(dane.pakiet) || !dane.pakiet.length) return { zapisani: 0, opis: 'bez zmian' };
 
     const zapis = await fetch('/api/stats-90minut?clubId=' + encodeURIComponent(poz.id) + '&apply=1',
@@ -4043,13 +4052,18 @@ function openGrupaStatsModal(){
         body: JSON.stringify({ pakiet: dane.pakiet }) });
     const odp = await zapis.json().catch(()=>({ error: 'serwer nie zwrócił danych' }));
     if(!zapis.ok || odp.error) throw new Error(odp.error || ('kod ' + zapis.status));
+    zapisaneWPrzebiegu.push(...dane.pakiet);
     return { zapisani: odp.zapisani || 0,
       opis: `${odp.zapisani || 0} zawodników${dane.zProtokolow && dane.zProtokolow.length ? `, ${dane.zProtokolow.length} z protokołów` : ''}` };
   }
 
-  async function przebiegnij(){
+  async function przebiegnij(tylkoNieudane){
+    pracuje = false; zakonczone = false; przerwane = false;
+    const kolejka = tylkoNieudane ? stan.filter(p=>p.etap === 'blad') : stan;
+    kolejka.forEach(p=>{ p.etap = 'czeka'; p.opis = ''; });
     pracuje = true; rysuj();
-    for(const poz of stan){
+    for(let i = 0; i < kolejka.length; i++){
+      const poz = kolejka[i];
       if(przerwane){ poz.etap = 'czeka'; poz.opis = 'przerwane'; continue; }
       poz.etap = 'pracuje'; poz.opis = 'pobieram…'; rysuj();
       try{
@@ -4058,9 +4072,12 @@ function openGrupaStatsModal(){
         poz.etap = 'ok'; poz.opis = wynik.opis;
       }catch(e){
         poz.etap = 'blad';
-        poz.opis = String((e && e.message) || e).slice(0, 90);
+        poz.opis = String((e && e.message) || e).slice(0, 110);
       }
       rysuj();
+      // Chwila przerwy między klubami — 90minut prowadzą wolontariusze, a przy ciągłym strumieniu
+      // zapytań serwis zaczyna odmawiać i kluby wypadają z przebiegu bez własnej winy.
+      if(i + 1 < kolejka.length) await new Promise(r=>setTimeout(r, 600));
     }
     pracuje = false; zakonczone = true;
     // Dopiero teraz wczytujemy bazę od nowa — raz, a nie po każdym klubie.

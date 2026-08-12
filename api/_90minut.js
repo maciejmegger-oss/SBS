@@ -532,18 +532,51 @@ export function parseWystepyZawodnika(html) {
 
 // Wspólne pobranie strony z 90minut. Kodowanie ISO-8859-2 jest tu obowiązkowe — bez niego
 // polskie nazwiska przychodzą zniekształcone i nic się nie dopasuje do naszej bazy.
-export async function pobierzZ90minut(rawUrl) {
+// PAMIĘĆ PODRĘCZNA STRON W OBRĘBIE JEDNEJ INSTANCJI FUNKCJI.
+//
+// Odświeżenie całej grupy to osiemnaście klubów, a każdy z nich czytał TE SAME cztery strony ligi
+// od nowa — siedemdziesiąt kilka pobrań zamiast czterech. To nie tylko wolne: 90minut prowadzą
+// wolontariusze i przy takim natężeniu serwis zaczyna odmawiać (429/403 albo urwane połączenie),
+// a wtedy klub kończył przebieg komunikatem „nie znalazłem rozegranych meczów" — choć powodem był
+// odrzucony strzał, a nie brak meczów. Strona ligi zmienia się raz na kolejkę, protokół rozegranego
+// meczu nie zmienia się wcale, więc kilkuminutowa pamięć jest tu w pełni bezpieczna.
+const CZAS_ZYCIA_CACHE = 10 * 60 * 1000;
+const MAKS_STRON_W_CACHE = 200;
+const cacheStron = new Map();
+
+const uspij = (ms) => new Promise((r) => setTimeout(r, ms));
+
+export async function pobierzZ90minut(rawUrl, opcje) {
   const { url, error } = validateTarget(rawUrl);
   if (error) throw new Error(error);
-  const odp = await fetch(url.toString(), {
-    headers: { "User-Agent": "ScoutBaseSystem/1.0 (+https://scoutbasesystem.com)" },
-    signal: AbortSignal.timeout(20000),
-  });
-  if (!odp.ok) throw new Error(`90minut odpowiedziało kodem ${odp.status}.`);
-  const bufor = await odp.arrayBuffer();
-  try {
-    return new TextDecoder("iso-8859-2").decode(bufor);
-  } catch {
-    return new TextDecoder("latin1").decode(bufor);
+  const klucz = url.toString();
+
+  if (!(opcje && opcje.bezCache)) {
+    const zPamieci = cacheStron.get(klucz);
+    if (zPamieci && Date.now() - zPamieci.kiedy < CZAS_ZYCIA_CACHE) return zPamieci.html;
   }
+
+  // Jedna ponowna próba po krótkiej przerwie. Odmowy z powodu natężenia ruchu są chwilowe,
+  // a bez powtórki cały klub wypadał z przebiegu przez jedno nieudane połączenie.
+  let ostatniBlad;
+  for (let proba = 0; proba < 2; proba++) {
+    if (proba) await uspij(1200);
+    try {
+      const odp = await fetch(klucz, {
+        headers: { "User-Agent": "ScoutBaseSystem/1.0 (+https://scoutbasesystem.com)" },
+        signal: AbortSignal.timeout(20000),
+      });
+      if (!odp.ok) throw new Error(`90minut odpowiedziało kodem ${odp.status}.`);
+      const bufor = await odp.arrayBuffer();
+      let html;
+      try { html = new TextDecoder("iso-8859-2").decode(bufor); }
+      catch { html = new TextDecoder("latin1").decode(bufor); }
+      if (cacheStron.size >= MAKS_STRON_W_CACHE) cacheStron.delete(cacheStron.keys().next().value);
+      cacheStron.set(klucz, { kiedy: Date.now(), html });
+      return html;
+    } catch (e) {
+      ostatniBlad = e;
+    }
+  }
+  throw ostatniBlad instanceof Error ? ostatniBlad : new Error(String(ostatniBlad));
 }

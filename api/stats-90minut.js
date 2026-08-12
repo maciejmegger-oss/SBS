@@ -125,6 +125,7 @@ export default async function handler(req, res) {
   let mecze = [], stronaLigi = "";
   // Nazwy drużyn napotkane na przeszukiwanych stronach — materiał do komunikatu, gdy klubu nie ma.
   const widzianeNazwy = new Set();
+  const bledyStron = [];
 
   // NAJPIERW PROFIL KLUBU NA 90MINUT, JEŚLI JEST W KARTOTECE.
   //
@@ -145,7 +146,14 @@ export default async function handler(req, res) {
 
   for (const adres of mecze.length ? [] : adresy) {
     let html;
-    try { html = await pobierzZ90minut(adres); } catch { continue; }
+    // NIEUDANE POBRANIE STRONY TO NIE JEST „BRAK MECZÓW".
+    //
+    // Odrzucone połączenie (429/403 przy większym ruchu, urwany transfer) było dotąd połykane
+    // w ciszy, a klub kończył przebieg komunikatem „nie znalazłem rozegranych meczów" — czyli
+    // kłamstwem, bo mecze są, tylko strona nie odpowiedziała. Zapisujemy więc każdy taki błąd
+    // i mówimy o nim wprost, bo działanie jest inne: nie poprawiać nazwę, tylko spróbować ponownie.
+    try { html = await pobierzZ90minut(adres); }
+    catch (e) { bledyStron.push({ adres, blad: String((e && e.message) || e) }); continue; }
     const linki = parseLinkiMeczow(html);
     linki.forEach((m) => String(m.tytul || "").split(/\s+[-–—]\s+/).forEach((n) => {
       const t = n.trim();
@@ -164,6 +172,15 @@ export default async function handler(req, res) {
       return nasze.some((w) => w.length >= 4 && ich.includes(w));
     });
     const przyklady = podobne.length ? podobne : [...widzianeNazwy].slice(0, 12);
+    // Gdy ŻADNA strona się nie otworzyła, o nazwie klubu nie wiemy niczego — i trzeba to powiedzieć
+    // wprost, zamiast obwiniać kartotekę.
+    if (bledyStron.length && !widzianeNazwy.size) {
+      return res.status(503).json({
+        error: `90minut nie odpowiedziało przy klubie „${klub.name}" — żadnej ze stron rozgrywek nie udało się otworzyć.`,
+        podpowiedz: "To chwilowa odmowa serwisu przy większym ruchu, nie błąd nazwy klubu. Spróbuj ponownie za chwilę — kolejne przejście jest szybsze, bo raz pobrane strony trzymam przez dziesięć minut.",
+        bledyStron,
+      });
+    }
     return res.status(404).json({
       error: `Nie znalazłem rozegranych meczów klubu „${klub.name}" w rozgrywkach ${klub.league}.`,
       podpowiedz: (podobne.length
@@ -178,6 +195,7 @@ export default async function handler(req, res) {
             "Druga możliwość: klub jeszcze nie grał w tym sezonie."),
       przeszukaneStrony: adresy.length,
       widzianeKluby: przyklady.slice(0, 24),
+      bledyStron,
     });
   }
 
