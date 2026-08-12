@@ -4008,7 +4008,11 @@ function openGrupaStatsModal(){
           <span style="width:14px;color:${p.etap==='ok'?'var(--good)':p.etap==='blad'?'var(--clay-dark)':'var(--ink-faint)'};">${ikona(p.etap)}</span>
           <span style="flex:1;">${esc(p.nazwa)}</span>
           <span class="note" style="text-align:right;">${esc(p.opis)}</span>
-        </div>`).join('')}
+        </div>${p.etap==='blad' && (p.podpowiedz || (p.widzianeKluby||[]).length) ? `<details style="margin:0 0 6px 22px;">
+          <summary style="cursor:pointer;font-size:12px;color:var(--ink-soft);">dlaczego? — sprawdź, w jakiej grupie ten klub naprawdę gra</summary>
+          ${p.podpowiedz ? `<p class="note" style="margin:4px 0;">${esc(p.podpowiedz)}</p>` : ''}
+          ${(p.widzianeKluby||[]).length ? `<p class="note" style="margin:4px 0;line-height:1.7;"><strong>Na przeszukanych stronach widzę:</strong> ${p.widzianeKluby.map(n=>esc(n)).join(' &middot; ')}</p>` : ''}
+        </details>` : ''}`).join('')}
       </div>
       <div class="modal-actions">
         ${zakonczone
@@ -4042,6 +4046,11 @@ function openGrupaStatsModal(){
     if(!res.ok || dane.error){
       const e = new Error(dane.error || ('kod ' + res.status));
       e.chwilowy = res.status === 503 || res.status === 429;
+      // Podpowiedź i nazwy widziane na stronach niosą całą diagnozę: czy klub gra w innej grupie,
+      // czy nazywa się inaczej, czy serwis nie odpowiedział. Bez nich wiersz mówi tylko „nie
+      // znalazłem" i sprawa wraca do punktu wyjścia.
+      e.podpowiedz = dane.podpowiedz || '';
+      e.widzianeKluby = dane.widzianeKluby || [];
       throw e;
     }
     if(!Array.isArray(dane.pakiet) || !dane.pakiet.length) return { zapisani: 0, opis: 'bez zmian' };
@@ -4073,6 +4082,8 @@ function openGrupaStatsModal(){
       }catch(e){
         poz.etap = 'blad';
         poz.opis = String((e && e.message) || e).slice(0, 110);
+        poz.podpowiedz = (e && e.podpowiedz) || '';
+        poz.widzianeKluby = (e && e.widzianeKluby) || [];
       }
       rysuj();
       // Chwila przerwy między klubami — 90minut prowadzą wolontariusze, a przy ciągłym strumieniu

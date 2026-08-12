@@ -172,6 +172,39 @@ export default async function handler(req, res) {
       return nasze.some((w) => w.length >= 4 && ich.includes(w));
     });
     const przyklady = podobne.length ? podobne : [...widzianeNazwy].slice(0, 12);
+
+    // A MOŻE KLUB GRA GDZIE INDZIEJ?
+    //
+    // Najczęstsza przyczyna „nie ma go na stronach tych rozgrywek" to nie literówka, tylko spadek
+    // albo awans: w kartotece został poprzedni poziom. Zaglądamy więc na strony poziomu wyżej
+    // i niżej i mówimy wprost, gdzie ten klub faktycznie występuje. Strony i tak leżą już
+    // w pamięci podręcznej z tego przebiegu, więc kosztuje to niewiele.
+    let znalezionyPoziom = "";
+    if (widzianeNazwy.size) {
+      // Budżet czasu, bo IV liga to szesnaście stron wojewódzkich, a funkcja ma swój limit.
+      // Diagnostyka nie może kosztować tyle, żeby przez nią przepadła odpowiedź.
+      const koniecSzukania = Date.now() + 8000;
+      const kolejnosc = { "Ekstraklasa": ["I liga"], "I liga": ["II liga", "Ekstraklasa"],
+        "II liga": ["III liga", "I liga"], "III liga": ["IV liga", "II liga"], "IV liga": ["III liga"] };
+      for (const innyPoziom of (kolejnosc[poziom] || [])) {
+        for (const adres of (ZRODLA_LIG[innyPoziom] || [])) {
+          if (Date.now() > koniecSzukania) break;
+          let html;
+          try { html = await pobierzZ90minut(adres); } catch { continue; }
+          if (parseLinkiMeczow(html).some((m) => tytulMaKlub(m.tytul, klub.name))) { znalezionyPoziom = innyPoziom; break; }
+        }
+        if (znalezionyPoziom || Date.now() > koniecSzukania) break;
+      }
+    }
+    if (znalezionyPoziom) {
+      return res.status(404).json({
+        error: `Klub „${klub.name}" nie gra w rozgrywkach ${klub.league} — jego mecze są w rozgrywkach ${znalezionyPoziom}.`,
+        podpowiedz: `Popraw pole „Liga" w edycji klubu na właściwy poziom (${znalezionyPoziom}) i uruchom pobieranie jeszcze raz. ` +
+          "Do czasu poprawki nie mam skąd wziąć protokołów tego klubu, bo szukam ich na stronach poziomu wpisanego w kartotece.",
+        znalezionyPoziom,
+        przeszukaneStrony: adresy.length,
+      });
+    }
     // Gdy ŻADNA strona się nie otworzyła, o nazwie klubu nie wiemy niczego — i trzeba to powiedzieć
     // wprost, zamiast obwiniać kartotekę.
     if (bledyStron.length && !widzianeNazwy.size) {
