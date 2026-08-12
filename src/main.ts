@@ -4879,38 +4879,248 @@ function parseTalentRowsObject(rows){
   };
 }
 
-// Wklejenie tekstu (np. skopiowana tabela z Transfermarkt/Wikipedii/arkusza) zamiast pliku Excel —
-// ten sam format co szablon (Imię, Nazwisko, Rocznik, Klub), rozdzielony tabulatorem, przecinkiem,
-// średnikiem albo dwiema+ spacjami. Jeśli pierwsza linia wygląda jak nagłówek — używamy jej do
-// dopasowania kolumn; jeśli nie, zakładamy stałą kolejność Imię/Nazwisko/Rocznik/Klub.
-function splitTalentLine(line){
-  if(line.includes('\t')) return line.split('\t');
-  if(line.includes(';')) return line.split(';');
-  if(line.includes(',')) return line.split(',');
-  return line.split(/\s{2,}/);
+// ---------- WKLEJANIE LISTY DO ZAKŁADKI TALENT ----------
+//
+// Do tego pola trafiają trzy różne rzeczy i parser musi rozumieć każdą z nich:
+//   1. TABELA Z ARKUSZA — kolumny Imię / Nazwisko / Rocznik / Klub rozdzielone tabulatorem.
+//   2. LISTA POWOŁAŃ (PZPN, kadry wojewódzkie) — „Lp. | Imię Nazwisko | Klub", a rocznik podany
+//      RAZ w nagłówku nad listą („Reprezentacja U-15, rocznik 2011"). Wcześniej rocznik przepadał,
+//      bo parser czytał wyłącznie kolumny w wierszu zawodnika.
+//   3. SKOPIOWANY SKŁAD — „Hubert Simson(8)-Wda Świecie", nierzadko kilku zawodników sklejonych
+//      w JEDNEJ linijce. Stary parser robił z takiej linijki jednego zawodnika o imieniu
+//      „Hubert Simson(8)-Wda Świecie" i pustym nazwisku.
+const RE_ROK_TALENTU = /\b(19[89]\d|20[0-4]\d)\b/;
+
+function czyscLinieTalentu(l){
+  // Twarda spacja i myślniki w kilku wariantach to standard przy kopiowaniu z PDF i stron WWW.
+  return String(l||'').replace(/ /g,' ').replace(/[‐-―]/g,'-').replace(/\s+/g,' ').trim();
 }
+
+// Nagłówek grupy: „ROCZNIK 2013", „Kadra U-15 (2011)", sama liczba w linijce. Zwraca rocznik,
+// który obowiązuje dla WSZYSTKICH kolejnych wierszy — aż do następnego takiego nagłówka.
+function rocznikZNaglowkaTalentu(linia){
+  const l = czyscLinieTalentu(linia);
+  const m = l.match(RE_ROK_TALENTU);
+  if(!m) return null;
+  const rok = Number(m[0]);
+  if(/^\(?\s*(19|20)\d{2}\s*\)?$/.test(l)) return rok;
+  if(/(rocznik|rok urodzenia|kadra|kadry|kadrze|powolan|powołan|reprezentacj|selekcj|u-?\s?\d{1,2}\b)/i.test(l)
+     && !/[;\t]/.test(l) && l.split(' ').length <= 9) return rok;
+  return null;
+}
+
+// „KOWALSKI" i „kowalski" na „Kowalski" — listy PZPN piszą nazwiska wersalikami, a w profilu
+// zawodnika ma być normalny zapis. Człony po myślniku traktujemy osobno (Nowak-Jeziorski).
+function ladnaNazwaOsoby(s){
+  return String(s||'').trim().split(/\s+/).filter(Boolean).map(w=>
+    w.split('-').map(cz=> cz ? cz[0].toUpperCase() + cz.slice(1).toLowerCase() : cz).join('-')
+  ).join(' ');
+}
+function rozdzielImieNazwisko(pelne){
+  const slowa = ladnaNazwaOsoby(pelne).split(/\s+/).filter(Boolean);
+  if(!slowa.length) return {firstName:'', lastName:''};
+  if(slowa.length === 1) return {firstName:'', lastName:slowa[0]};
+  return {firstName:slowa[0], lastName:slowa.slice(1).join(' ')};
+}
+
+// Czy ten kawałek tekstu to nazwa klubu? Najpewniejsza odpowiedź to nasza własna kartoteka klubów;
+// dopiero gdy klubu tam nie ma, sięgamy po typowe człony nazw (KS, Akademia, Sokół…).
+function wygladaNaKlubTalentu(s){
+  const t = czyscLinieTalentu(s);
+  if(!t) return false;
+  const n = t.toLowerCase();
+  if(DB.clubs && DB.clubs.some(c => c.name && (n === c.name.toLowerCase() || n.includes(c.name.toLowerCase()) || c.name.toLowerCase().includes(n)))) return true;
+  return /\b(ks|lks|mks|uks|gks|kks|zks|rks|cwks|wks|sp|ssa|fc|ac|sc|akademia|akademii|klub|szkola|szkoła|sportowa|football|soccer|team)\b/i.test(t);
+}
+
+// Format „Imię Nazwisko(7)-Klub" — numer na koszulce jest tu granicą rekordu, więc nawet kilku
+// zawodników sklejonych w jedną linijkę rozdzielamy pewnie. Czytamy od numeru do numeru: dwa
+// ostatnie słowa przed nawiasem to zawodnik, a wszystko wcześniej — klub POPRZEDNIEGO zawodnika.
+function osobyZeSkladuTalentu(linia, rocznik){
+  const l = czyscLinieTalentu(linia);
+  const re = /\((\d{1,2})\)/g;
+  const znaczniki = [];
+  let m;
+  while((m = re.exec(l)) !== null) znaczniki.push({od: m.index, do: m.index + m[0].length});
+  if(!znaczniki.length) return [];
+
+  const out = [];
+  let kursor = 0;
+  znaczniki.forEach(z=>{
+    const przed = l.slice(kursor, z.od).replace(/^[\s\-,;]+/,'').trim();
+    kursor = z.do;
+    let slowa = przed.split(' ').filter(Boolean);
+    if(!slowa.length) return;
+    let nazwa = slowa.slice(-2).join(' ');
+    let ogon = slowa.slice(0, -2).join(' ').replace(/[-,;]+$/,'').trim();
+    // Jedno samotne słowo przed nazwiskiem, które nie wygląda na klub, to zwykle drugie imię
+    // albo pierwszy człon nazwiska — nie robimy z niego klubu.
+    if(ogon && !ogon.includes(' ') && !wygladaNaKlubTalentu(ogon)){ nazwa = ogon + ' ' + nazwa; ogon = ''; }
+    if(ogon && out.length && !out[out.length-1].club) out[out.length-1].club = ogon;
+    const {firstName, lastName} = rozdzielImieNazwisko(nazwa);
+    if(!firstName && !lastName) return;
+    out.push({firstName, lastName, birthYear: rocznik || null, club: ''});
+  });
+
+  // Ostatni zawodnik ma klub dopiero za swoim numerem — do końca linijki.
+  const koncowka = l.slice(kursor).replace(/^[\s\-,;]+/,'').replace(/[-,;]+$/,'').trim();
+  if(koncowka && out.length && !out[out.length-1].club) out[out.length-1].club = koncowka;
+
+  out.forEach(o=>{
+    const mr = o.club && o.club.match(RE_ROK_TALENTU);
+    if(mr){ o.birthYear = Number(mr[0]); o.club = o.club.replace(RE_ROK_TALENTU,'').replace(/\s+/g,' ').trim(); }
+  });
+  return out;
+}
+
+function komorkiLiniiTalentu(l){
+  if(l.includes('\t')) return l.split('\t');
+  if(l.includes('|')) return l.split('|');
+  if(l.includes(';')) return l.split(';');
+  if(/\s{2,}/.test(l)) return l.split(/\s{2,}/);
+  if(l.includes(',')) return l.split(',');
+  return [l];
+}
+
+// Wiersz rozbity na kolumny. Kolejność bywa różna (arkusz: Imię/Nazwisko/Rocznik/Klub; powołania:
+// Lp./Imię Nazwisko/Klub), więc nie liczymy na pozycje: rocznik poznajemy po tym, że jest rokiem,
+// klub po tym, że wygląda na klub albo został jako ostatnia nadmiarowa kolumna.
+function osobaZKomorekTalentu(komorki, rocznik){
+  let c = komorki.map(czyscLinieTalentu).filter(Boolean);
+  if(c.length && /^\d{1,3}[.)]?$/.test(c[0])) c = c.slice(1);   // liczba porządkowa „Lp."
+  if(!c.length) return null;
+  let rok = null;
+  const nazwowe = [];
+  c.forEach(kom=>{
+    const sam = kom.match(/^\(?((?:19|20)\d{2})\)?$/);
+    if(sam && !rok){ rok = Number(sam[1]); return; }
+    nazwowe.push(kom);
+  });
+  if(!nazwowe.length) return null;
+  let klub = '';
+  if(nazwowe.length >= 3) klub = nazwowe.pop();
+  else if(nazwowe.length === 2 && (nazwowe[0].includes(' ') || wygladaNaKlubTalentu(nazwowe[1]))) klub = nazwowe.pop();
+  const nazwa = nazwowe.join(' ');
+  if(!rok){
+    const mr = nazwa.match(RE_ROK_TALENTU);
+    if(mr) rok = Number(mr[0]);
+  }
+  const {firstName, lastName} = rozdzielImieNazwisko(nazwa.replace(RE_ROK_TALENTU,'').trim());
+  if(!firstName && !lastName) return null;
+  return {firstName, lastName, birthYear: rok || rocznik || null, club: klub};
+}
+
+// Wiersz bez separatorów: „1. Jan Kowalski - Legia Warszawa" albo „Jan Kowalski Legia Warszawa".
+function osobaZWierszaTalentu(linia, rocznik){
+  let l = czyscLinieTalentu(linia).replace(/^\d{1,3}\s*[.)]\s*/,'');
+  if(!l) return null;
+  let rok = null;
+  const mr = l.match(RE_ROK_TALENTU);
+  if(mr){ rok = Number(mr[0]); l = (l.slice(0, mr.index) + ' ' + l.slice(mr.index + 4)).replace(/\s+/g,' ').trim(); }
+  let nazwa = l, klub = '';
+  const myslnik = l.match(/^(.+?)\s*-\s+(.+)$/) || l.match(/^(.+?),\s*(.+)$/);
+  if(myslnik){ nazwa = myslnik[1].trim(); klub = myslnik[2].trim(); }
+  else {
+    // Bez myślnika ryzykujemy podział tylko wtedy, gdy reszta wiersza faktycznie wygląda na klub —
+    // inaczej trzyczłonowe nazwisko rozpadłoby się na zawodnika i wymyślony klub.
+    const slowa = l.split(' ');
+    if(slowa.length > 2){
+      const reszta = slowa.slice(2).join(' ');
+      if(wygladaNaKlubTalentu(reszta)){ nazwa = slowa.slice(0,2).join(' '); klub = reszta; }
+    }
+  }
+  const {firstName, lastName} = rozdzielImieNazwisko(nazwa);
+  if(!firstName && !lastName) return null;
+  return {firstName, lastName, birthYear: rok || rocznik || null, club: klub};
+}
+
 function parseTalentPastedText(text){
-  const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-  if(!lines.length) throw new Error('Wklej przynajmniej jedną linię z danymi.');
+  const surowe = String(text||'').split(/\r?\n/);
+  // Lista powołań bywa wklejana jako jeden akapit: „1. Jan Kowalski - Legia 2. Piotr Nowak - Lech".
+  // Numer porządkowy w środku linii to wtedy granica kolejnego zawodnika.
+  const linie = [];
+  surowe.forEach(l=>{
+    const c = czyscLinieTalentu(l);
+    if(!c) return;
+    if(/^\d{1,3}[.)]\s/.test(c) && /\s\d{1,3}[.)]\s/.test(c)) c.split(/\s+(?=\d{1,3}[.)]\s)/).forEach(x=>linie.push(x));
+    else linie.push(c);
+  });
+  if(!linie.length) throw new Error('Wklej przynajmniej jedną linię z danymi.');
+
   const norm = (s)=> String(s||'').toLowerCase().replace(/[ąćęłńóśźż]/g, c=>({ą:'a',ć:'c',ę:'e',ł:'l',ń:'n',ó:'o',ś:'s',ź:'z',ż:'z'}[c])).replace(/[^a-z0-9]/g,'');
-  const HEADER_WORDS = ['imie','nazwisko','rocznik','klub','firstname','lastname','birthyear','club','rokurodzenia'];
-  const firstCells = splitTalentLine(lines[0]).map(c=>c.trim());
-  const looksLikeHeader = firstCells.some(c => HEADER_WORDS.includes(norm(c)));
-  let rows;
-  if(looksLikeHeader){
-    rows = lines.slice(1).map(line=>{
-      const cells = splitTalentLine(line);
+  const HEADER_WORDS = ['imie','nazwisko','rocznik','klub','firstname','lastname','birthyear','club','rokurodzenia','imieinazwisko'];
+  const pierwszeKomorki = komorkiLiniiTalentu(linie[0]).map(c=>c.trim());
+  const naglowekKolumn = pierwszeKomorki.length > 1 && pierwszeKomorki.some(c => HEADER_WORDS.includes(norm(c)));
+  if(naglowekKolumn){
+    const rows = linie.slice(1).map(line=>{
+      const cells = komorkiLiniiTalentu(line);
       const obj = {};
-      firstCells.forEach((h,i)=> obj[h] = cells[i]!=null ? cells[i].trim() : '');
+      pierwszeKomorki.forEach((h,i)=> obj[h] = cells[i]!=null ? cells[i].trim() : '');
       return obj;
     });
-  } else {
-    rows = lines.map(line=>{
-      const cells = splitTalentLine(line).map(c=>c.trim());
-      return {'Imię': cells[0]||'', 'Nazwisko': cells[1]||'', 'Rocznik': cells[2]||'', 'Klub': cells[3]||''};
-    });
+    return parseTalentRowsObject(rows);
   }
-  return parseTalentRowsObject(rows);
+
+  const nowDate = new Date().toISOString().slice(0,10);
+  const MAX_NAME_LEN = 40;
+  let rocznik = null;
+  const osoby = [];
+  let pominiete = 0;
+  linie.forEach(l=>{
+    const naglowek = rocznikZNaglowkaTalentu(l);
+    if(naglowek){ rocznik = naglowek; return; }
+    const zeSkladu = osobyZeSkladuTalentu(l, rocznik);
+    if(zeSkladu.length){ osoby.push(...zeSkladu); return; }
+    const komorki = komorkiLiniiTalentu(l);
+    const os = komorki.length > 1 ? osobaZKomorekTalentu(komorki, rocznik) : osobaZWierszaTalentu(l, rocznik);
+    if(!os){ pominiete++; return; }
+    if(!os.birthYear && rocznik) os.birthYear = rocznik;
+    if(os.firstName.length > MAX_NAME_LEN || os.lastName.length > MAX_NAME_LEN){ pominiete++; return; }
+    osoby.push(os);
+  });
+
+  // Ten sam zawodnik potrafi być w wklejce dwa razy (np. w składzie i na ławce) — do listy
+  // wchodzi raz, z pełniejszym kompletem danych.
+  const unikalne = [];
+  const widziane = new Map();
+  osoby.forEach(o=>{
+    const klucz = norm(o.firstName) + '|' + norm(o.lastName) + '|' + (o.birthYear||'');
+    const byl = widziane.get(klucz);
+    if(byl){ if(!byl.club && o.club) byl.club = o.club; return; }
+    widziane.set(klucz, o);
+    unikalne.push(o);
+  });
+
+  if(!unikalne.length){
+    const dlugie = linie.some(v => v.split(/\s+/).length > 8 && /[.,]/.test(v));
+    if(dlugie){
+      throw new Error(
+        'To wygląda na artykuł, a nie na listę zawodników.\n\n' +
+        'To pole czyta LISTĘ: jedna osoba w linijce — „Imię Nazwisko - Klub",\n' +
+        'kolumny z arkusza albo powołania z numeracją „1. Jan Kowalski  Legia Warszawa".\n' +
+        'Rocznik możesz podać raz, w linijce nad listą (np. „rocznik 2013").\n\n' +
+        'Pojedynczego zawodnika z artykułu dodaj formularzem „Dodaj ręcznie" niżej.'
+      );
+    }
+    throw new Error('Nie znaleziono żadnego wiersza z imieniem lub nazwiskiem.\n\n' +
+      'Oczekuję jednej osoby w linijce: „Imię Nazwisko - Klub" albo kolumny rozdzielone tabulatorem.');
+  }
+
+  // Segregacja według roczników — o to prosi zakładka Talent: najpierw najmłodsi, w obrębie
+  // rocznika alfabetycznie po nazwisku. Wpisy bez rocznika lądują na końcu.
+  unikalne.sort((a,b)=>{
+    const ra = a.birthYear || -1, rb = b.birthYear || -1;
+    if(ra !== rb) return rb - ra;
+    return (a.lastName||'').localeCompare(b.lastName||'', 'pl');
+  });
+
+  return {
+    talents: unikalne.map(o=>({
+      id: uid('T'), firstName: o.firstName, lastName: o.lastName, birthYear: o.birthYear || null,
+      club: o.club || '', confidence: 'import', sourceImage: '', dateAdded: nowDate
+    })),
+    skippedCount: pominiete
+  };
 }
 
 function promoteTalentToPlayer(talentId){
@@ -4945,16 +5155,41 @@ async function addTalentManually(){
 }
 
 function viewTalent(){
-  const rows = DB.talents.slice().sort((a,b)=>(b.dateAdded||'').localeCompare(a.dateAdded||''));
-  const rowsHtml = rows.length ? rows.map(t=>`
+  // SEGREGACJA WEDŁUG ROCZNIKÓW.
+  //
+  // Kolejność dodania nic tu nie znaczy — przy wklejeniu listy powołań z dwóch roczników naraz
+  // (2013 i 2014) chłopcy mieszali się na jednej długiej liście. Grupujemy więc po roczniku,
+  // od najmłodszych, a w obrębie rocznika alfabetycznie po nazwisku. Bez rocznika — na końcu,
+  // w osobnej grupie, żeby było widać, komu trzeba go uzupełnić.
+  const rows = DB.talents.slice().sort((a,b)=>{
+    const ra = a.birthYear || -1, rb = b.birthYear || -1;
+    if(ra !== rb) return rb - ra;
+    return (a.lastName||'').localeCompare(b.lastName||'', 'pl') || (a.firstName||'').localeCompare(b.firstName||'', 'pl');
+  });
+  const wierszTalentu = (t)=>`
     <div class="talent-row">
       <span class="talent-row-name"><input type="checkbox" class="talent-check" data-id="${t.id}" style="margin-right:6px;vertical-align:middle;">${esc(t.firstName)} ${esc(t.lastName)}</span>
       <span class="talent-row-actions">
         <button class="link-btn" data-action="talent-promote" data-id="${t.id}" style="color:var(--gold-dark);">pełny profil / dodaj do bazy</button>
         <button class="link-btn talent-remove-btn" data-id="${t.id}" style="color:var(--clay-dark);">usuń</button>
       </span>
-      <span class="talent-row-meta">${t.birthYear?('rocznik '+esc(t.birthYear)+' &middot; '):''}${esc(t.club||'klub nieznany')}</span>
-    </div>`).join('') : '<div class="empty">Brak jeszcze dodanych talentów — użyj importu lub formularza poniżej.</div>';
+      <span class="talent-row-meta">${esc(t.club||'klub nieznany')}</span>
+    </div>`;
+  let rowsHtml = '';
+  if(rows.length){
+    let biezacyRocznik;
+    rows.forEach(t=>{
+      const r = t.birthYear || null;
+      if(r !== biezacyRocznik){
+        biezacyRocznik = r;
+        const ilu = rows.filter(x=>(x.birthYear||null) === r).length;
+        rowsHtml += `<div class="talent-year-head">${r ? 'Rocznik '+esc(String(r)) : 'Bez rocznika'} <span class="reports-count">${ilu}</span></div>`;
+      }
+      rowsHtml += wierszTalentu(t);
+    });
+  } else {
+    rowsHtml = '<div class="empty">Brak jeszcze dodanych talentów — użyj importu lub formularza poniżej.</div>';
+  }
 
   return `
   <h2 class="view-title">Talent</h2>
@@ -4964,9 +5199,9 @@ function viewTalent(){
     <div>
       <h3 style="margin-top:0;color:var(--heading);font-family:'Barlow Condensed',sans-serif;">Wklej tekst</h3>
       <div class="card">
-        <p class="note" style="margin-top:-4px;">Skopiuj tabelę zawodników (np. z Transfermarkt/Wikipedii/arkusza) i wklej poniżej — jedna osoba na linię, kolumny <strong>Imię, Nazwisko, Rocznik, Klub</strong> rozdzielone tabulatorem, przecinkiem albo dwiema spacjami. Nagłówek opcjonalny.</p>
+        <p class="note" style="margin-top:-4px;">Wklej listę w dowolnej z trzech postaci: <strong>tabelę z arkusza</strong> (Imię, Nazwisko, Rocznik, Klub), <strong>listę powołań</strong> („1. Jan Kowalski — Legia Warszawa") albo <strong>skopiowany skład</strong> („Jan Kowalski(8)-Wda Świecie"), nawet gdy kilku zawodników wylądowało w jednej linijce. <strong>Rocznik wystarczy podać raz</strong>, w linijce nad grupą (np. „rocznik 2013") — trafi do wszystkich nazwisk poniżej, aż do następnego takiego nagłówka.</p>
         <div class="field-wrap">
-          <textarea id="talent-paste-text" rows="6" placeholder="np.&#10;Kacper	Kowalkowski	2007	Zawisza Bydgoszcz&#10;Jan	Nowak	2008	Lech Poznań">${esc(talentPasteText)}</textarea>
+          <textarea id="talent-paste-text" rows="6" placeholder="np.&#10;rocznik 2013&#10;1. Jan Kowalski — Legia Warszawa&#10;2. Piotr Nowak — Lech Poznań&#10;rocznik 2014&#10;Kacper	Kowalkowski	&#9;Zawisza Bydgoszcz">${esc(talentPasteText)}</textarea>
         </div>
         <div class="modal-actions" style="justify-content:flex-start;margin-bottom:0;">
           <button class="secondary" data-action="talent-paste-parse">Rozpoznaj zawodników</button>
