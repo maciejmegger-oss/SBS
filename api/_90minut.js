@@ -266,6 +266,56 @@ export const normalizujNazwe = (s) =>
     .replace(/\p{M}/gu, "")
     .replace(/[^a-z0-9]/g, "");
 
+// ---------------------------------------------------------------------------
+// PORÓWNYWANIE NAZW KLUBÓW
+//
+// Nazwa tego samego klubu po obu stronach bywa inna, a kolejność członów bywa odwrotna:
+// w kartotece „Raków Częstochowa II", na 90minut „Raków II Częstochowa". Sklejanie nazwy w jeden
+// ciąg znaków i sprawdzanie zawierania (tak było wcześniej) daje wtedy „nie znalazłem meczów"
+// przy klubie, który gra i ma protokoły. Porównujemy więc ZBIORY SŁÓW, a nie ciągi.
+//
+// Numer drużyny (II, III, „rezerwy") wyłuskujemy osobno i musi się zgadzać. Bez tego zbiór słów
+// pierwszej drużyny byłby podzbiorem nazwy rezerw i „Raków Częstochowa" zassałby statystyki
+// Rakowa II — pomyłka gorsza niż brak danych.
+const SZUM_W_NAZWIE = new Set([
+  "ks", "lks", "mks", "uks", "gks", "kks", "zks", "rks", "cwks", "wks", "gkp", "kp", "ksp",
+  "mkp", "mgks", "sks", "tks", "kls", "klub", "sportowy", "sportowe", "sa", "ssa", "fc", "sp",
+]);
+export function czlonyKlubu(nazwa) {
+  const slowa = [];
+  let numer = 1;
+  for (const w of String(nazwa || "").toLowerCase()
+    .replace(/[łøđ]/g, (c) => ({ ł: "l", ø: "o", đ: "d" }[c]))
+    .normalize("NFD").replace(/\p{M}/gu, "")
+    .replace(/[^a-z0-9]+/g, " ").split(" ").filter(Boolean)) {
+    if (/^(ii|2|b)$/.test(w)) { numer = Math.max(numer, 2); continue; }
+    if (/^(iii|3|c)$/.test(w)) { numer = Math.max(numer, 3); continue; }
+    if (/^(rezerwy|rezerw|res)$/.test(w)) { numer = Math.max(numer, 2); continue; }
+    if (SZUM_W_NAZWIE.has(w)) continue;
+    slowa.push(w);
+  }
+  return { slowa, numer };
+}
+export function toSamKlub(a, b) {
+  const A = czlonyKlubu(a), B = czlonyKlubu(b);
+  if (!A.slowa.length || !B.slowa.length) return false;
+  if (A.numer !== B.numer) return false;
+  // Jedna strona bywa krótsza („Wda" kontra „KP Wda Świecie"), więc wystarczy, że KAŻDE słowo
+  // krótszej nazwy stoi w dłuższej. Wspólna część musi mieć ze cztery znaki, żeby „II Łódź"
+  // nie sklejało się z pierwszym lepszym klubem z Łodzi.
+  const krotsza = A.slowa.length <= B.slowa.length ? A.slowa : B.slowa;
+  const dluzsza = A.slowa.length <= B.slowa.length ? B.slowa : A.slowa;
+  if (!krotsza.every((w) => dluzsza.includes(w))) return false;
+  return krotsza.join("").length >= 4;
+}
+// Podpowiedź odnośnika do meczu ma postać „Gospodarz - Gość". Sprawdzamy każdą stronę osobno,
+// bo szukanie nazwy w całym napisie myli się przy nazwach złożonych z tych samych słów.
+export function tytulMaKlub(tytul, nazwaKlubu) {
+  const strony = String(tytul || "").split(/\s+[-–—]\s+/);
+  if (strony.length >= 2) return strony.some((s) => toSamKlub(s, nazwaKlubu));
+  return toSamKlub(tytul, nazwaKlubu);
+}
+
 export const kluczMeczu = (m) =>
   `${m.round ?? ""}|${normalizujNazwe(m.homeTeam)}|${normalizujNazwe(m.awayTeam)}`;
 

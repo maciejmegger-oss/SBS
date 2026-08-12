@@ -3971,6 +3971,36 @@ function viewClubs(){
   </div>`;
 }
 
+// PORÓWNANIE NAZW KLUBÓW — PO SŁOWACH, NIE PO CIĄGU ZNAKÓW.
+//
+// Ten sam klub bywa zapisany z inną kolejnością członów: u nas „Raków Częstochowa II", na 90minut
+// „Raków II Częstochowa". Sklejanie nazwy w jeden ciąg i sprawdzanie zawierania nie znajdowało
+// wtedy klubu ani w tabeli, ani wśród meczów. Numer drużyny (II, III, „rezerwy") wyłuskujemy
+// osobno i MUSI się zgadzać — inaczej pierwsza drużyna zassałaby dorobek rezerw.
+// Bliźniak tej funkcji stoi w api/_90minut.js (tam dopasowuje protokoły po stronie serwera).
+const SZUM_W_NAZWIE_KLUBU = new Set(['ks','lks','mks','uks','gks','kks','zks','rks','cwks','wks',
+  'gkp','kp','ksp','mkp','mgks','sks','tks','kls','klub','sportowy','sportowe','sa','ssa','fc','sp']);
+function czlonyNazwyKlubu(nazwa){
+  const slowa = []; let numer = 1;
+  for(const w of szukajNorm(nazwa).replace(/[^a-z0-9]+/g,' ').split(' ').filter(Boolean)){
+    if(/^(ii|2|b)$/.test(w)){ numer = Math.max(numer,2); continue; }
+    if(/^(iii|3|c)$/.test(w)){ numer = Math.max(numer,3); continue; }
+    if(/^(rezerwy|rezerw|res)$/.test(w)){ numer = Math.max(numer,2); continue; }
+    if(SZUM_W_NAZWIE_KLUBU.has(w)) continue;
+    slowa.push(w);
+  }
+  return {slowa, numer};
+}
+function toSamKlubNazwa(a, b){
+  const A = czlonyNazwyKlubu(a), B = czlonyNazwyKlubu(b);
+  if(!A.slowa.length || !B.slowa.length) return false;
+  if(A.numer !== B.numer) return false;
+  const krotsza = A.slowa.length <= B.slowa.length ? A.slowa : B.slowa;
+  const dluzsza = A.slowa.length <= B.slowa.length ? B.slowa : A.slowa;
+  if(!krotsza.every(w=>dluzsza.includes(w))) return false;
+  return krotsza.join('').length >= 4;
+}
+
 // ---------- MINI TABELA: GDZIE KLUB STOI W SWOICH ROZGRYWKACH ----------
 //
 // Pozycja w tabeli jest pierwszą rzeczą, o którą pyta się przy klubie („z kim gramy i jak im
@@ -3994,14 +4024,7 @@ function miniTabelaKlubuHtml(c){
   if(stan.stan === 'ladowanie') return ramka('<div class="note">Wczytuję tabelę z 90minut…</div>');
   if(stan.stan === 'blad') return ramka(`<div class="note">Nie udało się pobrać tabeli: ${esc(stan.blad||'')}</div>`);
 
-  // Nazwy po obu stronach bywają zapisane inaczej („KP Wda Świecie" kontra „Wda Świecie"),
-  // więc dopuszczamy zawieranie — ale dopiero od pięciu znaków, żeby krótka nazwa nie sklejała
-  // się z pierwszym lepszym klubem.
-  const nk = szukajNorm(c.name).replace(/[^a-z0-9]/g,'');
-  const toSam = (nazwa)=>{
-    const x = szukajNorm(nazwa).replace(/[^a-z0-9]/g,'');
-    return x === nk || (x.length >= 5 && nk.length >= 5 && (x.includes(nk) || nk.includes(x)));
-  };
+  const toSam = (nazwa)=> toSamKlubNazwa(nazwa, c.name);
   let grupa = null, idx = -1;
   for(const g of (stan.grupy||[])){
     const i = (g.wiersze||[]).findIndex(w=> toSam(w.nazwa));

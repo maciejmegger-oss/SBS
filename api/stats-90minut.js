@@ -17,7 +17,7 @@
 // zostaje nietknięte, żeby nie skasować liczb wpisanych ręcznie.
 import {
   ZRODLA_LIG, poziomRozgrywek, pobierzZ90minut, parseLinkiMeczow, parseSkladyMeczu,
-  parseWystepyZawodnika, normalizujNazwe, minutyZWpisu,
+  parseWystepyZawodnika, normalizujNazwe, minutyZWpisu, toSamKlub, tytulMaKlub,
 } from "./_90minut.js";
 
 import { BAZA, KLUCZ_BAZY, naglowkiDlaZadania, maDostepDoBazy, PODPOWIEDZ_BRAK_KLUCZA } from "./_baza.js";
@@ -40,15 +40,6 @@ async function porcjami(elementy, ile, praca) {
     wynik.push(...(await Promise.all(elementy.slice(i, i + ile).map(praca))));
   }
   return wynik;
-}
-
-// Nazwy klubów po obu stronach bywają zapisane inaczej („Wda Świecie" kontra „KP Wda Świecie"),
-// więc dopuszczamy zawieranie — ale dopiero od pięciu znaków, żeby „Wisła" nie sklejała się
-// z dowolną inną Wisłą.
-function toSamKlub(a, b) {
-  const x = normalizujNazwe(a), y = normalizujNazwe(b);
-  if (!x || !y) return false;
-  return x === y || (x.length >= 5 && y.length >= 5 && (x.includes(y) || y.includes(x)));
 }
 
 export default async function handler(req, res) {
@@ -127,10 +118,10 @@ export default async function handler(req, res) {
   }
 
   // --- 1. ZNAJDŹ MECZE KLUBU ---
-  // Nazwy drużyn czytamy z podpowiedzi odnośnika, bez rozcinania jej na gospodarzy i gości —
-  // nazwy klubów bywają z liczbami („KKS 1925 Kalisz") i każde cięcie po wyniku jest zgadywanką.
-  // Do wyboru meczów wystarczy sprawdzić, czy nazwa klubu w podpowiedzi w ogóle występuje.
-  const nazwaKlubu = normalizujNazwe(klub.name);
+  // Podpowiedź odnośnika ma postać „Gospodarz - Gość". Każdą stronę porównujemy z nazwą klubu
+  // po SŁOWACH (patrz toSamKlub), bo kolejność członów bywa odwrotna: u nas „Raków Częstochowa II",
+  // na 90minut „Raków II Częstochowa". Szukanie nazwy jako ciągu znaków dawało w takim przypadku
+  // „nie znalazłem rozegranych meczów" przy klubie, który gra i ma protokoły.
   let mecze = [], stronaLigi = "";
 
   // NAJPIERW PROFIL KLUBU NA 90MINUT, JEŚLI JEST W KARTOTECE.
@@ -153,7 +144,7 @@ export default async function handler(req, res) {
   for (const adres of mecze.length ? [] : adresy) {
     let html;
     try { html = await pobierzZ90minut(adres); } catch { continue; }
-    const trafione = parseLinkiMeczow(html).filter((m) => normalizujNazwe(m.tytul).includes(nazwaKlubu));
+    const trafione = parseLinkiMeczow(html).filter((m) => tytulMaKlub(m.tytul, klub.name));
     if (trafione.length) { mecze = trafione; stronaLigi = adres; break; }
   }
   if (!mecze.length) {
