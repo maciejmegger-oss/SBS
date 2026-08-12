@@ -11929,6 +11929,10 @@ function open90minutStatsModal(clubId){
       ${blad ? `<div class="empty" style="text-align:left;padding:12px;border-color:var(--clay-dark);">
         <strong style="color:var(--clay-dark);">${esc(blad)}</strong>
         ${wynik && wynik.podpowiedz ? `<p style="margin:8px 0 0;">${esc(wynik.podpowiedz)}</p>` : ''}
+        ${wynik && wynik.widzianeKluby && wynik.widzianeKluby.length ? `<details style="margin-top:8px;">
+          <summary style="cursor:pointer;font-size:12.5px;color:var(--ink-soft);">Kluby, które widzę na przeszukanych stronach (${wynik.widzianeKluby.length})</summary>
+          <p style="margin:6px 0 0;font-size:12.5px;line-height:1.7;">${wynik.widzianeKluby.map(n=>esc(n)).join(' &middot; ')}</p>
+        </details>` : ''}
       </div>` : ''}
 
       ${wynik && wynik.ok ? `

@@ -17,7 +17,7 @@
 // zostaje nietknięte, żeby nie skasować liczb wpisanych ręcznie.
 import {
   ZRODLA_LIG, poziomRozgrywek, pobierzZ90minut, parseLinkiMeczow, parseSkladyMeczu,
-  parseWystepyZawodnika, normalizujNazwe, minutyZWpisu, toSamKlub, tytulMaKlub,
+  parseWystepyZawodnika, normalizujNazwe, minutyZWpisu, toSamKlub, tytulMaKlub, czlonyKlubu,
 } from "./_90minut.js";
 
 import { BAZA, KLUCZ_BAZY, naglowkiDlaZadania, maDostepDoBazy, PODPOWIEDZ_BRAK_KLUCZA } from "./_baza.js";
@@ -123,6 +123,8 @@ export default async function handler(req, res) {
   // na 90minut „Raków II Częstochowa". Szukanie nazwy jako ciągu znaków dawało w takim przypadku
   // „nie znalazłem rozegranych meczów" przy klubie, który gra i ma protokoły.
   let mecze = [], stronaLigi = "";
+  // Nazwy drużyn napotkane na przeszukiwanych stronach — materiał do komunikatu, gdy klubu nie ma.
+  const widzianeNazwy = new Set();
 
   // NAJPIERW PROFIL KLUBU NA 90MINUT, JEŚLI JEST W KARTOTECE.
   //
@@ -144,18 +146,38 @@ export default async function handler(req, res) {
   for (const adres of mecze.length ? [] : adresy) {
     let html;
     try { html = await pobierzZ90minut(adres); } catch { continue; }
-    const trafione = parseLinkiMeczow(html).filter((m) => tytulMaKlub(m.tytul, klub.name));
+    const linki = parseLinkiMeczow(html);
+    linki.forEach((m) => String(m.tytul || "").split(/\s+[-–—]\s+/).forEach((n) => {
+      const t = n.trim();
+      if (t) widzianeNazwy.add(t);
+    }));
+    const trafione = linki.filter((m) => tytulMaKlub(m.tytul, klub.name));
     if (trafione.length) { mecze = trafione; stronaLigi = adres; break; }
   }
   if (!mecze.length) {
+    // NAZWY, KTÓRE FAKTYCZNIE WIDZIAŁEM. Bez nich komunikat „nie znalazłem" jest ślepy: nie wiadomo,
+    // czy klub nazywa się na 90minut inaczej, czy w ogóle przeszukałem niewłaściwe rozgrywki.
+    // Podobne nazwy pokazujemy na początku — najczęściej to właśnie one są odpowiedzią.
+    const nasze = czlonyKlubu(klub.name).slowa;
+    const podobne = [...widzianeNazwy].filter((n) => {
+      const ich = czlonyKlubu(n).slowa;
+      return nasze.some((w) => w.length >= 4 && ich.includes(w));
+    });
+    const przyklady = podobne.length ? podobne : [...widzianeNazwy].slice(0, 12);
     return res.status(404).json({
       error: `Nie znalazłem rozegranych meczów klubu „${klub.name}" w rozgrywkach ${klub.league}.`,
-      podpowiedz: profil
-        ? "Sprawdź, czy link do 90minut w edycji klubu prowadzi do strony klubu z listą meczów tego sezonu."
-        : "Najpewniejsza droga: otwórz klub na 90minut.pl i wklej jego adres w „Edytuj klub” → pole 90minut. " +
-          "Wtedy biorę mecze wprost ze strony klubu, zamiast szukać go po nazwie na stronach ligi — " +
-          "a nazwa u nas potrafi się różnić od tej na 90minut. Druga możliwość: klub jeszcze nie grał w tym sezonie.",
+      podpowiedz: (podobne.length
+        ? `Na stronach tych rozgrywek są za to: ${podobne.slice(0, 6).join(", ")}. ` +
+          `Jeśli któraś z tych nazw to ten sam klub, wyrównaj nazwę w „Edytuj klub" — pilnuję przy tym numeru drużyny, ` +
+          `więc „II" po jednej stronie, a brak „II" po drugiej to dla mnie dwa różne kluby. `
+        : "") +
+        (profil
+          ? "Sprawdź też, czy link do 90minut w edycji klubu prowadzi do strony klubu z listą meczów tego sezonu."
+          : "Najpewniejsza droga: otwórz klub na 90minut.pl i wklej jego adres w „Edytuj klub” → pole 90minut. " +
+            "Wtedy biorę mecze wprost ze strony klubu, zamiast szukać go po nazwie na stronach ligi. " +
+            "Druga możliwość: klub jeszcze nie grał w tym sezonie."),
       przeszukaneStrony: adresy.length,
+      widzianeKluby: przyklady.slice(0, 24),
     });
   }
 
