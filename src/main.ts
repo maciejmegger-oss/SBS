@@ -50,7 +50,7 @@ let dashboardGroupSelected = null; // wybrana grupa (np. "III liga, gr. II") po 
 
 const DEFAULT_SETTINGS = {
   regions: ["Dolnośląski ZPN","Kujawsko-Pomorski ZPN","Lubelski ZPN","Lubuski ZPN","Łódzki ZPN","Małopolski ZPN","Mazowiecki ZPN","Opolski ZPN","Podkarpacki ZPN","Podlaski ZPN","Pomorski ZPN","Śląski ZPN","Świętokrzyski ZPN","Warmińsko-Mazurski ZPN","Wielkopolski ZPN","Zachodniopomorski ZPN"],
-  leagues: ["Ekstraklasa","I liga","II liga","III liga, gr. I","III liga, gr. II","III liga, gr. III","III liga, gr. IV","IV liga (pomorska)","IV liga (zachodniopomorska)","IV liga (dolnośląska)","IV liga (śląska)","IV liga (wielkopolska)","IV liga (kujawsko-pomorska)","Klasa okręgowa","CLJ U19","CLJ U17 (zachodnia)","CLJ U17 (wschodnia)","Liga makroregionalna U16","Rocznik 2011","Rocznik 2012","Rocznik 2013","Rocznik 2014"],
+  leagues: ["Ekstraklasa","I liga","II liga","III liga, gr. I","III liga, gr. II","III liga, gr. III","III liga, gr. IV","IV liga (pomorska)","IV liga (zachodniopomorska)","IV liga (dolnośląska)","IV liga (śląska)","IV liga (wielkopolska)","IV liga (kujawsko-pomorska)","IV liga (łódzka)","Klasa okręgowa","CLJ U19","CLJ U17 (zachodnia)","CLJ U17 (wschodnia)","Liga makroregionalna U16","Rocznik 2011","Rocznik 2012","Rocznik 2013","Rocznik 2014"],
   positions: ["Bramkarz","Obrońca prawy","Obrońca lewy","Obrońca środkowy","Obrońca środkowy prawy","Obrońca środkowy centralny","Obrońca środkowy lewy","Obrońca boczny","Wahadłowy prawy","Wahadłowy lewy","Pomocnik defensywny","Pomocnik środkowy","Pomocnik ofensywny","Skrzydłowy","Skrzydłowy prawy","Skrzydłowy lewy","Napastnik"],
   statuses: ["Do Obserwacji","Na Testy","Do transferu","Z polecenia","Rekomendowany","Odrzucony"],
   recommendations: ["Kontynuować obserwację","Zaprosić na testy","(Do transferu)","Odrzucić","Zbyt wcześnie ocenić"],
@@ -1969,12 +1969,14 @@ async function loadAllInner(){
     ['Rocznik 2011','Rocznik 2012','Rocznik 2013','Rocznik 2014'].forEach(r=>{
       if(!DB.settings.leagues.includes(r)) DB.settings.leagues.push(r);
     });
-    // IV liga kujawsko-pomorska doszła później — wstawiamy ją PRZY pozostałych grupach IV ligi,
-    // żeby lista nie miała jej doklejonej na końcu, za kategoriami juniorskimi.
-    if(!DB.settings.leagues.includes('IV liga (kujawsko-pomorska)')){
+    // Grupy IV ligi dochodzą pojedynczo, w miarę jak wchodzą w obszar obserwacji. Wstawiamy je
+    // PRZY pozostałych grupach IV ligi, żeby lista nie miała ich doklejonych na końcu, za
+    // kategoriami juniorskimi — i tylko wtedy, gdy jeszcze ich nie ma.
+    ['IV liga (kujawsko-pomorska)', 'IV liga (łódzka)'].forEach(grupa=>{
+      if(DB.settings.leagues.includes(grupa)) return;
       const last4 = DB.settings.leagues.map(l=>/^IV liga \(/.test(l)).lastIndexOf(true);
-      DB.settings.leagues.splice(last4 >= 0 ? last4+1 : DB.settings.leagues.length, 0, 'IV liga (kujawsko-pomorska)');
-    }
+      DB.settings.leagues.splice(last4 >= 0 ? last4+1 : DB.settings.leagues.length, 0, grupa);
+    });
   }
   // Rozszerzona lista pozycji (skrzydłowy P/L, wahadłowy P/L, obrońcy P/L/środkowi) także w istniejących
   // instalacjach. Zastępujemy całą listę kanoniczną — stare wartości pozycji zawodników nadal w niej są.
@@ -3916,6 +3918,7 @@ function viewClubs(){
         ⭱ Wgraj wiele logo <input type="file" id="multi-logo-input" accept="image/png,image/jpeg,image/jpg,.png,.jpg,.jpeg" multiple style="display:none;">
       </label>
       ${clubBrowse.top ? `<button class="secondary" data-action="league-stats" data-league="${esc(clubBrowse.top)}" title="Wklej statystyki wszystkich klubów tej ligi w jednym oknie">⏱ Statystyki ligi</button>` : ''}
+      <button class="secondary" data-action="paste-clubs" title="Wklej listę nazw klubów — założę je wszystkie naraz w wybranej grupie">📋 Wklej listę klubów</button>
       <button class="secondary" data-action="merge-duplicates" title="Znajdź kluby wpisane dwa razy pod różnymi nazwami i połącz je w jeden">🧹 Scal duplikaty</button>
       <button class="gold" data-action="add-club">+ Nowy klub</button>
     </div>
@@ -6213,6 +6216,123 @@ function domyslnaLigaNowegoKlubu(){
   return ligi[0] || '';
 }
 
+// ZAKŁADANIE CAŁEJ GRUPY NARAZ.
+//
+// Nowa grupa rozgrywek to osiemnaście klubów. Wpisywanie ich pojedynczo w oknie „Nowy klub" to
+// osiemdziesiąt kliknięć i kwadrans pracy — a lista i tak jest zwykle skądś skopiowana (tabela
+// ligi, komunikat związku). Wystarczy ją więc wkleić: jedna nazwa w linijce, opcjonalnie
+// z miastem po przecinku. Region podpowiadamy z nazwy grupy, bo „IV liga (łódzka)" to zawsze
+// Łódzki ZPN — użytkownik może go zmienić przed założeniem.
+const ZPN_WG_GRUPY = {
+  'dolnośląska':'Dolnośląski ZPN', 'kujawsko-pomorska':'Kujawsko-Pomorski ZPN', 'lubelska':'Lubelski ZPN',
+  'lubuska':'Lubuski ZPN', 'łódzka':'Łódzki ZPN', 'małopolska':'Małopolski ZPN', 'mazowiecka':'Mazowiecki ZPN',
+  'opolska':'Opolski ZPN', 'podkarpacka':'Podkarpacki ZPN', 'podlaska':'Podlaski ZPN', 'pomorska':'Pomorski ZPN',
+  'śląska':'Śląski ZPN', 'świętokrzyska':'Świętokrzyski ZPN', 'warmińsko-mazurska':'Warmińsko-Mazurski ZPN',
+  'wielkopolska':'Wielkopolski ZPN', 'zachodniopomorska':'Zachodniopomorski ZPN',
+};
+function zpnDlaLigi(liga){
+  const m = String(liga||'').match(/\(([^)]+)\)/);
+  return (m && ZPN_WG_GRUPY[m[1].toLowerCase()]) || '';
+}
+// Wiersz wklejonej listy: „Widzew II Łódź", „Pelikan Łowicz, Łowicz", „1. Warta Sieradz  Sieradz",
+// „Boruta Zgierz 18 34 12" (skopiowana tabela — liczby na końcu odcinamy).
+function klubZWiersza(linia){
+  let l = String(linia||'').replace(/ /g,' ').replace(/\s+/g,' ').trim();
+  if(!l) return null;
+  l = l.replace(/^\d{1,2}\s*[.)]?\s+/, '');            // pozycja w tabeli
+  l = l.replace(/(\s+[-\d:]+){2,}$/, '').trim();       // kolumny liczbowe skopiowane z tabeli
+  if(!l || !/[\p{L}]/u.test(l)) return null;
+  let nazwa = l, miasto = '';
+  const przecinek = l.match(/^(.+?)\s*[,;]\s*(.+)$/);
+  if(przecinek){ nazwa = przecinek[1].trim(); miasto = przecinek[2].trim(); }
+  else {
+    const tab = l.split(/\t|\s{2,}/).map(x=>x.trim()).filter(Boolean);
+    if(tab.length >= 2){ nazwa = tab[0]; miasto = tab[1]; }
+  }
+  if(!miasto){
+    // Bez osobnej kolumny miasto bierzemy z końca nazwy („Pelikan Łowicz" → Łowicz). Gdy ostatnie
+    // słowo jest przymiotnikiem, miasto jest dwuczłonowe („Konstantynów Łódzki"). To tylko
+    // podpowiedź do pola „Miasto" — nazwa klubu zostaje w całości, a podgląd pokazuje wynik
+    // przed założeniem, więc pomyłkę widać od razu.
+    const slowa = nazwa.split(' ');
+    if(slowa.length >= 2){
+      const ostatnie = slowa[slowa.length-1];
+      miasto = /(ski|cki|dzki|ska|cka|dzka|skie|ckie|dzkie)$/i.test(ostatnie) && slowa.length >= 3
+        ? slowa.slice(-2).join(' ')
+        : ostatnie;
+    }
+  }
+  if(nazwa.length > 60) return null;
+  return { nazwa, miasto };
+}
+function openPasteClubsModal(){
+  const ligi = DB.settings.leagues || [];
+  const domyslna = domyslnaLigaNowegoKlubu();
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+  <div class="modal">
+    <h3>Wklej listę klubów</h3>
+    <p class="note" style="margin-top:-6px;">Jedna nazwa w linijce. Możesz wkleić samą listę nazw albo całą tabelę ligi — numery pozycji i kolumny z punktami odetnę. Miasto podaj po przecinku, jeśli ma być inne niż ostatnie słowo nazwy.</p>
+    <div class="grid grid-2">
+      <div class="field-wrap"><label class="field">Liga / grupa</label><select id="pk-liga">${ligi.map(x=>`<option ${x===domyslna?'selected':''}>${esc(x)}</option>`).join('')}</select></div>
+      <div class="field-wrap"><label class="field">Region (ZPN)</label><select id="pk-region">${DB.settings.regions.map(x=>`<option ${x===zpnDlaLigi(domyslna)?'selected':''}>${esc(x)}</option>`).join('')}</select></div>
+    </div>
+    <div class="field-wrap"><label class="field">Sezon</label><input id="pk-sezon" value="2026/2027"></div>
+    <div class="field-wrap"><label class="field">Kluby</label>
+      <textarea id="pk-tekst" rows="9" placeholder="np.&#10;Boruta Zgierz&#10;Pilica Przedbórz&#10;Włókniarz Konstantynów Łódzki&#10;GKS Ksawerów"></textarea>
+    </div>
+    <div id="pk-podglad" class="note"></div>
+    <div class="modal-actions">
+      <button class="secondary" data-action="close-modal">Anuluj</button>
+      <button class="gold" id="pk-zaloz">Załóż kluby</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=()=>overlay.remove());
+  const selLiga = overlay.querySelector('#pk-liga');
+  const selRegion = overlay.querySelector('#pk-region');
+  selLiga.onchange = ()=>{ const z = zpnDlaLigi(selLiga.value); if(z) selRegion.value = z; };
+
+  const pole = overlay.querySelector('#pk-tekst');
+  const podglad = overlay.querySelector('#pk-podglad');
+  const rozpoznaj = ()=> pole.value.split(/\r?\n/).map(klubZWiersza).filter(Boolean);
+  const odswiez = ()=>{
+    const lista = rozpoznaj();
+    const istniejace = new Set(DB.clubs.map(c=>String(c.name||'').toLowerCase()));
+    const nowe = lista.filter(k=>!istniejace.has(k.nazwa.toLowerCase()));
+    podglad.innerHTML = lista.length
+      ? `Rozpoznano <strong>${lista.length}</strong>, do założenia <strong>${nowe.length}</strong>${
+          lista.length - nowe.length ? ` (${lista.length - nowe.length} już jest w kartotece — pominę)` : ''}.
+        <div style="max-height:150px;overflow:auto;margin-top:6px;"><table style="font-size:12px;"><tbody>${
+          lista.map(k=>`<tr><td style="padding-right:12px;">${esc(k.nazwa)}</td><td style="color:var(--ink-soft);">${esc(k.miasto||'—')}</td><td style="color:var(--ink-soft);">${
+            istniejace.has(k.nazwa.toLowerCase()) ? 'już jest' : ''}</td></tr>`).join('')}</tbody></table></div>`
+      : '';
+  };
+  pole.oninput = odswiez;
+
+  overlay.querySelector('#pk-zaloz').onclick = async ()=>{
+    const lista = rozpoznaj();
+    if(!lista.length){ alert('Nie rozpoznałem żadnej nazwy klubu — wklej listę, po jednej nazwie w linijce.'); return; }
+    const liga = selLiga.value, region = selRegion.value;
+    const sezon = overlay.querySelector('#pk-sezon').value.trim();
+    const istniejace = new Set(DB.clubs.map(c=>String(c.name||'').toLowerCase()));
+    const nowe = lista.filter(k=>!istniejace.has(k.nazwa.toLowerCase()));
+    if(!nowe.length){ alert('Wszystkie te kluby już są w kartotece — nic nie dodaję.'); return; }
+    nowe.forEach(k=> DB.clubs.push({
+      id: uid('K'), name: k.nazwa, city: k.miasto || '', region, league: liga, season: sezon,
+      crestUrl: '', juniorCategories: '', profileLnp: '', profileTm: '',
+    }));
+    const ok = await saveClubs();
+    if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
+    overlay.remove();
+    clubBrowse = { top: topLevelOf(liga), group: liga };
+    alert(`Założyłem ${nowe.length} ${nowe.length===1?'klub':'klubów'} w grupie „${liga}".\n\n` +
+      'Herby, linki do 90minut i składy uzupełnisz w edycji klubu — a statystyki pobierzesz przyciskiem „⏱ Statystyki z 90minut" w widoku klubu.');
+    render();
+  };
+}
+
 function openClubModal(id){
   const c = id ? DB.clubs.find(x=>x.id===id) : null;
   const overlay = document.createElement('div');
@@ -6968,6 +7088,7 @@ function attachHandlers(){
     }
   };
   main.querySelectorAll('[data-action="add-club"]').forEach(b=>b.onclick=()=>openClubModal(null));
+  main.querySelectorAll('[data-action="paste-clubs"]').forEach(b=>b.onclick=()=>openPasteClubsModal());
   main.querySelectorAll('[data-action="edit-club"]').forEach(b=>b.onclick=()=>openClubModal(b.dataset.id));
   main.querySelectorAll('[data-action="delete-club"]').forEach(b=>b.onclick=async()=>{
     if(confirm('Usunąć ten klub?')){
@@ -9011,7 +9132,7 @@ const SCHEDULE_SOURCES = {
                   'http://www.90minut.pl/liga/1/liga14743.html',
                   'http://www.90minut.pl/liga/1/liga14744.html',
                   'http://www.90minut.pl/liga/1/liga14745.html'],
-  // Sześć grup IV ligi, sezon 2026/2027 — te, które obserwujesz. Numery rozgrywek pochodzą
+  // Grupy IV ligi, sezon 2026/2027 — te, które obserwujesz. Numery rozgrywek pochodzą
   // wprost ze stron 90minut i zmieniają się co sezon; przy nowym sezonie trzeba je podmienić
   // (albo wskazać własne adresy w ustawieniach, patrz scheduleUrlsFor).
   'IV liga':     ['http://www.90minut.pl/liga/1/liga14747.html',   // śląska
@@ -9019,7 +9140,8 @@ const SCHEDULE_SOURCES = {
                   'http://www.90minut.pl/liga/1/liga14749.html',   // pomorska
                   'http://www.90minut.pl/liga/1/liga14768.html',   // dolnośląska
                   'http://www.90minut.pl/liga/1/liga14779.html',   // wielkopolska
-                  'http://www.90minut.pl/liga/1/liga14836.html'],  // kujawsko-pomorska
+                  'http://www.90minut.pl/liga/1/liga14836.html',   // kujawsko-pomorska
+                  'http://www.90minut.pl/liga/1/liga14968.html'],  // łódzka
 };
 // Przepisanie potwierdzonych terminów do ZAPLANOWANYCH obserwacji. Kluby mają czas do piątku do
 // północy na zgłoszenie terminu, więc mecz wybrany wcześniej często nie ma jeszcze dnia i godziny.
