@@ -3959,6 +3959,7 @@ function viewClubs(){
       </label>
       ${clubBrowse.top ? `<button class="secondary" data-action="league-stats" data-league="${esc(clubBrowse.top)}" title="Wklej statystyki wszystkich klubów tej ligi w jednym oknie">⏱ Statystyki ligi</button>` : ''}
       <button class="secondary" data-action="paste-clubs" title="Wklej listę nazw klubów — założę je wszystkie naraz w wybranej grupie">📋 Wklej listę klubów</button>
+      ${list.length ? `<button class="secondary" data-action="stats-90minut-grupa" title="Pobierz i zapisz statystyki z 90minut dla wszystkich klubów widocznych na liście — po kolei, jeden po drugim">⏱ Odśwież 90minut — cały widok (${list.length})</button>` : ''}
       <button class="secondary" data-action="merge-duplicates" title="Znajdź kluby wpisane dwa razy pod różnymi nazwami i połącz je w jeden">🧹 Scal duplikaty</button>
       <button class="gold" data-action="add-club">+ Nowy klub</button>
     </div>
@@ -3969,6 +3970,105 @@ function viewClubs(){
       <tbody>${rows || `<tr><td colspan="7"><div class="empty">Brak klubów w tym widoku.</div></td></tr>`}</tbody>
     </table>
   </div>`;
+}
+
+// ODŚWIEŻENIE CAŁEJ GRUPY JEDNYM KLIKNIĘCIEM.
+//
+// Po każdej kolejce trzeba przejść przez wszystkie kluby grupy i w każdym uruchomić pobieranie —
+// przy osiemnastu klubach III ligi to osiemnaście wejść w klub i osiemnaście czekań. Robimy to
+// więc po kolei, jeden klub po drugim, z widoczną listą postępu i możliwością przerwania.
+// Sekwencyjnie, a nie równolegle: 90minut prowadzą wolontariusze i zalewanie serwisu
+// kilkunastoma równoczesnymi przebiegami byłoby zwykłym nadużyciem.
+function klubyWWidoku(){
+  let lista = DB.clubs.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'','pl'));
+  if(clubBrowse.top) lista = lista.filter(c=>topLevelOf(c.league)===clubBrowse.top);
+  if(clubBrowse.group) lista = lista.filter(c=>c.league===clubBrowse.group);
+  return lista;
+}
+function openGrupaStatsModal(){
+  const kluby = klubyWWidoku();
+  if(!kluby.length){ alert('Brak klubów w tym widoku.'); return; }
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  document.body.appendChild(overlay);
+
+  const stan = kluby.map(c=>({ id:c.id, nazwa:c.name, etap:'czeka', opis:'' }));
+  let pracuje = false, przerwane = false, zakonczone = false;
+  let zapisanychRazem = 0;
+
+  const ikona = (e)=> e==='ok' ? '✔' : e==='blad' ? '✖' : e==='pracuje' ? '⏳' : '·';
+  const rysuj = ()=>{
+    overlay.innerHTML = `
+    <div class="modal" style="max-width:720px;">
+      <h3>⏱ Odśwież statystyki z 90minut — ${esc(clubBrowse.group || clubBrowse.top || 'wszystkie kluby')}</h3>
+      <p class="note" style="margin-bottom:10px;">Przechodzę kluby po kolei: pobieram protokoły meczów, liczę dorobek zawodników i od razu zapisuję. Klub bez rozegranych meczów albo bez trafienia w nazwę pomijam i wypisuję niżej — nic przez to nie przerywa całego przebiegu.</p>
+      <div style="max-height:320px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px;font-size:12.5px;">
+        ${stan.map(p=>`<div style="padding:3px 2px;display:flex;gap:8px;align-items:baseline;${p.etap==='pracuje'?'font-weight:700;':''}">
+          <span style="width:14px;color:${p.etap==='ok'?'var(--good)':p.etap==='blad'?'var(--clay-dark)':'var(--ink-faint)'};">${ikona(p.etap)}</span>
+          <span style="flex:1;">${esc(p.nazwa)}</span>
+          <span class="note" style="text-align:right;">${esc(p.opis)}</span>
+        </div>`).join('')}
+      </div>
+      <div class="modal-actions">
+        ${zakonczone
+          ? `<button class="gold" data-action="zamknij-grupe">Zamknij</button>`
+          : pracuje
+            ? `<button class="secondary" data-action="przerwij-grupe">Przerwij po tym klubie</button>`
+            : `<button class="secondary" data-action="zamknij-grupe">Anuluj</button>
+               <button class="gold" data-action="start-grupa">Zacznij — ${kluby.length} ${kluby.length===1?'klub':'klubów'}</button>`}
+      </div>
+    </div>`;
+    overlay.querySelectorAll('[data-action="zamknij-grupe"]').forEach(b=>b.onclick=()=>{
+      overlay.remove();
+      if(zapisanychRazem) render();
+    });
+    overlay.querySelectorAll('[data-action="przerwij-grupe"]').forEach(b=>b.onclick=()=>{ przerwane = true; });
+    overlay.querySelectorAll('[data-action="start-grupa"]').forEach(b=>b.onclick=()=>{ void przebiegnij(); });
+  };
+
+  async function jedenKlub(poz){
+    const token = await tokenSesji();
+    const naglowki = token ? { Authorization: 'Bearer ' + token } : {};
+    const res = await fetch('/api/stats-90minut?clubId=' + encodeURIComponent(poz.id),
+      { signal: AbortSignal.timeout(120000), headers: naglowki });
+    const typ = res.headers.get('content-type') || '';
+    if(!typ.includes('application/json')) throw new Error('przekroczony limit czasu funkcji');
+    const dane = await res.json();
+    if(!res.ok || dane.error) throw new Error(dane.error || ('kod ' + res.status));
+    if(!Array.isArray(dane.pakiet) || !dane.pakiet.length) return { zapisani: 0, opis: 'bez zmian' };
+
+    const zapis = await fetch('/api/stats-90minut?clubId=' + encodeURIComponent(poz.id) + '&apply=1',
+      { method: 'POST', signal: AbortSignal.timeout(120000),
+        headers: { ...naglowki, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pakiet: dane.pakiet }) });
+    const odp = await zapis.json().catch(()=>({ error: 'serwer nie zwrócił danych' }));
+    if(!zapis.ok || odp.error) throw new Error(odp.error || ('kod ' + zapis.status));
+    return { zapisani: odp.zapisani || 0,
+      opis: `${odp.zapisani || 0} zawodników${dane.zProtokolow && dane.zProtokolow.length ? `, ${dane.zProtokolow.length} z protokołów` : ''}` };
+  }
+
+  async function przebiegnij(){
+    pracuje = true; rysuj();
+    for(const poz of stan){
+      if(przerwane){ poz.etap = 'czeka'; poz.opis = 'przerwane'; continue; }
+      poz.etap = 'pracuje'; poz.opis = 'pobieram…'; rysuj();
+      try{
+        const wynik = await jedenKlub(poz);
+        zapisanychRazem += wynik.zapisani;
+        poz.etap = 'ok'; poz.opis = wynik.opis;
+      }catch(e){
+        poz.etap = 'blad';
+        poz.opis = String((e && e.message) || e).slice(0, 90);
+      }
+      rysuj();
+    }
+    pracuje = false; zakonczone = true;
+    // Dopiero teraz wczytujemy bazę od nowa — raz, a nie po każdym klubie.
+    if(zapisanychRazem) await loadAll();
+    rysuj();
+  }
+
+  rysuj();
 }
 
 // PORÓWNANIE NAZW KLUBÓW — PO SŁOWACH, NIE PO CIĄGU ZNAKÓW.
@@ -7152,6 +7252,7 @@ function attachHandlers(){
   };
   main.querySelectorAll('[data-action="add-club"]').forEach(b=>b.onclick=()=>openClubModal(null));
   main.querySelectorAll('[data-action="paste-clubs"]').forEach(b=>b.onclick=()=>openPasteClubsModal());
+  main.querySelectorAll('[data-action="stats-90minut-grupa"]').forEach(b=>b.onclick=()=>openGrupaStatsModal());
   main.querySelectorAll('[data-action="edit-club"]').forEach(b=>b.onclick=()=>openClubModal(b.dataset.id));
   main.querySelectorAll('[data-action="delete-club"]').forEach(b=>b.onclick=async()=>{
     if(confirm('Usunąć ten klub?')){
@@ -11938,16 +12039,27 @@ function open90minutStatsModal(clubId){
       ${wynik && wynik.ok ? `
         <div style="background:var(--card-soft);border:1px solid var(--border);border-radius:8px;padding:10px;font-size:12.5px;">
           <div>${esc(wynik.rozgrywki || wynik.liga || '')}</div>
-          <div style="margin-top:4px;">Sprawdzonych meczów: <strong>${wynik.sprawdzoneMecze}</strong>
+          <div style="margin-top:4px;">Sprawdzonych meczów: <strong>${wynik.sprawdzoneMecze}</strong>${
+            wynik.meczeKlubu && wynik.meczeKlubu !== wynik.sprawdzoneMecze ? ` z ${wynik.meczeKlubu} rozegranych` : ''}
           &middot; zawodników odczytanych z 90minut: <strong>${wynik.zawodnikowNa90minut}</strong>
           &middot; do zapisania: <strong>${wynik.doZapisu}</strong>
           ${wynik.zapisani ? ` &middot; <span style="color:var(--heading);font-weight:700;">zapisanych: ${wynik.zapisani}</span>` : ''}</div>
         </div>
+        ${wynik.zProtokolow && wynik.zProtokolow.length ? `<div style="border-left:3px solid var(--gold-dark);padding:8px 12px;margin-top:10px;background:var(--card-soft);font-size:12px;">
+          <strong>Policzone z protokołów — ${wynik.zProtokolow.length}:</strong>
+          <div style="margin-top:4px;line-height:1.7;">${wynik.zProtokolow.map(n=>esc(n)).join(' &middot; ')}</div>
+          <div class="note" style="margin-top:4px;">Ich zbiorcza tabela występów na 90minut nie jest jeszcze przeliczona (robią to wolontariusze, zwykle z kilkudniowym opóźnieniem), więc mecze i minuty policzyłem wprost z protokołów. Bramek stamtąd nie da się odczytać — te pola zostawiam nietknięte.</div>
+        </div>` : ''}
         ${tabelaZmian(wynik)}
         ${wynik.spozaBazy.length ? `<div style="border-left:3px solid var(--gold-dark);padding:8px 12px;margin-top:10px;background:var(--card-soft);font-size:12px;">
           <strong>Zagrali w tym klubie, ale nie ma ich w kartotece — ${wynik.spozaBazy.length}:</strong>
           <div style="margin-top:6px;line-height:1.8;">
-          ${wynik.spozaBazy.map(x=>`${esc(x.kto)}${x.rocznik?` <strong>${x.rocznik}</strong>${Number(x.rocznik)>=2006?youthBadge():''}`:''} — ${x.minuty} min`).join('<br>')}</div>
+          ${wynik.spozaBazy.map(x=>`${esc(x.kto)}${x.rocznik?` <strong>${x.rocznik}</strong>${Number(x.rocznik)>=2006?youthBadge():''}`:''} — ${x.minuty} min${
+            x.powod && x.powod !== 'nie ma go w kartotece tego klubu' ? ` <span class="note">(${esc(x.powod)})</span>` : ''}`).join('<br>')}</div>
+          ${wynik.nazwiskaWKlubie && wynik.nazwiskaWKlubie.length ? `<details style="margin-top:8px;">
+            <summary style="cursor:pointer;color:var(--ink-soft);">Kogo mam w kartotece tego klubu (${wynik.nazwiskaWKlubie.length}) — sprawdź, czy to nie ta sama osoba w innej pisowni</summary>
+            <div class="note" style="margin-top:4px;line-height:1.7;">${wynik.nazwiskaWKlubie.map(n=>esc(n)).join(' &middot; ')}</div>
+          </details>` : ''}
           <button class="gold" data-x="dopisz" style="margin-top:10px;" ${pracuje?'disabled':''}>${pracuje==='zapis'?'Dopisuję…':`+ Dopisz całą tę ${wynik.spozaBazy.length}-osobową listę do klubu`}</button>
         </div>` : ''}
         ${wynik.niejednoznaczni.length ? `<div style="border-left:3px solid var(--clay-dark);padding:8px 12px;margin-top:10px;background:var(--card-alert);font-size:12px;">
@@ -11963,12 +12075,18 @@ function open90minutStatsModal(clubId){
           <p style="margin:6px 0 0;">Dla Ekstraklasy dokładniejsze jest płatne API (liczy doliczony czas), więc nie cofam
           jego danych. ${wynik.pominietiGorsze.slice(0,6).map(x=>`${esc(x.kto)} <span class="meta">(mamy ${esc(x.mamy)}, 90minut ${esc(x.z90)})</span>`).join(' &nbsp;·&nbsp; ')}</p>
         </div>` : ''}
+        ${wynik.innyRocznik && wynik.innyRocznik.length ? `<div style="border-left:3px solid var(--gold-dark);padding:8px 12px;margin-top:10px;background:var(--card-soft);font-size:12px;">
+          <strong>Rocznik się różni — ${wynik.innyRocznik.length}:</strong>
+          <div style="margin-top:4px;line-height:1.7;">${wynik.innyRocznik.map(x=>`${esc(x.kto)}: u nas ${esc(String(x.uNas))}, na 90minut ${esc(String(x.na90minut))}`).join(' &middot; ')}</div>
+          <div class="note" style="margin-top:4px;">Dorobek zapisałem — w klubie jest tylko jeden zawodnik o tym nazwisku. Rocznika NIE nadpisuję: sprawdź, która data jest prawdziwa, i popraw ręcznie.</div>
+        </div>` : ''}
         ${wynik.bezDanych && wynik.bezDanych.length ? `<details style="margin-top:10px;font-size:12px;">
           <summary style="cursor:pointer;color:var(--ink-soft);">Bez liczb z tego pobrania — ${wynik.bezDanych.length} zawodników (kliknij, żeby sprawdzić)</summary>
           <p class="note" style="margin:8px 0 6px;">90minut nie wymienił ich w sprawdzonych protokołach. Zwykle znaczy to,
           że nie zagrali — ale jeśli ktoś tu jest, a wiesz, że grał, to znak, że jego nazwisko w kartotece
           różni się od zapisu na 90minut. Wtedy popraw pisownię w profilu i pobierz jeszcze raz.</p>
           <div>${wynik.bezDanych.map(x=>`${esc(x.kto)}${x.rocznik?` <span class="meta">(${esc(String(x.rocznik))})</span>`:''}`).join(' &nbsp;·&nbsp; ')}</div>
+          <div class="note" style="margin-top:6px;">90minut wymienia tylko zawodników, którzy byli w kadrze meczowej — kto nie znalazł się w protokole, nie ma tu liczb. Pełny skład bierz z „Łączy nas piłka" (karta „Pełny oficjalny skład" wyżej).</div>
         </details>` : ''}
         ${wynik.bledyZapisu && wynik.bledyZapisu.length ? `<p class="note" style="font-size:11.5px;margin-top:8px;color:var(--clay-dark);">
           Nie udało się zapisać: ${wynik.bledyZapisu.map(b=>esc(b.kto)).join(', ')}</p>` : ''}

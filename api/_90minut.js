@@ -296,10 +296,13 @@ export function czlonyKlubu(nazwa) {
   }
   return { slowa, numer };
 }
-export function toSamKlub(a, b) {
+export function toSamKlub(a, b, opcje) {
   const A = czlonyKlubu(a), B = czlonyKlubu(b);
   if (!A.slowa.length || !B.slowa.length) return false;
-  if (A.numer !== B.numer) return false;
+  // ignorujNumer: dla wierszy w tabeli występów zawodnika, gdzie rezerwy bywają podpisane nazwą
+  // klubu bez „II". Wywołujący musi wtedy sam sprawdzić poziom rozgrywek — samo pominięcie numeru
+  // pozwoliłoby wziąć dorobek pierwszej drużyny.
+  if (!(opcje && opcje.ignorujNumer) && A.numer !== B.numer) return false;
   // Jedna strona bywa krótsza („Wda" kontra „KP Wda Świecie"), więc wystarczy, że KAŻDE słowo
   // krótszej nazwy stoi w dłuższej. Wspólna część musi mieć ze cztery znaki, żeby „II Łódź"
   // nie sklejało się z pierwszym lepszym klubem z Łodzi.

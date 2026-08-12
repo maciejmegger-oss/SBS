@@ -242,21 +242,69 @@ export default async function handler(req, res) {
   }
 
   // --- 3. STRONY ZAWODNIKÓW -> SUMY SEZONOWE ---
+  //
+  // SUMY ZE STRONY ZAWODNIKA POTRAFIĄ BYĆ SPÓŹNIONE. 90minut prowadzą wolontariusze: protokół
+  // meczu pojawia się od razu, a zbiorcza tabela występów bywa przeliczona kilka dni później.
+  // Stąd „rozegrane dwie kolejki, a w aplikacji jedna". Dlatego liczby z protokołów (przebieg)
+  // traktujemy jako drugie źródło i bierzemy WIĘKSZĄ wartość — ale tylko wtedy, gdy protokoły
+  // objęły CAŁY sezon klubu. Przy dłuższym sezonie pobieramy ostatnie dwadzieścia kolejek, więc
+  // ich suma byłaby niepełna i zaniżałaby dorobek.
+  const pelnySezonWProtokolach = wybrane.length === mecze.length;
+  const zProtokolow = (id) => {
+    const lista = przebiegWg90.get(id) || [];
+    if (!lista.length) return null;
+    return {
+      wystepy: lista.filter((w) => (Number(w.minuty) || 0) > 0).length,
+      minuty: lista.reduce((sum, w) => sum + (Number(w.minuty) || 0), 0),
+      zolte: lista.reduce((sum, w) => sum + (Number(w.zolte) || 0), 0),
+      czerwone: lista.reduce((sum, w) => sum + (Number(w.czerwone) || 0), 0),
+    };
+  };
+
   const lista = [...zawodnicy90.values()];
+  const bezWierszaSezonu = [];
   const statystyki = await porcjami(lista, RÓWNOLEGLE, async (z) => {
     const adres = `http://www.90minut.pl/wystepy.php?id=${z.id}` + (z.sezon ? `&id_sezon=${z.sezon}` : "");
-    try {
-      const dane = parseWystepyZawodnika(await pobierzZ90minut(adres));
-      // Wiersz „RAZEM" zlicza ligę razem z pucharem. Chcemy wiersz samych rozgrywek ligowych,
-      // a podsumowania używamy tylko wtedy, gdy innego wiersza nie ma.
-      const ligowy = dane.sezony.find((s) => !s.podsumowanie && toSamKlub(s.klub, klub.name) && /liga|ekstraklasa/i.test(s.rozgrywki))
-        || dane.sezony.find((s) => !s.podsumowanie && toSamKlub(s.klub, klub.name))
-        || dane.sezony.find((s) => s.podsumowanie);
-      if (!ligowy) return null;
-      return { ...z, nazwaPelna: dane.nazwa || z.nazwa, rocznik: dane.rocznik, ...ligowy, adres };
-    } catch {
-      return null;
+    const zProtokolu = zProtokolow(z.id);
+    let dane = null;
+    try { dane = parseWystepyZawodnika(await pobierzZ90minut(adres)); } catch { /* strona zawodnika niedostępna */ }
+    // Wiersz „RAZEM" zlicza ligę razem z pucharem. Chcemy wiersz samych rozgrywek ligowych,
+    // a podsumowania używamy tylko wtedy, gdy innego wiersza nie ma.
+    //
+    // Przy drużynach rezerw numer bywa zapisany tylko po jednej stronie („Raków II Częstochowa"
+    // w protokole, „Raków Częstochowa" w tabeli występów), więc na końcu dopuszczamy dopasowanie
+    // BEZ numeru — ale wtedy wymagamy zgodnego poziomu rozgrywek, żeby nie wziąć wiersza z innej ligi.
+    const poziom = poziomRozgrywek(klub.league);
+    const ligowy = dane && (
+      dane.sezony.find((s) => !s.podsumowanie && toSamKlub(s.klub, klub.name) && /liga|ekstraklasa/i.test(s.rozgrywki))
+      || dane.sezony.find((s) => !s.podsumowanie && toSamKlub(s.klub, klub.name))
+      || dane.sezony.find((s) => !s.podsumowanie && toSamKlub(s.klub, klub.name, { ignorujNumer: true })
+           && poziom && poziomRozgrywek(s.rozgrywki) === poziom)
+      || dane.sezony.find((s) => s.podsumowanie)
+    );
+
+    if (!ligowy) {
+      // Zawodnik JEST w protokołach, tylko jego tabela występów jeszcze o tym nie wie (albo pisze
+      // klub inaczej). Do niedawna wypadał tu po cichu i zostawał bez minut. Skoro mamy protokoły
+      // całego sezonu, liczymy jego dorobek z nich — bez bramek, bo protokół ich nie wymienia,
+      // a wpisanie zera skasowałoby liczbę wprowadzoną ręcznie.
+      if (!pelnySezonWProtokolach || !zProtokolu) return null;
+      bezWierszaSezonu.push(z.nazwa || String(z.id));
+      return {
+        ...z, nazwaPelna: (dane && dane.nazwa) || z.nazwa, rocznik: dane ? dane.rocznik : null,
+        klub: klub.name, rozgrywki: klub.league, wystepy: zProtokolu.wystepy, minuty: zProtokolu.minuty,
+        gole: null, zolte: zProtokolu.zolte, czerwone: zProtokolu.czerwone, adres, zProtokolow: true,
+      };
     }
+
+    const wyrownany = { ...ligowy };
+    if (pelnySezonWProtokolach && zProtokolu) {
+      wyrownany.wystepy = Math.max(ligowy.wystepy || 0, zProtokolu.wystepy);
+      wyrownany.minuty = Math.max(ligowy.minuty || 0, zProtokolu.minuty);
+      wyrownany.zolte = Math.max(ligowy.zolte || 0, zProtokolu.zolte);
+      wyrownany.czerwone = Math.max(ligowy.czerwone || 0, zProtokolu.czerwone);
+    }
+    return { ...z, nazwaPelna: dane.nazwa || z.nazwa, rocznik: dane.rocznik, ...wyrownany, adres };
   });
   const zeStatystykami = statystyki.filter(Boolean);
 
@@ -276,30 +324,81 @@ export default async function handler(req, res) {
     wgNazwiska.get(k).push(g);
   });
 
-  const doZapisu = [], spozaBazy = [], niejednoznaczni = [], pominietiGorsze = [];
+  // Wszystkie człony nazwy, każdy osobno — do dopasowania po nazwisku, gdy imiona zapisano inaczej.
+  const czlonyNazwy = (s) => String(s || "").split(/\s+/).map(normalizujNazwe).filter((w) => w.length >= 3);
+  // Odległość edycyjna: „Żołneczko" kontra „Żołnieczko" to jedna litera różnicy, a dla człowieka
+  // ten sam zawodnik. Liczymy ją dopiero na końcu, gdy dokładne dopasowanie zawiodło.
+  const odlegloscEdycyjna = (a, b) => {
+    if (a === b) return 0;
+    if (Math.abs(a.length - b.length) > 2) return 9;
+    const wiersz = Array.from({ length: b.length + 1 }, (_, i) => i);
+    for (let i = 1; i <= a.length; i++) {
+      let poprzedni = wiersz[0];
+      wiersz[0] = i;
+      for (let j = 1; j <= b.length; j++) {
+        const zapas = wiersz[j];
+        wiersz[j] = Math.min(wiersz[j] + 1, wiersz[j - 1] + 1, poprzedni + (a[i - 1] === b[j - 1] ? 0 : 1));
+        poprzedni = zapas;
+      }
+    }
+    return wiersz[b.length];
+  };
+
+  const doZapisu = [], spozaBazy = [], niejednoznaczni = [], pominietiGorsze = [], innyRocznik = [];
   for (const z of zeStatystykami) {
+    // Powód rozstania z zawodnikiem zapisujemy po drodze — inaczej lista „zagrali, ale nie ma ich
+    // w kartotece" nie mówi, czy chodzi o zawodnika spoza bazy, o inną pisownię nazwiska,
+    // czy o rocznik, który się nie zgadza. A to trzy zupełnie różne rzeczy do zrobienia.
+    let powod = "nie ma go w kartotece tego klubu";
     let kandydaci = wgNazwiska.get(kluczNazwiska(z.nazwaPelna)) || [];
     if (!kandydaci.length && z.nazwa) kandydaci = wgNazwiska.get(kluczNazwiska(z.nazwa)) || [];
     if (!kandydaci.length) {
       // DOPASOWANIE PO SAMYM NAZWISKU — potrzebne, gdy imię zapisane jest inaczej po obu stronach
       // („Mateusz" kontra „Mateusz Robert", zdrobnienia, drugie imię).
       //
-      // Porównujemy KAŻDY człon nazwy, nie tylko ostatni. 90minut pisze „Nazwisko Imię", nasza
-      // baza trzyma „Imię Nazwisko" — branie ostatniego słowa oznaczało szukanie zawodnika
-      // o nazwisku „Mateusz" i cichy brak trafienia przy każdym takim wpisie.
-      const czlony = String(z.nazwaPelna || "")
-        .split(/\s+/).map(normalizujNazwe).filter((w) => w.length >= 4);
+      // Porównujemy KAŻDY człon nazwy z KAŻDYM członem nazwy w kartotece. 90minut pisze
+      // „Nazwisko Imię", nasza baza trzyma „Imię Nazwisko", a zdarza się i pełna nazwa w jednym
+      // polu — branie samego last_name gubiło wszystkie takie wpisy.
+      const czlony = czlonyNazwy(z.nazwaPelna).concat(czlonyNazwy(z.nazwa));
       if (czlony.length) {
-        kandydaci = nasiZawodnicy.filter((g) => czlony.includes(normalizujNazwe(g.last_name)));
-        // Nazwisko bywa czyimś imieniem, więc gdy obie strony znają rocznik i on się nie zgadza,
-        // trafienie odrzucamy — lepiej zgłosić „nie znalazłem" niż wpisać komuś cudzy dorobek.
-        if (kandydaci.length && z.rocznik) {
+        kandydaci = nasiZawodnicy.filter((g) =>
+          czlonyNazwy(`${g.first_name || ""} ${g.last_name || ""}`).some((w) => w.length >= 4 && czlony.includes(w)));
+
+        // Rocznik jest ROZSTRZYGACZEM, a nie warunkiem wstępnym. Wcześniej odrzucał trafienie
+        // nawet wtedy, gdy w klubie był tylko jeden zawodnik o tym nazwisku — a rok urodzenia
+        // w kartotece bywa po prostu przepisany z błędem. Przy jednym kandydacie ufamy nazwisku
+        // i mówimy o rozbieżności wprost; przy kilku rozstrzyga rocznik, bo wtedy naprawdę
+        // odróżnia braci i imienników.
+        if (kandydaci.length > 1 && z.rocznik) {
           const zgodni = kandydaci.filter((g) => !g.birth_year || Number(g.birth_year) === Number(z.rocznik));
-          kandydaci = zgodni;
+          if (zgodni.length) kandydaci = zgodni;
         }
       }
     }
-    if (!kandydaci.length) { spozaBazy.push({ kto: z.nazwaPelna, rocznik: z.rocznik, minuty: z.minuty, adres: z.adres }); continue; }
+    if (!kandydaci.length) {
+      // OSTATNIA PRÓBA: różnica w pisowni nazwiska (jedna litera). „Mirczetić" kontra „Mirčetić",
+      // „Żołneczko" kontra „Żołnieczko" — dla nas ten sam człowiek, dla porównania znak w znak nie.
+      const czlony = czlonyNazwy(z.nazwaPelna).filter((w) => w.length >= 5);
+      const bliscy = nasiZawodnicy.filter((g) =>
+        czlonyNazwy(`${g.first_name || ""} ${g.last_name || ""}`)
+          .some((w) => w.length >= 5 && czlony.some((c) => odlegloscEdycyjna(c, w) === 1)));
+      if (bliscy.length === 1) {
+        kandydaci = bliscy;
+        powod = "";
+      } else if (bliscy.length > 1) {
+        powod = "kilku podobnych w kartotece: " + bliscy.map((g) => `${g.last_name} ${g.first_name}`).join(", ");
+      }
+    }
+    if (!kandydaci.length) {
+      spozaBazy.push({ kto: z.nazwaPelna, rocznik: z.rocznik, minuty: z.minuty, adres: z.adres, powod });
+      continue;
+    }
+    // Rocznik po obu stronach bywa różny — trafienie zostaje (nazwisko w klubie jest jedno),
+    // ale mówimy o tym wprost, bo to zwykle literówka w kartotece do poprawienia.
+    if (kandydaci.length === 1 && z.rocznik && kandydaci[0].birth_year
+        && Number(kandydaci[0].birth_year) !== Number(z.rocznik)) {
+      innyRocznik.push({ kto: z.nazwaPelna, uNas: kandydaci[0].birth_year, na90minut: z.rocznik });
+    }
     // Przy imiennikach rozstrzyga rocznik — w jednym klubie zdarzają się bracia i kuzyni.
     if (kandydaci.length > 1 && z.rocznik) {
       const wRoczniku = kandydaci.filter((g) => Number(g.birth_year) === Number(z.rocznik));
@@ -327,8 +426,11 @@ export default async function handler(req, res) {
     // ekstraklasowym cofałoby dorobek: 219 minut na 218, 234 na 233, 262 na 261. Wygląda to
     // niewinnie, a jest cichym psuciem lepszych danych gorszymi.
     const zApiFootball = /API-Football/i.test(ext.statsSource || "");
+    // Bramek nie znamy, gdy dorobek policzyliśmy z samych protokołów — wtedy zostawiamy pole
+    // nietknięte i nie porównujemy go z niczym (null to „nie wiem", a nie „zero").
+    const goleZnane = z.gole !== null && z.gole !== undefined;
     const gorszeNizMamy = zApiFootball
-      && ((g.minutes || 0) > z.minuty || (g.matches || 0) > z.wystepy || (g.goals || 0) > z.gole);
+      && ((g.minutes || 0) > z.minuty || (g.matches || 0) > z.wystepy || (goleZnane && (g.goals || 0) > z.gole));
     if (gorszeNizMamy) {
       pominietiGorsze.push({ kto: `${g.last_name} ${g.first_name}`,
         mamy: `${g.matches} m / ${g.minutes} min`, z90: `${z.wystepy} m / ${z.minuty} min` });
@@ -348,7 +450,8 @@ export default async function handler(req, res) {
     const przebiegBezZmian = skrot(ext.przebieg) === skrot(przebieg);
 
     const bezZmian =
-      (g.matches || 0) === z.wystepy && (g.minutes || 0) === z.minuty && (g.goals || 0) === z.gole
+      (g.matches || 0) === z.wystepy && (g.minutes || 0) === z.minuty
+      && (!goleZnane || (g.goals || 0) === z.gole)
       && (ext.yellowCards || 0) === z.zolte && (ext.redCards || 0) === z.czerwone
       && !brakujeRocznika && przebiegBezZmian;
     if (bezZmian) continue;
@@ -356,7 +459,9 @@ export default async function handler(req, res) {
       id: g.id, kto: `${g.last_name} ${g.first_name}`, ext, custom_fields: g.custom_fields,
       rocznik: brakujeRocznika ? z.rocznik : null,
       bylo: { mecze: g.matches, minuty: g.minutes, gole: g.goals, zolte: ext.yellowCards, czerwone: ext.redCards },
-      bedzie: { mecze: z.wystepy, minuty: z.minuty, gole: z.gole, zolte: z.zolte, czerwone: z.czerwone },
+      bedzie: { mecze: z.wystepy, minuty: z.minuty, gole: goleZnane ? z.gole : g.goals,
+                zolte: z.zolte, czerwone: z.czerwone },
+      goleZnane, zProtokolow: !!z.zProtokolow,
       m90Id: z.id, przebieg,
     });
   }
@@ -381,7 +486,7 @@ export default async function handler(req, res) {
     for (const p of doZapisu) {
       const sezony = { ...(p.ext.seasonStats || {}) };
       sezony[etykietaSezonu] = {
-        mecze: p.bedzie.mecze, minuty: p.bedzie.minuty, gole: p.bedzie.gole,
+        mecze: p.bedzie.mecze, minuty: p.bedzie.minuty, gole: p.goleZnane ? p.bedzie.gole : (p.bylo.gole ?? null),
         zolte: p.bedzie.zolte, czerwone: p.bedzie.czerwone,
         // Asyst nie ruszamy — 90minut ich nie podaje, a wyzerowanie skasowałoby wpisy ręczne.
         asysty: p.ext.assists ?? null,
@@ -399,9 +504,13 @@ export default async function handler(req, res) {
         statsUpdatedAt: dzis, statsSource: `90minut (${klub.league})`, statsSeason: etykietaSezonu,
       };
       const doWyslania = {
-        matches: p.bedzie.mecze, minutes: p.bedzie.minuty, goals: p.bedzie.gole,
+        matches: p.bedzie.mecze, minutes: p.bedzie.minuty,
         custom_fields: { ...(p.custom_fields || {}), __ext: ext },
       };
+      // Bramki wysyłamy tylko wtedy, gdy naprawdę je odczytaliśmy. Zawodnik policzony z protokołów
+      // (bo jego tabela występów jeszcze nie istnieje) miałby inaczej wpisane zero na miejsce liczby,
+      // którą ktoś wprowadził ręcznie.
+      if (p.goleZnane) doWyslania.goals = p.bedzie.gole;
       if (p.rocznik) doWyslania.birth_year = p.rocznik;
       zadaniaZapisu.push({ p, doWyslania });
     }
@@ -446,7 +555,12 @@ export default async function handler(req, res) {
     rozgrywki: rozgrywkiNagl,
     stronaLigi,
     sprawdzoneMecze: wybrane.length,
-    zawodnikowNa90minut: zeStatystykami.length,
+    meczeKlubu: mecze.length,
+    pelnySezonWProtokolach,
+    // Zawodnicy, których dorobek policzyliśmy z samych protokołów, bo ich tabela występów na
+    // 90minut jeszcze nie została przeliczona. To najczęstsza przyczyna „rozegrane dwie kolejki,
+    // a w aplikacji jedna" — warto ją pokazać wprost, a nie milczeć.
+    zProtokolow: bezWierszaSezonu,
     doZapisu: doZapisu.length,
     zapisani,
     rocznikiDoUzupelnienia: doZapisu.filter((p) => p.rocznik).length,
@@ -458,7 +572,11 @@ export default async function handler(req, res) {
     })),
     spozaBazy,
     niejednoznaczni,
+    innyRocznik,
     bezDanych,
+    // Nazwiska, które mam w kartotece tego klubu — żeby przy „nie ma go w kartotece" dało się
+    // jednym spojrzeniem sprawdzić, czy to naprawdę nowy zawodnik, czy tylko inna pisownia.
+    nazwiskaWKlubie: nasiZawodnicy.map((g) => `${g.last_name || ""} ${g.first_name || ""}`.trim()).filter(Boolean),
     // Gotowe do wysłania z powrotem pod „Zapisz" — patrz ścieżka szybkiego zapisu na górze pliku.
     pakiet: zapisz ? undefined : zadaniaZapisu.map(({ p, doWyslania }) => ({ id: p.id, kto: p.kto, dane: doWyslania })),
     bledyZapisu,
