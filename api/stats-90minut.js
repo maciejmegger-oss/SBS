@@ -17,7 +17,7 @@
 // zostaje nietknięte, żeby nie skasować liczb wpisanych ręcznie.
 import {
   ZRODLA_LIG, poziomRozgrywek, pobierzZ90minut, parseLinkiMeczow, parseSkladyMeczu,
-  parseWystepyZawodnika, normalizujNazwe,
+  parseWystepyZawodnika, normalizujNazwe, minutyZWpisu,
 } from "./_90minut.js";
 
 import { BAZA, KLUCZ_BAZY, naglowkiDlaZadania, maDostepDoBazy, PODPOWIEDZ_BRAK_KLUCZA } from "./_baza.js";
@@ -28,7 +28,11 @@ const kluczNazwiska = (s) =>
 // 90minut to serwis prowadzony społecznie, nie komercyjne API. Pobieramy najwyżej kilka stron
 // naraz i tylko tyle, ile trzeba — zalewanie go zapytaniami byłoby zwyczajnym nadużyciem.
 const RÓWNOLEGLE = 4;
-const MAKS_MECZOW = 6;
+// Protokoły służą do dwóch rzeczy: ustalenia, kogo w tym klubie szukać, oraz zbudowania PRZEBIEGU
+// SEZONU zawodnika (ile minut w którym meczu) — a ten ma sens dopiero na dłuższym odcinku, nie na
+// sześciu ostatnich kolejkach. Dwadzieścia stron pobieranych czwórkami to pięć przebiegów, czyli
+// wciąż kilka sekund i wciąż uprzejme wobec serwisu prowadzonego społecznie.
+const MAKS_MECZOW = 20;
 
 async function porcjami(elementy, ile, praca) {
   const wynik = [];
@@ -164,9 +168,8 @@ export default async function handler(req, res) {
     });
   }
 
-  // Bierzemy kilka ostatnich meczów, nie wszystkie. Liczby i tak pochodzą ze stron zawodników
-  // (sumy za cały sezon) — protokoły służą wyłącznie do ustalenia, kogo w tym klubie szukać,
-  // a kilka spotkań wystarczy, żeby pojawił się cały rotujący skład.
+  // Bierzemy ostatnie mecze, nie wszystkie. Sumy sezonowe i tak pochodzą ze stron zawodników,
+  // a protokoły dokładają dwie rzeczy: skład (kogo szukać) i minuty mecz po meczu na wykres.
   const wybrane = mecze.slice(-MAKS_MECZOW);
 
   // --- 2. SKŁADY -> IDENTYFIKATORY ZAWODNIKÓW ---
@@ -176,6 +179,11 @@ export default async function handler(req, res) {
   });
 
   const zawodnicy90 = new Map();   // id -> {id, sezon, nazwa, numer}
+  // PRZEBIEG SEZONU: dla każdego zawodnika lista meczów z liczbą rozegranych minut. To materiał
+  // na wykres dostępności w profilu — pełne 90 minut, wejście z ławki i mecz opuszczony wyglądają
+  // na nim inaczej, a sama suma minut tego nie pokazuje.
+  const przebiegWg90 = new Map();  // id -> Map(idMeczu -> wpis)
+  const naszeMecze = [];           // spotkania klubu w kolejności rozegrania
   let rozgrywkiNagl = "";
   for (const s of skladyHtml) {
     if (s.error) continue;
@@ -183,11 +191,33 @@ export default async function handler(req, res) {
     rozgrywkiNagl = rozgrywkiNagl || p.rozgrywki;
     // Która strona to nasz klub? Rozstrzyga nazwa z samego protokołu, a nie zgadywanie
     // z podpowiedzi odnośnika.
-    let nasi = null;
-    if (toSamKlub(p.gospodarzeNazwa, klub.name)) nasi = p.gospodarze;
-    else if (toSamKlub(p.goscieNazwa, klub.name)) nasi = p.goscie;
+    let nasi = null, dom = false;
+    if (toSamKlub(p.gospodarzeNazwa, klub.name)) { nasi = p.gospodarze; dom = true; }
+    else if (toSamKlub(p.goscieNazwa, klub.name)) { nasi = p.goscie; dom = false; }
     if (!nasi) continue;
-    nasi.forEach((z) => { if (!zawodnicy90.has(z.id)) zawodnicy90.set(z.id, z); });
+    const opis = {
+      mecz: s.m.id, data: p.data || "",
+      kolejka: Number((p.rozgrywki.match(/Kolejka\s*(\d+)/i) || [])[1]) || null,
+      rywal: (dom ? p.goscieNazwa : p.gospodarzeNazwa) || "", dom, wynik: p.wynik || "",
+    };
+    naszeMecze.push(opis);
+    nasi.forEach((z) => {
+      if (!zawodnicy90.has(z.id)) zawodnicy90.set(z.id, z);
+      if (!przebiegWg90.has(z.id)) przebiegWg90.set(z.id, new Map());
+      przebiegWg90.get(z.id).set(opis.mecz, {
+        ...opis, minuty: minutyZWpisu(z), odMinuty: z.wszedl, doMinuty: z.zszedl,
+        podstawowy: !!z.podstawowy, zolte: z.zolte, czerwone: z.czerwone,
+      });
+    });
+  }
+
+  // Mecz, w którym zawodnika nie było w protokole, też jest informacją — na wykresie to zero.
+  // Dlatego każdą listę uzupełniamy o wszystkie spotkania klubu, w kolejności rozegrania.
+  const porzadekMeczu = (m) => (m.data || "") + "|" + String(m.kolejka ?? "").padStart(3, "0");
+  naszeMecze.sort((a, b) => porzadekMeczu(a).localeCompare(porzadekMeczu(b)));
+  for (const [id, wgMeczu] of przebiegWg90) {
+    przebiegWg90.set(id, naszeMecze.map((m) => wgMeczu.get(m.mecz)
+      || { ...m, minuty: 0, odMinuty: null, doMinuty: null, podstawowy: false, zolte: 0, czerwone: 0 }));
   }
 
   if (!zawodnicy90.size) {
@@ -298,17 +328,23 @@ export default async function handler(req, res) {
     // a przy sprzeczności wpis człowieka jest bardziej wiarygodny niż odczyt ze strony.
     const brakujeRocznika = !g.birth_year && !!z.rocznik;
 
+    // Przebieg sezonu potrafi się zmienić, choć sumy zostały te same — np. gdy poprzednie
+    // pobranie objęło mniej kolejek. Dlatego liczy się do „czy jest co zapisywać".
+    const przebieg = przebiegWg90.get(z.id) || [];
+    const skrot = (lista) => (lista || []).map((w) => `${w.mecz}:${w.minuty}`).join(",");
+    const przebiegBezZmian = skrot(ext.przebieg) === skrot(przebieg);
+
     const bezZmian =
       (g.matches || 0) === z.wystepy && (g.minutes || 0) === z.minuty && (g.goals || 0) === z.gole
       && (ext.yellowCards || 0) === z.zolte && (ext.redCards || 0) === z.czerwone
-      && !brakujeRocznika;
+      && !brakujeRocznika && przebiegBezZmian;
     if (bezZmian) continue;
     doZapisu.push({
       id: g.id, kto: `${g.last_name} ${g.first_name}`, ext, custom_fields: g.custom_fields,
       rocznik: brakujeRocznika ? z.rocznik : null,
       bylo: { mecze: g.matches, minuty: g.minutes, gole: g.goals, zolte: ext.yellowCards, czerwone: ext.redCards },
       bedzie: { mecze: z.wystepy, minuty: z.minuty, gole: z.gole, zolte: z.zolte, czerwone: z.czerwone },
-      m90Id: z.id,
+      m90Id: z.id, przebieg,
     });
   }
 
@@ -343,6 +379,10 @@ export default async function handler(req, res) {
         yellowCards: p.bedzie.zolte, redCards: p.bedzie.czerwone,
         seasonStats: sezony,
         m90Id: p.m90Id,
+        // Minuty mecz po meczu — źródło wykresu dostępności w profilu i w raporcie PDF.
+        // Pustej listy nie zapisujemy, żeby nie skasować wcześniej pobranego przebiegu.
+        przebieg: (p.przebieg && p.przebieg.length) ? p.przebieg : p.ext.przebieg,
+        przebiegSezon: etykietaSezonu,
         statsUpdatedAt: dzis, statsSource: `90minut (${klub.league})`, statsSeason: etykietaSezonu,
       };
       const doWyslania = {

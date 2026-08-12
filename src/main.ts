@@ -3644,6 +3644,11 @@ function viewPlayerDetail(id){
   <div class="card">
     <h4 style="margin-top:0;color:var(--heading);">⚡ Szybkie statystyki sezonu${
       p.statsSeason ? ` <span class="note" style="font-weight:400;">— ${esc(p.statsSeason)}</span>` : ''}</h4>
+    ${(p.przebieg && p.przebieg.length) ? `<div style="margin-bottom:12px;">
+      <div class="note" style="margin-bottom:2px;">Minuty w kolejnych meczach${p.przebiegSezon?' — sezon '+esc(p.przebiegSezon):''}:</div>
+      <div style="overflow-x:auto;">${wykresMinut(p.przebieg)}</div>
+      <div class="note" style="margin-top:2px;">${podsumowanieMinut(p.przebieg)}</div>
+    </div>` : ''}
     ${poprzednieSezonyHtml(p)}
     <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;">
       <div class="field-wrap" style="margin-bottom:8px;"><label class="field">Mecze</label><input type="number" min="0" id="qs-matches" value="${p.matches!=null?p.matches:''}"></div>
@@ -4474,6 +4479,78 @@ function poprzednieSezonyHtml(p){
       </tr>`;
     }).join('')}</tbody></table>
   </div>`;
+}
+
+// WYKRES MINUT — DOSTĘPNOŚĆ ZAWODNIKA MECZ PO MECZU.
+//
+// Suma „1 240 minut w sezonie" nic nie mówi o tym, JAK te minuty powstały: czy zawodnik gra pełne
+// spotkania, wchodzi z ławki, czy właśnie wypadł na miesiąc. Słupek na mecz pokazuje to od razu —
+// pełne 90 minut sięga góry skali, wejście na kwadrans jest niskie, a mecz opuszczony to pusta
+// kreska przy podstawie. Dane biorą się z protokołów 90minut (minuta wejścia i zejścia).
+function wykresMinut(przebieg, opcje){
+  const o = opcje || {};
+  const lista = (przebieg || []).filter(Boolean);
+  if(!lista.length) return '';
+  const MAKS = 90;
+  const wysokosc = o.wysokosc || 132;
+  const szerSlupka = o.szerSlupka || 22;
+  const odstep = 5;
+  const marginesLewy = 26, marginesDol = o.podpisy === false ? 8 : 26, marginesGora = 14;
+  const w = marginesLewy + lista.length*(szerSlupka+odstep) + 8;
+  const h = wysokosc + marginesDol + marginesGora;
+  const kolorPelne = o.pelne || 'var(--pitch)';
+  const kolorCzesc = o.czesc || 'var(--gold)';
+  const kolorBrak  = o.brak  || 'var(--chalk-dim)';
+  const kolorSiatka = o.siatka || 'var(--border-strong)';
+  const kolorPodpis = o.podpis || 'var(--ink-soft)';
+
+  const yDla = (min)=> marginesGora + wysokosc - (Math.max(0, Math.min(MAKS, min))/MAKS)*wysokosc;
+  const linie = [0, 45, 90].map(v=>{
+    const y = yDla(v);
+    return `<line x1="${marginesLewy}" y1="${y.toFixed(1)}" x2="${w-4}" y2="${y.toFixed(1)}" stroke="${kolorSiatka}" stroke-width="${v===0?1.2:0.7}" ${v===45?'stroke-dasharray="3 3"':''}/>
+      <text x="${marginesLewy-5}" y="${(y+3.5).toFixed(1)}" font-size="9" fill="${kolorPodpis}" text-anchor="end" font-family="Inter,Arial,sans-serif">${v}</text>`;
+  }).join('');
+
+  const slupki = lista.map((m,i)=>{
+    const x = marginesLewy + i*(szerSlupka+odstep);
+    const min = Math.max(0, Math.min(MAKS, Number(m.minuty)||0));
+    const y = yDla(min);
+    // Mecz bez gry rysujemy jako niską, szarą kreskę przy podstawie — pusta przerwa w rzędzie
+    // słupków wygląda jak brak danych, a to jest informacja: zawodnika nie było w protokole.
+    const wys = Math.max(min > 0 ? 2 : 4, marginesGora + wysokosc - y);
+    const kolor = min === 0 ? kolorBrak : (min >= MAKS ? kolorPelne : kolorCzesc);
+    const tytul = `${m.data||('kolejka '+(m.kolejka||i+1))} &middot; ${m.dom?'u siebie':'na wyjeździe'} z ${m.rywal||'—'}${m.wynik?' ('+m.wynik+')':''} &middot; ${min} min${
+      min>0 && !m.podstawowy ? ' (z ławki)' : ''}`;
+    const podpis = o.podpisy === false ? '' :
+      `<text x="${(x+szerSlupka/2).toFixed(1)}" y="${(marginesGora+wysokosc+11).toFixed(1)}" font-size="8.5" fill="${kolorPodpis}" text-anchor="middle" font-family="Inter,Arial,sans-serif">${esc(String(m.kolejka || (i+1)))}</text>
+       <text x="${(x+szerSlupka/2).toFixed(1)}" y="${(marginesGora+wysokosc+21).toFixed(1)}" font-size="8" fill="${kolorPodpis}" text-anchor="middle" font-family="Inter,Arial,sans-serif">${esc(skrotRywala(m.rywal))}</text>`;
+    return `<g><title>${tytul.replace(/&middot;/g,'·')}</title>
+      <rect x="${x}" y="${y.toFixed(1)}" width="${szerSlupka}" height="${wys.toFixed(1)}" rx="3" fill="${kolor}"/>
+      ${min>0 ? `<text x="${(x+szerSlupka/2).toFixed(1)}" y="${(y-3).toFixed(1)}" font-size="8.5" font-weight="700" fill="${kolorPodpis}" text-anchor="middle" font-family="Inter,Arial,sans-serif">${min}</text>` : ''}
+    </g>${podpis}`;
+  }).join('');
+
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="Minuty rozegrane w kolejnych meczach">
+    ${linie}${slupki}
+  </svg>`;
+}
+// Podpis pod słupkiem musi zmieścić się w 22 pikselach — bierzemy inicjały nazwy rywala.
+function skrotRywala(nazwa){
+  const slowa = String(nazwa||'').split(/\s+/).filter(Boolean);
+  if(!slowa.length) return '';
+  if(slowa.length === 1) return slowa[0].slice(0,4);
+  return slowa.map(s=>s[0]).join('').slice(0,4).toUpperCase();
+}
+// Podsumowanie pod wykresem: ile pełnych meczów, ile z ławki, ile opuszczonych.
+function podsumowanieMinut(przebieg){
+  const lista = (przebieg||[]).filter(Boolean);
+  if(!lista.length) return '';
+  const pelne = lista.filter(m=>(Number(m.minuty)||0) >= 90).length;
+  const zLawki = lista.filter(m=>(Number(m.minuty)||0) > 0 && !m.podstawowy).length;
+  const bez = lista.filter(m=>(Number(m.minuty)||0) === 0).length;
+  const suma = lista.reduce((s,m)=>s+(Number(m.minuty)||0),0);
+  const srednia = lista.length ? suma/lista.length : 0;
+  return `${lista.length} ${lista.length===1?'mecz':'meczów'} klubu &middot; ${pelne} pełnych &middot; ${zLawki} z ławki &middot; ${bez} bez gry &middot; średnio ${Math.round(srednia)} min`;
 }
 
 function isYouthPlayer(p){
@@ -13162,6 +13239,15 @@ async function generatePlayerPDF(playerId){
     </div>
   </div>` : ''}
 
+  ${(p.przebieg && p.przebieg.length) ? `<div class="section" style="padding-top:0;">
+    <div class="section-title">Minuty w kolejnych meczach${p.przebiegSezon?' — sezon '+esc(p.przebiegSezon):''}</div>
+    <div class="radar-box" style="align-items:flex-start;overflow:hidden;">
+      ${wykresMinut(p.przebieg.slice(-14), {szerSlupka:26, wysokosc:110,
+        pelne:'#16302A', czesc:'#C69B3C', brak:'#E7E2D3', siatka:'#E7E2D3', podpis:'#5B6560'})}
+      <p class="empty-note" style="margin:0;">${podsumowanieMinut(p.przebieg)}</p>
+    </div>
+  </div>` : ''}
+
   <div class="section">
     <div class="section-title">Oceny scoutingowe</div>
     ${a && a.overall!=null?`
@@ -13326,6 +13412,12 @@ async function generatePlayerPDF(playerId){
           if(d >= minimum && wolnoCiac(d)) najlepsze = d;
         }
         if(najlepsze) ciecie = najlepsze;
+
+        // OGON NIE ZASŁUGUJE NA WŁASNĄ KARTKĘ. Po bezpiecznym cięciu zostawała czasem sama
+        // stopka („Raport wygenerowany…") i lądowała na trzeciej, pustej stronie. Jeśli reszta
+        // treści to taki skrawek, dociągamy cięcie do końca i mieścimy go na tej stronie —
+        // obraz zmniejsza się o kilka procent, czego na wydruku nie widać.
+        if(canvas.height - ciecie > 0 && canvas.height - ciecie < stronaPx * 0.08) ciecie = canvas.height;
       }
 
       const wysokoscWycinka = Math.max(1, ciecie - y);
@@ -13334,10 +13426,19 @@ async function generatePlayerPDF(playerId){
       kawalek.height = wysokoscWycinka;
       kawalek.getContext('2d').drawImage(canvas, 0, y, canvas.width, wysokoscWycinka, 0, 0, canvas.width, wysokoscWycinka);
 
+      // Skalę liczymy z szerokości, ale gdyby wycinek był wyższy niż strona (patrz dociągnięty
+      // ogon), zmniejszamy OBIE miary — inaczej treść wyszłaby poza obszar druku albo spłaszczyła
+      // się w pionie.
+      let rysSzer = obrazSzerMm;
+      let rysWys = (wysokoscWycinka * obrazSzerMm) / canvas.width;
+      if(rysWys > obrazWysMm){
+        const k = obrazWysMm / rysWys;
+        rysWys = obrazWysMm; rysSzer = obrazSzerMm * k;
+      }
       if(!pierwsza) pdf.addPage();
       pierwsza = false;
-      pdf.addImage(kawalek.toDataURL('image/jpeg', 0.95), 'JPEG', marginesBokMm,
-        marginesGoraMm, obrazSzerMm, (wysokoscWycinka * obrazSzerMm) / canvas.width);
+      pdf.addImage(kawalek.toDataURL('image/jpeg', 0.95), 'JPEG',
+        marginesBokMm + (obrazSzerMm - rysSzer) / 2, marginesGoraMm, rysSzer, rysWys);
 
       y = ciecie;
     }

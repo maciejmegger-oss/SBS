@@ -340,7 +340,23 @@ export function parseSkladyMeczu(html) {
       const ogon = cel.slice(poczatek, koniec);
       const podpis = strip(a[3]);
       const nr = (podpis.match(/^\((\d+)\)/) || [])[1];
-      const minuta = (strip(ogon).match(/\b(\d{1,3})\b/) || [])[1];
+      // MINUTA ZMIANY DZIAŁA W OBIE STRONY. Liczba stoi w komórce między schodzącym a wchodzącym
+      // („Starzycki 61 Remisz"), więc ta sama liczba jest końcem gry jednego i początkiem gry
+      // drugiego. Czytamy ją dla KAŻDEGO wpisu, nie tylko dla wyjściowej jedenastki — bez minuty
+      // wejścia rezerwowego nie da się policzyć, ile ktoś naprawdę zagrał.
+      //
+      // Bierzemy OSTATNIĄ liczbę przed następnym nazwiskiem i tylko wtedy, gdy to nazwisko w ogóle
+      // jest. Za obrazkiem kartki też stoi minuta — gdyby liczyć pierwszą lepszą, żółta kartka
+      // w 30. minucie wyglądałaby jak zejście z boiska w 30. minucie.
+      const maNastepnego = i + 1 < trafienia.length;
+      const liczbyWOgonie = strip(ogon).match(/\b\d{1,3}\b/g) || [];
+      const minuta = maNastepnego && liczbyWOgonie.length ? liczbyWOgonie[liczbyWOgonie.length - 1] : null;
+      const poprzedni = i > 0 ? trafienia[i - 1] : null;
+      const ogonPoprzedniego = poprzedni
+        ? cel.slice(poprzedni.index + poprzedni[0].length, a.index)
+        : "";
+      const liczbyPoprzedniego = poprzedni ? (strip(ogonPoprzedniego).match(/\b\d{1,3}\b/g) || []) : [];
+      const minutaWejscia = liczbyPoprzedniego.length ? liczbyPoprzedniego[liczbyPoprzedniego.length - 1] : null;
       return {
         id: a[1],
         // Numer sezonu bierzemy wprost z odnośnika, zamiast go zgadywać — protokół sam wie,
@@ -350,7 +366,8 @@ export function parseSkladyMeczu(html) {
         nazwa: podpis.replace(/^\(\d+\)\s*/, ""),
         // Pierwszy odnośnik w komórce to zawodnik z wyjściowej jedenastki, kolejne weszły z ławki.
         podstawowy: i === 0,
-        zszedl: i === 0 && minuta ? parseInt(minuta, 10) : null,
+        zszedl: minuta ? parseInt(minuta, 10) : null,
+        wszedl: i === 0 ? 0 : (minutaWejscia ? parseInt(minutaWejscia, 10) : null),
         zolte: (ogon.match(/alt="ŻK"/g) || []).length,
         czerwone: (ogon.match(/alt="CK"/g) || []).length,
       };
@@ -366,13 +383,39 @@ export function parseSkladyMeczu(html) {
     goscie.push(...zKomorki(k[2]));
   }
 
+  // Data i wynik — potrzebne dopiero do wykresu minut, więc gdy protokół zapisano nietypowo,
+  // po prostu ich nie ma; reszta odczytu działa jak dotąd.
+  const tekst = strip(html);
+  const dataDm = tekst.match(/\b(\d{1,2})[.-](\d{1,2})[.-](\d{4})\b/);
+  const dataIso = tekst.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+  const data = dataIso
+    ? dataIso[0]
+    : (dataDm ? `${dataDm[3]}-${String(dataDm[2]).padStart(2,"0")}-${String(dataDm[1]).padStart(2,"0")}` : "");
+  const wynikM = html.match(/<b><font[^>]*>\s*(\d{1,2})\s*[:\-]\s*(\d{1,2})\s*<\/font><\/b>/i)
+    || tekst.match(/\b(\d{1,2})\s*[:\-]\s*(\d{1,2})\b/);
+  const wynik = wynikM ? `${wynikM[1]}:${wynikM[2]}` : "";
+
   return {
     rozgrywki: naglowek,
     gospodarzeNazwa: nazwy[0] || "",
     goscieNazwa: nazwy[1] || "",
+    data,
+    wynik,
     gospodarze,
     goscie,
   };
+}
+
+// Ile minut zawodnik faktycznie zagrał w tym meczu — z jednego wpisu w protokole.
+// Wyjściowa jedenastka bez zmiany gra pełne spotkanie; kto wszedł z ławki, gra od swojej minuty
+// do końca; kto zszedł — do minuty zmiany. Doliczonego czasu 90minut nie podaje, więc pełny mecz
+// to zawsze równe 90 minut.
+export function minutyZWpisu(w, dlugoscMeczu = 90) {
+  if (!w) return 0;
+  const od = Number.isFinite(w.wszedl) && w.wszedl !== null ? w.wszedl : (w.podstawowy ? 0 : null);
+  const doo = Number.isFinite(w.zszedl) && w.zszedl !== null ? w.zszedl : dlugoscMeczu;
+  if (od === null) return w.podstawowy ? dlugoscMeczu : 0;
+  return Math.max(0, Math.min(dlugoscMeczu, doo) - Math.min(od, dlugoscMeczu));
 }
 
 // Zbiorcza tabela występów ze strony zawodnika. Kolumny z bramkami i kartkami mają w nagłówku

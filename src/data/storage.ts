@@ -106,6 +106,10 @@ export const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }>
       // tam młodzież gra najwięcej. Protokół związkowy jest tu źródłem pewniejszym niż data
       // urodzenia przepisana z czyjegoś profilu.
       "mlodziezowiec",
+      // Przebieg sezonu: minuty w KAŻDYM meczu klubu, z protokołów 90minut. Zasila wykres
+      // dostępności w profilu i w raporcie PDF. Musi być na tej liście, bo inaczej pierwszy
+      // zapis zawodnika z przeglądarki wysłałby `przebieg` jako nieistniejącą kolumnę.
+      "przebieg", "przebiegSezon", "m90Id",
     ],
   },
   sbs_observations: {
