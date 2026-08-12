@@ -322,11 +322,35 @@ const SEED_CLUBS_IV_WIELKOPOLSKA = [
     profileLnp:`http://www.90minut.pl/skarb.php?id_klub=${c.klubId}&id_sezon=109`
   }, {name:c.name, city:c.city}));
 
+const SEED_CLUBS_IV_LODZKA = [
+  {name:"Boruta Zgierz", city:"Zgierz"},
+  {name:"Zjednoczeni Stryków", city:"Stryków"},
+  {name:"Polonia Piotrków Trybunalski", city:"Piotrków Trybunalski"},
+  {name:"ŁKS III Łódź", city:"Łódź"},
+  {name:"RKS Radomsko", city:"Radomsko"},
+  {name:"Orzeł Parzęczew", city:"Parzęczew"},
+  {name:"Ekolog Wojsławice", city:"Wojsławice"},
+  {name:"Orkan Buczek", city:"Buczek"},
+  {name:"Concordia Piotrków Trybunalski", city:"Piotrków Trybunalski"},
+  {name:"Włókniarz Pabianice", city:"Pabianice"},
+  {name:"Stal Głowno", city:"Głowno"},
+  {name:"AKS SMS Łódź", city:"Łódź"},
+  {name:"Zryw Wygoda", city:"Wygoda"},
+  {name:"GKS Bełchatów", city:"Bełchatów"},
+  {name:"LZS Justynów", city:"Justynów"},
+  {name:"KS Kutno", city:"Kutno"},
+  {name:"Ceramika Opoczno", city:"Opoczno"},
+  {name:"Sokół Aleksandrów Łódzki", city:"Aleksandrów Łódzki"}
+].map(c=>Object.assign({
+    id:uid('K'), region:"Łódzki ZPN", league:"IV liga (łódzka)", season:"2026/2027",
+    crestUrl:"", juniorCategories:"", profileTm:"", profileLnp:""
+  }, c));
+
 const ALL_SEED_CLUBS = [
   ...SEED_CLUBS_II_LIGA, ...SEED_CLUBS_III_LIGA_GR1, ...SEED_CLUBS_III_LIGA_GR2,
   ...SEED_CLUBS_III_LIGA_GR3, ...SEED_CLUBS_III_LIGA_GR4,
   ...SEED_CLUBS_IV_POMORSKA, ...SEED_CLUBS_IV_ZACHODNIOPOMORSKA, ...SEED_CLUBS_IV_DOLNOSLASKA,
-  ...SEED_CLUBS_IV_SLASKA, ...SEED_CLUBS_IV_WIELKOPOLSKA
+  ...SEED_CLUBS_IV_SLASKA, ...SEED_CLUBS_IV_WIELKOPOLSKA, ...SEED_CLUBS_IV_LODZKA
 ];
 
 // Squad list supplied by user (Transfermarkt-style), mapped onto the app's existing position vocabulary:
@@ -1885,6 +1909,22 @@ async function loadAllInner(){
     });
     if(addedSeed) await saveClubs();
     await quietFlagSet('scouting:seed_clubs_v1');
+  }
+  // IV liga łódzka — osiemnaście klubów sezonu 2026/2027, wprost z tabeli 90minut.
+  //
+  // Lista startowa wyżej wstawia się TYLKO przy pierwszym uruchomieniu, a ta grupa doszła później,
+  // gdy działająca baza dawno miała ten znacznik ustawiony. Stąd osobna, jednorazowa migracja
+  // z własnym znacznikiem: dokłada tylko brakujące kluby i tylko raz, więc usunięty klub nie wraca
+  // po odświeżeniu strony (na tym potknęła się kiedyś lista startowa).
+  const lodzkaZaslana = await storage.get('scouting:seed_iv_lodzka_v1', true).catch(()=>null);
+  if(!lodzkaZaslana){
+    let dodano = false;
+    SEED_CLUBS_IV_LODZKA.forEach(seed=>{
+      const jest = DB.clubs.some(c2=> c2.name === seed.name && c2.league === seed.league);
+      if(!jest){ DB.clubs.push(Object.assign({}, seed, {id: uid('K')})); dodano = true; }
+    });
+    if(dodano) await saveClubs();
+    await quietFlagSet('scouting:seed_iv_lodzka_v1');
   }
   if(!seedFlag){
     try{ await importAllKnownRosters(); }catch(e){ console.error('Roster seed error', e); }
