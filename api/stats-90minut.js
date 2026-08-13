@@ -18,6 +18,7 @@
 import {
   ZRODLA_LIG, poziomRozgrywek, pobierzZ90minut, parseLinkiMeczow, parseSkladyMeczu,
   parseWystepyZawodnika, normalizujNazwe, minutyZWpisu, toSamKlub, tytulMaKlub, czlonyKlubu,
+  parseKlubyZTabeli,
 } from "./_90minut.js";
 
 import { BAZA, KLUCZ_BAZY, naglowkiDlaZadania, maDostepDoBazy, PODPOWIEDZ_BRAK_KLUCZA } from "./_baza.js";
@@ -144,6 +145,14 @@ export default async function handler(req, res) {
     }
   }
 
+  // KLUBU SZUKAMY W TABELI, NIE W PODPOWIEDZIACH ODNOŚNIKÓW.
+  //
+  // Poprzednia droga sprawdzała, czy nazwa klubu stoi w podpowiedzi odnośnika do meczu
+  // („Gospodarz - Gość"). Okazała się dziurawa: w jednej grupie III ligi osiem klubów na osiemnaście
+  // wypadało z przebiegu, choć wszystkie grają i stoją w tabeli — po prostu ich mecze nie mają tej
+  // podpowiedzi. Tabela ligowa jest pewna: każdy klub ma tam pełną nazwę i odnośnik do własnej
+  // strony. Znajdujemy więc klub w tabeli, a mecze czytamy wprost z jego strony.
+  let adresKlubuNa90minut = "";
   for (const adres of mecze.length ? [] : adresy) {
     let html;
     // NIEUDANE POBRANIE STRONY TO NIE JEST „BRAK MECZÓW".
@@ -154,6 +163,27 @@ export default async function handler(req, res) {
     // i mówimy o nim wprost, bo działanie jest inne: nie poprawiać nazwę, tylko spróbować ponownie.
     try { html = await pobierzZ90minut(adres); }
     catch (e) { bledyStron.push({ adres, blad: String((e && e.message) || e) }); continue; }
+
+    const wTabeli = parseKlubyZTabeli(html);
+    wTabeli.forEach((k) => widzianeNazwy.add(k.nazwa));
+    const nasz = wTabeli.find((k) => toSamKlub(k.nazwa, klub.name));
+    if (nasz) {
+      const adresKlubu = `http://www.90minut.pl/skarb.php?id_klub=${nasz.id}` + (nasz.sezon ? `&id_sezon=${nasz.sezon}` : "");
+      try {
+        const zeStronyKlubu = parseLinkiMeczow(await pobierzZ90minut(adresKlubu));
+        if (zeStronyKlubu.length) {
+          mecze = zeStronyKlubu;
+          stronaLigi = adres;
+          adresKlubuNa90minut = adresKlubu;
+          break;
+        }
+      } catch (e) {
+        bledyStron.push({ adres: adresKlubu, blad: String((e && e.message) || e) });
+      }
+    }
+
+    // Zapasowo stara droga — gdyby klub nie stał w tabeli (np. wycofany w trakcie sezonu),
+    // a mecze mimo to były rozegrane.
     const linki = parseLinkiMeczow(html);
     linki.forEach((m) => String(m.tytul || "").split(/\s+[-–—]\s+/).forEach((n) => {
       const t = n.trim();
@@ -607,6 +637,9 @@ export default async function handler(req, res) {
     stronaLigi,
     sprawdzoneMecze: wybrane.length,
     meczeKlubu: mecze.length,
+    // Adres strony klubu odnaleziony w tabeli — przeglądarka zapisuje go w kartotece, żeby
+    // następnym razem pominąć całe szukanie i wejść od razu tam, gdzie trzeba.
+    adresKlubuNa90minut,
     pelnySezonWProtokolach,
     // Zawodnicy, których dorobek policzyliśmy z samych protokołów, bo ich tabela występów na
     // 90minut jeszcze nie została przeliczona. To najczęstsza przyczyna „rozegrane dwie kolejki,

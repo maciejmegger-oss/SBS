@@ -1926,6 +1926,54 @@ async function loadAllInner(){
     if(dodano) await saveClubs();
     await quietFlagSet('scouting:seed_iv_lodzka_v1');
   }
+
+  // WERYFIKACJA LIG WEDŁUG OFICJALNYCH TABEL 90MINUT (sezon 2026/2027).
+  //
+  // Pole „Liga" steruje wszystkim: adresem rozgrywek do pobrania statystyk, pozycją w tabeli,
+  // przypisaniem do grupy. Po awansach i spadkach zostawał w nim poprzedni poziom, a wtedy
+  // pobieranie kończyło się słowami „nie znalazłem rozegranych meczów" przy klubie, który gra
+  // co tydzień. Raz przykładamy kartotekę do czterech tabel III ligi: kto tam jest — dostaje
+  // właściwą grupę i pisownię nazwy jak na 90minut; kto stał w III lidze, a go tam nie ma —
+  // spadł, więc ląduje w IV lidze swojego województwa.
+  const ligiZweryfikowane = await storage.get('scouting:weryfikacja_lig_2026_v1', true).catch(()=>null);
+  if(!ligiZweryfikowane){
+    // Wszystkie 16 grup IV ligi musi być na liście, zanim zaczniemy do nich przenosić kluby.
+    if(Array.isArray(DB.settings.leagues)){
+      Object.values(IV_LIGA_WG_ZPN).forEach(grupa=>{
+        if(DB.settings.leagues.includes(grupa)) return;
+        const last4 = DB.settings.leagues.map(l=>/^IV liga \(/.test(l)).lastIndexOf(true);
+        DB.settings.leagues.splice(last4 >= 0 ? last4+1 : DB.settings.leagues.length, 0, grupa);
+      });
+    }
+    const zmiany = zweryfikujTrzeciaLige();
+    const scalone = scalDuplikatyPoNazwie(SEED_CLUBS_IV_LODZKA.map(c=>c.name), 'IV liga (łódzka)');
+    if(scalone.usuniete.length){
+      const idsDoUsuniecia = scalone.usuniete.map(c=>c.id);
+      try{ await storage.deleteItems('scouting:clubs', idsDoUsuniecia); }
+      catch(e){ console.error('Usuwanie pustych duplikatów klubów:', e); }
+      const zbior = new Set(idsDoUsuniecia);
+      DB.clubs = DB.clubs.filter(c=>!zbior.has(c.id));
+    }
+    const cokolwiek = zmiany.grupa.length + zmiany.nazwa.length + zmiany.doCzwartej.length
+      + scalone.przeniesione.length + scalone.usuniete.length;
+    if(cokolwiek){
+      await saveClubs();
+      if(Array.isArray(DB.settings.leagues)) await saveSettings();
+      console.table([...zmiany.grupa, ...zmiany.doCzwartej, ...scalone.przeniesione]);
+      const opis = [
+        zmiany.grupa.length ? `${zmiany.grupa.length} klubom poprawiłem grupę rozgrywek` : '',
+        zmiany.doCzwartej.length ? `${zmiany.doCzwartej.length} przeniosłem z III do IV ligi (spadek): ${zmiany.doCzwartej.map(z=>z.klub).join(', ')}` : '',
+        zmiany.nazwa.length ? `${zmiany.nazwa.length} nazwom nadałem pisownię jak w tabeli 90minut` : '',
+        scalone.przeniesione.length ? `${scalone.przeniesione.length} klubom poprawiłem ligę po scaleniu duplikatów` : '',
+        scalone.usuniete.length ? `usunąłem ${scalone.usuniete.length} pustych duplikatów` : '',
+        zmiany.bezRegionu.length ? `bez zmian zostawiłem ${zmiany.bezRegionu.length} (brak regionu w kartotece): ${zmiany.bezRegionu.join(', ')}` : '',
+      ].filter(Boolean).join('\n• ');
+      alert('Przyłożyłem kartotekę do oficjalnych tabel III ligi 2026/2027:\n\n• ' + opis +
+        '\n\nTeraz pobieranie statystyk trafi w te kluby — sprawdzenie robię tylko raz.');
+    }
+    await quietFlagSet('scouting:weryfikacja_lig_2026_v1');
+  }
+
   if(!seedFlag){
     try{ await importAllKnownRosters(); }catch(e){ console.error('Roster seed error', e); }
     await quietFlagSet('scouting:seed_rosters_v9');
@@ -3972,6 +4020,106 @@ function viewClubs(){
   </div>`;
 }
 
+// OFICJALNE SKŁADY CZTERECH GRUP III LIGI, SEZON 2026/2027 — spisane z tabel 90minut.
+//
+// Po co to tutaj: pole „Liga" w kartotece steruje wszystkim — z niego bierze się adres rozgrywek
+// do pobrania statystyk, pozycja w tabeli i przypisanie do grupy. Po awansach i spadkach zostawał
+// tam poprzedni poziom albo poprzednia grupa, a wtedy przebieg kończył się słowami „nie znalazłem
+// rozegranych meczów" przy klubie, który gra co tydzień. Tabela ligowa jest jedynym rozstrzygającym
+// źródłem, więc trzymamy ją wprost i raz na sezon się do niej przykładamy.
+const III_LIGA_2026 = {
+  'III liga, gr. I': ['Świt Nowy Dwór Mazowiecki','Pelikan Łowicz','Wisła II Płock','KTS Weszło Warszawa',
+    'Wigry Suwałki','Jagiellonia II Białystok','Widzew II Łódź','Mazovia Mińsk Mazowiecki','Olimpia Elbląg',
+    'Olimpia Zambrów','Warta Sieradz','Mławianka Mława','Ząbkovia Ząbki','Lechia Tomaszów Mazowiecki',
+    'ŁKS Łomża','Polonia Lidzbark Warmiński','ŁKS II Łódź','KS CK Troszyn'],
+  'III liga, gr. II': ['Polonia Środa Wielkopolska','KKS 1925 Kalisz','Wikęd Luzino','Lech II Poznań',
+    'Chemik Bydgoszcz','Gedania Gdańsk','Wda Świecie','Grom Nowy Staw','Flota Świnoujście','Unia Swarzędz',
+    'Kluczevia Stargard','Elana Toruń','Błękitni Stargard','Lipno Stęszew','Bałtyk Koszalin','Noteć Czarnków',
+    'Victoria Września','Kotwica Kórnik'],
+  'III liga, gr. III': ['Odra Bytom Odrzański','Barycz Sułów','Stal Brzeg','Zagłębie Sosnowiec','Zagłębie II Lubin',
+    'Karkonosze Jelenia Góra','ROW 1964 Rybnik','KS Stilon Gorzów Wielkopolski','Górnik Polkowice','Carina Gubin',
+    'Sparta Katowice','MKS Kluczbork','Warta Gorzów Wielkopolski','LKS Goczałkowice Zdrój','Polonia Nysa',
+    'Raków II Częstochowa','Miedź II Legnica','Ślęza Wrocław'],
+  'III liga, gr. IV': ['Wiślanie Skawina','Wisła II Kraków','Czarni Połaniec','Chełmianka Chełm','AKS 1947 Busko Zdrój',
+    'Wisłoka Dębica','KSZO 1929 Ostrowiec Świętokrzyski','Moravia Morawica','Naprzód Jędrzejów','Hetman Zamość',
+    'Siarka Tarnobrzeg','Podlasie Biała Podlaska','JKS Jarosław','Sokół Kolbuszowa Dolna','Star Starachowice',
+    'Korona II Kielce','Pogoń-Sokół Lubaczów','Wieczysta II Kraków'],
+};
+// Klub, który wypadł z III ligi, gra w IV lidze SWOJEGO województwa — a województwo mamy
+// w kartotece przy każdym klubie.
+const IV_LIGA_WG_ZPN = {
+  'Dolnośląski ZPN':'IV liga (dolnośląska)', 'Kujawsko-Pomorski ZPN':'IV liga (kujawsko-pomorska)',
+  'Lubelski ZPN':'IV liga (lubelska)', 'Lubuski ZPN':'IV liga (lubuska)', 'Łódzki ZPN':'IV liga (łódzka)',
+  'Małopolski ZPN':'IV liga (małopolska)', 'Mazowiecki ZPN':'IV liga (mazowiecka)', 'Opolski ZPN':'IV liga (opolska)',
+  'Podkarpacki ZPN':'IV liga (podkarpacka)', 'Podlaski ZPN':'IV liga (podlaska)', 'Pomorski ZPN':'IV liga (pomorska)',
+  'Śląski ZPN':'IV liga (śląska)', 'Świętokrzyski ZPN':'IV liga (świętokrzyska)',
+  'Warmińsko-Mazurski ZPN':'IV liga (warmińsko-mazurska)', 'Wielkopolski ZPN':'IV liga (wielkopolska)',
+  'Zachodniopomorski ZPN':'IV liga (zachodniopomorska)',
+};
+
+// Przyłożenie kartoteki do oficjalnych tabel. Zwraca opis zmian — nic nie zapisuje sam,
+// żeby dało się go użyć zarówno w migracji, jak i w przycisku „Zweryfikuj III ligę".
+function zweryfikujTrzeciaLige(){
+  const zmiany = { grupa: [], nazwa: [], doCzwartej: [], bezRegionu: [] };
+  const oficjalne = [];
+  Object.entries(III_LIGA_2026).forEach(([grupa, nazwy])=> nazwy.forEach(n=> oficjalne.push({ grupa, nazwa: n })));
+
+  DB.clubs.forEach(c=>{
+    const poziom = topLevelOf(c.league);
+    // Ruszamy wyłącznie seniorskie III i IV ligi. Drużyny młodzieżowe i klasa okręgowa mają
+    // własną logikę i nazwy, które przypadkiem bywają takie same.
+    if(poziom !== 'III liga' && poziom !== 'IV liga') return;
+    const trafienie = oficjalne.find(o=> toSamKlubNazwa(o.nazwa, c.name));
+    if(trafienie){
+      if(c.league !== trafienie.grupa){
+        zmiany.grupa.push({ klub: c.name, z: c.league, na: trafienie.grupa });
+        c.league = trafienie.grupa;
+      }
+      // Nazwa jak w tabeli 90minut — to ona jest kluczem przy szukaniu meczów i pozycji w tabeli.
+      if(c.name !== trafienie.nazwa){
+        zmiany.nazwa.push({ z: c.name, na: trafienie.nazwa });
+        c.name = trafienie.nazwa;
+      }
+      return;
+    }
+    if(poziom !== 'III liga') return;
+    // Nie ma go w żadnej z czterech tabel, a stoi u nas w III lidze — czyli spadł.
+    const docelowa = IV_LIGA_WG_ZPN[c.region || ''];
+    if(!docelowa){ zmiany.bezRegionu.push(c.name); return; }
+    zmiany.doCzwartej.push({ klub: c.name, z: c.league, na: docelowa });
+    c.league = docelowa;
+  });
+  return zmiany;
+}
+
+// Kluby wpisane dwa razy pod tą samą nazwą — po założeniu grupy z listy startowej zdarzyło się,
+// że klub był już w kartotece pod inną ligą (AKS SMS Łódź stał w Ekstraklasie z 31 zawodnikami,
+// a obok pojawił się pusty bliźniak w IV lidze łódzkiej). Zostawiamy WPIS Z ZAWODNIKAMI i to jemu
+// ustawiamy właściwą ligę; pusty duplikat, bez zawodników, herbu i linku, znika.
+function scalDuplikatyPoNazwie(nazwy, docelowaLiga){
+  const usuniete = [], przeniesione = [];
+  nazwy.forEach(nazwa=>{
+    const kandydaci = DB.clubs.filter(c=> toSamKlubNazwa(c.name, nazwa));
+    if(kandydaci.length < 2) {
+      const jeden = kandydaci[0];
+      if(jeden && jeden.league !== docelowaLiga && topLevelOf(jeden.league) !== 'Kategorie juniorskie'){
+        przeniesione.push({ klub: jeden.name, z: jeden.league, na: docelowaLiga });
+        jeden.league = docelowaLiga;
+      }
+      return;
+    }
+    const liczbaZawodnikow = (c)=> DB.players.filter(p=>p.clubId===c.id).length;
+    const zostaje = kandydaci.slice().sort((a,b)=> liczbaZawodnikow(b) - liczbaZawodnikow(a))[0];
+    if(zostaje.league !== docelowaLiga){
+      przeniesione.push({ klub: zostaje.name, z: zostaje.league, na: docelowaLiga });
+      zostaje.league = docelowaLiga;
+    }
+    kandydaci.filter(c=> c !== zostaje && !liczbaZawodnikow(c) && !c.crestUrl && !String(c.profileLnp||'').trim())
+      .forEach(c=> usuniete.push(c));
+  });
+  return { usuniete, przeniesione };
+}
+
 // ODŚWIEŻENIE CAŁEJ GRUPY JEDNYM KLIKNIĘCIEM.
 //
 // Po każdej kolejce trzeba przejść przez wszystkie kluby grupy i w każdym uruchomić pobieranie —
@@ -3996,6 +4144,7 @@ function openGrupaStatsModal(){
   let pracuje = false, przerwane = false, zakonczone = false;
   let zapisanychRazem = 0;
   const zapisaneWPrzebiegu = [];
+  let adresyDoZapisania = 0;
 
   const ikona = (e)=> e==='ok' ? '✔' : e==='blad' ? '✖' : e==='pracuje' ? '⏳' : '·';
   const rysuj = ()=>{
@@ -4053,6 +4202,12 @@ function openGrupaStatsModal(){
       e.widzianeKluby = dane.widzianeKluby || [];
       throw e;
     }
+    // Adres strony klubu na 90minut zapamiętujemy w kartotece — następnym razem wchodzimy tam
+    // od razu, bez szukania po tabelach, i nazwa klubu przestaje mieć jakiekolwiek znaczenie.
+    if(dane.adresKlubuNa90minut){
+      const k = DB.clubs.find(x=>x.id===poz.id);
+      if(k && !String(k.profileLnp||'').trim()){ k.profileLnp = dane.adresKlubuNa90minut; adresyDoZapisania++; }
+    }
     if(!Array.isArray(dane.pakiet) || !dane.pakiet.length) return { zapisani: 0, opis: 'bez zmian' };
 
     const zapis = await fetch('/api/stats-90minut?clubId=' + encodeURIComponent(poz.id) + '&apply=1',
@@ -4091,6 +4246,8 @@ function openGrupaStatsModal(){
       if(i + 1 < kolejka.length) await new Promise(r=>setTimeout(r, 600));
     }
     pracuje = false; zakonczone = true;
+    // Odnalezione adresy klubów zapisujemy raz, na koniec — to jedno zapytanie zamiast osiemnastu.
+    if(adresyDoZapisania){ try{ await saveClubs(); }catch(e){ console.error('Zapis adresów klubów:', e); } }
     // Dopiero teraz wczytujemy bazę od nowa — raz, a nie po każdym klubie.
     if(zapisanychRazem) await loadAll();
     rysuj();
@@ -12230,6 +12387,15 @@ function open90minutStatsModal(clubId){
       }
       const dane = await res.json();
       wynik = dane;
+      // Adres strony klubu na 90minut zapamiętujemy w kartotece — kolejne pobranie wchodzi tam
+      // wprost, bez szukania po tabelach rozgrywek.
+      if(dane.adresKlubuNa90minut){
+        const k = DB.clubs.find(x=>x.id===clubId);
+        if(k && !String(k.profileLnp||'').trim()){
+          k.profileLnp = dane.adresKlubuNa90minut;
+          try{ await saveClubs(); }catch(e){ console.error('Zapis adresu klubu:', e); }
+        }
+      }
       // Podpowiedź z serwera mówi, CO ZROBIĆ (np. brakuje klucza serwisowego w Vercelu) — bez niej
       // zostawał sam komunikat „nie ma takiego klubu", z którego nic nie wynika.
       if(!res.ok || dane.error){

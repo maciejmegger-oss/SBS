@@ -369,6 +369,25 @@ export function parseLinkiMeczow(html) {
   return [...out].map(([id, tytul]) => ({ id, tytul }));
 }
 
+// KLUBY Z TABELI ROZGRYWEK — nazwa i identyfikator na 90minut.
+//
+// Tabela ligowa jest jedynym miejscem na stronie, gdzie nazwa klubu stoi PEŁNA i w jednym kawałku,
+// a obok niej jest odnośnik do strony klubu. Szukanie klubu po podpowiedziach odnośników do meczów
+// („Gospodarz - Gość") okazało się zawodne: część meczów nie ma tej podpowiedzi w ogóle, więc klub
+// bywał niewidoczny, choć gra i ma protokoły. Stąd droga przez tabelę: znajdź klub, weź jego numer,
+// a mecze czytaj z jego własnej strony.
+export function parseKlubyZTabeli(html) {
+  const out = new Map();
+  const re = /<a\b[^>]*skarb\.php\?id_klub=(\d+)(?:&(?:amp;)?id_sezon=(\d+))?[^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    const nazwa = strip(m[3]);
+    if (!nazwa || nazwa.length > 60) continue;
+    if (!out.has(m[1])) out.set(m[1], { id: m[1], sezon: m[2] || "", nazwa });
+  }
+  return [...out.values()];
+}
+
 // Skład z protokołu meczu. Układ jest trzykolumnowy i stały: lewa komórka to gospodarze,
 // prawa to goście, środkowa jest pusta i tylko je rozdziela. Rodzaj kartki poznajemy po
 // atrybucie alt obrazka ("ŻK" / "CK") — tekstu przy nim nie ma.
