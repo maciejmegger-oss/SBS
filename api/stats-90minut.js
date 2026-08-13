@@ -153,6 +153,7 @@ export default async function handler(req, res) {
   // podpowiedzi. Tabela ligowa jest pewna: każdy klub ma tam pełną nazwę i odnośnik do własnej
   // strony. Znajdujemy więc klub w tabeli, a mecze czytamy wprost z jego strony.
   let adresKlubuNa90minut = "";
+  let wTabeliRozgrywek = null;
   for (const adres of mecze.length ? [] : adresy) {
     let html;
     // NIEUDANE POBRANIE STRONY TO NIE JEST „BRAK MECZÓW".
@@ -168,13 +169,18 @@ export default async function handler(req, res) {
     wTabeli.forEach((k) => widzianeNazwy.add(k.nazwa));
     const nasz = wTabeli.find((k) => toSamKlub(k.nazwa, klub.name));
     if (nasz) {
+      // Klub STOI W TABELI tych rozgrywek — to już rozstrzyga, że liga w kartotece jest dobra
+      // i że nazwa się zgadza. Adres jego strony zapamiętujemy niezależnie od tego, czy są tam
+      // już jakieś mecze: rozgrywki juniorskie startują później niż seniorskie, a link i tak
+      // przyda się przy następnym pobraniu.
       const adresKlubu = `http://www.90minut.pl/skarb.php?id_klub=${nasz.id}` + (nasz.sezon ? `&id_sezon=${nasz.sezon}` : "");
+      wTabeliRozgrywek = { nazwa: nasz.nazwa, adres: adresKlubu, stronaLigi: adres };
+      adresKlubuNa90minut = adresKlubu;
       try {
         const zeStronyKlubu = parseLinkiMeczow(await pobierzZ90minut(adresKlubu));
         if (zeStronyKlubu.length) {
           mecze = zeStronyKlubu;
           stronaLigi = adres;
-          adresKlubuNa90minut = adresKlubu;
           break;
         }
       } catch (e) {
@@ -191,6 +197,22 @@ export default async function handler(req, res) {
     }));
     const trafione = linki.filter((m) => tytulMaKlub(m.tytul, klub.name));
     if (trafione.length) { mecze = trafione; stronaLigi = adres; break; }
+  }
+  if (!mecze.length && wTabeliRozgrywek) {
+    // KLUB JEST W TABELI, TYLKO JESZCZE NIE GRAŁ.
+    //
+    // To zupełnie co innego niż „nie znalazłem klubu": liga w kartotece jest dobra, nazwa się
+    // zgadza, po prostu w tym sezonie nie ma jeszcze protokołów. Tak wygląda sierpień w CLJ,
+    // gdzie rozgrywki juniorskie startują później niż seniorskie. Mówienie w takiej sytuacji
+    // „sprawdź nazwę klubu" wysyłało do poprawiania czegoś, co jest poprawne.
+    return res.status(404).json({
+      error: `Klub „${klub.name}" jest w tabeli rozgrywek ${klub.league} (na 90minut: „${wTabeliRozgrywek.nazwa}"), ale nie ma tam jeszcze ANI JEDNEGO rozegranego meczu w tym sezonie.`,
+      podpowiedz: "Nie ma czego pobierać — wróć tu po pierwszej kolejce. Nazwy ani ligi nie trzeba poprawiać; " +
+        "adres strony klubu na 90minut właśnie zapisałem, więc następne pobranie wejdzie tam od razu.",
+      adresKlubuNa90minut,
+      bezMeczow: true,
+      przeszukaneStrony: adresy.length,
+    });
   }
   if (!mecze.length) {
     // NAZWY, KTÓRE FAKTYCZNIE WIDZIAŁEM. Bez nich komunikat „nie znalazłem" jest ślepy: nie wiadomo,

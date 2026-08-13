@@ -4007,6 +4007,7 @@ function viewClubs(){
       </label>
       ${clubBrowse.top ? `<button class="secondary" data-action="league-stats" data-league="${esc(clubBrowse.top)}" title="Wklej statystyki wszystkich klubów tej ligi w jednym oknie">⏱ Statystyki ligi</button>` : ''}
       <button class="secondary" data-action="paste-clubs" title="Wklej listę nazw klubów — założę je wszystkie naraz w wybranej grupie">📋 Wklej listę klubów</button>
+      <button class="secondary" data-action="import-klubow-ligi" title="Pobierz z 90minut składy wszystkich grup wybranego poziomu i załóż brakujące kluby">⬇ Wgraj kluby z 90minut</button>
       ${list.length ? `<button class="secondary" data-action="stats-90minut-grupa" title="Pobierz i zapisz statystyki z 90minut dla wszystkich klubów widocznych na liście — po kolei, jeden po drugim">⏱ Odśwież 90minut — cały widok (${list.length})</button>` : ''}
       <button class="secondary" data-action="merge-duplicates" title="Znajdź kluby wpisane dwa razy pod różnymi nazwami i połącz je w jeden">🧹 Scal duplikaty</button>
       <button class="gold" data-action="add-club">+ Nowy klub</button>
@@ -4120,6 +4121,110 @@ function scalDuplikatyPoNazwie(nazwy, docelowaLiga){
   return { usuniete, przeniesione };
 }
 
+// ZAŁOŻENIE KARTOTEKI CAŁEGO POZIOMU ROZGRYWEK.
+//
+// IV liga to szesnaście grup wojewódzkich po osiemnaście klubów — blisko trzysta wpisów, których
+// nikt nie wprowadzi ręcznie. Tabele na 90minut mają wszystko: pełną nazwę, odnośnik do strony
+// klubu (a stamtąd biorą się mecze i statystyki) i nazwę grupy. Pobieramy je, pokazujemy do
+// zatwierdzenia i zakładamy TYLKO brakujące — kluby, które już masz, zostają nietknięte.
+function openImportKlubowModal(){
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  document.body.appendChild(overlay);
+  const poziomy = ['IV liga','III liga','II liga','I liga','Ekstraklasa','CLJ U19','CLJ U17'];
+  let poziom = (clubBrowse.top && poziomy.includes(clubBrowse.top)) ? clubBrowse.top : 'IV liga';
+  let stan = 'wybor';        // wybor | pobieram | podglad | zakladam
+  let wynik = null, komunikat = '';
+
+  const nowyKlub = (k, g)=> !DB.clubs.some(c=> toSamKlubNazwa(c.name, k.nazwa));
+
+  const rysuj = ()=>{
+    const grupy = wynik ? wynik.grupy : [];
+    const doZalozenia = grupy.reduce((sum,g)=> sum + g.kluby.filter(k=>nowyKlub(k,g)).length, 0);
+    overlay.innerHTML = `
+    <div class="modal" style="max-width:760px;">
+      <h3>⬇ Wgraj kluby z 90minut</h3>
+      <p class="note" style="margin-bottom:10px;">Czytam tabele wszystkich grup wybranego poziomu i zakładam kluby, których jeszcze nie masz — z nazwą, województwem, grupą rozgrywek i linkiem do strony klubu. Kluby już wpisane zostawiam bez zmian.</p>
+      <div class="field-wrap"><label class="field">Poziom rozgrywek</label>
+        <select id="ik-poziom" ${stan==='pobieram'||stan==='zakladam'?'disabled':''}>${poziomy.map(p=>`<option ${p===poziom?'selected':''}>${esc(p)}</option>`).join('')}</select>
+      </div>
+      ${komunikat ? `<p class="note" style="color:var(--clay-dark);">${esc(komunikat)}</p>` : ''}
+      ${stan==='pobieram' ? '<p class="note">Czytam tabele z 90minut… przy szesnastu grupach to kilkanaście sekund.</p>' : ''}
+      ${wynik ? `<div style="max-height:300px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px;font-size:12.5px;">
+        ${grupy.map(g=>{
+          const nowe = g.kluby.filter(k=>nowyKlub(k,g));
+          return `<div style="padding:4px 2px;border-bottom:1px solid var(--chalk-dim);">
+            <div style="display:flex;gap:8px;align-items:baseline;">
+              <strong style="flex:1;">${esc(g.liga)}</strong>
+              <span class="note">${g.kluby.length} w tabeli &middot; ${nowe.length ? `<strong style="color:var(--good);">${nowe.length} do założenia</strong>` : 'wszystkie już mam'}</span>
+            </div>
+            ${nowe.length ? `<div class="note" style="margin-top:2px;line-height:1.6;">${nowe.map(k=>esc(k.nazwa)).join(' &middot; ')}</div>` : ''}
+          </div>`;
+        }).join('')}
+        ${(wynik.bledy||[]).length ? `<p class="note" style="color:var(--clay-dark);margin:6px 0 0;">Nie udało się otworzyć ${wynik.bledy.length} stron — spróbuj ponownie za chwilę.</p>` : ''}
+      </div>` : ''}
+      <div class="modal-actions">
+        <button class="secondary" data-x="zamknij">${wynik ? 'Zamknij' : 'Anuluj'}</button>
+        ${!wynik ? `<button class="gold" data-x="pobierz" ${stan==='pobieram'?'disabled':''}>${stan==='pobieram'?'Pobieram…':'Pokaż kluby'}</button>` : ''}
+        ${wynik && doZalozenia ? `<button class="gold" data-x="zaloz" ${stan==='zakladam'?'disabled':''}>${stan==='zakladam'?'Zakładam…':`Załóż ${doZalozenia} brakujących`}</button>` : ''}
+      </div>
+    </div>`;
+    overlay.querySelectorAll('[data-x="zamknij"]').forEach(b=>b.onclick=()=>{ overlay.remove(); render(); });
+    const sel = overlay.querySelector('#ik-poziom');
+    if(sel) sel.onchange = ()=>{ poziom = sel.value; wynik = null; komunikat=''; rysuj(); };
+    overlay.querySelectorAll('[data-x="pobierz"]').forEach(b=>b.onclick=()=>{ void pobierz(); });
+    overlay.querySelectorAll('[data-x="zaloz"]').forEach(b=>b.onclick=()=>{ void zaloz(); });
+  };
+
+  async function pobierz(){
+    stan = 'pobieram'; komunikat = ''; rysuj();
+    try{
+      const token = await tokenSesji();
+      const res = await fetch('/api/kluby-ligi?poziom=' + encodeURIComponent(poziom),
+        { signal: AbortSignal.timeout(120000), headers: token ? { Authorization: 'Bearer ' + token } : {} });
+      const dane = await res.json();
+      if(!res.ok || dane.error) throw new Error((dane.error||'kod '+res.status) + (dane.podpowiedz?' '+dane.podpowiedz:''));
+      wynik = dane;
+      stan = 'podglad';
+    }catch(e){
+      komunikat = 'Nie udało się pobrać: ' + ((e && e.message) || e);
+      stan = 'wybor';
+    }
+    rysuj();
+  }
+
+  async function zaloz(){
+    stan = 'zakladam'; rysuj();
+    let ile = 0;
+    // Grupy MUSZĄ istnieć na liście lig, zanim przypiszemy do nich klub — inaczej klub trafiłby
+    // do rozgrywek, których nie ma w ustawieniach, i zniknąłby z filtrów.
+    (wynik.grupy||[]).forEach(g=>{
+      if(g.liga && Array.isArray(DB.settings.leagues) && !DB.settings.leagues.includes(g.liga)){
+        const ostatniaPodobna = DB.settings.leagues.map(l=>topLevelOf(l)===topLevelOf(g.liga)).lastIndexOf(true);
+        DB.settings.leagues.splice(ostatniaPodobna >= 0 ? ostatniaPodobna+1 : DB.settings.leagues.length, 0, g.liga);
+      }
+      g.kluby.filter(k=>nowyKlub(k,g)).forEach(k=>{
+        DB.clubs.push({
+          id: uid('K'), name: k.nazwa, city: k.miasto || '', region: g.region || '',
+          league: g.liga, season: (wynik.grupy[0] && /\d{4}\/\d{4}/.test(wynik.grupy[0].rozgrywki||'')
+            ? (wynik.grupy[0].rozgrywki.match(/\d{4}\/\d{4}/)||[])[0] : '2026/2027'),
+          crestUrl: '', juniorCategories: '', profileTm: '', profileLnp: k.adresKlubu || '',
+        });
+        ile++;
+      });
+    });
+    const ok = await saveClubs();
+    if(ok && Array.isArray(DB.settings.leagues)) await saveSettings();
+    overlay.remove();
+    alert(ok
+      ? `Założyłem ${ile} klubów.\n\nKażdy ma już link do swojej strony na 90minut, więc statystyki pobierzesz od razu — przyciskiem „⏱ Odśwież 90minut — cały widok" po ustawieniu filtra na grupę.`
+      : 'Nie udało się zapisać — sprawdź baner u góry strony.');
+    render();
+  }
+
+  rysuj();
+}
+
 // ODŚWIEŻENIE CAŁEJ GRUPY JEDNYM KLIKNIĘCIEM.
 //
 // Po każdej kolejce trzeba przejść przez wszystkie kluby grupy i w każdym uruchomić pobieranie —
@@ -4200,6 +4305,8 @@ function openGrupaStatsModal(){
       // znalazłem" i sprawa wraca do punktu wyjścia.
       e.podpowiedz = dane.podpowiedz || '';
       e.widzianeKluby = dane.widzianeKluby || [];
+      e.bezMeczow = !!dane.bezMeczow;
+      e.adresKlubuNa90minut = dane.adresKlubuNa90minut || '';
       throw e;
     }
     // Adres strony klubu na 90minut zapamiętujemy w kartotece — następnym razem wchodzimy tam
@@ -4235,10 +4342,20 @@ function openGrupaStatsModal(){
         zapisanychRazem += wynik.zapisani;
         poz.etap = 'ok'; poz.opis = wynik.opis;
       }catch(e){
-        poz.etap = 'blad';
-        poz.opis = String((e && e.message) || e).slice(0, 110);
-        poz.podpowiedz = (e && e.podpowiedz) || '';
-        poz.widzianeKluby = (e && e.widzianeKluby) || [];
+        // „Jest w tabeli, ale nie grał" to nie awaria — nie ma po co tego ponawiać ani straszyć
+        // czerwonym krzyżykiem. Zapamiętujemy za to znaleziony adres strony klubu.
+        if(e && e.bezMeczow){
+          poz.etap = 'ok'; poz.opis = 'brak rozegranych meczów';
+          if(e.adresKlubuNa90minut){
+            const k = DB.clubs.find(x=>x.id===poz.id);
+            if(k && !String(k.profileLnp||'').trim()){ k.profileLnp = e.adresKlubuNa90minut; adresyDoZapisania++; }
+          }
+        } else {
+          poz.etap = 'blad';
+          poz.opis = String((e && e.message) || e).slice(0, 110);
+          poz.podpowiedz = (e && e.podpowiedz) || '';
+          poz.widzianeKluby = (e && e.widzianeKluby) || [];
+        }
       }
       rysuj();
       // Chwila przerwy między klubami — 90minut prowadzą wolontariusze, a przy ciągłym strumieniu
@@ -7438,6 +7555,7 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="add-club"]').forEach(b=>b.onclick=()=>openClubModal(null));
   main.querySelectorAll('[data-action="paste-clubs"]').forEach(b=>b.onclick=()=>openPasteClubsModal());
   main.querySelectorAll('[data-action="stats-90minut-grupa"]').forEach(b=>b.onclick=()=>openGrupaStatsModal());
+  main.querySelectorAll('[data-action="import-klubow-ligi"]').forEach(b=>b.onclick=()=>openImportKlubowModal());
   main.querySelectorAll('[data-action="edit-club"]').forEach(b=>b.onclick=()=>openClubModal(b.dataset.id));
   main.querySelectorAll('[data-action="delete-club"]').forEach(b=>b.onclick=async()=>{
     if(confirm('Usunąć ten klub?')){
@@ -12388,7 +12506,8 @@ function open90minutStatsModal(clubId){
       const dane = await res.json();
       wynik = dane;
       // Adres strony klubu na 90minut zapamiętujemy w kartotece — kolejne pobranie wchodzi tam
-      // wprost, bez szukania po tabelach rozgrywek.
+      // wprost, bez szukania po tabelach rozgrywek. Robimy to TAKŻE wtedy, gdy klub jeszcze nie
+      // grał: link jest poprawny niezależnie od tego, czy są już protokoły.
       if(dane.adresKlubuNa90minut){
         const k = DB.clubs.find(x=>x.id===clubId);
         if(k && !String(k.profileLnp||'').trim()){
