@@ -149,7 +149,14 @@ export function parseSchedule(html) {
     const segment = html.slice(from, to);
 
     // Wiersz meczu + opcjonalnie następujący po nim wiersz z kursami (z datą ISO).
-    const rowRe = /<tr[^>]*align="left"[^>]*>([\s\S]*?)<\/tr>\s*(?:<tr[^>]*class="odds"([^>]*)>)?/gi;
+    //
+    // WIERSZ ROZPOZNAJEMY PO TREŚCI, NIE PO ATRYBUCIE. Wcześniej wymagaliśmy `align="left"` na
+    // znaczniku <tr>, a 90minut trzyma wyrównania na komórkach — wtedy terminarz był dla nas
+    // pusty i klub z rozegranymi meczami wychodził jako „bez rozegranych spotkań". Bierzemy więc
+    // każdy wiersz, w którym po bokach stoją dwie NAZWY (a nie liczby), a w środku wynik albo
+    // odnośnik do protokołu. Tabela i krzyżówka wyników odpadają same: tam z brzegu są cyfry.
+    const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>\s*(?:<tr[^>]*class="odds"([^>]*)>)?/gi;
+    const maLitery = (t) => /\p{L}{3}/u.test(String(t || ""));
     let m;
     while ((m = rowRe.exec(segment)) !== null) {
       const cells = (m[1].match(/<td[^>]*>[\s\S]*?<\/td>/gi) || []).map(strip);
@@ -158,8 +165,16 @@ export function parseSchedule(html) {
       const homeTeam = cells[0];
       const awayTeam = cells[2];
       if (!homeTeam || !awayTeam) continue;
+      if (!maLitery(homeTeam) || !maLitery(awayTeam)) continue;
+      if (homeTeam.length > 60 || awayTeam.length > 60) continue;
       // Nagłówki i wiersze techniczne nie mają dwóch nazw drużyn po bokach separatora.
       if (/^kolejka/i.test(homeTeam)) continue;
+      // Środkowa komórka to wynik, myślnik (mecz nierozegrany) albo godzina — plus ewentualny
+      // odnośnik do protokołu. Cokolwiek innego znaczy, że to nie jest wiersz meczu.
+      const srodek = String(cells[1] || "").trim();
+      const wygladaNaMecz = /mecz\.php\?id_mecz=/i.test(m[1])
+        || /^\d{1,2}\s*[-:]\s*\d{1,2}$/.test(srodek) || /^[-–—]$/.test(srodek);
+      if (!wygladaNaMecz) continue;
 
       const oddsAttrs = m[2] || "";
       const cellText = cells[3] || "";
