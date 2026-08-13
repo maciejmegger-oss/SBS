@@ -4121,6 +4121,151 @@ function scalDuplikatyPoNazwie(nazwy, docelowaLiga){
   return { usuniete, przeniesione };
 }
 
+// WKLEJANIE PROTOKOŁÓW MECZOWYCH — DROGA DLA IV LIGI.
+//
+// IV ligi nie prowadzi ani Transfermarkt, ani 90minut (odnośnik przy wyniku przenosi na stronę
+// PZPN), więc jedynym źródłem minut jest protokół z „Łączy nas piłka". Kolejka to dziewięć meczów,
+// a każdy trzeba wkleić — dlatego okno jest zrobione pod SERIĘ: po zapisie samo się czyści i czeka
+// na następny protokół, licząc, ile już weszło. Jedno wklejenie obsługuje OBIE drużyny, więc dziewięć
+// wklejek zamyka całą kolejkę w grupie.
+//
+// Protokół wnosi też coś, czego nie ma w sumach sezonowych: minuty MECZ PO MECZU. Zapisujemy je
+// w przebiegu zawodnika, więc wykres dostępności w profilu i w raporcie PDF działa tak samo,
+// jak w ligach pobieranych automatycznie.
+function openProtokolMeczuModal(clubId){
+  const klub = DB.clubs.find(c=>c.id===clubId);
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  document.body.appendChild(overlay);
+  let wynik = null, komunikat = '', pracuje = false, zapisanychMeczow = 0, dopisujBrak = true;
+
+  // Ile meczów tego klubu jest już rozliczonych — liczymy z znaczników przy zawodnikach.
+  const juzRozliczone = ()=>{
+    const klucze = new Set();
+    DB.players.filter(p=>p.clubId===clubId).forEach(p=>(p.rozliczoneMecze||[]).forEach(k=>klucze.add(k)));
+    return klucze.size;
+  };
+
+  const rysuj = ()=>{
+    overlay.innerHTML = `
+    <div class="modal" style="max-width:820px;">
+      <h3>📋 Protokół meczu — ${esc(klub ? klub.name : '')}</h3>
+      <p class="note" style="margin-bottom:8px;">Otwórz mecz na <strong>Łączy nas piłka</strong>, zaznacz całą stronę (Ctrl+A), skopiuj (Ctrl+C) i wklej tutaj. Odczytam skład, zmiany i minuty <strong>obu drużyn naraz</strong> — drugiego klubu nie musisz otwierać osobno. Mecz rozliczony wcześniej nie policzy się drugi raz.</p>
+      <p class="note" style="margin-top:0;">Rozliczonych meczów tego klubu: <strong>${juzRozliczone()}</strong>${zapisanychMeczow?` &middot; w tym oknie zapisano ${zapisanychMeczow}`:''}</p>
+      <label style="display:flex;gap:8px;align-items:flex-start;margin:8px 0;cursor:pointer;font-size:13px;">
+        <input type="checkbox" id="pm-dopisuj" ${dopisujBrak?'checked':''} style="margin-top:3px;">
+        <span>Zakładaj kartoteki zawodnikom, których nie ma w bazie — z numerem, pozycją bramkarza i znacznikiem młodzieżowca z protokołu.</span>
+      </label>
+      <div class="field-wrap">
+        <textarea id="pm-tekst" rows="8" placeholder="Wklej tu całą stronę meczu z laczynaspilka.pl" style="font-size:12px;font-family:monospace;"></textarea>
+      </div>
+      ${komunikat ? `<p class="note" style="color:var(--clay-dark);">${esc(komunikat)}</p>` : ''}
+      ${wynik ? `<div style="max-height:280px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px;font-size:12.5px;">
+        ${wynik.length>1 ? `<p class="note" style="margin:0 0 6px;">Rozpoznanych meczów: <strong>${wynik.length}</strong></p>` : ''}
+        ${wynik.flatMap(prot=>prot.strony).map(s=>{
+          if(s.blad) return `<div style="padding:4px 0;color:var(--clay-dark);"><strong>${esc(s.nazwa)}</strong> — ${esc(s.blad)}</div>`;
+          const grali = s.wiersze.filter(w=>w.zagral);
+          const nowi = grali.filter(w=>!w.zawodnik).length;
+          const policzeni = grali.filter(w=>w.juzPoliczony).length;
+          return `<div style="padding:6px 0;border-bottom:1px solid var(--chalk-dim);">
+            <strong>${esc(s.nazwa)}</strong> ${s.klub && s.klub.id===clubId?'<span class="note">(ten klub)</span>':''}
+            <span class="note">&middot; ${grali.length} zagrało${nowi?` &middot; ${nowi} do dopisania`:''}${policzeni?` &middot; ${policzeni} już policzonych`:''}${s.dane && !s.dane.zgodne?' &middot; ⚠️ suma minut się nie zgadza':''}</span>
+            <div class="note" style="margin-top:3px;line-height:1.7;">${grali.map(w=>`${esc(w.firstName)} ${esc(w.lastName)} <strong>${w.minutyGry}'</strong>${w.zawodnik?'':' <span style="color:var(--gold-dark);">nowy</span>'}`).join(' &middot; ')}</div>
+          </div>`;
+        }).join('')}
+      </div>` : ''}
+      <div class="modal-actions" style="justify-content:space-between;">
+        <button class="secondary" data-x="zakladka" title="Jedno kliknięcie na stronie meczu zamiast zaznaczania całej strony">🔖 Szybkie kopiowanie z ŁNP</button>
+        <span>
+          <button class="secondary" data-x="zamknij">Zamknij</button>
+          ${wynik
+            ? `<button class="gold" data-x="zapisz" ${pracuje?'disabled':''}>${pracuje?'Zapisuję…':'Zapisz protokoły'}</button>`
+            : `<button class="gold" data-x="rozpoznaj">Rozpoznaj</button>`}
+        </span>
+      </div>
+    </div>`;
+    overlay.querySelectorAll('[data-x="zamknij"]').forEach(b=>b.onclick=()=>{ overlay.remove(); render(); });
+    overlay.querySelectorAll('[data-x="rozpoznaj"]').forEach(b=>b.onclick=()=>rozpoznaj());
+    overlay.querySelectorAll('[data-x="zakladka"]').forEach(b=>b.onclick=()=>openLnpBookmarkletModal());
+    overlay.querySelectorAll('[data-x="zapisz"]').forEach(b=>b.onclick=()=>{ void zapisz(); });
+    const chk = overlay.querySelector('#pm-dopisuj');
+    if(chk) chk.onchange = ()=>{ dopisujBrak = chk.checked; };
+    const pole = overlay.querySelector('#pm-tekst');
+    if(pole && !wynik) pole.focus();
+  };
+
+  function rozpoznaj(){
+    const tekst = (overlay.querySelector('#pm-tekst') as any).value.trim();
+    if(!tekst){ komunikat = 'Najpierw wklej stronę meczu.'; rysuj(); return; }
+    // Zakładka do ŁNP zbiera protokoły całej kolejki i skleja je znacznikiem „### PROTOKOL:".
+    // Dzieki temu jedno wklejenie rozlicza dziewięć meczów zamiast jednego.
+    const czesci = tekst.split(/^###\s*PROTOKOL:.*$/m).map(t=>t.trim()).filter(Boolean);
+    const wyniki = (czesci.length ? czesci : [tekst]).map(t=>przetworzProtokolLnp(t));
+    const dobre = wyniki.filter(w=>!w.blad);
+    if(!dobre.length){ komunikat = wyniki[0].blad || 'Nie rozpoznałem protokołu.'; wynik = null; rysuj(); return; }
+    komunikat = wyniki.length > dobre.length
+      ? `Rozpoznałem ${dobre.length} z ${wyniki.length} protokołów — reszty nie umiem odczytać.` : '';
+    wynik = dobre;
+    rysuj();
+  }
+
+  async function zapisz(){
+    pracuje = true; rysuj();
+    let dopisanych = 0, nowych = 0, meczow = 0;
+    const dzis = new Date().toISOString().slice(0,10);
+    wynik.forEach(protokol=>{
+    meczow++;
+    protokol.strony.forEach(s=>{
+      if(s.blad || !s.klub) return;
+      s.wiersze.forEach(w=>{
+        // Zawodnika szukamy PONOWNIE, przy zapisie. Rozpoznanie policzyło go przed dopisaniem
+        // kogokolwiek, więc przy kilku protokołach naraz ten sam człowiek zakładany byłby drugi
+        // raz — raz z pierwszego meczu, raz z drugiego.
+        let p = w.zawodnik || DB.players.find(x=> x.clubId === s.klub.id
+          && importNorm((x.firstName||'')+(x.lastName||'')) === importNorm(w.firstName+w.lastName));
+        if(!p && dopisujBrak && w.zagral){
+          p = { id: uid('Z'), firstName: w.firstName, lastName: w.lastName, birthDate:'', birthYear:'',
+            nationality:'', position: w.position || '', foot:'', height:null, status:'', clubId: s.klub.id,
+            scout: currentScout || '', videoLink:'', lnpLink:'', tmLink:'', hasAgent:false, agencyName:'',
+            formation:'', customFields:{}, mlodziezowiec: !!w.mlodziezowiec,
+            notes:'Dopisany z protokołu meczu (Łączy nas piłka).', dateAdded: dzis };
+          DB.players.push(p);
+          nowych++;
+        }
+        if(!p) return;
+        if(w.mlodziezowiec && !p.mlodziezowiec) p.mlodziezowiec = true;
+        if(w.position && !p.position) p.position = w.position;
+        if(!w.zagral || (p.rozliczoneMecze||[]).includes(protokol.klucz)) return;
+        p.matches = (p.matches || 0) + 1;
+        p.minutes = (p.minutes || 0) + w.minutyGry;
+        p.rozliczoneMecze = [...(p.rozliczoneMecze || []), protokol.klucz];
+        // Minuty mecz po meczu — to z nich powstaje wykres dostępności w profilu i w PDF.
+        const rywal = (protokol.druzyny.find(d=>d !== s.nazwa) || '');
+        const przebieg = (p.przebieg || []).filter(x=>x.mecz !== protokol.klucz);
+        przebieg.push({ mecz: protokol.klucz, data: '', kolejka: null, rywal,
+          dom: protokol.druzyny[0] === s.nazwa, wynik: '', minuty: w.minutyGry,
+          odMinuty: w.rezerwa ? (w.wszedl ?? null) : 0, doMinuty: w.rezerwa ? null : (w.zszedl ?? null),
+          podstawowy: !w.rezerwa, zolte: 0, czerwone: 0 });
+        p.przebieg = przebieg;
+        p.przebiegSezon = klub && klub.season ? klub.season : '';
+        p.statsUpdatedAt = dzis;
+        p.statsSource = 'protokół ŁNP';
+        dopisanych++;
+      });
+    });
+    });
+    const ok = await savePlayers();
+    pracuje = false;
+    if(!ok){ komunikat = 'Nie udało się zapisać — sprawdź baner u góry strony.'; rysuj(); return; }
+    zapisanychMeczow += meczow;
+    komunikat = `Zapisano ${meczow} ${meczow===1?'mecz':'meczów'}: ${dopisanych} wpisów dorobku${nowych?`, w tym ${nowych} nowych zawodników w kartotece`:''}. Wklej kolejne protokoły.`;
+    wynik = null;
+    rysuj();
+  }
+
+  rysuj();
+}
+
 // ZAŁOŻENIE KARTOTEKI CAŁEGO POZIOMU ROZGRYWEK.
 //
 // IV liga to szesnaście grup wojewódzkich po osiemnaście klubów — blisko trzysta wpisów, których
@@ -4555,7 +4700,9 @@ function viewClubDetail(id){
     <div style="display:flex;gap:8px;">
       <button class="gold" data-action="import-squad" data-id="${c.id}">📋 Import składu</button>
       <button class="gold" data-action="stats-90minut" data-id="${c.id}" title="Pobierz z 90minut mecze, minuty, bramki i kartki całego składu — bez kopiowania czegokolwiek">⏱ Statystyki z 90minut</button>
-      <button class="secondary" data-action="import-squad-stats" data-id="${c.id}" title="Zapasowa droga: ręczna wklejka z Transfermarktu. Dla polskich lig użyj przycisku obok.">📋 Wklejka z Transfermarktu</button>
+      ${topLevelOf(c.league) === 'IV liga' || topLevelOf(c.league) === 'Klasa okręgowa'
+        ? `<button class="secondary" data-action="protokol-meczu" data-id="${c.id}" title="Wklej protokół z Łączy nas piłka — minuty, zmiany i skład za jednym razem">📋 Wklej protokół meczu</button>`
+        : `<button class="secondary" data-action="import-squad-stats" data-id="${c.id}" title="Zapasowa droga: ręczna wklejka z Transfermarktu. Dla polskich lig użyj przycisku obok.">📋 Wklejka z Transfermarktu</button>`}
       <button class="secondary" data-action="edit-club" data-id="${c.id}">Edytuj klub</button>
       <button class="danger" data-action="delete-club" data-id="${c.id}">Usuń</button>
     </div>
@@ -7494,6 +7641,7 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="manage-transfer-history"]').forEach(b=>b.onclick=()=>openTransferHistoryModal(b.dataset.id));
   main.querySelectorAll('[data-action="import-squad"]').forEach(b=>b.onclick=()=>openSquadImportModal(b.dataset.id));
   main.querySelectorAll('[data-action="import-squad-stats"]').forEach(b=>b.onclick=()=>openSquadStatsModal(b.dataset.id));
+  main.querySelectorAll('[data-action="protokol-meczu"]').forEach(b=>b.onclick=()=>openProtokolMeczuModal(b.dataset.id));
   main.querySelectorAll('[data-action="stats-90minut"]').forEach(b=>b.onclick=()=>open90minutStatsModal(b.dataset.id));
 
   // Zaznaczanie i usuwanie zawodników wprost ze składu klubu — pojedynczo lub całością.
@@ -10048,6 +10196,33 @@ function tmStatsLink(club){
 //
 // Świadomie nie chodzi po stronach samodzielnie — automatyczne przemierzanie serwisu łamałoby
 // jego regulamin. Czyta wyłącznie stronę, którą masz otwartą.
+// ZAKŁADKA DO ŁNP — zbieranie protokołów meczowych jednym kliknięciem.
+//
+// „Łączy nas piłka" buduje stronę w przeglądarce, więc z serwera przychodzi pusta skorupa: nasz
+// program nie ma czego czytać (sprawdzone — w odpowiedzi nie ma ani jednego nazwiska). Dane są
+// jednak na ekranie, u Ciebie. Ta zakładka zbiera je stamtąd: klikasz ją na stronie meczu, a ona
+// dokłada protokół do listy w pamięci przeglądarki i kopiuje CAŁĄ listę do schowka. Dziewięć
+// meczów kolejki to dziewięć kliknięć i JEDNO wklejenie w aplikacji.
+//
+// Shift + kliknięcie czyści zebrane protokoły (na początek nowej kolejki).
+const LNP_BOOKMARKLET = `javascript:(function(){try{
+var K='sbs_protokoly';
+if(window.event&&window.event.shiftKey){localStorage.removeItem(K);alert('SBS: wyczyszczono zebrane protokoly.');return;}
+if(!/laczynaspilka\\.pl/.test(location.host)){alert('SBS: to nie jest strona Laczy nas pilka.');return;}
+var t=document.body.innerText||'';
+var i=t.search(/^\\s*Sk\\u0142ady\\s*$/m);
+if(i<0){alert('SBS: na tej stronie nie widze sekcji \\u201eSklady\\u201d.\\n\\nOtworz strone MECZU (nie tabele) i poczekaj, az sie zaladuje.');return;}
+var naglowek=(document.title||'mecz').replace(/\\s+/g,' ').trim();
+var protokol='### PROTOKOL: '+naglowek+'\\n'+t.slice(i);
+var zebrane=[];try{zebrane=JSON.parse(localStorage.getItem(K)||'[]');}catch(e){}
+if(zebrane.indexOf(protokol)<0)zebrane.push(protokol);
+localStorage.setItem(K,JSON.stringify(zebrane));
+var calosc=zebrane.join('\\n\\n');
+var p=document.createElement('textarea');p.value=calosc;document.body.appendChild(p);p.select();
+document.execCommand('copy');document.body.removeChild(p);
+alert('SBS: zebrano '+zebrane.length+' protokolow i skopiowano do schowka.\\n\\nWklej je w aplikacji w oknie \\u201eWklej protokol meczu\\u201d.\\n\\nShift+klikniecie czysci liste.');
+}catch(e){alert('SBS: '+e.message);}})();`;
+
 const TM_BOOKMARKLET = `javascript:(function(){try{
 var K='sbs_zebrane';
 if(window.event&&window.event.shiftKey){localStorage.removeItem(K);alert('SBS: wyczyszczono zebrane kluby.');return;}
@@ -10546,6 +10721,40 @@ function matchPlayersByFullName(nazwa, birthYear){
     if(zRocznikiem.length) kandydaci = zRocznikiem;
   }
   return kandydaci;
+}
+
+// Instrukcja do zakładki ŁNP. Krok po kroku, bo to jedyna droga do minut w IV lidze:
+// strona PZPN buduje się w przeglądarce i z serwera przychodzi pusta — dane są tylko na ekranie.
+function openLnpBookmarkletModal(){
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+  <div class="modal" style="max-width:660px;">
+    <h3>🔖 Szybkie kopiowanie protokołów z „Łączy nas piłka"</h3>
+    <p class="note">Zamiast zaznaczać całą stronę (Ctrl+A) i wklejać mecz po meczu — jedno kliknięcie
+    na każdej stronie meczu, a potem <strong>jedno wklejenie całej kolejki</strong>. Ustawiasz to <strong>raz</strong>.</p>
+    <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
+      <li>Włącz pasek zakładek: <strong>Ctrl+Shift+B</strong></li>
+      <li>Przeciągnij ten przycisk na pasek zakładek:<br>
+        <a href="${esc(LNP_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem klikaj go TAM, na stronach meczów.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">📋 Zbierz protokół</a>
+      </li>
+      <li>Otwórz mecz na laczynaspilka.pl i poczekaj, aż pojawią się <strong>Składy</strong></li>
+      <li>Kliknij <strong>„📋 Zbierz protokół"</strong> — powie, ile protokołów już zebrał</li>
+      <li>Tak samo przy kolejnych meczach kolejki — <strong>lista rośnie</strong>, a schowek zawsze ma komplet</li>
+      <li>Wróć tutaj, wklej (<strong>Ctrl+V</strong>) i zapisz — rozliczę wszystkie mecze naraz</li>
+    </ol>
+    <p class="note" style="font-size:11.5px;"><strong>Shift + kliknięcie</strong> zakładki czyści zebraną listę — rób to na początku nowej kolejki.</p>
+    <p class="note" style="font-size:11px;color:var(--ink-soft);">Skrypt czyta tylko tekst strony, którą masz otwartą — nie loguje się nigdzie i nie chodzi po serwisie samodzielnie.</p>
+    <details style="margin-top:10px;">
+      <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Przeciąganie nie działa? Pokaż kod do wklejenia ręcznie</summary>
+      <p class="note" style="font-size:11px;margin-top:6px;">Utwórz nową zakładkę i wklej to w pole adresu:</p>
+      <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;">${esc(LNP_BOOKMARKLET)}</textarea>
+    </details>
+    <div class="modal-actions"><button class="secondary" data-action="close-modal">Zamknij</button></div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=()=>overlay.remove());
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) overlay.remove(); });
 }
 
 function openBookmarkletModal(){
