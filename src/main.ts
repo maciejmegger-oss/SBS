@@ -14358,7 +14358,13 @@ function wireLastModal(){
     const hasAgent = agentChecked ? agentChecked.value==='tak' : false;
     // Data sprawdzenia: albo ta, którą zawodnik już miał, albo dzisiejsza — gdy odpowiedź padła
     // teraz (dotknięto pola) lub gdy menedżer jest wskazany, bo to samo w sobie jest odpowiedzią.
-    const wczesniejSprawdzone = p && p.agentCheckedAt ? p.agentCheckedAt : '';
+    //
+    // Edytowanego zawodnika bierzemy TUTAJ. Wcześniej stało w tym miejscu `p`, które istnieje
+    // dopiero niżej, w gałęzi zapisu — więc każde kliknięcie „Zapisz" w oknie zawodnika kończyło
+    // się komunikatem „p is not defined" i nic się nie zapisywało.
+    const edytowanyZawodnik = editingPlayerId ? DB.players.find(x=>x.id===editingPlayerId) : null;
+    const wczesniejSprawdzone = edytowanyZawodnik && edytowanyZawodnik.agentCheckedAt
+      ? edytowanyZawodnik.agentCheckedAt : '';
     const agentCheckedAt = (ov.dataset.agentOdpowiedziano === '1' || hasAgent)
       ? new Date().toISOString().slice(0,10)
       : wczesniejSprawdzone;
@@ -14396,8 +14402,7 @@ function wireLastModal(){
       notes: document.getElementById('pm-notes').value.trim()
     };
     if(editingPlayerId){
-      const p = DB.players.find(x=>x.id===editingPlayerId);
-      Object.assign(p, data);
+      if(edytowanyZawodnik) Object.assign(edytowanyZawodnik, data);
     } else {
       data.id = uid('Z');
       data.dateAdded = new Date().toISOString().slice(0,10);
