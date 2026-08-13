@@ -18,7 +18,7 @@
 import {
   ZRODLA_LIG, poziomRozgrywek, pobierzZ90minut, parseLinkiMeczow, parseSkladyMeczu,
   parseWystepyZawodnika, normalizujNazwe, minutyZWpisu, toSamKlub, tytulMaKlub, czlonyKlubu,
-  parseKlubyZTabeli,
+  parseKlubyZTabeli, parseSchedule,
 } from "./_90minut.js";
 
 import { BAZA, KLUCZ_BAZY, naglowkiDlaZadania, maDostepDoBazy, PODPOWIEDZ_BRAK_KLUCZA } from "./_baza.js";
@@ -176,15 +176,38 @@ export default async function handler(req, res) {
       const adresKlubu = `http://www.90minut.pl/skarb.php?id_klub=${nasz.id}` + (nasz.sezon ? `&id_sezon=${nasz.sezon}` : "");
       wTabeliRozgrywek = { nazwa: nasz.nazwa, adres: adresKlubu, stronaLigi: adres };
       adresKlubuNa90minut = adresKlubu;
+    }
+
+    // MECZE BIERZEMY Z TERMINARZA, A NIE Z PODPOWIEDZI ODNOŚNIKÓW ANI ZE STRONY KLUBU.
+    //
+    // W terminarzu obie nazwy drużyn stoją jako ZWYKŁY TEKST w komórkach wiersza, a w tym samym
+    // wierszu jest wynik i odnośnik do protokołu. To jedyne miejsce na stronie, które wiąże mecz
+    // z klubem niezależnie od tego, czy odnośnik ma podpowiedź (często nie ma) i czy strona klubu
+    // wymienia mecze (bywa, że nie wymienia — cała IV liga pomorska pokazywała wtedy „nie ma
+    // jeszcze rozegranych meczów", choć kluby miały za sobą kolejkę).
+    const zTerminarza = parseSchedule(html)
+      .filter((m) => m.id && m.rozegrany && (toSamKlub(m.homeTeam, klub.name) || toSamKlub(m.awayTeam, klub.name)));
+    if (zTerminarza.length) {
+      mecze = zTerminarza.map((m) => ({
+        id: m.id, tytul: `${m.homeTeam} - ${m.awayTeam}`,
+        data: m.date || "", kolejka: m.round || null, wynik: m.wynik || "",
+      }));
+      stronaLigi = adres;
+      break;
+    }
+
+    if (wTabeliRozgrywek && wTabeliRozgrywek.stronaLigi === adres) {
+      // Strona klubu jako druga droga — bywa, że ma mecze, których nie ma w terminarzu
+      // (np. zaległe spotkanie dopisane ręcznie).
       try {
-        const zeStronyKlubu = parseLinkiMeczow(await pobierzZ90minut(adresKlubu));
+        const zeStronyKlubu = parseLinkiMeczow(await pobierzZ90minut(wTabeliRozgrywek.adres));
         if (zeStronyKlubu.length) {
           mecze = zeStronyKlubu;
           stronaLigi = adres;
           break;
         }
       } catch (e) {
-        bledyStron.push({ adres: adresKlubu, blad: String((e && e.message) || e) });
+        bledyStron.push({ adres: wTabeliRozgrywek.adres, blad: String((e && e.message) || e) });
       }
     }
 
@@ -312,9 +335,9 @@ export default async function handler(req, res) {
     else if (toSamKlub(p.goscieNazwa, klub.name)) { nasi = p.goscie; dom = false; }
     if (!nasi) continue;
     const opis = {
-      mecz: s.m.id, data: p.data || "",
-      kolejka: Number((p.rozgrywki.match(/Kolejka\s*(\d+)/i) || [])[1]) || null,
-      rywal: (dom ? p.goscieNazwa : p.gospodarzeNazwa) || "", dom, wynik: p.wynik || "",
+      mecz: s.m.id, data: p.data || s.m.data || "",
+      kolejka: Number((p.rozgrywki.match(/Kolejka\s*(\d+)/i) || [])[1]) || s.m.kolejka || null,
+      rywal: (dom ? p.goscieNazwa : p.gospodarzeNazwa) || "", dom, wynik: p.wynik || s.m.wynik || "",
     };
     naszeMecze.push(opis);
     nasi.forEach((z) => {
@@ -658,6 +681,7 @@ export default async function handler(req, res) {
     rozgrywki: rozgrywkiNagl,
     stronaLigi,
     sprawdzoneMecze: wybrane.length,
+    zawodnikowNa90minut: zeStatystykami.length,
     meczeKlubu: mecze.length,
     // Adres strony klubu odnaleziony w tabeli — przeglądarka zapisuje go w kartotece, żeby
     // następnym razem pominąć całe szukanie i wejść od razu tam, gdzie trzeba.

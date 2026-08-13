@@ -165,12 +165,21 @@ export function parseSchedule(html) {
       const cellText = cells[3] || "";
       const time = (cellText.match(/(\d{1,2}:\d{2})/) || [])[1] || "";
 
+      // Identyfikator protokołu i wynik biorę z TEGO SAMEGO wiersza, w którym stoją nazwy drużyn.
+      // To najpewniejsze powiązanie meczu z klubem, jakie ma ta strona: nazwy są tu zwykłym
+      // tekstem, więc nie zależą od tego, czy odnośnik ma podpowiedź (a często jej nie ma).
+      const id = (m[1].match(/mecz\.php\?id_mecz=(\d+)/i) || [])[1] || "";
+      const wynikTekst = String(cells[1] || "").trim();
+      const rozegrany = /^\d{1,2}\s*[-:]\s*\d{1,2}$/.test(wynikTekst);
+
       const exactDate =
         (oddsAttrs.match(/data-date="(\d{4}-\d{2}-\d{2})"/) || [])[1] ||
         polishDateToIso(cellText, years);
       const date = exactDate || headingDate;
 
-      out.push({ round, date, time, homeTeam, awayTeam, dateApprox: !exactDate && !!headingDate });
+      out.push({ round, date, time, homeTeam, awayTeam, id,
+        wynik: rozegrany ? wynikTekst.replace(/\s*/g, "") : "", rozegrany,
+        dateApprox: !exactDate && !!headingDate });
     }
   }
   return out;

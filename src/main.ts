@@ -4250,6 +4250,9 @@ function openGrupaStatsModal(){
   let zapisanychRazem = 0;
   const zapisaneWPrzebiegu = [];
   let adresyDoZapisania = 0;
+  let dopisujBrakujacych = true;
+  let dopisanychRazem = 0;
+  let komunikatKoncowy = '';
 
   const ikona = (e)=> e==='ok' ? '✔' : e==='blad' ? '✖' : e==='pracuje' ? '⏳' : '·';
   const rysuj = ()=>{
@@ -4257,6 +4260,11 @@ function openGrupaStatsModal(){
     <div class="modal" style="max-width:720px;">
       <h3>⏱ Odśwież statystyki z 90minut — ${esc(clubBrowse.group || clubBrowse.top || 'wszystkie kluby')}</h3>
       <p class="note" style="margin-bottom:10px;">Przechodzę kluby po kolei: pobieram protokoły meczów, liczę dorobek zawodników i od razu zapisuję. Klub bez rozegranych meczów albo bez trafienia w nazwę pomijam i wypisuję niżej — nic przez to nie przerywa całego przebiegu.</p>
+      <label style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px;cursor:pointer;font-size:13px;">
+        <input type="checkbox" id="gs-dopisuj" ${dopisujBrakujacych?'checked':''} ${pracuje?'disabled':''} style="margin-top:3px;">
+        <span><strong>Zakładaj kartoteki zawodnikom, których jeszcze nie mam.</strong>
+        <span class="note" style="display:block;">Kto zagrał w protokole, a nie ma go w bazie, dostaje wpis z imieniem, nazwiskiem i rocznikiem, a zaraz potem swoje mecze i minuty. Tak zapełnia się skład klubu, który zakładasz od zera.</span></span>
+      </label>
       <div style="max-height:320px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px;font-size:12.5px;">
         ${stan.map(p=>`<div style="padding:3px 2px;display:flex;gap:8px;align-items:baseline;${p.etap==='pracuje'?'font-weight:700;':''}">
           <span style="width:14px;color:${p.etap==='ok'?'var(--good)':p.etap==='blad'?'var(--clay-dark)':'var(--ink-faint)'};">${ikona(p.etap)}</span>
@@ -4268,6 +4276,7 @@ function openGrupaStatsModal(){
           ${(p.widzianeKluby||[]).length ? `<p class="note" style="margin:4px 0;line-height:1.7;"><strong>Na przeszukanych stronach widzę:</strong> ${p.widzianeKluby.map(n=>esc(n)).join(' &middot; ')}</p>` : ''}
         </details>` : ''}`).join('')}
       </div>
+      ${komunikatKoncowy ? `<p class="note" style="margin:8px 0 0;color:var(--heading);font-weight:600;">${esc(komunikatKoncowy)}</p>` : ''}
       <div class="modal-actions">
         ${zakonczone
           ? `${stan.some(p=>p.etap==='blad') ? `<button class="secondary" data-action="ponow-grupe">Ponów nieudane (${stan.filter(p=>p.etap==='blad').length})</button>` : ''}
@@ -4285,37 +4294,54 @@ function openGrupaStatsModal(){
     overlay.querySelectorAll('[data-action="przerwij-grupe"]').forEach(b=>b.onclick=()=>{ przerwane = true; });
     overlay.querySelectorAll('[data-action="start-grupa"]').forEach(b=>b.onclick=()=>{ void przebiegnij(false); });
     overlay.querySelectorAll('[data-action="ponow-grupe"]').forEach(b=>b.onclick=()=>{ void przebiegnij(true); });
+    const chk = overlay.querySelector('#gs-dopisuj');
+    if(chk) chk.onchange = ()=>{ dopisujBrakujacych = chk.checked; };
   };
 
   async function jedenKlub(poz){
     const token = await tokenSesji();
     const naglowki = token ? { Authorization: 'Bearer ' + token } : {};
-    const res = await fetch('/api/stats-90minut?clubId=' + encodeURIComponent(poz.id),
-      { signal: AbortSignal.timeout(120000), headers: naglowki });
-    const typ = res.headers.get('content-type') || '';
-    if(!typ.includes('application/json')) throw new Error('przekroczony limit czasu funkcji');
-    const dane = await res.json();
-    // Odmowa serwisu przy większym ruchu (503) to co innego niż „nie znalazłem klubu" — taki klub
-    // ma sens ponowić, więc oznaczamy błąd jako chwilowy.
-    if(!res.ok || dane.error){
-      const e = new Error(dane.error || ('kod ' + res.status));
-      e.chwilowy = res.status === 503 || res.status === 429;
-      // Podpowiedź i nazwy widziane na stronach niosą całą diagnozę: czy klub gra w innej grupie,
-      // czy nazywa się inaczej, czy serwis nie odpowiedział. Bez nich wiersz mówi tylko „nie
-      // znalazłem" i sprawa wraca do punktu wyjścia.
-      e.podpowiedz = dane.podpowiedz || '';
-      e.widzianeKluby = dane.widzianeKluby || [];
-      e.bezMeczow = !!dane.bezMeczow;
-      e.adresKlubuNa90minut = dane.adresKlubuNa90minut || '';
-      throw e;
+    let dane = await podglad(poz, naglowki);
+    let dopisani = 0;
+
+    // ZAWODNICY, KTÓRYCH JESZCZE NIE MA W KARTOTECE.
+    //
+    // Klub założony od zera nie ma ani jednego zawodnika, więc pobranie statystyk nie miałoby czego
+    // uzupełnić — wszyscy z protokołu trafialiby na listę „zagrali, ale ich nie mam". Zakładamy im
+    // więc wpisy (imię, nazwisko, rocznik, klub) i POWTARZAMY podgląd, żeby od razu dostali swoje
+    // mecze i minuty. Drugie pobranie jest szybkie: strony 90minut leżą już w pamięci serwera.
+    if(dopisujBrakujacych && dane.spozaBazy && dane.spozaBazy.length){
+      const nowi = dane.spozaBazy.filter(x=> String(x.kto||'').trim().split(/\s+/).length >= 2);
+      if(nowi.length){
+        nowi.forEach(x=>{
+          const slowa = String(x.kto).trim().split(/\s+/);
+          DB.players.push({
+            id: uid('Z'), firstName: slowa[0], lastName: slowa.slice(1).join(' '),
+            birthDate: '', birthYear: x.rocznik ? String(x.rocznik) : '', nationality: '',
+            position: '', foot: '', height: null, status: '', clubId: poz.id, scout: currentScout || '',
+            videoLink: '', lnpLink: x.adres || '', tmLink: '',
+            hasAgent: false, agencyName: '', formation: '', customFields: {},
+            notes: 'Dopisany automatycznie z protokołu 90minut — uzupełnij pozycję i resztę danych.',
+            dateAdded: new Date().toISOString().slice(0,10),
+          });
+        });
+        const ok = await savePlayers();
+        if(!ok) throw new Error('nie udało się zapisać dopisanych zawodników');
+        dopisani = nowi.length;
+        dopisanychRazem += nowi.length;
+        dane = await podglad(poz, naglowki);
+      }
     }
+
     // Adres strony klubu na 90minut zapamiętujemy w kartotece — następnym razem wchodzimy tam
     // od razu, bez szukania po tabelach, i nazwa klubu przestaje mieć jakiekolwiek znaczenie.
     if(dane.adresKlubuNa90minut){
       const k = DB.clubs.find(x=>x.id===poz.id);
       if(k && !String(k.profileLnp||'').trim()){ k.profileLnp = dane.adresKlubuNa90minut; adresyDoZapisania++; }
     }
-    if(!Array.isArray(dane.pakiet) || !dane.pakiet.length) return { zapisani: 0, opis: 'bez zmian' };
+    if(!Array.isArray(dane.pakiet) || !dane.pakiet.length){
+      return { zapisani: 0, opis: dopisani ? `dopisano ${dopisani}, liczby bez zmian` : 'bez zmian' };
+    }
 
     const zapis = await fetch('/api/stats-90minut?clubId=' + encodeURIComponent(poz.id) + '&apply=1',
       { method: 'POST', signal: AbortSignal.timeout(120000),
@@ -4325,7 +4351,28 @@ function openGrupaStatsModal(){
     if(!zapis.ok || odp.error) throw new Error(odp.error || ('kod ' + zapis.status));
     zapisaneWPrzebiegu.push(...dane.pakiet);
     return { zapisani: odp.zapisani || 0,
-      opis: `${odp.zapisani || 0} zawodników${dane.zProtokolow && dane.zProtokolow.length ? `, ${dane.zProtokolow.length} z protokołów` : ''}` };
+      opis: `${odp.zapisani || 0} zawodników${dopisani ? `, w tym ${dopisani} nowych` : ''}${
+        dane.zProtokolow && dane.zProtokolow.length ? `, ${dane.zProtokolow.length} z protokołów` : ''}` };
+  }
+
+  // Jedno pobranie podglądu dla klubu. Błąd zamieniamy na wyjątek z całą diagnozą z serwera —
+  // stąd bierze się rozwijane „dlaczego?" przy nieudanym klubie.
+  async function podglad(poz, naglowki){
+    const res = await fetch('/api/stats-90minut?clubId=' + encodeURIComponent(poz.id),
+      { signal: AbortSignal.timeout(120000), headers: naglowki });
+    const typ = res.headers.get('content-type') || '';
+    if(!typ.includes('application/json')) throw new Error('przekroczony limit czasu funkcji');
+    const dane = await res.json();
+    if(!res.ok || dane.error){
+      const e = new Error(dane.error || ('kod ' + res.status));
+      e.chwilowy = res.status === 503 || res.status === 429;
+      e.podpowiedz = dane.podpowiedz || '';
+      e.widzianeKluby = dane.widzianeKluby || [];
+      e.bezMeczow = !!dane.bezMeczow;
+      e.adresKlubuNa90minut = dane.adresKlubuNa90minut || '';
+      throw e;
+    }
+    return dane;
   }
 
   async function przebiegnij(tylkoNieudane){
@@ -4363,6 +4410,7 @@ function openGrupaStatsModal(){
       if(i + 1 < kolejka.length) await new Promise(r=>setTimeout(r, 600));
     }
     pracuje = false; zakonczone = true;
+    if(dopisanychRazem) komunikatKoncowy = `Założyłem kartoteki ${dopisanychRazem} zawodnikom i wciągnąłem ich mecze oraz minuty.`;
     // Odnalezione adresy klubów zapisujemy raz, na koniec — to jedno zapytanie zamiast osiemnastu.
     if(adresyDoZapisania){ try{ await saveClubs(); }catch(e){ console.error('Zapis adresów klubów:', e); } }
     // Dopiero teraz wczytujemy bazę od nowa — raz, a nie po każdym klubie.
