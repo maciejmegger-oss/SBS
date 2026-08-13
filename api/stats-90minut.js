@@ -20,6 +20,7 @@ import {
   parseWystepyZawodnika, normalizujNazwe, minutyZWpisu, toSamKlub, tytulMaKlub, czlonyKlubu,
   parseKlubyZTabeli, parseSchedule,
 } from "./_90minut.js";
+import { czyLnp, pobierzLnp, parseProtokolLnp } from "./_lnp.js";
 
 import { BAZA, KLUCZ_BAZY, naglowkiDlaZadania, maDostepDoBazy, PODPOWIEDZ_BRAK_KLUCZA } from "./_baza.js";
 
@@ -160,6 +161,8 @@ export default async function handler(req, res) {
   let wTabeliRozgrywek = null;
   let zProtokolowWprost = false;
   let zTerminarzaRozpoznane = 0;
+  let zLnpOdczytane = 0;
+  const protokolyBezSkladu = [];
   for (const adres of mecze.length ? [] : adresy) {
     let html;
     // NIEUDANE POBRANIE STRONY TO NIE JEST „BRAK MECZÓW".
@@ -383,8 +386,13 @@ export default async function handler(req, res) {
   // --- 2. SKŁADY -> IDENTYFIKATORY ZAWODNIKÓW ---
   const skladyHtml = await porcjami(wybrane, RÓWNOLEGLE, async (m) => {
     const adresProtokolu = m.url || `http://www.90minut.pl/mecz.php?id_mecz=${m.id}`;
-    try { return { m, html: await pobierzZ90minut(adresProtokolu) }; }
-    catch (e) { return { m, error: e.message }; }
+    try {
+      // W IV lidze 90minut nie prowadzi własnych protokołów — odnośnik przy wyniku przenosi na
+      // stronę PZPN. Czytamy więc stamtąd, tym samym parserem, którym aplikacja czyta wklejony
+      // protokół. Skąd pochodzi strona, rozstrzyga jej adres.
+      if (czyLnp(adresProtokolu)) return { m, html: await pobierzLnp(adresProtokolu), zLnp: true };
+      return { m, html: await pobierzZ90minut(adresProtokolu) };
+    } catch (e) { return { m, error: e.message }; }
   });
 
   const zawodnicy90 = new Map();   // id -> {id, sezon, nazwa, numer}
@@ -396,6 +404,33 @@ export default async function handler(req, res) {
   let rozgrywkiNagl = "";
   for (const s of skladyHtml) {
     if (s.error) continue;
+
+    // --- PROTOKÓŁ Z ŁNP ---
+    // Nie ma tu identyfikatorów zawodników z 90minut, więc tożsamość budujemy z imienia
+    // i nazwiska. Dorobek sezonowy i tak policzymy z protokołów, a do kartoteki dopasowujemy
+    // po nazwisku — czyli dokładnie tak samo jak przy 90minut.
+    if (s.zLnp) {
+      const prot = parseProtokolLnp(s.html, klub.name);
+      if (!prot) { protokolyBezSkladu.push(s.m.url || s.m.id); continue; }
+      zLnpOdczytane++;
+      const opisLnp = {
+        mecz: s.m.id, data: s.m.data || "", kolejka: s.m.kolejka || null,
+        rywal: s.m.rywal || (prot.druzyny.find((d) => d !== prot.nazwaDruzyny) || ""),
+        dom: typeof s.m.dom === "boolean" ? s.m.dom : true, wynik: s.m.wynik || "",
+      };
+      naszeMecze.push(opisLnp);
+      prot.zawodnicy.forEach((z) => {
+        const id = "lnp:" + normalizujNazwe(z.nazwaPelna);
+        if (!zawodnicy90.has(id)) zawodnicy90.set(id, { id, sezon: "", nazwa: z.nazwaPelna, numer: z.numer, zLnp: true });
+        if (!przebiegWg90.has(id)) przebiegWg90.set(id, new Map());
+        przebiegWg90.get(id).set(opisLnp.mecz, {
+          ...opisLnp, minuty: z.minutyGry, odMinuty: z.wszedl, doMinuty: z.zszedl,
+          podstawowy: !!z.podstawowy, zolte: 0, czerwone: 0,
+        });
+      });
+      continue;
+    }
+
     const p = parseSkladyMeczu(s.html);
     rozgrywkiNagl = rozgrywkiNagl || p.rozgrywki;
     // Która strona to nasz klub? Rozstrzyga nazwa z samego protokołu, a nie zgadywanie
@@ -481,8 +516,19 @@ export default async function handler(req, res) {
   const lista = [...zawodnicy90.values()];
   const bezWierszaSezonu = [];
   const statystyki = await porcjami(lista, RÓWNOLEGLE, async (z) => {
-    const adres = `http://www.90minut.pl/wystepy.php?id=${z.id}` + (z.sezon ? `&id_sezon=${z.sezon}` : "");
     const zProtokolu = zProtokolow(z.id);
+    // Zawodnik odczytany z protokołu ŁNP nie ma strony na 90minut, więc nie ma czego pytać
+    // o sumy sezonowe — jego dorobek liczymy wprost z protokołów. Bramek stąd nie znamy
+    // (rodzaj zdarzenia jest ikoną), więc pole bramek zostaje nietknięte.
+    if (z.zLnp) {
+      if (!zProtokolu) return null;
+      return {
+        ...z, nazwaPelna: z.nazwa, rocznik: null, klub: klub.name, rozgrywki: klub.league,
+        wystepy: zProtokolu.wystepy, minuty: zProtokolu.minuty, gole: null,
+        zolte: zProtokolu.zolte, czerwone: zProtokolu.czerwone, adres: "", zProtokolow: true,
+      };
+    }
+    const adres = `http://www.90minut.pl/wystepy.php?id=${z.id}` + (z.sezon ? `&id_sezon=${z.sezon}` : "");
     let dane = null;
     try { dane = parseWystepyZawodnika(await pobierzZ90minut(adres)); } catch { /* strona zawodnika niedostępna */ }
     // Wiersz „RAZEM" zlicza ligę razem z pucharem. Chcemy wiersz samych rozgrywek ligowych,
@@ -666,6 +712,14 @@ export default async function handler(req, res) {
     const skrot = (lista) => (lista || []).map((w) => `${w.mecz}:${w.minuty}`).join(",");
     const przebiegBezZmian = skrot(ext.przebieg) === skrot(przebieg);
 
+    // Dorobek policzony z protokołów obejmuje tylko te kolejki, które pobraliśmy (ostatnie
+    // dwadzieścia). W trakcie sezonu byłby więc niepełny — dlatego nigdy nie OBNIŻA liczb,
+    // które zawodnik już ma. Rosnąć może zawsze, maleć nie.
+    if (z.zProtokolow) {
+      z.wystepy = Math.max(z.wystepy || 0, g.matches || 0);
+      z.minuty = Math.max(z.minuty || 0, g.minutes || 0);
+    }
+
     const bezZmian =
       (g.matches || 0) === z.wystepy && (g.minutes || 0) === z.minuty
       && (!goleZnane || (g.goals || 0) === z.gole)
@@ -775,6 +829,7 @@ export default async function handler(req, res) {
     zawodnikowNa90minut: zeStatystykami.length,
     zProtokolowWprost,
     stronaZTerminarza: zTerminarzaRozpoznane,
+    protokolyZLnp: zLnpOdczytane,
     meczeKlubu: mecze.length,
     // Adres strony klubu odnaleziony w tabeli — przeglądarka zapisuje go w kartotece, żeby
     // następnym razem pominąć całe szukanie i wejść od razu tam, gdzie trzeba.
