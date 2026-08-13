@@ -4176,7 +4176,10 @@ function openProtokolMeczuModal(clubId){
         }).join('')}
       </div>` : ''}
       <div class="modal-actions" style="justify-content:space-between;">
-        <button class="secondary" data-x="zakladka" title="Jedno kliknięcie na stronie meczu zamiast zaznaczania całej strony">🔖 Szybkie kopiowanie z ŁNP</button>
+        <span>
+          <button class="secondary" data-x="zakladka" title="Jedno kliknięcie na stronie meczu zamiast zaznaczania całej strony">🔖 Szybkie kopiowanie z ŁNP</button>
+          <button class="secondary" data-x="otworz-lnp" title="Otwiera stronę klubu na Łączy nas piłka — stamtąd wchodzisz w kolejne mecze">↗ Otwórz mecze klubu</button>
+        </span>
         <span>
           <button class="secondary" data-x="zamknij">Zamknij</button>
           ${wynik
@@ -4188,6 +4191,12 @@ function openProtokolMeczuModal(clubId){
     overlay.querySelectorAll('[data-x="zamknij"]').forEach(b=>b.onclick=()=>{ overlay.remove(); render(); });
     overlay.querySelectorAll('[data-x="rozpoznaj"]').forEach(b=>b.onclick=()=>rozpoznaj());
     overlay.querySelectorAll('[data-x="zakladka"]').forEach(b=>b.onclick=()=>openLnpBookmarkletModal());
+    overlay.querySelectorAll('[data-x="otworz-lnp"]').forEach(b=>b.onclick=()=>{
+      // Link zapisany przy klubie, a gdy go nie ma — wyszukiwarka ŁNP po nazwie klubu.
+      const wlasny = klub && /laczynaspilka\.pl/i.test(String(klub.profileLnp||'')) ? klub.profileLnp : '';
+      const adres = wlasny || ('https://www.laczynaspilka.pl/szukaj?q=' + encodeURIComponent(klub ? klub.name : ''));
+      window.open(adres, '_blank', 'noopener');
+    });
     overlay.querySelectorAll('[data-x="zapisz"]').forEach(b=>b.onclick=()=>{ void zapisz(); });
     const chk = overlay.querySelector('#pm-dopisuj');
     if(chk) chk.onchange = ()=>{ dopisujBrak = chk.checked; };
@@ -4700,10 +4709,13 @@ function viewClubDetail(id){
     </div>
     <div style="display:flex;gap:8px;">
       <button class="gold" data-action="import-squad" data-id="${c.id}">📋 Import składu</button>
-      <button class="gold" data-action="stats-90minut" data-id="${c.id}" title="Pobierz z 90minut mecze, minuty, bramki i kartki całego składu — bez kopiowania czegokolwiek">⏱ Statystyki z 90minut</button>
       ${topLevelOf(c.league) === 'IV liga' || topLevelOf(c.league) === 'Klasa okręgowa'
-        ? `<button class="secondary" data-action="protokol-meczu" data-id="${c.id}" title="Wklej protokół z Łączy nas piłka — minuty, zmiany i skład za jednym razem">📋 Wklej protokół meczu</button>`
-        : `<button class="secondary" data-action="import-squad-stats" data-id="${c.id}" title="Zapasowa droga: ręczna wklejka z Transfermarktu. Dla polskich lig użyj przycisku obok.">📋 Wklejka z Transfermarktu</button>`}
+        ? // IV ligi 90minut nie prowadzi (odnośnik przy wyniku przenosi na stronę PZPN), a ŁNP
+          // nie oddaje danych serwerowi — buduje stronę w przeglądarce. Jedyna działająca droga
+          // do minut prowadzi więc przez protokoły z ŁNP, i to ona stoi tu jako główny przycisk.
+          `<button class="gold" data-action="protokol-meczu" data-id="${c.id}" title="Protokoły meczów z Łączy nas piłka — minuty, zmiany i skład obu drużyn za jednym razem">⏱ Statystyki z Łączy nas piłka</button>`
+        : `<button class="gold" data-action="stats-90minut" data-id="${c.id}" title="Pobierz z 90minut mecze, minuty, bramki i kartki całego składu — bez kopiowania czegokolwiek">⏱ Statystyki z 90minut</button>
+           <button class="secondary" data-action="import-squad-stats" data-id="${c.id}" title="Zapasowa droga: ręczna wklejka z Transfermarktu. Dla polskich lig użyj przycisku obok.">📋 Wklejka z Transfermarktu</button>`}
       <button class="secondary" data-action="edit-club" data-id="${c.id}">Edytuj klub</button>
       <button class="danger" data-action="delete-club" data-id="${c.id}">Usuń</button>
     </div>
