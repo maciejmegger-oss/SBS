@@ -10772,6 +10772,57 @@ function matchPlayersByFullName(nazwa, birthYear){
 // Instrukcja do zakładki ŁNP. Krok po kroku, bo to jedyna droga do minut w IV lidze:
 // strona PZPN buduje się w przeglądarce i z serwera przychodzi pusta — dane są tylko na ekranie.
 // Instrukcja do zakładki „profil zawodnika z Transfermarktu".
+// Ręczne przypisanie liczb z wklejki. Pokazujemy, co znaleźliśmy, i pozwalamy wskazać znaczenie —
+// bez przepisywania. To ostatnia deska ratunku, gdy tekst nie ma podpisów przy liczbach.
+function pokazPrzypisanieLiczb(ov, liczby){
+  const stare = ov.querySelector('#pm-przypisanie');
+  if(stare) stare.remove();
+  const pole = ov.querySelector('#pm-stats-paste');
+  if(!pole) return;
+  const box = document.createElement('div');
+  box.id = 'pm-przypisanie';
+  box.style.cssText = 'border:1px solid var(--gold);border-radius:8px;padding:10px;margin:0 0 12px;background:var(--card-soft);';
+  box.innerHTML = `
+    <p class="note" style="margin:0 0 8px;"><strong>Nie wiem, co jest czym w tej wklejce.</strong>
+    Znalazłem te liczby — wskaż przy każdej, czym jest. Czego nie wskażesz, zostanie nietknięte.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;">
+      ${liczby.map((n,i)=>`<span style="display:inline-flex;align-items:center;gap:4px;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:4px 8px;">
+        <strong style="font-size:14px;">${n}</strong>
+        <select data-liczba="${i}" style="font-size:12px;padding:2px 4px;">
+          <option value="">— pomiń —</option>
+          <option value="matches">mecze</option>
+          <option value="minutes">minuty</option>
+          <option value="goals">gole</option>
+          <option value="assists">asysty</option>
+        </select></span>`).join('')}
+    </div>
+    <div class="modal-actions" style="justify-content:flex-start;margin:10px 0 0;">
+      <button type="button" class="gold" data-x="wstaw-liczby">Wstaw do pól</button>
+      <button type="button" class="secondary" data-x="anuluj-liczby">Anuluj</button>
+    </div>`;
+  pole.parentElement.insertAdjacentElement('afterend', box);
+
+  // Podpowiedź, która trafia w większość przypadków: największa liczba to zwykle minuty.
+  const najwieksza = liczby.indexOf(Math.max(...liczby));
+  const selMin = box.querySelector(`select[data-liczba="${najwieksza}"]`);
+  if(selMin && Math.max(...liczby) >= 45) selMin.value = 'minutes';
+
+  box.querySelector('[data-x="anuluj-liczby"]').onclick = ()=>box.remove();
+  box.querySelector('[data-x="wstaw-liczby"]').onclick = ()=>{
+    const mapa = { matches:'#pm-matches', minutes:'#pm-minutes', goals:'#pm-goals', assists:'#pm-assists' };
+    const wstawione = [];
+    box.querySelectorAll('select[data-liczba]').forEach(sel=>{
+      if(!sel.value) return;
+      const el = ov.querySelector(mapa[sel.value]);
+      if(el){ el.value = String(liczby[Number(sel.dataset.liczba)]); wstawione.push(sel.options[sel.selectedIndex].text); }
+    });
+    box.remove();
+    alert(wstawione.length
+      ? 'Wstawiłem: ' + wstawione.join(', ') + '.\nSprawdź pola i kliknij „Zapisz".'
+      : 'Nic nie wskazałeś — pola zostały bez zmian.');
+  };
+}
+
 function openTmProfilBookmarkletModal(){
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -14678,10 +14729,17 @@ function wireLastModal(){
 
       const parsed = parseStatsText(text);
       if(!Object.keys(parsed).length){
-        alert('Nie udało się rozpoznać statystyk w tym tekście.\n\n' +
-          'Najprostsza droga: kliknij „🔖 Zakładka do Transfermarktu" pod spodem i ustaw ją raz. ' +
-          'Potem jedno kliknięcie na profilu zawodnika kopiuje komplet danych — datę urodzenia, pozycję, ' +
-          'nogę, wzrost, narodowość, kontrakt i dorobek sezonu — a tutaj wystarczy wkleić.');
+        // WKLEJKA BEZ PODPISÓW. Skopiowany wiersz z Transfermarktu to często sama kolumna kresek
+        // i liczb („-", „-", „-", „180") — nie da się z niej poznać, co jest meczem, a co minutą.
+        // Zamiast odmówić albo zgadywać (i wpisać komuś złe liczby), pokazujemy znalezione liczby
+        // i pytamy WPROST. Jedno kliknięcie na liczbę, zamiast przepisywania z ekranu.
+        const liczby = (text.match(/\d{1,4}/g) || []).map(Number).filter(n=>n<=10000).slice(0, 10);
+        if(!liczby.length){
+          alert('W tej wklejce nie widzę ani jednej liczby.\n\nNajprostsza droga: „🔖 Zakładka do Transfermarktu" — ' +
+            'jedno kliknięcie na profilu zawodnika kopiuje komplet danych, łącznie z datą urodzenia i pozycją.');
+          return;
+        }
+        pokazPrzypisanieLiczb(ov, liczby);
         return;
       }
       setVal('#pm-matches', parsed.matches);
