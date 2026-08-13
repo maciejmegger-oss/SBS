@@ -159,6 +159,7 @@ export default async function handler(req, res) {
   let adresKlubuNa90minut = "";
   let wTabeliRozgrywek = null;
   let zProtokolowWprost = false;
+  let zTerminarzaRozpoznane = 0;
   for (const adres of mecze.length ? [] : adresy) {
     let html;
     // NIEUDANE POBRANIE STRONY TO NIE JEST „BRAK MECZÓW".
@@ -201,7 +202,12 @@ export default async function handler(req, res) {
       if (!url && m.hrefProtokolu) {
         try { url = new URL(m.hrefProtokolu, adres).toString(); } catch { url = ""; }
       }
+      // Z TERMINARZA WIEMY, PO KTÓREJ STRONIE GRAŁ NASZ KLUB. To informacja pewniejsza niż nazwy
+      // wyłuskane z protokołu (te bywają w innym miejscu szablonu albo nie ma ich wcale) — i to
+      // ona ratuje odczyt, gdy protokół nie chce się przedstawić.
+      const dom = toSamKlub(m.homeTeam, klub.name);
       return url ? { id: m.id || url, url, tytul: `${m.homeTeam} - ${m.awayTeam}`,
+        dom, rywal: dom ? m.awayTeam : m.homeTeam,
         data: m.date || "", kolejka: m.round || null, wynik: m.wynik || "" } : null;
     }).filter(Boolean);
     // Ślad z odczytu strony. Bez niego „nie ma rozegranych meczów" jest nie do rozstrzygnięcia:
@@ -397,11 +403,20 @@ export default async function handler(req, res) {
     let nasi = null, dom = false;
     if (toSamKlub(p.gospodarzeNazwa, klub.name)) { nasi = p.gospodarze; dom = true; }
     else if (toSamKlub(p.goscieNazwa, klub.name)) { nasi = p.goscie; dom = false; }
-    if (!nasi) continue;
+    else if (typeof s.m.dom === "boolean") {
+      // Protokół nie podał nazw w rozpoznawalnym miejscu, ale wiersz terminarza, z którego wzięliśmy
+      // ten mecz, mówi wprost, czy graliśmy u siebie. Bez tego cała grupa kończyła przebieg
+      // komunikatem „w żadnym protokole nie rozpoznałem strony tego klubu".
+      nasi = s.m.dom ? p.gospodarze : p.goscie;
+      dom = s.m.dom;
+      zTerminarzaRozpoznane++;
+    }
+    if (!nasi || !nasi.length) continue;
     const opis = {
       mecz: s.m.id, data: p.data || s.m.data || "",
       kolejka: Number((p.rozgrywki.match(/Kolejka\s*(\d+)/i) || [])[1]) || s.m.kolejka || null,
-      rywal: (dom ? p.goscieNazwa : p.gospodarzeNazwa) || "", dom, wynik: p.wynik || s.m.wynik || "",
+      rywal: (dom ? p.goscieNazwa : p.gospodarzeNazwa) || s.m.rywal || "", dom,
+      wynik: p.wynik || s.m.wynik || "",
     };
     naszeMecze.push(opis);
     nasi.forEach((z) => {
@@ -424,10 +439,22 @@ export default async function handler(req, res) {
   }
 
   if (!zawodnicy90.size) {
+    // Ślad z odczytu protokołów — bez niego nie da się rozstrzygnąć, czy chodzi o nazwę klubu,
+    // o nieotwarty protokół, czy o szablon, w którym nie ma składów.
+    const slad = skladyHtml.slice(0, 3).map((s) => {
+      if (s.error) return `${s.m.url || s.m.id}: nie otworzyłem (${s.error})`;
+      const p = parseSkladyMeczu(s.html);
+      return `${s.m.url || s.m.id}: „${p.gospodarzeNazwa || "?"}" - „${p.goscieNazwa || "?"}", ` +
+        `zawodników w protokole: ${p.gospodarze.length + p.goscie.length}`;
+    });
     return res.status(404).json({
-      error: "Znalazłem mecze, ale w żadnym protokole nie rozpoznałem strony tego klubu.",
-      podpowiedz: `Na 90minut klub nazywa się inaczej niż u nas („${klub.name}"). Wyrównaj nazwę w edycji klubu.`,
+      error: "Znalazłem mecze, ale w żadnym protokole nie rozpoznałem składu tego klubu.",
+      podpowiedz: `Sprawdziłem ${wybrane.length} protokołów. Co w nich widzę: ${slad.join(" | ")}. ` +
+        (slad.some((t) => /zawodników w protokole: 0/.test(t))
+          ? "Protokoły nie mają list zawodników — 90minut publikuje je zwykle dzień po meczu."
+          : `Jeśli nazwy w protokole różnią się od „${klub.name}", wyrównaj nazwę w edycji klubu.`),
       sprawdzoneMecze: wybrane.map((m) => m.tytul),
+      sladProtokolow: slad,
     });
   }
 
@@ -747,6 +774,7 @@ export default async function handler(req, res) {
     sprawdzoneMecze: wybrane.length,
     zawodnikowNa90minut: zeStatystykami.length,
     zProtokolowWprost,
+    stronaZTerminarza: zTerminarzaRozpoznane,
     meczeKlubu: mecze.length,
     // Adres strony klubu odnaleziony w tabeli — przeglądarka zapisuje go w kartotece, żeby
     // następnym razem pominąć całe szukanie i wejść od razu tam, gdzie trzeba.
