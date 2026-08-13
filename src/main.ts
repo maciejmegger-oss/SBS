@@ -4005,7 +4005,8 @@ function viewClubs(){
       <label class="secondary" style="cursor:pointer;padding:9px 16px;border:1px solid #C9C2AB;border-radius:6px;display:inline-flex;align-items:center;" title="Zaznacz wiele plików — dopasuję je do klubów po nazwie pliku">
         ⭱ Wgraj wiele logo <input type="file" id="multi-logo-input" accept="image/png,image/jpeg,image/jpg,.png,.jpg,.jpeg" multiple style="display:none;">
       </label>
-      ${clubBrowse.top ? `<button class="secondary" data-action="league-stats" data-league="${esc(clubBrowse.top)}" title="Wklej statystyki wszystkich klubów tej ligi w jednym oknie">⏱ Statystyki ligi</button>` : ''}
+      ${clubBrowse.top && clubBrowse.top !== 'IV liga' && clubBrowse.top !== 'Klasa okręgowa'
+        ? `<button class="secondary" data-action="league-stats" data-league="${esc(clubBrowse.top)}" title="Wklej statystyki wszystkich klubów tej ligi w jednym oknie">⏱ Statystyki ligi</button>` : ''}
       <button class="secondary" data-action="paste-clubs" title="Wklej listę nazw klubów — założę je wszystkie naraz w wybranej grupie">📋 Wklej listę klubów</button>
       <button class="secondary" data-action="import-klubow-ligi" title="Pobierz z 90minut składy wszystkich grup wybranego poziomu i załóż brakujące kluby">⬇ Wgraj kluby z 90minut</button>
       ${list.length ? `<button class="secondary" data-action="stats-90minut-grupa" title="Pobierz i zapisz statystyki z 90minut dla wszystkich klubów widocznych na liście — po kolei, jeden po drugim">⏱ Odśwież 90minut — cały widok (${list.length})</button>` : ''}
@@ -6791,6 +6792,7 @@ function openPlayerModal(id, presetClubId, prefillData){
     <div class="modal-actions" style="justify-content:flex-start;margin-top:0;margin-bottom:14px;">
       <button type="button" class="gold" data-action="pm-parse-stats">📊 Wczytaj z wklejonego tekstu</button>
       <button type="button" class="secondary" data-action="open-tm-profile">↗ Otwórz profil Transfermarkt</button>
+      <button type="button" class="secondary" data-action="tm-zakladka" title="Jedno kliknięcie na profilu zawodnika kopiuje komplet danych">🔖 Zakładka do Transfermarktu</button>
     </div>
     <div class="field-wrap">
       <label class="field">Klub</label>
@@ -10223,6 +10225,38 @@ document.execCommand('copy');document.body.removeChild(p);
 alert('SBS: zebrano '+zebrane.length+' protokolow i skopiowano do schowka.\\n\\nWklej je w aplikacji w oknie \\u201eWklej protokol meczu\\u201d.\\n\\nShift+klikniecie czysci liste.');
 }catch(e){alert('SBS: '+e.message);}})();`;
 
+// ZAKŁADKA DO PROFILU ZAWODNIKA NA TRANSFERMARKCIE.
+//
+// Wklejanie „na oko" nie działa: skopiowana tabela to często sama kolumna kresek i liczb
+// („-", „-", „180"), z której nie da się poznać, co jest meczem, a co minutą. Zamiast zgadywać,
+// czytamy stronę tam, gdzie ona jest w całości — w przeglądarce — i wypisujemy dane PODPISANE.
+// Aplikacja dostaje wtedy komplet: datę urodzenia, pozycję, nogę, wzrost, narodowość, klub
+// i dorobek sezonu, i wypełnia formularz jednym kliknięciem.
+const TM_PROFIL_BOOKMARKLET = `javascript:(function(){try{
+if(!/transfermarkt\\./.test(location.host)){alert('SBS: to nie jest strona Transfermarktu.');return;}
+var T=document.body.innerText||'';
+function po(et){var re=new RegExp(et+'\\\\s*:?\\\\s*\\\\n?\\\\s*([^\\\\n]+)','i');var m=T.match(re);return m?m[1].trim():'';}
+var nazwa=(document.querySelector('h1')||{}).innerText||document.title.split(' - ')[0];
+nazwa=nazwa.replace(/#\\d+\\s*/,'').replace(/\\s+/g,' ').trim();
+var data=po('Date of birth|Data urodzenia|Geburtsdatum').replace(/\\(.*?\\)/,'').trim();
+var poz=po('Position|Pozycja|Hauptposition');
+var noga=po('Foot|Noga|Fu\\u00df');
+var wzrost=po('Height|Wzrost|Gr\\u00f6\\u00dfe');
+var kraj=po('Citizenship|Obywatelstwo|Nationalit\\u00e4t');
+var klub=po('Current club|Obecny klub|Aktueller Verein');
+var kontrakt=po('Contract expires|Kontrakt do|Vertrag bis');
+var out=['SBS-PROFIL','Zawodnik: '+nazwa,'Data urodzenia: '+data,'Pozycja: '+poz,'Noga: '+noga,
+'Wzrost: '+wzrost,'Narodowosc: '+kraj,'Klub: '+klub,'Kontrakt do: '+kontrakt,'Adres: '+location.href];
+var wiersz=null,ts=document.querySelectorAll('table tbody tr');
+for(var i=0;i<ts.length;i++){var t=ts[i].innerText.replace(/\\s+/g,' ');
+if(/(26\\/27|2026\\/2027|Total|Suma|Gesamt)/i.test(t)&&/\\d/.test(t)){wiersz=ts[i];}}
+if(wiersz){var k=[].map.call(wiersz.cells,function(c){return c.innerText.replace(/\\s+/g,' ').trim();});
+out.push('Wiersz sezonu: '+k.join(' | '));}
+var p=document.createElement('textarea');p.value=out.join('\\n');document.body.appendChild(p);p.select();
+document.execCommand('copy');document.body.removeChild(p);
+alert('SBS: skopiowano profil '+nazwa+'.\\n\\nWklej go w oknie edycji zawodnika i kliknij \\u201eWczytaj z wklejonego tekstu\\u201d.');
+}catch(e){alert('SBS: '+e.message);}})();`;
+
 const TM_BOOKMARKLET = `javascript:(function(){try{
 var K='sbs_zebrane';
 if(window.event&&window.event.shiftKey){localStorage.removeItem(K);alert('SBS: wyczyszczono zebrane kluby.');return;}
@@ -10725,6 +10759,38 @@ function matchPlayersByFullName(nazwa, birthYear){
 
 // Instrukcja do zakładki ŁNP. Krok po kroku, bo to jedyna droga do minut w IV lidze:
 // strona PZPN buduje się w przeglądarce i z serwera przychodzi pusta — dane są tylko na ekranie.
+// Instrukcja do zakładki „profil zawodnika z Transfermarktu".
+function openTmProfilBookmarkletModal(){
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+  <div class="modal" style="max-width:660px;">
+    <h3>🔖 Cały profil z Transfermarktu jednym kliknięciem</h3>
+    <p class="note">Kopiowanie tabeli myszą zwykle daje kolumnę kresek i liczb, z której nie sposób poznać,
+    co jest meczem, a co minutą. Ta zakładka czyta stronę tam, gdzie jest kompletna — w przeglądarce —
+    i wypisuje dane <strong>podpisane</strong>. Ustawiasz to <strong>raz</strong>.</p>
+    <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
+      <li>Włącz pasek zakładek: <strong>Ctrl+Shift+B</strong></li>
+      <li>Przeciągnij ten przycisk na pasek zakładek:<br>
+        <a href="${esc(TM_PROFIL_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na profilu zawodnika.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">👤 Kopiuj profil do SBS</a>
+      </li>
+      <li>Otwórz profil zawodnika na Transfermarkcie</li>
+      <li>Kliknij <strong>„👤 Kopiuj profil do SBS"</strong> — potwierdzi, kogo skopiował</li>
+      <li>Wróć tutaj, wklej (<strong>Ctrl+V</strong>) w pole wyżej i kliknij <strong>„Wczytaj z wklejonego tekstu"</strong></li>
+    </ol>
+    <p class="note" style="font-size:11.5px;">Wypełnia: datę urodzenia, pozycję, nogę, wzrost, narodowość, datę końca kontraktu
+    i dorobek sezonu (mecze, minuty, gole, asysty). Nic nie zapisuje samo — sprawdzasz pola i klikasz „Zapisz".</p>
+    <details style="margin-top:10px;">
+      <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Przeciąganie nie działa? Pokaż kod do wklejenia ręcznie</summary>
+      <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;">${esc(TM_PROFIL_BOOKMARKLET)}</textarea>
+    </details>
+    <div class="modal-actions"><button class="secondary" data-action="close-modal">Zamknij</button></div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=()=>overlay.remove());
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) overlay.remove(); });
+}
+
 function openLnpBookmarkletModal(){
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -13080,6 +13146,81 @@ function statsNumber(raw){
   return isNaN(n) ? undefined : n;
 }
 
+// Odczyt bloku „SBS-PROFIL" — tego, co kopiuje zakładka z Transfermarktu. Wszystko jest tu
+// PODPISANE, więc nie ma miejsca na zgadywanie: data urodzenia trafia w datę, wzrost we wzrost.
+function parseProfilSBS(text){
+  if(!/^\s*SBS-PROFIL\s*$/m.test(String(text||''))) return null;
+  const pole = (etykieta)=>{
+    const m = String(text).match(new RegExp('^'+etykieta+':\\s*(.+)$','im'));
+    const v = m ? m[1].trim() : '';
+    return v && v !== '-' && !/^b\.?d\.?$/i.test(v) ? v : '';
+  };
+  const out = {};
+  const nazwa = pole('Zawodnik');
+  if(nazwa){
+    const slowa = nazwa.split(/\s+/);
+    out.firstName = slowa[0];
+    out.lastName = slowa.slice(1).join(' ') || slowa[0];
+  }
+  // Transfermarkt pisze datę na kilka sposobów: „Mar 1, 2005", „01.03.2005", „2005-03-01".
+  const data = pole('Data urodzenia');
+  if(data){
+    const iso = data.match(/(\d{4})-(\d{2})-(\d{2})/);
+    const kropki = data.match(/(\d{1,2})[.\/](\d{1,2})[.\/](\d{4})/);
+    const ang = new Date(data.replace(/,/g,''));
+    if(iso) out.birthDate = iso[0];
+    else if(kropki) out.birthDate = `${kropki[3]}-${String(kropki[2]).padStart(2,'0')}-${String(kropki[1]).padStart(2,'0')}`;
+    else if(!isNaN(ang.getTime())) out.birthDate = ang.toISOString().slice(0,10);
+  }
+  const wzrost = pole('Wzrost').replace(/,/g,'.').match(/(\d)[.,]?(\d{2})\s*m|(\d{3})\s*cm/i);
+  if(wzrost) out.height = wzrost[3] ? Number(wzrost[3]) : Number(wzrost[1]+wzrost[2]);
+  const noga = pole('Noga').toLowerCase();
+  if(/right|praw/.test(noga)) out.foot = 'Prawa';
+  else if(/left|lew/.test(noga)) out.foot = 'Lewa';
+  else if(/both|obie|beid/.test(noga)) out.foot = 'Obie';
+  const kraj = pole('Narodowosc');
+  if(kraj) out.nationality = kraj.split(/\s{2,}|,/)[0].trim();
+  const kontrakt = pole('Kontrakt do');
+  if(kontrakt){
+    const rok = kontrakt.match(/(\d{4})/);
+    const mies = kontrakt.match(/(\d{1,2})[.\/](\d{1,2})[.\/](\d{4})/);
+    if(mies) out.contractUntil = `${mies[3]}-${String(mies[2]).padStart(2,'0')}-${String(mies[1]).padStart(2,'0')}`;
+    else if(rok) out.contractUntil = `${rok[1]}-06-30`;
+  }
+  // Pozycja z Transfermarktu na nasze nazewnictwo — dopasowanie luźne, bo wariantów jest wiele.
+  const poz = pole('Pozycja').toLowerCase();
+  const mapa = [[/goalkeeper|bramkarz|torwart/,'Bramkarz'],[/centre-back|środkowy obrońca|innenverteidiger/,'Obrońca środkowy'],
+    [/left-back|lewy obrońca/,'Obrońca lewy'],[/right-back|prawy obrońca/,'Obrońca prawy'],
+    [/defensive midfield|pomocnik defensywny/,'Pomocnik defensywny'],[/attacking midfield|pomocnik ofensywny/,'Pomocnik ofensywny'],
+    [/central midfield|pomocnik środkowy|mittelfeld/,'Pomocnik środkowy'],[/left winger|lewy skrzydłowy/,'Skrzydłowy lewy'],
+    [/right winger|prawy skrzydłowy/,'Skrzydłowy prawy'],[/winger|skrzydłowy/,'Skrzydłowy'],
+    [/striker|centre-forward|napastnik|sturm/,'Napastnik']];
+  const trafiona = mapa.find(([re])=>re.test(poz));
+  if(trafiona) out.position = trafiona[1];
+
+  // Wiersz sezonu: kolumny rozdzielone „|". Liczby czytamy od końca — asysty, gole, mecze
+  // stoją w stałej kolejności względem minut, a minuty poznajemy po apostrofie albo po tym,
+  // że są największe.
+  const wiersz = pole('Wiersz sezonu');
+  if(wiersz){
+    const komorki = wiersz.split('|').map(k=>k.trim());
+    const liczby = komorki.map(k=>{
+      const c = k.replace(/[.\s']/g,'').replace(/,/g,'');
+      return /^\d+$/.test(c) ? Number(c) : null;
+    });
+    const idxMinut = liczby.findIndex((n,i)=> n !== null && /'/.test(komorki[i]));
+    if(idxMinut >= 0){
+      out.minutes = liczby[idxMinut];
+      const przed = liczby.slice(0, idxMinut).filter(n=>n!==null);
+      if(przed.length >= 3){ out.matches = przed[przed.length-3]; out.goals = przed[przed.length-2]; out.assists = przed[przed.length-1]; }
+      else if(przed.length === 2){ out.matches = przed[0]; out.goals = przed[1]; }
+      else if(przed.length === 1){ out.matches = przed[0]; }
+    }
+  }
+  if(pole('Adres')) out.tmLink = pole('Adres');
+  return Object.keys(out).length ? out : null;
+}
+
 function parseStatsText(text){
   const result: any = {};
   const lines = text.split(/[\n;]+/).map(l=>l.trim()).filter(Boolean);
@@ -14471,6 +14612,9 @@ function wireLastModal(){
     }, 150);
   }
 
+  const zakladkaBtn = ov.querySelector('[data-action="tm-zakladka"]');
+  if(zakladkaBtn) zakladkaBtn.onclick = ()=>openTmProfilBookmarkletModal();
+
   const openTmBtn = ov.querySelector('[data-action="open-tm-profile"]');
   if(openTmBtn){
     openTmBtn.onclick = ()=>openTmProfileFromModal();
@@ -14483,9 +14627,51 @@ function wireLastModal(){
       const ta = ov.querySelector('#pm-stats-paste') as HTMLTextAreaElement;
       const text = ta ? ta.value.trim() : '';
       if(!text){ alert('Najpierw wklej skopiowane statystyki do pola powyżej.'); return; }
+      const setVal = (id, v)=>{ if(v===undefined || v===null || v==='') return; const el2 = ov.querySelector(id) as HTMLInputElement; if(el2) el2.value = String(v); };
+
+      // NAJPIERW BLOK Z ZAKŁADKI. Ma wszystko podpisane, więc wypełnia CAŁY profil — datę
+      // urodzenia, pozycję, nogę, wzrost, narodowość, kontrakt i dorobek sezonu — a nie tylko
+      // cztery liczby. To jest ta droga „jednym kliknięciem", bez przepisywania czegokolwiek.
+      const profil = parseProfilSBS(text);
+      if(profil){
+        setVal('#pm-first', profil.firstName);
+        setVal('#pm-last', profil.lastName);
+        setVal('#pm-birth', profil.birthDate);
+        setVal('#pm-height', profil.height);
+        setVal('#pm-nationality', profil.nationality);
+        setVal('#pm-tm', profil.tmLink);
+        setVal('#pm-matches', profil.matches);
+        setVal('#pm-minutes', profil.minutes);
+        setVal('#pm-goals', profil.goals);
+        setVal('#pm-assists', profil.assists);
+        const wybierz = (id, v)=>{ if(!v) return false; const el2 = ov.querySelector(id) as HTMLSelectElement; if(!el2) return false;
+          const opcja = Array.from(el2.options).find(o=>o.value===v || o.text===v); if(opcja){ el2.value = opcja.value; return true; } return false; };
+        wybierz('#pm-position', profil.position);
+        wybierz('#pm-foot', profil.foot);
+        if(profil.contractUntil){
+          const radioTak = ov.querySelector('input[name="pm-contract"][value="tak"]') as HTMLInputElement;
+          if(radioTak){ radioTak.checked = true; radioTak.dispatchEvent(new Event('change', {bubbles:true})); }
+          setVal('#pm-contract-until', profil.contractUntil);
+        }
+        const wypelnione = [
+          profil.birthDate ? 'data urodzenia' : '', profil.position ? 'pozycja' : '', profil.foot ? 'noga' : '',
+          profil.height ? 'wzrost' : '', profil.nationality ? 'narodowość' : '', profil.contractUntil ? 'kontrakt' : '',
+          profil.matches!=null ? 'mecze' : '', profil.minutes!=null ? 'minuty' : '',
+          profil.goals!=null ? 'gole' : '', profil.assists!=null ? 'asysty' : '',
+        ].filter(Boolean);
+        alert('Wypełniłem z profilu: ' + (wypelnione.join(', ') || 'nic nowego') +
+          '.\n\nSprawdź pola i kliknij „Zapisz".');
+        return;
+      }
+
       const parsed = parseStatsText(text);
-      if(!Object.keys(parsed).length){ alert('Nie udało się rozpoznać statystyk w tym tekście. Sprawdź, czy widać liczby przy nazwach: mecze / minuty / gole / asysty.'); return; }
-      const setVal = (id, v)=>{ if(v===undefined) return; const el2 = ov.querySelector(id) as HTMLInputElement; if(el2) el2.value = String(v); };
+      if(!Object.keys(parsed).length){
+        alert('Nie udało się rozpoznać statystyk w tym tekście.\n\n' +
+          'Najprostsza droga: kliknij „🔖 Zakładka do Transfermarktu" pod spodem i ustaw ją raz. ' +
+          'Potem jedno kliknięcie na profilu zawodnika kopiuje komplet danych — datę urodzenia, pozycję, ' +
+          'nogę, wzrost, narodowość, kontrakt i dorobek sezonu — a tutaj wystarczy wkleić.');
+        return;
+      }
       setVal('#pm-matches', parsed.matches);
       setVal('#pm-minutes', parsed.minutes);
       setVal('#pm-goals', parsed.goals);
