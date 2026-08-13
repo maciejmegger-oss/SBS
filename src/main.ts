@@ -4270,8 +4270,8 @@ function openGrupaStatsModal(){
           <span style="width:14px;color:${p.etap==='ok'?'var(--good)':p.etap==='blad'?'var(--clay-dark)':'var(--ink-faint)'};">${ikona(p.etap)}</span>
           <span style="flex:1;">${esc(p.nazwa)}</span>
           <span class="note" style="text-align:right;">${esc(p.opis)}</span>
-        </div>${p.etap==='blad' && (p.podpowiedz || (p.widzianeKluby||[]).length) ? `<details style="margin:0 0 6px 22px;">
-          <summary style="cursor:pointer;font-size:12px;color:var(--ink-soft);">dlaczego? — sprawdź, w jakiej grupie ten klub naprawdę gra</summary>
+        </div>${(p.podpowiedz || (p.widzianeKluby||[]).length) ? `<details style="margin:0 0 6px 22px;">
+          <summary style="cursor:pointer;font-size:12px;color:var(--ink-soft);">dlaczego? — co widzę na stronie tych rozgrywek</summary>
           ${p.podpowiedz ? `<p class="note" style="margin:4px 0;">${esc(p.podpowiedz)}</p>` : ''}
           ${(p.widzianeKluby||[]).length ? `<p class="note" style="margin:4px 0;line-height:1.7;"><strong>Na przeszukanych stronach widzę:</strong> ${p.widzianeKluby.map(n=>esc(n)).join(' &middot; ')}</p>` : ''}
         </details>` : ''}`).join('')}
@@ -4370,6 +4370,7 @@ function openGrupaStatsModal(){
       e.widzianeKluby = dane.widzianeKluby || [];
       e.bezMeczow = !!dane.bezMeczow;
       e.adresKlubuNa90minut = dane.adresKlubuNa90minut || '';
+      e.diagnostyka = dane.diagnostyka || null;
       throw e;
     }
     return dane;
@@ -4392,7 +4393,20 @@ function openGrupaStatsModal(){
         // „Jest w tabeli, ale nie grał" to nie awaria — nie ma po co tego ponawiać ani straszyć
         // czerwonym krzyżykiem. Zapamiętujemy za to znaleziony adres strony klubu.
         if(e && e.bezMeczow){
-          poz.etap = 'ok'; poz.opis = 'brak rozegranych meczów';
+          const d = e.diagnostyka;
+          // Pusty terminarz to nie „klub nie grał", tylko niedoczytana strona — takiego wiersza
+          // nie wolno odhaczać na zielono, bo to właśnie usterka do naprawy.
+          if(d && !d.wierszyTerminarza){
+            poz.etap = 'blad';
+            poz.opis = 'nie odczytałem terminarza tej strony';
+            poz.podpowiedz = e.podpowiedz || '';
+            poz.widzianeKluby = [];
+          } else {
+            poz.etap = 'ok';
+            poz.opis = d ? `brak meczów tego klubu (w terminarzu ${d.zWynikiem} rozegranych)` : 'brak rozegranych meczów';
+            poz.podpowiedz = e.podpowiedz || '';
+            poz.widzianeKluby = (d && d.przyklady) || [];
+          }
           if(e.adresKlubuNa90minut){
             const k = DB.clubs.find(x=>x.id===poz.id);
             if(k && !String(k.profileLnp||'').trim()){ k.profileLnp = e.adresKlubuNa90minut; adresyDoZapisania++; }
@@ -12381,6 +12395,10 @@ function open90minutStatsModal(clubId){
       ${blad ? `<div class="empty" style="text-align:left;padding:12px;border-color:var(--clay-dark);">
         <strong style="color:var(--clay-dark);">${esc(blad)}</strong>
         ${wynik && wynik.podpowiedz ? `<p style="margin:8px 0 0;">${esc(wynik.podpowiedz)}</p>` : ''}
+        ${wynik && wynik.diagnostyka && (wynik.diagnostyka.przyklady||[]).length ? `<details style="margin-top:8px;">
+          <summary style="cursor:pointer;font-size:12.5px;color:var(--ink-soft);">Co widzę w terminarzu tej strony (${wynik.diagnostyka.wierszyTerminarza})</summary>
+          <p class="note" style="margin:6px 0 0;line-height:1.7;">${wynik.diagnostyka.przyklady.map(x=>esc(x)).join('<br>')}</p>
+        </details>` : ''}
         ${wynik && wynik.widzianeKluby && wynik.widzianeKluby.length ? `<details style="margin-top:8px;">
           <summary style="cursor:pointer;font-size:12.5px;color:var(--ink-soft);">Kluby, które widzę na przeszukanych stronach (${wynik.widzianeKluby.length})</summary>
           <p style="margin:6px 0 0;font-size:12.5px;line-height:1.7;">${wynik.widzianeKluby.map(n=>esc(n)).join(' &middot; ')}</p>

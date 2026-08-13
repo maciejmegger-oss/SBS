@@ -34,6 +34,10 @@ const RÓWNOLEGLE = 4;
 // sześciu ostatnich kolejkach. Dwadzieścia stron pobieranych czwórkami to pięć przebiegów, czyli
 // wciąż kilka sekund i wciąż uprzejme wobec serwisu prowadzonego społecznie.
 const MAKS_MECZOW = 20;
+// Ile protokołów wolno otworzyć „na ślepo", gdy strona ligi nie chce zdradzić, które mecze są
+// czyje. Dwie kolejki osiemnastozespołowej grupy to osiemnaście spotkań — tyle wystarczy,
+// żeby znaleźć te dwa nasze, a przy dłuższym sezonie i tak liczą się ostatnie kolejki.
+const MAKS_MECZOW_DO_PRZESZUKANIA = 40;
 
 async function porcjami(elementy, ile, praca) {
   const wynik = [];
@@ -154,6 +158,7 @@ export default async function handler(req, res) {
   // strony. Znajdujemy więc klub w tabeli, a mecze czytamy wprost z jego strony.
   let adresKlubuNa90minut = "";
   let wTabeliRozgrywek = null;
+  let zProtokolowWprost = false;
   for (const adres of mecze.length ? [] : adresy) {
     let html;
     // NIEUDANE POBRANIE STRONY TO NIE JEST „BRAK MECZÓW".
@@ -185,8 +190,19 @@ export default async function handler(req, res) {
     // z klubem niezależnie od tego, czy odnośnik ma podpowiedź (często nie ma) i czy strona klubu
     // wymienia mecze (bywa, że nie wymienia — cała IV liga pomorska pokazywała wtedy „nie ma
     // jeszcze rozegranych meczów", choć kluby miały za sobą kolejkę).
-    const zTerminarza = parseSchedule(html)
+    const terminarz = parseSchedule(html);
+    const zTerminarza = terminarz
       .filter((m) => m.id && m.rozegrany && (toSamKlub(m.homeTeam, klub.name) || toSamKlub(m.awayTeam, klub.name)));
+    // Ślad z odczytu strony. Bez niego „nie ma rozegranych meczów" jest nie do rozstrzygnięcia:
+    // nie wiadomo, czy terminarz jest pusty, czy tylko tego klubu w nim nie ma.
+    if (wTabeliRozgrywek && wTabeliRozgrywek.stronaLigi === adres) {
+      wTabeliRozgrywek.diagnostyka = {
+        wierszyTerminarza: terminarz.length,
+        zWynikiem: terminarz.filter((m) => m.rozegrany).length,
+        zProtokolem: terminarz.filter((m) => m.id).length,
+        przyklady: terminarz.slice(0, 6).map((m) => `${m.homeTeam} - ${m.awayTeam}${m.wynik ? " " + m.wynik : ""}`),
+      };
+    }
     if (zTerminarza.length) {
       mecze = zTerminarza.map((m) => ({
         id: m.id, tytul: `${m.homeTeam} - ${m.awayTeam}`,
@@ -220,6 +236,31 @@ export default async function handler(req, res) {
     }));
     const trafione = linki.filter((m) => tytulMaKlub(m.tytul, klub.name));
     if (trafione.length) { mecze = trafione; stronaLigi = adres; break; }
+
+    // OSTATNIA DESKA RATUNKU: ZAPYTAĆ SAME PROTOKOŁY.
+    //
+    // Wszystkie drogi wyżej opierają się na tym, JAK strona ligi jest zbudowana — a układ bywa
+    // różny w różnych grupach (III liga trafiała, IV liga nie). Protokół meczu za to zawsze
+    // podaje obie drużyny wprost. Skoro klub stoi w tabeli TEJ strony, jego mecze też tu są:
+    // otwieramy więc protokoły i pytamy każdego z osobna, kto grał. Kosztuje to kilkanaście
+    // dodatkowych stron, dlatego jest na końcu — ale kończy wszelkie zgadywanie.
+    if (wTabeliRozgrywek && wTabeliRozgrywek.stronaLigi === adres && linki.length) {
+      const doSprawdzenia = linki.slice(-MAKS_MECZOW_DO_PRZESZUKANIA);
+      const sprawdzone = await porcjami(doSprawdzenia, RÓWNOLEGLE, async (m) => {
+        try {
+          const p = parseSkladyMeczu(await pobierzZ90minut(`http://www.90minut.pl/mecz.php?id_mecz=${m.id}`));
+          const nasz = toSamKlub(p.gospodarzeNazwa, klub.name) || toSamKlub(p.goscieNazwa, klub.name);
+          return nasz ? { id: m.id, tytul: `${p.gospodarzeNazwa} - ${p.goscieNazwa}`, data: p.data || "" } : null;
+        } catch { return null; }
+      });
+      const nasze = sprawdzone.filter(Boolean);
+      if (nasze.length) {
+        mecze = nasze;
+        stronaLigi = adres;
+        zProtokolowWprost = true;
+        break;
+      }
+    }
   }
   if (!mecze.length && wTabeliRozgrywek) {
     // KLUB JEST W TABELI, TYLKO JESZCZE NIE GRAŁ.
@@ -230,9 +271,19 @@ export default async function handler(req, res) {
     // „sprawdź nazwę klubu" wysyłało do poprawiania czegoś, co jest poprawne.
     return res.status(404).json({
       error: `Klub „${klub.name}" jest w tabeli rozgrywek ${klub.league} (na 90minut: „${wTabeliRozgrywek.nazwa}"), ale nie ma tam jeszcze ANI JEDNEGO rozegranego meczu w tym sezonie.`,
-      podpowiedz: "Nie ma czego pobierać — wróć tu po pierwszej kolejce. Nazwy ani ligi nie trzeba poprawiać; " +
-        "adres strony klubu na 90minut właśnie zapisałem, więc następne pobranie wejdzie tam od razu.",
+      podpowiedz: (() => {
+        const d = wTabeliRozgrywek.diagnostyka;
+        if (!d) return "Nie ma czego pobierać — wróć tu po pierwszej kolejce.";
+        if (!d.wierszyTerminarza) {
+          return "UWAGA: na stronie tych rozgrywek nie odczytałem ANI JEDNEGO wiersza terminarza — " +
+            "to raczej zmiana układu strony po stronie 90minut niż brak meczów. Zgłoś to, bo wymaga poprawki w programie.";
+        }
+        return `W terminarzu tej strony widzę ${d.wierszyTerminarza} spotkań (${d.zWynikiem} z wynikiem), ` +
+          `ale w żadnym nie ma tego klubu. Przykłady: ${d.przyklady.join("; ")}. ` +
+          "Jeśli któraś z tych par dotyczy Twojego klubu pod inną nazwą — wyrównaj nazwę w „Edytuj klub”.";
+      })(),
       adresKlubuNa90minut,
+      diagnostyka: wTabeliRozgrywek.diagnostyka || null,
       bezMeczow: true,
       przeszukaneStrony: adresy.length,
     });
@@ -682,6 +733,7 @@ export default async function handler(req, res) {
     stronaLigi,
     sprawdzoneMecze: wybrane.length,
     zawodnikowNa90minut: zeStatystykami.length,
+    zProtokolowWprost,
     meczeKlubu: mecze.length,
     // Adres strony klubu odnaleziony w tabeli — przeglądarka zapisuje go w kartotece, żeby
     // następnym razem pominąć całe szukanie i wejść od razu tam, gdzie trzeba.
