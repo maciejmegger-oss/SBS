@@ -191,23 +191,35 @@ export default async function handler(req, res) {
     // wymienia mecze (bywa, że nie wymienia — cała IV liga pomorska pokazywała wtedy „nie ma
     // jeszcze rozegranych meczów", choć kluby miały za sobą kolejkę).
     const terminarz = parseSchedule(html);
-    const zTerminarza = terminarz
-      .filter((m) => m.id && m.rozegrany && (toSamKlub(m.homeTeam, klub.name) || toSamKlub(m.awayTeam, klub.name)));
+    const nasze = terminarz
+      .filter((m) => m.rozegrany && (toSamKlub(m.homeTeam, klub.name) || toSamKlub(m.awayTeam, klub.name)));
+    // Adres protokołu: identyfikator z odnośnika, a gdy go nie ma — surowy adres z wiersza,
+    // rozwinięty względem strony ligi. Bez tego mecz z wynikiem, ale o nietypowym odnośniku,
+    // przepadał bez śladu.
+    const zTerminarza = nasze.map((m) => {
+      let url = m.id ? `http://www.90minut.pl/mecz.php?id_mecz=${m.id}` : "";
+      if (!url && m.hrefProtokolu) {
+        try { url = new URL(m.hrefProtokolu, adres).toString(); } catch { url = ""; }
+      }
+      return url ? { id: m.id || url, url, tytul: `${m.homeTeam} - ${m.awayTeam}`,
+        data: m.date || "", kolejka: m.round || null, wynik: m.wynik || "" } : null;
+    }).filter(Boolean);
     // Ślad z odczytu strony. Bez niego „nie ma rozegranych meczów" jest nie do rozstrzygnięcia:
     // nie wiadomo, czy terminarz jest pusty, czy tylko tego klubu w nim nie ma.
     if (wTabeliRozgrywek && wTabeliRozgrywek.stronaLigi === adres) {
       wTabeliRozgrywek.diagnostyka = {
         wierszyTerminarza: terminarz.length,
         zWynikiem: terminarz.filter((m) => m.rozegrany).length,
-        zProtokolem: terminarz.filter((m) => m.id).length,
+        zProtokolem: terminarz.filter((m) => m.id || m.hrefProtokolu).length,
+        // Surowe odnośniki z wierszy z wynikiem — jedyna rzecz, która rozstrzyga, dlaczego
+        // rozegrany mecz bywa dla nas nie do otwarcia.
+        odnosniki: terminarz.filter((m) => m.rozegrany).slice(0, 4)
+          .map((m) => `${m.homeTeam}-${m.awayTeam}: ${m.hrefProtokolu || m.id || "BRAK ODNOŚNIKA"}`),
         przyklady: terminarz.slice(0, 6).map((m) => `${m.homeTeam} - ${m.awayTeam}${m.wynik ? " " + m.wynik : ""}`),
       };
     }
     if (zTerminarza.length) {
-      mecze = zTerminarza.map((m) => ({
-        id: m.id, tytul: `${m.homeTeam} - ${m.awayTeam}`,
-        data: m.date || "", kolejka: m.round || null, wynik: m.wynik || "",
-      }));
+      mecze = zTerminarza;
       stronaLigi = adres;
       break;
     }
@@ -364,7 +376,8 @@ export default async function handler(req, res) {
 
   // --- 2. SKŁADY -> IDENTYFIKATORY ZAWODNIKÓW ---
   const skladyHtml = await porcjami(wybrane, RÓWNOLEGLE, async (m) => {
-    try { return { m, html: await pobierzZ90minut(`http://www.90minut.pl/mecz.php?id_mecz=${m.id}`) }; }
+    const adresProtokolu = m.url || `http://www.90minut.pl/mecz.php?id_mecz=${m.id}`;
+    try { return { m, html: await pobierzZ90minut(adresProtokolu) }; }
     catch (e) { return { m, error: e.message }; }
   });
 

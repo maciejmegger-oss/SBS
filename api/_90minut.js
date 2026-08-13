@@ -183,7 +183,15 @@ export function parseSchedule(html) {
       // Identyfikator protokołu i wynik biorę z TEGO SAMEGO wiersza, w którym stoją nazwy drużyn.
       // To najpewniejsze powiązanie meczu z klubem, jakie ma ta strona: nazwy są tu zwykłym
       // tekstem, więc nie zależą od tego, czy odnośnik ma podpowiedź (a często jej nie ma).
-      const id = (m[1].match(/mecz\.php\?id_mecz=(\d+)/i) || [])[1] || "";
+      // ODNOŚNIK DO PROTOKOŁU — najpierw kanoniczna postać, potem cokolwiek, co wygląda na mecz.
+      // Numer rozgrywek bywa zapisany inaczej w różnych ligach, a bez odnośnika mecz jest dla nas
+      // niewidoczny, choć w wierszu stoi wynik. Zapisujemy też surowy adres, żeby dało się go użyć
+      // wprost, gdy identyfikatora nie ma w spodziewanym miejscu.
+      const id = (m[1].match(/mecz\.php\?(?:id_mecz|id)=(\d+)/i) || [])[1] || "";
+      const hrefProtokolu = (() => {
+        const wszystkie = [...m[1].matchAll(/href\s*=\s*["']([^"']+)["']/gi)].map((h) => h[1]);
+        return wszystkie.find((h) => /mecz/i.test(h) && !/skarb\.php|wystepy\.php/i.test(h)) || "";
+      })();
       const wynikTekst = String(cells[1] || "").trim();
       const rozegrany = /^\d{1,2}\s*[-:]\s*\d{1,2}$/.test(wynikTekst);
 
@@ -192,7 +200,7 @@ export function parseSchedule(html) {
         polishDateToIso(cellText, years);
       const date = exactDate || headingDate;
 
-      out.push({ round, date, time, homeTeam, awayTeam, id,
+      out.push({ round, date, time, homeTeam, awayTeam, id, hrefProtokolu,
         wynik: rozegrany ? wynikTekst.replace(/\s*/g, "") : "", rozegrany,
         dateApprox: !exactDate && !!headingDate });
     }
@@ -420,9 +428,22 @@ export function parseSkladyMeczu(html) {
   // menu („Transfery - I liga") i mecz III ligi opisywało jako pierwszoligowy.
   const naglowek = strip((html.match(/<b>([^<]*Kolejka[^<]*)<\/b>/i) || [])[1] || "");
 
-  // Nazwy drużyn stoją nad wynikiem, w komórkach szerokości 220 px.
-  const nazwy = [...html.matchAll(/<td[^>]*width="220"[^>]*>\s*<b><font[^>]*>([\s\S]*?)<\/font><\/b>/gi)]
+  // Nazwy drużyn stoją nad wynikiem, w komórkach szerokości 220 px — ale tylko w podstawowym
+  // szablonie protokołu. Gdy go nie ma, sięgamy po odnośniki do stron klubów (każda drużyna
+  // w protokole jest do nich podlinkowana), a na końcu po tytuł strony. Bez tego zapasu protokół
+  // o innym układzie kończył się komunikatem „nie rozpoznałem strony tego klubu" — i cały klub
+  // zostawał bez statystyk, choć jego mecz był już otwarty.
+  let nazwy = [...html.matchAll(/<td[^>]*width="220"[^>]*>\s*<b><font[^>]*>([\s\S]*?)<\/font><\/b>/gi)]
     .map((m) => strip(m[1]));
+  if (nazwy.filter(Boolean).length < 2) {
+    const zOdnosnikow = parseKlubyZTabeli(html).map((k) => k.nazwa);
+    if (zOdnosnikow.length >= 2) nazwy = zOdnosnikow.slice(0, 2);
+  }
+  if (nazwy.filter(Boolean).length < 2) {
+    const zTytulu = String(parseLeagueName(html) || "").split(/\s+[-–—]\s+/).map((t) => t.trim())
+      .filter((t) => t && !/90minut/i.test(t));
+    if (zTytulu.length >= 2) nazwy = zTytulu.slice(-2);
+  }
 
   // W jednej komórce potrafi stać DWÓCH zawodników: schodzący, minuta zmiany i wchodzący
   // („(17) Błażej Starzycki 61 (3) Rafał Remisz"). Czytanie tylko pierwszego odnośnika gubiło
