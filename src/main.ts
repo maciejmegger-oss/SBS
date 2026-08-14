@@ -10210,6 +10210,52 @@ function tmStatsLink(club){
 //
 // Świadomie nie chodzi po stronach samodzielnie — automatyczne przemierzanie serwisu łamałoby
 // jego regulamin. Czyta wyłącznie stronę, którą masz otwartą.
+// ZAKŁADKA „CAŁA KOLEJKA NARAZ" — jedyna droga do automatu przy stronie budowanej w przeglądarce.
+//
+// Serwer nie ma jak pobrać danych z ŁNP: pod adresem meczu przychodzi pusta skorupa, bo stronę
+// składa dopiero JavaScript (sprawdzone — zero zawodników w odpowiedzi). Ale w PRZEGLĄDARCE
+// wszystko działa. Ta zakładka wykorzystuje to wprost: stojąc na liście meczów, znajduje odnośniki
+// do spotkań i otwiera je po kolei w ukrytej ramce NA TEJ SAMEJ stronie (to samo źródło, więc
+// przeglądarka na to pozwala), czeka aż skład się pojawi i zbiera protokół.
+//
+// Efekt: jedno kliknięcie zamiast dziewięciu wejść w mecz, a na końcu komplet w schowku.
+// Ramka pokazuje postęp, bo przy dziewięciu meczach to kilkanaście sekund.
+const LNP_HURT_BOOKMARKLET = `javascript:(function(){
+if(!/laczynaspilka\\.pl/.test(location.host)){alert('SBS: to nie jest strona Laczy nas pilka.');return;}
+var linki=[].slice.call(document.querySelectorAll('a[href*="/rozgrywki/mecz/"]'))
+ .map(function(a){return a.href;}).filter(function(v,i,t){return t.indexOf(v)===i;});
+if(!linki.length){alert('SBS: na tej stronie nie widze odnosnikow do meczow.\\n\\nOtworz liste kolejki (Rozgrywki) i sprobuj ponownie.');return;}
+var box=document.createElement('div');
+box.style.cssText='position:fixed;right:16px;bottom:16px;z-index:999999;background:#16302A;color:#F6F3EA;padding:12px 16px;border-radius:8px;font:14px sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.4)';
+box.textContent='SBS: zbieram protokoly 0/'+linki.length;
+document.body.appendChild(box);
+var zebrane=[],i=0;
+function nastepny(){
+ if(i>=linki.length){
+  var p=document.createElement('textarea');p.value=zebrane.join('\\n\\n');document.body.appendChild(p);p.select();
+  try{document.execCommand('copy');}catch(e){}
+  document.body.removeChild(p);box.remove();
+  alert('SBS: zebralem '+zebrane.length+' protokolow z '+linki.length+' meczow i skopiowalem do schowka.\\n\\nWklej je w aplikacji: klub -> Statystyki z Laczy nas pilka.');
+  return;}
+ var url=linki[i];box.textContent='SBS: zbieram protokoly '+i+'/'+linki.length;
+ var f=document.createElement('iframe');f.style.cssText='position:fixed;left:-9999px;width:1200px;height:2000px';
+ f.src=url;document.body.appendChild(f);
+ var prob=0;
+ var t=setInterval(function(){
+  prob++;
+  var txt='';
+  try{txt=(f.contentDocument&&f.contentDocument.body)?f.contentDocument.body.innerText:'';}catch(e){txt='';}
+  var ok=/Sk\\u0142ad wyj\\u015bciowy/.test(txt);
+  if(ok||prob>40){
+   clearInterval(t);
+   if(ok){var j=txt.search(/^\\s*Sk\\u0142ady\\s*$/m);
+    zebrane.push('### PROTOKOL: '+url+'\\n'+txt.slice(j<0?0:j));}
+   f.remove();i++;setTimeout(nastepny,300);}
+ },500);
+}
+nastepny();
+})();`;
+
 // ZAKŁADKA DO ŁNP — zbieranie protokołów meczowych jednym kliknięciem.
 //
 // „Łączy nas piłka" buduje stronę w przeglądarce, więc z serwera przychodzi pusta skorupa: nasz
@@ -10873,6 +10919,20 @@ function openLnpBookmarkletModal(){
       <li>Wróć tutaj, wklej (<strong>Ctrl+V</strong>) i zapisz — rozliczę wszystkie mecze naraz</li>
     </ol>
     <p class="note" style="font-size:11.5px;"><strong>Shift + kliknięcie</strong> zakładki czyści zebraną listę — rób to na początku nowej kolejki.</p>
+
+    <div style="border-top:2px solid var(--gold);margin-top:14px;padding-top:12px;">
+      <h4 style="margin:0 0 6px;color:var(--heading);">Albo od razu CAŁA KOLEJKA — jednym kliknięciem</h4>
+      <p class="note" style="margin-top:0;">Ta druga zakładka nie wymaga wchodzenia w mecze. Uruchamiasz ją na <strong>liście meczów</strong>
+      (Rozgrywki → wybrana kolejka), a ona sama otwiera po kolei każde spotkanie w tle, czeka na składy i zbiera protokoły.
+      Dziewięć meczów to kilkanaście sekund i <strong>jedno</strong> kliknięcie.</p>
+      <a href="${esc(LNP_HURT_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go na pasek zakładek, a potem kliknij TAM — będąc na liście meczów na laczynaspilka.pl.');return false;" style="display:inline-block;margin:4px 0;padding:8px 16px;background:var(--pitch);color:var(--on-pitch);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">⚡ Zbierz całą kolejkę</a>
+      <p class="note" style="font-size:11.5px;">W rogu ekranu zobaczysz licznik postępu. Na końcu komplet trafia do schowka — wklejasz raz w aplikacji.
+      Skrypt czyta wyłącznie strony tego samego serwisu, otwarte w Twojej przeglądarce.</p>
+      <details style="margin-top:8px;">
+        <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Kod do wklejenia ręcznie</summary>
+        <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;">${esc(LNP_HURT_BOOKMARKLET)}</textarea>
+      </details>
+    </div>
     <p class="note" style="font-size:11px;color:var(--ink-soft);">Skrypt czyta tylko tekst strony, którą masz otwartą — nie loguje się nigdzie i nie chodzi po serwisie samodzielnie.</p>
     <details style="margin-top:10px;">
       <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Przeciąganie nie działa? Pokaż kod do wklejenia ręcznie</summary>
