@@ -14377,7 +14377,6 @@ async function generatePlayerPDF(playerId){
     .obs-table th{background:var(--pitch);color:var(--on-pitch);font-size:10px;text-transform:uppercase;letter-spacing:.03em;padding:7px 10px;text-align:left;}
     .obs-table td{padding:7px 10px;border-bottom:1px solid var(--chalk-dim);font-size:11.5px;}
     .obs-table tr:nth-child(even) td{background:#FAF8F2;}
-    .page-break{height:0;overflow:hidden;}
     .radar-box{background:var(--chalk);border:1px solid var(--chalk-dim);border-radius:8px;padding:10px 8px 12px;
       display:flex;flex-direction:column;align-items:center;gap:6px;}
     .recommend-box{background:var(--good-bg);border-radius:8px;padding:12px 14px;}
@@ -14435,9 +14434,10 @@ async function generatePlayerPDF(playerId){
     <div class="notes-box">${esc(p.notes)}</div>
   </div>`:''}
 
-  <!-- Wymuszony podział: strona pierwsza to treść raportu, druga zaczyna się od historii. -->
-  <div class="page-break"></div>
-
+  <!-- BEZ WYMUSZONEGO PODZIAŁU. Stał tu znacznik, który kazał zaczynać historię od nowej kartki.
+       Kosztowało to pół pustej strony, a gdy raport był krótki — nagłówek „Historia obserwacji"
+       zostawał sam nad białą przerwą, a tabela lądowała dopiero na następnej kartce. Podział
+       wyznacza teraz sam układ treści (patrz „GDZIE WOLNO PRZECIĄĆ"), który nie rozdziela sekcji. -->
   <div class="section" style="padding-top:0;">
     <div class="section-title">Historia obserwacji (${obs.length})</div>
     ${obs.length?(()=>{
@@ -14608,23 +14608,27 @@ async function generatePlayerPDF(playerId){
     // najniższym dozwolonym dnie elementu przed końcem strony.
     const zakazane = [];   // [{od, do}] w pikselach obrazu
     const dna = [];        // dopuszczalne miejsca cięcia
-    // Miejsca, w których podział MA nastąpić — znacznik .page-break w szablonie. Dzięki temu
-    // druga strona zaczyna się od historii, a nie od tego, co akurat wypadło po 297 mm.
-    const wymuszone = [];
+    const gora = (el)=> Math.round((el.getBoundingClientRect().top + idoc.documentElement.scrollTop) * SKALA);
+    const dol  = (el)=> Math.round((el.getBoundingClientRect().bottom + idoc.documentElement.scrollTop) * SKALA);
     idoc.body.querySelectorAll('*').forEach(el=>{
       const r = el.getBoundingClientRect();
-      const od = Math.round((r.top + idoc.documentElement.scrollTop) * SKALA);
-      const doo = Math.round((r.bottom + idoc.documentElement.scrollTop) * SKALA);
-      // Znacznik podziału sprawdzamy PRZED odsianiem elementów o zerowej wysokości — sam
-      // .page-break jest właśnie taki (to pusty div), więc wcześniej wypadał z listy i wymuszony
-      // podział nigdy nie działał: druga strona zaczynała się tam, gdzie akurat skończyła pierwsza.
-      if(el.classList && el.classList.contains('page-break')){ wymuszone.push(od); return; }
       if(r.height <= 0) return;
+      const od = gora(el), doo = dol(el);
       dna.push(doo);
       // Bloki wyższe niż pół strony i tak trzeba kiedyś przeciąć — one nie blokują.
       if((doo - od) < stronaPx * 0.5) zakazane.push({od, do: doo});
     });
-    wymuszone.sort((a,b)=>a-b);
+
+    // NAGŁÓWEK IDZIE Z TREŚCIĄ. Sekcja krótsza niż pół strony jest już nierozdzielna, ale sekcja
+    // wysoka (długa tabela obserwacji, szeroka opinia) nie blokuje cięcia — i wtedy sam nagłówek
+    // potrafił zostać na dole kartki, a to, co opisuje, zaczynało się dopiero na następnej.
+    // Dlatego nagłówek sklejamy z pierwszym blokiem, który po nim następuje.
+    idoc.body.querySelectorAll('.section-title').forEach(tytul=>{
+      const pierwszaTresc = tytul.nextElementSibling;
+      if(!pierwszaTresc) return;
+      const doo = dol(pierwszaTresc);
+      if(doo > gora(tytul)) zakazane.push({od: gora(tytul), do: doo});
+    });
     dna.sort((a,b)=>a-b);
 
     const wolnoCiac = (y)=> !zakazane.some(z=> y > z.od + 1 && y < z.do - 1);
@@ -14633,11 +14637,7 @@ async function generatePlayerPDF(playerId){
     while(y < canvas.height){
       const koniecIdealny = Math.min(y + stronaPx, canvas.height);
       let ciecie = koniecIdealny;
-      // Wymuszony podział ma pierwszeństwo przed szukaniem bezpiecznego miejsca.
-      const wymuszony = wymuszone.find(w => w > y + 4 && w <= koniecIdealny);
-      if(wymuszony){
-        ciecie = wymuszony;
-      } else if(koniecIdealny < canvas.height){
+      if(koniecIdealny < canvas.height){
         // Najniższe dno elementu przed końcem strony, przy którym nie przecinamy niczego w pół.
         // Nie schodzimy poniżej 45% strony — inaczej jedna wysoka tabela zostawiałaby po sobie
         // kartkę zapełnioną w jednej trzeciej.
