@@ -4491,10 +4491,12 @@ function openGrupaStatsModal(){
           <span style="width:14px;color:${p.etap==='ok'?'var(--good)':p.etap==='blad'?'var(--clay-dark)':'var(--ink-faint)'};">${ikona(p.etap)}</span>
           <span style="flex:1;">${esc(p.nazwa)}</span>
           <span class="note" style="text-align:right;">${esc(p.opis)}</span>
-        </div>${(p.podpowiedz || (p.widzianeKluby||[]).length) ? `<details style="margin:0 0 6px 22px;">
+        </div>${(p.podpowiedz || (p.widzianeKluby||[]).length || p.coWidacNaStronie) ? `<details style="margin:0 0 6px 22px;">
           <summary style="cursor:pointer;font-size:12px;color:var(--ink-soft);">dlaczego? — co widzę na stronie tych rozgrywek</summary>
           ${p.podpowiedz ? `<p class="note" style="margin:4px 0;">${esc(p.podpowiedz)}</p>` : ''}
           ${(p.widzianeKluby||[]).length ? `<p class="note" style="margin:4px 0;line-height:1.7;"><strong>Na przeszukanych stronach widzę:</strong> ${p.widzianeKluby.map(n=>esc(n)).join(' &middot; ')}</p>` : ''}
+          ${p.coWidacNaStronie ? `<pre style="margin:4px 0;padding:6px;background:var(--chalk);border-radius:6px;font-size:10.5px;
+            white-space:pre-wrap;word-break:break-all;max-height:220px;overflow:auto;">${esc(JSON.stringify(p.coWidacNaStronie, null, 1))}</pre>` : ''}
         </details>` : ''}`).join('')}
       </div>
       ${komunikatKoncowy ? `<p class="note" style="margin:8px 0 0;color:var(--heading);font-weight:600;">${esc(komunikatKoncowy)}</p>` : ''}
@@ -4592,6 +4594,9 @@ function openGrupaStatsModal(){
       e.bezMeczow = !!dane.bezMeczow;
       e.adresKlubuNa90minut = dane.adresKlubuNa90minut || '';
       e.diagnostyka = dane.diagnostyka || null;
+      // Ślad z zajrzenia w stronę ŁNP — bez niego „nie oddaje składów" jest zdaniem bez wskazówki,
+      // co dalej. Niesiemy go aż do okna, żeby dało się go po prostu pokazać.
+      e.coWidacNaStronie = dane.coWidacNaStronie || null;
       throw e;
     }
     return dane;
@@ -4622,11 +4627,13 @@ function openGrupaStatsModal(){
             poz.opis = 'nie odczytałem terminarza tej strony';
             poz.podpowiedz = e.podpowiedz || '';
             poz.widzianeKluby = [];
+            poz.coWidacNaStronie = e.coWidacNaStronie || null;
           } else {
             poz.etap = 'ok';
             poz.opis = d ? `brak meczów tego klubu (w terminarzu ${d.zWynikiem} rozegranych)` : 'brak rozegranych meczów';
             poz.podpowiedz = e.podpowiedz || '';
             poz.widzianeKluby = (d && d.przyklady) || [];
+            poz.coWidacNaStronie = e.coWidacNaStronie || null;
           }
           if(e.adresKlubuNa90minut){
             const k = DB.clubs.find(x=>x.id===poz.id);
@@ -4637,6 +4644,7 @@ function openGrupaStatsModal(){
           poz.opis = String((e && e.message) || e).slice(0, 110);
           poz.podpowiedz = (e && e.podpowiedz) || '';
           poz.widzianeKluby = (e && e.widzianeKluby) || [];
+          poz.coWidacNaStronie = (e && e.coWidacNaStronie) || null;
         }
       }
       rysuj();

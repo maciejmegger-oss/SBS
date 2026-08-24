@@ -494,6 +494,11 @@ export default async function handler(req, res) {
       // trafiła w tę ze strony.
       const zajrzenie = skladyHtml.filter((s) => s.zLnp && s.html)
         .slice(0, 2).map((s) => ({ mecz: s.m.url || s.m.id, ...opiszZawartosc(s.html) }));
+      // Strony, których w ogóle nie udało się pobrać (blokada, przekroczony czas) — bez tego
+      // wyglądałyby tak samo jak strony puste, a to zupełnie inna przyczyna i inna naprawa.
+      const nieodczytane = skladyHtml.filter((s) => s.zLnp && s.error)
+        .slice(0, 3).map((s) => ({ mecz: s.m.url || s.m.id, blad: String(s.error).slice(0, 160) }));
+      if (nieodczytane.length) zajrzenie.push({ nieodczytaneStrony: nieodczytane });
       const cosJest = zajrzenie.some((z) => z.listOsobowychTablic > 0);
       return res.status(409).json({
         error: cosJest

@@ -282,11 +282,36 @@ export function opiszZawartosc(html) {
     return `#${i + 1}: ${klucze}`;
   });
   const sklady = jsony.flatMap((j) => znajdzSklady(j));
+  const tekst = String(html || "");
+
+  // Skrypty na stronie — ile ich jest i które są duże. Duży skrypt to najczęściej właśnie dane;
+  // sama ich obecność mówi, czy w ogóle jest czego szukać.
+  const skrypty = [...tekst.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)]
+    .map((m) => ({ znaczniki: m[1].slice(0, 90).replace(/\s+/g, " ").trim(), dlugosc: m[2].length }))
+    .sort((a, b) => b.dlugosc - a.dlugosc);
+
+  // Ślady znanych sposobów budowania stron. Gdy żadnego nie ma, dane najpewniej dociągane są
+  // osobnym zapytaniem już w przeglądarce — wtedy trzeba znaleźć TEN adres, nie szukać w stronie.
+  const znaki = ["__NEXT_DATA__", "__next_f", "__NUXT__", "__INITIAL_STATE__", "__APOLLO_STATE__",
+    "application/json", "sveltekit", "ng-version", "data-reactroot"]
+    .filter((z) => tekst.includes(z));
+
+  // Adresy, pod które strona sama sięga po dane. To najkrótsza droga do źródła, gdy w samej
+  // stronie nic nie ma.
+  const adresyApi = [...new Set([...tekst.matchAll(/["'`](https?:\/\/[^"'`\s]*\/api\/[^"'`\s]{0,90}|\/api\/[^"'`\s]{0,90})["'`]/gi)]
+    .map((m) => m[1]))].slice(0, 10);
+
   return {
+    dlugoscStrony: tekst.length,
+    skryptow: skrypty.length,
+    najwiekszeSkrypty: skrypty.slice(0, 4).map((s) => `${s.dlugosc} zn. ${s.znaczniki ? "<" + s.znaczniki + ">" : ""}`),
+    znakiRozpoznawcze: znaki,
+    adresyApi,
     znalezionychJsonow: jsony.length,
     kluczeNajwyzszegoPoziomu: opis,
     listOsobowychTablic: sklady.length,
     nazwyDruzyn: [...new Set(sklady.map((s) => nazwaDruzyny(s.rodzic, s.droga)).filter(Boolean))].slice(0, 8),
     przykladoweNazwiska: sklady.slice(0, 2).flatMap((s) => s.osoby.slice(0, 3).map(nazwaZawodnika)).filter(Boolean),
+    poczatekStrony: tekst.slice(0, 300).replace(/\s+/g, " "),
   };
 }
