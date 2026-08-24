@@ -482,6 +482,21 @@ export default async function handler(req, res) {
       return `${s.m.url || s.m.id}: „${p.gospodarzeNazwa || "?"}" - „${p.goscieNazwa || "?"}", ` +
         `zawodników w protokole: ${p.gospodarze.length + p.goscie.length}`;
     });
+    // PROTOKOŁY IV LIGI PROWADZI ŁNP, A TA STRONA POWSTAJE DOPIERO W PRZEGLĄDARCE.
+    //
+    // Do serwera przychodzi pusta skorupa — zero nazwisk — więc nie ma czego czytać. To nie jest
+    // problem nazwy klubu ani ligi w kartotece, a poprzedni komunikat sugerował dokładnie to
+    // i wysyłał do poprawiania czegoś, co jest poprawne.
+    if (protokolyBezSkladu.length) {
+      return res.status(409).json({
+        error: `Protokoły tych rozgrywek prowadzi „Łączy nas piłka", a ta strona nie oddaje składów serwerowi — buduje je dopiero w przeglądarce.`,
+        podpowiedz: "Tej ligi nie da się pobrać automatycznie z 90minut. Wejdź w klub i użyj przycisku " +
+          "„⏱ Statystyki z Łączy nas piłka” — jest tam zakładka „⚡ Zbierz całą kolejkę”, która " +
+          "przechodzi wszystkie mecze w Twojej przeglądarce i kopiuje protokoły. Jedno wklejenie rozlicza całą kolejkę.",
+        protokolyBezSkladu: protokolyBezSkladu.slice(0, 5),
+        zrodloProtokolow: "laczynaspilka.pl",
+      });
+    }
     return res.status(404).json({
       error: "Znalazłem mecze, ale w żadnym protokole nie rozpoznałem składu tego klubu.",
       podpowiedz: `Sprawdziłem ${wybrane.length} protokołów. Co w nich widzę: ${slad.join(" | ")}. ` +

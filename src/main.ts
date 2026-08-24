@@ -1835,17 +1835,23 @@ async function loadAllInner(){
     czytaj('scouting:matches'),
     czytaj('scouting:agencies'),
     czytaj('scouting:agents'),
-    storage.get('scouting:position_map_assignments', true).catch(()=>null),
+    czytaj('scouting:position_map_assignments'),
     // Ustawienia to jedyny wiersz, który zapis NADPISUJE w całości (logotypy lig, lista scoutów).
     // Nieudany odczyt musi być więc widoczny, inaczej pierwszy zapis ustawień skasowałby logotypy.
     czytaj('scouting:settings'),
-    storage.get('scouting:seed_rosters_v9', true).catch(()=>null),
-    storage.get('scouting:enrich_znicz_players_v1', true).catch(()=>null),
-    storage.get('scouting:enrich_avia_v1', true).catch(()=>null),
-    storage.get('scouting:enrich_gornik_v1', true).catch(()=>null),
-    storage.get('scouting:enrich_avia_olimpia_v2', true).catch(()=>null),
-    storage.get('scouting:reco_migration_v1', true).catch(()=>null),
-    storage.get('scouting:status_migration_v1', true).catch(()=>null),
+    // ZNACZNIKI „JUŻ TO ZROBIONE" CZYTAMY TAK SAMO JAK DANE.
+    //
+    // Wcześniej nieudany odczyt znacznika kończył się cichym `null` — nie do odróżnienia od
+    // „tego jeszcze nie robiliśmy". Po wybudzeniu uśpionej bazy pierwsze wejście nie pobrało
+    // znaczników i lista startowa klubów wstawiła się DRUGI RAZ: cała II liga zdublowana,
+    // każdy klub w dwóch egzemplarzach, z zawodnikami rozbitymi na oba wpisy.
+    czytaj('scouting:seed_rosters_v9'),
+    czytaj('scouting:enrich_znicz_players_v1'),
+    czytaj('scouting:enrich_avia_v1'),
+    czytaj('scouting:enrich_gornik_v1'),
+    czytaj('scouting:enrich_avia_olimpia_v2'),
+    czytaj('scouting:reco_migration_v1'),
+    czytaj('scouting:status_migration_v1'),
   ]);
   try{ DB.players = p ? JSON.parse(p.value) : []; }catch(e){ DB.players = []; }
   try{ DB.clubs = c ? JSON.parse(c.value) : []; }catch(e){ DB.clubs = []; }
@@ -1904,14 +1910,27 @@ async function loadAllInner(){
     try{ render(); }catch(e){ /* widok mógł się w międzyczasie zmienić — nic pilnego */ }
     console.table(pomiar.slice().sort((a,b)=> b.ms - a.ms));
   })();
+  // NIC NIE DOPISUJEMY DO NIEPEŁNEJ BAZY.
+  //
+  // Wszystkie poniższe kroki (lista startowa klubów, składy, wzbogacanie, migracje) są sterowane
+  // znacznikami „już to zrobione". Gdy choćby jeden odczyt się nie powiódł, nie wiemy ani co jest
+  // w bazie, ani co już zrobiliśmy — a wtedy „uzupełnianie braków" tworzy duplikaty zamiast ich
+  // unikać. Tak zdublowała się cała II liga po wybudzeniu uśpionego projektu. Przy niepełnym
+  // wczytaniu odpuszczamy więc wszystko i prosimy o odświeżenie (baner u góry).
+  const wolnoUzupelniac = nieudaneOdczyty.length === 0;
+  if(!wolnoUzupelniac){
+    console.warn('Niepełne wczytanie (' + nieudaneOdczyty.map(x=>x.klucz).join(', ') +
+      ') — pomijam listę startową, wzbogacanie i migracje. Odśwież stronę.');
+  }
+
   // Lista startowa klubów wstawia się TYLKO RAZ, przy pierwszym uruchomieniu na danej bazie.
   //
   // Wcześniej przebiegała przy każdym starcie i dokładała wszystko, czego akurat nie było — więc
   // każdy usunięty klub wracał po odświeżeniu strony. Tak wracały „Skra Częstochowa" i „Słowianin
   // Wolibórz" (drużyny spoza rozgrywek) oraz drugie warianty nazw po scaleniu duplikatów.
   // Kasowanie klubu było skuteczne dokładnie do następnego wejścia na stronę.
-  const klubyZaslane = await storage.get('scouting:seed_clubs_v1', true).catch(()=>null);
-  if(!klubyZaslane){
+  const klubyZaslane = await czytaj('scouting:seed_clubs_v1');
+  if(wolnoUzupelniac && !klubyZaslane){
     let addedSeed = false;
     ALL_SEED_CLUBS.forEach(seed=>{
       const exists = DB.clubs.some(c2=>c2.name===seed.name && c2.league===seed.league);
@@ -1926,8 +1945,8 @@ async function loadAllInner(){
   // gdy działająca baza dawno miała ten znacznik ustawiony. Stąd osobna, jednorazowa migracja
   // z własnym znacznikiem: dokłada tylko brakujące kluby i tylko raz, więc usunięty klub nie wraca
   // po odświeżeniu strony (na tym potknęła się kiedyś lista startowa).
-  const lodzkaZaslana = await storage.get('scouting:seed_iv_lodzka_v1', true).catch(()=>null);
-  if(!lodzkaZaslana){
+  const lodzkaZaslana = await czytaj('scouting:seed_iv_lodzka_v1');
+  if(wolnoUzupelniac && !lodzkaZaslana){
     let dodano = false;
     SEED_CLUBS_IV_LODZKA.forEach(seed=>{
       const jest = DB.clubs.some(c2=> c2.name === seed.name && c2.league === seed.league);
@@ -1945,8 +1964,8 @@ async function loadAllInner(){
   // co tydzień. Raz przykładamy kartotekę do czterech tabel III ligi: kto tam jest — dostaje
   // właściwą grupę i pisownię nazwy jak na 90minut; kto stał w III lidze, a go tam nie ma —
   // spadł, więc ląduje w IV lidze swojego województwa.
-  const ligiZweryfikowane = await storage.get('scouting:weryfikacja_lig_2026_v1', true).catch(()=>null);
-  if(!ligiZweryfikowane){
+  const ligiZweryfikowane = await czytaj('scouting:weryfikacja_lig_2026_v1');
+  if(wolnoUzupelniac && !ligiZweryfikowane){
     // Wszystkie 16 grup IV ligi musi być na liście, zanim zaczniemy do nich przenosić kluby.
     if(Array.isArray(DB.settings.leagues)){
       Object.values(IV_LIGA_WG_ZPN).forEach(grupa=>{
@@ -1984,20 +2003,20 @@ async function loadAllInner(){
     await quietFlagSet('scouting:weryfikacja_lig_2026_v1');
   }
 
-  if(!seedFlag){
+  if(wolnoUzupelniac && !seedFlag){
     try{ await importAllKnownRosters(); }catch(e){ console.error('Roster seed error', e); }
     await quietFlagSet('scouting:seed_rosters_v9');
   }
   let totalEnrichChanged = 0;
-  if(!enrichFlag){
+  if(wolnoUzupelniac && !enrichFlag){
     try{ const r = await enrichZniczRoster(); totalEnrichChanged += r.changed||0; }catch(e){ console.error('Znicz enrich error', e); }
     await quietFlagSet('scouting:enrich_znicz_players_v1');
   }
-  if(!enrichAviaFlag){
+  if(wolnoUzupelniac && !enrichAviaFlag){
     try{ const r = await enrichRosterGeneric(SEED_PLAYER_ENRICHMENT_AVIA); totalEnrichChanged += r.changed||0; }catch(e){ console.error('Avia enrich error', e); }
     await quietFlagSet('scouting:enrich_avia_v1');
   }
-  if(!enrichGornikFlag){
+  if(wolnoUzupelniac && !enrichGornikFlag){
     try{
       const r1 = await enrichRosterGeneric(SEED_PLAYER_ENRICHMENT_GORNIK);
       const r2 = await enrichRosterGeneric(SEED_PLAYER_ENRICHMENT_REKORD);
@@ -2005,7 +2024,7 @@ async function loadAllInner(){
     }catch(e){ console.error('Gornik/Rekord enrich error', e); }
     await quietFlagSet('scouting:enrich_gornik_v1');
   }
-  if(!enrichAviaV2Flag){
+  if(wolnoUzupelniac && !enrichAviaV2Flag){
     try{
       const r1 = await enrichRosterGeneric(SEED_PLAYER_ENRICHMENT_AVIA_V2);
       const r2 = await enrichRosterGeneric(SEED_PLAYER_ENRICHMENT_OLIMPIA);
@@ -2016,7 +2035,7 @@ async function loadAllInner(){
   }
   // Jeden zapis zawodników na koniec WSZYSTKICH bramek wzbogacania, zamiast do 7 osobnych.
   if(totalEnrichChanged > 0){ try{ await savePlayers(); }catch(e){ console.error('Batched enrichment savePlayers error', e); } }
-  if(!recoMigrationFlag){
+  if(wolnoUzupelniac && !recoMigrationFlag){
     DB.settings.recommendations = ["Kontynuować obserwację","Zaprosić na testy","(Do transferu)","Odrzucić","Zbyt wcześnie ocenić"];
     let anyObsChanged = false;
     DB.observations.forEach(o=>{
@@ -2027,7 +2046,7 @@ async function loadAllInner(){
     if(anyObsChanged){ try{ await saveObservations(); }catch(e){ console.error('Reco observations migration save error', e); } }
     await quietFlagSet('scouting:reco_migration_v1');
   }
-  if(!statusMigrationFlag){
+  if(wolnoUzupelniac && !statusMigrationFlag){
     DB.settings.statuses = ["Do Obserwacji","Rekomendowany","Na Testy","Odrzucony","Do transferu"];
     const STATUS_REMAP = {
       'Nowy typ':'Do Obserwacji', 'W obserwacji':'Do Obserwacji', 'Na testach':'Na Testy',
@@ -4036,7 +4055,10 @@ function viewClubs(){
   <div class="filters" style="margin-bottom:0;">${topRow}</div>
   ${groupRow}
   <div class="toolbar" style="margin-top:14px;">
-    <div class="note">${list.length} ${list.length===1?'klub':'klubów'} w widoku</div>
+    <div class="note">${list.length} ${list.length===1?'klub':'klubów'} w widoku${
+      (clubBrowse.top === 'IV liga' || clubBrowse.top === 'Klasa okręgowa')
+        ? ' &middot; <strong>statystyki tej ligi wchodzą przez protokoły z „Łączy nas piłka"</strong> — wejdź w klub i kliknij „⏱ Statystyki z Łączy nas piłka"'
+        : ''}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <label class="secondary" style="cursor:pointer;padding:9px 16px;border:1px solid #C9C2AB;border-radius:6px;display:inline-flex;align-items:center;" title="Zaznacz wiele plików — dopasuję je do klubów po nazwie pliku">
         ⭱ Wgraj wiele logo <input type="file" id="multi-logo-input" accept="image/png,image/jpeg,image/jpg,.png,.jpg,.jpeg" multiple style="display:none;">
@@ -4045,7 +4067,9 @@ function viewClubs(){
         ? `<button class="secondary" data-action="league-stats" data-league="${esc(clubBrowse.top)}" title="Wklej statystyki wszystkich klubów tej ligi w jednym oknie">⏱ Statystyki ligi</button>` : ''}
       <button class="secondary" data-action="paste-clubs" title="Wklej listę nazw klubów — założę je wszystkie naraz w wybranej grupie">📋 Wklej listę klubów</button>
       <button class="secondary" data-action="import-klubow-ligi" title="Pobierz z 90minut składy wszystkich grup wybranego poziomu i załóż brakujące kluby">⬇ Wgraj kluby z 90minut</button>
-      ${list.length ? `<button class="secondary" data-action="stats-90minut-grupa" title="Pobierz i zapisz statystyki z 90minut dla wszystkich klubów widocznych na liście — po kolei, jeden po drugim">⏱ Odśwież 90minut — cały widok (${list.length})</button>` : ''}
+      ${list.length && clubBrowse.top !== 'IV liga' && clubBrowse.top !== 'Klasa okręgowa'
+        ? `<button class="secondary" data-action="stats-90minut-grupa" title="Pobierz i zapisz statystyki z 90minut dla wszystkich klubów widocznych na liście — po kolei, jeden po drugim">⏱ Odśwież 90minut — cały widok (${list.length})</button>`
+        : ''}
       <button class="secondary" data-action="merge-duplicates" title="Znajdź kluby wpisane dwa razy pod różnymi nazwami i połącz je w jeden">🧹 Scal duplikaty</button>
       <button class="gold" data-action="add-club">+ Nowy klub</button>
     </div>
