@@ -14440,14 +14440,32 @@ async function generatePlayerPDF(playerId){
 
   <div class="section" style="padding-top:0;">
     <div class="section-title">Historia obserwacji (${obs.length})</div>
-    ${obs.length?`<table class="obs-table">
-      <tr><th>Data</th><th>Mecz</th><th>Scout</th><th>Ocena</th><th>Rekomendacja</th></tr>
+    ${obs.length?(()=>{
+      // RODZAJ OBSERWACJI W RAPORCIE.
+      //
+      // „Historia obserwacji" mówiła tylko KIEDY i NA JAKIM meczu — a dla czytającego raport
+      // różnica między obejrzeniem zawodnika na żywo a z transmisji jest zasadnicza i waży na
+      // tym, ile warta jest ocena. Rodzaj stoi więc zaraz przy dacie, kolorem jak w aplikacji.
+      //
+      // Kolumnę „Ocena" pokazujemy tylko wtedy, gdy KTÓRAKOLWIEK obserwacja ma liczby. Ocenia się
+      // dziś w raportach, więc u większości zawodników była to kolumna samych kresek.
+      const kolorRodzaju = { live:'#3E7D4C', online:'#2F6FA8', video:'#8B5CF6' };
+      const maOceny = obs.some(o=> o.statsFilledIn && o.ratings && RATING_KEYS.some(k=>Number(o.ratings[k])>0));
+      return `<table class="obs-table">
+      <tr><th>Data</th><th>Rodzaj</th><th>Mecz</th><th>Scout</th>${maOceny?'<th>Ocena</th>':''}<th>Rekomendacja</th></tr>
       ${obs.map(o=>{
         const hasHist = o.statsFilledIn && o.ratings && RATING_KEYS.some(k=>Number(o.ratings[k])>0);
         const rowAvg = hasHist ? RATING_KEYS.reduce((s,k)=>s+(Number(o.ratings[k])||0),0)/RATING_KEYS.length : null;
-        return `<tr><td>${esc(o.date)}</td><td>${esc(o.match||'—')}</td><td>${esc(o.scout)}</td><td>${rowAvg!=null?fmt1(rowAvg):'—'}</td><td>${esc(o.recommendation||'—')}</td></tr>`;
+        const rodzaj = obsTypeOf(o);
+        const meta = obsTypeMeta(rodzaj);
+        return `<tr><td style="white-space:nowrap;">${esc(o.date)}</td>
+          <td><span style="display:inline-block;padding:1px 7px;border-radius:9px;font-size:9.5px;font-weight:700;
+            color:#FFFFFF;background:${kolorRodzaju[rodzaj] || '#3E7D4C'};">${esc(meta.label)}</span></td>
+          <td>${esc(o.match||'—')}</td><td>${esc(o.scout||'—')}</td>${maOceny?`<td>${rowAvg!=null?fmt1(rowAvg):'—'}</td>`:''}
+          <td>${esc(o.recommendation||'—')}</td></tr>`;
       }).join('')}
-    </table>`:`<p class="empty-note">Brak zarejestrowanych obserwacji.</p>`}
+    </table>`;
+    })():`<p class="empty-note">Brak zarejestrowanych obserwacji.</p>`}
   </div>
 
   ${(a && a.metryki && a.metryki.length >= 3) ? `<div class="section" style="padding-top:0;">
