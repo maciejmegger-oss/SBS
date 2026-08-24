@@ -35,6 +35,26 @@ export async function signIn(email: string, password: string): Promise<{ ok: boo
   if (m.includes("email not confirmed")) {
     return { ok: false, error: "Konto nie zostało jeszcze potwierdzone — sprawdź skrzynkę e-mail." };
   }
+  // BAZA NIE ODPOWIEDZIAŁA W OGÓLE.
+  //
+  // To coś innego niż złe hasło: przy złym haśle serwer odpowiada „invalid login credentials",
+  // a tutaj przeglądarka nie dostała żadnej odpowiedzi. Najczęstsza przyczyna to uśpiony projekt
+  // Supabase — darmowy plan usypia bazę po kilku dniach bez ruchu, więc wraca się do tego
+  // po każdym dłuższym urlopie. Angielskie „NetworkError when attempting to fetch resource"
+  // nie mówi o tym nic; komunikat musi prowadzić do rozwiązania.
+  if (m.includes("fetch") || m.includes("network") || m.includes("failed to fetch") || m.includes("load failed")) {
+    return {
+      ok: false,
+      error: "Baza danych nie odpowiada — to nie jest problem z hasłem.\n\n" +
+        "Najczęstsza przyczyna: projekt Supabase został UŚPIONY po kilku dniach bez logowania " +
+        "(tak działa darmowy plan). Dane są bezpieczne — trzeba tylko obudzić bazę:\n\n" +
+        "1. Wejdź na supabase.com i zaloguj się.\n" +
+        "2. Otwórz projekt Scout Base System — przy nazwie będzie „Paused”.\n" +
+        "3. Kliknij „Restore project” i poczekaj 2-5 minut, aż status będzie „Active”.\n" +
+        "4. Odśwież tę stronę i zaloguj się ponownie.\n\n" +
+        "Jeśli projekt jest aktywny, sprawdź połączenie z internetem albo wyłącz blokadę reklam dla tej strony.",
+    };
+  }
   return { ok: false, error: "Nie udało się zalogować: " + error.message };
 }
 

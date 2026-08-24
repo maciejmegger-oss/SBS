@@ -526,8 +526,11 @@ tr.player-row.prow-okazja td:first-child{box-shadow:inset 4px 0 0 var(--gold);}
 .login-sub{color:var(--ink-soft);font-size:13px;margin:0 0 20px;}
 .login-card .field-wrap{margin-bottom:14px;}
 .login-card input{width:100%;box-sizing:border-box;}
+/* white-space:pre-line — komunikat o uśpionej bazie to instrukcja krok po kroku, a bez tego
+   wszystkie punkty zlewały się w jeden akapit i nie dało się ich przeczytać. */
 .login-error{background:var(--bad-bg);border:1px solid var(--border-strong);color:var(--clay-dark);
-  padding:9px 12px;border-radius:8px;font-size:12.5px;margin-bottom:14px;}
+  padding:9px 12px;border-radius:8px;font-size:12.5px;margin-bottom:14px;
+  white-space:pre-line;line-height:1.6;text-align:left;}
 .login-info{background:var(--good-bg);border:1px solid var(--border-strong);color:var(--good);
   padding:9px 12px;border-radius:8px;font-size:12.5px;margin-bottom:14px;}
 
