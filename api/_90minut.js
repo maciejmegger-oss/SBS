@@ -420,6 +420,29 @@ export function parseKlubyZTabeli(html) {
   return [...out.values()];
 }
 
+// KADRA ZE STRONY KLUBU — druga droga do zawodników, gdy nie ma protokołów.
+//
+// PO CO TO JEST: w IV lidze 90minut nie prowadzi protokołów meczów (odnośnik przy wyniku przenosi
+// na stronę PZPN), więc dotychczasowa droga „protokół → kto grał" urywa się na starcie. Ale strony
+// ZAWODNIKÓW 90minut prowadzi także dla niższych lig, a strona klubu jest do nich spisem treści.
+// Bierzemy z niej listę zawodników i dalej idziemy dokładnie tą samą drogą co w II i III lidze:
+// strona zawodnika oddaje gotowe sumy sezonu — występy, minuty, bramki i kartki.
+//
+// CZEGO TĄ DROGĄ NIE DOSTANIEMY: przebiegu mecz po meczu (wykresu minut). Sumy sezonowe owszem,
+// ale rozbicia na poszczególne spotkania nie ma się skąd wziąć bez protokołów.
+export function parseKadraKlubu(html) {
+  const out = new Map();
+  const re = /<a\b[^>]*wystepy\.php\?id=(\d+)(?:&(?:amp;)?id_sezon=(\d+))?[^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    const nazwa = strip(m[3]);
+    // Odsiewamy odnośniki-ozdobniki: puste, za długie i takie bez ani jednej litery.
+    if (!nazwa || nazwa.length > 60 || !/\p{L}/u.test(nazwa)) continue;
+    if (!out.has(m[1])) out.set(m[1], { id: m[1], sezon: m[2] || "", nazwa });
+  }
+  return [...out.values()];
+}
+
 // Skład z protokołu meczu. Układ jest trzykolumnowy i stały: lewa komórka to gospodarze,
 // prawa to goście, środkowa jest pusta i tylko je rozdziela. Rodzaj kartki poznajemy po
 // atrybucie alt obrazka ("ŻK" / "CK") — tekstu przy nim nie ma.

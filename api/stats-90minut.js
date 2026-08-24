@@ -18,7 +18,7 @@
 import {
   ZRODLA_LIG, poziomRozgrywek, pobierzZ90minut, parseLinkiMeczow, parseSkladyMeczu,
   parseWystepyZawodnika, normalizujNazwe, minutyZWpisu, toSamKlub, tytulMaKlub, czlonyKlubu,
-  parseKlubyZTabeli, parseSchedule,
+  parseKlubyZTabeli, parseSchedule, parseKadraKlubu,
 } from "./_90minut.js";
 import { czyLnp, pobierzLnp, parseProtokolLnp, protokolZDanychStrony, opiszZawartosc } from "./_lnp.js";
 
@@ -479,6 +479,22 @@ export default async function handler(req, res) {
       || { ...m, minuty: 0, odMinuty: null, doMinuty: null, podstawowy: false, zolte: 0, czerwone: 0 }));
   }
 
+  // DRUGA DROGA: KADRA ZE STRONY KLUBU.
+  //
+  // Protokołów IV ligi 90minut nie prowadzi, więc dotąd wszystko kończyło się tutaj. Ale strony
+  // ZAWODNIKÓW 90minut prowadzi także niżej — a strona klubu jest do nich spisem treści. Skoro
+  // z protokołów nie wyszedł ani jeden zawodnik, bierzemy skład stamtąd i dalej idziemy dokładnie
+  // tą samą drogą co w II i III lidze: strona zawodnika oddaje gotowe sumy sezonu.
+  let zKadryKlubu = 0;
+  if (!zawodnicy90.size && adresKlubuNa90minut) {
+    try {
+      const htmlKlubu = await pobierzZ90minut(adresKlubuNa90minut);
+      for (const z of parseKadraKlubu(htmlKlubu)) {
+        if (!zawodnicy90.has(z.id)) { zawodnicy90.set(z.id, { ...z, zKadry: true }); zKadryKlubu++; }
+      }
+    } catch (e) { bledyStron.push({ adres: adresKlubuNa90minut, blad: String((e && e.message) || e) }); }
+  }
+
   if (!zawodnicy90.size) {
     // Ślad z odczytu protokołów — bez niego nie da się rozstrzygnąć, czy chodzi o nazwę klubu,
     // o nieotwarty protokół, czy o szablon, w którym nie ma składów.
@@ -525,7 +541,9 @@ export default async function handler(req, res) {
         podpowiedz: cosJest
           ? `Na stronie widzę drużyny: ${zajrzenie.flatMap((z) => z.nazwyDruzyn).join(", ") || "—"}. `
             + `Wyrównaj nazwę klubu w kartotece do tej ze strony, albo napisz mi, która to drużyna.`
-          : `Początek strony: ${(pierwsze && pierwsze.poczatekStrony) || "—"}`,
+          : `Próbowałem też drugą drogą — spisem kadry ze strony klubu na 90minut `
+            + `(${adresKlubuNa90minut || "adresu klubu nie znam"}) — i tam też nie ma zawodników. `
+            + `Początek strony ŁNP: ${(pierwsze && pierwsze.poczatekStrony) || "—"}`,
         protokolyBezSkladu: protokolyBezSkladu.slice(0, 5),
         zrodloProtokolow: "laczynaspilka.pl",
         coWidacNaStronie: zajrzenie,
@@ -879,6 +897,7 @@ export default async function handler(req, res) {
     zProtokolowWprost,
     stronaZTerminarza: zTerminarzaRozpoznane,
     protokolyZLnp: zLnpOdczytane,
+    zKadryKlubu,
     meczeKlubu: mecze.length,
     // Adres strony klubu odnaleziony w tabeli — przeglądarka zapisuje go w kartotece, żeby
     // następnym razem pominąć całe szukanie i wejść od razu tam, gdzie trzeba.
