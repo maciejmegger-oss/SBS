@@ -14609,10 +14609,35 @@ async function generatePlayerPDF(playerId){
     // dokument: każdy element, który mieści się na stronie (nagłówek sekcji, wiersz tabeli, karta
     // oceny), wyznacza strefę zakazaną — nie wolno przez niego przejść. Cięcie robimy na
     // najniższym dozwolonym dnie elementu przed końcem strony.
+    // PRZELICZNIK MIERZYMY, NIE ZAKŁADAMY — TO BYŁ KORZEŃ CAŁEGO ZŁA.
+    //
+    // Położenia elementów znamy w pikselach CSS i mnożyliśmy je przez SKALA, zakładając, że obraz
+    // jest dokładnie tyle razy większy. Nie jest: przy raporcie o wysokości 3332 px html2canvas
+    // oddawał płótno 7250 px zamiast 6664 — o 8,8% za dużo. Każde wyliczone miejsce cięcia
+    // wskazywało więc coraz bardziej obok, a przy dole dokumentu mijało się z celem o ćwierć
+    // kartki. Stąd brały się nagłówki przecięte w pół (górna połowa kończyła stronę, dolna
+    // zaczynała następną — wyglądało to jak nagłówek wydrukowany dwa razy) i rozdarte wiersze
+    // tabeli. Bierzemy więc przelicznik z samego płótna i pozycje liczymy względem górnej
+    // krawędzi raportu, a nie okna.
+    const ramaRaportu = targetEl.getBoundingClientRect();
+    const gornaKrawedz = ramaRaportu.top + idoc.documentElement.scrollTop;
+    // Przelicznik to tylko OSZACOWANIE. html2canvas nie robi wiernej kopii jeden do jednego —
+    // układa treść u siebie od nowa i wychodzi mu o kilka procent wyżej (u nas 3332 css → 7250 px
+    // zamiast 6664). Dlatego samo mnożenie przez SKALA rozjeżdżało się coraz bardziej im niżej,
+    // a przy dole dokumentu mijało się z celem o ćwierć kartki — stąd nagłówki przecięte w pół
+    // (górna połowa kończyła stronę, dolna zaczynała następną, jakby wydrukowano je dwa razy).
+    // Stosunek wysokości trafia znacznie bliżej, a resztę błędu usuwa dosunięcie do pustego
+    // rzędu pikseli (patrz `bezDruku` niżej) — czyli sprawdzenie w samym obrazie, nie w rachunku.
+    const przelicznik = ramaRaportu.height > 0 ? canvas.height / ramaRaportu.height : SKALA;
+    // Gdzie kończy się TREŚĆ. Poniżej jest już samo białe tło i nie ma czego drukować — bez tego
+    // raport dostawał na koniec dodatkową, pustą kartkę.
+    const koniecTresci = Math.min(canvas.height, Math.round(ramaRaportu.height * przelicznik));
+
     const zakazane = [];   // [{od, do}] w pikselach obrazu
     const dna = [];        // dopuszczalne miejsca cięcia
-    const gora = (el)=> Math.round((el.getBoundingClientRect().top + idoc.documentElement.scrollTop) * SKALA);
-    const dol  = (el)=> Math.round((el.getBoundingClientRect().bottom + idoc.documentElement.scrollTop) * SKALA);
+    const naObrazie = (wCss)=> Math.round((wCss + idoc.documentElement.scrollTop - gornaKrawedz) * przelicznik);
+    const gora = (el)=> naObrazie(el.getBoundingClientRect().top);
+    const dol  = (el)=> naObrazie(el.getBoundingClientRect().bottom);
     idoc.body.querySelectorAll('*').forEach(el=>{
       const r = el.getBoundingClientRect();
       if(r.height <= 0) return;
@@ -14626,40 +14651,110 @@ async function generatePlayerPDF(playerId){
     // wysoka (długa tabela obserwacji, szeroka opinia) nie blokuje cięcia — i wtedy sam nagłówek
     // potrafił zostać na dole kartki, a to, co opisuje, zaczynało się dopiero na następnej.
     // Dlatego nagłówek sklejamy z pierwszym blokiem, który po nim następuje.
+    // Sklejamy z POCZĄTKIEM treści, nie z całością. Objęcie całego bloku zakazywało cięcia
+    // w każdym wierszu długiej tabeli obserwacji — a wtedy nie zostawało ANI JEDNO dozwolone
+    // miejsce i strona lądowała cięta na ślepo, w poprzek wiersza. Nagłówkowi wystarczy, że
+    // pociągnie za sobą pierwsze dwa wiersze tego, co opisuje.
+    const ZACZEPKA = Math.round(48 * przelicznik);
     idoc.body.querySelectorAll('.section-title').forEach(tytul=>{
       const pierwszaTresc = tytul.nextElementSibling;
       if(!pierwszaTresc) return;
-      const doo = dol(pierwszaTresc);
+      const doo = Math.min(dol(pierwszaTresc), gora(pierwszaTresc) + ZACZEPKA);
       if(doo > gora(tytul)) zakazane.push({od: gora(tytul), do: doo});
     });
     dna.sort((a,b)=>a-b);
 
     const wolnoCiac = (y)=> !zakazane.some(z=> y > z.od + 1 && y < z.do - 1);
 
+    // ---------- SPRAWDZENIE W SAMYM OBRAZIE ----------
+    //
+    // Rachunek na położeniach elementów daje dobre miejsce, ale nie co do piksela — bo obraz
+    // powstaje z osobnego przeliczenia układu. Ostatnie kilkanaście pikseli rozstrzygamy więc
+    // patrząc na obraz: szukamy rzędu, w którym NIE MA DRUKU (same jasne piksele). Cięcie w takim
+    // rzędzie z definicji niczego nie przecina — ani litery, ani ramki, ani kreski tabeli.
+    const kontekst = canvas.getContext('2d', {willReadFrequently:true});
+    const czyRzadPusty = (y)=>{
+      if(y <= 0 || y >= canvas.height) return true;
+      try{
+        const d = kontekst.getImageData(0, y, canvas.width, 1).data;
+        // Piksel „z drukiem" to każdy wyraźnie ciemniejszy od tła kartki. Delikatne tła sekcji
+        // (kremowe, jasnozielone) przepuszczamy — nie są treścią, tylko podkładem.
+        for(let i = 0; i < d.length; i += 4){
+          if(d[i] < 205 || d[i+1] < 205 || d[i+2] < 205) return false;
+        }
+        return true;
+      }catch(e){ return true; }   // płótno z obcym obrazem bywa zablokowane — wtedy ufamy rachunkowi
+    };
+    // Najbliższy pusty rząd względem wyliczonego miejsca. Szukamy najpierw w GÓRĘ, żeby nie
+    // wypchnąć treści poza stronę, a dopiero potem w dół.
+    const OKNO = Math.round(40 * przelicznik);
+    // Wolny pas ma zwykle kilkanaście pikseli: cienka ramka, odstęp, dopiero potem następna
+    // sekcja. Tniemy przy jego DOLE, żeby ramka została na tej stronie, do której należy —
+    // inaczej na następną kartkę przechodziła sama kreska obramowania.
+    const dolPasa = (y)=>{
+      let k = y;
+      while(k + 1 < canvas.height && k - y < OKNO && czyRzadPusty(k + 1)) k++;
+      return k;
+    };
+    const bezDruku = (y)=>{
+      if(czyRzadPusty(y)) return dolPasa(y);
+      for(let d = 1; d <= OKNO; d++){
+        if(czyRzadPusty(y - d)) return dolPasa(y - d);
+        if(czyRzadPusty(y + d)) return dolPasa(y + d);
+      }
+      return y;
+    };
+
     let y = 0, pierwsza = true;
-    while(y < canvas.height){
-      const koniecIdealny = Math.min(y + stronaPx, canvas.height);
+    while(y < koniecTresci){
+      const koniecIdealny = Math.min(y + stronaPx, koniecTresci);
       let ciecie = koniecIdealny;
-      if(koniecIdealny < canvas.height){
+      if(koniecIdealny < koniecTresci){
         // Najniższe dno elementu przed końcem strony, przy którym nie przecinamy niczego w pół.
         // Nie schodzimy poniżej 45% strony — inaczej jedna wysoka tabela zostawiałaby po sobie
         // kartkę zapełnioną w jednej trzeciej.
         const minimum = y + stronaPx * 0.45;
-        let najlepsze = 0;
+        let najlepsze = 0, awaryjne = 0;
         for(const d of dna){
           if(d <= y) continue;
           if(d > koniecIdealny) break;
-          if(d >= minimum && wolnoCiac(d)) najlepsze = d;
+          if(!wolnoCiac(d)) continue;
+          awaryjne = d;                       // jakiekolwiek dozwolone miejsce, choćby wysoko
+          if(d >= minimum) najlepsze = d;     // a najlepiej takie, które zapełnia kartkę
         }
-        if(najlepsze) ciecie = najlepsze;
+        // KRÓTSZA STRONA JEST LEPSZA NIŻ PRZECIĘTY NAGŁÓWEK. Gdy w dolnej połowie kartki nie ma
+        // ani jednego dozwolonego miejsca, wcześniej tnęliśmy NA ŚLEPO na granicy 297 mm — czyli
+        // w poprzek nagłówka albo ramki. Wyglądało to tak, jakby nagłówek pojawiał się dwa razy:
+        // jego górna połowa kończyła jedną stronę, dolna zaczynała następną. Teraz w takiej
+        // sytuacji cofamy się do ostatniego dozwolonego miejsca — strona wychodzi krótsza, ale
+        // sekcja zaczyna się w całości na następnej kartce.
+        ciecie = najlepsze || awaryjne || koniecIdealny;
+
+        // BIAŁA PRZERWA NA DOLE KARTKI. Nierozdzielny blok (ramka radaru, wykres minut) potrafi
+        // nie zmieścić się o kilka procent — i wtedy schodzi na następną stronę, zostawiając po
+        // sobie ćwierć pustej kartki. Skoro nie da się go przeciąć, ŚCIŚNIJMY całą stronę: to ta
+        // sama sztuczka, którą niżej ratujemy stopkę. Zgadzamy się najwyżej na dziesięć procent
+        // zmniejszenia — mniej znaczy nieczytelny druk, a przy większej dziurze i tak nic nie da.
+        const NAJWYZEJ_PUSTE = 0.78;   // strona wypełniona słabiej niż w 78% woła o dociągnięcie
+        const MAKS_SCISK = 1.10;       // ale nie kosztem więcej niż 10% zmniejszenia
+        if(ciecie - y < stronaPx * NAJWYZEJ_PUSTE){
+          let dociagniete = 0;
+          for(const d of dna){
+            if(d <= ciecie) continue;
+            if(d - y > stronaPx * MAKS_SCISK) break;
+            if(wolnoCiac(d)) dociagniete = d;
+          }
+          if(dociagniete) ciecie = dociagniete;
+        }
 
         // OGON NIE ZASŁUGUJE NA WŁASNĄ KARTKĘ. Po bezpiecznym cięciu zostawała czasem sama
         // stopka („Raport wygenerowany…") i lądowała na trzeciej, pustej stronie. Jeśli reszta
         // treści to taki skrawek, dociągamy cięcie do końca i mieścimy go na tej stronie —
         // obraz zmniejsza się o kilka procent, czego na wydruku nie widać.
-        if(canvas.height - ciecie > 0 && canvas.height - ciecie < stronaPx * 0.08) ciecie = canvas.height;
+        if(koniecTresci - ciecie > 0 && koniecTresci - ciecie < stronaPx * 0.08) ciecie = koniecTresci;
       }
 
+      ciecie = ciecie >= koniecTresci ? koniecTresci : bezDruku(ciecie);
       const wysokoscWycinka = Math.max(1, ciecie - y);
       const kawalek = document.createElement('canvas');
       kawalek.width = canvas.width;
