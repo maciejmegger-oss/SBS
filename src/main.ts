@@ -4057,7 +4057,7 @@ function viewClubs(){
   <div class="toolbar" style="margin-top:14px;">
     <div class="note">${list.length} ${list.length===1?'klub':'klubów'} w widoku${
       (clubBrowse.top === 'IV liga' || clubBrowse.top === 'Klasa okręgowa')
-        ? ' &middot; <strong>statystyki tej ligi wchodzą przez protokoły z „Łączy nas piłka"</strong> — wejdź w klub i kliknij „⏱ Statystyki z Łączy nas piłka"'
+        ? ' &middot; statystyki tej ligi idą z <strong>„Łączy nas piłka"</strong> — odświeżysz je dla wszystkich klubów naraz, przyciskiem obok'
         : ''}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <label class="secondary" style="cursor:pointer;padding:9px 16px;border:1px solid #C9C2AB;border-radius:6px;display:inline-flex;align-items:center;" title="Zaznacz wiele plików — dopasuję je do klubów po nazwie pliku">
@@ -4067,8 +4067,12 @@ function viewClubs(){
         ? `<button class="secondary" data-action="league-stats" data-league="${esc(clubBrowse.top)}" title="Wklej statystyki wszystkich klubów tej ligi w jednym oknie">⏱ Statystyki ligi</button>` : ''}
       <button class="secondary" data-action="paste-clubs" title="Wklej listę nazw klubów — założę je wszystkie naraz w wybranej grupie">📋 Wklej listę klubów</button>
       <button class="secondary" data-action="import-klubow-ligi" title="Pobierz z 90minut składy wszystkich grup wybranego poziomu i załóż brakujące kluby">⬇ Wgraj kluby z 90minut</button>
-      ${list.length && clubBrowse.top !== 'IV liga' && clubBrowse.top !== 'Klasa okręgowa'
-        ? `<button class="secondary" data-action="stats-90minut-grupa" title="Pobierz i zapisz statystyki z 90minut dla wszystkich klubów widocznych na liście — po kolei, jeden po drugim">⏱ Odśwież 90minut — cały widok (${list.length})</button>`
+      ${list.length
+        // ODŚWIEŻENIE CAŁEJ LIGI, NIE KLUB PO KLUBIE. Osiemnaście klubów w grupie to osiemnaście
+        // wejść w kartotekę i osiemnaście kliknięć — przy szesnastu grupach IV ligi robota na cały
+        // wieczór. Przycisk przechodzi wszystkie kluby z widoku po kolei. IV liga stała tu dotąd
+        // z boku, bo jej protokołów nie dawało się czytać z serwera; teraz idzie tą samą drogą.
+        ? `<button class="secondary" data-action="stats-90minut-grupa" title="Pobierz i zapisz statystyki wszystkich klubów widocznych na liście — po kolei, jeden po drugim">⏱ Odśwież statystyki — cały widok (${list.length})</button>`
         : ''}
       <button class="secondary" data-action="merge-duplicates" title="Znajdź kluby wpisane dwa razy pod różnymi nazwami i połącz je w jeden">🧹 Scal duplikaty</button>
       <button class="gold" data-action="add-club">+ Nowy klub</button>
@@ -4473,7 +4477,9 @@ function openGrupaStatsModal(){
   const rysuj = ()=>{
     overlay.innerHTML = `
     <div class="modal" style="max-width:720px;">
-      <h3>⏱ Odśwież statystyki z 90minut — ${esc(clubBrowse.group || clubBrowse.top || 'wszystkie kluby')}</h3>
+      <h3>⏱ Odśwież statystyki — ${esc(clubBrowse.group || clubBrowse.top || 'wszystkie kluby')}</h3>
+      <p class="note" style="margin:-6px 0 6px;">Źródło: ${clubBrowse.top === 'IV liga' || clubBrowse.top === 'Klasa okręgowa'
+        ? '<strong>Łączy nas piłka</strong> (protokoły PZPN)' : '<strong>90minut.pl</strong>'}.</p>
       <p class="note" style="margin-bottom:10px;">Przechodzę kluby po kolei: pobieram protokoły meczów, liczę dorobek zawodników i od razu zapisuję. Klub bez rozegranych meczów albo bez trafienia w nazwę pomijam i wypisuję niżej — nic przez to nie przerywa całego przebiegu.</p>
       <label style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px;cursor:pointer;font-size:13px;">
         <input type="checkbox" id="gs-dopisuj" ${dopisujBrakujacych?'checked':''} ${pracuje?'disabled':''} style="margin-top:3px;">
