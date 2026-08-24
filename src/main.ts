@@ -4770,10 +4770,13 @@ function viewClubDetail(id){
     <div style="display:flex;gap:8px;">
       <button class="gold" data-action="import-squad" data-id="${c.id}">📋 Import składu</button>
       ${topLevelOf(c.league) === 'IV liga' || topLevelOf(c.league) === 'Klasa okręgowa'
-        ? // IV ligi 90minut nie prowadzi (odnośnik przy wyniku przenosi na stronę PZPN), a ŁNP
-          // nie oddaje danych serwerowi — buduje stronę w przeglądarce. Jedyna działająca droga
-          // do minut prowadzi więc przez protokoły z ŁNP, i to ona stoi tu jako główny przycisk.
-          `<button class="gold" data-action="protokol-meczu" data-id="${c.id}" title="Protokoły meczów z Łączy nas piłka — minuty, zmiany i skład obu drużyn za jednym razem">⏱ Statystyki z Łączy nas piłka</button>`
+        ? // IV ligi 90minut nie prowadzi — odnośnik przy wyniku przenosi na stronę „Łączy nas piłka",
+          // a ta buduje się dopiero w przeglądarce. Dlatego dotąd jedyną drogą było wklejanie strony
+          // meczu. Teraz serwer zagląda w dane, które ŁNP przywozi razem ze stroną (wpisane w skrypt),
+          // więc ta liga aktualizuje się tak samo jak II i III — jednym kliknięciem. Wklejka zostaje
+          // jako droga awaryjna, na wypadek gdyby ŁNP przestało te dane wysyłać.
+          `<button class="gold" data-action="stats-90minut" data-id="${c.id}" title="Pobierz mecze, minuty i skład wprost z Łączy nas piłka — bez kopiowania i wklejania">⏱ Aktualizuj statystyki z ŁNP</button>
+           <button class="secondary" data-action="protokol-meczu" data-id="${c.id}" title="Droga awaryjna: wklejenie strony meczu, gdy pobieranie nie zadziała">📋 Wklejka z ŁNP</button>`
         : `<button class="gold" data-action="stats-90minut" data-id="${c.id}" title="Pobierz z 90minut mecze, minuty, bramki i kartki całego składu — bez kopiowania czegokolwiek">⏱ Statystyki z 90minut</button>
            <button class="secondary" data-action="import-squad-stats" data-id="${c.id}" title="Zapasowa droga: ręczna wklejka z Transfermarktu. Dla polskich lig użyj przycisku obok.">📋 Wklejka z Transfermarktu</button>`}
       <button class="secondary" data-action="edit-club" data-id="${c.id}">Edytuj klub</button>

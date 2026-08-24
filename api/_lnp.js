@@ -10,10 +10,14 @@
 // Minuty gry policzyć się da i to jest tu wartość: kto wyszedł w pierwszym składzie, kto wszedł
 // z ławki i w której minucie.
 
+import { protokolZeSkryptow, opiszZawartosc } from "./_lnp-dane.js";
+
 const DOZWOLONE_HOSTY = new Set(["laczynaspilka.pl", "www.laczynaspilka.pl"]);
 const DLUGOSC_MECZU = 90;
 const CZAS_ZYCIA_CACHE = 10 * 60 * 1000;
 const cacheStron = new Map();
+
+export { opiszZawartosc };
 
 export function czyLnp(adres) {
   try { return DOZWOLONE_HOSTY.has(new URL(String(adres)).hostname); }
@@ -94,6 +98,14 @@ export function druzynyZProtokoluLnp(linie) {
 // zasada, którą stosuje wklejanie protokołu w aplikacji — i ona się sprawdza, bo suma minut
 // jedenastu zawodników musi dać 11 × 90.
 export function parseProtokolLnp(html, nazwaKlubu) {
+  // NAJPIERW ZAGLĄDAMY W SKRYPTY. Strona ŁNP powstaje w przeglądarce, więc do serwera przychodzi
+  // sam szkielet — w widocznym tekście nie ma nazwisk i stąd brał się wniosek „nie da się".
+  // Dane jednak przyjeżdżają razem ze stroną, wpisane w skrypt, tyle że `htmlNaLinie` wycina
+  // skrypty, zanim cokolwiek zobaczy. Gdy uda się je odczytać, mecz rozlicza się bez wklejania.
+  if (!Array.isArray(html)) {
+    const zeSkryptow = protokolZeSkryptow(html, nazwaKlubu);
+    if (zeSkryptow) return zeSkryptow;
+  }
   const linie = Array.isArray(html) ? html : htmlNaLinie(html);
   const druzyny = druzynyZProtokoluLnp(linie);
   const szukany = norm(nazwaKlubu);

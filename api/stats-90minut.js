@@ -20,7 +20,7 @@ import {
   parseWystepyZawodnika, normalizujNazwe, minutyZWpisu, toSamKlub, tytulMaKlub, czlonyKlubu,
   parseKlubyZTabeli, parseSchedule,
 } from "./_90minut.js";
-import { czyLnp, pobierzLnp, parseProtokolLnp } from "./_lnp.js";
+import { czyLnp, pobierzLnp, parseProtokolLnp, opiszZawartosc } from "./_lnp.js";
 
 import { BAZA, KLUCZ_BAZY, naglowkiDlaZadania, maDostepDoBazy, PODPOWIEDZ_BRAK_KLUCZA } from "./_baza.js";
 
@@ -488,13 +488,25 @@ export default async function handler(req, res) {
     // problem nazwy klubu ani ligi w kartotece, a poprzedni komunikat sugerował dokładnie to
     // i wysyłał do poprawiania czegoś, co jest poprawne.
     if (protokolyBezSkladu.length) {
+      // CO STRONA W OGÓLE ZAWIERAŁA. Czytamy już nie tylko widoczny tekst, ale i dane wpisane
+      // w skrypty — jeśli i tam nic nie ma, trzeba wiedzieć CZEGO nie ma, zamiast dostawać samo
+      // „nie da się". Ten ślad wskazuje wprost, czy zabrakło danych, czy tylko nazwa klubu nie
+      // trafiła w tę ze strony.
+      const zajrzenie = skladyHtml.filter((s) => s.zLnp && s.html)
+        .slice(0, 2).map((s) => ({ mecz: s.m.url || s.m.id, ...opiszZawartosc(s.html) }));
+      const cosJest = zajrzenie.some((z) => z.listOsobowychTablic > 0);
       return res.status(409).json({
-        error: `Protokoły tych rozgrywek prowadzi „Łączy nas piłka", a ta strona nie oddaje składów serwerowi — buduje je dopiero w przeglądarce.`,
-        podpowiedz: "Tej ligi nie da się pobrać automatycznie z 90minut. Wejdź w klub i użyj przycisku " +
-          "„⏱ Statystyki z Łączy nas piłka” — jest tam zakładka „⚡ Zbierz całą kolejkę”, która " +
-          "przechodzi wszystkie mecze w Twojej przeglądarce i kopiuje protokoły. Jedno wklejenie rozlicza całą kolejkę.",
+        error: cosJest
+          ? `Strona „Łączy nas piłka" oddała składy, ale pod nazwami drużyn, których nie umiem połączyć z „${klub.name}".`
+          : `Protokoły tych rozgrywek prowadzi „Łączy nas piłka", a ta strona nie oddaje składów serwerowi — buduje je dopiero w przeglądarce.`,
+        podpowiedz: cosJest
+          ? `Na stronie widzę drużyny: ${zajrzenie.flatMap((z) => z.nazwyDruzyn).join(", ") || "—"}. `
+            + `Wyrównaj nazwę klubu w kartotece do tej ze strony, albo napisz mi, która to drużyna.`
+          : "Póki co rozlicz tę ligę wklejeniem: wejdź w klub, „📋 Protokół meczu”, a tam „⚡ Zbierz całą kolejkę”. "
+            + "Jedno wklejenie rozlicza całą kolejkę.",
         protokolyBezSkladu: protokolyBezSkladu.slice(0, 5),
         zrodloProtokolow: "laczynaspilka.pl",
+        coWidacNaStronie: zajrzenie,
       });
     }
     return res.status(404).json({
