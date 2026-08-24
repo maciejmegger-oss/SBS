@@ -20,7 +20,7 @@ import {
   parseWystepyZawodnika, normalizujNazwe, minutyZWpisu, toSamKlub, tytulMaKlub, czlonyKlubu,
   parseKlubyZTabeli, parseSchedule, parseKadraKlubu,
 } from "./_90minut.js";
-import { czyLnp, pobierzLnp, parseProtokolLnp, protokolZDanychStrony, opiszZawartosc } from "./_lnp.js";
+import { czyLnp, pobierzLnp, parseProtokolLnp, protokolZDanychStrony, zbadajSkryptyStrony, opiszZawartosc } from "./_lnp.js";
 
 import { BAZA, KLUCZ_BAZY, naglowkiDlaZadania, maDostepDoBazy, PODPOWIEDZ_BRAK_KLUCZA } from "./_baza.js";
 
@@ -530,8 +530,17 @@ export default async function handler(req, res) {
       // więc to, co najcenniejsze — adresy, pod które strona sama sięga po dane — żeby dotarło
       // nawet wtedy, gdy reszta zdania zostanie obcięta.
       const pierwsze = zajrzenie.find((z) => z.dlugoscStrony != null);
+      // Strona ŁNP jest w Angularze: adresu danych nie ma ani w niej, ani w jej treści — jest
+      // w plikach z kodem. Zaglądamy tam i pokazujemy, co znaleźliśmy; bez tego każda kolejna
+      // próba byłaby zgadywaniem.
+      let zKodu = null;
+      const zLnpHtml = skladyHtml.find((s) => s.zLnp && s.html && s.adres);
+      if (zLnpHtml) {
+        try { zKodu = await zbadajSkryptyStrony(zLnpHtml.html, zLnpHtml.adres); } catch { /* trudno */ }
+      }
       const skrot = pierwsze
-        ? `API: ${pierwsze.adresyApi.join(" ") || "brak"} | znaki: ${pierwsze.znakiRozpoznawcze.join(",") || "brak"}`
+        ? `API: ${[...(pierwsze.adresyApi || []), ...((zKodu && zKodu.adresy) || [])].slice(0, 6).join(" ") || "brak"}`
+          + ` | ścieżki: ${((zKodu && zKodu.sciezki) || []).slice(0, 8).join(" ") || "brak"}`
           + ` | ${pierwsze.dlugoscStrony} zn., ${pierwsze.skryptow} skryptów`
         : `żadnej strony meczu nie udało się pobrać`;
       return res.status(409).json({
@@ -546,7 +555,7 @@ export default async function handler(req, res) {
             + `Początek strony ŁNP: ${(pierwsze && pierwsze.poczatekStrony) || "—"}`,
         protokolyBezSkladu: protokolyBezSkladu.slice(0, 5),
         zrodloProtokolow: "laczynaspilka.pl",
-        coWidacNaStronie: zajrzenie,
+        coWidacNaStronie: zKodu ? [...zajrzenie, { zKoduStrony: zKodu }] : zajrzenie,
       });
     }
     return res.status(404).json({

@@ -4584,8 +4584,23 @@ function openGrupaStatsModal(){
         body: JSON.stringify({ pakiet: dane.pakiet }) });
     const odp = await zapis.json().catch(()=>({ error: 'serwer nie zwrócił danych' }));
     if(!zapis.ok || odp.error) throw new Error(odp.error || ('kod ' + zapis.status));
+
+    // ZAPIS, KTÓRY SIĘ NIE UDAŁ, MUSI BYĆ WIDOCZNY.
+    //
+    // Serwer odsyła listę wierszy, których nie zdołał zapisać — widok pojedynczego klubu ją
+    // pokazywał, a to okno sprawdzało tylko, czy w ogóle przyszła odpowiedź. Skutek był taki,
+    // że przebieg całej grupy kończył się samymi zielonymi ptaszkami, a liczby w kartotece
+    // zostawały stare i nie było o tym ani słowa. Teraz nieudany zapis jest błędem klubu,
+    // razem z tym, co odpowiedziała baza.
+    const nieudane = Array.isArray(odp.bledyZapisu) ? odp.bledyZapisu : [];
+    const zapisani = odp.zapisani || 0;
+    if(nieudane.length || zapisani < dane.pakiet.length){
+      const pierwszy = nieudane[0];
+      throw new Error(`zapisano ${zapisani} z ${dane.pakiet.length} — baza odrzuciła zapis`
+        + (pierwszy ? ` (${pierwszy.kto}: kod ${pierwszy.status} ${String(pierwszy.tresc||'').slice(0,120)})` : ''));
+    }
     zapisaneWPrzebiegu.push(...dane.pakiet);
-    return { zapisani: odp.zapisani || 0,
+    return { zapisani,
       opis: `${odp.zapisani || 0} zawodników${dopisani ? `, w tym ${dopisani} nowych` : ''}${
         dane.zProtokolow && dane.zProtokolow.length ? `, ${dane.zProtokolow.length} z protokołów` : ''}` };
   }

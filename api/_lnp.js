@@ -44,8 +44,63 @@ function uporzadkujAdresy(adresy, adresStrony) {
   return [...new Set(pelne)].sort((a, b) => waga(a) - waga(b)).slice(0, 4);
 }
 
+// ---------- ADRES DANYCH UKRYTY W KODZIE STRONY ----------
+//
+// Strona ŁNP jest zbudowana w Angularze: w samym kodzie strony nie ma ani danych, ani nawet adresu,
+// spod którego je bierze. Adres siedzi w plikach z kodem (tych z <script src=…>). Czytamy je więc
+// tak samo, jak przeglądarka, i wyjmujemy z nich adresy — nie zgadując ani jednego znaku.
+//
+// Raz znaleziony adres zapamiętujemy na godzinę: pliki kodu ważą megabajty i nie ma powodu
+// pobierać ich przy każdym klubie.
+const CZAS_ZYCIA_ADRESOW = 60 * 60 * 1000;
+const MAKS_ZNAKOW_SKRYPTU = 4 * 1024 * 1024;
+const znaleziona = new Map();   // origin -> { kiedy, adresy, sciezki }
+
+export async function zbadajSkryptyStrony(html, adresStrony) {
+  let baza;
+  try { baza = new URL(adresStrony); } catch { return { adresy: [], sciezki: [], zbadane: [] }; }
+  const zPamieci = znaleziona.get(baza.origin);
+  if (zPamieci && Date.now() - zPamieci.kiedy < CZAS_ZYCIA_ADRESOW) return zPamieci;
+
+  const pliki = [...String(html || "").matchAll(/<script[^>]+src=["']([^"']+)["']/gi)]
+    .map((m) => { try { return new URL(m[1], baza).toString(); } catch { return ""; } })
+    .filter((u) => u && HOSTY_DANYCH.test(new URL(u).hostname) && /\.js(\?|$)/i.test(u));
+
+  const adresy = new Set();
+  const sciezki = new Set();
+  const zbadane = [];
+  // Najpierw „main" — w Angularze to tam siedzą ustawienia środowiska z adresem danych.
+  pliki.sort((a, b) => (/main/i.test(b) ? 1 : 0) - (/main/i.test(a) ? 1 : 0));
+  for (const plik of pliki.slice(0, 3)) {
+    try {
+      const odp = await fetch(plik, { signal: AbortSignal.timeout(20000),
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; ScoutBaseSystem/1.0; +https://scoutbasesystem.com)" } });
+      if (!odp.ok) { zbadane.push(`${plik}: kod ${odp.status}`); continue; }
+      const kod = (await odp.text()).slice(0, MAKS_ZNAKOW_SKRYPTU);
+      zbadane.push(`${plik}: ${kod.length} zn.`);
+      // Pełne adresy w obrębie serwisu ŁNP.
+      for (const m of kod.matchAll(/["'`](https?:\/\/[a-z0-9.-]*laczynaspilka\.pl[^"'`\s]{0,120})["'`]/gi)) {
+        adresy.add(m[1]);
+      }
+      // Kawałki ścieżek, z których strona skleja swoje zapytania („/api/…", „matches/…/lineups").
+      for (const m of kod.matchAll(/["'`](\/?(?:api|v\d)\/[a-z0-9/_{}.:$-]{2,90})["'`]/gi)) sciezki.add(m[1]);
+      for (const m of kod.matchAll(/["'`]([a-z0-9/_-]{0,40}(?:lineup|squad|sklad|player|zawodnik|protok|match|mecz|team|druzyn)[a-z0-9/_-]{0,40})["'`]/gi)) {
+        if (m[1].length > 3) sciezki.add(m[1]);
+      }
+    } catch (e) { zbadane.push(`${plik}: ${String((e && e.message) || e).slice(0, 80)}`); }
+  }
+  const wynik = { kiedy: Date.now(), adresy: [...adresy].slice(0, 25), sciezki: [...sciezki].slice(0, 40), zbadane };
+  znaleziona.set(baza.origin, wynik);
+  return wynik;
+}
+
 export async function protokolZDanychStrony(html, adresStrony, nazwaKlubu) {
-  const adresy = uporzadkujAdresy(adresyDanychZeStrony(html), adresStrony);
+  let adresy = uporzadkujAdresy(adresyDanychZeStrony(html), adresStrony);
+  if (!adresy.length) {
+    // W stronie nic nie ma — szukamy w plikach z jej kodem.
+    const zKodu = await zbadajSkryptyStrony(html, adresStrony);
+    adresy = uporzadkujAdresy(zKodu.adresy, adresStrony);
+  }
   if (!adresy.length) return null;
   const odczytane = [];
   for (const adres of adresy) {
