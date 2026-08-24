@@ -10,7 +10,7 @@
 // Minuty gry policzyć się da i to jest tu wartość: kto wyszedł w pierwszym składzie, kto wszedł
 // z ławki i w której minucie.
 
-import { protokolZeSkryptow, opiszZawartosc } from "./_lnp-dane.js";
+import { protokolZeSkryptow, protokolZJsonow, adresyDanychZeStrony, opiszZawartosc } from "./_lnp-dane.js";
 
 const DOZWOLONE_HOSTY = new Set(["laczynaspilka.pl", "www.laczynaspilka.pl"]);
 const DLUGOSC_MECZU = 90;
@@ -18,6 +18,53 @@ const CZAS_ZYCIA_CACHE = 10 * 60 * 1000;
 const cacheStron = new Map();
 
 export { opiszZawartosc };
+
+// ---------- GDY DANYCH NIE MA W SAMEJ STRONIE ----------
+//
+// Strona buduje się w przeglądarce i po składy sięga osobnym zapytaniem. Nie zgadujemy, dokąd —
+// bierzemy adresy, KTÓRE STRONA SAMA PODAJE w swoim kodzie, i zaglądamy pod nie tym samym
+// czytnikiem. Ograniczamy się przy tym do serwisu ŁNP: adres znaleziony w cudzej stronie nie może
+// wysłać nas w dowolne miejsce internetu.
+const HOSTY_DANYCH = /(^|\.)laczynaspilka\.pl$/i;
+
+function uporzadkujAdresy(adresy, adresStrony) {
+  const baza = new URL(adresStrony);
+  const idMeczu = (baza.pathname.match(/(\d{3,})/) || [])[1] || "";
+  const pelne = [];
+  for (const a of adresy) {
+    let u;
+    try { u = new URL(a, baza.origin); } catch { continue; }
+    if (!HOSTY_DANYCH.test(u.hostname)) continue;
+    if (/\.(js|css|png|jpe?g|svg|woff2?)$/i.test(u.pathname)) continue;
+    pelne.push(u.toString());
+  }
+  // Najpierw te, które mówią o tym meczu i o składach — reszta tylko gdyby ich zabrakło.
+  const waga = (u) => (idMeczu && u.includes(idMeczu) ? 0 : 2)
+    + (/(lineup|squad|sklad|skład|player|zawodnik|protok|match|mecz)/i.test(u) ? 0 : 1);
+  return [...new Set(pelne)].sort((a, b) => waga(a) - waga(b)).slice(0, 4);
+}
+
+export async function protokolZDanychStrony(html, adresStrony, nazwaKlubu) {
+  const adresy = uporzadkujAdresy(adresyDanychZeStrony(html), adresStrony);
+  if (!adresy.length) return null;
+  const odczytane = [];
+  for (const adres of adresy) {
+    try {
+      const odp = await fetch(adres, {
+        headers: { "Accept": "application/json", "Accept-Language": "pl-PL,pl;q=0.9",
+                   "User-Agent": "Mozilla/5.0 (compatible; ScoutBaseSystem/1.0; +https://scoutbasesystem.com)" },
+        signal: AbortSignal.timeout(12000),
+      });
+      if (!odp.ok) continue;
+      const tresc = await odp.text();
+      const dane = (() => { try { return JSON.parse(tresc); } catch { return null; } })();
+      if (dane && typeof dane === "object") odczytane.push(dane);
+    } catch { /* jeden nieudany adres nie przerywa reszty */ }
+  }
+  if (!odczytane.length) return null;
+  const prot = protokolZJsonow(odczytane, nazwaKlubu);
+  return prot ? { ...prot, zrodlo: "dane spod adresu podanego przez stronę" } : null;
+}
 
 export function czyLnp(adres) {
   try { return DOZWOLONE_HOSTY.has(new URL(String(adres)).hostname); }

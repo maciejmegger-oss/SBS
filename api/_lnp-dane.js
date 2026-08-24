@@ -232,11 +232,17 @@ function zlozZawodnikow(osoby, rezerwaZDrogi) {
 // Zwraca ten sam kształt co `parseProtokolLnp`, więc reszta aplikacji nie musi wiedzieć,
 // którą drogą przyszły dane. `null` znaczy „nie znalazłem" — nigdy „chyba tak".
 export function protokolZeSkryptow(html, nazwaKlubu) {
+  return protokolZJsonow(jsonyZeStrony(html), nazwaKlubu);
+}
+
+// To samo, ale na danych już odczytanych — używamy tego, gdy dane przychodzą nie w stronie,
+// tylko osobnym zapytaniem, pod adres, który strona sama podaje.
+export function protokolZJsonow(jsony, nazwaKlubu) {
   const szukany = norm(nazwaKlubu);
   if (!szukany) return null;
 
   const grupy = [];
-  for (const korzen of jsonyZeStrony(html)) {
+  for (const korzen of jsony) {
     for (const { osoby, droga, rodzic } of znajdzSklady(korzen)) {
       grupy.push({ osoby, droga, rodzic, nazwa: nazwaDruzyny(rodzic, droga), rezerwa: czyLawka(droga, rodzic) });
     }
@@ -275,6 +281,14 @@ export function protokolZeSkryptow(html, nazwaKlubu) {
 
 // Co strona w ogóle zawiera — do komunikatu o błędzie. Bez tego każda nieudana próba kończy się
 // zdaniem „nie znalazłem" i nie wiadomo, czego szukać dalej.
+// Adresy, pod które strona sama sięga po dane. Zwracamy je osobno, bo służą do dwóch rzeczy:
+// do komunikatu o błędzie i do tego, żeby tam po prostu zajrzeć.
+export function adresyDanychZeStrony(html) {
+  return [...new Set([...String(html || "").matchAll(
+    /["'`](https?:\/\/[^"'`\s]*\/api\/[^"'`\s]{0,90}|\/api\/[^"'`\s]{0,90})["'`]/gi
+  )].map((m) => m[1]))];
+}
+
 export function opiszZawartosc(html) {
   const jsony = jsonyZeStrony(html);
   const opis = jsony.slice(0, 6).map((j, i) => {
@@ -298,8 +312,7 @@ export function opiszZawartosc(html) {
 
   // Adresy, pod które strona sama sięga po dane. To najkrótsza droga do źródła, gdy w samej
   // stronie nic nie ma.
-  const adresyApi = [...new Set([...tekst.matchAll(/["'`](https?:\/\/[^"'`\s]*\/api\/[^"'`\s]{0,90}|\/api\/[^"'`\s]{0,90})["'`]/gi)]
-    .map((m) => m[1]))].slice(0, 10);
+  const adresyApi = adresyDanychZeStrony(tekst).slice(0, 10);
 
   return {
     dlugoscStrony: tekst.length,

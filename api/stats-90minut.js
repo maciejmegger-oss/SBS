@@ -20,7 +20,7 @@ import {
   parseWystepyZawodnika, normalizujNazwe, minutyZWpisu, toSamKlub, tytulMaKlub, czlonyKlubu,
   parseKlubyZTabeli, parseSchedule,
 } from "./_90minut.js";
-import { czyLnp, pobierzLnp, parseProtokolLnp, opiszZawartosc } from "./_lnp.js";
+import { czyLnp, pobierzLnp, parseProtokolLnp, protokolZDanychStrony, opiszZawartosc } from "./_lnp.js";
 
 import { BAZA, KLUCZ_BAZY, naglowkiDlaZadania, maDostepDoBazy, PODPOWIEDZ_BRAK_KLUCZA } from "./_baza.js";
 
@@ -390,7 +390,7 @@ export default async function handler(req, res) {
       // W IV lidze 90minut nie prowadzi własnych protokołów — odnośnik przy wyniku przenosi na
       // stronę PZPN. Czytamy więc stamtąd, tym samym parserem, którym aplikacja czyta wklejony
       // protokół. Skąd pochodzi strona, rozstrzyga jej adres.
-      if (czyLnp(adresProtokolu)) return { m, html: await pobierzLnp(adresProtokolu), zLnp: true };
+      if (czyLnp(adresProtokolu)) return { m, html: await pobierzLnp(adresProtokolu), zLnp: true, adres: adresProtokolu };
       return { m, html: await pobierzZ90minut(adresProtokolu) };
     } catch (e) { return { m, error: e.message }; }
   });
@@ -410,7 +410,13 @@ export default async function handler(req, res) {
     // i nazwiska. Dorobek sezonowy i tak policzymy z protokołów, a do kartoteki dopasowujemy
     // po nazwisku — czyli dokładnie tak samo jak przy 90minut.
     if (s.zLnp) {
-      const prot = parseProtokolLnp(s.html, klub.name);
+      // Najpierw sama strona, a gdy w niej pusto — adresy, które strona podaje jako źródło
+      // swoich danych. Dopiero brak jednego i drugiego znaczy, że nie ma czego czytać.
+      let prot = parseProtokolLnp(s.html, klub.name);
+      if (!prot && s.adres) {
+        try { prot = await protokolZDanychStrony(s.html, s.adres, klub.name); }
+        catch { /* nie udało się — zostaje zwykły komunikat niżej */ }
+      }
       if (!prot) { protokolyBezSkladu.push(s.m.url || s.m.id); continue; }
       zLnpOdczytane++;
       const opisLnp = {
@@ -503,16 +509,19 @@ export default async function handler(req, res) {
       // Najważniejsze liczby WPROST W KOMUNIKACIE, nie tylko w zwiniętym śladzie. Przy osiemnastu
       // klubach nikt nie będzie rozwijał osiemnastu ramek, a bez tych kilku liczb nie da się
       // rozstrzygnąć, czy strona przyszła pusta, czy w ogóle nie przyszła.
+      // KOLEJNOŚĆ MA ZNACZENIE. Starsze wydanie aplikacji ucina ten komunikat na 110 znakach,
+      // a przeglądarka potrafi trzymać starą wersję strony przez dłuższy czas. Na początek idzie
+      // więc to, co najcenniejsze — adresy, pod które strona sama sięga po dane — żeby dotarło
+      // nawet wtedy, gdy reszta zdania zostanie obcięta.
       const pierwsze = zajrzenie.find((z) => z.dlugoscStrony != null);
       const skrot = pierwsze
-        ? `strona ma ${pierwsze.dlugoscStrony} znaków i ${pierwsze.skryptow} skryptów; `
-          + `znaki rozpoznawcze: ${pierwsze.znakiRozpoznawcze.join(", ") || "żadnych"}; `
-          + `adresy API w stronie: ${pierwsze.adresyApi.join(" ") || "żadnych"}`
+        ? `API: ${pierwsze.adresyApi.join(" ") || "brak"} | znaki: ${pierwsze.znakiRozpoznawcze.join(",") || "brak"}`
+          + ` | ${pierwsze.dlugoscStrony} zn., ${pierwsze.skryptow} skryptów`
         : `żadnej strony meczu nie udało się pobrać`;
       return res.status(409).json({
         error: cosJest
           ? `Strona „Łączy nas piłka" oddała składy, ale pod nazwami drużyn, których nie umiem połączyć z „${klub.name}".`
-          : `Zajrzałem w kod strony „Łączy nas piłka" i nie ma w nim składów — ${skrot}.`,
+          : `Kod strony ŁNP bez składów. ${skrot}.`,
         podpowiedz: cosJest
           ? `Na stronie widzę drużyny: ${zajrzenie.flatMap((z) => z.nazwyDruzyn).join(", ") || "—"}. `
             + `Wyrównaj nazwę klubu w kartotece do tej ze strony, albo napisz mi, która to drużyna.`
