@@ -4473,6 +4473,11 @@ function openGrupaStatsModal(){
   let dopisanychRazem = 0;
   let komunikatKoncowy = '';
 
+  // ROZWINIĘTE RAMKI MUSZĄ PRZEŻYĆ PRZERYSOWANIE. Okno rysuje się od nowa po każdym skończonym
+  // klubie, a że robi to przez podmianę całej zawartości, otwarta ramka „dlaczego?" zamykała się
+  // po ułamku sekundy — wyglądało to tak, jakby w ogóle nie dawała się rozwinąć. Pamiętamy więc,
+  // które są otwarte, i przywracamy je po każdym rysowaniu.
+  const rozwiniete = new Set();
   const ikona = (e)=> e==='ok' ? '✔' : e==='blad' ? '✖' : e==='pracuje' ? '⏳' : '·';
   const rysuj = ()=>{
     overlay.innerHTML = `
@@ -4487,13 +4492,15 @@ function openGrupaStatsModal(){
         <span class="note" style="display:block;">Kto zagrał w protokole, a nie ma go w bazie, dostaje wpis z imieniem, nazwiskiem i rocznikiem, a zaraz potem swoje mecze i minuty. Tak zapełnia się skład klubu, który zakładasz od zera.</span></span>
       </label>
       <div style="max-height:320px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px;font-size:12.5px;">
-        ${stan.map(p=>`<div style="padding:3px 2px;display:flex;gap:8px;align-items:baseline;${p.etap==='pracuje'?'font-weight:700;':''}">
-          <span style="width:14px;color:${p.etap==='ok'?'var(--good)':p.etap==='blad'?'var(--clay-dark)':'var(--ink-faint)'};">${ikona(p.etap)}</span>
-          <span style="flex:1;">${esc(p.nazwa)}</span>
-          <span class="note" style="text-align:right;">${esc(p.opis)}</span>
-        </div>${(p.podpowiedz || (p.widzianeKluby||[]).length || p.coWidacNaStronie) ? `<details style="margin:0 0 6px 22px;">
+        ${stan.map(p=>`<div style="padding:4px 2px;${p.etap==='pracuje'?'font-weight:700;':''}">
+          <div style="display:flex;gap:8px;align-items:baseline;">
+            <span style="width:14px;flex:none;color:${p.etap==='ok'?'var(--good)':p.etap==='blad'?'var(--clay-dark)':'var(--ink-faint)'};">${ikona(p.etap)}</span>
+            <span style="flex:1;min-width:0;">${esc(p.nazwa)}</span>
+          </div>
+          ${p.opis ? `<div class="note" style="margin:2px 0 0 22px;line-height:1.5;overflow-wrap:anywhere;">${esc(p.opis)}</div>` : ''}
+        </div>${(p.podpowiedz || (p.widzianeKluby||[]).length || p.coWidacNaStronie) ? `<details data-klub="${esc(p.id)}" ${rozwiniete.has(p.id)?'open':''} style="margin:0 0 6px 22px;">
           <summary style="cursor:pointer;font-size:12px;color:var(--ink-soft);">dlaczego? — co widzę na stronie tych rozgrywek</summary>
-          ${p.podpowiedz ? `<p class="note" style="margin:4px 0;">${esc(p.podpowiedz)}</p>` : ''}
+          ${p.podpowiedz ? `<p class="note" style="margin:4px 0;overflow-wrap:anywhere;">${esc(p.podpowiedz)}</p>` : ''}
           ${(p.widzianeKluby||[]).length ? `<p class="note" style="margin:4px 0;line-height:1.7;"><strong>Na przeszukanych stronach widzę:</strong> ${p.widzianeKluby.map(n=>esc(n)).join(' &middot; ')}</p>` : ''}
           ${p.coWidacNaStronie ? `<pre style="margin:4px 0;padding:6px;background:var(--chalk);border-radius:6px;font-size:10.5px;
             white-space:pre-wrap;word-break:break-all;max-height:220px;overflow:auto;">${esc(JSON.stringify(p.coWidacNaStronie, null, 1))}</pre>` : ''}
@@ -4517,6 +4524,11 @@ function openGrupaStatsModal(){
     overlay.querySelectorAll('[data-action="przerwij-grupe"]').forEach(b=>b.onclick=()=>{ przerwane = true; });
     overlay.querySelectorAll('[data-action="start-grupa"]').forEach(b=>b.onclick=()=>{ void przebiegnij(false); });
     overlay.querySelectorAll('[data-action="ponow-grupe"]').forEach(b=>b.onclick=()=>{ void przebiegnij(true); });
+    overlay.querySelectorAll('details[data-klub]').forEach(d=>{
+      d.addEventListener('toggle', ()=>{
+        if(d.open) rozwiniete.add(d.dataset.klub); else rozwiniete.delete(d.dataset.klub);
+      });
+    });
     const chk = overlay.querySelector('#gs-dopisuj');
     if(chk) chk.onchange = ()=>{ dopisujBrakujacych = chk.checked; };
   };
@@ -4641,7 +4653,10 @@ function openGrupaStatsModal(){
           }
         } else {
           poz.etap = 'blad';
-          poz.opis = String((e && e.message) || e).slice(0, 110);
+          // Do 110 znaków komunikat urywał się w połowie słowa („…buduje je dopi") i gubił
+          // dokładnie tę część, która mówi, co jest nie tak. Wiersz zawija się teraz na całą
+          // szerokość, więc może być dłuższy.
+          poz.opis = String((e && e.message) || e).slice(0, 400);
           poz.podpowiedz = (e && e.podpowiedz) || '';
           poz.widzianeKluby = (e && e.widzianeKluby) || [];
           poz.coWidacNaStronie = (e && e.coWidacNaStronie) || null;

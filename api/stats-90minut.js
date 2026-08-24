@@ -500,15 +500,23 @@ export default async function handler(req, res) {
         .slice(0, 3).map((s) => ({ mecz: s.m.url || s.m.id, blad: String(s.error).slice(0, 160) }));
       if (nieodczytane.length) zajrzenie.push({ nieodczytaneStrony: nieodczytane });
       const cosJest = zajrzenie.some((z) => z.listOsobowychTablic > 0);
+      // Najważniejsze liczby WPROST W KOMUNIKACIE, nie tylko w zwiniętym śladzie. Przy osiemnastu
+      // klubach nikt nie będzie rozwijał osiemnastu ramek, a bez tych kilku liczb nie da się
+      // rozstrzygnąć, czy strona przyszła pusta, czy w ogóle nie przyszła.
+      const pierwsze = zajrzenie.find((z) => z.dlugoscStrony != null);
+      const skrot = pierwsze
+        ? `strona ma ${pierwsze.dlugoscStrony} znaków i ${pierwsze.skryptow} skryptów; `
+          + `znaki rozpoznawcze: ${pierwsze.znakiRozpoznawcze.join(", ") || "żadnych"}; `
+          + `adresy API w stronie: ${pierwsze.adresyApi.join(" ") || "żadnych"}`
+        : `żadnej strony meczu nie udało się pobrać`;
       return res.status(409).json({
         error: cosJest
           ? `Strona „Łączy nas piłka" oddała składy, ale pod nazwami drużyn, których nie umiem połączyć z „${klub.name}".`
-          : `Protokoły tych rozgrywek prowadzi „Łączy nas piłka", a ta strona nie oddaje składów serwerowi — buduje je dopiero w przeglądarce.`,
+          : `Zajrzałem w kod strony „Łączy nas piłka" i nie ma w nim składów — ${skrot}.`,
         podpowiedz: cosJest
           ? `Na stronie widzę drużyny: ${zajrzenie.flatMap((z) => z.nazwyDruzyn).join(", ") || "—"}. `
             + `Wyrównaj nazwę klubu w kartotece do tej ze strony, albo napisz mi, która to drużyna.`
-          : "Póki co rozlicz tę ligę wklejeniem: wejdź w klub, „📋 Protokół meczu”, a tam „⚡ Zbierz całą kolejkę”. "
-            + "Jedno wklejenie rozlicza całą kolejkę.",
+          : `Początek strony: ${(pierwsze && pierwsze.poczatekStrony) || "—"}`,
         protokolyBezSkladu: protokolyBezSkladu.slice(0, 5),
         zrodloProtokolow: "laczynaspilka.pl",
         coWidacNaStronie: zajrzenie,
