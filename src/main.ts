@@ -1803,6 +1803,7 @@ async function loadAllInner(){
   // a przy kilkunastu kolekcjach nie ma jak zgadnąć, która z nich ciąży. Wynik ląduje w konsoli
   // przeglądarki (F12 → Console) jako tabelka: ile milisekund i ile kilobajtów.
   const pomiar = [];
+  nieudaneOdczyty = [];
   const czytaj = async (klucz)=>{
     const start = performance.now();
     try{
@@ -1811,7 +1812,14 @@ async function loadAllInner(){
                     kB: Math.round(((wiersz && wiersz.value ? wiersz.value.length : 0)/1024)) });
       return wiersz;
     }catch(e){
+      // NIEUDANY ODCZYT TO NIE JEST „PUSTA KOLEKCJA".
+      //
+      // Do niedawna błąd sieci kończył się cichym `null`, czyli pustą tablicą — i aplikacja
+      // pokazywała „0 obserwacji, 0 raportów, 0 klubów Ekstraklasy" tak, jakby ktoś skasował dane.
+      // Wygląda to jak utrata pracy, a jest wyłącznie nieudanym pobraniem (np. tuż po wybudzeniu
+      // uśpionej bazy). Zapisujemy więc, CO się nie wczytało, i mówimy o tym wprost.
       pomiar.push({ kolekcja: klucz.replace('scouting:',''), ms: Math.round(performance.now()-start), kB: 0 });
+      nieudaneOdczyty.push({ klucz: klucz.replace('scouting:',''), powod: String((e && e.message) || e).slice(0, 120) });
       return null;
     }
   };
@@ -1828,7 +1836,9 @@ async function loadAllInner(){
     czytaj('scouting:agencies'),
     czytaj('scouting:agents'),
     storage.get('scouting:position_map_assignments', true).catch(()=>null),
-    storage.get('scouting:settings', true).catch(()=>null),
+    // Ustawienia to jedyny wiersz, który zapis NADPISUJE w całości (logotypy lig, lista scoutów).
+    // Nieudany odczyt musi być więc widoczny, inaczej pierwszy zapis ustawień skasowałby logotypy.
+    czytaj('scouting:settings'),
     storage.get('scouting:seed_rosters_v9', true).catch(()=>null),
     storage.get('scouting:enrich_znicz_players_v1', true).catch(()=>null),
     storage.get('scouting:enrich_avia_v1', true).catch(()=>null),
@@ -2122,6 +2132,20 @@ let lastSaveFailure = null; // {key, time} gdy zapis ostatecznie się nie powió
 // opóźnieniem; dopiero gdy WSZYSTKIE próby zawiodą, pokazujemy widoczny baner ostrzegawczy zamiast
 // cichego console.error — bo to właśnie cisza powodowała wrażenie "danych, które znikają po odświeżeniu".
 async function robustStorageSet(key, jsonValue){
+  // BLOKADA ZAPISU PRZY NIEPEŁNYM WCZYTANIU.
+  //
+  // Gdy któraś kolekcja nie wczytała się przy starcie, w pamięci mamy migawkę uboższą niż baza.
+  // Zapis kolekcji nic nie kasuje (upsert), ale USTAWIENIA nadpisujemy w całości — jeden zapis
+  // wystarczyłby, żeby przepadły logotypy lig i lista scoutów. Dlatego wstrzymujemy zapisywanie
+  // do czasu udanego odświeżenia; użytkownik dostaje komunikat, a nie ciche uszkodzenie danych.
+  if(nieudaneOdczyty.length){
+    const czego = nieudaneOdczyty.map(x=>x.klucz).join(', ');
+    alert('Wstrzymałem zapis, żeby nie nadpisać dobrych danych.\n\n' +
+      'Przy wczytywaniu nie udało się pobrać: ' + czego + '. Aplikacja pracuje więc na niepełnej ' +
+      'kopii — zapis mógłby zastąpić nią to, co jest w bazie.\n\nOdśwież stronę (F5). ' +
+      'Jeśli baza była uśpiona, pierwsze wejście po obudzeniu bywa nieudane, a drugie już przechodzi.');
+    return false;
+  }
   let lastError = null;
   for(let attempt = 1; attempt <= 3; attempt++){
     try{
@@ -2875,7 +2899,19 @@ function renderNav(){
   });
   const banner = document.getElementById('save-failure-banner');
   if(banner){
-    if(lastSaveFailure){
+    if(nieudaneOdczyty.length){
+      // NIEPEŁNE WCZYTANIE JEST GROŹNIEJSZE NIŻ NIEUDANY ZAPIS — bo wygląda jak utrata danych
+      // i kusi, żeby „wpisać wszystko od nowa". Mówimy więc wprost, czego brakuje, i blokujemy
+      // zapisywanie do czasu udanego odświeżenia.
+      banner.innerHTML = `<div class="save-fail-bar">
+        ⚠️ <strong>Nie wczytałem wszystkich danych</strong> — brakuje: ${esc(nieudaneOdczyty.map(x=>x.klucz).join(', '))}.
+        To NIE znaczy, że dane zniknęły z bazy: nie udało się ich pobrać. Zapisywanie jest wstrzymane, żeby nie nadpisać dobrych danych.
+        <button data-action="ponow-wczytanie">Wczytaj ponownie</button>
+      </div>`;
+      const btn = banner.querySelector('[data-action="ponow-wczytanie"]');
+      if(btn) btn.onclick = ()=>window.location.reload();
+      document.body.classList.add('baner-zapisu');
+    } else if(lastSaveFailure){
       banner.innerHTML = `<div class="save-fail-bar">
         ⚠️ <strong>Nie udało się zapisać ostatniej zmiany</strong> (${esc(lastSaveFailure.time)}) — dane mogą się nie zachować po zamknięciu strony.
         <button data-action="retry-save">Spróbuj zapisać ponownie</button>
@@ -2887,7 +2923,7 @@ function renderNav(){
     }
     // Przycisk sesji stoi w prawym górnym rogu, czyli dokładnie tam, gdzie baner. Klasa na <body>
     // przesuwa go pod baner na czas, gdy baner jest widoczny.
-    document.body.classList.toggle('baner-zapisu', !!lastSaveFailure);
+    document.body.classList.toggle('baner-zapisu', !!lastSaveFailure || nieudaneOdczyty.length > 0);
   }
 }
 
@@ -15085,6 +15121,9 @@ function loginScreenHtml(tryb, komunikat, blad){
 }
 
 let loginTryb = 'login', loginKomunikat = '', loginBlad = '';
+// Kolekcje, których NIE UDAŁO SIĘ wczytać przy starcie. Dopóki lista nie jest pusta, aplikacja
+// pracuje na niepełnych danych i nie wolno jej niczego zapisywać — patrz baner i blokada zapisu.
+let nieudaneOdczyty = [];
 // Konto zalogowanego użytkownika (rola i zgoda administratora). Null, gdy nikt nie jest zalogowany
 // albo gdy baza nie ma jeszcze tabeli kont — patrz wpuscZalogowanego().
 let kontoUzytkownika = null;
