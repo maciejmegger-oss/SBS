@@ -139,14 +139,21 @@ export default async function handler(req, res) {
   // niż my („GKS Mustang" kontra „Mustang Ostaszewo"), albo że dana grupa ma w tym sezonie inny
   // adres, i przebieg kończy się słowami „nie znalazłem meczów" — choć klub gra. Link do profilu
   // omija cały ten problem: mecze bierzemy wprost ze strony klubu.
+  // SKRÓT NIE MOŻE PRZESŁANIAĆ PEŁNEGO ŹRÓDŁA.
+  //
+  // Dotąd było tak: jeśli strona klubu wymieniła choć jeden mecz, terminarz ligi nie był już
+  // w ogóle czytany. Gdy więc strona klubu pokazywała dwa spotkania, a rozegrano pięć, dorobek
+  // zamarzał na dwóch kolejkach i żadne kolejne odświeżenie tego nie ruszało — bo za każdym razem
+  // program zatrzymywał się na tym samym, uboższym źródle. Dlatego teraz czytamy OBA i bierzemy
+  // pełniejsze; skrót nadal ratuje sytuację, gdy klubu nie da się znaleźć w tabeli po nazwie.
+  let meczeZProfilu = [];
   const profil = String(klub.profile_lnp || "").trim();
   if (/90minut\.pl/i.test(profil)) {
     try {
       const html = await pobierzZ90minut(profil);
-      const zProfilu = parseLinkiMeczow(html);
-      if (zProfilu.length) { mecze = zProfilu; stronaLigi = profil; }
+      meczeZProfilu = parseLinkiMeczow(html);
     } catch {
-      /* profil nieosiągalny — schodzimy do szukania po stronach ligi */
+      /* profil nieosiągalny — zostaje szukanie po stronach ligi */
     }
   }
 
@@ -163,7 +170,7 @@ export default async function handler(req, res) {
   let zTerminarzaRozpoznane = 0;
   let zLnpOdczytane = 0;
   const protokolyBezSkladu = [];
-  for (const adres of mecze.length ? [] : adresy) {
+  for (const adres of adresy) {
     let html;
     // NIEUDANE POBRANIE STRONY TO NIE JEST „BRAK MECZÓW".
     //
@@ -283,6 +290,22 @@ export default async function handler(req, res) {
       }
     }
   }
+  // ŁĄCZYMY OBA ŹRÓDŁA I BIERZEMY PEŁNIEJSZE OBRAZ. Terminarz ligi i strona klubu bywają niepełne
+  // każde na swój sposób: terminarz gubi mecz zaległy, strona klubu bywa spóźniona o kolejkę.
+  // Suma obu jest zawsze co najmniej tak dobra jak lepsze z nich, a ten sam mecz rozpoznajemy po
+  // jego identyfikatorze, więc nic nie policzy się dwa razy.
+  if (meczeZProfilu.length) {
+    const wgKlucza = new Map();
+    for (const m of [...mecze, ...meczeZProfilu]) {
+      const klucz = String(m.id || m.url || m.tytul || "");
+      if (klucz && !wgKlucza.has(klucz)) wgKlucza.set(klucz, m);
+    }
+    if (wgKlucza.size > mecze.length) {
+      mecze = [...wgKlucza.values()];
+      if (!stronaLigi) stronaLigi = profil;
+    }
+  }
+
   if (!mecze.length && wTabeliRozgrywek) {
     // KLUB JEST W TABELI, TYLKO JESZCZE NIE GRAŁ.
     //
