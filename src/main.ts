@@ -4070,6 +4070,16 @@ function viewClubs(){
       </label>
       ${clubBrowse.top && clubBrowse.top !== 'IV liga' && clubBrowse.top !== 'Klasa okręgowa'
         ? `<button class="secondary" data-action="league-stats" data-league="${esc(clubBrowse.top)}" title="Wklej statystyki wszystkich klubów tej ligi w jednym oknie">⏱ Statystyki ligi</button>` : ''}
+      ${clubBrowse.group && (clubBrowse.top === 'IV liga' || clubBrowse.top === 'Klasa okręgowa')
+        // LINK DO GRUPY W ŁNP. Adresy rozgrywek na „Łączy nas piłka" to same numery — z samego
+        // adresu nie da się poznać, które to województwo. Dlatego link przypisuje człowiek, mając
+        // wybraną grupę na ekranie. Potem jedno kliknięcie otwiera właściwą kolejkę i można na niej
+        // uruchomić zakładkę zbierającą protokoły.
+        ? `<button class="secondary" data-action="lnp-link-grupy" title="Przypisz do tej grupy adres jej rozgrywek na Łączy nas piłka">🔗 Link ŁNP dla grupy${
+            (DB.settings.lnpGrupy||{})[clubBrowse.group] ? ' ✔' : ''}</button>
+           ${(DB.settings.lnpGrupy||{})[clubBrowse.group]
+             ? `<button class="secondary" data-action="lnp-otworz-grupe" title="Otwiera kolejkę tej grupy na Łączy nas piłka">↗ Otwórz kolejkę w ŁNP</button>` : ''}`
+        : ''}
       <button class="secondary" data-action="paste-clubs" title="Wklej listę nazw klubów — założę je wszystkie naraz w wybranej grupie">📋 Wklej listę klubów</button>
       <button class="secondary" data-action="import-klubow-ligi" title="Pobierz z 90minut składy wszystkich grup wybranego poziomu i załóż brakujące kluby">⬇ Wgraj kluby z 90minut</button>
       ${list.length
@@ -4270,9 +4280,11 @@ function openProtokolMeczuModal(clubId){
     overlay.querySelectorAll('[data-x="rozpoznaj"]').forEach(b=>b.onclick=()=>rozpoznaj());
     overlay.querySelectorAll('[data-x="zakladka"]').forEach(b=>b.onclick=()=>openLnpBookmarkletModal());
     overlay.querySelectorAll('[data-x="otworz-lnp"]').forEach(b=>b.onclick=()=>{
-      // Link zapisany przy klubie, a gdy go nie ma — wyszukiwarka ŁNP po nazwie klubu.
+      // Kolejność: link do KOLEJKI tej grupy (bo to z niej zakładka zbiera całą rundę naraz),
+      // potem link zapisany przy klubie, a na końcu wyszukiwarka ŁNP po nazwie.
+      const grupowy = klub ? (DB.settings.lnpGrupy||{})[klub.league] : '';
       const wlasny = klub && /laczynaspilka\.pl/i.test(String(klub.profileLnp||'')) ? klub.profileLnp : '';
-      const adres = wlasny || ('https://www.laczynaspilka.pl/szukaj?q=' + encodeURIComponent(klub ? klub.name : ''));
+      const adres = grupowy || wlasny || ('https://www.laczynaspilka.pl/szukaj?q=' + encodeURIComponent(klub ? klub.name : ''));
       window.open(adres, '_blank', 'noopener');
     });
     overlay.querySelectorAll('[data-x="ze-schowka"]').forEach(b=>b.onclick=()=>{ void zeSchowka(); });
@@ -7943,6 +7955,29 @@ function attachHandlers(){
   };
   main.querySelectorAll('[data-action="add-club"]').forEach(b=>b.onclick=()=>openClubModal(null));
   main.querySelectorAll('[data-action="paste-clubs"]').forEach(b=>b.onclick=()=>openPasteClubsModal());
+  main.querySelectorAll('[data-action="lnp-link-grupy"]').forEach(b=>b.onclick=async ()=>{
+    const grupa = clubBrowse.group;
+    if(!grupa) return;
+    const teraz = (DB.settings.lnpGrupy||{})[grupa] || '';
+    const wpisany = prompt(
+      `Adres rozgrywek grupy „${grupa}" na Łączy nas piłka.\n\n`
+      + `Otwórz tę grupę na laczynaspilka.pl, skopiuj adres z paska przeglądarki i wklej tutaj.\n`
+      + `Puste pole usuwa zapisany link.`, teraz);
+    if(wpisany === null) return;
+    const adres = String(wpisany).trim();
+    if(adres && !/^https?:\/\/(www\.)?laczynaspilka\.pl\//i.test(adres)){
+      alert('To nie jest adres z laczynaspilka.pl.'); return;
+    }
+    DB.settings.lnpGrupy = { ...(DB.settings.lnpGrupy||{}) };
+    if(adres) DB.settings.lnpGrupy[grupa] = adres; else delete DB.settings.lnpGrupy[grupa];
+    const ok = await saveSettings();
+    if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
+    render();
+  });
+  main.querySelectorAll('[data-action="lnp-otworz-grupe"]').forEach(b=>b.onclick=()=>{
+    const adres = (DB.settings.lnpGrupy||{})[clubBrowse.group];
+    if(adres) window.open(adres, '_blank', 'noopener');
+  });
   main.querySelectorAll('[data-action="stats-90minut-grupa"]').forEach(b=>b.onclick=()=>openGrupaStatsModal());
   main.querySelectorAll('[data-action="import-klubow-ligi"]').forEach(b=>b.onclick=()=>openImportKlubowModal());
   main.querySelectorAll('[data-action="edit-club"]').forEach(b=>b.onclick=()=>openClubModal(b.dataset.id));
