@@ -126,9 +126,13 @@ export async function zbadajSkryptyStrony(html, adresStrony) {
   const wynik = { kiedy: Date.now(), plikowWStronie: pliki.length,
     adresy: [...adresy].slice(0, 25), sciezki: [...sciezki].slice(0, 40),
     szablony: [...szablony].slice(0, 20), zbadane };
-  // Pustego wyniku NIE zapamiętujemy — inaczej jedna nieudana próba (chwilowa awaria, limit czasu)
-  // zamykałaby drogę na całą godzinę, a kolejne kluby dostawałyby „nie znalazłem" bez próby.
-  if (adresy.size || sciezki.size) znaleziona.set(baza.origin, wynik);
+  // Wynik pusty też zapamiętujemy, ale KRÓTKO. ŁNP wysyła serwerom atrapę strony — plik „main"
+  // ma sto osiemdziesiąt pięć znaków, a w żadnym z plików nie ma ani jednego adresu. Skoro tak,
+  // to przy osiemnastu klubach grupy pobieralibyśmy te same trzy pliki osiemnaście razy, za
+  // każdym razem po nic. Dziesięć minut przerwy wystarczy, żeby tego nie robić, a jednocześnie
+  // nie zamknąć drogi na stałe, gdyby ŁNP kiedyś zaczęło te dane wysyłać.
+  const naDlugo = adresy.size || sciezki.size;
+  znaleziona.set(baza.origin, naDlugo ? wynik : { ...wynik, kiedy: Date.now() - CZAS_ZYCIA_ADRESOW + 10 * 60 * 1000 });
   return wynik;
 }
 

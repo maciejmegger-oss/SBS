@@ -561,6 +561,8 @@ export default async function handler(req, res) {
       if (zLnpHtml) {
         try { zKodu = await zbadajSkryptyStrony(zLnpHtml.html, zLnpHtml.adres); } catch { /* trudno */ }
       }
+      // Szczegóły techniczne zostają w śladzie pod „dlaczego?", a nie w pierwszym zdaniu.
+      // Dla czytającego liczy się jedno: co ma teraz zrobić.
       const skrot = pierwsze
         ? `API: ${[...(pierwsze.adresyApi || []), ...((zKodu && zKodu.adresy) || [])].slice(0, 6).join(" ") || "brak"}`
           + ` | ścieżki: ${((zKodu && zKodu.sciezki) || []).slice(0, 8).join(" ") || "brak"}`
@@ -568,16 +570,29 @@ export default async function handler(req, res) {
           + ` | pliki kodu: ${(zKodu && zKodu.zbadane || []).join(" ; ") || "nie czytałem"}`
           + ` | ${pierwsze.dlugoscStrony} zn., ${pierwsze.skryptow} skryptów`
         : `żadnej strony meczu nie udało się pobrać`;
+      // ŁNP WYSYŁA SERWEROM ATRAPĘ STRONY. Poznajemy to po tym, że plik z kodem aplikacji ma
+      // kilkaset znaków zamiast megabajtów i nie ma w nim ani jednego adresu. Prawdziwą aplikację
+      // dostaje wyłącznie przeglądarka — i to nie jest coś, co da się obejść od strony serwera.
+      // Mówimy więc wprost, jaka droga działa, zamiast obiecywać kolejną próbę.
+      const atrapaStrony = !!zKodu && !zKodu.adresy.length && !zKodu.sciezki.length
+        && (zKodu.zbadane || []).some((z) => /main[^:]*:\s*\d{1,4} zn\./.test(z));
       return res.status(409).json({
         error: cosJest
           ? `Strona „Łączy nas piłka" oddała składy, ale pod nazwami drużyn, których nie umiem połączyć z „${klub.name}".`
-          : `Kod strony ŁNP bez składów. ${skrot}.`,
+          : atrapaStrony
+            ? `„Łączy nas piłka" nie wysyła składów serwerom — prawdziwą stronę meczu dostaje wyłącznie przeglądarka.`
+            : `Kod strony ŁNP bez składów. ${skrot}.`,
         podpowiedz: cosJest
           ? `Na stronie widzę drużyny: ${zajrzenie.flatMap((z) => z.nazwyDruzyn).join(", ") || "—"}. `
             + `Wyrównaj nazwę klubu w kartotece do tej ze strony, albo napisz mi, która to drużyna.`
-          : `Próbowałem też drugą drogą — spisem kadry ze strony klubu na 90minut `
-            + `(${adresKlubuNa90minut || "adresu klubu nie znam"}) — i tam też nie ma zawodników. `
-            + `Początek strony ŁNP: ${(pierwsze && pierwsze.poczatekStrony) || "—"}`,
+          : atrapaStrony
+            ? `Tę ligę rozliczasz w dwóch ruchach: na stronie kolejki w ŁNP kliknij zakładkę `
+              + `„⚡ Zbierz całą kolejkę", wróć tutaj i naciśnij „📥 Wczytaj ze schowka" `
+              + `(przycisk „📋 Wklejka z ŁNP" w klubie). Wklejać niczego nie musisz. `
+              + `Szczegóły techniczne: ${skrot}.`
+            : `Próbowałem też drugą drogą — spisem kadry ze strony klubu na 90minut `
+              + `(${adresKlubuNa90minut || "adresu klubu nie znam"}) — i tam też nie ma zawodników. `
+              + `Początek strony ŁNP: ${(pierwsze && pierwsze.poczatekStrony) || "—"}`,
         protokolyBezSkladu: protokolyBezSkladu.slice(0, 5),
         zrodloProtokolow: "laczynaspilka.pl",
         coWidacNaStronie: zKodu ? [...zajrzenie, { zKoduStrony: zKodu }] : zajrzenie,
