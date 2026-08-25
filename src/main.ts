@@ -4080,6 +4080,8 @@ function viewClubs(){
            ${(DB.settings.lnpGrupy||{})[clubBrowse.group]
              ? `<button class="secondary" data-action="lnp-otworz-grupe" title="Otwiera kolejkę tej grupy na Łączy nas piłka">↗ Otwórz kolejkę w ŁNP</button>` : ''}`
         : ''}
+      ${clubBrowse.group && (clubBrowse.top === 'IV liga' || clubBrowse.top === 'Klasa okręgowa')
+        ? `<button class="gold" data-action="protokoly-grupy" title="Wklej protokoły z ŁNP — jedno wklejenie rozlicza wszystkie kluby tej grupy">📋 Wczytaj protokoły całej grupy</button>` : ''}
       <button class="secondary" data-action="paste-clubs" title="Wklej listę nazw klubów — założę je wszystkie naraz w wybranej grupie">📋 Wklej listę klubów</button>
       <button class="secondary" data-action="import-klubow-ligi" title="Pobierz z 90minut składy wszystkich grup wybranego poziomu i załóż brakujące kluby">⬇ Wgraj kluby z 90minut</button>
       ${list.length
@@ -4212,8 +4214,15 @@ function scalDuplikatyPoNazwie(nazwy, docelowaLiga){
 // Protokół wnosi też coś, czego nie ma w sumach sezonowych: minuty MECZ PO MECZU. Zapisujemy je
 // w przebiegu zawodnika, więc wykres dostępności w profilu i w raporcie PDF działa tak samo,
 // jak w ligach pobieranych automatycznie.
+// Okno działa na CAŁEJ GRUPIE, nie na jednym klubie — jedno wklejenie rozlicza wszystkie mecze
+// kolejki, bo protokół niesie obie drużyny, a każdą dopasowujemy do kartoteki po nazwie. Klub
+// służy tylko za punkt wyjścia (tytuł, licznik, link do ŁNP), więc wolno go nie podawać: wtedy
+// oknem rządzi wybrana grupa i nie trzeba wchodzić w żaden klub.
 function openProtokolMeczuModal(clubId){
   const klub = DB.clubs.find(c=>c.id===clubId);
+  const grupa = klub ? klub.league : (clubBrowse.group || clubBrowse.top || '');
+  const klubyGrupy = DB.clubs.filter(c=>c.league === grupa);
+  const naglowekOkna = klub ? klub.name : (grupa || 'wybrana grupa');
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   document.body.appendChild(overlay);
@@ -4222,15 +4231,17 @@ function openProtokolMeczuModal(clubId){
   // Ile meczów tego klubu jest już rozliczonych — liczymy z znaczników przy zawodnikach.
   const juzRozliczone = ()=>{
     const klucze = new Set();
-    DB.players.filter(p=>p.clubId===clubId).forEach(p=>(p.rozliczoneMecze||[]).forEach(k=>klucze.add(k)));
+    const idy = new Set((klub ? [klub] : klubyGrupy).map(c=>c.id));
+    DB.players.filter(p=>idy.has(p.clubId)).forEach(p=>(p.rozliczoneMecze||[]).forEach(k=>klucze.add(k)));
     return klucze.size;
   };
 
   const rysuj = ()=>{
     overlay.innerHTML = `
     <div class="modal" style="max-width:820px;">
-      <h3>📋 Protokół meczu — ${esc(klub ? klub.name : '')}</h3>
-      <p class="note" style="margin-bottom:8px;">Skopiuj mecz na <strong>Łączy nas piłka</strong> — zakładką „⚡ Zbierz całą kolejkę" albo ręcznie (Ctrl+A, Ctrl+C) — i wróć tutaj po <strong>„📥 Wczytaj ze schowka"</strong>. Wklejać nie musisz. Odczytam skład, zmiany i minuty <strong>obu drużyn naraz</strong>, a mecz rozliczony wcześniej nie policzy się drugi raz.</p>
+      <h3>📋 Protokoły meczów — ${esc(naglowekOkna)}</h3>
+      ${!klub && klubyGrupy.length ? `<p class="note" style="margin:-4px 0 6px;">Jedno wklejenie rozlicza <strong>wszystkie kluby tej grupy</strong> (${klubyGrupy.length}) — nie musisz wchodzić w żaden z osobna.</p>` : ''}
+      <p class="note" style="margin-bottom:8px;">Skopiuj mecz na <strong>Łączy nas piłka</strong> — zakładką „⚡ Zbierz całą kolejkę" albo ręcznie (Ctrl+A, Ctrl+C) — a tutaj naciśnij <strong>Ctrl+V</strong>. Rozpoznam od razu, nie musisz nawet klikać w pole. (Przycisk „📥 Wczytaj ze schowka" robi to samo, ale przeglądarka pyta wtedy o zgodę.) Odczytam skład, zmiany i minuty <strong>obu drużyn naraz</strong>, a mecz rozliczony wcześniej nie policzy się drugi raz.</p>
       <p class="note" style="margin-top:0;">Rozliczonych meczów tego klubu: <strong>${juzRozliczone()}</strong>${zapisanychMeczow?` &middot; w tym oknie zapisano ${zapisanychMeczow}`:''}</p>
       <label style="display:flex;gap:8px;align-items:flex-start;margin:8px 0;cursor:pointer;font-size:13px;">
         <input type="checkbox" id="pm-dopisuj" ${dopisujBrak?'checked':''} style="margin-top:3px;">
@@ -4282,7 +4293,7 @@ function openProtokolMeczuModal(clubId){
     overlay.querySelectorAll('[data-x="otworz-lnp"]').forEach(b=>b.onclick=()=>{
       // Kolejność: link do KOLEJKI tej grupy (bo to z niej zakładka zbiera całą rundę naraz),
       // potem link zapisany przy klubie, a na końcu wyszukiwarka ŁNP po nazwie.
-      const grupowy = klub ? (DB.settings.lnpGrupy||{})[klub.league] : '';
+      const grupowy = (DB.settings.lnpGrupy||{})[grupa] || '';
       const wlasny = klub && /laczynaspilka\.pl/i.test(String(klub.profileLnp||'')) ? klub.profileLnp : '';
       const adres = grupowy || wlasny || ('https://www.laczynaspilka.pl/szukaj?q=' + encodeURIComponent(klub ? klub.name : ''));
       window.open(adres, '_blank', 'noopener');
@@ -4295,14 +4306,39 @@ function openProtokolMeczuModal(clubId){
     if(pole && !wynik) pole.focus();
   };
 
+  // CTRL+V I GOTOWE — bez klikania czegokolwiek.
+  //
+  // Odczyt schowka przyciskiem wymaga zgody przeglądarki, a ta bywa odmawiana i wtedy zostaje
+  // sucha informacja „nie dałem rady". Wklejenie za to działa zawsze. Nasłuchujemy go więc na
+  // całym oknie: gdziekolwiek klikniesz Ctrl+V, treść trafia do pola i od razu ją rozpoznaję.
+  // Dzięki temu „bez wklejania" i „z wklejaniem" kosztują tyle samo — jeden ruch.
+  overlay.addEventListener('paste', (e)=>{
+    if(wynik) return;                       // po rozpoznaniu czekamy na „Zapisz", nie na kolejne wklejki
+    const dane = (e.clipboardData || (window as any).clipboardData);
+    const tekst = dane ? dane.getData('text') : '';
+    if(!String(tekst||'').trim()) return;
+    e.preventDefault();
+    const pole = overlay.querySelector('#pm-tekst') as any;
+    if(pole) pole.value = tekst;
+    rozpoznaj();
+  });
+
   // Schowek czytamy TYLKO na kliknięcie — przeglądarka inaczej nie pozwoli, i słusznie: nikt nie
   // chce, żeby strona zaglądała mu do schowka sama z siebie.
   async function zeSchowka(){
     let tekst = '';
     try { tekst = await navigator.clipboard.readText(); }
     catch {
-      komunikat = 'Przeglądarka nie dała mi zajrzeć do schowka. Kliknij w pole poniżej i wklej ręcznie (Ctrl+V).';
-      rysuj(); return;
+      // PRZEGLĄDARKA PYTA O ZGODĘ. Przy pierwszym odczycie schowka Chrome pokazuje malutkie
+      // okienko z napisem „Wklej" tuż przy przycisku — dopóki się go nie kliknie, odczyt jest
+      // odrzucany. Bez tego zdania wygląda to na usterkę, a to zwykłe pytanie o pozwolenie.
+      komunikat = 'Przeglądarka pyta o zgodę na odczyt schowka — kliknij małe okienko „Wklej", '
+        + 'które pojawiło się tuż przy przycisku, i naciśnij „📥 Wczytaj ze schowka" jeszcze raz. '
+        + 'Możesz też po prostu kliknąć w pole poniżej i wcisnąć Ctrl+V.';
+      rysuj();
+      const pole = overlay.querySelector('#pm-tekst') as any;
+      if(pole) pole.focus();
+      return;
     }
     if(!String(tekst||'').trim()){
       komunikat = 'Schowek jest pusty — najpierw kliknij zakładkę „⚡ Zbierz całą kolejkę" na stronie ŁNP.';
@@ -7974,6 +8010,7 @@ function attachHandlers(){
     if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
     render();
   });
+  main.querySelectorAll('[data-action="protokoly-grupy"]').forEach(b=>b.onclick=()=>openProtokolMeczuModal(null));
   main.querySelectorAll('[data-action="lnp-otworz-grupe"]').forEach(b=>b.onclick=()=>{
     const adres = (DB.settings.lnpGrupy||{})[clubBrowse.group];
     if(adres) window.open(adres, '_blank', 'noopener');
@@ -10544,13 +10581,22 @@ var box=document.createElement('div');
 box.style.cssText='position:fixed;right:16px;bottom:16px;z-index:999999;background:#16302A;color:#F6F3EA;padding:12px 16px;border-radius:8px;font:14px sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.4)';
 box.textContent='SBS v2: zbieram protokoly 0/'+linki.length;
 document.body.appendChild(box);
-var zebrane=[],i=0;
+// ZBIERAMY PO KOLEJKACH, NIE NA JEDEN RAZ.
+// Klub rozgrywa mecze w kolejnych kolejkach, a strona pokazuje jedna kolejke naraz. Gdyby kazde
+// uruchomienie zaczynalo od zera, dorobek z wczesniejszych kolejek by przepadal. Dlatego zebrane
+// protokoly dokladamy do tej samej listy w pamieci przegladarki: przechodzisz kolejka po kolejce,
+// a schowek za kazdym razem ma KOMPLET. Shift + klikniecie czysci liste przed nowym sezonem.
+var KLUCZ='sbs_protokoly_hurt';
+if(window.event&&window.event.shiftKey){try{localStorage.removeItem(KLUCZ);}catch(e){}alert('SBS v2: wyczyscilem zebrane protokoly.');return;}
+var zebrane=[];try{zebrane=JSON.parse(localStorage.getItem(KLUCZ)||'[]');}catch(e){zebrane=[];}
+var bylo=zebrane.length,i=0;
 function nastepny(){
  if(i>=linki.length){
+  try{localStorage.setItem(KLUCZ,JSON.stringify(zebrane));}catch(e){}
   var p=document.createElement('textarea');p.value=zebrane.join('\\n\\n');document.body.appendChild(p);p.select();
   try{document.execCommand('copy');}catch(e){}
   document.body.removeChild(p);box.remove();
-  alert('SBS v2: zebralem '+zebrane.length+' protokolow z '+linki.length+' meczow i skopiowalem do schowka.\\n\\nW aplikacji: wejdz w dowolny klub tej grupy, kliknij \\u201eProtokoly z LNP\\u201d, a tam \\u201eWczytaj ze schowka\\u201d. Wklejac nie musisz.');
+  alert('SBS v2: dolozylem '+(zebrane.length-bylo)+' protokolow z tej kolejki. W schowku masz teraz '+zebrane.length+' protokolow lacznie.\\n\\nMozesz przelaczyc na kolejna kolejke i kliknac ponownie - lista rosnie. Shift + klikniecie czysci ja przed nowym sezonem.\\n\\nW aplikacji: wejdz w dowolny klub tej grupy, kliknij \\u201eProtokoly z LNP\\u201d, a tam \\u201eWczytaj ze schowka\\u201d. Wklejac nie musisz.');
   return;}
  var url=linki[i];box.textContent='SBS: zbieram protokoly '+i+'/'+linki.length;
  var f=document.createElement('iframe');f.style.cssText='position:fixed;left:-9999px;width:1200px;height:2000px';
@@ -10564,7 +10610,10 @@ function nastepny(){
   if(ok||prob>40){
    clearInterval(t);
    if(ok){var j=txt.search(/^\\s*Sk\\u0142ady\\s*$/m);
-    zebrane.push('### PROTOKOL: '+url+'\\n'+txt.slice(j<0?0:j)+zdarzenia(f.contentDocument));}
+    var wpis='### PROTOKOL: '+url+'\\n'+txt.slice(j<0?0:j)+zdarzenia(f.contentDocument);
+    var duplikat=false;
+    for(var q=0;q<zebrane.length;q++){if(zebrane[q].indexOf('### PROTOKOL: '+url+'\\n')===0){zebrane[q]=wpis;duplikat=true;break;}}
+    if(!duplikat)zebrane.push(wpis);}
    f.remove();i++;setTimeout(nastepny,300);}
  },500);
 }
