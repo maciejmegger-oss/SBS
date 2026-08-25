@@ -10510,9 +10510,24 @@ function zdarzenia(d){try{
 const LNP_HURT_BOOKMARKLET = `javascript:(function(){
 ${LNP_ZDARZENIA}
 if(!/laczynaspilka\\.pl/.test(location.host)){alert('SBS: to nie jest strona Laczy nas pilka.');return;}
-var linki=[].slice.call(document.querySelectorAll('a[href*="/rozgrywki/mecz/"]'))
- .map(function(a){return a.href;}).filter(function(v,i,t){return t.indexOf(v)===i;});
-if(!linki.length){alert('SBS: na tej stronie nie widze odnosnikow do meczow.\\n\\nOtworz liste kolejki (Rozgrywki) i sprobuj ponownie.');return;}
+function zbierzLinki(){
+ return [].slice.call(document.querySelectorAll('a[href*="/mecz/"]'))
+  .map(function(a){return a.href;})
+  .filter(function(v,i,t){return /\\/mecz\\//.test(v)&&t.indexOf(v)===i;});
+}
+var linki=zbierzLinki();
+var czekam=0;
+function start(){
+ linki=zbierzLinki();
+ if(linki.length){jedziemy();return;}
+ czekam++;
+ if(czekam<12){setTimeout(start,500);return;}
+ alert('SBS: na tej stronie nie ma odnosnikow do meczow.\\n\\n'
+  +'Jestes na WIDOKU TABELI. Przelacz na widok MECZOW/TERMINARZA '
+  +'(przycisk \\u201eWidok\\u2026\\u201d w prawym gornym rogu albo zakladka z kolejkami), '
+  +'poczekaj az pokaza sie wyniki i kliknij zakladke ponownie.');
+}
+function jedziemy(){
 var box=document.createElement('div');
 box.style.cssText='position:fixed;right:16px;bottom:16px;z-index:999999;background:#16302A;color:#F6F3EA;padding:12px 16px;border-radius:8px;font:14px sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.4)';
 box.textContent='SBS: zbieram protokoly 0/'+linki.length;
@@ -10523,7 +10538,7 @@ function nastepny(){
   var p=document.createElement('textarea');p.value=zebrane.join('\\n\\n');document.body.appendChild(p);p.select();
   try{document.execCommand('copy');}catch(e){}
   document.body.removeChild(p);box.remove();
-  alert('SBS: zebralem '+zebrane.length+' protokolow z '+linki.length+' meczow i skopiowalem do schowka.\\n\\nWklej je w aplikacji: klub -> Statystyki z Laczy nas pilka.');
+  alert('SBS: zebralem '+zebrane.length+' protokolow z '+linki.length+' meczow i skopiowalem do schowka.\\n\\nW aplikacji: wejdz w dowolny klub tej grupy, kliknij \\u201eProtokoly z LNP\\u201d, a tam \\u201eWczytaj ze schowka\\u201d. Wklejac nie musisz.');
   return;}
  var url=linki[i];box.textContent='SBS: zbieram protokoly '+i+'/'+linki.length;
  var f=document.createElement('iframe');f.style.cssText='position:fixed;left:-9999px;width:1200px;height:2000px';
@@ -10542,6 +10557,8 @@ function nastepny(){
  },500);
 }
 nastepny();
+}
+start();
 })();`;
 
 // ZAKŁADKA DO ŁNP — zbieranie protokołów meczowych jednym kliknięciem.
