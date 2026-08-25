@@ -4242,7 +4242,7 @@ function openProtokolMeczuModal(clubId){
       <h3>📋 Protokoły meczów — ${esc(naglowekOkna)}</h3>
       ${!klub && klubyGrupy.length ? `<p class="note" style="margin:-4px 0 6px;">Jedno wklejenie rozlicza <strong>wszystkie kluby tej grupy</strong> (${klubyGrupy.length}) — nie musisz wchodzić w żaden z osobna.</p>` : ''}
       <p class="note" style="margin-bottom:8px;">Skopiuj mecz na <strong>Łączy nas piłka</strong> — zakładką „⚡ Zbierz całą kolejkę" albo ręcznie (Ctrl+A, Ctrl+C) — a tutaj naciśnij <strong>Ctrl+V</strong>. Rozpoznam od razu, nie musisz nawet klikać w pole. (Przycisk „📥 Wczytaj ze schowka" robi to samo, ale przeglądarka pyta wtedy o zgodę.) Odczytam skład, zmiany i minuty <strong>obu drużyn naraz</strong>, a mecz rozliczony wcześniej nie policzy się drugi raz.</p>
-      <p class="note" style="margin-top:0;">Rozliczonych meczów tego klubu: <strong>${juzRozliczone()}</strong>${zapisanychMeczow?` &middot; w tym oknie zapisano ${zapisanychMeczow}`:''}</p>
+      <p class="note" style="margin-top:0;">Rozliczonych meczów ${klub ? 'tego klubu' : 'w tej grupie'}: <strong>${juzRozliczone()}</strong>${zapisanychMeczow?` &middot; w tym oknie zapisano ${zapisanychMeczow}`:''}</p>
       <label style="display:flex;gap:8px;align-items:flex-start;margin:8px 0;cursor:pointer;font-size:13px;">
         <input type="checkbox" id="pm-dopisuj" ${dopisujBrak?'checked':''} style="margin-top:3px;">
         <span>Zakładaj kartoteki zawodnikom, których nie ma w bazie — z numerem, pozycją bramkarza i znacznikiem młodzieżowca z protokołu.</span>
@@ -4272,7 +4272,7 @@ function openProtokolMeczuModal(clubId){
       <div class="modal-actions" style="justify-content:space-between;">
         <span>
           <button class="secondary" data-x="zakladka" title="Jedno kliknięcie na stronie meczu zamiast zaznaczania całej strony">🔖 Szybkie kopiowanie z ŁNP</button>
-          <button class="secondary" data-x="otworz-lnp" title="Otwiera stronę klubu na Łączy nas piłka — stamtąd wchodzisz w kolejne mecze">↗ Otwórz mecze klubu</button>
+          <button class="secondary" data-x="otworz-lnp" title="Otwiera kolejkę tej grupy na Łączy nas piłka — tam uruchamiasz zakładkę">↗ ${klub ? 'Otwórz mecze klubu' : 'Otwórz kolejkę w ŁNP'}</button>
         </span>
         <span>
           <button class="secondary" data-x="zamknij">Zamknij</button>
