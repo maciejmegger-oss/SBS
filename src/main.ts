@@ -4060,14 +4060,10 @@ function viewClubs(){
         // Sprawdzone na produkcji: ŁNP oddaje serwerom atrapę strony (plik z kodem aplikacji ma
         // dwieście znaków zamiast megabajtów), więc odświeżanie z serwera tej ligi nie rozliczy.
         // Zamiast zapraszać w ślepy zaułek, mówimy od razu, która droga działa.
-        ? ' &middot; <strong>tej ligi nie pobierzemy z serwera</strong> — ŁNP wysyła składy tylko do przeglądarki.'
-          + ' Zbierz kolejkę zakładką „⚡ Zbierz całą kolejkę" na ŁNP, potem w dowolnym klubie tej grupy:'
-          + ' „📋 Protokoły z ŁNP" → „📥 Wczytaj ze schowka". Jedno wczytanie rozlicza całą kolejkę.'
+        ? ' &middot; statystyki tej ligi wchodzą zakładką z ŁNP, a potem w dowolnym klubie:'
+          + ' „📋 Protokoły z ŁNP" i <strong>Ctrl+V</strong>. Jedno wklejenie rozlicza całą grupę.'
         : ''}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
-      <label class="secondary" style="cursor:pointer;padding:9px 16px;border:1px solid #C9C2AB;border-radius:6px;display:inline-flex;align-items:center;" title="Zaznacz wiele plików — dopasuję je do klubów po nazwie pliku">
-        ⭱ Wgraj wiele logo <input type="file" id="multi-logo-input" accept="image/png,image/jpeg,image/jpg,.png,.jpg,.jpeg" multiple style="display:none;">
-      </label>
       ${clubBrowse.top && clubBrowse.top !== 'IV liga' && clubBrowse.top !== 'Klasa okręgowa'
         ? `<button class="secondary" data-action="league-stats" data-league="${esc(clubBrowse.top)}" title="Wklej statystyki wszystkich klubów tej ligi w jednym oknie">⏱ Statystyki ligi</button>` : ''}
       ${clubBrowse.group && (clubBrowse.top === 'IV liga' || clubBrowse.top === 'Klasa okręgowa')
@@ -4080,10 +4076,6 @@ function viewClubs(){
            ${(DB.settings.lnpGrupy||{})[clubBrowse.group]
              ? `<button class="secondary" data-action="lnp-otworz-grupe" title="Otwiera kolejkę tej grupy na Łączy nas piłka">↗ Otwórz kolejkę w ŁNP</button>` : ''}`
         : ''}
-      ${clubBrowse.group && (clubBrowse.top === 'IV liga' || clubBrowse.top === 'Klasa okręgowa')
-        ? `<button class="gold" data-action="protokoly-grupy" title="Wklej protokoły z ŁNP — jedno wklejenie rozlicza wszystkie kluby tej grupy">📋 Wczytaj protokoły całej grupy</button>` : ''}
-      <button class="secondary" data-action="paste-clubs" title="Wklej listę nazw klubów — założę je wszystkie naraz w wybranej grupie">📋 Wklej listę klubów</button>
-      <button class="secondary" data-action="import-klubow-ligi" title="Pobierz z 90minut składy wszystkich grup wybranego poziomu i załóż brakujące kluby">⬇ Wgraj kluby z 90minut</button>
       ${list.length
         // ODŚWIEŻENIE CAŁEJ LIGI, NIE KLUB PO KLUBIE. Osiemnaście klubów w grupie to osiemnaście
         // wejść w kartotekę i osiemnaście kliknięć — przy szesnastu grupach IV ligi robota na cały
