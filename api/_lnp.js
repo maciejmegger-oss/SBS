@@ -77,20 +77,24 @@ export async function zbadajSkryptyStrony(html, adresStrony) {
         headers: { "User-Agent": "Mozilla/5.0 (compatible; ScoutBaseSystem/1.0; +https://scoutbasesystem.com)" } });
       if (!odp.ok) { zbadane.push(`${plik}: kod ${odp.status}`); continue; }
       const kod = (await odp.text()).slice(0, MAKS_ZNAKOW_SKRYPTU);
-      zbadane.push(`${plik}: ${kod.length} zn.`);
-      // Pełne adresy w obrębie serwisu ŁNP.
-      for (const m of kod.matchAll(/["'`](https?:\/\/[a-z0-9.-]*laczynaspilka\.pl[^"'`\s]{0,120})["'`]/gi)) {
-        adresy.add(m[1]);
+      // BEZ WYMAGANIA CUDZYSŁOWÓW. Kod po minifikacji bywa sklejony tak, że napis nie stoi
+      // w spodziewanym otoczeniu — a przy szukaniu „w cudzysłowie" nie znajdowaliśmy nic,
+      // choćby w pliku było pełno adresów. Szukamy więc samych wzorców, gdziekolwiek stoją.
+      for (const m of kod.matchAll(/https?:\/\/[a-z0-9.-]*laczynaspilka\.pl[a-z0-9/_.$-]{0,120}/gi)) {
+        adresy.add(m[0]);
       }
-      // Kawałki ścieżek, z których strona skleja swoje zapytania („/api/…", „matches/…/lineups").
-      for (const m of kod.matchAll(/["'`](\/?(?:api|v\d)\/[a-z0-9/_{}.:$-]{2,90})["'`]/gi)) sciezki.add(m[1]);
-      for (const m of kod.matchAll(/["'`]([a-z0-9/_-]{0,40}(?:lineup|squad|sklad|player|zawodnik|protok|match|mecz|team|druzyn)[a-z0-9/_-]{0,40})["'`]/gi)) {
-        if (m[1].length > 3) sciezki.add(m[1]);
+      for (const m of kod.matchAll(/\/(?:api|v\d)\/[a-z0-9/_{}.:$-]{2,90}/gi)) sciezki.add(m[0]);
+      for (const m of kod.matchAll(/[a-z0-9/_-]{0,30}(?:lineup|squad|sklad|zawodnik|protok|matchreport|mecz)[a-z0-9/_-]{0,30}/gi)) {
+        if (m[0].length > 4) sciezki.add(m[0]);
       }
+      zbadane.push(`${plik.split("/").pop()}: ${kod.length} zn., adresów ${adresy.size}, ścieżek ${sciezki.size}`);
     } catch (e) { zbadane.push(`${plik}: ${String((e && e.message) || e).slice(0, 80)}`); }
   }
-  const wynik = { kiedy: Date.now(), adresy: [...adresy].slice(0, 25), sciezki: [...sciezki].slice(0, 40), zbadane };
-  znaleziona.set(baza.origin, wynik);
+  const wynik = { kiedy: Date.now(), plikowWStronie: pliki.length,
+    adresy: [...adresy].slice(0, 25), sciezki: [...sciezki].slice(0, 40), zbadane };
+  // Pustego wyniku NIE zapamiętujemy — inaczej jedna nieudana próba (chwilowa awaria, limit czasu)
+  // zamykałaby drogę na całą godzinę, a kolejne kluby dostawałyby „nie znalazłem" bez próby.
+  if (adresy.size || sciezki.size) znaleziona.set(baza.origin, wynik);
   return wynik;
 }
 
