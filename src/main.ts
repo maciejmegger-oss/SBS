@@ -10511,9 +10511,21 @@ const LNP_HURT_BOOKMARKLET = `javascript:(function(){
 ${LNP_ZDARZENIA}
 if(!/laczynaspilka\\.pl/.test(location.host)){alert('SBS: to nie jest strona Laczy nas pilka.');return;}
 function zbierzLinki(){
- return [].slice.call(document.querySelectorAll('a[href*="/mecz/"]'))
-  .map(function(a){return a.href;})
-  .filter(function(v,i,t){return /\\/mecz\\//.test(v)&&t.indexOf(v)===i;});
+ var out=[];
+ // 1. zwykle odnosniki
+ [].slice.call(document.querySelectorAll('a[href*="/mecz/"]')).forEach(function(a){out.push(a.href);});
+ // 2. klikalne wiersze bez <a> - Angular trzyma adres w atrybucie
+ [].slice.call(document.querySelectorAll('[routerlink],[ng-reflect-router-link],[data-href],[data-url]'))
+  .forEach(function(el){
+   for(var i=0;i<el.attributes.length;i++){
+    var v=el.attributes[i].value||'';
+    if(/\\/mecz\\//.test(v)) out.push(new URL(v,location.origin).href);
+   }});
+ // 3. ostatecznie: numery meczow gdziekolwiek w kodzie strony
+ var html=document.documentElement.innerHTML||'';
+ var re=/\\/rozgrywki\\/mecz\\/([0-9a-fA-F-]{30,40})/g,m;
+ while((m=re.exec(html))!==null) out.push(location.origin+'/rozgrywki/mecz/'+m[1]);
+ return out.filter(function(v,i,t){return v&&t.indexOf(v)===i;});
 }
 var linki=zbierzLinki();
 var czekam=0;
@@ -10522,7 +10534,7 @@ function start(){
  if(linki.length){jedziemy();return;}
  czekam++;
  if(czekam<12){setTimeout(start,500);return;}
- alert('SBS: na tej stronie nie ma odnosnikow do meczow.\\n\\n'
+ alert('SBS v2: na tej stronie nie ma odnosnikow do meczow.\\n\\n'
   +'Jestes na WIDOKU TABELI. Przelacz na widok MECZOW/TERMINARZA '
   +'(przycisk \\u201eWidok\\u2026\\u201d w prawym gornym rogu albo zakladka z kolejkami), '
   +'poczekaj az pokaza sie wyniki i kliknij zakladke ponownie.');
@@ -10530,7 +10542,7 @@ function start(){
 function jedziemy(){
 var box=document.createElement('div');
 box.style.cssText='position:fixed;right:16px;bottom:16px;z-index:999999;background:#16302A;color:#F6F3EA;padding:12px 16px;border-radius:8px;font:14px sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.4)';
-box.textContent='SBS: zbieram protokoly 0/'+linki.length;
+box.textContent='SBS v2: zbieram protokoly 0/'+linki.length;
 document.body.appendChild(box);
 var zebrane=[],i=0;
 function nastepny(){
@@ -10538,7 +10550,7 @@ function nastepny(){
   var p=document.createElement('textarea');p.value=zebrane.join('\\n\\n');document.body.appendChild(p);p.select();
   try{document.execCommand('copy');}catch(e){}
   document.body.removeChild(p);box.remove();
-  alert('SBS: zebralem '+zebrane.length+' protokolow z '+linki.length+' meczow i skopiowalem do schowka.\\n\\nW aplikacji: wejdz w dowolny klub tej grupy, kliknij \\u201eProtokoly z LNP\\u201d, a tam \\u201eWczytaj ze schowka\\u201d. Wklejac nie musisz.');
+  alert('SBS v2: zebralem '+zebrane.length+' protokolow z '+linki.length+' meczow i skopiowalem do schowka.\\n\\nW aplikacji: wejdz w dowolny klub tej grupy, kliknij \\u201eProtokoly z LNP\\u201d, a tam \\u201eWczytaj ze schowka\\u201d. Wklejac nie musisz.');
   return;}
  var url=linki[i];box.textContent='SBS: zbieram protokoly '+i+'/'+linki.length;
  var f=document.createElement('iframe');f.style.cssText='position:fixed;left:-9999px;width:1200px;height:2000px';
