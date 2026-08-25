@@ -4215,7 +4215,7 @@ function openProtokolMeczuModal(clubId){
     overlay.innerHTML = `
     <div class="modal" style="max-width:820px;">
       <h3>📋 Protokół meczu — ${esc(klub ? klub.name : '')}</h3>
-      <p class="note" style="margin-bottom:8px;">Otwórz mecz na <strong>Łączy nas piłka</strong>, zaznacz całą stronę (Ctrl+A), skopiuj (Ctrl+C) i wklej tutaj. Odczytam skład, zmiany i minuty <strong>obu drużyn naraz</strong> — drugiego klubu nie musisz otwierać osobno. Mecz rozliczony wcześniej nie policzy się drugi raz.</p>
+      <p class="note" style="margin-bottom:8px;">Skopiuj mecz na <strong>Łączy nas piłka</strong> — zakładką „⚡ Zbierz całą kolejkę" albo ręcznie (Ctrl+A, Ctrl+C) — i wróć tutaj po <strong>„📥 Wczytaj ze schowka"</strong>. Wklejać nie musisz. Odczytam skład, zmiany i minuty <strong>obu drużyn naraz</strong>, a mecz rozliczony wcześniej nie policzy się drugi raz.</p>
       <p class="note" style="margin-top:0;">Rozliczonych meczów tego klubu: <strong>${juzRozliczone()}</strong>${zapisanychMeczow?` &middot; w tym oknie zapisano ${zapisanychMeczow}`:''}</p>
       <label style="display:flex;gap:8px;align-items:flex-start;margin:8px 0;cursor:pointer;font-size:13px;">
         <input type="checkbox" id="pm-dopisuj" ${dopisujBrak?'checked':''} style="margin-top:3px;">
@@ -4248,7 +4248,12 @@ function openProtokolMeczuModal(clubId){
           <button class="secondary" data-x="zamknij">Zamknij</button>
           ${wynik
             ? `<button class="gold" data-x="zapisz" ${pracuje?'disabled':''}>${pracuje?'Zapisuję…':'Zapisz protokoły'}</button>`
-            : `<button class="gold" data-x="rozpoznaj">Rozpoznaj</button>`}
+            // JEDEN RUCH ZAMIAST TRZECH. Zakładka na ŁNP i tak wrzuca protokoły do schowka —
+            // klikanie w pole, Ctrl+V i dopiero „Rozpoznaj" to trzy ruchy na to samo. Ten przycisk
+            // bierze schowek sam i od razu rozpoznaje. Wklejanie ręczne zostaje obok, bo w niektórych
+            // przeglądarkach odczyt schowka wymaga zgody, a wtedy trzeba mieć czym się poratować.
+            : `<button class="secondary" data-x="ze-schowka">📥 Wczytaj ze schowka</button>
+               <button class="gold" data-x="rozpoznaj">Rozpoznaj</button>`}
         </span>
       </div>
     </div>`;
@@ -4261,12 +4266,31 @@ function openProtokolMeczuModal(clubId){
       const adres = wlasny || ('https://www.laczynaspilka.pl/szukaj?q=' + encodeURIComponent(klub ? klub.name : ''));
       window.open(adres, '_blank', 'noopener');
     });
+    overlay.querySelectorAll('[data-x="ze-schowka"]').forEach(b=>b.onclick=()=>{ void zeSchowka(); });
     overlay.querySelectorAll('[data-x="zapisz"]').forEach(b=>b.onclick=()=>{ void zapisz(); });
     const chk = overlay.querySelector('#pm-dopisuj');
     if(chk) chk.onchange = ()=>{ dopisujBrak = chk.checked; };
     const pole = overlay.querySelector('#pm-tekst');
     if(pole && !wynik) pole.focus();
   };
+
+  // Schowek czytamy TYLKO na kliknięcie — przeglądarka inaczej nie pozwoli, i słusznie: nikt nie
+  // chce, żeby strona zaglądała mu do schowka sama z siebie.
+  async function zeSchowka(){
+    let tekst = '';
+    try { tekst = await navigator.clipboard.readText(); }
+    catch {
+      komunikat = 'Przeglądarka nie dała mi zajrzeć do schowka. Kliknij w pole poniżej i wklej ręcznie (Ctrl+V).';
+      rysuj(); return;
+    }
+    if(!String(tekst||'').trim()){
+      komunikat = 'Schowek jest pusty — najpierw kliknij zakładkę „⚡ Zbierz całą kolejkę" na stronie ŁNP.';
+      rysuj(); return;
+    }
+    const pole = overlay.querySelector('#pm-tekst') as any;
+    if(pole) pole.value = tekst;
+    rozpoznaj();
+  }
 
   function rozpoznaj(){
     const tekst = (overlay.querySelector('#pm-tekst') as any).value.trim();
