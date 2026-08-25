@@ -11243,7 +11243,12 @@ function openLnpBookmarkletModal(){
       <p class="note" style="margin-top:0;">Ta druga zakładka nie wymaga wchodzenia w mecze. Uruchamiasz ją na <strong>liście meczów</strong>
       (Rozgrywki → wybrana kolejka), a ona sama otwiera po kolei każde spotkanie w tle, czeka na składy i zbiera protokoły.
       Dziewięć meczów to kilkanaście sekund i <strong>jedno</strong> kliknięcie.</p>
-      <a href="${esc(LNP_HURT_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go na pasek zakładek, a potem kliknij TAM — będąc na liście meczów na laczynaspilka.pl.');return false;" style="display:inline-block;margin:4px 0;padding:8px 16px;background:var(--pitch);color:var(--on-pitch);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">⚡ Zbierz całą kolejkę</a>
+      <p class="note" style="margin:6px 0;padding:8px 10px;background:var(--clay-bg,#FBF0EC);border-radius:6px;">
+        <strong>Masz już starą zakładkę na pasku?</strong> Najpierw ją usuń (prawy przycisk myszy na niej → „Usuń"),
+        dopiero potem przeciągnij tę. Zakładka nie aktualizuje się sama — na pasku zostaje ta wersja, którą kiedyś przeciągnąłeś.
+        Poznasz, której używasz, po komunikacie: nowa zaczyna się od <strong>„SBS v2:"</strong>, stara od „SBS:".
+      </p>
+      <a href="${esc(LNP_HURT_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go na pasek zakładek, a potem kliknij TAM — będąc na liście meczów na laczynaspilka.pl.');return false;" style="display:inline-block;margin:4px 0;padding:8px 16px;background:var(--pitch);color:var(--on-pitch);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">⚡ Zbierz całą kolejkę (v2)</a>
       <p class="note" style="font-size:11.5px;">W rogu ekranu zobaczysz licznik postępu. Na końcu komplet trafia do schowka — wklejasz raz w aplikacji.
       Skrypt czyta wyłącznie strony tego samego serwisu, otwarte w Twojej przeglądarce.</p>
       <details style="margin-top:8px;">
