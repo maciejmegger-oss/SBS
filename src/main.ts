@@ -10546,60 +10546,58 @@ function zdarzenia(d){try{
 
 const LNP_HURT_BOOKMARKLET = `javascript:(function(){
 ${LNP_ZDARZENIA}
-if(!/laczynaspilka\\.pl/.test(location.host)){alert('SBS: to nie jest strona Laczy nas pilka.');return;}
+if(!/laczynaspilka\\.pl/.test(location.host)){alert('SBS v2: to nie jest strona Laczy nas pilka.');return;}
+var KLUCZ='sbs_protokoly_hurt';
+if(window.event&&window.event.shiftKey){try{localStorage.removeItem(KLUCZ);}catch(e){}alert('SBS v2: wyczyscilem zebrane protokoly.');return;}
+
+// Odnosniki do meczow szukamy trzema sposobami: zwykle <a>, atrybuty klikalnych wierszy
+// (Angular chowa tam adres) i wreszcie numery meczow wylowione wprost z kodu strony.
 function zbierzLinki(){
  var out=[];
- // 1. zwykle odnosniki
  [].slice.call(document.querySelectorAll('a[href*="/mecz/"]')).forEach(function(a){out.push(a.href);});
- // 2. klikalne wiersze bez <a> - Angular trzyma adres w atrybucie
  [].slice.call(document.querySelectorAll('[routerlink],[ng-reflect-router-link],[data-href],[data-url]'))
-  .forEach(function(el){
-   for(var i=0;i<el.attributes.length;i++){
-    var v=el.attributes[i].value||'';
-    if(/\\/mecz\\//.test(v)) out.push(new URL(v,location.origin).href);
-   }});
- // 3. ostatecznie: numery meczow gdziekolwiek w kodzie strony
+  .forEach(function(el){for(var i=0;i<el.attributes.length;i++){var v=el.attributes[i].value||'';
+   if(/\\/mecz\\//.test(v)){try{out.push(new URL(v,location.origin).href);}catch(e){}}}});
  var html=document.documentElement.innerHTML||'';
  var re=/\\/rozgrywki\\/mecz\\/([0-9a-fA-F-]{30,40})/g,m;
  while((m=re.exec(html))!==null) out.push(location.origin+'/rozgrywki/mecz/'+m[1]);
  return out.filter(function(v,i,t){return v&&t.indexOf(v)===i;});
 }
-var linki=zbierzLinki();
-var czekam=0;
-function start(){
- linki=zbierzLinki();
- if(linki.length){jedziemy();return;}
- czekam++;
- if(czekam<12){setTimeout(start,500);return;}
- alert('SBS v2: na tej stronie nie ma odnosnikow do meczow.\\n\\n'
-  +'Jestes na WIDOKU TABELI. Przelacz na widok MECZOW/TERMINARZA '
-  +'(przycisk \\u201eWidok\\u2026\\u201d w prawym gornym rogu albo zakladka z kolejkami), '
-  +'poczekaj az pokaza sie wyniki i kliknij zakladke ponownie.');
+
+// Lista wyboru kolejki, jesli strona ja ma - dzieki niej przechodzimy CALY SEZON jednym
+// klikniecem, zamiast wracac tu po kazdej kolejce.
+function listaKolejek(){
+ var sel=[].slice.call(document.querySelectorAll('select'));
+ for(var i=0;i<sel.length;i++){
+  var opcje=[].slice.call(sel[i].options||[]);
+  if(opcje.length<2) continue;
+  var pasuje=opcje.filter(function(o){return /kolejk|runda|round/i.test(o.textContent||'');});
+  if(pasuje.length>1||/kolejk|runda|round/i.test((sel[i].getAttribute('aria-label')||'')+' '+(sel[i].name||''))) return sel[i];
+ }
+ return null;
 }
-function jedziemy(){
+
+var zebrane=[];try{zebrane=JSON.parse(localStorage.getItem(KLUCZ)||'[]');}catch(e){zebrane=[];}
+var bylo=zebrane.length, linki=[], i=0, kolejek=1, czekam=0;
 var box=document.createElement('div');
 box.style.cssText='position:fixed;right:16px;bottom:16px;z-index:999999;background:#16302A;color:#F6F3EA;padding:12px 16px;border-radius:8px;font:14px sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.4)';
-box.textContent='SBS v2: zbieram protokoly 0/'+linki.length;
 document.body.appendChild(box);
-// ZBIERAMY PO KOLEJKACH, NIE NA JEDEN RAZ.
-// Klub rozgrywa mecze w kolejnych kolejkach, a strona pokazuje jedna kolejke naraz. Gdyby kazde
-// uruchomienie zaczynalo od zera, dorobek z wczesniejszych kolejek by przepadal. Dlatego zebrane
-// protokoly dokladamy do tej samej listy w pamieci przegladarki: przechodzisz kolejka po kolejce,
-// a schowek za kazdym razem ma KOMPLET. Shift + klikniecie czysci liste przed nowym sezonem.
-var KLUCZ='sbs_protokoly_hurt';
-if(window.event&&window.event.shiftKey){try{localStorage.removeItem(KLUCZ);}catch(e){}alert('SBS v2: wyczyscilem zebrane protokoly.');return;}
-var zebrane=[];try{zebrane=JSON.parse(localStorage.getItem(KLUCZ)||'[]');}catch(e){zebrane=[];}
-var bylo=zebrane.length,i=0;
+
+function start(){
+ linki=zbierzLinki();
+ if(linki.length){box.textContent='SBS v2: zbieram protokoly 0/'+linki.length;nastepny();return;}
+ czekam++;
+ if(czekam<12){box.textContent='SBS v2: czekam, az strona sie zaladuje...';setTimeout(start,500);return;}
+ box.remove();
+ alert('SBS v2: na tej stronie nie ma odnosnikow do meczow.\\n\\nJestes na WIDOKU TABELI. Przelacz na widok MECZOW/TERMINARZA (przycisk \\u201eWidok\\u2026\\u201d w prawym gornym rogu albo zakladka z kolejkami), poczekaj az pokaza sie wyniki i kliknij zakladke ponownie.');
+}
+
 function nastepny(){
- if(i>=linki.length){
-  try{localStorage.setItem(KLUCZ,JSON.stringify(zebrane));}catch(e){}
-  var p=document.createElement('textarea');p.value=zebrane.join('\\n\\n');document.body.appendChild(p);p.select();
-  try{document.execCommand('copy');}catch(e){}
-  document.body.removeChild(p);box.remove();
-  alert('SBS v2: dolozylem '+(zebrane.length-bylo)+' protokolow z tej kolejki. W schowku masz teraz '+zebrane.length+' protokolow lacznie.\\n\\nMozesz przelaczyc na kolejna kolejke i kliknac ponownie - lista rosnie. Shift + klikniecie czysci ja przed nowym sezonem.\\n\\nW aplikacji: wejdz w dowolny klub tej grupy, kliknij \\u201eProtokoly z LNP\\u201d, a tam \\u201eWczytaj ze schowka\\u201d. Wklejac nie musisz.');
-  return;}
- var url=linki[i];box.textContent='SBS: zbieram protokoly '+i+'/'+linki.length;
- var f=document.createElement('iframe');f.style.cssText='position:fixed;left:-9999px;width:1200px;height:2000px';
+ if(i>=linki.length){ poKolejce(); return; }
+ var url=linki[i];
+ box.textContent='SBS v2: kolejka '+kolejek+' - protokoly '+i+'/'+linki.length+' (razem '+zebrane.length+')';
+ var f=document.createElement('iframe');
+ f.style.cssText='position:fixed;left:-9999px;width:1200px;height:2000px';
  f.src=url;document.body.appendChild(f);
  var prob=0;
  var t=setInterval(function(){
@@ -10609,16 +10607,48 @@ function nastepny(){
   var ok=/Sk\\u0142ad wyj\\u015bciowy/.test(txt);
   if(ok||prob>40){
    clearInterval(t);
-   if(ok){var j=txt.search(/^\\s*Sk\\u0142ady\\s*$/m);
+   if(ok){
+    var j=txt.search(/^\\s*Sk\\u0142ady\\s*$/m);
     var wpis='### PROTOKOL: '+url+'\\n'+txt.slice(j<0?0:j)+zdarzenia(f.contentDocument);
-    var duplikat=false;
-    for(var q=0;q<zebrane.length;q++){if(zebrane[q].indexOf('### PROTOKOL: '+url+'\\n')===0){zebrane[q]=wpis;duplikat=true;break;}}
-    if(!duplikat)zebrane.push(wpis);}
-   f.remove();i++;setTimeout(nastepny,300);}
+    var byl=false;
+    for(var q=0;q<zebrane.length;q++){if(zebrane[q].indexOf('### PROTOKOL: '+url+'\\n')===0){zebrane[q]=wpis;byl=true;break;}}
+    if(!byl)zebrane.push(wpis);
+   }
+   f.remove();i++;setTimeout(nastepny,300);
+  }
  },500);
 }
-nastepny();
+
+// Kolejka zebrana. Jesli strona pozwala przejsc do nastepnej - przechodzimy sami.
+function poKolejce(){
+ try{localStorage.setItem(KLUCZ,JSON.stringify(zebrane));}catch(e){}
+ var wybor=listaKolejek();
+ if(wybor&&wybor.selectedIndex+1<wybor.options.length&&kolejek<40){
+  kolejek++;
+  box.textContent='SBS v2: przechodze do kolejki '+kolejek+'...';
+  var poprzednie=linki.join('|');
+  wybor.selectedIndex=wybor.selectedIndex+1;
+  wybor.dispatchEvent(new Event('change',{bubbles:true}));
+  var czek=0;
+  var licz=setInterval(function(){
+   czek++;
+   var teraz=zbierzLinki();
+   if(teraz.length&&teraz.join('|')!==poprzednie){clearInterval(licz);linki=teraz;i=0;nastepny();return;}
+   if(czek>16){clearInterval(licz);koniec();}
+  },500);
+  return;
+ }
+ koniec();
 }
+
+function koniec(){
+ try{localStorage.setItem(KLUCZ,JSON.stringify(zebrane));}catch(e){}
+ var p=document.createElement('textarea');p.value=zebrane.join('\\n\\n');document.body.appendChild(p);p.select();
+ try{document.execCommand('copy');}catch(e){}
+ document.body.removeChild(p);box.remove();
+ alert('SBS v2: dolozylem '+(zebrane.length-bylo)+' protokolow (kolejek przejrzanych: '+kolejek+'). W schowku masz teraz '+zebrane.length+' lacznie.\\n\\nW aplikacji: Kluby -> wybierz grupe -> \\u201eWczytaj protokoly calej grupy\\u201d -> Ctrl+V.\\n\\nShift + klikniecie tej zakladki czysci zebrana liste.');
+}
+
 start();
 })();`;
 
