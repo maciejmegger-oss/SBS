@@ -68,14 +68,32 @@ export async function zbadajSkryptyStrony(html, adresStrony) {
 
   const adresy = new Set();
   const sciezki = new Set();
+  const szablony = new Set();
   const zbadane = [];
   // Najpierw „main" — w Angularze to tam siedzą ustawienia środowiska z adresem danych.
   pliki.sort((a, b) => (/main/i.test(b) ? 1 : 0) - (/main/i.test(a) ? 1 : 0));
-  for (const plik of pliki.slice(0, 3)) {
+
+  // MAIN NIE ZAWIERA KODU — ZAWIERA ODWOŁANIA DO NIEGO.
+  //
+  // Plik „main" tej strony ma sto osiemdziesiąt pięć znaków. To nie jest kod aplikacji, tylko
+  // spis dalszych plików: nowe wydania Angulara rozbijają program na kawałki i main tylko je
+  // wymienia (import "./chunk-….js"). Zatrzymanie się na nim było jak przeczytanie spisu treści
+  // zamiast książki — stąd „adresów 0, ścieżek 0" przy pliku, w którym po prostu nic nie ma.
+  // Idziemy więc za tymi odwołaniami, pilnując dwóch granic: ile plików i ile łącznie znaków.
+  const doZbadania = [...pliki];
+  const juz = new Set();
+  let przeczytanychZnakow = 0;
+  const MAKS_PLIKOW = 14;
+  const MAKS_ZNAKOW_RAZEM = 12 * 1024 * 1024;
+
+  while (doZbadania.length && juz.size < MAKS_PLIKOW && przeczytanychZnakow < MAKS_ZNAKOW_RAZEM) {
+    const plik = doZbadania.shift();
+    if (juz.has(plik)) continue;
+    juz.add(plik);
     try {
       const odp = await fetch(plik, { signal: AbortSignal.timeout(20000),
         headers: { "User-Agent": "Mozilla/5.0 (compatible; ScoutBaseSystem/1.0; +https://scoutbasesystem.com)" } });
-      if (!odp.ok) { zbadane.push(`${plik}: kod ${odp.status}`); continue; }
+      if (!odp.ok) { zbadane.push(`${plik.split("/").pop()}: kod ${odp.status}`); continue; }
       const kod = (await odp.text()).slice(0, MAKS_ZNAKOW_SKRYPTU);
       // BEZ WYMAGANIA CUDZYSŁOWÓW. Kod po minifikacji bywa sklejony tak, że napis nie stoi
       // w spodziewanym otoczeniu — a przy szukaniu „w cudzysłowie" nie znajdowaliśmy nic,
@@ -84,18 +102,44 @@ export async function zbadajSkryptyStrony(html, adresStrony) {
         adresy.add(m[0]);
       }
       for (const m of kod.matchAll(/\/(?:api|v\d)\/[a-z0-9/_{}.:$-]{2,90}/gi)) sciezki.add(m[0]);
+      // SZABLON ADRESU, A NIE SAM POCZĄTEK. Adres do składów strona skleja z trzech kawałków:
+      // „matches/" + numer meczu + „/lineups". Sam początek („…/api/v1/") do niczego nie prowadzi,
+      // więc wyłuskujemy OBIE połówki naraz — dokładnie tak, jak stoją w kodzie, bez dokładania
+      // czegokolwiek od siebie.
+      for (const m of kod.matchAll(/["'`]([a-z0-9/_-]{2,40}\/)["'`]\s*\+[^+"'`]{1,40}\+\s*["'`](\/[a-z0-9/_-]{2,40})["'`]/gi)) {
+        szablony.add(m[1] + "{mecz}" + m[2]);
+      }
       for (const m of kod.matchAll(/[a-z0-9/_-]{0,30}(?:lineup|squad|sklad|zawodnik|protok|matchreport|mecz)[a-z0-9/_-]{0,30}/gi)) {
         if (m[0].length > 4) sciezki.add(m[0]);
       }
+      // Dalsze pliki, po które ten sięga: import "./chunk-….js", from "./x.js", import("./y.js").
+      for (const m of kod.matchAll(/(?:\bimport\b|\bfrom\b)\s*\(?\s*["']([^"']+\.js)["']/g)) {
+        try {
+          const dalej = new URL(m[1], plik).toString();
+          if (HOSTY_DANYCH.test(new URL(dalej).hostname) && !juz.has(dalej)) doZbadania.push(dalej);
+        } catch { /* nieczytelne odwołanie pomijamy */ }
+      }
+      przeczytanychZnakow += kod.length;
       zbadane.push(`${plik.split("/").pop()}: ${kod.length} zn., adresów ${adresy.size}, ścieżek ${sciezki.size}`);
-    } catch (e) { zbadane.push(`${plik}: ${String((e && e.message) || e).slice(0, 80)}`); }
+    } catch (e) { zbadane.push(`${plik.split("/").pop()}: ${String((e && e.message) || e).slice(0, 80)}`); }
   }
   const wynik = { kiedy: Date.now(), plikowWStronie: pliki.length,
-    adresy: [...adresy].slice(0, 25), sciezki: [...sciezki].slice(0, 40), zbadane };
+    adresy: [...adresy].slice(0, 25), sciezki: [...sciezki].slice(0, 40),
+    szablony: [...szablony].slice(0, 20), zbadane };
   // Pustego wyniku NIE zapamiętujemy — inaczej jedna nieudana próba (chwilowa awaria, limit czasu)
   // zamykałaby drogę na całą godzinę, a kolejne kluby dostawałyby „nie znalazłem" bez próby.
   if (adresy.size || sciezki.size) znaleziona.set(baza.origin, wynik);
   return wynik;
+}
+
+// Numer meczu z adresu strony. Na ŁNP jest to długi numer z myślnikami, a nie zwykła liczba —
+// szukamy więc najpierw jego, a dopiero potem liczby (tak numeruje mecze 90minut).
+function numerMeczuZAdresu(adresStrony) {
+  let sciezka;
+  try { sciezka = new URL(adresStrony).pathname; } catch { return ""; }
+  const uuid = sciezka.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+  if (uuid) return uuid[0];
+  return (sciezka.match(/(\d{3,})/) || [])[1] || "";
 }
 
 export async function protokolZDanychStrony(html, adresStrony, nazwaKlubu) {
@@ -104,6 +148,24 @@ export async function protokolZDanychStrony(html, adresStrony, nazwaKlubu) {
     // W stronie nic nie ma — szukamy w plikach z jej kodem.
     const zKodu = await zbadajSkryptyStrony(html, adresStrony);
     adresy = uporzadkujAdresy(zKodu.adresy, adresStrony);
+
+    // ADRES SKLEJONY Z KAWAŁKÓW ZNALEZIONYCH W KODZIE. Sam początek („…/api/v1/") do niczego nie
+    // prowadzi. Ale w kodzie stoi obok niego szablon — „matches/" + numer meczu + „/lineups" —
+    // a numer meczu mamy w adresie strony. Składamy więc adres z tych trzech części: dwie
+    // pochodzą wprost z kodu strony, trzecia z odnośnika, w który klikamy. Nic nie dokładamy.
+    const numer = numerMeczuZAdresu(adresStrony);
+    const szablony = (zKodu.szablony || []);
+    if (numer && szablony.length) {
+      const wagaSzablonu = (s) => /(lineup|squad|sklad|protok|report|player|zawodnik)/i.test(s) ? 0 : 1;
+      const kandydaci = [];
+      for (const podstawa of zKodu.adresy.slice(0, 4)) {
+        for (const szablon of [...szablony].sort((a, b) => wagaSzablonu(a) - wagaSzablonu(b))) {
+          try { kandydaci.push(new URL(szablon.replace("{mecz}", numer), podstawa).toString()); }
+          catch { /* nieskładny szablon pomijamy */ }
+        }
+      }
+      adresy = [...new Set([...adresy, ...kandydaci])].slice(0, 6);
+    }
   }
   if (!adresy.length) return null;
   const odczytane = [];

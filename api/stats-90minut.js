@@ -541,6 +541,7 @@ export default async function handler(req, res) {
       const skrot = pierwsze
         ? `API: ${[...(pierwsze.adresyApi || []), ...((zKodu && zKodu.adresy) || [])].slice(0, 6).join(" ") || "brak"}`
           + ` | ścieżki: ${((zKodu && zKodu.sciezki) || []).slice(0, 8).join(" ") || "brak"}`
+          + ` | szablony: ${((zKodu && zKodu.szablony) || []).slice(0, 5).join(" ") || "brak"}`
           + ` | pliki kodu: ${(zKodu && zKodu.zbadane || []).join(" ; ") || "nie czytałem"}`
           + ` | ${pierwsze.dlugoscStrony} zn., ${pierwsze.skryptow} skryptów`
         : `żadnej strony meczu nie udało się pobrać`;
