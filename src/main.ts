@@ -4574,8 +4574,15 @@ function openGrupaStatsModal(){
       const k = DB.clubs.find(x=>x.id===poz.id);
       if(k && !String(k.profileLnp||'').trim()){ k.profileLnp = dane.adresKlubuNa90minut; adresyDoZapisania++; }
     }
+    // ILE MECZÓW W OGÓLE PRZEJRZAŁEM. „Bez zmian" ma dwa zupełnie różne znaczenia: albo liczby
+    // są już aktualne, albo znalazłem tylko część spotkań i nie ma z czego ich policzyć. Bez tej
+    // liczby jedno wygląda jak drugie — a to właśnie odróżnia porządną aktualizację od takiej,
+    // która pokazuje dwie kolejki, choć rozegrano pięć.
+    const zIlu = Number(dane.sprawdzoneMecze) || 0;
+    const skadLiczby = zIlu ? ` (z ${zIlu} ${zIlu===1?'meczu':'meczów'})` : ' (nie znalazłem żadnego meczu)';
     if(!Array.isArray(dane.pakiet) || !dane.pakiet.length){
-      return { zapisani: 0, opis: dopisani ? `dopisano ${dopisani}, liczby bez zmian` : 'bez zmian' };
+      return { zapisani: 0,
+        opis: (dopisani ? `dopisano ${dopisani}, liczby bez zmian` : 'bez zmian') + skadLiczby };
     }
 
     const zapis = await fetch('/api/stats-90minut?clubId=' + encodeURIComponent(poz.id) + '&apply=1',
@@ -4602,7 +4609,8 @@ function openGrupaStatsModal(){
     zapisaneWPrzebiegu.push(...dane.pakiet);
     return { zapisani,
       opis: `${odp.zapisani || 0} zawodników${dopisani ? `, w tym ${dopisani} nowych` : ''}${
-        dane.zProtokolow && dane.zProtokolow.length ? `, ${dane.zProtokolow.length} z protokołów` : ''}` };
+        dane.zProtokolow && dane.zProtokolow.length ? `, ${dane.zProtokolow.length} z protokołów` : ''}`
+        + skadLiczby };
   }
 
   // Jedno pobranie podglądu dla klubu. Błąd zamieniamy na wyjątek z całą diagnozą z serwera —
