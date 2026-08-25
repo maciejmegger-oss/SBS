@@ -874,6 +874,10 @@ export default async function handler(req, res) {
         przebieg: (p.przebieg && p.przebieg.length) ? p.przebieg : p.ext.przebieg,
         przebiegSezon: etykietaSezonu,
         statsUpdatedAt: dzis, statsSource: `90minut (${klub.league})`, statsSeason: etykietaSezonu,
+        // Z ILU MECZÓW POLICZONE. Bez tej liczby "dorobek stoi w miejscu" jest nie do rozstrzygnięcia:
+        // nie wiadomo, czy zrodlo jest spoznione, czy my widzimy tylko czesc kolejek. Zapisujemy ja
+        // przy zawodniku, zeby bylo to widac w kartotece, a nie tylko w oknie przebiegu.
+        statsMeczow: wybrane.length,
       };
       const doWyslania = {
         matches: p.bedzie.mecze, minutes: p.bedzie.minuty,

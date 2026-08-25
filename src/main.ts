@@ -4870,7 +4870,19 @@ function viewClubDetail(id){
   ${miniTabelaKlubuHtml(c)}
   <div class="card">
     <div class="toolbar" style="margin-bottom:8px;">
-      <h4 style="margin:0;color:var(--heading);">Zawodnicy scoutowani w tym klubie (${squad.length})</h4>
+      <h4 style="margin:0;color:var(--heading);">Zawodnicy scoutowani w tym klubie (${squad.length})
+        ${(()=>{
+          // SKĄD TE LICZBY. Gdy w tabeli ligowej stoi pięć kolejek, a przy zawodnikach dwie, trzeba
+          // wiedzieć, czy widzieliśmy pięć meczów i tyle z nich wyszło, czy tylko dwa w ogóle
+          // znaleźliśmy. Bez tego jedno wygląda jak drugie i nie da się rozstrzygnąć, gdzie szukać.
+          const zMeczow = squad.map(p=>Number(p.statsMeczow)||0).filter(Boolean);
+          const kiedy = squad.map(p=>String(p.statsUpdatedAt||'').slice(0,10)).filter(Boolean).sort();
+          if(!zMeczow.length && !kiedy.length) return '';
+          const n = zMeczow.length ? Math.max(...zMeczow) : 0;
+          return `<span class="note" style="font-weight:400;display:block;margin-top:2px;">
+            ${n?`statystyki policzone z <strong>${n}</strong> ${n===1?'meczu':'meczów'}`:'statystyki bez podanej liczby meczów'}${
+            kiedy.length?` &middot; odświeżone ${esc(kiedy[kiedy.length-1])}`:''}</span>`;
+        })()}</h4>
       <div style="display:flex;gap:8px;align-items:center;">
         <button class="secondary" id="squad-reset-stats-btn" style="display:none;" data-action="reset-squad-stats" data-club="${c.id}" title="Czyści dorobek bieżącego sezonu, żeby wczytać go od nowa. Archiwum poprzednich sezonów zostaje.">↺ Wyzeruj statystyki (0)</button>
         <button class="danger" id="squad-delete-btn" style="display:none;" data-action="delete-squad-selected" data-club="${c.id}">🗑️ Usuń zaznaczonych (0)</button>

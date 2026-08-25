@@ -110,6 +110,9 @@ export const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }>
       // dostępności w profilu i w raporcie PDF. Musi być na tej liście, bo inaczej pierwszy
       // zapis zawodnika z przeglądarki wysłałby `przebieg` jako nieistniejącą kolumnę.
       "przebieg", "przebiegSezon", "m90Id",
+      // Z ilu meczów policzony był dorobek przy ostatnim odświeżeniu — bez tego nie da się
+      // odróżnić "źródło jest spóźnione" od "widzimy tylko część kolejek".
+      "statsMeczow",
     ],
   },
   sbs_observations: {
