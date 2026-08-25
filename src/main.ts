@@ -4057,7 +4057,12 @@ function viewClubs(){
   <div class="toolbar" style="margin-top:14px;">
     <div class="note">${list.length} ${list.length===1?'klub':'klubów'} w widoku${
       (clubBrowse.top === 'IV liga' || clubBrowse.top === 'Klasa okręgowa')
-        ? ' &middot; statystyki tej ligi idą z <strong>„Łączy nas piłka"</strong> — odświeżysz je dla wszystkich klubów naraz, przyciskiem obok'
+        // Sprawdzone na produkcji: ŁNP oddaje serwerom atrapę strony (plik z kodem aplikacji ma
+        // dwieście znaków zamiast megabajtów), więc odświeżanie z serwera tej ligi nie rozliczy.
+        // Zamiast zapraszać w ślepy zaułek, mówimy od razu, która droga działa.
+        ? ' &middot; <strong>tej ligi nie pobierzemy z serwera</strong> — ŁNP wysyła składy tylko do przeglądarki.'
+          + ' Zbierz kolejkę zakładką „⚡ Zbierz całą kolejkę" na ŁNP, potem w dowolnym klubie tej grupy:'
+          + ' „📋 Protokoły z ŁNP" → „📥 Wczytaj ze schowka". Jedno wczytanie rozlicza całą kolejkę.'
         : ''}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <label class="secondary" style="cursor:pointer;padding:9px 16px;border:1px solid #C9C2AB;border-radius:6px;display:inline-flex;align-items:center;" title="Zaznacz wiele plików — dopasuję je do klubów po nazwie pliku">
@@ -4235,7 +4240,11 @@ function openProtokolMeczuModal(clubId){
           return `<div style="padding:6px 0;border-bottom:1px solid var(--chalk-dim);">
             <strong>${esc(s.nazwa)}</strong> ${s.klub && s.klub.id===clubId?'<span class="note">(ten klub)</span>':''}
             <span class="note">&middot; ${grali.length} zagrało${nowi?` &middot; ${nowi} do dopisania`:''}${policzeni?` &middot; ${policzeni} już policzonych`:''}${s.dane && !s.dane.zgodne?' &middot; ⚠️ suma minut się nie zgadza':''}</span>
-            <div class="note" style="margin-top:3px;line-height:1.7;">${grali.map(w=>`${esc(w.firstName)} ${esc(w.lastName)} <strong>${w.minutyGry}'</strong>${w.zawodnik?'':' <span style="color:var(--gold-dark);">nowy</span>'}`).join(' &middot; ')}</div>
+            <div class="note" style="margin-top:3px;line-height:1.7;">${grali.map(w=>`${esc(w.firstName)} ${esc(w.lastName)} <strong>${w.minutyGry}'</strong>${
+              w.gole?` <span title="gole">⚽${w.gole}</span>`:''}${
+              w.zolte?` <span title="żółte kartki" style="color:var(--gold-dark);">🟨${w.zolte}</span>`:''}${
+              w.czerwone?` <span title="czerwone kartki" style="color:var(--clay-dark);">🟥${w.czerwone}</span>`:''}${
+              w.zawodnik?'':' <span style="color:var(--gold-dark);">nowy</span>'}`).join(' &middot; ')}</div>
           </div>`;
         }).join('')}
       </div>` : ''}
@@ -4336,6 +4345,11 @@ function openProtokolMeczuModal(clubId){
         if(!w.zagral || (p.rozliczoneMecze||[]).includes(protokol.klucz)) return;
         p.matches = (p.matches || 0) + 1;
         p.minutes = (p.minutes || 0) + w.minutyGry;
+        // GOLE I KARTKI Z IKON PRZY MINUTACH. Doliczamy je tak samo jak mecze — raz na protokół,
+        // bo znacznik rozliczonego meczu chroni przed policzeniem tego samego spotkania drugi raz.
+        if(w.gole) p.goals = (p.goals || 0) + w.gole;
+        if(w.zolte) p.yellowCards = (p.yellowCards || 0) + w.zolte;
+        if(w.czerwone) p.redCards = (p.redCards || 0) + w.czerwone;
         p.rozliczoneMecze = [...(p.rozliczoneMecze || []), protokol.klucz];
         // Minuty mecz po meczu — to z nich powstaje wykres dostępności w profilu i w PDF.
         const rywal = (protokol.druzyny.find(d=>d !== s.nazwa) || '');
@@ -4343,7 +4357,7 @@ function openProtokolMeczuModal(clubId){
         przebieg.push({ mecz: protokol.klucz, data: '', kolejka: null, rywal,
           dom: protokol.druzyny[0] === s.nazwa, wynik: '', minuty: w.minutyGry,
           odMinuty: w.rezerwa ? (w.wszedl ?? null) : 0, doMinuty: w.rezerwa ? null : (w.zszedl ?? null),
-          podstawowy: !w.rezerwa, zolte: 0, czerwone: 0 });
+          podstawowy: !w.rezerwa, zolte: w.zolte || 0, czerwone: w.czerwone || 0 });
         p.przebieg = przebieg;
         p.przebiegSezon = klub && klub.season ? klub.season : '';
         p.statsUpdatedAt = dzis;
@@ -4851,8 +4865,8 @@ function viewClubDetail(id){
           // meczu. Teraz serwer zagląda w dane, które ŁNP przywozi razem ze stroną (wpisane w skrypt),
           // więc ta liga aktualizuje się tak samo jak II i III — jednym kliknięciem. Wklejka zostaje
           // jako droga awaryjna, na wypadek gdyby ŁNP przestało te dane wysyłać.
-          `<button class="gold" data-action="stats-90minut" data-id="${c.id}" title="Pobierz mecze, minuty i skład wprost z Łączy nas piłka — bez kopiowania i wklejania">⏱ Aktualizuj statystyki z ŁNP</button>
-           <button class="secondary" data-action="protokol-meczu" data-id="${c.id}" title="Droga awaryjna: wklejenie strony meczu, gdy pobieranie nie zadziała">📋 Wklejka z ŁNP</button>`
+          `<button class="gold" data-action="protokol-meczu" data-id="${c.id}" title="Zbierz kolejkę zakładką na ŁNP, a tutaj kliknij „Wczytaj ze schowka" — bez wklejania">📋 Protokoły z ŁNP</button>
+           <button class="secondary" data-action="stats-90minut" data-id="${c.id}" title="Próba pobrania z serwera. Dla IV ligi zwykle się nie uda: ŁNP nie wysyła składów serwerom.">⏱ Spróbuj pobrać z serwera</button>`
         : `<button class="gold" data-action="stats-90minut" data-id="${c.id}" title="Pobierz z 90minut mecze, minuty, bramki i kartki całego składu — bez kopiowania czegokolwiek">⏱ Statystyki z 90minut</button>
            <button class="secondary" data-action="import-squad-stats" data-id="${c.id}" title="Zapasowa droga: ręczna wklejka z Transfermarktu. Dla polskich lig użyj przycisku obok.">📋 Wklejka z Transfermarktu</button>`}
       <button class="secondary" data-action="edit-club" data-id="${c.id}">Edytuj klub</button>
@@ -10144,7 +10158,42 @@ const kluczProtokolu = (druzyny, rawText)=>{
 
 // Przetworzenie protokołu dla OBU drużyn naraz. Protokół sam podaje nazwy zespołów, więc
 // nie trzeba wskazywać klubu — to jedno wklejenie zamiast dwóch.
+// ZDARZENIA ZEBRANE PRZEZ ZAKŁADKĘ — gole i kartki, których w samym tekście nie ma.
+//
+// Zakładka dokłada na końcu protokołu blok „### ZDARZENIA", a w nim przy każdej minucie PODPIS
+// elementu, który przy niej stał: nazwę klasy albo plik obrazka. Tu zamieniamy te podpisy na
+// rodzaj zdarzenia. Trzymamy to po stronie aplikacji, a nie w zakładce, żeby zmiana nazw na ŁNP
+// nie wymagała od nikogo wciągania zakładki na pasek od nowa.
+const PODPISY_ZDARZEN = [
+  { typ:'gol',       wzor:/goal|gol\b|bramk|score/i },
+  { typ:'zolta',     wzor:/yellow|zolt|żółt|\byc\b|card-y/i },
+  { typ:'czerwona',  wzor:/red|czerwon|\brc\b|card-r/i },
+  { typ:'zmiana',    wzor:/sub|zmian|change|swap|arrow|in-out/i },
+];
+function rodzajZdarzenia(podpisy){
+  const t = String(podpisy||'');
+  // Czerwona przed żółtą: „second-yellow-red" to czerwona, a wzorzec żółtej też by tu trafił.
+  for(const {typ, wzor} of [PODPISY_ZDARZEN[2], PODPISY_ZDARZEN[0], PODPISY_ZDARZEN[1], PODPISY_ZDARZEN[3]]){
+    if(wzor.test(t)) return typ;
+  }
+  return '';
+}
+function zdarzeniaZProtokolu(rawText){
+  const blok = String(rawText||'').split(/^###\s*ZDARZENIA\s*$/m)[1];
+  if(!blok) return [];
+  const out = [];
+  for(const linia of blok.split('\n')){
+    const m = linia.match(/^\s*(\d{1,3})'\s*\|([^|]*)\|(.*)$/);
+    if(!m) continue;
+    const typ = rodzajZdarzenia(m[3]);
+    if(!typ || typ === 'zmiana') continue;   // zmiany liczymy z minut, nie stąd
+    out.push({ minuta: parseInt(m[1],10), kto: m[2].trim(), typ, podpisy: m[3].trim() });
+  }
+  return out;
+}
+
 function przetworzProtokolLnp(rawText){
+  const zdarzenia = zdarzeniaZProtokolu(rawText);
   const druzyny = nazwyDruzynZProtokolu(rawText);
   if(druzyny.length < 1) return {blad:'W tej wklejce nie widzę sekcji „Skład wyjściowy" — to chyba nie jest protokół meczu.'};
   const klucz = kluczProtokolu(druzyny, rawText);
@@ -10163,7 +10212,18 @@ function przetworzProtokolLnp(rawText){
       const zawodnik = DB.players.find(p=>p.clubId===klub.id
         && importNorm(p.firstName+p.lastName) === importNorm(z.firstName+z.lastName));
       const juzPoliczony = zawodnik && (zawodnik.rozliczoneMecze||[]).includes(klucz);
-      return {...z, zawodnik, juzPoliczony};
+      // Gole i kartki wiążemy z zawodnikiem po nazwisku — wiersz zdarzenia niesie tekst całego
+      // wiersza z protokołu, więc nazwisko w nim stoi. Sprawdzamy oba człony, bo wiersz bywa
+      // zapisany „Kowalski Jan" albo „Jan Kowalski".
+      const moje = zdarzenia.filter(e=>{
+        const w = importNorm(e.kto);
+        const n = importNorm(z.lastName);
+        return n.length >= 3 && w.includes(n);
+      });
+      return {...z, zawodnik, juzPoliczony,
+        gole: moje.filter(e=>e.typ==='gol').length,
+        zolte: moje.filter(e=>e.typ==='zolta').length,
+        czerwone: moje.filter(e=>e.typ==='czerwona').length};
     });
     strony.push({nazwa, klub, dane, wiersze});
   }
@@ -10371,7 +10431,49 @@ function tmStatsLink(club){
 //
 // Efekt: jedno kliknięcie zamiast dziewięciu wejść w mecz, a na końcu komplet w schowku.
 // Ramka pokazuje postęp, bo przy dziewięciu meczach to kilkanaście sekund.
+// RODZAJ ZDARZENIA JEST IKONĄ, NIE TEKSTEM.
+//
+// Protokół ŁNP pokazuje gola, kartkę i zmianę jako obrazek przy minucie — w skopiowanym TEKŚCIE
+// zostaje z tego goła liczba i nie da się odróżnić bramki od kartki. Dlatego stąd braliśmy tylko
+// minuty gry. Ale zakładka pracuje w przeglądarce, gdzie ikona jest zwykłym elementem strony:
+// widać jej nazwę klasy i plik obrazka. Zbieramy więc przy każdej minucie PODPIS tego elementu.
+//
+// Podpisów nie tłumaczymy tutaj na „gol" czy „kartka" — robi to aplikacja przy wczytywaniu.
+// Dzięki temu, gdy ŁNP zmieni nazwy klas, poprawka idzie w aplikacji, a Ty nie musisz na nowo
+// wciągać zakładki na pasek.
+const LNP_ZDARZENIA = `
+function zdarzenia(d){try{
+ if(!d) return '';
+ var out=[],widziane={};
+ var wszystkie=[].slice.call(d.querySelectorAll('*'));
+ for(var k=0;k<wszystkie.length;k++){
+  var el=wszystkie[k];
+  if(el.children.length) continue;
+  var tt=(el.textContent||'').trim();
+  var mm=tt.match(/^(\\\\d{1,3})'(?:\\\\s*\\\\+\\\\s*(\\\\d+)')?$/);
+  if(!mm) continue;
+  var wiersz=el, glab=0;
+  while(wiersz&&glab<5&&!(wiersz.textContent||'').match(/[A-Za-z\\\\u00c0-\\\\u017f]{3,}/)){wiersz=wiersz.parentElement;glab++;}
+  if(!wiersz) continue;
+  var podpisy=[];
+  var obrazki=wiersz.querySelectorAll('img,svg,use,i,span[class]');
+  for(var q=0;q<obrazki.length&&q<12;q++){
+   var o=obrazki[q];
+   var s=(o.getAttribute&&(o.getAttribute('src')||o.getAttribute('href')||o.getAttribute('xlink:href')||o.getAttribute('alt')||o.getAttribute('aria-label')||o.getAttribute('title')))||'';
+   var c=(o.getAttribute&&o.getAttribute('class'))||'';
+   if(s) podpisy.push(String(s).split('/').pop());
+   if(c) podpisy.push(String(c));
+  }
+  var kto=(wiersz.textContent||'').replace(/\\\\s+/g,' ').trim().slice(0,60);
+  var linia=mm[1]+"'|"+kto+'|'+podpisy.join(' ').slice(0,160);
+  if(!widziane[linia]){widziane[linia]=1;out.push(linia);}
+ }
+ return out.length?('\\\\n### ZDARZENIA\\\\n'+out.join('\\\\n')):'';
+}catch(e){return '';}}
+`;
+
 const LNP_HURT_BOOKMARKLET = `javascript:(function(){
+${LNP_ZDARZENIA}
 if(!/laczynaspilka\\.pl/.test(location.host)){alert('SBS: to nie jest strona Laczy nas pilka.');return;}
 var linki=[].slice.call(document.querySelectorAll('a[href*="/rozgrywki/mecz/"]'))
  .map(function(a){return a.href;}).filter(function(v,i,t){return t.indexOf(v)===i;});
@@ -10400,7 +10502,7 @@ function nastepny(){
   if(ok||prob>40){
    clearInterval(t);
    if(ok){var j=txt.search(/^\\s*Sk\\u0142ady\\s*$/m);
-    zebrane.push('### PROTOKOL: '+url+'\\n'+txt.slice(j<0?0:j));}
+    zebrane.push('### PROTOKOL: '+url+'\\n'+txt.slice(j<0?0:j)+zdarzenia(f.contentDocument));}
    f.remove();i++;setTimeout(nastepny,300);}
  },500);
 }
@@ -10417,6 +10519,7 @@ nastepny();
 //
 // Shift + kliknięcie czyści zebrane protokoły (na początek nowej kolejki).
 const LNP_BOOKMARKLET = `javascript:(function(){try{
+${LNP_ZDARZENIA}
 var K='sbs_protokoly';
 if(window.event&&window.event.shiftKey){localStorage.removeItem(K);alert('SBS: wyczyszczono zebrane protokoly.');return;}
 if(!/laczynaspilka\\.pl/.test(location.host)){alert('SBS: to nie jest strona Laczy nas pilka.');return;}
@@ -10424,7 +10527,7 @@ var t=document.body.innerText||'';
 var i=t.search(/^\\s*Sk\\u0142ady\\s*$/m);
 if(i<0){alert('SBS: na tej stronie nie widze sekcji \\u201eSklady\\u201d.\\n\\nOtworz strone MECZU (nie tabele) i poczekaj, az sie zaladuje.');return;}
 var naglowek=(document.title||'mecz').replace(/\\s+/g,' ').trim();
-var protokol='### PROTOKOL: '+naglowek+'\\n'+t.slice(i);
+var protokol='### PROTOKOL: '+naglowek+'\\n'+t.slice(i)+zdarzenia(document);
 var zebrane=[];try{zebrane=JSON.parse(localStorage.getItem(K)||'[]');}catch(e){}
 if(zebrane.indexOf(protokol)<0)zebrane.push(protokol);
 localStorage.setItem(K,JSON.stringify(zebrane));
