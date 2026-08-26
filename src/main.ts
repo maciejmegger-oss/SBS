@@ -10713,13 +10713,21 @@ function dociagnijStrone(gotowe){
  },700);
 }
 function start(){
+ if(/\\/mecz\\//.test(location.pathname)){
+  box.textContent='SBS v3: jestes na stronie meczu - zbieram ten jeden';
+  linki=[location.href];nastepny();return;
+ }
  linki=zbierzLinki();
  if(linki.length){box.textContent='SBS v3: zbieram protokoly 0/'+linki.length;nastepny();return;}
  czekam++;
  if(czekam===1){box.textContent='SBS v3: rozwijam liste meczow...';dociagnijStrone(start);return;}
  if(czekam<12){box.textContent='SBS v3: czekam, az strona sie zaladuje...';setTimeout(start,500);return;}
  box.remove();
- alert('SBS v3: nie znalazlem na tej stronie ani jednego odnosnika do meczu - zjechalem tez na sam dol i rozwinalem liste.\\n\\nSprobuj tak: zjedz na dol do sekcji \\u201eMecze\\u201d, poczekaj az pojawia sie wyniki, i dopiero wtedy kliknij zakladke. Mozesz tez wejsc w konkretny klub (jego strona ma sekcje \\u201eRozegrane mecze\\u201d) i kliknac ja tam.');
+ var wszystkieA=document.querySelectorAll('a').length;
+ var zMecz=[].slice.call(document.querySelectorAll('a')).filter(function(a){return /mecz/i.test(a.getAttribute('href')||'');}).length;
+ var dlugoscTekstu=(document.body.innerText||'').length;
+ var slad=' [na stronie: odnosnikow '+wszystkieA+', w tym wskazujacych na mecz '+zMecz+'; tekstu '+dlugoscTekstu+' znakow; wysokosc '+document.body.scrollHeight+']';
+ alert('SBS v3: nie znalazlem na tej stronie ani jednego odnosnika do meczu - zjechalem tez na sam dol i rozwinalem liste.\\n\\nSprobuj tak: zjedz na dol do sekcji \\u201eMecze\\u201d, poczekaj az pojawia sie wyniki, i dopiero wtedy kliknij zakladke. Mozesz tez wejsc w konkretny klub (jego strona ma sekcje \\u201eRozegrane mecze\\u201d) i kliknac ja tam.'+slad);
 }
 
 function nastepny(){
