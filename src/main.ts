@@ -10275,8 +10275,17 @@ function nazwyDruzynZProtokolu(rawText){
 // dorobku podwójnie. Statystyki z protokołów SUMUJĄ SIĘ mecz po meczu, więc bez tego
 // drugie kliknięcie podwoiłoby każdemu minuty.
 const kluczProtokolu = (druzyny, rawText)=>{
-  const data = (rawText.match(/(\d{1,2})\s+(stycznia|lutego|marca|kwietnia|maja|czerwca|lipca|sierpnia|września|października|listopada|grudnia)/i)||[]).slice(1).join(' ');
-  return 'lnp|' + druzyny.map(importNorm).join('|') + (data ? '|'+importNorm(data) : '');
+  const data = (rawText.match(/(\d{1,2})\s+(stycznia|lutego|marca|kwietnia|maja|czerwca|lipca|sierpnia|września|października|listopada|grudnia)/i)||[]).slice(1).join(' ')
+    || (rawText.match(/\b(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{4})\b/)||[]).slice(1).join('.');
+  if(data) return 'lnp|' + druzyny.map(importNorm).join('|') + '|' + importNorm(data);
+  // BEZ DATY DWA SPOTKANIA TEJ SAMEJ PARY BYŁYBY NIEROZRÓŻNIALNE — a każda para gra ze sobą
+  // dwa razy w sezonie. Rewanż zostawał wtedy nierozliczony jako „już policzony". Gdy daty w
+  // protokole nie ma, rozstrzyga skrót jego treści: składy i minuty dwóch meczów nigdy nie są
+  // identyczne, a ten sam protokół wklejony ponownie da ten sam skrót.
+  let skrot = 0;
+  const tresc = String(rawText||'').replace(/\s+/g,' ');
+  for(let i=0;i<tresc.length;i++){ skrot = (skrot*31 + tresc.charCodeAt(i)) | 0; }
+  return 'lnp|' + druzyny.map(importNorm).join('|') + '|t' + (skrot>>>0).toString(36);
 };
 
 // Przetworzenie protokołu dla OBU drużyn naraz. Protokół sam podaje nazwy zespołów, więc
@@ -10356,10 +10365,16 @@ function przetworzProtokolLnp(rawText){
         const n = importNorm(z.lastName);
         return n.length >= 3 && w.includes(n);
       });
-      return {...z, zawodnik, juzPoliczony,
+      const czerwone = moje.filter(e=>e.typ==='czerwona');
+      // WYKLUCZONY KOŃCZY MECZ W MINUCIE CZERWONEJ KARTKI. Samo parowanie minut tego nie wyłapie:
+      // za wyrzuconego nikt nie wchodzi, więc jego liczba zostaje bez pary i wyglądał na takiego,
+      // który przegrał całe 90 minut. Ikona kartki rozstrzyga to jednoznacznie.
+      const wyklMin = czerwone.length ? Math.min(...czerwone.map(e=>e.minuta)) : null;
+      const minutyGry = (wyklMin != null && !z.rezerwa && wyklMin < z.minutyGry) ? wyklMin : z.minutyGry;
+      return {...z, minutyGry, zawodnik, juzPoliczony,
         gole: moje.filter(e=>e.typ==='gol').length,
         zolte: moje.filter(e=>e.typ==='zolta').length,
-        czerwone: moje.filter(e=>e.typ==='czerwona').length};
+        czerwone: czerwone.length};
     });
     strony.push({nazwa, klub, dane, wiersze});
   }
@@ -10617,30 +10632,42 @@ const LNP_ZDARZENIA = `
 function zdarzenia(d){try{
  if(!d) return '';
  var out=[],widziane={};
+ var MINUTA=/^\\s*\\d{1,3}'(?:\\s*\\+\\s*\\d+')?\\s*$/;
+ function opisz(w){
+  var r=[];
+  if(!w||!w.querySelectorAll) return r;
+  var ob=w.querySelectorAll('img,svg,use,i,span[class]');
+  for(var y=0;y<ob.length&&y<12;y++){
+   var o=ob[y];
+   var s=(o.getAttribute&&(o.getAttribute('src')||o.getAttribute('href')||o.getAttribute('xlink:href')||o.getAttribute('alt')||o.getAttribute('aria-label')||o.getAttribute('title')))||'';
+   var c=(o.getAttribute&&o.getAttribute('class'))||'';
+   if(s) r.push(String(s).split('/').pop());
+   if(c) r.push(String(c));
+  }
+  return r;
+ }
+ function obok(w){
+  if(!w) return [];
+  if(MINUTA.test(w.textContent||'')) return [];
+  return opisz(w);
+ }
  var wszystkie=[].slice.call(d.querySelectorAll('*'));
  for(var k=0;k<wszystkie.length;k++){
   var el=wszystkie[k];
   if(el.children.length) continue;
   var tt=(el.textContent||'').trim();
-  var mm=tt.match(/^(\\\\d{1,3})'(?:\\\\s*\\\\+\\\\s*(\\\\d+)')?$/);
+  var mm=tt.match(/^(\\d{1,3})'(?:\\s*\\+\\s*(\\d+)')?$/);
   if(!mm) continue;
-  var wiersz=el, glab=0;
-  while(wiersz&&glab<5&&!(wiersz.textContent||'').match(/[A-Za-z\\\\u00c0-\\\\u017f]{3,}/)){wiersz=wiersz.parentElement;glab++;}
+  var wiersz=el, pojemnik=el, glab=0;
+  while(wiersz&&glab<5&&!(wiersz.textContent||'').match(/[A-Za-z\\u00c0-\\u017f]{3,}/)){pojemnik=wiersz;wiersz=wiersz.parentElement;glab++;}
   if(!wiersz) continue;
-  var podpisy=[];
-  var obrazki=wiersz.querySelectorAll('img,svg,use,i,span[class]');
-  for(var q=0;q<obrazki.length&&q<12;q++){
-   var o=obrazki[q];
-   var s=(o.getAttribute&&(o.getAttribute('src')||o.getAttribute('href')||o.getAttribute('xlink:href')||o.getAttribute('alt')||o.getAttribute('aria-label')||o.getAttribute('title')))||'';
-   var c=(o.getAttribute&&o.getAttribute('class'))||'';
-   if(s) podpisy.push(String(s).split('/').pop());
-   if(c) podpisy.push(String(c));
-  }
-  var kto=(wiersz.textContent||'').replace(/\\\\s+/g,' ').trim().slice(0,60);
+  var podpisy=opisz(pojemnik);
+  if(!podpisy.length&&pojemnik) podpisy=obok(pojemnik.previousElementSibling).concat(obok(pojemnik.nextElementSibling));
+  var kto=(wiersz.textContent||'').replace(/\\s+/g,' ').trim().slice(0,60);
   var linia=mm[1]+"'|"+kto+'|'+podpisy.join(' ').slice(0,160);
   if(!widziane[linia]){widziane[linia]=1;out.push(linia);}
  }
- return out.length?('\\\\n### ZDARZENIA\\\\n'+out.join('\\\\n')):'';
+ return out.length?('\\n### ZDARZENIA\\n'+out.join('\\n')):'';
 }catch(e){return '';}}
 `;
 
@@ -10718,8 +10745,24 @@ function listaKolejek(){
 
 var pominietych=0;
 var zebrane=[];try{zebrane=JSON.parse(localStorage.getItem(KLUCZ)||'[]');}catch(e){zebrane=[];}
-var bylo=zebrane.length, linki=[], i=0, kolejek=1, czekam=0, doliczen=0, rozwiniete=false;
+var bylo=zebrane.length, linki=[], i=0, kolejek=1, czekam=0, doliczen=0, rozwiniete=false, probowanoKlikac=false, wierszyNaEkranie=0;
 
+function otworzZakladkeMecze(gotowe){
+ var nazwy=/^(mecze|terminarz|wyniki|terminarz i wyniki)$/i;
+ var kand=[].slice.call(document.querySelectorAll('button,a,[role="tab"],li,span,div'));
+ var cel=null;
+ for(var i=0;i<kand.length;i++){
+  var el=kand[i];
+  if(el.children.length>1) continue;
+  var t=(el.textContent||'').replace(/\\s+/g,' ').trim();
+  if(!nazwy.test(t)) continue;
+  cel=el;break;
+ }
+ if(!cel){gotowe();return;}
+ box.textContent='SBS v3: otwieram zakladke z meczami...';
+ try{cel.click();}catch(e){}
+ setTimeout(gotowe,1600);
+}
 function dociagnijStrone(gotowe){
  var krok=0;
  var t=setInterval(function(){
@@ -10729,8 +10772,16 @@ function dociagnijStrone(gotowe){
    return /zaladuj wiecej|za\u0142aduj wi\u0119cej|pokaz wiecej|poka\u017c wi\u0119cej/i.test((el.textContent||'').trim());
   });
   wiecej.forEach(function(el){try{el.click();}catch(e){}});
-  box.textContent='SBS v3: rozwijam liste meczow ('+krok+')...';
-  if(krok>=6){clearInterval(t);try{window.scrollTo(0,0);}catch(e){}gotowe();}
+  var n=naglowekRozegranych();
+  if(n){ try{ n.scrollIntoView({block:'start'}); }catch(e){} box.textContent='SBS v3: jestem przy \\u201eRozegranych meczach\\u201d ('+krok+')...'; }
+  else box.textContent='SBS v3: szukam rozegranych meczow ('+krok+')...';
+  if(krok>=6){
+   clearInterval(t);
+   var k=naglowekRozegranych();
+   if(k){ try{ k.scrollIntoView({block:'start'}); }catch(e){} }
+   else { try{window.scrollTo(0,0);}catch(e){} }
+   gotowe();
+  }
  },700);
 }
 function start(){
@@ -10741,20 +10792,36 @@ function start(){
  if(!rozwiniete){
   rozwiniete=true;
   box.textContent='SBS v3: rozwijam liste meczow...';
-  dociagnijStrone(start);
+  otworzZakladkeMecze(function(){ dociagnijStrone(start); });
   return;
  }
  linki=zbierzLinki();
  if(linki.length){box.textContent='SBS v3: zbieram protokoly 0/'+linki.length;nastepny();return;}
  czekam++;
- if(czekam<12){box.textContent='SBS v3: czekam, az strona sie zaladuje...';setTimeout(start,500);return;}
+ if(czekam<6){box.textContent='SBS v3: czekam, az strona sie zaladuje...';setTimeout(start,500);return;}
+ if(!probowanoKlikac&&wierszeRozegrane().length){
+  probowanoKlikac=true;
+  zbierzAdresyPrzezKlikanie(function(adresy){
+   if(adresy.length){
+    linki=adresy;i=0;
+    box.textContent='SBS v3: zbieram protokoly 0/'+linki.length;
+    nastepny();return;
+   }
+   czekam=0;start();
+  });
+  return;
+ }
  box.remove();
  var wszystkieA=document.querySelectorAll('a').length;
  var zMecz=[].slice.call(document.querySelectorAll('a')).filter(function(a){return /mecz/i.test(a.getAttribute('href')||'');}).length;
  var dlugoscTekstu=(document.body.innerText||'').length;
  var zKodu=0;try{var hh=document.documentElement.innerHTML||'';var rr=/\\/rozgrywki\\/mecz\\/[0-9a-fA-F-]{30,40}/g;var mm;while((mm=rr.exec(hh))!==null)zKodu++;}catch(e){}
- var slad=' [na stronie: odnosnikow '+wszystkieA+', w tym wskazujacych na mecz '+zMecz+'; numerow meczu w kodzie '+zKodu+'; tekstu '+dlugoscTekstu+' znakow; wysokosc '+document.body.scrollHeight+']';
- alert('SBS v3: nie znalazlem na tej stronie ani jednego odnosnika do meczu - zjechalem tez na sam dol i rozwinalem liste.\\n\\nSprobuj tak: zjedz na dol do sekcji \\u201eMecze\\u201d, poczekaj az pojawia sie wyniki, i dopiero wtedy kliknij zakladke. Mozesz tez wejsc w konkretny klub (jego strona ma sekcje \\u201eRozegrane mecze\\u201d) i kliknac ja tam.'+slad);
+ var maRozegrane=/rozegrane mecze/i.test(document.body.innerText||'');
+ var slad=' [na stronie: odnosnikow '+wszystkieA+', w tym wskazujacych na mecz '+zMecz+'; numerow meczu w kodzie '+zKodu+'; wierszy z wynikiem '+wierszyNaEkranie+'; naglowek Rozegrane mecze: '+(maRozegrane?'jest':'brak')+'; tekstu '+dlugoscTekstu+' znakow; wysokosc '+document.body.scrollHeight+']';
+ var rada = maRozegrane
+  ? 'Sekcja \\u201eRozegrane mecze\\u201d jest, ale nie widze w niej ani jednego wiersza z wynikiem. Poczekaj, az wyniki sie wyswietla, i kliknij zakladke jeszcze raz.'
+  : 'Na tej stronie sa same \\u201ePlanowane mecze\\u201d - w tym sezonie nie ma tu jeszcze zadnego rozegranego spotkania. Sprawdz u gory pole \\u201eSezon\\u201d i \\u201eRozgrywki\\u201d: wybierz sezon, w ktorym mecze juz sie odbyly.';
+ alert('SBS v3: nie mam z tej strony czego pobrac.\\n\\n'+rada+slad);
 }
 
 function nastepny(){
@@ -10774,7 +10841,7 @@ function nastepny(){
    clearInterval(t);
    if(ok){
     var j=txt.search(/^\\s*Sk\\u0142ady\\s*$/m);
-    var wpis='### PROTOKOL: '+url+'\\n'+txt.slice(j<0?0:j)+zdarzenia(f.contentDocument);
+    var wpis='### PROTOKOL: '+url+'\\n'+txt.slice(j<0?0:Math.max(0,j-400))+zdarzenia(f.contentDocument);
     var byl=false;
     for(var q=0;q<zebrane.length;q++){if(zebrane[q].indexOf('### PROTOKOL: '+url+'\\n')===0){zebrane[q]=wpis;byl=true;break;}}
     if(!byl)zebrane.push(wpis);
@@ -10784,6 +10851,119 @@ function nastepny(){
  },500);
 }
 
+function maWynikMeczu(t){
+ var m=t.match(/\\d{1,2}\\s*:\\s*\\d{1,2}/g);
+ if(!m) return false;
+ for(var i=0;i<m.length;i++){
+  var s=m[i].replace(/\\s+/g,'');
+  if(/^\\d{2}:\\d{2}$/.test(s)) continue;
+  return true;
+ }
+ return false;
+}
+function naglowekRozegranych(){
+ var kand=[].slice.call(document.querySelectorAll('h1,h2,h3,h4,div,span,p'));
+ for(var i=0;i<kand.length;i++){
+  if(kand[i].children.length) continue;
+  var t=(kand[i].textContent||'').replace(/\\s+/g,' ').trim();
+  if(/^rozegrane mecze$/i.test(t)) return kand[i];
+ }
+ return null;
+}
+function wierszeRozegrane(){
+ var szuk='tr,li,[role="row"],[class*="match"],[class*="mecz"],[class*="Match"]';
+ var kand=[].slice.call(document.querySelectorAll(szuk));
+ var granica=naglowekRozegranych();
+ var out=[];
+ for(var i=0;i<kand.length;i++){
+  var el=kand[i], t=(el.textContent||'').replace(/\\s+/g,' ').trim();
+  if(t.length<8||t.length>400) continue;
+  if(/nierozegran|odwo\u0142an|prze\u0142o\u017con/i.test(t)) continue;
+  if(!maWynikMeczu(t)) continue;
+  if(granica&&!(granica.compareDocumentPosition(el)&Node.DOCUMENT_POSITION_FOLLOWING)) continue;
+  out.push(el);
+ }
+ var fin=[];
+ for(var a=0;a<out.length;a++){
+  var zawiera=false;
+  for(var b=0;b<out.length;b++){ if(a!==b&&out[a].contains(out[b])){zawiera=true;break;} }
+  if(!zawiera) fin.push(out[a]);
+ }
+ wierszyNaEkranie=fin.length;
+ return fin.slice(0,80);
+}
+function celeKlikania(el){
+ var c=[];
+ try{
+  var a=el.querySelector('a[href],button,[role="link"],[role="button"]');
+  if(a) c.push(a);
+ }catch(e){}
+ c.push(el);
+ try{
+  var dz=[].slice.call(el.querySelectorAll('*'));
+  for(var i=0;i<dz.length&&c.length<6;i++){
+   if(dz[i].children.length) continue;
+   if((dz[i].textContent||'').trim().length<2) continue;
+   if(c.indexOf(dz[i])<0) c.push(dz[i]);
+  }
+ }catch(e){}
+ return c;
+}
+function zbierzAdresyPrzezKlikanie(gotowe){
+ var baza=location.href, bazaP=location.pathname+location.search;
+ var wiersze=wierszeRozegrane();
+ if(!wiersze.length){ gotowe([]); return; }
+ var adresy=[], k=0, zlapane=[], staryOpen=window.open;
+ try{ window.open=function(u){ if(u) zlapane.push(String(u)); return null; }; }catch(e){}
+ function skoncz(){
+  try{ window.open=staryOpen; }catch(e){}
+  var meczowe=adresy.filter(function(u){ return /mecz|match|spotkan/i.test(u); });
+  gotowe(meczowe.length?meczowe:adresy);
+ }
+ function dodajAdres(u){
+  var pelny='';
+  try{ pelny=new URL(u,location.origin).href; }catch(e){ return; }
+  if(pelny===baza) return;
+  if(adresy.indexOf(pelny)<0) adresy.push(pelny);
+ }
+ function wroc(dalejGotowe){
+  try{ history.back(); }catch(e){}
+  var n=0;
+  var t=setInterval(function(){
+   n++;
+   if(location.pathname+location.search===bazaP){ clearInterval(t); setTimeout(dalejGotowe,700); return; }
+   if(n>=25){ clearInterval(t); skoncz(); }
+  },200);
+ }
+ function dalej(){
+  if(k>=wiersze.length){ skoncz(); return; }
+  box.textContent='SBS v3: otwieram mecz '+(k+1)+'/'+wiersze.length+' (adresow '+adresy.length+')';
+  var lista=wierszeRozegrane();
+  var el=lista[k]||wiersze[k];
+  if(!el||!el.isConnected){ k++; setTimeout(dalej,80); return; }
+  var cele=celeKlikania(el), ci=0;
+  function probuj(){
+   if(ci>=cele.length){ k++; setTimeout(dalej,120); return; }
+   var cel=cele[ci++];
+   zlapane.length=0;
+   try{ cel.click(); }catch(e){}
+   var n=0;
+   var t=setInterval(function(){
+    n++;
+    if(zlapane.length){ clearInterval(t); dodajAdres(zlapane[0]); k++; setTimeout(dalej,120); return; }
+    if(location.pathname+location.search!==bazaP){
+     clearInterval(t);
+     dodajAdres(location.href);
+     wroc(function(){ k++; dalej(); });
+     return;
+    }
+    if(n>=12){ clearInterval(t); probuj(); }
+   },100);
+  }
+  probuj();
+ }
+ dalej();
+}
 function poKolejce(){
  try{localStorage.setItem(KLUCZ,JSON.stringify(zebrane));}catch(e){}
  var swieze=zbierzLinki().filter(function(u){
@@ -10877,7 +11057,7 @@ var t=document.body.innerText||'';
 var i=t.search(/^\\s*Sk\\u0142ady\\s*$/m);
 if(i<0){alert('SBS: na tej stronie nie widze sekcji \\u201eSklady\\u201d.\\n\\nOtworz strone MECZU (nie tabele) i poczekaj, az sie zaladuje.');return;}
 var naglowek=(document.title||'mecz').replace(/\\s+/g,' ').trim();
-var protokol='### PROTOKOL: '+naglowek+'\\n'+t.slice(i)+zdarzenia(document);
+var protokol='### PROTOKOL: '+naglowek+'\\n'+t.slice(Math.max(0,i-400))+zdarzenia(document);
 var zebrane=[];try{zebrane=JSON.parse(localStorage.getItem(K)||'[]');}catch(e){}
 if(zebrane.indexOf(protokol)<0)zebrane.push(protokol);
 localStorage.setItem(K,JSON.stringify(zebrane));
