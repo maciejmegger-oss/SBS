@@ -4284,10 +4284,24 @@ function openProtokolMeczuModal(clubId){
     overlay.querySelectorAll('[data-x="zakladka"]').forEach(b=>b.onclick=()=>openLnpBookmarkletModal());
     overlay.querySelectorAll('[data-x="otworz-lnp"]').forEach(b=>b.onclick=()=>{
       // Kolejność: link do KOLEJKI tej grupy (bo to z niej zakładka zbiera całą rundę naraz),
-      // potem link zapisany przy klubie, a na końcu wyszukiwarka ŁNP po nazwie.
+      // potem link zapisany przy klubie.
+      //
+      // NIE ZMYŚLAMY ADRESU. Stała tu wyszukiwarka „laczynaspilka.pl/szukaj?q=…", której na tej
+      // stronie po prostu nie ma — klikając przycisk bez przypisanego linku trafiało się na
+      // stronę „404, piłka za boiskiem". Lepiej powiedzieć wprost, czego brakuje, i otworzyć
+      // stronę rozgrywek, na której da się grupę wybrać z list.
       const grupowy = (DB.settings.lnpGrupy||{})[grupa] || '';
       const wlasny = klub && /laczynaspilka\.pl/i.test(String(klub.profileLnp||'')) ? klub.profileLnp : '';
-      const adres = grupowy || wlasny || ('https://www.laczynaspilka.pl/szukaj?q=' + encodeURIComponent(klub ? klub.name : ''));
+      const adres = grupowy || wlasny;
+      if(!adres){
+        alert('Nie mam jeszcze adresu tej grupy na „Łączy nas piłka".\n\n'
+          + 'Otworzę stronę rozgrywek — ustaw tam Sezon, Ligę i Grupę, przełącz na widok MECZÓW, '
+          + 'a potem skopiuj adres z paska przeglądarki i wklej go w SBS przyciskiem '
+          + '„🔗 Link ŁNP dla grupy" (Kluby → wybierz grupę).\n\n'
+          + 'Od tej pory ten przycisk będzie otwierał kolejkę od razu.');
+        window.open('https://www.laczynaspilka.pl/rozgrywki', '_blank', 'noopener');
+        return;
+      }
       window.open(adres, '_blank', 'noopener');
     });
     overlay.querySelectorAll('[data-x="ze-schowka"]').forEach(b=>b.onclick=()=>{ void zeSchowka(); });
@@ -10553,7 +10567,26 @@ function zbierzLinki(){
  var html=document.documentElement.innerHTML||'';
  var re=/\\/rozgrywki\\/mecz\\/([0-9a-fA-F-]{30,40})/g,m;
  while((m=re.exec(html))!==null) out.push(location.origin+'/rozgrywki/mecz/'+m[1]);
- return out.filter(function(v,i,t){return v&&t.indexOf(v)===i;});
+ out=out.filter(function(v,i,t){return v&&t.indexOf(v)===i;});
+ // MECZ NIEROZEGRANY NIE MA SKLADOW. Lista na stronie miesza rozegrane z przyszlymi, a te drugie
+ // maja przy sobie slowo "Nierozegrany". Otwieranie ich to czyste czekanie - przy dwudziestu
+ // takich wierszach zakladka milczy kilka minut, zanim cokolwiek powie.
+ var pomijane={};
+ [].slice.call(document.querySelectorAll('*')).forEach(function(el){
+  if(el.children.length>8) return;
+  if(!/nierozegran|odwo\u0142an|prze\u0142o\u017con/i.test(el.textContent||'')) return;
+  var w=el,g=0;
+  while(w&&g<4){
+   var h=w.innerHTML||'', r2=/\\/rozgrywki\\/mecz\\/([0-9a-fA-F-]{30,40})/g, m2, byl=false;
+   while((m2=r2.exec(h))!==null){pomijane[location.origin+'/rozgrywki/mecz/'+m2[1]]=1;byl=true;}
+   if(byl) break;
+   w=w.parentElement;g++;
+  }
+ });
+ var przed=out.length;
+ out=out.filter(function(v){return !pomijane[v];});
+ pominietych+=przed-out.length;
+ return out;
 }
 
 // Lista wyboru kolejki, jesli strona ja ma - dzieki niej przechodzimy CALY SEZON jednym
@@ -10569,6 +10602,7 @@ function listaKolejek(){
  return null;
 }
 
+var pominietych=0;
 var zebrane=[];try{zebrane=JSON.parse(localStorage.getItem(KLUCZ)||'[]');}catch(e){zebrane=[];}
 var bylo=zebrane.length, linki=[], i=0, kolejek=1, czekam=0;
 var box=document.createElement('div');
@@ -10597,7 +10631,7 @@ function nastepny(){
   var txt='';
   try{txt=(f.contentDocument&&f.contentDocument.body)?f.contentDocument.body.innerText:'';}catch(e){txt='';}
   var ok=/Sk\\u0142ad wyj\\u015bciowy/.test(txt);
-  if(ok||prob>40){
+  if(ok||prob>16){
    clearInterval(t);
    if(ok){
     var j=txt.search(/^\\s*Sk\\u0142ady\\s*$/m);
@@ -10638,7 +10672,7 @@ function koniec(){
  var p=document.createElement('textarea');p.value=zebrane.join('\\n\\n');document.body.appendChild(p);p.select();
  try{document.execCommand('copy');}catch(e){}
  document.body.removeChild(p);box.remove();
- alert('SBS v2: dolozylem '+(zebrane.length-bylo)+' protokolow (kolejek przejrzanych: '+kolejek+'). W schowku masz teraz '+zebrane.length+' lacznie.\\n\\nW aplikacji: Kluby -> wybierz grupe -> \\u201eWczytaj protokoly calej grupy\\u201d -> Ctrl+V.\\n\\nShift + klikniecie tej zakladki czysci zebrana liste.');
+ alert('SBS v2: dolozylem '+(zebrane.length-bylo)+' protokolow (kolejek przejrzanych: '+kolejek+(pominietych?', pominietych nierozegranych: '+pominietych:'')+'). W schowku masz teraz '+zebrane.length+' lacznie.\\n\\nW aplikacji: Kluby -> wybierz grupe -> \\u201eWczytaj protokoly calej grupy\\u201d -> Ctrl+V.\\n\\nShift + klikniecie tej zakladki czysci zebrana liste.');
 }
 
 start();
