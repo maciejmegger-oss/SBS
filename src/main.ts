@@ -3543,13 +3543,13 @@ function viewPlayers(){
     // (new Date(...).getFullYear() — liczba), a import rocznikowy wpisuje tekst z nazwy kategorii.
     // Przy ścisłym === liczbowy 2014 nie równał się tekstowemu "2014": zawodnik znikał z listy
     // rocznika, a ponowny import zakładał go drugi raz, bo nie znajdował istniejącego wpisu.
-    list = list.filter(p => String(p.birthYear||'') === year);
+    list = list.filter(p => rocznikZawodnika(p) === year);
   }
   if(playerFilters.region) list = list.filter(p=>clubRegion(p.clubId)===playerFilters.region);
   if(playerFilters.league) list = list.filter(p=>clubLeague(p.clubId)===playerFilters.league);
   if(playerFilters.status) list = list.filter(p=>p.status===playerFilters.status);
   if(playerFilters.position) list = list.filter(p=>p.position===playerFilters.position);
-  if(playerFilters.birthYear) list = list.filter(p=>String(p.birthYear||'')===String(playerFilters.birthYear));
+  if(playerFilters.birthYear) list = list.filter(p=>rocznikZawodnika(p)===String(playerFilters.birthYear));
   // „Niesprawdzone" to trzeci stan: ani zaznaczonego menedżera, ani śladu, że ktoś to weryfikował.
   if(playerFilters.agent==='tak') list = list.filter(p=>!!p.hasAgent);
   else if(playerFilters.agent==='nie') list = list.filter(p=>!p.hasAgent);
@@ -3584,7 +3584,7 @@ function viewPlayers(){
       <td><input type="checkbox" class="player-checkbox" data-id="${p.id}"></td>
       <td style="color:var(--ink-soft);font-size:12px;text-align:right;">${idx+1}</td>
       <td>${p.nationality?`<span title="${esc(p.nationality)}">${nationalityFlag(p.nationality)}</span> `:''}<strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</td>
-      <td>${p.birthYear||"—"}${isYouthPlayer(p)?youthBadge():''}</td>
+      <td>${rocznikHtml(p)}</td>
       <td>${esc(p.position)}</td>
       <td><div class="club-cell">${crestImg(clubCrest(p.clubId))}<span>
         <span class="club-name">${esc(clubName(p.clubId))}</span>
@@ -4909,7 +4909,7 @@ function viewClubDetail(id){
     return `<tr class="player-row" data-action="row-open-player" data-id="${p.id}" style="cursor:pointer;" title="Kliknij, aby otworzyć profil">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="squad-player-check" data-id="${p.id}"></td>
       <td>${p.nationality?`<span title="${esc(p.nationality)}">${nationalityFlag(p.nationality)}</span> `:''}<strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</td>
-      <td>${p.birthYear||"—"}${isYouthPlayer(p)?youthBadge():''}</td>
+      <td>${rocznikHtml(p)}</td>
       <td>${esc(p.position)}</td>
       <td>${p.status? `<span class="badge ${STATUS_CLASS[p.status]||'new'}">${esc(p.status)}</span>` : '—'}</td>
       <td style="text-align:right;">${p.matches!=null?p.matches:'—'}</td>
@@ -5485,16 +5485,51 @@ function podsumowanieMinut(przebieg){
   return `${lista.length} ${lista.length===1?'mecz':'meczów'} klubu &middot; ${pelne} pełnych &middot; ${zLawki} z ławki &middot; ${bez} bez gry &middot; średnio ${Math.round(srednia)} min`;
 }
 
+// Granica rocznika młodzieżowca — w jednym miejscu, bo wisi i w odznace, i w podpowiedziach,
+// i w filtrach. Rozjechane kopie tej liczby pokazywałyby dwie różne prawdy w jednym oknie.
+const ROCZNIK_MLODZIEZOWCA = 2006;
+
 function isYouthPlayer(p){
   // Protokół PZPN oznacza młodzieżowca wprost — i to źródło jest pewniejsze niż rocznik, bo
   // w IV lidze rocznika nie ma skąd wziąć, a przepis o młodzieżowcu obowiązuje tam tak samo.
   if(p && p.mlodziezowiec) return true;
-  const y = Number(p.birthYear);
-  return Number.isFinite(y) && y >= 2006;
+  const y = Number(rocznikZawodnika(p));
+  return Number.isFinite(y) && y >= ROCZNIK_MLODZIEZOWCA;
 }
-function youthBadge(){
+function youthBadge(p){
   // Wiodący odstęp (nbsp) + margines w CSS — żeby odznaka nie zlewała się z rokiem/datą obok.
-  return `&nbsp;<span class="youth-badge-3d" title="Młodzieżowiec — rocznik 2006 i młodszy">MŁ</span>`;
+  const rok = p ? rocznikZawodnika(p) : '';
+  const opis = rok
+    ? `Młodzieżowiec — rocznik ${rok}`
+    : `Młodzieżowiec z oznaczenia (M) w protokole PZPN, czyli rocznik ${ROCZNIK_MLODZIEZOWCA} lub młodszy. `
+      + 'Dokładnej daty urodzenia „Łączy nas piłka" nie publikuje — uzupełnij ją w kartotece zawodnika.';
+  return `&nbsp;<span class="youth-badge-3d" title="${esc(opis)}">MŁ</span>`;
+}
+
+// ROCZNIK — JEDNO ŹRÓDŁO PRAWDY DLA WSZYSTKICH LIST.
+//
+// Zawodnik dopisany z protokołu ma pustą datę urodzenia (ŁNP jej nie publikuje), ale bywa i tak,
+// że data jest, a samo pole „rocznik" zostało puste — wtedy lista pokazywała kreskę przy kimś,
+// o kim wiemy wszystko. Dlatego rocznik zawsze liczymy: z pola, a jak go nie ma — z daty.
+function rocznikZawodnika(p){
+  const wpisany = String((p && p.birthYear) || '').trim();
+  if(/^\d{4}$/.test(wpisany)) return wpisany;
+  const data = String((p && p.birthDate) || '').trim();
+  const m = data.match(/(\d{4})/);
+  if(m && Number(m[1]) > 1900 && Number(m[1]) < 2100) return m[1];
+  return '';
+}
+
+// Komórka „Rocznik" na listach. Gdy roku nie znamy, a protokół oznaczył zawodnika jako
+// młodzieżowca, mówimy tyle, ile z tego wynika — „2006 lub młodszy" — i podpisujemy to jako
+// wniosek z przepisu, a nie jako odczytaną datę. Kreska w tym miejscu nie mówiła nic.
+function rocznikHtml(p){
+  const rok = rocznikZawodnika(p);
+  if(rok) return `${esc(rok)}${isYouthPlayer(p)?youthBadge(p):''}`;
+  if(p && p.mlodziezowiec){
+    return `<span class="meta" style="white-space:nowrap;" title="Wniosek z oznaczenia (M) w protokole PZPN, a nie odczytana data urodzenia. Dokładnego rocznika „Łączy nas piłka” nie publikuje — uzupełnij go w kartotece zawodnika.">≤&nbsp;${ROCZNIK_MLODZIEZOWCA}</span>${youthBadge(p)}`;
+  }
+  return `—${isYouthPlayer(p)?youthBadge(p):''}`;
 }
 // Agent/agencja: jeśli w nazwie jest link (http…), rozdziel nazwę od linku i zrób go klikalnym
 // (przekierowanie do strony agencji, np. Transfermarkt). Bez linku — sama nazwa.
@@ -6912,7 +6947,7 @@ function viewMonitoring(){
     const pillClass = priority==="Pilne"?"pill-urgent": priority==="Top talent"?"pill-top":"pill-ok";
     return `<tr>
       <td><strong>${esc(p.lastName)} ${esc(p.firstName)}</strong></td>
-      <td>${p.birthYear||"—"}${isYouthPlayer(p)?youthBadge():''}</td>
+      <td>${rocznikHtml(p)}</td>
       <td>${esc(clubName(p.clubId))}</td>
       <td>${esc(clubRegion(p.clubId))}</td>
       <td>${a? a.count : 0}</td>
@@ -9364,7 +9399,7 @@ function openSquadImportModal(clubId){
                 <td style="width:24px;"><input type="checkbox" class="squad-row-check" data-idx="${i}" checked></td>
                 <td><strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</td>
                 <td>${esc(p.position||'—')}</td>
-                <td>${esc(p.birthYear||'—')}${isYouthPlayer(p)?youthBadge():''}</td>
+                <td>${rocznikHtml(p)}</td>
                 <td>${p.nationality? nationalityFlag(p.nationality)+' '+esc(p.nationality) : '—'}</td>
                 <td style="white-space:nowrap;">${agentPreviewHtml(p)}</td>
               </tr>` : `
@@ -12094,7 +12129,7 @@ function viewAgencyDetail(id){
   </tr>`).join('');
 
   const wierszeZawodnikow = zawodnicy.map(p=>`<tr>
-    <td><strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}${isYouthPlayer(p)?youthBadge():''}</td>
+    <td><strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}${isYouthPlayer(p)?youthBadge(p):''}</td>
     <td>${esc(p.birthYear||'—')}</td>
     <td>${esc(p.position||'—')}</td>
     <td><div class="club-cell">${crestImg(clubCrest(p.clubId))}<span class="club-name">${esc(clubName(p.clubId))}</span></div></td>
@@ -12200,7 +12235,7 @@ function openAddPlayersToAgencyModal(agencyId){
       <div style="max-height:320px;overflow:auto;border-top:1px solid var(--border);padding-top:8px;">
         ${l.length ? `<table><tbody>${l.slice(0,LIMIT).map(p=>`<tr>
           <td style="width:24px;"><input type="checkbox" class="dodaj-check" data-id="${p.id}" ${wybrani.has(p.id)?'checked':''} ${p.agencyId===agencyId?'disabled':''}></td>
-          <td><strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}${isYouthPlayer(p)?youthBadge():''}
+          <td><strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}${isYouthPlayer(p)?youthBadge(p):''}
             <span class="club-sub" style="display:block;">${esc(p.birthYear||'—')} · ${esc(clubName(p.clubId))}</span></td>
           <td style="font-size:12px;">${p.agencyId===agencyId
             ? '<span class="note">już w tej agencji</span>'
@@ -12504,7 +12539,7 @@ function openAgencySquadModal(agencyId){
             <table><tbody>
             ${trafione.map((x,i)=>`<tr>
               <td style="width:24px;"><input type="checkbox" class="squad-row-check" data-idx="${i}" checked></td>
-              <td><strong>${esc(x.player.lastName)}</strong> ${esc(x.player.firstName)}${isYouthPlayer(x.player)?youthBadge():''}
+              <td><strong>${esc(x.player.lastName)}</strong> ${esc(x.player.firstName)}${isYouthPlayer(x.player)?youthBadge(x.player):''}
                 <span class="club-sub" style="display:block;">${esc(clubName(x.player.clubId))}</span></td>
               <td style="font-size:12px;">${x.player.agencyId===agencyId
                 ? '<span class="note">już przypisany</span>'
@@ -12513,7 +12548,7 @@ function openAgencySquadModal(agencyId){
             </tr>`).join('')}
             ${doZalozenia.map((x,i)=>`<tr style="background:rgba(198,155,60,0.06);">
               <td style="width:24px;"><input type="checkbox" class="squad-new-check" data-idx="${i}" ${zakladajBrakujacych?'checked':''}></td>
-              <td>${esc(x.nazwa)}${x.rocznik && Number(x.rocznik)>=2006 ? youthBadge() : ''}
+              <td>${esc(x.nazwa)}${x.rocznik && Number(x.rocznik)>=2006 ? youthBadge({birthYear:x.rocznik}) : ''}
                 <span class="club-sub" style="display:block;">${esc(x.klubBazy.name)}${x.rocznik? ' · '+esc(x.rocznik):''}${x.pozycja? ' · '+esc(x.pozycja):''}</span></td>
               <td style="font-size:12px;color:var(--gold-dark);">nowy — założę</td>
             </tr>`).join('')}
@@ -12927,7 +12962,7 @@ function openAgentImportModal(){
               const p = x.player;
               return `<tr>
                 <td style="width:24px;"><input type="checkbox" class="agent-row-check" data-idx="${i}" checked></td>
-                <td><strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}${isYouthPlayer(p)?youthBadge():''}
+                <td><strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}${isYouthPlayer(p)?youthBadge(p):''}
                   <span class="note" style="display:block;">${esc(clubName(p.clubId))}</span></td>
                 <td style="font-size:12px;">${p.hasAgent ? `<span class="agent-yes">Tak</span>${p.agencyName?' · '+esc(p.agencyName):''}` : `<span class="agent-no">Nie</span>`}</td>
                 <td style="font-size:12px;">→ ${x.maAgenta
@@ -13569,7 +13604,7 @@ function open90minutStatsModal(clubId){
       <tr style="text-align:left;color:var(--ink-soft);"><th style="padding:4px;">Zawodnik</th><th style="padding:4px;">Rocznik</th><th style="padding:4px;">Było</th><th style="padding:4px;">Będzie</th></tr>
       ${r.zmiany.map(z=>`<tr style="border-top:1px solid var(--border);">
         <td style="padding:4px;font-weight:600;">${esc(z.kto)}</td>
-        <td style="padding:4px;">${z.rocznik?`<strong style="color:var(--heading);">${esc(String(z.rocznik))}</strong>${Number(z.rocznik)>=2006?youthBadge():''}`:'<span class="meta">—</span>'}</td>
+        <td style="padding:4px;">${z.rocznik?`<strong style="color:var(--heading);">${esc(String(z.rocznik))}</strong>${Number(z.rocznik)>=2006?youthBadge({birthYear:z.rocznik}):''}`:'<span class="meta">—</span>'}</td>
         <td style="padding:4px;color:var(--ink-soft);">${esc(z.bylo)}</td>
         <td style="padding:4px;">${esc(z.bedzie)}</td></tr>`).join('')}
     </table>`;
@@ -13615,7 +13650,7 @@ function open90minutStatsModal(clubId){
         ${wynik.spozaBazy.length ? `<div style="border-left:3px solid var(--gold-dark);padding:8px 12px;margin-top:10px;background:var(--card-soft);font-size:12px;">
           <strong>Zagrali w tym klubie, ale nie ma ich w kartotece — ${wynik.spozaBazy.length}:</strong>
           <div style="margin-top:6px;line-height:1.8;">
-          ${wynik.spozaBazy.map(x=>`${esc(x.kto)}${x.rocznik?` <strong>${x.rocznik}</strong>${Number(x.rocznik)>=2006?youthBadge():''}`:''} — ${x.minuty} min${
+          ${wynik.spozaBazy.map(x=>`${esc(x.kto)}${x.rocznik?` <strong>${x.rocznik}</strong>${Number(x.rocznik)>=2006?youthBadge({birthYear:x.rocznik}):''}`:''} — ${x.minuty} min${
             x.powod && x.powod !== 'nie ma go w kartotece tego klubu' ? ` <span class="note">(${esc(x.powod)})</span>` : ''}`).join('<br>')}</div>
           ${wynik.nazwiskaWKlubie && wynik.nazwiskaWKlubie.length ? `<details style="margin-top:8px;">
             <summary style="cursor:pointer;color:var(--ink-soft);">Kogo mam w kartotece tego klubu (${wynik.nazwiskaWKlubie.length}) — sprawdź, czy to nie ta sama osoba w innej pisowni</summary>
@@ -15145,7 +15180,7 @@ async function generatePlayerPDF(playerId){
   </div>
 
   <div class="player-meta">
-    <div class="meta-item"><div class="lbl">Rocznik</div><div class="val">${esc(p.birthYear||"—")}${isYouthPlayer(p)?youthBadge():''}</div></div>
+    <div class="meta-item"><div class="lbl">Rocznik</div><div class="val">${rocznikHtml(p)}</div></div>
     <div class="meta-item"><div class="lbl">Wzrost</div><div class="val">${p.height?p.height+" cm":"—"}</div></div>
     <div class="meta-item"><div class="lbl">Noga</div><div class="val">${esc(p.foot||"—")}</div></div>
     <div class="meta-item"><div class="lbl">System gry</div><div class="val">${esc(p.formation||"—")}</div></div>
