@@ -10699,7 +10699,7 @@ function listaKolejek(){
 
 var pominietych=0;
 var zebrane=[];try{zebrane=JSON.parse(localStorage.getItem(KLUCZ)||'[]');}catch(e){zebrane=[];}
-var bylo=zebrane.length, linki=[], i=0, kolejek=1, czekam=0;
+var bylo=zebrane.length, linki=[], i=0, kolejek=1, czekam=0, doliczen=0, rozwiniete=false;
 
 function dociagnijStrone(gotowe){
  var krok=0;
@@ -10719,10 +10719,15 @@ function start(){
   box.textContent='SBS v3: jestes na stronie meczu - zbieram ten jeden';
   linki=[location.href];nastepny();return;
  }
+ if(!rozwiniete){
+  rozwiniete=true;
+  box.textContent='SBS v3: rozwijam liste meczow...';
+  dociagnijStrone(start);
+  return;
+ }
  linki=zbierzLinki();
  if(linki.length){box.textContent='SBS v3: zbieram protokoly 0/'+linki.length;nastepny();return;}
  czekam++;
- if(czekam===1){box.textContent='SBS v3: rozwijam liste meczow...';dociagnijStrone(start);return;}
  if(czekam<12){box.textContent='SBS v3: czekam, az strona sie zaladuje...';setTimeout(start,500);return;}
  box.remove();
  var wszystkieA=document.querySelectorAll('a').length;
@@ -10762,6 +10767,15 @@ function nastepny(){
 
 function poKolejce(){
  try{localStorage.setItem(KLUCZ,JSON.stringify(zebrane));}catch(e){}
+ var swieze=zbierzLinki().filter(function(u){
+  for(var q=0;q<zebrane.length;q++) if(zebrane[q].indexOf('### PROTOKOL: '+u+'\\n')===0) return false;
+  return true;
+ });
+ if(swieze.length&&doliczen<6){
+  doliczen++;
+  box.textContent='SBS v3: doszlo '+swieze.length+' meczow - zbieram dalej';
+  linki=swieze;i=0;nastepny();return;
+ }
  var wybor=listaKolejek();
  if(wybor&&wybor.selectedIndex+1<wybor.options.length&&kolejek<40){
   kolejek++;
