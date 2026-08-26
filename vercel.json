@@ -1,28 +1,75 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
-    { "path": "/api/refresh-stats", "schedule": "0 5 * * *" },
-    { "path": "/api/refresh-schedule", "schedule": "0 21 * * 5" }
+    {
+      "path": "/api/refresh-stats",
+      "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/refresh-schedule",
+      "schedule": "0 21 * * 5"
+    }
   ],
   "rewrites": [
-    { "source": "/m", "destination": "/mobile.html" },
-    { "source": "/app", "destination": "/app.html" }
+    {
+      "source": "/m",
+      "destination": "/mobile.html"
+    },
+    {
+      "source": "/app",
+      "destination": "/app.html"
+    }
   ],
   "headers": [
     {
       "source": "/(.*)",
       "headers": [
-        { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
-        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
-        { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains" }
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "SAMEORIGIN"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Strict-Transport-Security",
+          "value": "max-age=31536000; includeSubDomains"
+        }
       ]
     },
     {
       "source": "/(app|m|app.html|mobile.html)",
       "headers": [
-        { "key": "X-Robots-Tag", "value": "noindex, nofollow" },
-        { "key": "Cache-Control", "value": "no-store" }
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    },
+    {
+      "source": "/zakladka-lnp.js",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        },
+        {
+          "key": "Content-Type",
+          "value": "application/javascript; charset=utf-8"
+        }
       ]
     }
   ]
