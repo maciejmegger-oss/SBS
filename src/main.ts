@@ -10678,7 +10678,7 @@ function zbierzLinki(){
  [].slice.call(document.querySelectorAll('[routerlink],[ng-reflect-router-link],[data-href],[data-url]'))
   .forEach(function(el){for(var i=0;i<el.attributes.length;i++){var v=el.attributes[i].value||'';
    if(/\\/mecz\\//.test(v)){try{dodaj(new URL(v,location.origin).href,el);}catch(e){}}}});
- if(!wynik.length&&!pominietych){
+ if(!wynik.length){
   var html=document.documentElement.innerHTML||'';
   var re=/\\/rozgrywki\\/mecz\\/([0-9a-fA-F-]{30,40})/g,m;
   while((m=re.exec(html))!==null) dodaj(location.origin+'/rozgrywki/mecz/'+m[1],null);
@@ -10728,7 +10728,8 @@ function start(){
  var wszystkieA=document.querySelectorAll('a').length;
  var zMecz=[].slice.call(document.querySelectorAll('a')).filter(function(a){return /mecz/i.test(a.getAttribute('href')||'');}).length;
  var dlugoscTekstu=(document.body.innerText||'').length;
- var slad=' [na stronie: odnosnikow '+wszystkieA+', w tym wskazujacych na mecz '+zMecz+'; tekstu '+dlugoscTekstu+' znakow; wysokosc '+document.body.scrollHeight+']';
+ var zKodu=0;try{var hh=document.documentElement.innerHTML||'';var rr=/\\/rozgrywki\\/mecz\\/[0-9a-fA-F-]{30,40}/g;var mm;while((mm=rr.exec(hh))!==null)zKodu++;}catch(e){}
+ var slad=' [na stronie: odnosnikow '+wszystkieA+', w tym wskazujacych na mecz '+zMecz+'; numerow meczu w kodzie '+zKodu+'; tekstu '+dlugoscTekstu+' znakow; wysokosc '+document.body.scrollHeight+']';
  alert('SBS v3: nie znalazlem na tej stronie ani jednego odnosnika do meczu - zjechalem tez na sam dol i rozwinalem liste.\\n\\nSprobuj tak: zjedz na dol do sekcji \\u201eMecze\\u201d, poczekaj az pojawia sie wyniki, i dopiero wtedy kliknij zakladke. Mozesz tez wejsc w konkretny klub (jego strona ma sekcje \\u201eRozegrane mecze\\u201d) i kliknac ja tam.'+slad);
 }
 
