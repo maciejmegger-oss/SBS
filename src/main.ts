@@ -4246,8 +4246,18 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz){
         <input type="checkbox" id="pm-dopisuj" ${dopisujBrak?'checked':''} style="margin-top:3px;">
         <span>Zakładaj kartoteki zawodnikom, których nie ma w bazie — z numerem, pozycją bramkarza i znacznikiem młodzieżowca z protokołu.</span>
       </label>
+      ${!wynik ? `<div style="background:var(--chalk);border:1px solid var(--chalk-dim);border-radius:8px;padding:12px 14px;margin-bottom:10px;">
+        <strong style="color:var(--heading);">To okno nie pobiera danych samo</strong>
+        <p class="note" style="margin:4px 0 8px;">„Łączy nas piłka" pokazuje składy wyłącznie przeglądarce — serwer dostaje pustą stronę. Dlatego mecze zbiera zakładka, klikana na ŁNP. Zajmuje to trzy ruchy raz na kolejkę:</p>
+        <ol class="note" style="margin:0;padding-left:18px;line-height:1.9;">
+          <li>Lista meczów tej grupy <strong>właśnie otworzyła się w nowej karcie</strong> (jeśli nie — kliknij „↗ Otwórz kolejkę w ŁNP" niżej).</li>
+          <li>Na tej stronie kliknij zakładkę <strong>„⚡ Zbierz całą kolejkę (v3)"</strong> z paska i poczekaj, aż licznik dojdzie do końca.</li>
+          <li><strong>Nic więcej.</strong> To okno otworzy się samo z gotowymi protokołami — bez kopiowania i wklejania.</li>
+        </ol>
+        <p class="note" style="margin:8px 0 0;">Nie masz zakładki na pasku? Kliknij <strong>„🚀 Szybkie kopiowanie z ŁNP"</strong> i przeciągnij ją tam raz.</p>
+      </div>` : ''}
       <div class="field-wrap">
-        <textarea id="pm-tekst" rows="8" placeholder="Wklej tu całą stronę meczu z laczynaspilka.pl" style="font-size:12px;font-family:monospace;"></textarea>
+        <textarea id="pm-tekst" rows="4" placeholder="(pole zapasowe — gdybyś miał protokoły w schowku, naciśnij tu Ctrl+V)" style="font-size:12px;font-family:monospace;"></textarea>
       </div>
       ${komunikat ? `<p class="note" style="color:var(--clay-dark);">${esc(komunikat)}</p>` : ''}
       ${wynik ? `<div style="max-height:280px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px;font-size:12.5px;">
@@ -8045,7 +8055,16 @@ function attachHandlers(){
     // protokołów zebranych zakładką — jedno wklejenie rozlicza wszystkie kluby grupy naraz,
     // z minutami, golami i kartkami ze wszystkich rozegranych kolejek.
     const poziom = clubBrowse.top;
-    if(poziom === 'IV liga' || poziom === 'Klasa okręgowa'){ openProtokolMeczuModal(null); return; }
+    if(poziom === 'IV liga' || poziom === 'Klasa okręgowa'){
+      // JEDNO KLIKNIĘCIE ROBI TYLE, ILE MOŻE. Przeglądarka nie pozwala nam sięgnąć do cudzej
+      // strony z poziomu SBS — to zabezpieczenie, którego nie da się (i nie należy) obchodzić.
+      // Otwieramy więc od razu właściwą stronę ŁNP i zostawiamy człowiekowi JEDEN ruch: kliknięcie
+      // zakładki. Wszystko po nim dzieje się samo, łącznie z powrotem tutaj.
+      const adres = (DB.settings.lnpGrupy||{})[clubBrowse.group] || '';
+      if(adres) window.open(adres, '_blank', 'noopener');
+      openProtokolMeczuModal(null);
+      return;
+    }
     openGrupaStatsModal();
   });
   main.querySelectorAll('[data-action="import-klubow-ligi"]').forEach(b=>b.onclick=()=>openImportKlubowModal());
