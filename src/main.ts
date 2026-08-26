@@ -4306,12 +4306,19 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz){
       const adres = klubowy || wlasny;
       if(adres){ window.open(adres, '_blank', 'noopener'); return; }
 
+      // MAMY LINK DO GRUPY — OTWIERAMY BEZ PYTANIA. Kolejka całej grupy jest do zbierania nawet
+      // lepsza niż strona pojedynczego klubu (jedno przejście zbiera wszystkie osiemnaście),
+      // więc nie ma po co prosić o cokolwiek. O adres klubu pytamy tylko wtedy, gdy nie mamy
+      // ani jego, ani grupy — czyli gdy inaczej nie otworzylibyśmy niczego sensownego.
+      if(grupowy){ window.open(grupowy, '_blank', 'noopener'); return; }
+
       if(klub){
         const wpisany = prompt(
           `Adres klubu „${klub.name}" na Łączy nas piłka.\n\n`
           + `Na ŁNP wejdź w ten klub (jego strona ma listę WSZYSTKICH jego meczów), skopiuj adres\n`
           + `z paska przeglądarki i wklej tutaj. Zapamiętam go — następnym razem otworzy się od razu.\n\n`
-          + `Zostaw puste, żeby otworzyć kolejkę całej grupy.`, '');
+          + `To NIEOBOWIĄZKOWE — zostaw puste i naciśnij OK, a otworzę stronę rozgrywek,\n`
+          + `gdzie wybierzesz grupę z list.`, '');
         const czysty = String(wpisany || '').trim();
         if(czysty && /^https?:\/\/(www\.)?laczynaspilka\.pl\//i.test(czysty)){
           DB.settings.lnpKluby = { ...(DB.settings.lnpKluby||{}), [klub.id]: czysty };
@@ -4322,7 +4329,6 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz){
         if(czysty){ alert('To nie jest adres z laczynaspilka.pl — nic nie zapisałem.'); return; }
       }
 
-      if(grupowy){ window.open(grupowy, '_blank', 'noopener'); return; }
       alert('Nie mam jeszcze żadnego adresu tej grupy ani klubu na „Łączy nas piłka".\n\n'
         + 'Otworzę stronę rozgrywek — ustaw tam Sezon, Ligę i Grupę, a potem skopiuj adres '
         + 'z paska przeglądarki i wklej go przyciskiem „🔗 Link ŁNP dla grupy" (Kluby → wybierz grupę).');
@@ -10693,13 +10699,27 @@ var pominietych=0;
 var zebrane=[];try{zebrane=JSON.parse(localStorage.getItem(KLUCZ)||'[]');}catch(e){zebrane=[];}
 var bylo=zebrane.length, linki=[], i=0, kolejek=1, czekam=0;
 
+function dociagnijStrone(gotowe){
+ var krok=0;
+ var t=setInterval(function(){
+  krok++;
+  try{window.scrollTo(0,document.body.scrollHeight);}catch(e){}
+  var wiecej=[].slice.call(document.querySelectorAll('button,a')).filter(function(el){
+   return /zaladuj wiecej|za\u0142aduj wi\u0119cej|pokaz wiecej|poka\u017c wi\u0119cej/i.test((el.textContent||'').trim());
+  });
+  wiecej.forEach(function(el){try{el.click();}catch(e){}});
+  box.textContent='SBS v3: rozwijam liste meczow ('+krok+')...';
+  if(krok>=6){clearInterval(t);try{window.scrollTo(0,0);}catch(e){}gotowe();}
+ },700);
+}
 function start(){
  linki=zbierzLinki();
  if(linki.length){box.textContent='SBS v3: zbieram protokoly 0/'+linki.length;nastepny();return;}
  czekam++;
+ if(czekam===1){box.textContent='SBS v3: rozwijam liste meczow...';dociagnijStrone(start);return;}
  if(czekam<12){box.textContent='SBS v3: czekam, az strona sie zaladuje...';setTimeout(start,500);return;}
  box.remove();
- alert('SBS v3: na tej stronie nie ma odnosnikow do meczow.\\n\\nJestes na WIDOKU TABELI. Przelacz na widok MECZOW/TERMINARZA (przycisk \\u201eWidok\\u2026\\u201d w prawym gornym rogu albo zakladka z kolejkami), poczekaj az pokaza sie wyniki i kliknij zakladke ponownie.');
+ alert('SBS v3: nie znalazlem na tej stronie ani jednego odnosnika do meczu - zjechalem tez na sam dol i rozwinalem liste.\\n\\nSprobuj tak: zjedz na dol do sekcji \\u201eMecze\\u201d, poczekaj az pojawia sie wyniki, i dopiero wtedy kliknij zakladke. Mozesz tez wejsc w konkretny klub (jego strona ma sekcje \\u201eRozegrane mecze\\u201d) i kliknac ja tam.');
 }
 
 function nastepny(){
