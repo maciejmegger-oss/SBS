@@ -4081,7 +4081,11 @@ function viewClubs(){
         // wejść w kartotekę i osiemnaście kliknięć — przy szesnastu grupach IV ligi robota na cały
         // wieczór. Przycisk przechodzi wszystkie kluby z widoku po kolei. IV liga stała tu dotąd
         // z boku, bo jej protokołów nie dawało się czytać z serwera; teraz idzie tą samą drogą.
-        ? `<button class="secondary" data-action="stats-90minut-grupa" title="Pobierz i zapisz statystyki wszystkich klubów widocznych na liście — po kolei, jeden po drugim">⏱ Odśwież statystyki — cały widok (${list.length})</button>`
+        ? `<button class="gold" data-action="stats-90minut-grupa" title="${
+            clubBrowse.top === 'IV liga' || clubBrowse.top === 'Klasa okręgowa'
+              ? 'Wczytaj protokoły zebrane zakładką z ŁNP — jedno wklejenie rozlicza wszystkie kluby grupy'
+              : 'Pobierz i zapisz statystyki wszystkich klubów widocznych na liście — po kolei, jeden po drugim'
+          }">⏱ Odśwież statystyki — cały widok (${list.length})</button>`
         : ''}
       <button class="secondary" data-action="merge-duplicates" title="Znajdź kluby wpisane dwa razy pod różnymi nazwami i połącz je w jeden">🧹 Scal duplikaty</button>
       <button class="gold" data-action="add-club">+ Nowy klub</button>
@@ -8011,7 +8015,20 @@ function attachHandlers(){
     const adres = (DB.settings.lnpGrupy||{})[clubBrowse.group];
     if(adres) window.open(adres, '_blank', 'noopener');
   });
-  main.querySelectorAll('[data-action="stats-90minut-grupa"]').forEach(b=>b.onclick=()=>openGrupaStatsModal());
+  main.querySelectorAll('[data-action="stats-90minut-grupa"]').forEach(b=>b.onclick=()=>{
+    // JEDEN PRZYCISK, DWIE DROGI — bo źródła są dwa i nic na to nie poradzimy.
+    //
+    // II i III liga: 90minut oddaje dane serwerowi, więc odświeżamy same, klub po klubie.
+    // IV liga i klasa okręgowa: „Łączy nas piłka" wysyła serwerom atrapę strony (sprawdzone —
+    // plik z kodem aplikacji ma dwieście znaków zamiast megabajtów), a składy pokazuje wyłącznie
+    // przeglądarce. Kierowanie tego przycisku na serwer dawało tam osiemnaście czerwonych
+    // krzyżyków pod rząd. Prowadzi więc od razu tam, gdzie dane naprawdę są: do wczytania
+    // protokołów zebranych zakładką — jedno wklejenie rozlicza wszystkie kluby grupy naraz,
+    // z minutami, golami i kartkami ze wszystkich rozegranych kolejek.
+    const poziom = clubBrowse.top;
+    if(poziom === 'IV liga' || poziom === 'Klasa okręgowa'){ openProtokolMeczuModal(null); return; }
+    openGrupaStatsModal();
+  });
   main.querySelectorAll('[data-action="import-klubow-ligi"]').forEach(b=>b.onclick=()=>openImportKlubowModal());
   main.querySelectorAll('[data-action="edit-club"]').forEach(b=>b.onclick=()=>openClubModal(b.dataset.id));
   main.querySelectorAll('[data-action="delete-club"]').forEach(b=>b.onclick=async()=>{
