@@ -2136,6 +2136,9 @@ async function loadAll(){
     settled = true;
   })();
   await Promise.race([loadPromise, timeoutGuard]);
+  // Kartoteka jest już w pamięci — jeśli zakładka z ŁNP zdążyła przysłać protokoły, teraz je otwieramy.
+  bazaGotowaDlaLnp = true;
+  odbierzZalegleProtokoly();
   // Odświeżanie statystyk celowo POZA wyścigiem z limitem czasu — to praca w tle, która nie może
   // opóźnić pokazania bazy. Błędy tu nie mogą przewrócić startu aplikacji.
   refreshStatsInBackground().catch(e=>console.warn('Odświeżanie statystyk w tle nie powiodło się:', e));
@@ -4214,7 +4217,7 @@ function scalDuplikatyPoNazwie(nazwy, docelowaLiga){
 // kolejki, bo protokół niesie obie drużyny, a każdą dopasowujemy do kartoteki po nazwie. Klub
 // służy tylko za punkt wyjścia (tytuł, licznik, link do ŁNP), więc wolno go nie podawać: wtedy
 // oknem rządzi wybrana grupa i nie trzeba wchodzić w żaden klub.
-function openProtokolMeczuModal(clubId){
+function openProtokolMeczuModal(clubId, tekstZZewnatrz){
   const klub = DB.clubs.find(c=>c.id===clubId);
   const grupa = klub ? klub.league : (clubBrowse.group || clubBrowse.top || '');
   const klubyGrupy = DB.clubs.filter(c=>c.league === grupa);
@@ -4331,6 +4334,16 @@ function openProtokolMeczuModal(clubId){
     const pole = overlay.querySelector('#pm-tekst');
     if(pole && !wynik) pole.focus();
   };
+
+  // Protokoły przysłane wprost ze strony ŁNP (zakładka) — wpadają tu bez udziału schowka
+  // i od razu idą do rozpoznania, tak jakby ktoś je wkleił.
+  if(tekstZZewnatrz && String(tekstZZewnatrz).trim()){
+    rysuj();
+    const pole = overlay.querySelector('#pm-tekst') as any;
+    if(pole) pole.value = tekstZZewnatrz;
+    rozpoznaj();
+    return;
+  }
 
   // CTRL+V I GOTOWE — bez klikania czegokolwiek.
   //
@@ -10280,7 +10293,20 @@ function zdarzeniaZProtokolu(rawText){
 function przetworzProtokolLnp(rawText){
   const zdarzenia = zdarzeniaZProtokolu(rawText);
   const druzyny = nazwyDruzynZProtokolu(rawText);
-  if(druzyny.length < 1) return {blad:'W tej wklejce nie widzę sekcji „Skład wyjściowy" — to chyba nie jest protokół meczu.'};
+  if(druzyny.length < 1){
+    // POWIEDZ, CO FAKTYCZNIE PRZYSZŁO. „To chyba nie jest protokół" nie mówi, gdzie szukać winy:
+    // czy schowek jest pusty, czy zakładka skopiowała samą tabelę, czy siedzi w nim coś zupełnie
+    // innego sprzed godziny. Początek wklejki rozstrzyga to w jednej chwili.
+    const czysty = String(rawText||'').replace(/\s+/g,' ').trim();
+    if(!czysty) return {blad:'Schowek jest pusty — nie mam czego rozpoznać. Zbierz mecze zakładką „⚡ Zbierz całą kolejkę" na stronie ŁNP i naciśnij tutaj Ctrl+V.'};
+    const maZnacznik = /^###\s*PROTOKOL:/m.test(rawText||'');
+    return {blad: (maZnacznik
+      ? 'To jest wklejka z zakładki, ale w żadnym meczu nie ma sekcji „Skład wyjściowy" — protokoły zebrały się puste. '
+        + 'Sprawdź na ŁNP, czy te mecze mają już opublikowane składy.'
+      : 'W tej wklejce nie widzę sekcji „Skład wyjściowy" ani znacznika zakładki. W schowku jest chyba coś innego. '
+        + 'Uwaga: zakładkę trzeba było ostatnio wciągnąć na pasek NA NOWO — starsza nie kopiowała nic.')
+      + ` Początek wklejki: „${czysty.slice(0,120)}…"`};
+  }
   const klucz = kluczProtokolu(druzyny, rawText);
   const strony = [];
 
@@ -10526,6 +10552,42 @@ function tmStatsLink(club){
 // Podpisów nie tłumaczymy tutaj na „gol" czy „kartka" — robi to aplikacja przy wczytywaniu.
 // Dzięki temu, gdy ŁNP zmieni nazwy klas, poprawka idzie w aplikacji, a Ty nie musisz na nowo
 // wciągać zakładki na pasek.
+// ODBIÓR PROTOKOŁÓW WPROST ZE STRONY ŁNP — BEZ SCHOWKA.
+//
+// Schowek okazał się najsłabszym ogniwem: przeglądarka pyta o zgodę, odmawia, a użytkownik nie ma
+// jak sprawdzić, czy cokolwiek się skopiowało. Dane da się jednak przesłać bezpośrednio: zakładka
+// pracuje na stronie ŁNP, otwiera SBS w nowej karcie i podaje mu zebrane protokoły wiadomością
+// między oknami. Nikt niczego nie kopiuje ani nie wkleja.
+//
+// BEZPIECZEŃSTWO: przyjmujemy wyłącznie wiadomości od „Łączy nas piłka" i wyłącznie w umówionym
+// kształcie. Cokolwiek innego przyjdzie z dowolnej innej strony, jest po prostu pomijane.
+const ZRODLO_LNP = 'https://www.laczynaspilka.pl';
+let protokolyZLnpDoOdbioru = '';
+let bazaGotowaDlaLnp = false;
+function odbierzZalegleProtokoly(){
+  if(!protokolyZLnpDoOdbioru || !bazaGotowaDlaLnp) return;
+  const tresc = protokolyZLnpDoOdbioru;
+  protokolyZLnpDoOdbioru = '';
+  openProtokolMeczuModal(null, tresc);
+}
+function podlaczOdbiorZLnp(){
+  window.addEventListener('message', (e)=>{
+    if(e.origin !== ZRODLO_LNP) return;
+    const d = e.data;
+    if(!d || d.typ !== 'sbs-protokoly' || typeof d.tresc !== 'string' || !d.tresc.trim()) return;
+    try{ (e.source as any).postMessage({typ:'sbs-odebrano'}, ZRODLO_LNP); }catch(err){}
+    // Wiadomość potrafi przyjść, zanim aplikacja wczyta kartotekę klubów — wtedy rozpoznanie
+    // nie miałoby czego z czym dopasować. Odkładamy ją i otwieramy okno, gdy dane już są.
+    protokolyZLnpDoOdbioru = d.tresc;
+    odbierzZalegleProtokoly();
+  });
+  // Zakładka czeka na ten znak, zanim cokolwiek wyśle — inaczej trafiłaby w kartę, która jeszcze
+  // się nie wczytała, i wiadomość przepadłaby bez śladu.
+  if(window.opener){
+    try{ window.opener.postMessage({typ:'sbs-gotowy'}, ZRODLO_LNP); }catch(err){}
+  }
+}
+
 const LNP_ZDARZENIA = `
 function zdarzenia(d){try{
  if(!d) return '';
@@ -10576,11 +10638,17 @@ function sprawdzZakladke(nazwa, kod){
   catch(e){ console.error('SBS: zakładka „'+nazwa+'" nie przetrwa zapisania w pasku — '+e.message); }
 }
 
+const SBS_ADRES_JS = JSON.stringify(location.origin);
 const LNP_HURT_BOOKMARKLET = `javascript:(function(){
+var SBS_ADRES=${SBS_ADRES_JS};
+var box=document.createElement('div');
+box.style.cssText='position:fixed;right:16px;bottom:16px;z-index:2147483647;background:#16302A;color:#F6F3EA;padding:12px 16px;border-radius:8px;font:14px sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.4)';
+box.textContent='SBS v3: zaczynam...';
+(document.body||document.documentElement).appendChild(box);
 ${LNP_ZDARZENIA}
-if(!/laczynaspilka\\.pl/.test(location.host)){alert('SBS v2: to nie jest strona Laczy nas pilka.');return;}
+if(!/laczynaspilka\\.pl/.test(location.host)){box.remove();alert('SBS v3: to nie jest strona Laczy nas pilka.');return;}
 var KLUCZ='sbs_protokoly_hurt';
-if(window.event&&window.event.shiftKey){try{localStorage.removeItem(KLUCZ);}catch(e){}alert('SBS v2: wyczyscilem zebrane protokoly.');return;}
+if(window.event&&window.event.shiftKey){try{localStorage.removeItem(KLUCZ);}catch(e){}alert('SBS v3: wyczyscilem zebrane protokoly.');return;}
 
 function zbierzLinki(){
  var out=[];
@@ -10624,23 +10692,20 @@ function listaKolejek(){
 var pominietych=0;
 var zebrane=[];try{zebrane=JSON.parse(localStorage.getItem(KLUCZ)||'[]');}catch(e){zebrane=[];}
 var bylo=zebrane.length, linki=[], i=0, kolejek=1, czekam=0;
-var box=document.createElement('div');
-box.style.cssText='position:fixed;right:16px;bottom:16px;z-index:999999;background:#16302A;color:#F6F3EA;padding:12px 16px;border-radius:8px;font:14px sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.4)';
-document.body.appendChild(box);
 
 function start(){
  linki=zbierzLinki();
- if(linki.length){box.textContent='SBS v2: zbieram protokoly 0/'+linki.length;nastepny();return;}
+ if(linki.length){box.textContent='SBS v3: zbieram protokoly 0/'+linki.length;nastepny();return;}
  czekam++;
- if(czekam<12){box.textContent='SBS v2: czekam, az strona sie zaladuje...';setTimeout(start,500);return;}
+ if(czekam<12){box.textContent='SBS v3: czekam, az strona sie zaladuje...';setTimeout(start,500);return;}
  box.remove();
- alert('SBS v2: na tej stronie nie ma odnosnikow do meczow.\\n\\nJestes na WIDOKU TABELI. Przelacz na widok MECZOW/TERMINARZA (przycisk \\u201eWidok\\u2026\\u201d w prawym gornym rogu albo zakladka z kolejkami), poczekaj az pokaza sie wyniki i kliknij zakladke ponownie.');
+ alert('SBS v3: na tej stronie nie ma odnosnikow do meczow.\\n\\nJestes na WIDOKU TABELI. Przelacz na widok MECZOW/TERMINARZA (przycisk \\u201eWidok\\u2026\\u201d w prawym gornym rogu albo zakladka z kolejkami), poczekaj az pokaza sie wyniki i kliknij zakladke ponownie.');
 }
 
 function nastepny(){
  if(i>=linki.length){ poKolejce(); return; }
  var url=linki[i];
- box.textContent='SBS v2: kolejka '+kolejek+' - protokoly '+i+'/'+linki.length+' (razem '+zebrane.length+')';
+ box.textContent='SBS v3: kolejka '+kolejek+' - protokoly '+i+'/'+linki.length+' (razem '+zebrane.length+')';
  var f=document.createElement('iframe');
  f.style.cssText='position:fixed;left:-9999px;width:1200px;height:2000px';
  f.src=url;document.body.appendChild(f);
@@ -10669,7 +10734,7 @@ function poKolejce(){
  var wybor=listaKolejek();
  if(wybor&&wybor.selectedIndex+1<wybor.options.length&&kolejek<40){
   kolejek++;
-  box.textContent='SBS v2: przechodze do kolejki '+kolejek+'...';
+  box.textContent='SBS v3: przechodze do kolejki '+kolejek+'...';
   var poprzednie=linki.join('|');
   wybor.selectedIndex=wybor.selectedIndex+1;
   wybor.dispatchEvent(new Event('change',{bubbles:true}));
@@ -10695,9 +10760,36 @@ function koniec(){
  if(!udalo&&navigator.clipboard&&navigator.clipboard.writeText){
   try{navigator.clipboard.writeText(tresc);udalo=true;}catch(e){}
  }
+ var doSbs=SBS_ADRES+'/app?sbs=odbior';
+ box.textContent='SBS v3: wysylam '+zebrane.length+' protokolow do aplikacji...';
+ var okno=null;
+ try{okno=window.open(doSbs,'sbs_odbior');}catch(e){okno=null;}
+ if(okno){
+  var wyslane=false;
+  var nasluch=function(ev){
+   if(!ev.data||ev.data.typ!=='sbs-gotowy') return;
+   try{okno.postMessage({typ:'sbs-protokoly',tresc:tresc},SBS_ADRES);wyslane=true;}catch(e){}
+  };
+  var potwierdzenie=function(ev){
+   if(!ev.data||ev.data.typ!=='sbs-odebrano') return;
+   window.removeEventListener('message',nasluch);
+   window.removeEventListener('message',potwierdzenie);
+   box.remove();
+   alert('SBS v3: wyslalem '+zebrane.length+' protokolow prosto do aplikacji (kolejek: '+kolejek+(pominietych?', pominietych nierozegranych: '+pominietych:'')+').\\n\\nPrzejdz do karty Scout Base System - protokoly juz tam sa, nic nie musisz wklejac.');
+  };
+  window.addEventListener('message',nasluch);
+  window.addEventListener('message',potwierdzenie);
+  setTimeout(function(){
+   window.removeEventListener('message',nasluch);
+   window.removeEventListener('message',potwierdzenie);
+   if(box.parentNode) box.remove();
+   if(!wyslane) alert('SBS v3: zebralem '+zebrane.length+' protokolow, ale aplikacja sie nie odezwala.'+(udalo?' Sa w schowku - wejdz do SBS i nacisnij Ctrl+V.':' Kliknij zakladke jeszcze raz.'));
+  },20000);
+  return;
+ }
  box.remove();
- if(!udalo){alert('SBS v2: zebralem '+zebrane.length+' protokolow, ale przegladarka nie pozwolila zapisac ich do schowka.\\n\\nKliknij zakladke jeszcze raz - za drugim razem zwykle sie udaje.');return;}
- alert('SBS v2: dolozylem '+(zebrane.length-bylo)+' protokolow (kolejek przejrzanych: '+kolejek+(pominietych?', pominietych nierozegranych: '+pominietych:'')+'). W schowku masz teraz '+zebrane.length+' protokolow ('+tresc.length+' znakow).\\n\\nW aplikacji: Kluby -> wybierz grupe -> \\u201eProtokoly z LNP\\u201d -> Ctrl+V.\\n\\nShift + klikniecie tej zakladki czysci zebrana liste.');
+ if(!udalo){alert('SBS v3: zebralem '+zebrane.length+' protokolow, ale przegladarka nie pozwolila zapisac ich do schowka.\\n\\nKliknij zakladke jeszcze raz - za drugim razem zwykle sie udaje.');return;}
+ alert('SBS v3: dolozylem '+(zebrane.length-bylo)+' protokolow (kolejek przejrzanych: '+kolejek+(pominietych?', pominietych nierozegranych: '+pominietych:'')+'). W schowku masz teraz '+zebrane.length+' protokolow ('+tresc.length+' znakow).\\n\\nW aplikacji: Kluby -> wybierz grupe -> \\u201eProtokoly z LNP\\u201d -> Ctrl+V.\\n\\nShift + klikniecie tej zakladki czysci zebrana liste.');
 }
 
 start();
@@ -11381,9 +11473,9 @@ function openLnpBookmarkletModal(){
       <p class="note" style="margin:6px 0;padding:8px 10px;background:var(--clay-bg,#FBF0EC);border-radius:6px;">
         <strong>Masz już starą zakładkę na pasku?</strong> Najpierw ją usuń (prawy przycisk myszy na niej → „Usuń"),
         dopiero potem przeciągnij tę. Zakładka nie aktualizuje się sama — na pasku zostaje ta wersja, którą kiedyś przeciągnąłeś.
-        Poznasz, której używasz, po komunikacie: nowa zaczyna się od <strong>„SBS v2:"</strong>, stara od „SBS:".
+        Poznasz, której używasz, po komunikacie: nowa zaczyna się od <strong>„SBS v3:"</strong> i od razu po kliknięciu pokazuje ciemną ramkę w prawym dolnym rogu. Starsze nie pokazują nic.
       </p>
-      <a href="${esc(LNP_HURT_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go na pasek zakładek, a potem kliknij TAM — będąc na liście meczów na laczynaspilka.pl.');return false;" style="display:inline-block;margin:4px 0;padding:8px 16px;background:var(--pitch);color:var(--on-pitch);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">⚡ Zbierz całą kolejkę (v2)</a>
+      <a href="${esc(LNP_HURT_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go na pasek zakładek, a potem kliknij TAM — będąc na liście meczów na laczynaspilka.pl.');return false;" style="display:inline-block;margin:4px 0;padding:8px 16px;background:var(--pitch);color:var(--on-pitch);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">⚡ Zbierz całą kolejkę (v3)</a>
       <p class="note" style="font-size:11.5px;">W rogu ekranu zobaczysz licznik postępu. Na końcu komplet trafia do schowka — wklejasz raz w aplikacji.
       Skrypt czyta wyłącznie strony tego samego serwisu, otwarte w Twojej przeglądarce.</p>
       <details style="margin-top:8px;">
@@ -15835,4 +15927,7 @@ async function wpuscZalogowanego(){
   loadAll();
 }
 
+// Nasłuch podpinamy PRZED startem aplikacji: zakładka może otworzyć tę kartę i od razu wysłać
+// dane, a wtedy nie ma na co czekać — wiadomość przepadłaby, gdyby nikt jej nie słuchał.
+podlaczOdbiorZLnp();
 startApp();
