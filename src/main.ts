@@ -10657,31 +10657,33 @@ var KLUCZ='sbs_protokoly_hurt';
 if(window.event&&window.event.shiftKey){try{localStorage.removeItem(KLUCZ);}catch(e){}alert('SBS v3: wyczyscilem zebrane protokoly.');return;}
 
 function zbierzLinki(){
- var out=[];
- [].slice.call(document.querySelectorAll('a[href*="/mecz/"]')).forEach(function(a){out.push(a.href);});
+ var wynik=[], widziane={};
+ pominietych=0;
+ function stan(el){
+  var w=el, g=0;
+  while(w&&g<5){
+   var t=(w.textContent||'');
+   if(/nierozegran|odwo\u0142an|prze\u0142o\u017con/i.test(t)) return 'nie';
+   if(/rozegran/i.test(t)) return 'tak';
+   w=w.parentElement; g++;
+  }
+  return '?';
+ }
+ function dodaj(url, el){
+  if(!url||widziane[url]) return;
+  if(el&&stan(el)==='nie'){ pominietych++; widziane[url]=1; return; }
+  widziane[url]=1; wynik.push(url);
+ }
+ [].slice.call(document.querySelectorAll('a[href*="/mecz/"]')).forEach(function(a){dodaj(a.href,a);});
  [].slice.call(document.querySelectorAll('[routerlink],[ng-reflect-router-link],[data-href],[data-url]'))
   .forEach(function(el){for(var i=0;i<el.attributes.length;i++){var v=el.attributes[i].value||'';
-   if(/\\/mecz\\//.test(v)){try{out.push(new URL(v,location.origin).href);}catch(e){}}}});
- var html=document.documentElement.innerHTML||'';
- var re=/\\/rozgrywki\\/mecz\\/([0-9a-fA-F-]{30,40})/g,m;
- while((m=re.exec(html))!==null) out.push(location.origin+'/rozgrywki/mecz/'+m[1]);
- out=out.filter(function(v,i,t){return v&&t.indexOf(v)===i;});
- var pomijane={};
- [].slice.call(document.querySelectorAll('*')).forEach(function(el){
-  if(el.children.length>8) return;
-  if(!/nierozegran|odwo\u0142an|prze\u0142o\u017con/i.test(el.textContent||'')) return;
-  var w=el,g=0;
-  while(w&&g<4){
-   var h=w.innerHTML||'', r2=/\\/rozgrywki\\/mecz\\/([0-9a-fA-F-]{30,40})/g, m2, byl=false;
-   while((m2=r2.exec(h))!==null){pomijane[location.origin+'/rozgrywki/mecz/'+m2[1]]=1;byl=true;}
-   if(byl) break;
-   w=w.parentElement;g++;
-  }
- });
- var przed=out.length;
- out=out.filter(function(v){return !pomijane[v];});
- pominietych+=przed-out.length;
- return out;
+   if(/\\/mecz\\//.test(v)){try{dodaj(new URL(v,location.origin).href,el);}catch(e){}}}});
+ if(!wynik.length&&!pominietych){
+  var html=document.documentElement.innerHTML||'';
+  var re=/\\/rozgrywki\\/mecz\\/([0-9a-fA-F-]{30,40})/g,m;
+  while((m=re.exec(html))!==null) dodaj(location.origin+'/rozgrywki/mecz/'+m[1],null);
+ }
+ return wynik;
 }
 
 function listaKolejek(){
