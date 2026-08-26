@@ -4233,7 +4233,7 @@ function openProtokolMeczuModal(clubId){
     <div class="modal" style="max-width:820px;">
       <h3>📋 Protokoły meczów — ${esc(naglowekOkna)}</h3>
       ${!klub && klubyGrupy.length ? `<p class="note" style="margin:-4px 0 6px;">Jedno wklejenie rozlicza <strong>wszystkie kluby tej grupy</strong> (${klubyGrupy.length}) — nie musisz wchodzić w żaden z osobna.</p>` : ''}
-      <p class="note" style="margin-bottom:8px;">Skopiuj mecz na <strong>Łączy nas piłka</strong> — zakładką „⚡ Zbierz całą kolejkę" albo ręcznie (Ctrl+A, Ctrl+C) — a tutaj naciśnij <strong>Ctrl+V</strong>. Rozpoznam od razu, nie musisz nawet klikać w pole. (Przycisk „📥 Wczytaj ze schowka" robi to samo, ale przeglądarka pyta wtedy o zgodę.) Odczytam skład, zmiany i minuty <strong>obu drużyn naraz</strong>, a mecz rozliczony wcześniej nie policzy się drugi raz.</p>
+      <p class="note" style="margin-bottom:8px;">Zbierz mecze na <strong>Łączy nas piłka</strong> zakładką „⚡ Zbierz całą kolejkę", a tutaj naciśnij <strong style="font-size:14px;">Ctrl+V</strong> — rozpoznam od razu, nie musisz nawet klikać w pole. Odczytam skład, zmiany i minuty <strong>obu drużyn naraz</strong>, a mecz rozliczony wcześniej nie policzy się drugi raz.</p>
       <p class="note" style="margin-top:0;">Rozliczonych meczów ${klub ? 'tego klubu' : 'w tej grupie'}: <strong>${juzRozliczone()}</strong>${zapisanychMeczow?` &middot; w tym oknie zapisano ${zapisanychMeczow}`:''}</p>
       <label style="display:flex;gap:8px;align-items:flex-start;margin:8px 0;cursor:pointer;font-size:13px;">
         <input type="checkbox" id="pm-dopisuj" ${dopisujBrak?'checked':''} style="margin-top:3px;">
@@ -4274,8 +4274,7 @@ function openProtokolMeczuModal(clubId){
             // klikanie w pole, Ctrl+V i dopiero „Rozpoznaj" to trzy ruchy na to samo. Ten przycisk
             // bierze schowek sam i od razu rozpoznaje. Wklejanie ręczne zostaje obok, bo w niektórych
             // przeglądarkach odczyt schowka wymaga zgody, a wtedy trzeba mieć czym się poratować.
-            : `<button class="secondary" data-x="ze-schowka">📥 Wczytaj ze schowka</button>
-               <button class="gold" data-x="rozpoznaj">Rozpoznaj</button>`}
+            : `<button class="gold" data-x="rozpoznaj">Rozpoznaj</button>`}
         </span>
       </div>
     </div>`;
@@ -4304,7 +4303,6 @@ function openProtokolMeczuModal(clubId){
       }
       window.open(adres, '_blank', 'noopener');
     });
-    overlay.querySelectorAll('[data-x="ze-schowka"]').forEach(b=>b.onclick=()=>{ void zeSchowka(); });
     overlay.querySelectorAll('[data-x="zapisz"]').forEach(b=>b.onclick=()=>{ void zapisz(); });
     const chk = overlay.querySelector('#pm-dopisuj');
     if(chk) chk.onchange = ()=>{ dopisujBrak = chk.checked; };
@@ -4328,32 +4326,6 @@ function openProtokolMeczuModal(clubId){
     if(pole) pole.value = tekst;
     rozpoznaj();
   });
-
-  // Schowek czytamy TYLKO na kliknięcie — przeglądarka inaczej nie pozwoli, i słusznie: nikt nie
-  // chce, żeby strona zaglądała mu do schowka sama z siebie.
-  async function zeSchowka(){
-    let tekst = '';
-    try { tekst = await navigator.clipboard.readText(); }
-    catch {
-      // PRZEGLĄDARKA PYTA O ZGODĘ. Przy pierwszym odczycie schowka Chrome pokazuje malutkie
-      // okienko z napisem „Wklej" tuż przy przycisku — dopóki się go nie kliknie, odczyt jest
-      // odrzucany. Bez tego zdania wygląda to na usterkę, a to zwykłe pytanie o pozwolenie.
-      komunikat = 'Przeglądarka pyta o zgodę na odczyt schowka — kliknij małe okienko „Wklej", '
-        + 'które pojawiło się tuż przy przycisku, i naciśnij „📥 Wczytaj ze schowka" jeszcze raz. '
-        + 'Możesz też po prostu kliknąć w pole poniżej i wcisnąć Ctrl+V.';
-      rysuj();
-      const pole = overlay.querySelector('#pm-tekst') as any;
-      if(pole) pole.focus();
-      return;
-    }
-    if(!String(tekst||'').trim()){
-      komunikat = 'Schowek jest pusty — najpierw kliknij zakładkę „⚡ Zbierz całą kolejkę" na stronie ŁNP.';
-      rysuj(); return;
-    }
-    const pole = overlay.querySelector('#pm-tekst') as any;
-    if(pole) pole.value = tekst;
-    rozpoznaj();
-  }
 
   function rozpoznaj(){
     const tekst = (overlay.querySelector('#pm-tekst') as any).value.trim();
@@ -10669,10 +10641,20 @@ function poKolejce(){
 
 function koniec(){
  try{localStorage.setItem(KLUCZ,JSON.stringify(zebrane));}catch(e){}
- var p=document.createElement('textarea');p.value=zebrane.join('\\n\\n');document.body.appendChild(p);p.select();
- try{document.execCommand('copy');}catch(e){}
- document.body.removeChild(p);box.remove();
- alert('SBS v2: dolozylem '+(zebrane.length-bylo)+' protokolow (kolejek przejrzanych: '+kolejek+(pominietych?', pominietych nierozegranych: '+pominietych:'')+'). W schowku masz teraz '+zebrane.length+' lacznie.\\n\\nW aplikacji: Kluby -> wybierz grupe -> \\u201eWczytaj protokoly calej grupy\\u201d -> Ctrl+V.\\n\\nShift + klikniecie tej zakladki czysci zebrana liste.');
+ // KOPIOWANIE MUSI SIE UDAC ALBO POWIEDZIEC, ZE SIE NIE UDALO. Samo execCommand bywa odrzucane
+ // i wtedy schowek zostaje pusty, a komunikat i tak mowil "skopiowalem" - czlowiek wracal do
+ // aplikacji, naciskal Ctrl+V i nic sie nie wklejalo. Probujemy dwiema drogami i sprawdzamy wynik.
+ var tresc=zebrane.join('\\n\\n');
+ var udalo=false;
+ var p=document.createElement('textarea');p.value=tresc;document.body.appendChild(p);p.select();
+ try{udalo=document.execCommand('copy');}catch(e){udalo=false;}
+ document.body.removeChild(p);
+ if(!udalo&&navigator.clipboard&&navigator.clipboard.writeText){
+  try{navigator.clipboard.writeText(tresc);udalo=true;}catch(e){}
+ }
+ box.remove();
+ if(!udalo){alert('SBS v2: zebralem '+zebrane.length+' protokolow, ale przegladarka nie pozwolila zapisac ich do schowka.\\n\\nKliknij zakladke jeszcze raz - za drugim razem zwykle sie udaje.');return;}
+ alert('SBS v2: dolozylem '+(zebrane.length-bylo)+' protokolow (kolejek przejrzanych: '+kolejek+(pominietych?', pominietych nierozegranych: '+pominietych:'')+'). W schowku masz teraz '+zebrane.length+' protokolow ('+tresc.length+' znakow).\\n\\nW aplikacji: Kluby -> wybierz grupe -> \\u201eProtokoly z LNP\\u201d -> Ctrl+V.\\n\\nShift + klikniecie tej zakladki czysci zebrana liste.');
 }
 
 start();
