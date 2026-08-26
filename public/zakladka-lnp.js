@@ -2,6 +2,7 @@
 
 var SBS_ZBIERACZ="v4 z 26.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
+var STRONA_STARTOWA=location.href;
 var box=document.createElement('div');
 box.style.cssText='position:fixed;right:16px;bottom:16px;z-index:2147483647;background:#16302A;color:#F6F3EA;padding:12px 16px;border-radius:8px;font:14px sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.4)';
 box.textContent='SBS '+SBS_ZBIERACZ+': zaczynam...';
@@ -381,7 +382,7 @@ function koniec(){
   var wyslane=false;
   var nasluch=function(ev){
    if(!ev.data||ev.data.typ!=='sbs-gotowy') return;
-   try{okno.postMessage({typ:'sbs-protokoly',tresc:tresc},SBS_ADRES);wyslane=true;}catch(e){}
+   try{okno.postMessage({typ:'sbs-protokoly',tresc:tresc,zrodlo:STRONA_STARTOWA},SBS_ADRES);wyslane=true;}catch(e){}
   };
   var potwierdzenie=function(ev){
    if(!ev.data||ev.data.typ!=='sbs-odebrano') return;
