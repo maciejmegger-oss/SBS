@@ -4289,19 +4289,37 @@ function openProtokolMeczuModal(clubId){
       // stronie po prostu nie ma — klikając przycisk bez przypisanego linku trafiało się na
       // stronę „404, piłka za boiskiem". Lepiej powiedzieć wprost, czego brakuje, i otworzyć
       // stronę rozgrywek, na której da się grupę wybrać z list.
+      // STRONA TEGO KLUBU MA WSZYSTKIE JEGO MECZE W JEDNYM MIEJSCU — i to z niej najwygodniej
+      // zebrać cały dorobek. Adresu klubu na ŁNP nie da się wyliczyć (to numer, nie nazwa), więc
+      // przy pierwszym kliknięciu prosimy o niego raz i zapamiętujemy przy kliknięciu na stałe.
+      // Dopiero gdy go nie ma, wracamy do kolejki całej grupy.
+      const klubowy = klub ? ((DB.settings.lnpKluby||{})[klub.id] || '') : '';
       const grupowy = (DB.settings.lnpGrupy||{})[grupa] || '';
       const wlasny = klub && /laczynaspilka\.pl/i.test(String(klub.profileLnp||'')) ? klub.profileLnp : '';
-      const adres = grupowy || wlasny;
-      if(!adres){
-        alert('Nie mam jeszcze adresu tej grupy na „Łączy nas piłka".\n\n'
-          + 'Otworzę stronę rozgrywek — ustaw tam Sezon, Ligę i Grupę, przełącz na widok MECZÓW, '
-          + 'a potem skopiuj adres z paska przeglądarki i wklej go w SBS przyciskiem '
-          + '„🔗 Link ŁNP dla grupy" (Kluby → wybierz grupę).\n\n'
-          + 'Od tej pory ten przycisk będzie otwierał kolejkę od razu.');
-        window.open('https://www.laczynaspilka.pl/rozgrywki', '_blank', 'noopener');
-        return;
+      const adres = klubowy || wlasny;
+      if(adres){ window.open(adres, '_blank', 'noopener'); return; }
+
+      if(klub){
+        const wpisany = prompt(
+          `Adres klubu „${klub.name}" na Łączy nas piłka.\n\n`
+          + `Na ŁNP wejdź w ten klub (jego strona ma listę WSZYSTKICH jego meczów), skopiuj adres\n`
+          + `z paska przeglądarki i wklej tutaj. Zapamiętam go — następnym razem otworzy się od razu.\n\n`
+          + `Zostaw puste, żeby otworzyć kolejkę całej grupy.`, '');
+        const czysty = String(wpisany || '').trim();
+        if(czysty && /^https?:\/\/(www\.)?laczynaspilka\.pl\//i.test(czysty)){
+          DB.settings.lnpKluby = { ...(DB.settings.lnpKluby||{}), [klub.id]: czysty };
+          void saveSettings();
+          window.open(czysty, '_blank', 'noopener');
+          return;
+        }
+        if(czysty){ alert('To nie jest adres z laczynaspilka.pl — nic nie zapisałem.'); return; }
       }
-      window.open(adres, '_blank', 'noopener');
+
+      if(grupowy){ window.open(grupowy, '_blank', 'noopener'); return; }
+      alert('Nie mam jeszcze żadnego adresu tej grupy ani klubu na „Łączy nas piłka".\n\n'
+        + 'Otworzę stronę rozgrywek — ustaw tam Sezon, Ligę i Grupę, a potem skopiuj adres '
+        + 'z paska przeglądarki i wklej go przyciskiem „🔗 Link ŁNP dla grupy" (Kluby → wybierz grupę).');
+      window.open('https://www.laczynaspilka.pl/rozgrywki', '_blank', 'noopener');
     });
     overlay.querySelectorAll('[data-x="zapisz"]').forEach(b=>b.onclick=()=>{ void zapisz(); });
     const chk = overlay.querySelector('#pm-dopisuj');
