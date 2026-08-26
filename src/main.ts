@@ -10540,14 +10540,31 @@ function zdarzenia(d){try{
 }catch(e){return '';}}
 `;
 
+// DLACZEGO W KODZIE ZAKŁADKI NIE MA KOMENTARZY //
+//
+// Przeglądarka zapisuje zakładkę jako JEDNĄ linię — znaki końca linii przepadają. Wszystko, co
+// stało po „//", zjada wtedy resztę programu i klikniecie zakładki nie robi kompletnie nic:
+// ani okienka, ani błędu. Objaw nie do odgadnięcia bez sprawdzenia, dlatego wyjaśnienia trzymamy
+// tutaj, PRZED zakładką, a w samym jej kodzie nie ma ani jednego komentarza.
+//
+// Co robi: zbiera protokoły wszystkich ROZEGRANYCH meczów widocznych na stronie ŁNP (lista
+// kolejki albo strona klubu), otwierając każdy w ukrytej ramce. Mecze nierozegrane pomija.
+// Jeśli strona ma listę wyboru kolejki, przechodzi ją samą. Wynik ląduje w schowku i dokłada się
+// do zebranych wcześniej, więc można iść grupa po grupie i wkleić raz.
+// Zakładka musi przeżyć spłaszczenie do jednej linii — patrz wyjaśnienie wyżej. Sprawdzamy to
+// przy starcie aplikacji w trybie roboczym, żeby zepsuta zakładka nie wyszła na jaw dopiero
+// wtedy, gdy ktoś kliknie ją na obcej stronie i nie zobaczy ZUPEŁNIE NIC.
+function sprawdzZakladke(nazwa, kod){
+  try { new Function(String(kod).replace(/^javascript:/,'').replace(/\r?\n/g,' ')); }
+  catch(e){ console.error('SBS: zakładka „'+nazwa+'" nie przetrwa zapisania w pasku — '+e.message); }
+}
+
 const LNP_HURT_BOOKMARKLET = `javascript:(function(){
 ${LNP_ZDARZENIA}
 if(!/laczynaspilka\\.pl/.test(location.host)){alert('SBS v2: to nie jest strona Laczy nas pilka.');return;}
 var KLUCZ='sbs_protokoly_hurt';
 if(window.event&&window.event.shiftKey){try{localStorage.removeItem(KLUCZ);}catch(e){}alert('SBS v2: wyczyscilem zebrane protokoly.');return;}
 
-// Odnosniki do meczow szukamy trzema sposobami: zwykle <a>, atrybuty klikalnych wierszy
-// (Angular chowa tam adres) i wreszcie numery meczow wylowione wprost z kodu strony.
 function zbierzLinki(){
  var out=[];
  [].slice.call(document.querySelectorAll('a[href*="/mecz/"]')).forEach(function(a){out.push(a.href);});
@@ -10558,9 +10575,6 @@ function zbierzLinki(){
  var re=/\\/rozgrywki\\/mecz\\/([0-9a-fA-F-]{30,40})/g,m;
  while((m=re.exec(html))!==null) out.push(location.origin+'/rozgrywki/mecz/'+m[1]);
  out=out.filter(function(v,i,t){return v&&t.indexOf(v)===i;});
- // MECZ NIEROZEGRANY NIE MA SKLADOW. Lista na stronie miesza rozegrane z przyszlymi, a te drugie
- // maja przy sobie slowo "Nierozegrany". Otwieranie ich to czyste czekanie - przy dwudziestu
- // takich wierszach zakladka milczy kilka minut, zanim cokolwiek powie.
  var pomijane={};
  [].slice.call(document.querySelectorAll('*')).forEach(function(el){
   if(el.children.length>8) return;
@@ -10579,8 +10593,6 @@ function zbierzLinki(){
  return out;
 }
 
-// Lista wyboru kolejki, jesli strona ja ma - dzieki niej przechodzimy CALY SEZON jednym
-// klikniecem, zamiast wracac tu po kazdej kolejce.
 function listaKolejek(){
  var sel=[].slice.call(document.querySelectorAll('select'));
  for(var i=0;i<sel.length;i++){
@@ -10635,7 +10647,6 @@ function nastepny(){
  },500);
 }
 
-// Kolejka zebrana. Jesli strona pozwala przejsc do nastepnej - przechodzimy sami.
 function poKolejce(){
  try{localStorage.setItem(KLUCZ,JSON.stringify(zebrane));}catch(e){}
  var wybor=listaKolejek();
@@ -10659,9 +10670,6 @@ function poKolejce(){
 
 function koniec(){
  try{localStorage.setItem(KLUCZ,JSON.stringify(zebrane));}catch(e){}
- // KOPIOWANIE MUSI SIE UDAC ALBO POWIEDZIEC, ZE SIE NIE UDALO. Samo execCommand bywa odrzucane
- // i wtedy schowek zostaje pusty, a komunikat i tak mowil "skopiowalem" - czlowiek wracal do
- // aplikacji, naciskal Ctrl+V i nic sie nie wklejalo. Probujemy dwiema drogami i sprawdzamy wynik.
  var tresc=zebrane.join('\\n\\n');
  var udalo=false;
  var p=document.createElement('textarea');p.value=tresc;document.body.appendChild(p);p.select();
@@ -10713,6 +10721,11 @@ alert('SBS: zebrano '+zebrane.length+' protokolow i skopiowano do schowka.\\n\\n
 // czytamy stronę tam, gdzie ona jest w całości — w przeglądarce — i wypisujemy dane PODPISANE.
 // Aplikacja dostaje wtedy komplet: datę urodzenia, pozycję, nogę, wzrost, narodowość, klub
 // i dorobek sezonu, i wypełnia formularz jednym kliknięciem.
+if(import.meta.env && import.meta.env.DEV){
+  sprawdzZakladke('Zbierz całą kolejkę', LNP_HURT_BOOKMARKLET);
+  sprawdzZakladke('Zbierz protokół', LNP_BOOKMARKLET);
+}
+
 const TM_PROFIL_BOOKMARKLET = `javascript:(function(){try{
 if(!/transfermarkt\\./.test(location.host)){alert('SBS: to nie jest strona Transfermarktu.');return;}
 var T=document.body.innerText||'';
