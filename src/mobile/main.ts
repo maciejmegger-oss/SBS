@@ -2903,8 +2903,17 @@ function renderLogin(info?: string) {
           <div class="login-halo" aria-hidden="true"></div>
           <div class="login-logo">
             <div class="login-badge">
-              <img src="${LOGO}" alt="Scout Base System" width="104" height="104">
-              <span class="login-sheen" aria-hidden="true"></span>
+              <div class="login-face">
+                <img src="${LOGO}" alt="Scout Base System" width="104" height="104">
+                <span class="login-sheen" aria-hidden="true"></span>
+              </div>
+              <!-- Druga ściana odznaki. Bez niej w połowie obrotu byłaby pustka i bryła znikałaby
+                   na sekundę. Herb się nie powtarza dla czytającego ekran — to ta sama rzecz
+                   widziana z drugiej strony, stąd aria-hidden. -->
+              <div class="login-face login-face--tyl" aria-hidden="true">
+                <img src="${LOGO}" alt="" width="104" height="104">
+                <span class="login-sheen"></span>
+              </div>
             </div>
           </div>
           <div class="login-orbit" aria-hidden="true"></div>
@@ -3063,8 +3072,17 @@ function renderCzekaNaZgode(konto: Konto) {
           <div class="login-halo" aria-hidden="true"></div>
           <div class="login-logo">
             <div class="login-badge">
-              <img src="${LOGO}" alt="Scout Base System" width="104" height="104">
-              <span class="login-sheen" aria-hidden="true"></span>
+              <div class="login-face">
+                <img src="${LOGO}" alt="Scout Base System" width="104" height="104">
+                <span class="login-sheen" aria-hidden="true"></span>
+              </div>
+              <!-- Druga ściana odznaki. Bez niej w połowie obrotu byłaby pustka i bryła znikałaby
+                   na sekundę. Herb się nie powtarza dla czytającego ekran — to ta sama rzecz
+                   widziana z drugiej strony, stąd aria-hidden. -->
+              <div class="login-face login-face--tyl" aria-hidden="true">
+                <img src="${LOGO}" alt="" width="104" height="104">
+                <span class="login-sheen"></span>
+              </div>
             </div>
           </div>
           <div class="login-orbit" aria-hidden="true"></div>
