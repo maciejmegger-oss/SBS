@@ -56,7 +56,7 @@
       ]
     },
     {
-      "source": "/zakladka-lnp.js",
+      "source": "/zakladka-lnp-v2.js",
       "headers": [
         {
           "key": "Access-Control-Allow-Origin",

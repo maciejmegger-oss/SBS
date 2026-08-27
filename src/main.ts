@@ -11241,7 +11241,7 @@ var ruszyl=false, budzik=null;
 function odpal(co){ if(ruszyl) return; ruszyl=true; if(budzik) clearTimeout(budzik); try{ co(); }catch(e){ alert('SBS: '+e.message); } }
 budzik=setTimeout(function(){ odpal(awaryjnie); },4000);
 try{
- fetch(A+'/zakladka-lnp.js?t='+Date.now(),{cache:'no-store'})
+ fetch(A+'/zakladka-lnp-v2.js?t='+Date.now(),{cache:'no-store'})
   .then(function(r){ if(!r.ok) throw 0; return r.text(); })
   .then(function(t){ if(t.indexOf('SBS_ZBIERACZ')<0) throw 0; odpal(function(){ (new Function(t))(); }); })
   .catch(function(){ odpal(awaryjnie); });
