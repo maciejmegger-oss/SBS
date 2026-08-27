@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v7 z 28.08.2026";
+var SBS_ZBIERACZ="v8 z 28.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -249,7 +249,28 @@ function start(){
   return;
  }
  linki=zbierzLinki();
- if(linki.length){box.textContent='SBS '+SBS_ZBIERACZ+': zbieram protokoly 0/'+linki.length;nastepny();return;}
+ // JEDEN ODNOSNIK PRZY DWUDZIESTU MECZACH NA EKRANIE TO NIE KOMPLET.
+ //
+ // Strona druzyny pokazuje wszystkie rozegrane spotkania, ale wiersze nie sa odnosnikami —
+ // Angular otwiera mecz kliknieciem. Zbieracz znajdowal wtedy jeden przypadkowy adres, uznawal
+ // go za cala liste i konczyl prace z jednym protokolem zamiast dwudziestu. Gdy wierszy
+ // z wynikiem jest wyraznie wiecej niz odnosnikow, idziemy droga klikania.
+ var ileWierszy=wierszeRozegrane().length;
+ if(linki.length && !(ileWierszy>=2 && linki.length*2<ileWierszy)){
+  box.textContent='SBS '+SBS_ZBIERACZ+': zbieram protokoly 0/'+linki.length;nastepny();return;
+ }
+ if(linki.length && !probowanoKlikac && ileWierszy>=2){
+  probowanoKlikac=true;
+  box.textContent='SBS '+SBS_ZBIERACZ+': na ekranie '+ileWierszy+' meczow, a odnosnikow '+linki.length+' - wchodze w mecze po kolei';
+  zbierzAdresyPrzezKlikanie(function(adresy){
+   var razem=linki.slice();
+   for(var q=0;q<adresy.length;q++) if(razem.indexOf(adresy[q])<0) razem.push(adresy[q]);
+   linki=razem;i=0;
+   box.textContent='SBS '+SBS_ZBIERACZ+': zbieram protokoly 0/'+linki.length;
+   nastepny();
+  });
+  return;
+ }
  czekam++;
  if(czekam<6){box.textContent='SBS '+SBS_ZBIERACZ+': czekam, az strona sie zaladuje...';setTimeout(start,500);return;}
  if(!probowanoKlikac&&wierszeRozegrane().length){
@@ -345,10 +366,20 @@ function naglowekRozegranych(){
  }
  return null;
 }
-function wierszeRozegrane(){
- var szuk='tr,li,[role="row"],[class*="match"],[class*="mecz"],[class*="Match"]';
+// Wiersze rozegranych meczow — szukane po TRESCI, nie po znacznikach.
+//
+// Pierwotnie pytalismy o "tr, li, [class*=match]". Na liscie kolejek to wystarczalo, ale strona
+// DRUZYNY (/rozgrywki/druzyna/...?tab=tab-mecz) buduje wiersze z wlasnych komponentow Angulara
+// bez zadnej z tych klas — zbieracz mowil "wierszy z wynikiem 0" i konczyl prace, choc mecze
+// byly na ekranie. Do tego filtr "tylko ponizej naglowka Rozegrane mecze" potrafil odciac
+// wszystko, gdy naglowek stoi gdzie indziej niz lista.
+//
+// Dlatego szukamy szeroko i schodzimy tylko wtedy, gdy weziej nic nie znalezlismy. Kryterium
+// jest tresc: wynik meczu plus data albo slowo "Rozegrany". Z zagniezdzonych trafien zostawiamy
+// najglebsze, zeby nie wziac calej listy jako jednego wiersza.
+function wierszeZSelektora(szuk, stosujGranice){
  var kand=[].slice.call(document.querySelectorAll(szuk));
- var granica=naglowekRozegranych();
+ var granica=stosujGranice?naglowekRozegranych():null;
  var out=[];
  for(var i=0;i<kand.length;i++){
   var el=kand[i], t=(el.textContent||'').replace(/\s+/g,' ').trim();
@@ -365,6 +396,15 @@ function wierszeRozegrane(){
   for(var b=0;b<out.length;b++){ if(a!==b&&out[a].contains(out[b])){zawiera=true;break;} }
   if(!zawiera) fin.push(out[a]);
  }
+ return fin;
+}
+function wierszeRozegrane(){
+ var waski='tr,li,[role="row"],[class*="match"],[class*="mecz"],[class*="Match"]';
+ var szeroki=waski+',div,section,article,a';
+ var fin=wierszeZSelektora(waski,true);
+ if(!fin.length) fin=wierszeZSelektora(waski,false);      // naglowek stal w zlym miejscu
+ if(!fin.length) fin=wierszeZSelektora(szeroki,true);     // wlasne komponenty Angulara
+ if(!fin.length) fin=wierszeZSelektora(szeroki,false);    // i jedno, i drugie naraz
  wierszyNaEkranie=fin.length;
  return fin.slice(0,80);
 }
