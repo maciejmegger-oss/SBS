@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v6 z 28.08.2026";
+var SBS_ZBIERACZ="v7 z 28.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -282,7 +282,14 @@ function start(){
  var tekstStrony=(document.body.innerText||'');
  var toTabela = /\bPunkty\b/i.test(tekstStrony) && /\bBilans\b/i.test(tekstStrony)
    && /\bWygrane\b/i.test(tekstStrony) && zMecz===0 && zKodu===0;
- var rada = toTabela
+ // STRONA BLEDU TO NIE PUSTA KOLEJKA. Zapamietany adres grupy potrafi sie zdezaktualizowac —
+ // LNP trzyma w nim identyfikatory sezonu i grupy, a te zmieniaja sie miedzy sezonami. Wtedy
+ // otwiera sie 404 i rada "sprawdz pole Sezon" jest bez sensu, bo na stronie bledu nie ma
+ // zadnych pol. Mowimy wprost, ze trzeba podac nowy adres.
+ var to404 = /\b404\b/.test(tekstStrony) && /ups|nie znaleziono|not found/i.test(tekstStrony);
+ var rada = to404
+  ? 'To jest strona bledu 404 - zapamietany adres tej grupy jest juz nieaktualny (LNP zmienia identyfikatory miedzy sezonami).\n\nW aplikacji: Kluby -> wybierz te grupe -> przycisk "Link LNP dla grupy" -> wklej tam ADRES Z PASKA przegladarki, gdy bedziesz na dzialajacej liscie meczow tej grupy.'
+  : toTabela
   ? 'Jestes na TABELI LIGOWEJ - sa tu punkty i bilans, ale nie ma protokolow. Przejdz do listy meczow tej grupy: u gory wybierz "Kolejka", zeby pokazaly sie spotkania z wynikami, i dopiero tam kliknij zakladke.'
   : maRozegrane
   ? 'Sekcja \u201eRozegrane mecze\u201d jest, ale nie widze w niej ani jednego wiersza z wynikiem. Poczekaj, az wyniki sie wyswietla, i kliknij zakladke jeszcze raz.'

@@ -4423,7 +4423,8 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
     const chk = overlay.querySelector('#pm-dopisuj');
     if(chk) chk.onchange = ()=>{ dopisujBrak = chk.checked; };
     const pole = overlay.querySelector('#pm-tekst');
-    if(pole && !wynik) pole.focus();
+    // Pole trzyma ognisko także po rozpoznaniu — żeby kolejne Ctrl+V miało gdzie trafić.
+    if(pole && !pracuje) pole.focus();
   };
 
   // Protokoły przysłane wprost ze strony ŁNP (zakładka) — wpadają tu bez udziału schowka
@@ -4443,7 +4444,12 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
   // całym oknie: gdziekolwiek klikniesz Ctrl+V, treść trafia do pola i od razu ją rozpoznaję.
   // Dzięki temu „bez wklejania" i „z wklejaniem" kosztują tyle samo — jeden ruch.
   overlay.addEventListener('paste', (e)=>{
-    if(wynik) return;                       // po rozpoznaniu czekamy na „Zapisz", nie na kolejne wklejki
+    // WKLEJENIE ZAWSZE COŚ ROBI. Wcześniej po pierwszym rozpoznaniu okno przestawało reagować na
+    // Ctrl+V — czekało na „Zapisz". Kto zebrał kolejkę na nowo i wklejał ją do otwartego okna,
+    // nie widział żadnej reakcji i miał prawo sądzić, że wklejanie jest zepsute. Nowa wklejka
+    // po prostu zastępuje poprzednie rozpoznanie; blokujemy ją tylko w trakcie samego zapisu,
+    // żeby nie podmienić danych w połowie wysyłki.
+    if(pracuje) return;
     const dane = (e.clipboardData || (window as any).clipboardData);
     const tekst = dane ? dane.getData('text') : '';
     if(!String(tekst||'').trim()) return;
@@ -11105,7 +11111,7 @@ function sprawdzZakladke(nazwa, kod){
 
 // Wersja zakładki. Widnieje w każdym jej komunikacie i w oknie SBS, żeby dało się jednym
 // spojrzeniem stwierdzić, czy w pasku siedzi kod sprzed poprawek.
-const ZAKLADKA_WERSJA = 'v6 z 28.08.2026';
+const ZAKLADKA_WERSJA = 'v7 z 28.08.2026';
 const SBS_ADRES_JS = JSON.stringify(location.origin);
 // ZAKŁADKA W PASKU NIE AKTUALIZUJE SIĘ SAMA — I TO BYŁ PRAWDZIWY PROBLEM.
 //
