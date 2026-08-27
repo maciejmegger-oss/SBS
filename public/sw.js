@@ -11,12 +11,14 @@
 // Podniesiona wersja czyści starą pamięć przy pierwszym uruchomieniu po wdrożeniu (activate
 // kasuje wszystkie klucze poza bieżącym). Konieczne przy zmianie adresów: pod "/m" mogła zostać
 // zapisana strona z czasów, gdy aplikacja na komputerze stała pod adresem głównym.
-const CACHE = "sbs-live-v2";
+const CACHE = "sbs-live-v3";
 
 self.addEventListener("install", (e) => {
   // Panel ma działać od razu po pierwszym wejściu, bez odświeżania strony.
   self.skipWaiting();
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["/m", "/manifest.webmanifest", "/icon-192.png"]).catch(() => {})));
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(
+    ["/m", "/manifest.webmanifest", "/icon-192.png", "/apple-touch-icon.png", "/icon-maskable-512.png"],
+  ).catch(() => {})));
 });
 
 self.addEventListener("activate", (e) => {
