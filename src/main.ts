@@ -4479,7 +4479,9 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
     const adresy = (bezRocznikow.match(/^###\s*PROTOKOL:\s*(.*)$/gm) || [])
       .map(l=>l.replace(/^###\s*PROTOKOL:\s*/, '').trim());
     const czesci = bezRocznikow.split(/^###\s*PROTOKOL:.*$/m).map(t=>t.trim()).filter(Boolean);
-    const wyniki = (czesci.length ? czesci : [tekst]).map((t,i)=>przetworzProtokolLnp(t, adresy[i] || ''));
+    // GRUPA, W KTÓREJ PRACUJESZ, ROZSTRZYGA WĄTPLIWOŚCI. „Pogoń" jest i w Barlinku, i w Lęborku,
+    // i w Szczecinie; bez wskazania grupy dorobek mógłby trafić do klubu z drugiego końca Polski.
+    const wyniki = (czesci.length ? czesci : [tekst]).map((t,i)=>przetworzProtokolLnp(t, adresy[i] || '', grupa));
     const dobre = wyniki.filter(w=>!w.blad);
     if(!dobre.length){ komunikat = wyniki[0].blad || 'Nie rozpoznałem protokołu.'; wynik = null; rysuj(); return; }
     komunikat = wyniki.length > dobre.length
@@ -10418,8 +10420,27 @@ function parseLnpProtokolMinuty(rawText, nazwaKlubu){
   const bezOzdob = (l)=> l.replace(/\[([^\]]*)\]\([^)]*\)/g,'$1').trim();
   const szukany = importNorm(nazwaKlubu);
   let od = -1;
+  // NAGŁÓWEK Z NAZWĄ DRUŻYNY BYWA ROZBITY NA DWIE LINIE. „LGKS 38 PODLESIANKA KATOWICE" nie
+  // mieści się w jednym wierszu i strona łamie go w połowie — wtedy dokładna równość nigdy nie
+  // zachodzi, cały skład wraca jako nieodczytany i klub zostaje bez jednego zawodnika. Krótsze
+  // nazwy (Przemsza Siewierz) mieściły się w linii i działały, przez co wyglądało to na kaprys.
+  //
+  // Dlatego dopuszczamy trzy postacie nagłówka: samą linię, tę linię sklejoną z następną oraz
+  // zawieranie się jednej nazwy w drugiej. Warunek „Skład wyjściowy" tuż pod spodem pilnuje,
+  // żeby nie złapać nazwy z menu albo z tabeli wyników.
+  const pasujeNaglowek = (i)=>{
+    const a = importNorm(bezOzdob(linie[i]));
+    if(!a) return false;
+    if(a === szukany) return true;
+    const sklejone = importNorm(bezOzdob(linie[i]) + ' ' + bezOzdob(linie[i+1]||''));
+    if(sklejone === szukany) return true;
+    // Zawieranie tylko przy nazwach na tyle długich, żeby nie trafić w przypadkowy fragment.
+    if(a.length >= 8 && (szukany.includes(a) || a.includes(szukany))) return true;
+    return false;
+  };
   for(let i=0;i<linie.length;i++){
-    if(importNorm(bezOzdob(linie[i])) === szukany && /skład wyjściowy/i.test(linie[i+1]||'')){ od = i; break; }
+    // Nagłówek sklejony z dwóch linii ma „Skład wyjściowy" o wiersz dalej — sprawdzamy oba.
+    if(pasujeNaglowek(i) && (/skład wyjściowy/i.test(linie[i+1]||'') || /skład wyjściowy/i.test(linie[i+2]||''))){ od = i; break; }
   }
   if(od < 0) return null;
   let doIdx = linie.findIndex((l,i)=> i>od && /^Sztab$/i.test(l));
@@ -10562,7 +10583,10 @@ const SZUM_NAZWY_KLUBU = /^(ks|mks|gks|lks|mlks|uks|kp|ts|rks|wks|zks|mkp|oks|sk
 const NUMER_ZESPOLU = { ii:'2', iii:'3', iv:'4', '2':'2', '3':'3', '4':'4' };
 
 function rozbijNazweKlubu(nazwa){
-  const slowa = String(nazwa||'').replace(/[.,()]/g,' ').split(/\s+/).filter(Boolean);
+  // MYŚLNIK ROZDZIELA CZŁONY NAZWY, NIE SKLEJA ICH. „SPÓJNIA LANDEK-JASIENICA" bez tego dawała
+  // rdzeń „landekjasienica", który nie ma nic wspólnego z naszym „Spójnia Landek" — klub zostawał
+  // bez statystyk, choć chodzi o ten sam zespół.
+  const slowa = String(nazwa||'').replace(/[.,()]/g,' ').replace(/[-–—]/g,' ').split(/\s+/).filter(Boolean);
   let numer = '';
   const rdzen = [];
   for(const w of slowa){
@@ -10603,6 +10627,14 @@ function dopasujKlubDoNazwy(nazwa, podpowiedzGrupa){
   });
   if(!pasujace.length) return null;
   if(pasujace.length === 1) return pasujace[0];
+
+  // KIEDY NAZWA PASUJE DO KILKU KLUBÓW, PIERWSZEŃSTWO MA GRUPA, W KTÓREJ PRACUJESZ. „Pogoń"
+  // pasuje do Barlinka, Lęborka i Szczecina naraz — bez tego dorobek trafiałby do klubu
+  // z drugiego końca Polski albo nie trafiał nigdzie.
+  if(podpowiedzGrupa){
+    const wlasciwaGrupa = pasujace.filter(c=>c.league === podpowiedzGrupa);
+    if(wlasciwaGrupa.length === 1) return wlasciwaGrupa[0];
+  }
 
   // TEN SAM KLUB WPISANY KILKA RAZY to nie jest niejednoznaczność, tylko duplikat w bazie —
   // a takich jest sporo, dopóki nie przejdzie „Scal duplikaty". Odmowa dopisania czegokolwiek
@@ -10671,7 +10703,7 @@ function zapamietajAdresGrupy(zrodlo, protokoly){
   return nowe;
 }
 
-function przetworzProtokolLnp(rawText, adresMeczu){
+function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
   const zdarzenia = zdarzeniaZProtokolu(rawText);
   const druzyny = nazwyDruzynZProtokolu(rawText);
   if(druzyny.length < 1){
@@ -10691,10 +10723,13 @@ function przetworzProtokolLnp(rawText, adresMeczu){
   const klucz = kluczProtokolu(druzyny, rawText, adresMeczu);
   const strony = [];
   // Gdy jedna z drużyn dopasuje się bez wątpliwości, jej grupa rozstrzyga wątpliwości przy drugiej.
-  let podpowiedzGrupa = '';
-  for(const nazwa of druzyny){
-    const trafiony = DB.clubs.find(c=>importNorm(c.name)===importNorm(nazwa));
-    if(trafiony){ podpowiedzGrupa = trafiony.league; break; }
+  // Grupa otwartego okna jest pewniejsza niż zgadywanie z nazw — to w niej użytkownik pracuje.
+  let podpowiedzGrupa = grupaOkna || '';
+  if(!podpowiedzGrupa){
+    for(const nazwa of druzyny){
+      const trafiony = DB.clubs.find(c=>importNorm(c.name)===importNorm(nazwa));
+      if(trafiony){ podpowiedzGrupa = trafiony.league; break; }
+    }
   }
 
   for(const nazwa of druzyny){
