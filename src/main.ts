@@ -4484,6 +4484,27 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
     if(!dobre.length){ komunikat = wyniki[0].blad || 'Nie rozpoznałem protokołu.'; wynik = null; rysuj(); return; }
     komunikat = wyniki.length > dobre.length
       ? `Rozpoznałem ${dobre.length} z ${wyniki.length} protokołów — reszty nie umiem odczytać.` : '';
+
+    // CZY TA WKLEJKA W OGÓLE DOTYCZY TEGO KLUBU?
+    //
+    // Schowek pamięta poprzednie zebranie. Stojąc w klubie z grupy śląskiej łatwo wkleić kolejkę
+    // pomorską sprzed godziny — protokoły rozpoznają się bez zarzutu, zapis nawet je przyjmie
+    // (trafią do właściwych klubów), ale w otwartym klubie nie pojawi się ani jeden zawodnik.
+    // Bez tego ostrzeżenia wygląda to jak awaria zapisu, a jest pomyłką w schowku.
+    if(klub){
+      const strony = dobre.flatMap(p=>p.strony);
+      const tenKlub = strony.some(s=>s.klub && s.klub.id === klub.id);
+      const taGrupa = strony.some(s=>s.klub && s.klub.league === klub.league);
+      if(!tenKlub){
+        const obceGrupy = [...new Set(strony.map(s=>s.klub && s.klub.league).filter(Boolean))];
+        komunikat = `⚠️ W tej wklejce nie ma ${esc(klub.name)}. `
+          + (taGrupa
+            ? `Są mecze z tej samej grupy, ale bez tego klubu — ten zespół w tej kolejce nie grał albo pauzował.`
+            : `To kolejka ${obceGrupy.length ? `z grupy: ${obceGrupy.join(', ')}` : 'z innej grupy'}, a ${esc(klub.name)} gra w ${esc(klub.league||'innej')}. `
+              + `Najpewniej w schowku została poprzednia wklejka — otwórz kolejkę tej grupy przyciskiem „↗ Otwórz mecze klubu" i zbierz ją na nowo.`)
+          + (komunikat ? ' ' + komunikat : '');
+      }
+    }
     wynik = dobre;
     rysuj();
   }
