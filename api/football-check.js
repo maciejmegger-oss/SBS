@@ -31,7 +31,14 @@ export default async function handler(req, res) {
     });
     dane = await r.json();
     if (!r.ok) {
-      return res.status(502).json({ error: "Dostawca odpowiedział kodem " + r.status, odpowiedz: dane });
+      // Ogon klucza przy BŁĘDZIE, nie tylko przy powodzeniu. Gdy dostawca odrzuca klucz, jedyne
+      // pytanie brzmi „czy w Vercelu leży ten, co trzeba" — a bez tych czterech znaków nie da się
+      // tego rozstrzygnąć bez ujawniania klucza komukolwiek.
+      return res.status(502).json({
+        error: "Dostawca odpowiedział kodem " + r.status,
+        klucz: "wczytany (…" + String(KLUCZ).slice(-4) + "), długość " + String(KLUCZ).length,
+        odpowiedz: dane,
+      });
     }
   } catch (e) {
     return res.status(504).json({ error: "Nie udało się połączyć z dostawcą: " + e.message });
