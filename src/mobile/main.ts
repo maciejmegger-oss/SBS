@@ -272,6 +272,25 @@ const miesiacPl = (iso: string) => {
   return nazwa.charAt(0).toUpperCase() + nazwa.slice(1);
 };
 
+// DATA Z DNIEM TYGODNIA — „sobota, 29.08".
+//
+// Sam zapis 2026-08-29 nic nie mówi o tym, czy da się na ten mecz pojechać. Scout planuje
+// wyjazdy wokół pracy i weekendu, więc dzień tygodnia jest tu ważniejszy niż numer dnia:
+// piątek 20:30 i sobota 15:00 to dwie zupełnie różne decyzje.
+//
+// Rok dopisujemy TYLKO wtedy, gdy nie jest bieżący. Sezon przechodzi przez sylwestra, więc przy
+// meczu w styczniu sam „16.01" byłby mylący — ale dokładanie roku do każdego wiersza zamieniłoby
+// listę w ścianę cyfr.
+function dataZDniem(iso: string): string {
+  if (!iso) return "";
+  const d = new Date(iso + "T00:00:00");
+  if (Number.isNaN(d.getTime())) return iso;   // data w nieoczekiwanym kształcie — oddajemy jak jest
+  const dzien = d.toLocaleDateString("pl-PL", { weekday: "long" });
+  const reszta = d.toLocaleDateString("pl-PL", { day: "2-digit", month: "2-digit" });
+  const rok = d.getFullYear() !== new Date().getFullYear() ? "." + d.getFullYear() : "";
+  return `${dzien}, ${reszta}${rok}`;
+}
+
 function kartaObserwacji(o: Observation, dzis: string): string {
   const oceniona = !!o.statsFilledIn;
   const trwa = live && live.observationId === o.id;
@@ -280,7 +299,7 @@ function kartaObserwacji(o: Observation, dzis: string): string {
       <div class="row">
         <div style="min-width:0;">
           <div class="name">${esc(o.match || "Mecz bez nazwy")}</div>
-          <div class="sub" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(o.date)}${o.matchTime ? " · " + esc(o.matchTime) : ""}${o.location ? " · " + esc(o.location) : ""}</div>
+          <div class="sub" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(dataZDniem(o.date || ""))}${o.matchTime ? " · " + esc(o.matchTime) : ""}${o.location ? " · " + esc(o.location) : ""}</div>
         </div>
         <span class="tag ${trwa ? "live" : oceniona ? "done" : ""}">${trwa ? "W toku" : oceniona ? "Oceniona" : o.date === dzis ? "Dziś" : "Plan"}</span>
       </div>
@@ -371,7 +390,8 @@ function viewNowa(): string {
       <input id="n-match" value="${esc(planMecz)}" placeholder="np. Chojniczanka Chojnice - Znicz Pruszków">
       <button class="btn ghost small" style="margin-top:6px;" data-act="otworz-terminarz">📅 Wybierz z terminarza</button></div>
     <div class="grid-2">
-      <div class="field"><span class="label">Data</span><input type="date" id="n-date" value="${esc(planData || todayISO())}"></div>
+      <div class="field"><span class="label">Data</span><input type="date" id="n-date" value="${esc(planData || todayISO())}">
+        <span class="hint" id="n-dzien" style="display:block; margin-top:4px;">${esc(dataZDniem(planData || todayISO()))}</span></div>
       <div class="field"><span class="label">Godzina</span><input type="time" id="n-time" value="${esc(planGodzina || "17:00")}"></div>
     </div>
     <div class="field"><span class="label">Miejsce</span>
@@ -462,7 +482,7 @@ function viewTerminarz(): string {
       <button class="sklad-row" style="flex-direction:column; align-items:flex-start; gap:3px;"
               data-act="wybierz-mecz" data-id="${esc(m.id)}">
         <span class="sklad-nazwa" style="font-weight:650;">${esc(m.homeTeam)} - ${esc(m.awayTeam)}</span>
-        <span class="sub" style="font-size:11.5px;">${esc(m.date)}${m.time ? " · " + esc(m.time) : ""}${m.city ? " · " + esc(m.city) : ""}</span>
+        <span class="sub" style="font-size:11.5px;"><strong style="color:var(--text-strong); font-weight:650;">${esc(dataZDniem(m.date || ""))}</strong>${m.time ? " · " + esc(m.time) : ""}${m.city ? " · " + esc(m.city) : ""}</span>
       </button>`).join("") || '<div class="empty">Brak spotkań spełniających warunki.</div>'}
     ${wszystkie.length > lista.length ? `<p class="hint">Pokazano ${lista.length} z ${wszystkie.length} — zawęź wyszukiwaniem.</p>` : ""}`;
 }
@@ -1169,7 +1189,7 @@ function viewPodglad(): string {
 
   return `
     <h2>${esc(obs.match || "Obserwacja")}</h2>
-    <p class="hint">${esc(obs.date)}${obs.matchTime ? " · " + esc(obs.matchTime) : ""}${obs.scout ? " · " + esc(obs.scout) : ""}</p>
+    <p class="hint">${esc(dataZDniem(obs.date || ""))}${obs.matchTime ? " · " + esc(obs.matchTime) : ""}${obs.scout ? " · " + esc(obs.scout) : ""}</p>
 
     ${(o as any).poziomMeczu || ((o as any).warunki || []).length || (o as any).notatkaMeczu ? `
       <div class="section" style="border-top:none; margin-top:0; padding-top:0;">
@@ -1869,7 +1889,7 @@ function saveNowa(odRazu: boolean) {
   listaTryb = "nadchodzace";
   view = "dzis";
   render();
-  toast("Zaplanowane na " + (obs.date || ""));
+  toast("Zaplanowane na " + dataZDniem(obs.date || ""));
 }
 
 // Dyktowanie notatek. Rozpoznawanie mowy w przeglądarce wysyła dźwięk na serwer producenta,
@@ -2321,6 +2341,15 @@ document.addEventListener("change", (e) => {
   if (wyborLigi.id === "t-liga") { terminarzLiga = wyborLigi.value; render(); return; }
 
   const pole = e.target as HTMLInputElement;
+
+  // Dzień tygodnia pod polem daty. Podpis podmieniamy WPROST, bez przerysowania widoku —
+  // pełny render zabrałby zawartość pozostałych pól formularza planowania.
+  if (pole.id === "n-date") {
+    const podpis = $("n-dzien");
+    if (podpis) podpis.textContent = dataZDniem(pole.value);
+    return;
+  }
+
   if (pole.dataset.numerStrona) {
     // Numeru nie zgadnie żaden parser we wszystkich układach — bywa w osobnej komórce, bywa
     // przy ikonie gola albo kartki, bywa go po prostu brak. Dlatego da się go dopisać ręcznie,
