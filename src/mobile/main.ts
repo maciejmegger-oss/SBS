@@ -171,13 +171,16 @@ function toast(msg: string) {
 // Stan aplikacji
 // ---------------------------------------------------------------------------
 
-type ViewName = "dzis" | "live" | "ocena" | "baza" | "nowa" | "podglad" | "terminarz";
+type ViewName = "dzis" | "live" | "ocena" | "baza" | "nowa" | "podglad" | "terminarz" | "wklej";
 let podgladObsId: string | null = null;
 // Wybór z terminarza wypełnia formularz planowania, więc jego treść musi przeżyć przejście
 // do listy meczów i z powrotem.
 let planMecz = "", planData = "", planGodzina = "", planMiejsce = "";
 let terminarzLiga = "";
 let terminarzSzukaj = "";
+// Tekst przepisany ze zrzutu ekranu, czekający na rozpoznanie. Trzymany w stanie, a nie tylko
+// w polu, żeby przejście do formularza i powrót go nie kasowały.
+let wklejTekst = "";
 // Która część listy obserwacji jest widoczna: to, co przed nami, czy to, co już rozliczone.
 let listaTryb: "nadchodzace" | "zakonczone" = "nadchodzace";
 
@@ -383,6 +386,165 @@ function viewDzis(): string {
     <button class="btn ghost" data-act="go-nowa">+ Zaplanuj obserwację</button>`;
 }
 
+// ============================================================================
+// WCZYTANIE MECZU ZE ZRZUTU EKRANU
+// ============================================================================
+//
+// Mecz bierze się zwykle z cudzej aplikacji — ŁNP, terminarz okręgu, strona klubu. Przepisywanie
+// z niej czterech pól palcem to najbardziej jałowa czynność w całym panelu, a przy okazji jedyna,
+// przy której łatwo pomylić datę.
+//
+// ROZPOZNAWANIE OBRAZU ROBI TELEFON, NIE MY. iPhone od iOS 15 czyta tekst wprost ze zdjęcia
+// (przytrzymanie palcem na zrzucie w Zdjęciach), i robi to po polsku lepiej, niż zrobiłaby to
+// biblioteka doładowana do strony — a taka biblioteka to kilkanaście megabajtów pobierane na
+// stadionie. Panel dostaje więc gotowy TEKST i jego zadaniem jest go zrozumieć.
+//
+// Zasada nadrzędna: NIGDY nie zgadujemy po cichu. Pola wypełniamy tylko tym, co rozpoznane pewnie,
+// resztę zostawiamy pustą i mówimy wprost, czego nie znaleziono — formularz stoi obok, poprawienie
+// jednego pola jest tańsze niż wykrycie, że data jest o rok obok.
+
+const MIESIACE_PL = [
+  "stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca",
+  "lipca", "sierpnia", "września", "października", "listopada", "grudnia",
+];
+
+// Wiersze interfejsu obcej aplikacji, które NIE są nazwą drużyny. Bez tej listy „Statystyki"
+// albo „Dziś grają" trafiały do pola z nazwą meczu.
+const NIE_DRUZYNA = new Set([
+  "szczegóły", "szczegóły meczu", "relacja", "statystyki", "mecze", "rozgrywki", "ulubione",
+  "dziś grają", "terminarz", "stadion", "runda", "rozgrywka", "kolejka", "tabela", "składy",
+  "przebieg", "sędziowie", "informacje", "wynik", "transmisja", "bilety", "więcej",
+]);
+
+export interface DaneZeZrzutu {
+  gospodarze: string;
+  goscie: string;
+  data: string;      // ISO
+  godzina: string;
+  miejsce: string;
+  rozgrywki: string;
+  braki: string[];   // czego NIE udało się odczytać — pokazujemy to wprost
+}
+
+// Rok dla daty zapisanej bez roku („02.09"). Bierzemy ten, przy którym mecz wypada najbliżej
+// w przód: terminarze pokazuje się przed spotkaniem, nie po nim.
+function rokDlaDaty(dzien: number, miesiac: number): number {
+  const teraz = new Date();
+  const wTym = new Date(teraz.getFullYear(), miesiac - 1, dzien);
+  // Mecz sprzed więcej niż miesiąca to prawie na pewno przyszły rok (grudzień → styczeń).
+  return wTym.getTime() < teraz.getTime() - 31 * 864e5 ? teraz.getFullYear() + 1 : teraz.getFullYear();
+}
+
+const iso = (r: number, m: number, d: number) =>
+  `${r}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+
+export function czytajZeZrzutu(tekst: string, kluby: string[]): DaneZeZrzutu {
+  const wiersze = tekst.split(/\r?\n/).map((w) => w.trim()).filter(Boolean);
+  const calosc = wiersze.join("\n");
+  const wynik: DaneZeZrzutu = { gospodarze: "", goscie: "", data: "", godzina: "", miejsce: "", rozgrywki: "", braki: [] };
+
+  // ---- DATA. Trzy zapisy, od najpewniejszego. Słowny („2 września 2026") jest najlepszy, bo nie
+  // da się go pomylić z formatem amerykańskim.
+  const slowna = calosc.match(new RegExp(`(\\d{1,2})\\s+(${MIESIACE_PL.join("|")})\\s+(\\d{4})`, "i"));
+  const zRokiem = calosc.match(/\b(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{4})\b/);
+  const bezRoku = calosc.match(/\b(\d{1,2})[.](\d{1,2})\b(?!\s*[.\-/]\s*\d)/);
+  if (slowna) {
+    wynik.data = iso(Number(slowna[3]), MIESIACE_PL.indexOf(slowna[2].toLowerCase()) + 1, Number(slowna[1]));
+  } else if (zRokiem) {
+    wynik.data = iso(Number(zRokiem[3]), Number(zRokiem[2]), Number(zRokiem[1]));
+  } else if (bezRoku) {
+    const d = Number(bezRoku[1]);
+    const m = Number(bezRoku[2]);
+    if (d >= 1 && d <= 31 && m >= 1 && m <= 12) wynik.data = iso(rokDlaDaty(d, m), m, d);
+  }
+  if (!wynik.data) wynik.braki.push("data");
+
+  // ---- GODZINA. Bierzemy tę z wiersza z terminarzem, jeśli jest — na ekranie meczu bywa też
+  // godzina transmisji albo otwarcia bram, a ta z terminarza jest tą właściwą.
+  const wierszCzasu = wiersze.find((w) => /^terminarz\s*:/i.test(w)) || "";
+  const czas = (wierszCzasu.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/) || calosc.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/));
+  if (czas) wynik.godzina = `${String(Number(czas[1])).padStart(2, "0")}:${czas[2]}`;
+  else wynik.braki.push("godzina");
+
+  // ---- MIEJSCE i ROZGRYWKI: pola podpisane wprost, więc bez zgadywania.
+  // „Gdańska 163 , 85-915 Bydgoszcz" — odstęp przed przecinkiem bierze się z układu tamtej
+  // aplikacji, nie z adresu.
+  const poEtykiecie = (etykieta: RegExp) => {
+    const w = wiersze.find((x) => etykieta.test(x));
+    return w ? w.replace(etykieta, "").replace(/\s+,/g, ",").replace(/\s+/g, " ").trim() : "";
+  };
+  wynik.miejsce = poEtykiecie(/^\s*(stadion|adres|obiekt|miejsce)\s*:\s*/i);
+  wynik.rozgrywki = poEtykiecie(/^\s*(rozgrywka|rozgrywki|liga)\s*:\s*/i);
+  if (!wynik.miejsce) wynik.braki.push("miejsce");
+
+  // ---- DRUŻYNY. Najpierw zapis „A - B" w jednym wierszu, potem dopasowanie do klubów Z BAZY
+  // (najpewniejsza droga — nazwa zgadza się wtedy z kartoteką), a na końcu odsiew wierszy
+  // wyglądających na nazwę drużyny.
+  const znormalizuj = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+  const klubyN = kluby.map((k) => ({ nazwa: k, n: znormalizuj(k) })).filter((k) => k.n.length > 2);
+
+  const wJednym = wiersze
+    .map((w) => w.match(/^(.{3,40}?)\s+[-–—:]\s+(.{3,40})$/))
+    .find((m) => m && !/^\s*(terminarz|stadion|runda|rozgrywka)/i.test(m[1]));
+  if (wJednym) {
+    wynik.gospodarze = wJednym[1].trim();
+    wynik.goscie = wJednym[2].trim();
+  } else {
+    const znalezione: string[] = [];
+    for (const w of wiersze) {
+      const n = znormalizuj(w);
+      if (NIE_DRUZYNA.has(n) || /[:]/.test(w) || /\d{2}:\d{2}/.test(w)) continue;
+      const trafiony = klubyN.find((k) => k.n === n || (n.length > 4 && (k.n.includes(n) || n.includes(k.n))));
+      if (trafiony && !znalezione.includes(trafiony.nazwa)) znalezione.push(trafiony.nazwa);
+      if (znalezione.length === 2) break;
+    }
+    // Kluby spoza bazy — drużyny młodzieżowe rzadko w niej są. Wiersz musi wyglądać jak nazwa:
+    // od dużej litery, bez dwukropka, bez dat i liczb, najwyżej pięć słów.
+    if (znalezione.length < 2) {
+      for (const w of wiersze) {
+        const n = znormalizuj(w);
+        if (znalezione.includes(w) || NIE_DRUZYNA.has(n)) continue;
+        if (/[:]/.test(w) || /\d/.test(w) || w.split(/\s+/).length > 5) continue;
+        if (!/^[A-ZĄĆĘŁŃÓŚŹŻ]/.test(w)) continue;
+        znalezione.push(w);
+        if (znalezione.length === 2) break;
+      }
+    }
+    wynik.gospodarze = znalezione[0] || "";
+    wynik.goscie = znalezione[1] || "";
+  }
+  if (!wynik.gospodarze || !wynik.goscie) wynik.braki.push("drużyny");
+
+  return wynik;
+}
+
+function viewWklej(): string {
+  return `
+    <div class="row" style="margin-bottom:8px;">
+      <h2 style="margin:0;">Wgraj mecz</h2>
+      <button class="btn ghost small" data-act="zamknij-wklej">Wróć</button>
+    </div>
+    <p class="hint">Zrzut ekranu z ŁNP, terminarza okręgu albo strony klubu — panel wyciągnie
+      z niego drużyny, datę, godzinę i adres.</p>
+
+    <div class="card">
+      <span class="label">Jak wziąć tekst ze zrzutu</span>
+      <ol style="margin:8px 0 0; padding-left:20px; font-size:14.5px; line-height:1.65; color:var(--text-2);">
+        <li>Otwórz zrzut w <strong>Zdjęciach</strong></li>
+        <li><strong>Przytrzymaj palcem</strong> na tekście — iPhone go podświetli</li>
+        <li><strong>Zaznacz wszystko</strong> → <strong>Kopiuj</strong></li>
+        <li>Wróć tutaj i naciśnij <strong>Wklej ze schowka</strong></li>
+      </ol>
+    </div>
+
+    <button class="btn" data-act="wklej-ze-schowka">📋 Wklej ze schowka</button>
+
+    <div class="field" style="margin-top:10px;"><span class="label">Albo wklej tutaj ręcznie</span>
+      <textarea id="wklej-tekst" rows="8" placeholder="Zawisza Bydgoszcz&#10;02.09, Śr.&#10;18:00&#10;ZKS Elana Toruń&#10;Terminarz: 2 września 2026 Środa 18:00&#10;Stadion: Gdańska 163, 85-915 Bydgoszcz">${esc(wklejTekst)}</textarea></div>
+
+    <button class="btn ghost" data-act="wczytaj-ze-zrzutu">Wczytaj do formularza</button>`;
+}
+
 function viewNowa(): string {
   const scouts = cache.scouts.length
     ? cache.scouts.map((s) => `<option ${s === getScout() ? "selected" : ""}>${esc(s)}</option>`).join("")
@@ -399,7 +561,10 @@ function viewNowa(): string {
 
     <div class="field"><span class="label">Mecz (gospodarz - gość)</span>
       <input id="n-match" value="${esc(planMecz)}" placeholder="np. Chojniczanka Chojnice - Znicz Pruszków">
-      <button class="btn ghost small" style="margin-top:6px;" data-act="otworz-terminarz">📅 Wybierz z terminarza</button></div>
+      <div style="display:flex; gap:8px; margin-top:6px;">
+        <button class="btn ghost small" style="margin:0;" data-act="otworz-terminarz">📅 Z terminarza</button>
+        <button class="btn ghost small" style="margin:0;" data-act="otworz-wklej">🖼 Ze zrzutu</button>
+      </div></div>
     <div class="grid-2">
       <div class="field"><span class="label">Data</span><input type="date" id="n-date" value="${esc(planData || todayISO())}">
         <span class="hint" id="n-dzien" style="display:block; margin-top:4px;">${esc(dataZDniem(planData || todayISO()))}</span></div>
@@ -1468,6 +1633,7 @@ function render() {
     view === "ocena" ? viewOcena() :
     view === "podglad" ? viewPodglad() :
     view === "terminarz" ? viewTerminarz() :
+    view === "wklej" ? viewWklej() :
     viewBaza();
 
   app.innerHTML = `
@@ -1893,6 +2059,35 @@ function istniejacaObserwacja(match: string, date: string): Observation | undefi
 // zasięgu — sytuacja codzienna, bo pierwsze dotknięcie nie daje natychmiastowej odpowiedzi.
 let zapisywanieTrwa = false;
 
+// Rozpoznanie wklejonego tekstu i wypełnienie formularza planowania.
+//
+// Pola wypełniamy WYŁĄCZNIE tym, co rozpoznane — pustych nie nadpisujemy zgadywanką, a tego,
+// co scout wpisał wcześniej ręcznie, nie kasujemy pustym wynikiem. Na końcu mówimy wprost,
+// czego nie znaleziono: milczenie kazałoby sprawdzać wszystkie cztery pola po kolei.
+function wczytajZeZrzutu(): void {
+  wklejTekst = $<HTMLTextAreaElement>("wklej-tekst")?.value ?? wklejTekst;
+  if (!wklejTekst.trim()) { toast("Najpierw wklej tekst ze zrzutu"); return; }
+
+  const d = czytajZeZrzutu(wklejTekst, cache.clubs.map((c) => c.name || ""));
+  if (d.gospodarze && d.goscie) planMecz = `${d.gospodarze} - ${d.goscie}`;
+  if (d.data) planData = d.data;
+  if (d.godzina) planGodzina = d.godzina;
+  if (d.miejsce) planMiejsce = d.miejsce;
+
+  view = "nowa";
+  render();
+
+  const rozpoznane = [
+    d.gospodarze && d.goscie ? "drużyny" : "",
+    d.data ? dataZDniem(d.data) : "",
+    d.godzina, d.miejsce ? "miejsce" : "",
+  ].filter(Boolean);
+  if (!rozpoznane.length) { toast("Nie rozpoznałem niczego — sprawdź, czy skopiował się cały tekst"); return; }
+  toast(d.braki.length
+    ? `Wczytano: ${rozpoznane.join(", ")}. Uzupełnij: ${d.braki.join(", ")}`
+    : `Wczytano wszystko: ${rozpoznane.join(", ")}`);
+}
+
 function saveNowa(odRazu: boolean) {
   if (zapisywanieTrwa) return;
   const match = $<HTMLInputElement>("n-match")?.value.trim() || "";
@@ -1997,6 +2192,37 @@ document.addEventListener("click", (e) => {
       break;
 
     case "zamknij-terminarz": view = "nowa"; render(); break;
+
+    // WGRANIE MECZU ZE ZRZUTU EKRANU.
+    case "otworz-wklej":
+      zapamietajPlan();          // formularz nie może stracić tego, co już wpisane
+      view = "wklej";
+      render();
+      break;
+
+    case "zamknij-wklej":
+      wklejTekst = $<HTMLTextAreaElement>("wklej-tekst")?.value ?? wklejTekst;
+      view = "nowa";
+      render();
+      break;
+
+    // Schowek czytamy TYLKO na dotknięcie przycisku: iPhone pyta wtedy o zgodę raz i wprost,
+    // zamiast pozwalać stronie zaglądać do schowka po cichu.
+    case "wklej-ze-schowka": {
+      if (!navigator.clipboard?.readText) { toast("Ta przeglądarka nie odda schowka — wklej ręcznie niżej"); break; }
+      navigator.clipboard.readText()
+        .then((t) => {
+          if (!t.trim()) { toast("Schowek jest pusty — skopiuj tekst ze zrzutu"); return; }
+          wklejTekst = t;
+          const pole = $<HTMLTextAreaElement>("wklej-tekst");
+          if (pole) pole.value = t;
+          wczytajZeZrzutu();
+        })
+        .catch(() => toast("Nie udało się odczytać schowka — wklej ręcznie w pole niżej"));
+      break;
+    }
+
+    case "wczytaj-ze-zrzutu": wczytajZeZrzutu(); break;
 
     case "wybierz-mecz": {
       const m = cache.matches.find((x) => x.id === el.dataset.id);
