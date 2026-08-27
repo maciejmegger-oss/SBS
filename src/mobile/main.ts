@@ -329,19 +329,9 @@ function kartaObserwacji(o: Observation, dzis: string): string {
     </div>`;
 }
 
-// NAGŁÓWEK EKRANU OBSERWACJI, z wylogowaniem przy prawej krawędzi.
-//
-// Wylogowanie stoi w jednym rzędzie z tytułem, na wysokości, na której nic się nie tapie w trakcie
-// meczu — kafle zdarzeń i przyciski obserwacji są niżej. Jest wąskie i przygaszone, bo to nie jest
-// czynność codzienna; przed skasowaniem kopii bazy broni pytanie potwierdzające (patrz „logout").
 function naglowekObserwacji(podtytul: string): string {
   return `
-    <div class="row" style="align-items:center; margin-bottom:2px;">
-      <h2 style="margin:0;">Obserwacje</h2>
-      ${zalogowany
-        ? '<button class="btn ghost small" style="flex:0 0 auto; width:auto; margin:0;" data-act="logout">Wyloguj</button>'
-        : '<button class="btn ghost small" style="flex:0 0 auto; width:auto; margin:0;" data-act="go-login">Zaloguj</button>'}
-    </div>
+    <h2>Obserwacje</h2>
     <p class="hint">${podtytul}</p>`;
 }
 
@@ -1500,6 +1490,19 @@ function render() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">${t.icon}</svg>
           ${t.label}
         </button>`).join("")}
+      <!-- Wylogowanie w OSTATNIEJ kolumnie siatki, nie zaraz za zakładkami: pasek ma cztery
+           kolumny, a zakładek bywa dwie albo trzy (Live tylko w trakcie meczu). Bez tego przycisk
+           przeskakiwałby w bok przy pierwszym gwizdku, czyli dokładnie wtedy, gdy kciuk uczy się
+           panelu na pamięć. Trzyma się prawego rogu niezależnie od tego, co obok. -->
+      ${zalogowany
+        ? `<button class="tab tab-wyloguj" style="grid-column:4;" data-act="logout">
+             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/></svg>
+             Wyloguj
+           </button>`
+        : `<button class="tab" style="grid-column:4;" data-act="go-login">
+             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5M15 12H3"/></svg>
+             Zaloguj
+           </button>`}
     </nav>`;
 
   if (view === "live" && live) startClockTicker();
@@ -2478,7 +2481,10 @@ function renderLogin(info?: string) {
   app.innerHTML = `
     <div class="login">
       <div class="login-brand">
-        <img src="${LOGO}" alt="Scout Base System" width="88" height="88">
+        <div class="login-stage">
+          <div class="login-logo"><img src="${LOGO}" alt="Scout Base System" width="88" height="88"></div>
+          <div class="login-orbit" aria-hidden="true"></div>
+        </div>
         <h1>SBS Scout Live</h1>
         <p class="hint">Zaloguj się tym samym kontem, co w Scout Base System.</p>
       </div>
@@ -2628,7 +2634,10 @@ function renderCzekaNaZgode(konto: Konto) {
   app.innerHTML = `
     <div class="login">
       <div class="login-brand">
-        <img src="${LOGO}" alt="Scout Base System" width="88" height="88">
+        <div class="login-stage">
+          <div class="login-logo"><img src="${LOGO}" alt="Scout Base System" width="88" height="88"></div>
+          <div class="login-orbit" aria-hidden="true"></div>
+        </div>
         <h1>${odrzucone ? "Brak dostępu" : "Konto czeka na akceptację"}</h1>
         <p class="hint">${odrzucone
           ? "Administrator systemu nie przyznał dostępu temu kontu."
