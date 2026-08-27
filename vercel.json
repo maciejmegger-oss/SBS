@@ -56,6 +56,15 @@
       ]
     },
     {
+      "source": "/wersja.json",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    },
+    {
       "source": "/zakladka-lnp-v2.js",
       "headers": [
         {

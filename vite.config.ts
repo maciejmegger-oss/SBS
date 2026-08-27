@@ -85,9 +85,39 @@ function friendlyRoutesDevPlugin() {
 // rozstrzygnięcie „czy poprawka doszła" sprowadzało się do zgadywania po wyglądzie ekranu.
 const WERSJA = new Date().toISOString().slice(0, 16).replace("T", " ");
 
+// ZNACZNIK WERSJI TAKŻE JAKO PLIK NA SERWERZE.
+//
+// Sam `__WERSJA__` mówi tylko, na czym pracuje TA karta. Panel musi jeszcze umieć zapytać, co
+// stoi na serwerze — inaczej nie ma jak zauważyć, że wdrożono poprawkę.
+//
+// Wcześniej opierało się to na mechanizmie offline (nowy service worker = nowa wersja) i było
+// bezużyteczne: plik sw.js nie zmienia się przy zwykłym wdrożeniu, więc przeglądarka nie miała
+// czego instalować, zdarzenie „zmiana kontrolera" nie padało nigdy i pasek o nowej wersji nie
+// pokazywał się ani razu. Znacznik w osobnym pliku jest od tego niezależny: zmienia się przy
+// KAŻDYM zbudowaniu, bo bierze się z godziny budowania.
+function wersjaPlikPlugin() {
+  const tresc = JSON.stringify({ wersja: WERSJA });
+  return {
+    name: "wersja-panelu",
+    // Serwer deweloperski nie przechodzi przez generateBundle, a bez tego sprawdzanie wersji
+    // dawałoby lokalnie 404 i nie dałoby się go przetestować przed wdrożeniem.
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (!req.url || req.url.split("?")[0] !== "/wersja.json") return next();
+        res.setHeader("Content-Type", "application/json");
+        res.setHeader("Cache-Control", "no-store");
+        res.end(tresc);
+      });
+    },
+    generateBundle() {
+      this.emitFile({ type: "asset", fileName: "wersja.json", source: tresc });
+    },
+  };
+}
+
 export default defineConfig({
   define: { __WERSJA__: JSON.stringify(WERSJA) },
-  plugins: [vercelApiDevPlugin(), friendlyRoutesDevPlugin()],
+  plugins: [vercelApiDevPlugin(), friendlyRoutesDevPlugin(), wersjaPlikPlugin()],
   server: {
     port: 5173,
     hmr: process.env.NODE_ENV === 'production' ? false : undefined,
