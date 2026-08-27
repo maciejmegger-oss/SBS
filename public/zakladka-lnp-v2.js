@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v5 z 28.08.2026";
+var SBS_ZBIERACZ="v6 z 28.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -18,7 +18,17 @@ var STRONA_STARTOWA=location.href;
 // przechwytywania, zanim przegladarka zdazy zareagowac.
 // Wyjatek: droga awaryjna, w ktorej zbieracz wchodzi w kolejne mecze i wraca przez history.back(),
 // nawiguje CELOWO. Na jej czas rygiel jest uchylany — patrz zbierzAdresyPrzezKlikanie().
-var ZBIERAM=true, POZWOL_NAWIGACJE=false;
+var ZBIERAM=true, POZWOL_NAWIGACJE=false, zablokowanych=0;
+
+// PORoWNUJEMY CALY ADRES, NIE SAMA SCIEZKE.
+//
+// LNP to aplikacja Angulara: strona grupy ma te sama sciezke "/rozgrywki" co strona ogolna,
+// a sezon, liga i grupa siedza w PARAMETRACH. Porownywanie samych sciezek uznawalo wiec odnosnik
+// "Wyniki" ze stopki (href="/rozgrywki") za "ta sama strona" i przepuszczalo klikniecie —
+// Angular resetowal widok do Ekstraklasy i zbieracz tracil kolejke IV ligi.
+//
+// Kotwica bez adresu albo z sama kotwica (#) nie nawiguje nigdzie i jest bezpieczna.
+function bezKotwicy(u){ try{ var x=new URL(u, location.href); return x.origin+x.pathname+x.search; }catch(e){ return ''; } }
 document.addEventListener('click', function(e){
  if(!ZBIERAM || POZWOL_NAWIGACJE) return;
  var el=e.target;
@@ -27,10 +37,11 @@ document.addEventListener('click', function(e){
  if(!a) return;
  var h=a.getAttribute&&a.getAttribute('href');
  if(!h || h.charAt(0)==='#') return;
- var inna=true;
- try{ inna = new URL(a.href, location.href).pathname !== location.pathname; }catch(err){}
  var cel=(a.getAttribute&&a.getAttribute('target'))||'';
- if(inna || (cel && cel!=='_self')){ e.preventDefault(); e.stopPropagation(); }
+ var gdzieIndziej = bezKotwicy(a.href) !== bezKotwicy(location.href);
+ if(gdzieIndziej || (cel && cel!=='_self')){
+  e.preventDefault(); e.stopPropagation(); zablokowanych++;
+ }
 }, true);
 window.addEventListener('beforeunload', function(){ ZBIERAM=false; });
 var box=document.createElement('div');
@@ -154,7 +165,8 @@ function wolnoKliknac(el){
  if(t && t!=='_self') return false;
  var h=a.getAttribute&&a.getAttribute('href');
  if(!h || h.charAt(0)==='#') return true;
- try{ return new URL(a.href, location.href).pathname === location.pathname; }catch(e){ return false; }
+ // Caly adres, nie sama sciezka — grupa siedzi w parametrach (patrz komentarz przy ryglu).
+ return bezKotwicy(a.href) === bezKotwicy(location.href);
 }
 
 function kandydaciMeczow(){
@@ -181,9 +193,7 @@ function kandydaciMeczow(){
   if(kotwica){
    var cel_href=kotwica.getAttribute('href')||'';
    if(cel_href && cel_href.charAt(0)!=='#'){
-    var innaStrona=true;
-    try{ innaStrona = new URL(kotwica.href, location.href).pathname !== location.pathname; }catch(e){}
-    if(innaStrona) continue;
+    if(bezKotwicy(kotwica.href) !== bezKotwicy(location.href)) continue;
    }
   }
   // Stopka i naglowek serwisu nie zawieraja zakladek tresci — tylko nawigacje po calym portalu.
@@ -607,7 +617,7 @@ function koniec(){
  }
  box.remove();
  if(!udalo){alert('SBS '+SBS_ZBIERACZ+': zebralem '+zebrane.length+' protokolow, ale przegladarka nie pozwolila zapisac ich do schowka.\n\nKliknij zakladke jeszcze raz - za drugim razem zwykle sie udaje.');return;}
- alert('SBS '+SBS_ZBIERACZ+': dolozylem '+(zebrane.length-bylo)+' protokolow (kolejek przejrzanych: '+kolejek+(pominietych?', pominietych nierozegranych: '+pominietych:'')+'). W schowku masz teraz '+zebrane.length+' protokolow ('+tresc.length+' znakow).\n\nW aplikacji: Kluby -> wybierz grupe -> \u201eProtokoly z LNP\u201d -> Ctrl+V.\n\nShift + klikniecie tej zakladki czysci zebrana liste.');
+ alert('SBS '+SBS_ZBIERACZ+': dolozylem '+(zebrane.length-bylo)+' protokolow (kolejek przejrzanych: '+kolejek+(pominietych?', pominietych nierozegranych: '+pominietych:'')+(zablokowanych?', zatrzymanych prob wyjscia ze strony: '+zablokowanych:'')+'). W schowku masz teraz '+zebrane.length+' protokolow ('+tresc.length+' znakow).\n\nW aplikacji: Kluby -> wybierz grupe -> \u201eProtokoly z LNP\u201d -> Ctrl+V.\n\nShift + klikniecie tej zakladki czysci zebrana liste.');
 }
 
 start();
