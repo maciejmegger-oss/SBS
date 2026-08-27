@@ -206,10 +206,6 @@ let kontoEmail = "";
 // na końcu pliku — bez tego wdrożona poprawka potrafiła tygodniami nie docierać do telefonu.
 let nowaWersja = false;
 
-// Czy w tle doszła nowsza wersja panelu. Patrz komentarz przy rejestracji mechanizmu offline
-// na końcu pliku — bez tego wdrożona poprawka potrafiła tygodniami nie docierać do telefonu.
-let nowaWersja = false;
-
 // Formularz oceny — trzymany w pamięci, żeby przełączenie zakładki go nie kasowało.
 interface OcenaState {
   observationId: string;
@@ -333,20 +329,20 @@ function kartaObserwacji(o: Observation, dzis: string): string {
     </div>`;
 }
 
-// STOPKA KONTA na ekranie obserwacji.
+// NAGŁÓWEK EKRANU OBSERWACJI, z wylogowaniem przy prawej krawędzi.
 //
-// Wylogowanie stoi NA KOŃCU listy, nie przy jej górze: to jedyny przycisk w panelu, który
-// zabiera z telefonu kopię bazy, więc nie może sąsiadować z niczym, w co dotyka się w biegu.
-// Obok niego adres konta — scout bywa zalogowany innym kontem niż na komputerze i wtedy widzi
-// pustą bazę, nie mając jak dojść dlaczego.
-function stopkaKonta(): string {
-  if (!zalogowany) return '<button class="btn ghost" data-act="go-login">Zaloguj się</button>';
+// Wylogowanie stoi w jednym rzędzie z tytułem, na wysokości, na której nic się nie tapie w trakcie
+// meczu — kafle zdarzeń i przyciski obserwacji są niżej. Jest wąskie i przygaszone, bo to nie jest
+// czynność codzienna; przed skasowaniem kopii bazy broni pytanie potwierdzające (patrz „logout").
+function naglowekObserwacji(podtytul: string): string {
   return `
-    <div class="section" style="display:flex; align-items:center; gap:10px;">
-      <span class="sub" style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-        ${kontoEmail ? esc(kontoEmail) : "Zalogowany"}</span>
-      <button class="btn ghost small" style="flex:0 0 auto; width:auto; margin:0;" data-act="logout">Wyloguj się</button>
-    </div>`;
+    <div class="row" style="align-items:center; margin-bottom:2px;">
+      <h2 style="margin:0;">Obserwacje</h2>
+      ${zalogowany
+        ? '<button class="btn ghost small" style="flex:0 0 auto; width:auto; margin:0;" data-act="logout">Wyloguj</button>'
+        : '<button class="btn ghost small" style="flex:0 0 auto; width:auto; margin:0;" data-act="go-login">Zaloguj</button>'}
+    </div>
+    <p class="hint">${podtytul}</p>`;
 }
 
 function viewDzis(): string {
@@ -374,8 +370,7 @@ function viewDzis(): string {
     });
 
     return `
-      <h2>Obserwacje</h2>
-      <p class="hint">Zakończone i minione · ${skonczone.length}</p>
+      ${naglowekObserwacji("Zakończone i minione · " + skonczone.length)}
       ${przelacznik}
       ${skonczone.length
         ? [...wgMiesiaca.entries()].map(([klucz, lista]) => `
@@ -383,8 +378,7 @@ function viewDzis(): string {
               <span class="label">${esc(klucz === "bez daty" ? "Bez daty" : miesiacPl(klucz + "-01"))} · ${lista.length}</span>
               ${lista.map((o) => kartaObserwacji(o, dzis)).join("")}
             </div>`).join("")
-        : '<div class="empty">Nic jeszcze nie zostało zakończone.</div>'}
-      ${stopkaKonta()}`;
+        : '<div class="empty">Nic jeszcze nie zostało zakończone.</div>'}`;
   }
 
   const lista = cache.observations
@@ -392,13 +386,11 @@ function viewDzis(): string {
     .sort((a, b) => ((a.date || "") + (a.matchTime || "")).localeCompare((b.date || "") + (b.matchTime || "")));
 
   return `
-    <h2>Obserwacje</h2>
-    <p class="hint">Zaplanowane${cache.fetchedAt ? " · kopia z " + new Date(cache.fetchedAt).toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}</p>
+    ${naglowekObserwacji("Zaplanowane" + (cache.fetchedAt ? " · kopia z " + new Date(cache.fetchedAt).toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""))}
     ${banerIkony()}
     ${przelacznik}
     ${lista.length ? lista.map((o) => kartaObserwacji(o, dzis)).join("") : '<div class="empty">Nic nie czeka.<br>Zaplanuj obserwację albo zajrzyj do zakończonych.</div>'}
-    <button class="btn ghost" data-act="go-nowa">+ Zaplanuj obserwację</button>
-    ${stopkaKonta()}`;
+    <button class="btn ghost" data-act="go-nowa">+ Zaplanuj obserwację</button>`;
 }
 
 function viewNowa(): string {
@@ -1310,6 +1302,11 @@ function viewBaza(): string {
         <strong style="font-family:var(--data); font-size:12.5px; color:${cache.matches.length ? "var(--text-2)" : "var(--accent-fg)"};">${cache.matches.length}</strong></div>
       <div class="row" style="margin-top:6px;"><span class="sub">Wersja panelu</span>
         <strong style="font-family:var(--data); font-size:12.5px; color:var(--text-2);">${esc(WERSJA_PANELU)}</strong></div>
+      <!-- Konto zostaje tu jako INFORMACJA, nie przycisk (wylogowanie przeniosło się na ekran
+           obserwacji). Bez niego zalogowanie się w telefonie innym kontem niż na komputerze daje
+           pustą bazę bez jednej wskazówki, skąd się wzięła. -->
+      <div class="row" style="margin-top:6px;"><span class="sub">Konto</span>
+        <strong style="font-family:var(--data); font-size:12.5px; color:var(--text-2); min-width:0; overflow:hidden; text-overflow:ellipsis;">${esc(kontoEmail || "—")}</strong></div>
       <button class="btn ghost" data-act="refresh">Odśwież kopię bazy</button>
       ${n ? '<button class="btn ghost" data-act="flush">Wyślij teraz</button>' : ""}
     </div>
