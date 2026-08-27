@@ -109,6 +109,23 @@ function kandydaciMeczow(){
   if(!nazwy.test(t)) continue;
   if(el.tagName==='TH'||el.tagName==='TD') continue;
   if(el.closest&&el.closest('table')) continue;
+  // NIE KLIKAMY W NIC, CO PROWADZI NA INNA STRONE.
+  //
+  // W stopce LNP jest odnosnik "Wyniki" kierujacy na laczynaspilka.pl/rozgrywki. Pasowal do
+  // tej samej nazwy co zakladka z meczami, wiec zakladka go klikala i przegladarka opuszczala
+  // strone z tabela — wygladalo to jak "zamyka strone i otwiera glowna, nic nie kopiuje".
+  // Prawdziwa zakladka z meczami albo nie ma adresu, albo prowadzi na TE SAMA sciezke
+  // (zmienia sie co najwyzej parametr lub kotwica). Kazdy inny adres odsiewamy.
+  if(el.tagName==='A'){
+   var cel_href=el.getAttribute('href')||'';
+   if(cel_href && cel_href.charAt(0)!=='#'){
+    var innaStrona=true;
+    try{ innaStrona = new URL(el.href, location.href).pathname !== location.pathname; }catch(e){}
+    if(innaStrona) continue;
+   }
+  }
+  // Stopka i naglowek serwisu nie zawieraja zakladek tresci — tylko nawigacje po calym portalu.
+  if(el.closest&&el.closest('footer,header')) continue;
   var waga=(el.getAttribute&&el.getAttribute('role')==='tab')?0:((el.tagName==='BUTTON'||el.tagName==='A')?1:2);
   if(el.closest&&el.closest('[class*="tab"],[class*="Tab"],[class*="nav"],[class*="Nav"]')) waga=waga-1;
   out.push({el:el,waga:waga});
