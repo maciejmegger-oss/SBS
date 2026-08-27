@@ -83,6 +83,14 @@ export interface Observation {
   distanceKm?: number | null;
   startLocation?: string;
   obsType?: string;
+  // Rozgrywki, w których gra się mecz — pełna nazwa, tak jak podaje ją źródło („III liga, grupa 2",
+  // „A1", „CLJ U17"). Bez tego lista obserwacji nie odróżnia spotkania seniorów od meczu juniorów,
+  // a to zmienia wszystko: wagę oceny, poziom rywalizacji i to, czego w ogóle szuka się na boisku.
+  rozgrywki?: string;
+  // „seniorzy" albo „mlodziez". Trzymane OSOBNO od nazwy rozgrywek, a nie wyliczane przy każdym
+  // wyświetleniu: nazwy bywają nieoczywiste (A1 to juniorzy, klasa A to seniorzy), więc scout musi
+  // móc poprawić rozpoznanie — a raz poprawione ma zostać.
+  kategoria?: string;
 }
 
 export interface Report {
