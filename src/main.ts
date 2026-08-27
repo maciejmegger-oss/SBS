@@ -8241,10 +8241,19 @@ function attachHandlers(){
     const grupa = clubBrowse.group;
     if(!grupa) return;
     const teraz = (DB.settings.lnpGrupy||{})[grupa] || '';
+    // ADRESY NA ŁNP SIĘ PRZETERMINOWUJĄ. Trzymają identyfikatory grupy i klasy rozgrywkowej,
+    // a te ŁNP wydaje na nowo — stary adres prowadzi wtedy na stronę „404 Ups! Piłka za boiskiem".
+    // Dlatego podajemy tu dokładną drogę do zdobycia świeżego, zamiast samego „wklej adres".
     const wpisany = prompt(
       `Adres rozgrywek grupy „${grupa}" na Łączy nas piłka.\n\n`
-      + `Otwórz tę grupę na laczynaspilka.pl, skopiuj adres z paska przeglądarki i wklej tutaj.\n`
-      + `Puste pole usuwa zapisany link.`, teraz);
+      + `JAK ZDOBYĆ ŚWIEŻY (stary potrafi prowadzić na stronę 404 — ŁNP zmienia identyfikatory):\n`
+      + `1. Wejdź na laczynaspilka.pl/rozgrywki\n`
+      + `2. Liga: „Niższe ligi"\n`
+      + `3. Województwa: wybierz swoje\n`
+      + `4. Klasa rozgrywkowa: „Czwarta liga"\n`
+      + `5. Grupa: wybierz tę właściwą\n`
+      + `6. Gdy zobaczysz tabelę tej grupy, skopiuj adres Z PASKA przeglądarki i wklej tutaj\n\n`
+      + `Puste pole usuwa zapisany link — wtedy otworzy się ogólna strona rozgrywek.`, teraz);
     if(wpisany === null) return;
     const adres = String(wpisany).trim();
     if(adres && !/^https?:\/\/(www\.)?laczynaspilka\.pl\//i.test(adres)){
