@@ -128,8 +128,11 @@ export const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }>
     // poziomMeczu / warunki / notatkaMeczu: ocena SAMEGO SPOTKANIA, nie zawodnika. Przy jednej
     // obserwacji na mecz to ona jest kontekstem dla wszystkich ocen indywidualnych — poziom rywalizacji
     // i pogoda zmieniają wagę tego, co zawodnik pokazał.
+    // rozgrywki / kategoria: w jakich rozgrywkach grano i czy to seniorzy, czy młodzież. Bez tego
+    // lista obserwacji nie odróżnia meczu III ligi od spotkania A1, choć to dwie zupełnie różne
+    // oceny tego samego zawodnika.
     fields: ["startLocation", "distanceKm", "obsType", "skladMeczu", "googleEventId",
-             "poziomMeczu", "warunki", "notatkaMeczu"],
+             "poziomMeczu", "warunki", "notatkaMeczu", "rozgrywki", "kategoria"],
   },
   sbs_reports: {
     // sbs_reports nie ma kolumny custom_fields — chowamy w istniejącej `phases` (jsonb).

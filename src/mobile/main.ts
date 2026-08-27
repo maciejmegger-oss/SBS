@@ -176,6 +176,10 @@ let podgladObsId: string | null = null;
 // Wybór z terminarza wypełnia formularz planowania, więc jego treść musi przeżyć przejście
 // do listy meczów i z powrotem.
 let planMecz = "", planData = "", planGodzina = "", planMiejsce = "";
+let planRozgrywki = "", planKategoria = "";
+// Czy kategorię wskazał scout, czy tylko podpowiedział ją panel. Po ręcznym wyborze przestajemy
+// nadpisywać go rozpoznaniem z nazwy — inaczej dopisanie litery w polu rozgrywek cofałoby poprawkę.
+let kategoriaRecznie = false;
 let terminarzLiga = "";
 let terminarzSzukaj = "";
 // Tekst przepisany ze zrzutu ekranu, czekający na rozpoznanie. Trzymany w stanie, a nie tylko
@@ -301,6 +305,16 @@ function dataZDniem(iso: string): string {
   return `${dzien}, ${reszta}${rok}`;
 }
 
+// Znacznik rozgrywek na karcie. Kategoria jest wyróżniona kolorem, bo to ona rozstrzyga, jak
+// czytać ocenę — nazwa rozgrywek stoi obok jako uszczegółowienie, nie zamiast niej.
+function ligaChip(o: Observation & { rozgrywki?: string; kategoria?: string }): string {
+  const kat = o.kategoria || kategoriaZRozgrywek(o.rozgrywki || "");
+  if (!o.rozgrywki && !kat) return "";
+  const barwa = kat === "mlodziez" ? "var(--accent-fg)" : "var(--good-fg)";
+  const opis = [ETYKIETA_KATEGORII[kat] || "", o.rozgrywki || ""].filter(Boolean).join(" · ");
+  return `<span style="color:${barwa}; font-weight:650;">${esc(opis)}</span> · `;
+}
+
 function kartaObserwacji(o: Observation, dzis: string): string {
   const oceniona = !!o.statsFilledIn;
   const trwa = live && live.observationId === o.id;
@@ -314,6 +328,7 @@ function kartaObserwacji(o: Observation, dzis: string): string {
         <span class="tag ${trwa ? "live" : oceniona ? "done" : ""}">${trwa ? "W toku" : oceniona ? "Oceniona" : o.date === dzis ? "Dziś" : "Plan"}</span>
       </div>
       <div class="sub" style="margin-top:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+        ${ligaChip(o)}
         ${o.playerId ? "<strong style=\"color:var(--text-strong)\">" + esc(playerLabel(o.playerId)) + "</strong>" : "Obserwacja zespołu"}
         ${o.scout ? " · " + esc(o.scout) : ""}
       </div>
@@ -385,6 +400,42 @@ function viewDzis(): string {
     ${lista.length ? lista.map((o) => kartaObserwacji(o, dzis)).join("") : '<div class="empty">Nic nie czeka.<br>Zaplanuj obserwację albo zajrzyj do zakończonych.</div>'}
     <button class="btn ghost" data-act="go-nowa">+ Zaplanuj obserwację</button>`;
 }
+
+// KATEGORIA ROZGRYWEK: SENIORZY CZY MŁODZIEŻ.
+//
+// Ta sama ocena znaczy co innego w III lidze i w A1, więc lista obserwacji musi to rozróżniać.
+// Nazwy rozgrywek nie mówią tego wprost i potrafią mylić: „A1" to juniorzy starsi, ale „klasa A"
+// to rozgrywki seniorskie; „CLJ U17" to młodzież, a „IV liga" nie. Dlatego rozpoznanie jest
+// PODPOWIEDZIĄ — scout może je jednym dotknięciem zmienić, a wybór zapisuje się przy obserwacji.
+//
+// Kolejność sprawdzania ma znaczenie. Wzorzec młodzieżowy wymaga litery Z CYFRĄ (A1, B2, C1),
+// więc „klasa A" go nie spełnia i trafia dalej, do wzorca seniorskiego.
+const MLODZIEZ_WZORCE = [
+  /\b[ABCD][12]\b/i,                    // A1, A2, B1, B2, C1, C2, D1, D2
+  /\bU-?\d{1,2}\b/i,                    // U19, U17, U15, U13
+  /juniorz?k?[aiy]?\b|juniorsk/i,
+  /młodzik|mlodzik|młodzicz|mlodzicz/i,
+  /trampkarz|orlik|żak\b|zak\b/i,
+  /\bCLJ\b/i,                           // Centralna Liga Juniorów
+  /młodzieżow|mlodziezow/i,
+];
+const SENIORZY_WZORCE = [
+  /ekstraklasa|ekstraliga|betclic/i,
+  /\b(I|II|III|IV|V)\s*liga\b/i,
+  /\b[1-5]\s*liga\b/i,
+  /klasa\s+[ABC]\b|\b[ABC]\s+klasa|okręgow|okregow/i,
+  /puchar\s+polski/i,
+];
+
+export function kategoriaZRozgrywek(nazwa: string): "seniorzy" | "mlodziez" | "" {
+  const n = (nazwa || "").trim();
+  if (!n) return "";
+  if (MLODZIEZ_WZORCE.some((w) => w.test(n))) return "mlodziez";
+  if (SENIORZY_WZORCE.some((w) => w.test(n))) return "seniorzy";
+  return "";
+}
+
+const ETYKIETA_KATEGORII: Record<string, string> = { seniorzy: "Seniorzy", mlodziez: "Młodzież" };
 
 // ============================================================================
 // WCZYTANIE MECZU ZE ZRZUTU EKRANU
@@ -572,6 +623,23 @@ function viewNowa(): string {
     </div>
     <div class="field"><span class="label">Miejsce</span>
       <input id="n-location" value="${esc(planMiejsce)}" placeholder="np. ul. Mickiewicza 12, Chojnice"></div>
+
+    <!-- Rozgrywki z podpowiedziami z terminarza: nazwy są długie i łatwo je zapisać na dwa
+         sposoby („III liga gr. 2" kontra „III liga, grupa 2"), a wtedy nie da się po nich filtrować. -->
+    <div class="field"><span class="label">Rozgrywki</span>
+      <input id="n-liga" list="lista-rozgrywek" value="${esc(planRozgrywki)}"
+             placeholder="np. III liga, grupa 2 albo A1">
+      <datalist id="lista-rozgrywek">
+        ${rozgrywkiZTerminarza().map((r) => `<option value="${esc(r)}"></option>`).join("")}
+      </datalist></div>
+    <div class="field"><span class="label">Kategoria</span>
+      <div class="polarity" id="n-kategoria">
+        <button type="button" class="pol seg" data-act="kategoria" data-v="seniorzy" aria-pressed="${planKategoria === "seniorzy"}">Seniorzy</button>
+        <button type="button" class="pol seg" data-act="kategoria" data-v="mlodziez" aria-pressed="${planKategoria === "mlodziez"}">Młodzież</button>
+      </div>
+      <span class="hint" style="display:block; margin-top:4px;">${planKategoria
+        ? (kategoriaRecznie ? "Wybrane ręcznie." : "Rozpoznane z nazwy rozgrywek — popraw, jeśli się mylę.")
+        : "Rozpoznam z nazwy rozgrywek albo wskaż sam."}</span></div>
     <div class="field"><span class="label">Zawodnik (opcjonalnie)</span>
       <select id="n-player"><option value="">— obserwacja meczu —</option>${players}</select></div>
     <div class="field"><span class="label">Rodzaj</span>
@@ -1365,7 +1433,7 @@ function viewPodglad(): string {
 
   return `
     <h2>${esc(obs.match || "Obserwacja")}</h2>
-    <p class="hint">${esc(dataZDniem(obs.date || ""))}${obs.matchTime ? " · " + esc(obs.matchTime) : ""}${obs.scout ? " · " + esc(obs.scout) : ""}</p>
+    <p class="hint">${ligaChip(obs)}${esc(dataZDniem(obs.date || ""))}${obs.matchTime ? " · " + esc(obs.matchTime) : ""}${obs.scout ? " · " + esc(obs.scout) : ""}</p>
 
     ${(o as any).poziomMeczu || ((o as any).warunki || []).length || (o as any).notatkaMeczu ? `
       <div class="section" style="border-top:none; margin-top:0; padding-top:0;">
@@ -1987,6 +2055,14 @@ function zapamietajPlan() {
   planData = $<HTMLInputElement>("n-date")?.value ?? planData;
   planGodzina = $<HTMLInputElement>("n-time")?.value ?? planGodzina;
   planMiejsce = $<HTMLInputElement>("n-location")?.value ?? planMiejsce;
+  planRozgrywki = $<HTMLInputElement>("n-liga")?.value ?? planRozgrywki;
+}
+
+// Ustawienie rozgrywek z zewnątrz (terminarz, zrzut ekranu) razem z podpowiedzią kategorii.
+// Ręcznego wyboru scouta NIE ruszamy — patrz kategoriaRecznie.
+function ustawRozgrywki(nazwa: string) {
+  planRozgrywki = nazwa || "";
+  if (!kategoriaRecznie) planKategoria = kategoriaZRozgrywek(planRozgrywki);
 }
 
 // ODŚWIEŻENIE KOPII BAZY — jedna droga dla przycisku w ustawieniach i dla przycisku w terminarzu.
@@ -2073,6 +2149,7 @@ function wczytajZeZrzutu(): void {
   if (d.data) planData = d.data;
   if (d.godzina) planGodzina = d.godzina;
   if (d.miejsce) planMiejsce = d.miejsce;
+  if (d.rozgrywki) ustawRozgrywki(d.rozgrywki);
 
   view = "nowa";
   render();
@@ -2081,6 +2158,7 @@ function wczytajZeZrzutu(): void {
     d.gospodarze && d.goscie ? "drużyny" : "",
     d.data ? dataZDniem(d.data) : "",
     d.godzina, d.miejsce ? "miejsce" : "",
+    d.rozgrywki ? d.rozgrywki + (planKategoria ? " (" + ETYKIETA_KATEGORII[planKategoria].toLowerCase() + ")" : "") : "",
   ].filter(Boolean);
   if (!rozpoznane.length) { toast("Nie rozpoznałem niczego — sprawdź, czy skopiował się cały tekst"); return; }
   toast(d.braki.length
@@ -2124,6 +2202,8 @@ function saveNowa(odRazu: boolean) {
     ratings: {},
     statsFilledIn: false,
     obsType: $<HTMLSelectElement>("n-typ")?.value || "live",
+    rozgrywki: ($<HTMLInputElement>("n-liga")?.value || "").trim(),
+    kategoria: planKategoria,
   };
   saveObservation(obs);
   cache = getCache();
@@ -2182,7 +2262,22 @@ document.addEventListener("click", (e) => {
     case "go": view = v as ViewName; render(); break;
     case "go-dzis": view = "dzis"; render(); break;
     case "lista-tryb": listaTryb = v === "zakonczone" ? "zakonczone" : "nadchodzace"; render(); break;
-    case "go-nowa": planMecz = planData = planGodzina = planMiejsce = ""; view = "nowa"; render(); break;
+    case "go-nowa":
+      planMecz = planData = planGodzina = planMiejsce = planRozgrywki = planKategoria = "";
+      kategoriaRecznie = false;
+      wklejTekst = "";
+      view = "nowa";
+      render();
+      break;
+
+    // Kategorię wskazaną palcem traktujemy jako ostateczną: od tej chwili rozpoznanie z nazwy
+    // przestaje ją nadpisywać. Ponowne dotknięcie tej samej odznacza ją i wraca do podpowiedzi.
+    case "kategoria":
+      zapamietajPlan();
+      if (planKategoria === v) { planKategoria = kategoriaZRozgrywek(planRozgrywki); kategoriaRecznie = false; }
+      else { planKategoria = v || ""; kategoriaRecznie = true; }
+      render();
+      break;
 
     case "otworz-terminarz":
       // Zapamiętujemy, co już wpisane — powrót z terminarza nie może wyczyścić formularza.
@@ -2230,6 +2325,7 @@ document.addEventListener("click", (e) => {
       planMecz = `${m.homeTeam} - ${m.awayTeam}`;
       planData = m.date || "";
       planGodzina = m.time || "";
+      ustawRozgrywki(m.competition || m.league || "");
       // Adres stadionu bywa pusty w terminarzu — wtedy zostaje miasto, i tak lepsze niż nic.
       planMiejsce = [m.stadium, m.city].filter(Boolean).join(", ");
       view = "nowa";
@@ -2674,6 +2770,19 @@ document.addEventListener("change", (e) => {
 
 document.addEventListener("input", (e) => {
   const t = e.target as HTMLInputElement;
+
+  // Kategoria dopowiada się przy wpisywaniu rozgrywek. Przełącznik przestawiamy WPROST, bez
+  // przerysowania widoku: pełny render w trakcie pisania zabrałby kursor z pola.
+  if (t.id === "n-liga") {
+    planRozgrywki = t.value;
+    if (kategoriaRecznie) return;
+    planKategoria = kategoriaZRozgrywek(planRozgrywki);
+    $("n-kategoria")?.querySelectorAll<HTMLElement>("[data-act='kategoria']").forEach((b) => {
+      b.setAttribute("aria-pressed", String(b.dataset.v === planKategoria));
+    });
+    return;
+  }
+
   if (t.id === "t-szukaj") {
     terminarzSzukaj = t.value;
     const main = $("main");
