@@ -4226,6 +4226,9 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
   overlay.className = 'modal-overlay';
   document.body.appendChild(overlay);
   let wynik = null, komunikat = '', pracuje = false, zapisanychMeczow = 0, dopisujBrak = true;
+  // Roczniki z bloku „### ROCZNIKI" — klucz to znormalizowane imię i nazwisko, wartość to rok.
+  let rocznikiZWklejki: Record<string,string> = {};
+  const kluczRocznika = (s)=> String(s||'').split(/\s+/).map(importNorm).filter(Boolean).sort().join(' ');
 
   // Ile meczów tego klubu jest już rozliczonych — liczymy z znaczników przy zawodnikach.
   const juzRozliczone = ()=>{
@@ -4408,9 +4411,25 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
   function rozpoznaj(){
     const tekst = (overlay.querySelector('#pm-tekst') as any).value.trim();
     if(!tekst){ komunikat = 'Najpierw wklej stronę meczu.'; rysuj(); return; }
+    // ROCZNIKI dołączone przez zakładkę. Protokół ich nie zawiera — zakładka dobiera je z profili
+    // zawodników i dokleja osobnym blokiem. Odcinamy go, zanim podzielimy tekst na mecze,
+    // żeby nie trafił do żadnego z nich.
+    // Klucz niezależny od kolejności słów: ŁNP pisze raz „Jan Kowalski", raz „Kowalski Jan",
+    // a w kartotece imię i nazwisko są w osobnych polach. Sortowanie słów godzi wszystkie trzy.
+    rocznikiZWklejki = {};
+    const blokR = tekst.match(/^###\s*ROCZNIKI\s*$([\s\S]*)/m);
+    if(blokR){
+      blokR[1].split('\n').forEach(l=>{
+        const [kto, rok] = l.split('|');
+        const k = kluczRocznika(kto);
+        if(k && /^(19|20)\d{2}$/.test(String(rok||'').trim())) rocznikiZWklejki[k] = rok.trim();
+      });
+    }
+    const bezRocznikow = tekst.replace(/^###\s*ROCZNIKI\s*$[\s\S]*/m, '');
+
     // Zakładka do ŁNP zbiera protokoły całej kolejki i skleja je znacznikiem „### PROTOKOL:".
     // Dzieki temu jedno wklejenie rozlicza dziewięć meczów zamiast jednego.
-    const czesci = tekst.split(/^###\s*PROTOKOL:.*$/m).map(t=>t.trim()).filter(Boolean);
+    const czesci = bezRocznikow.split(/^###\s*PROTOKOL:.*$/m).map(t=>t.trim()).filter(Boolean);
     const wyniki = (czesci.length ? czesci : [tekst]).map(t=>przetworzProtokolLnp(t));
     const dobre = wyniki.filter(w=>!w.blad);
     if(!dobre.length){ komunikat = wyniki[0].blad || 'Nie rozpoznałem protokołu.'; wynik = null; rysuj(); return; }
@@ -4439,7 +4458,7 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
   }
 
   async function zapiszWewnetrznie(){
-    let dopisanych = 0, nowych = 0, meczow = 0;
+    let dopisanych = 0, nowych = 0, meczow = 0, rocznikow = 0;
     const dzis = new Date().toISOString().slice(0,10);
     wynik.forEach(protokol=>{
     meczow++;
@@ -4464,6 +4483,13 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
           nowych++;
         }
         if(!p) return;
+        // ROCZNIK Z PROFILU ŁNP. Protokół meczu roczników nie podaje — zakładka dobiera je
+        // ze stron zawodników i dokleja osobnym blokiem. Wpisujemy tylko w puste pole: dane
+        // z Transfermarktu czy z ręki są pewniejsze i nie wolno ich nadpisać.
+        if(!p.birthYear && !p.birthDate){
+          const rok = rocznikiZWklejki[kluczRocznika(w.firstName + ' ' + w.lastName)];
+          if(rok){ p.birthYear = rok; rocznikow++; }
+        }
         if(w.mlodziezowiec && !p.mlodziezowiec) p.mlodziezowiec = true;
         if(w.position && !p.position) p.position = w.position;
         if(!w.zagral || (p.rozliczoneMecze||[]).includes(protokol.klucz)) return;
@@ -4499,7 +4525,7 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
     // dotyczy. Od tej chwili „Odśwież statystyki" działa w niej tak samo jak w pomorskiej.
     const zapamietane = zapamietajAdresGrupy(zrodloLnp, wynik);
     zapisanychMeczow += meczow;
-    komunikat = `Zapisano ${meczow} ${meczow===1?'mecz':'meczów'}: ${dopisanych} wpisów dorobku${nowych?`, w tym ${nowych} nowych zawodników w kartotece`:''}.`
+    komunikat = `Zapisano ${meczow} ${meczow===1?'mecz':'meczów'}: ${dopisanych} wpisów dorobku${nowych?`, w tym ${nowych} nowych zawodników w kartotece`:''}${rocznikow?`; uzupełniłem ${rocznikow} roczników`:''}.`
       + (zapamietane.length ? ` Zapamiętałem też adres ŁNP dla ${zapamietane.join(' i ')} — następnym razem otworzy się jednym kliknięciem.` : ' Wklej kolejne protokoły.');
     wynik = null;
     rysuj();

@@ -98,26 +98,6 @@ var pominietych=0;
 var zebrane=[];try{zebrane=JSON.parse(localStorage.getItem(KLUCZ)||'[]');}catch(e){zebrane=[];}
 var bylo=zebrane.length, linki=[], i=0, kolejek=1, czekam=0, doliczen=0, rozwiniete=false, probowanoKlikac=false, wierszyNaEkranie=0, zakladkaNr=0;
 
-// Czy w ten element wolno kliknac?
-//
-// Zbieracz klika w elementy rozpoznane po TRESCI — "Mecze", "Pokaz wiecej". Ta sama tresc trafia
-// sie w nawigacji portalu: w stopce LNP jest "Wyniki" prowadzace na /rozgrywki, a przy liscie
-// zdarzen bywa "Pokaz wiecej" jako zwykly odnosnik. Klikniecie takiego elementu opuszcza strone
-// albo otwiera nowa karte i cala praca przepada.
-//
-// Kryterium: element sterujacy trescia albo nie ma adresu, albo prowadzi na TE SAMA sciezke
-// (zmienia sie co najwyzej parametr lub kotwica). Odnosnik otwierajacy nowa karte odsiewamy
-// zawsze — zakladka z meczami nigdy nie otwiera sie w nowym oknie.
-function wolnoKliknac(el){
- if(!el) return false;
- if(el.tagName!=='A') return true;
- var t=(el.getAttribute&&el.getAttribute('target'))||'';
- if(t && t!=='_self') return false;
- var h=el.getAttribute&&el.getAttribute('href');
- if(!h || h.charAt(0)==='#') return true;
- try{ return new URL(el.href, location.href).pathname === location.pathname; }catch(e){ return false; }
-}
-
 function kandydaciMeczow(){
  var nazwy=/^(mecze|terminarz|wyniki|terminarz i wyniki|mecze i wyniki)$/i;
  var kand=[].slice.call(document.querySelectorAll('[role="tab"],button,a,li,span,div'));
@@ -129,23 +109,6 @@ function kandydaciMeczow(){
   if(!nazwy.test(t)) continue;
   if(el.tagName==='TH'||el.tagName==='TD') continue;
   if(el.closest&&el.closest('table')) continue;
-  // NIE KLIKAMY W NIC, CO PROWADZI NA INNA STRONE.
-  //
-  // W stopce LNP jest odnosnik "Wyniki" kierujacy na laczynaspilka.pl/rozgrywki. Pasowal do
-  // tej samej nazwy co zakladka z meczami, wiec zakladka go klikala i przegladarka opuszczala
-  // strone z tabela — wygladalo to jak "zamyka strone i otwiera glowna, nic nie kopiuje".
-  // Prawdziwa zakladka z meczami albo nie ma adresu, albo prowadzi na TE SAMA sciezke
-  // (zmienia sie co najwyzej parametr lub kotwica). Kazdy inny adres odsiewamy.
-  if(el.tagName==='A'){
-   var cel_href=el.getAttribute('href')||'';
-   if(cel_href && cel_href.charAt(0)!=='#'){
-    var innaStrona=true;
-    try{ innaStrona = new URL(el.href, location.href).pathname !== location.pathname; }catch(e){}
-    if(innaStrona) continue;
-   }
-  }
-  // Stopka i naglowek serwisu nie zawieraja zakladek tresci — tylko nawigacje po calym portalu.
-  if(el.closest&&el.closest('footer,header')) continue;
   var waga=(el.getAttribute&&el.getAttribute('role')==='tab')?0:((el.tagName==='BUTTON'||el.tagName==='A')?1:2);
   if(el.closest&&el.closest('[class*="tab"],[class*="Tab"],[class*="nav"],[class*="Nav"]')) waga=waga-1;
   out.push({el:el,waga:waga});
@@ -161,7 +124,7 @@ function otworzZakladkeMecze(gotowe){
  var cel=k[zakladkaNr];
  zakladkaNr++;
  box.textContent='SBS '+SBS_ZBIERACZ+': otwieram zakladke z meczami ('+zakladkaNr+'/'+k.length+')...';
- if(wolnoKliknac(cel)){try{cel.click();}catch(e){}}
+ try{cel.click();}catch(e){}
  setTimeout(gotowe,1600);
 }
 function dociagnijStrone(gotowe){
@@ -172,7 +135,7 @@ function dociagnijStrone(gotowe){
   var wiecej=[].slice.call(document.querySelectorAll('button,a')).filter(function(el){
    return /zaladuj wiecej|załaduj więcej|pokaz wiecej|pokaż więcej/i.test((el.textContent||'').trim());
   });
-  wiecej.filter(wolnoKliknac).forEach(function(el){try{el.click();}catch(e){}});
+  wiecej.forEach(function(el){try{el.click();}catch(e){}});
   var n=naglowekRozegranych();
   if(n){ try{ n.scrollIntoView({block:'start'}); }catch(e){} box.textContent='SBS '+SBS_ZBIERACZ+': jestem przy \u201eRozegranych meczach\u201d ('+krok+')...'; }
   else box.textContent='SBS '+SBS_ZBIERACZ+': szukam rozegranych meczow ('+krok+')...';
@@ -224,15 +187,7 @@ function start(){
  var zKodu=0;try{var hh=document.documentElement.innerHTML||'';var rr=/\/rozgrywki\/mecz\/[0-9a-fA-F-]{30,40}/g;var mm;while((mm=rr.exec(hh))!==null)zKodu++;}catch(e){}
  var maRozegrane=/rozegrane mecze/i.test(document.body.innerText||'');
  var slad=' [na stronie: odnosnikow '+wszystkieA+', w tym wskazujacych na mecz '+zMecz+'; numerow meczu w kodzie '+zKodu+'; wierszy z wynikiem '+wierszyNaEkranie+'; naglowek Rozegrane mecze: '+(maRozegrane?'jest':'brak')+'; tekstu '+dlugoscTekstu+' znakow; wysokosc '+document.body.scrollHeight+']';
- // TABELA TO NIE LISTA MECZOW. Najczestsza pomylka: zakladka uruchamiana na tabeli ligowej,
- // gdzie sa punkty i bilans, a nie ma ani jednego protokolu. Rozpoznajemy to po naglowkach
- // kolumn i mowimy wprost, dokad przejsc \u2014 zamiast ogolnego "nie mam czego pobrac".
- var tekstStrony=(document.body.innerText||'');
- var toTabela = /\bPunkty\b/i.test(tekstStrony) && /\bBilans\b/i.test(tekstStrony)
-   && /\bWygrane\b/i.test(tekstStrony) && zMecz===0 && zKodu===0;
- var rada = toTabela
-  ? 'Jestes na TABELI LIGOWEJ - sa tu punkty i bilans, ale nie ma protokolow. Przejdz do listy meczow tej grupy: u gory wybierz "Kolejka", zeby pokazaly sie spotkania z wynikami, i dopiero tam kliknij zakladke.'
-  : maRozegrane
+ var rada = maRozegrane
   ? 'Sekcja \u201eRozegrane mecze\u201d jest, ale nie widze w niej ani jednego wiersza z wynikiem. Poczekaj, az wyniki sie wyswietla, i kliknij zakladke jeszcze raz.'
   : 'Na tej stronie sa same \u201ePlanowane mecze\u201d - w tym sezonie nie ma tu jeszcze zadnego rozegranego spotkania. Sprawdz u gory pole \u201eSezon\u201d i \u201eRozgrywki\u201d: wybierz sezon, w ktorym mecze juz sie odbyly.';
  alert('SBS '+SBS_ZBIERACZ+': nie mam z tej strony czego pobrac.\n\n'+rada+slad);
@@ -254,8 +209,6 @@ function nastepny(){
   if(ok||prob>16){
    clearInterval(t);
    if(ok){
-    // Adresy profili zbieramy przy okazji \u2014 dokument meczu i tak jest juz wczytany.
-    zbierzProfile(f.contentDocument);
     var j=txt.search(/^\s*Sk\u0142ady\s*$/m);
     var wpis='### PROTOKOL: '+url+'\n'+txt.slice(j<0?0:Math.max(0,j-400))+zdarzenia(f.contentDocument);
     var byl=false;
@@ -363,11 +316,6 @@ function zbierzAdresyPrzezKlikanie(gotowe){
    if(ci>=cele.length){ k++; setTimeout(dalej,120); return; }
    var cel=cele[ci++];
    zlapane.length=0;
-   // TU NAWIGACJA JEST ZAMIERZONA i nie wolno jej blokowac. Ta droga jest awaryjna: uruchamia sie
-   // dopiero, gdy na stronie nie da sie znalezc odnosnikow do meczow, a sa widoczne wiersze
-   // z wynikiem. Zbieracz wchodzi wtedy w mecz, zapisuje adres i wraca przez history.back().
-   // Strażnik wolnoKliknac() chroni miejsca, gdzie klikamy w element STERUJACY TRESCIA — tam
-   // wyjscie ze strony jest awaria. Tutaj jest metoda.
    try{ cel.click(); }catch(e){}
    var n=0;
    var t=setInterval(function(){
@@ -416,116 +364,9 @@ function poKolejce(){
  koniec();
 }
 
-// ---------------------------------------------------------------------------
-// ROCZNIKI Z PROFILI ZAWODNIKOW
-//
-// Protokol podaje nazwisko, numer i znacznik mlodziezowca — ale NIE date urodzenia. Bez rocznika
-// kartoteka IV ligi zostaje bez wieku, a to wlasnie tam gra najwiecej mlodziezy.
-//
-// Data urodzenia jest w PROFILU zawodnika, pod stalym adresem, do ktorego protokol linkuje.
-// Zbieramy te adresy przy okazji czytania protokolow (nic to nie kosztuje), a potem odwiedzamy
-// tylko te profile, ktorych rocznika jeszcze nie znamy.
-//
-// Wynik zapamietujemy w przegladarce NA STALE. Przy drugim uruchomieniu tej samej grupy nie ma
-// juz czego dobierac — inaczej kazde zbieranie kolejki oznaczalo trzysta dodatkowych wczytan.
-var KLUCZ_ROCZNIKI='sbs_roczniki';
-var profileZawodnikow={};
-var roczniki={};
-try{roczniki=JSON.parse(localStorage.getItem(KLUCZ_ROCZNIKI)||'{}');}catch(e){roczniki={};}
-
-function kluczOsoby(s){
- return String(s||'').toLowerCase()
-  .replace(/[łøđ]/g,function(c){return {'ł':'l','ø':'o','đ':'d'}[c];})
-  .normalize('NFD').replace(/[̀-ͯ]/g,'')
-  .replace(/[^a-z0-9 ]/g,'').replace(/\s+/g,' ').trim();
-}
-
-function zbierzProfile(doc){
- try{
-  var a=doc.querySelectorAll('a[href*="/zawodnik/"]');
-  for(var i=0;i<a.length;i++){
-   var nazwa=(a[i].textContent||'').replace(/\s+/g,' ').replace(/\(.\)/g,'').trim();
-   // Podpis odnosnika bywa sama strzalka albo "Zobacz profil" — nazwisko jest wtedy obok.
-   if(!/[a-zA-ZÀ-ſ]{3,}/.test(nazwa)||/zobacz profil/i.test(nazwa)){
-    var w=a[i].closest('tr,li,div');
-    nazwa=w?(w.textContent||'').replace(/\s+/g,' ').replace(/\d+/g,'').replace(/\(.\)/g,'').replace(/zobacz profil.*/i,'').trim():'';
-   }
-   var k=kluczOsoby(nazwa);
-   if(k&&k.indexOf(' ')>0&&!profileZawodnikow[k]) profileZawodnikow[k]=a[i].href;
-  }
- }catch(e){}
-}
-
-function rocznikZTekstu(t){
- var s=String(t||'');
- // Rok STOI PIERWSZY w zapisie ISO (1990-05-02) i ostatni w polskim (14.03.2007). Sprawdzamy
- // ISO wczesniej, bo inaczej "1990-05-02" dalby rocznik 0002 z drugiego wzorca.
- var m=s.match(/urodz\w*[^0-9]{0,30}((?:19|20)\d{2})[.\-\/]\d{1,2}[.\-\/]\d{1,2}/i);
- if(m) return m[1];
- m=s.match(/urodz\w*[^0-9]{0,30}\d{1,2}[.\-\/]\d{1,2}[.\-\/]((?:19|20)\d{2})/i);
- if(m) return m[1];
- m=s.match(/urodz\w*[^0-9]{0,30}\d{1,2}\s+[a-ząćęłńóśźż]+\s+((?:19|20)\d{2})/i);
- if(m) return m[1];
- return '';
-}
-
-function pobierzRoczniki(gotowe){
- var doZrobienia=[];
- for(var k in profileZawodnikow){ if(!roczniki[k]) doZrobienia.push(k); }
- // Limit na jedno uruchomienie. Pierwsza kolejka w grupie to okolo trzystu zawodnikow —
- // wczytywanie wszystkich naraz trwaloby kilkanascie minut i wygladalo na zawieszenie.
- // Reszta dobierze sie przy kolejnym zbieraniu, bo to, co juz wiemy, zostaje zapamietane.
- var LIMIT=60;
- var zostalo=Math.max(0,doZrobienia.length-LIMIT);
- doZrobienia=doZrobienia.slice(0,LIMIT);
- if(!doZrobienia.length){ gotowe(0,0); return; }
- var n=0, zdobyte=0;
- function nastepnyProfil(){
-  if(n>=doZrobienia.length){
-   try{localStorage.setItem(KLUCZ_ROCZNIKI,JSON.stringify(roczniki));}catch(e){}
-   gotowe(zdobyte,zostalo); return;
-  }
-  var k=doZrobienia[n];
-  box.textContent='SBS '+SBS_ZBIERACZ+': roczniki '+(n+1)+'/'+doZrobienia.length+(zostalo?' (zostanie '+zostalo+' na potem)':'');
-  var f=document.createElement('iframe');
-  f.style.cssText='position:fixed;left:-9999px;width:1000px;height:1400px';
-  f.src=profileZawodnikow[k];
-  document.body.appendChild(f);
-  var prob=0;
-  var t=setInterval(function(){
-   prob++;
-   var txt='';
-   try{txt=(f.contentDocument&&f.contentDocument.body)?f.contentDocument.body.innerText:'';}catch(e){txt='';}
-   var r=rocznikZTekstu(txt);
-   if(r||prob>14){
-    clearInterval(t);
-    if(r){ roczniki[k]=r; zdobyte++; }
-    f.remove(); n++; setTimeout(nastepnyProfil,120);
-   }
-  },500);
- }
- nastepnyProfil();
-}
-
-function blokRocznikow(){
- var linie=[];
- for(var k in roczniki){ if(roczniki[k]) linie.push(k+'|'+roczniki[k]); }
- return linie.length?('\n\n### ROCZNIKI\n'+linie.join('\n')):'';
-}
-
 function koniec(){
- // Roczniki dobieramy PRZED skopiowaniem, zeby poleicaly razem z protokolami — jedno wklejenie
- // w aplikacji ma zalatwic i statystyki, i wiek.
- if(!koniec.poRocznikach){
-  koniec.poRocznikach=true;
-  pobierzRoczniki(function(zdobyte,zostalo){
-   box.textContent='SBS '+SBS_ZBIERACZ+': roczniki gotowe (+'+zdobyte+')';
-   koniec();
-  });
-  return;
- }
  try{localStorage.setItem(KLUCZ,JSON.stringify(zebrane));}catch(e){}
- var tresc=zebrane.join('\n\n')+blokRocznikow();
+ var tresc=zebrane.join('\n\n');
  var udalo=false;
  var p=document.createElement('textarea');p.value=tresc;document.body.appendChild(p);p.select();
  try{udalo=document.execCommand('copy');}catch(e){udalo=false;}
