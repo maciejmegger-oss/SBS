@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v9 z 28.08.2026";
+var SBS_ZBIERACZ="v10 z 28.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -316,6 +316,28 @@ function start(){
   ? 'Sekcja \u201eRozegrane mecze\u201d jest, ale nie widze w niej ani jednego wiersza z wynikiem. Poczekaj, az wyniki sie wyswietla, i kliknij zakladke jeszcze raz.'
   : 'Na tej stronie sa same \u201ePlanowane mecze\u201d - w tym sezonie nie ma tu jeszcze zadnego rozegranego spotkania. Sprawdz u gory pole \u201eSezon\u201d i \u201eRozgrywki\u201d: wybierz sezon, w ktorym mecze juz sie odbyly.';
  alert('SBS '+SBS_ZBIERACZ+': nie mam z tej strony czego pobrac.\n\n'+rada+slad);
+ // Bufor moze byc pelen protokolow z innej grupy — daj go wyczyscic bez szukania skrotu.
+ if(zebrane.length && box.parentNode){
+  box.textContent='';
+  var inf=document.createElement('div');
+  inf.style.cssText='margin-bottom:8px;line-height:1.45';
+  inf.textContent='W buforze zakladki leza jeszcze protokoly z poprzednich zebran: '+zebrane.length+'.';
+  box.appendChild(inf);
+  var czysc=document.createElement('button');
+  czysc.textContent='Wyczysc zebrane ('+zebrane.length+')';
+  czysc.style.cssText='display:block;width:100%;padding:8px;margin-bottom:6px;border:0;border-radius:6px;background:#C9A227;color:#16302A;font:600 13px sans-serif;cursor:pointer';
+  czysc.onclick=function(){
+   try{localStorage.removeItem(KLUCZ);}catch(e){}
+   zebrane=[];
+   box.textContent='SBS '+SBS_ZBIERACZ+': wyczyscilem bufor. Wejdz na liste meczow wlasciwej grupy i kliknij zakladke.';
+  };
+  box.appendChild(czysc);
+  var x=document.createElement('button');
+  x.textContent='Zamknij';
+  x.style.cssText='display:block;width:100%;padding:6px;border:1px solid rgba(246,243,234,.35);border-radius:6px;background:transparent;color:#F6F3EA;font:13px sans-serif;cursor:pointer';
+  x.onclick=function(){ box.remove(); };
+  box.appendChild(x);
+ }
 }
 
 function nastepny(){
@@ -651,6 +673,21 @@ function koniec(){
  przycisk.textContent='Wyslij do SBS ('+zebrane.length+')';
  przycisk.style.cssText='display:block;width:100%;padding:10px 14px;margin-bottom:6px;border:0;border-radius:6px;background:#C9A227;color:#16302A;font:600 14px sans-serif;cursor:pointer';
  box.appendChild(przycisk);
+ // CZYSZCZENIE MUSI BYC PRZYCISKIEM, NIE SKROTEM KLAWISZOWYM.
+ //
+ // Dotad bufor czyscilo Shift + klikniecie zakladki. W Chrome to dziala, ale FIREFOX na
+ // Shift + klikniecie bookmarka otwiera go w NOWYM OKNIE - zakladka uruchamia sie wtedy na
+ // pustej karcie i mowi "to nie jest strona Laczy nas pilka". Gest byl wiec nie do wykonania
+ // akurat w przegladarce, ktorej uzywamy.
+ var wyczysc=document.createElement('button');
+ wyczysc.textContent='Wyczysc zebrane ('+zebrane.length+')';
+ wyczysc.style.cssText='display:block;width:100%;padding:6px;margin-bottom:6px;border:1px solid rgba(246,243,234,.35);border-radius:6px;background:transparent;color:#F6F3EA;font:13px sans-serif;cursor:pointer';
+ wyczysc.onclick=function(){
+  try{localStorage.removeItem(KLUCZ);}catch(e){}
+  zebrane=[];
+  box.textContent='SBS '+SBS_ZBIERACZ+': wyczyscilem zebrane protokoly. Kliknij zakladke jeszcze raz, zeby zebrac te grupe od nowa.';
+ };
+ box.appendChild(wyczysc);
  var zamknij=document.createElement('button');
  zamknij.textContent='Zamknij';
  zamknij.style.cssText='display:block;width:100%;padding:6px;border:1px solid rgba(246,243,234,.35);border-radius:6px;background:transparent;color:#F6F3EA;font:13px sans-serif;cursor:pointer';
