@@ -4,3 +4,6 @@ dist
 .env.local
 *.local
 .claude/settings.local.json
+
+# Plik roboczy Vite — powstaje przy starcie serwera deweloperskiego i znika sam.
+vite.config.ts.timestamp-*.mjs
