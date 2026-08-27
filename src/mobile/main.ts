@@ -9,7 +9,7 @@ import "./style.css";
 import { currentUser, signIn, signOut, requestPasswordReset, mojeKonto, type Konto } from "../data/auth";
 import {
   uid, getCache, refreshCache, patchCache, flushQueue, queueLength,
-  saveObservation, saveReport, savePlayerStatus, saveLiveEvents,
+  saveObservation, saveReport, savePlayerStatus, saveLiveEvents, deleteObservation,
   getLive, setLive, getScout, setScout, zarchiwizujZdarzenia, zdarzeniaObserwacji,
   wyczyscKopieBazy,
   type Cache, type LiveEvent, type LiveState, type Period,
@@ -293,6 +293,12 @@ function kartaObserwacji(o: Observation, dzis: string): string {
         ${oceniona
           ? `<button class="btn ghost" data-act="podglad" data-id="${esc(o.id)}">Otwórz</button>`
           : `<button class="btn ghost" data-act="open-ocena" data-id="${esc(o.id)}">Oceń</button>`}
+        <!-- Kosz jest wąski i stoi z boku: kasowanie ma być dostępne, ale nie pod kciukiem obok
+             „Rozpocznij". Pyta o potwierdzenie i podaje nazwę meczu, więc dotknięcie przez pomyłkę
+             niczego nie traci. -->
+        <button class="btn ghost" style="flex:0 0 auto; width:46px; padding:0;"
+                data-act="usun-obserwacje" data-id="${esc(o.id)}"
+                aria-label="Usuń obserwację ${esc(o.match || "")}" title="Usuń obserwację">🗑</button>
       </div>
     </div>`;
 }
@@ -412,12 +418,36 @@ function viewTerminarz(): string {
   const lista = wszystkie.slice(0, 60);
   const rozgrywki = rozgrywkiZTerminarza();
 
+  // PUSTY TERMINARZ MA TRZY RÓŻNE PRZYCZYNY i scout musi wiedzieć, na którą patrzy.
+  // Dawny komunikat („pobierz go w aplikacji na komputerze") mówił zawsze to samo, także wtedy,
+  // gdy terminarz na komputerze był kompletny, a telefonowi po prostu nie udało się go odczytać.
+  const problemy = cache.problemy || [];
+  const bladTerminarza = problemy.find((p) => p.startsWith("terminarz:"));
+  const bladDostepu = problemy.find((p) => p.startsWith("baza oddała zero"));
+  const pusto = !cache.matches.length;
+  const wyjasnienie = bladTerminarza
+    ? `Nie udało się pobrać terminarza. ${esc(bladTerminarza.replace(/^terminarz:\s*/, ""))}`
+    : bladDostepu
+      ? `Z bazy nie przyszło nic — ani terminarz, ani zawodnicy. ${esc(bladDostepu.replace(/^baza oddała zero rekordów — zwykle znaczy to, że /, "Zwykle znaczy to, że "))}`
+      : pusto
+        ? "Kopia w telefonie nie zawiera terminarza. Pobierz go raz w aplikacji na komputerze (zakładka Terminarz), potem odśwież tutaj."
+        : !cache.fetchedAt
+          ? "Kopia bazy nie była jeszcze odświeżana."
+          : "";
+
   return `
     <div class="row" style="margin-bottom:8px;">
       <h2 style="margin:0;">Terminarz</h2>
       <button class="btn ghost small" data-act="zamknij-terminarz">Wróć</button>
     </div>
-    <p class="hint">${cache.matches.length ? wszystkie.length + " spotkań od dziś" : "Terminarz jest pusty — pobierz go w aplikacji na komputerze."}</p>
+    <p class="hint">${cache.matches.length
+      ? wszystkie.length + " spotkań od dziś · " + cache.matches.length + " w kopii"
+      : "Brak meczów w kopii bazy."}</p>
+
+    ${wyjasnienie ? `<div class="empty" style="text-align:left;">${wyjasnienie}</div>` : ""}
+    ${(pusto || bladTerminarza || bladDostepu)
+      ? '<button class="btn ghost" data-act="odswiez-terminarz" style="margin-bottom:10px;">↻ Pobierz terminarz z SBS</button>'
+      : ""}
 
     <div class="field">
       <select id="t-liga" data-act="terminarz-liga">
@@ -1213,6 +1243,7 @@ function viewBaza(): string {
   const ostatnia = cache.fetchedAt
     ? new Date(cache.fetchedAt).toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
     : "brak";
+  const problemy = cache.problemy || [];
 
   return `
     <h2>Ustawienia</h2>
@@ -1225,11 +1256,22 @@ function viewBaza(): string {
         <strong style="font-family:var(--data); font-size:12.5px; color:var(--text-2);">${esc(ostatnia)}</strong></div>
       <div class="row" style="margin-top:6px;"><span class="sub">Zawodników w kopii</span>
         <strong style="font-family:var(--data); font-size:12.5px; color:var(--text-2);">${cache.players.length}</strong></div>
+      <div class="row" style="margin-top:6px;"><span class="sub">Meczów w terminarzu</span>
+        <strong style="font-family:var(--data); font-size:12.5px; color:${cache.matches.length ? "var(--text-2)" : "var(--accent-fg)"};">${cache.matches.length}</strong></div>
       <div class="row" style="margin-top:6px;"><span class="sub">Wersja panelu</span>
         <strong style="font-family:var(--data); font-size:12.5px; color:var(--text-2);">${esc(WERSJA_PANELU)}</strong></div>
       <button class="btn ghost" data-act="refresh">Odśwież kopię bazy</button>
       ${n ? '<button class="btn ghost" data-act="flush">Wyślij teraz</button>' : ""}
     </div>
+
+    ${problemy.length ? `
+      <div class="card" style="border-color:var(--accent-fg);">
+        <span class="label">Ostatnie pobranie — czego nie udało się wziąć</span>
+        ${problemy.map((p) => `<p class="hint" style="margin:4px 0 0; color:var(--text-strong);">• ${esc(p)}</p>`).join("")}
+        <p class="hint" style="margin-top:8px;">To, co się nie pobrało, zostało w telefonie z poprzedniego
+        razu — nic nie przepadło. Najczęstsza przyczyna to uśpiona baza (wystarczy odświeżyć jeszcze raz)
+        albo brak uprawnień do konta.</p>
+      </div>` : ""}
 
     <p class="hint">Kopia bazy to zawodnicy, kluby i plany trzymane w telefonie. Z niej bierze się
     kadra klubu przy składzie — odśwież ją przy zasięgu, zanim pojedziesz na mecz.</p>
@@ -1687,15 +1729,84 @@ function zapamietajPlan() {
   planMiejsce = $<HTMLInputElement>("n-location")?.value ?? planMiejsce;
 }
 
+// ODŚWIEŻENIE KOPII BAZY — jedna droga dla przycisku w ustawieniach i dla przycisku w terminarzu.
+//
+// Wysyłka idzie PRZED pobraniem, nie równolegle: inaczej świeża kopia potrafi przyjść bez
+// obserwacji, która wciąż czeka w kolejce, i plan znika scoutowi z listy (patrz start()).
+let odswiezanie = false;
+
+async function odswiezKopie(): Promise<void> {
+  if (odswiezanie) return;
+  odswiezanie = true;
+  toast("Pobieram…");
+  try {
+    await flushQueue().catch(() => 0);
+    cache = await refreshCache();
+    refreshSyncPill();
+    render();
+    // O kłopotach mówimy wprost. „Pobrano" przy pustym terminarzu i cichym błędzie dostępu było
+    // najgorszą z możliwych odpowiedzi: wyglądało na sukces, a nie przywoziło niczego.
+    const problemy = cache.problemy || [];
+    toast(problemy.length ? "Pobrano częściowo — szczegóły w Ustawieniach" : "Kopia bazy odświeżona");
+  } catch (e) {
+    toast("Nie udało się pobrać: " + (e as Error).message);
+  } finally {
+    odswiezanie = false;
+  }
+}
+
+// Czy taka obserwacja już istnieje? Porównujemy mecz i datę, po sprowadzeniu nazwy do wspólnej
+// postaci — „Chojniczanka Chojnice - Znicz Pruszków" i „chojniczanka chojnice – znicz pruszków"
+// to dla scouta to samo spotkanie, a różnica bierze się z myślnika wstawionego przez telefon.
+function kluczSpotkania(match: string, date: string): string {
+  const nazwa = match
+    .toLowerCase()
+    .replace(/[–—]/g, "-")
+    .replace(/[^a-ząćęłńóśźż0-9-]+/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return nazwa + "|" + (date || "");
+}
+
+function istniejacaObserwacja(match: string, date: string): Observation | undefined {
+  const klucz = kluczSpotkania(match, date);
+  return cache.observations.find((o) => kluczSpotkania(o.match || "", o.date || "") === klucz);
+}
+
+// Podwójne dotknięcie przycisku zapisu tworzyło DWIE obserwacje: każde wywołanie brało świeże
+// `uid("obs")`, więc nic ich ze sobą nie wiązało. Na telefonie, w rękawiczkach, przy niepewnym
+// zasięgu — sytuacja codzienna, bo pierwsze dotknięcie nie daje natychmiastowej odpowiedzi.
+let zapisywanieTrwa = false;
+
 function saveNowa(odRazu: boolean) {
+  if (zapisywanieTrwa) return;
   const match = $<HTMLInputElement>("n-match")?.value.trim() || "";
   if (!match) { toast("Podaj nazwę meczu"); return; }
+  const data = $<HTMLInputElement>("n-date")?.value || todayISO();
+
+  // JEDNA OBSERWACJA NA MECZ. Ten sam mecz zaplanowany na komputerze i jeszcze raz w telefonie
+  // dawał dwa wpisy o tej samej nazwie — nie do odróżnienia na liście, z oceną rozbitą na oba.
+  // Zamiast tworzyć drugi, otwieramy ten, który już jest.
+  const juzJest = istniejacaObserwacja(match, data);
+  if (juzJest) {
+    zapamietajPlan();
+    if (odRazu) { beginLive(juzJest.id); toast("Ta obserwacja już istniała — otwieram ją"); return; }
+    listaTryb = juzJest.statsFilledIn ? "zakonczone" : "nadchodzace";
+    view = "dzis";
+    render();
+    toast("Ten mecz jest już zaplanowany — nie dokładam drugiego");
+    return;
+  }
+
+  zapisywanieTrwa = true;
+  window.setTimeout(() => { zapisywanieTrwa = false; }, 1500);
+
   const scout = ($<HTMLInputElement | HTMLSelectElement>("n-scout")?.value || "").trim();
   if (scout) setScout(scout);
   const obs: Observation = {
     id: uid("obs"),
     playerId: $<HTMLSelectElement>("n-player")?.value || "",
-    date: $<HTMLInputElement>("n-date")?.value || todayISO(),
+    date: data,
     matchTime: $<HTMLInputElement>("n-time")?.value || "",
     match,
     location: $<HTMLInputElement>("n-location")?.value.trim() || "",
@@ -1708,6 +1819,9 @@ function saveNowa(odRazu: boolean) {
   cache = getCache();
   if (odRazu) { beginLive(obs.id); toast("Obserwacja utworzona"); return; }
   // Plan na później zostaje na liście — scout umawia wyjazd i wraca do niego w dniu meczu.
+  // Lista musi pokazać WŁAŚNIE nadchodzące: po zapisaniu ocen zostaje włączona część „Zakończone",
+  // a wrócenie do niej po zaplanowaniu wyglądałoby tak, jakby nowy plan się nie zapisał.
+  listaTryb = "nadchodzace";
   view = "dzis";
   render();
   toast("Zaplanowane na " + (obs.date || ""));
@@ -1781,6 +1895,39 @@ document.addEventListener("click", (e) => {
       render();
       break;
     }
+    // USUNIĘCIE OBSERWACJI. Kasowanie jest nieodwracalne, więc pytamy wprost i nazywamy mecz —
+    // na liście kilku spotkań z tego samego weekendu sam „Czy na pewno?" niczego nie rozstrzyga.
+    case "usun-obserwacje": {
+      const id = el.dataset.id!;
+      const o = cache.observations.find((x) => x.id === id);
+      if (!o) break;
+      const opis = (o.match || "obserwację") + (o.date ? " (" + o.date + ")" : "");
+      const zOcenami = o.statsFilledIn || zdarzeniaObserwacji(id).length > 0;
+      if (!confirm(
+        "Usunąć " + opis + "?\n\n" +
+        (zOcenami
+          ? "Ta obserwacja ma już zapisany dorobek — oceny, notatki i oś zdarzeń znikną razem z nią, także z SBS na komputerze."
+          : "Zniknie z listy i z SBS na komputerze.") +
+        "\n\nTego nie da się cofnąć.",
+      )) break;
+
+      // Trwający mecz kasujemy razem z obserwacją — inaczej zegar biegłby dalej dla czegoś,
+      // czego już nie ma, a zapis ocen po meczu próbowałby trafić w skasowany wiersz.
+      if (live && live.observationId === id) { live = null; setLive(null); }
+      if (ocena && ocena.observationId === id) ocena = null;
+      if (podgladObsId === id) podgladObsId = null;
+
+      deleteObservation(id);
+      cache = getCache();
+      refreshSyncPill();
+      view = "dzis";
+      render();
+      toast("Usunięto");
+      break;
+    }
+
+    case "odswiez-terminarz": void odswiezKopie(); break;
+
     case "start-live": beginLive(el.dataset.id!); break;
     case "open-ocena": startOcena(el.dataset.id!); view = "ocena"; render(); break;
     case "podglad": podgladObsId = el.dataset.id!; view = "podglad"; render(); break;
@@ -2076,9 +2223,7 @@ document.addEventListener("click", (e) => {
     case "save-ocena": saveOcena(); break;
 
     case "refresh":
-      toast("Pobieram…");
-      refreshCache().then((c) => { cache = c; render(); toast("Kopia bazy odświeżona"); })
-        .catch((err) => toast("Nie udało się pobrać: " + err.message));
+      void odswiezKopie();
       break;
     case "flush":
       flushQueue().then((left) => { refreshSyncPill(); render(); toast(left ? "Zostało " + left : "Wszystko wysłane"); });
@@ -2300,7 +2445,12 @@ async function start(pobranaKopia?: Cache) {
   if (live) view = "live";
   render();
 
-  void flushQueue().then(refreshSyncPill);
+  // NAJPIERW WYSYŁKA, DOPIERO POTEM POBRANIE.
+  //
+  // Obie rzeczy puszczone równolegle ścigały się ze sobą: pobranie zdążało odpytać serwer, zanim
+  // dojechała tam obserwacja z kolejki, więc świeża kopia jej nie zawierała i plan znikał z listy.
+  // Scout planował go wtedy po raz drugi — i tak w bazie lądowały dwie obserwacje tego samego meczu.
+  await flushQueue().then(refreshSyncPill).catch(() => refreshSyncPill());
   if (pobranaKopia) return; // kopia przyszła już przy sprawdzaniu dostępu — nie pobieramy drugi raz
 
   // Kopię bazy pobieramy w tle. Panel jest użyteczny natychmiast — z tym, co zostało w telefonie

@@ -42,7 +42,10 @@ type QueueJobPayload =
   | { kind: "observation"; row: Record<string, unknown> }
   | { kind: "report"; row: Record<string, unknown> }
   | { kind: "playerStatus"; playerId: string; status: string }
-  | { kind: "liveEvents"; observationId: string; events: LiveEvent[] };
+  | { kind: "liveEvents"; observationId: string; events: LiveEvent[] }
+  // Skasowanie obserwacji. Jedyne zadanie, które coś z bazy ZABIERA — dlatego powstaje wyłącznie
+  // na wyraźne polecenie scouta (przycisk „Usuń" z pytaniem potwierdzającym), nigdy ubocznie.
+  | { kind: "usunObserwacje"; observationId: string };
 
 // Zadanie w kolejce ma dodatkowo własny identyfikator, bo kolejka żyje w localStorage: przy każdym
 // odczycie powstają NOWE obiekty i wykonanego zadania nie da się rozpoznać po tożsamości obiektu.
@@ -92,9 +95,13 @@ export interface Cache {
   matches: (Match & { competition?: string })[];
   scouts: string[];
   fetchedAt: string | null;
+  // Co się NIE pobrało przy ostatnim odświeżeniu, w ludzkich słowach. Bez tego pusta lista
+  // wygląda identycznie w dwóch zupełnie różnych sytuacjach: „w bazie faktycznie nic nie ma"
+  // i „baza odmówiła dostępu". Scout na trybunie musi wiedzieć, na którą z nich patrzy.
+  problemy?: string[];
 }
 
-const EMPTY_CACHE: Cache = { players: [], clubs: [], observations: [], reports: [], matches: [], scouts: [], fetchedAt: null };
+const EMPTY_CACHE: Cache = { players: [], clubs: [], observations: [], reports: [], matches: [], scouts: [], fetchedAt: null, problemy: [] };
 
 export const getCache = (): Cache => readLS<Cache>(LS.cache, EMPTY_CACHE);
 
@@ -181,43 +188,140 @@ const page = async (table: string, columns = "*"): Promise<Record<string, unknow
   return all;
 };
 
+// Jeden wiersz z sbs_kv. Brak wiersza to `null` BEZ błędu — to normalny stan (czegoś jeszcze nie
+// zapisano); błąd bazy leci wyjątkiem, żeby dało się te dwie rzeczy od siebie odróżnić.
+async function czytajKv(key: string): Promise<string | null> {
+  const { data, error } = await sb.from("sbs_kv").select("value").eq("key", key).maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? (data as { value: string }).value : null;
+}
+
+// Wynik jednego pobrania. Świadomie JEDEN kształt zamiast unii rozróżnianej polem `ok`:
+// projekt kompiluje się z wyłączonym `strict`, a bez `strictNullChecks` TypeScript nie zawęża
+// typu po takim polu i każde odwołanie do `blad` byłoby błędem kompilacji.
+// Puste `blad` = pobranie się udało; `dane === null` przy pustym `blad` = w bazie nic nie ma.
+interface Wynik<T> {
+  dane: T | null;
+  blad: string;
+}
+
+const sprobuj = async <T>(fn: () => Promise<T>): Promise<Wynik<T>> => {
+  try {
+    return { dane: await fn(), blad: "" };
+  } catch (e) {
+    return { dane: null, blad: (e as Error).message || "nieznany błąd" };
+  }
+};
+
+// PRACA CZEKAJĄCA W KOLEJCE MUSI PRZEŻYĆ ODŚWIEŻENIE.
+//
+// Kopia bazy powstaje z tego, co odda serwer. Obserwacja zaplanowana na telefonie bez zasięgu
+// jeszcze tam nie dotarła — więc odświeżenie zastępowało ją listą, w której jej nie ma, i plan
+// znikał scoutowi z ekranu. Dokładnie stąd brały się DUBLE: obserwacja „przepadała", scout
+// planował ją drugi raz, a potem kolejka wysyłała obie i w bazie były dwie tego samego meczu.
+//
+// Dlatego po złożeniu kopii nakładamy na nią wszystko, co wciąż czeka na wysyłkę. Wersja lokalna
+// jest z definicji nowsza od serwerowej — to ona dopiero ma tam pojechać.
+function nalozKolejke(c: Cache): void {
+  for (const j of getQueue()) {
+    if (j.kind === "observation") {
+      const obs = liftObsExt(objFromRow(j.row)) as unknown as Observation;
+      const i = c.observations.findIndex((o) => o.id === obs.id);
+      if (i >= 0) c.observations[i] = obs; else c.observations.push(obs);
+    } else if (j.kind === "report") {
+      const rep = objFromRow(j.row) as unknown as Report;
+      const i = c.reports.findIndex((r) => r.id === rep.id);
+      if (i >= 0) c.reports[i] = rep; else c.reports.push(rep);
+    } else if (j.kind === "usunObserwacje") {
+      // Kasowanie też jeszcze nie dotarło do bazy — skasowana obserwacja nie może wrócić na listę.
+      c.observations = c.observations.filter((o) => o.id !== j.observationId);
+    }
+  }
+}
+
 // Pobranie kopii bazy. Wołane po zalogowaniu i z przycisku „Odśwież" — świadomie, a nie przy
 // każdym wejściu do widoku, żeby nie zjadać transferu na stadionie.
+//
+// KAŻDE ŹRÓDŁO OSOBNO. Wcześniej sześć zapytań szło jednym `Promise.all` bez zabezpieczenia:
+// wystarczyło, że JEDNO z nich odmówiło (reguły dostępu, uśpiona baza), a całe odświeżenie kończyło
+// się wyjątkiem i w telefonie zostawała stara kopia — bez słowa wyjaśnienia. Terminarz miał jeszcze
+// gorzej: jego błąd był łykany po cichu i panel pisał „terminarz jest pusty, pobierz go na
+// komputerze", choć na komputerze był komplet meczów. Teraz to, co się pobrało, wchodzi do kopii;
+// to, co się nie pobrało, zostaje z poprzedniego razu i trafia na listę problemów.
 export async function refreshCache(): Promise<Cache> {
-  const [players, clubs, observations, reports, kv, kvMecze] = await Promise.all([
-    page("sbs_players"),
-    page("sbs_clubs"),
-    page("sbs_observations"),
-    page("sbs_reports"),
-    sb.from("sbs_kv").select("value").eq("key", "scouting:settings").maybeSingle(),
-    sb.from("sbs_kv").select("value").eq("key", "scouting:matches").maybeSingle(),
+  const poprzednia = getCache();
+  const problemy: string[] = [];
+
+  const [players, clubs, observations, reports, ustawienia, terminarz] = await Promise.all([
+    sprobuj(() => page("sbs_players")),
+    sprobuj(() => page("sbs_clubs")),
+    sprobuj(() => page("sbs_observations")),
+    sprobuj(() => page("sbs_reports")),
+    sprobuj(() => czytajKv("scouting:settings")),
+    sprobuj(() => czytajKv("scouting:matches")),
   ]);
 
-  let scouts: string[] = [];
-  try {
-    const settings = kv.data ? JSON.parse((kv.data as { value: string }).value) : null;
-    if (settings && Array.isArray(settings.scouts)) scouts = settings.scouts;
-  } catch {
-    /* ustawienia w nieoczekiwanym kształcie — lista scoutów zostaje pusta, da się ją wpisać ręcznie */
+  const zTabeli = <T>(w: Wynik<Record<string, unknown>[]>, nazwa: string, stare: T[], mapuj: (r: Record<string, unknown>) => unknown): T[] => {
+    if (w.blad) { problemy.push(nazwa + ": " + w.blad); return stare; }
+    return (w.dane || []).map(mapuj) as T[];
+  };
+
+  let scouts = poprzednia.scouts || [];
+  if (ustawienia.blad) problemy.push("ustawienia: " + ustawienia.blad);
+  else if (ustawienia.dane) {
+    try {
+      const s = JSON.parse(ustawienia.dane);
+      if (s && Array.isArray(s.scouts)) scouts = s.scouts;
+    } catch {
+      problemy.push("ustawienia: zapis w nieoczekiwanym kształcie");
+    }
   }
 
-  let matches: (Match & { competition?: string })[] = [];
-  try {
-    const surowe = kvMecze.data ? JSON.parse((kvMecze.data as { value: string }).value) : null;
-    if (Array.isArray(surowe)) matches = surowe;
-  } catch {
-    /* terminarz w nieoczekiwanym kształcie — lista zostaje pusta, mecz da się wpisać ręcznie */
+  // Terminarz leży w sbs_kv pod „scouting:matches" — tam, gdzie zapisuje go aplikacja na komputerze
+  // (patrz komentarz przy COLLECTION_TABLES w src/data/storage.ts). Brak wiersza znaczy naprawdę
+  // „nikt jeszcze nie pobrał terminarza"; błąd odczytu znaczy coś zupełnie innego i mówimy o tym wprost.
+  let matches = poprzednia.matches || [];
+  if (terminarz.blad) problemy.push("terminarz: " + terminarz.blad);
+  else if (terminarz.dane === null || terminarz.dane === undefined) matches = [];
+  else {
+    try {
+      const surowe = JSON.parse(terminarz.dane);
+      if (Array.isArray(surowe)) matches = surowe;
+      else problemy.push("terminarz: zapis w nieoczekiwanym kształcie");
+    } catch {
+      problemy.push("terminarz: zapis w nieoczekiwanym kształcie");
+    }
   }
 
   const cache: Cache = {
-    players: players.map(objFromRow) as unknown as Player[],
-    clubs: clubs.map(objFromRow) as unknown as Club[],
-    observations: observations.map((r) => liftObsExt(objFromRow(r))) as unknown as Observation[],
-    reports: reports.map(objFromRow) as unknown as Report[],
+    players: zTabeli<Player>(players, "zawodnicy", poprzednia.players, objFromRow),
+    clubs: zTabeli<Club>(clubs, "kluby", poprzednia.clubs, objFromRow),
+    observations: zTabeli<Observation>(observations, "obserwacje", poprzednia.observations, (r) => liftObsExt(objFromRow(r))),
+    reports: zTabeli<Report>(reports, "raporty", poprzednia.reports, objFromRow),
     matches,
     scouts,
     fetchedAt: new Date().toISOString(),
+    problemy,
   };
+  // PUSTKA BEZ BŁĘDU TO TEŻ OBJAW.
+  //
+  // Reguły dostępu w Supabase nie odmawiają — one FILTRUJĄ. Konto bez zgody administratora
+  // (albo bez wiersza w sbs_konta, jeśli powstało przed wprowadzeniem zgód) dostaje na każde
+  // pytanie poprawną odpowiedź: zero wierszy. Dla panelu wygląda to identycznie jak świeża,
+  // pusta baza — i właśnie stąd bierze się „nie wgrało meczów z komputera", choć na komputerze
+  // jest komplet. Nazywamy to wprost, bo sam scout nie ma jak tego odróżnić.
+  const nicNieDoszlo =
+    !problemy.length &&
+    !cache.players.length && !cache.clubs.length &&
+    !cache.observations.length && !cache.reports.length && !cache.matches.length;
+  if (nicNieDoszlo) {
+    problemy.push(
+      "baza oddała zero rekordów — zwykle znaczy to, że konto nie ma jeszcze zgody administratora " +
+      "SBS albo zalogowano się na inne konto niż na komputerze",
+    );
+  }
+
+  nalozKolejke(cache);
   writeLS(LS.cache, cache);
   return cache;
 }
@@ -251,6 +355,7 @@ function enqueue(job: QueueJobPayload) {
     if (a.kind === "report" && b.kind === "report") return a.row.id === b.row.id;
     if (a.kind === "playerStatus" && b.kind === "playerStatus") return a.playerId === b.playerId;
     if (a.kind === "liveEvents" && b.kind === "liveEvents") return a.observationId === b.observationId;
+    if (a.kind === "usunObserwacje" && b.kind === "usunObserwacje") return a.observationId === b.observationId;
     return false;
   };
   setQueue([...q.filter((j) => !sameTarget(j, pelne)), pelne]);
@@ -307,6 +412,11 @@ async function runJob(job: QueueJob): Promise<void> {
     if (error) throw new Error(error.message);
     return;
   }
+  if (job.kind === "usunObserwacje") {
+    const { error } = await sb.from("sbs_observations").delete().eq("id", job.observationId);
+    if (error) throw new Error(error.message);
+    return;
+  }
   if (job.kind === "playerStatus") {
     // Świadomie update, nie upsert: telefon zmienia JEDNO pole istniejącego zawodnika i nie może
     // nadpisać reszty jego profilu wersją z lokalnej kopii, która bywa nieaktualna.
@@ -358,6 +468,32 @@ export function saveObservation(obs: Observation): void {
     if (i >= 0) c.observations[i] = obs; else c.observations.push(obs);
   });
   enqueue({ kind: "observation", row: rowFromObj(packObsExt(obs as unknown as Record<string, unknown>)) });
+  void flushQueue();
+}
+
+// USUNIĘCIE OBSERWACJI.
+//
+// Jedyna operacja panelu, która coś z bazy zabiera. Dlatego wołana wyłącznie z przycisku
+// potwierdzonego pytaniem — nigdy jako skutek uboczny czegoś innego.
+//
+// Zaległe zapisy TEJ obserwacji wyrzucamy z kolejki przed dołożeniem kasowania. Bez tego telefon
+// bez zasięgu wysyłałby najpierw upsert, a potem delete — dwa przejścia po sieci po to, żeby
+// skończyć w tym samym miejscu. Oś zdarzeń w bazie znika sama (klucz obcy z `on delete cascade`).
+export function deleteObservation(id: string): void {
+  patchCache((c) => {
+    c.observations = c.observations.filter((o) => o.id !== id);
+  });
+  const bezZaleglych = getQueue().filter(
+    (j) => !((j.kind === "observation" && j.row.id === id) || (j.kind === "liveEvents" && j.observationId === id)),
+  );
+  setQueue(bezZaleglych);
+  enqueue({ kind: "usunObserwacje", observationId: id });
+
+  // Sprzątamy też kopię zdarzeń w telefonie — inaczej oś skasowanego meczu zostawałaby w pamięci
+  // urządzenia bez niczego, co by ją pokazywało.
+  const archiwum = archiwumZdarzen();
+  if (archiwum[id]) { delete archiwum[id]; writeLS(LS.archiwum, archiwum); }
+
   void flushQueue();
 }
 
