@@ -25,8 +25,21 @@ export async function currentUser(): Promise<SessionUser | null> {
 
 // Logowanie adresem e-mail i hasłem. Komunikaty tłumaczymy na polski, ale świadomie NIE zdradzamy,
 // czy dany adres istnieje w bazie — inaczej ekran logowania służyłby do sprawdzania, kto ma konto.
+// ADRES WPISANY NA TELEFONIE.
+//
+// iOS dokleja kropkę na końcu (podwójna spacja zamienia się w kropkę, autokorekta robi to samo),
+// a klawiatura potrafi zostawić wielką literę na początku. Adres „maciejmegger@gmail.com." to
+// z punktu widzenia bazy inny adres niż ten zapisany — logowanie kończyło się komunikatem
+// „Nieprawidłowy e-mail lub hasło", choć hasło było dobre i wpisujący nie miał jak tego zobaczyć.
+//
+// Obcinamy więc kropki i spacje z obu końców oraz sprowadzamy do małych liter. Nie jest to
+// zgadywanie: adres e-mail nie może kończyć się kropką, a wielkość liter w nim nie ma znaczenia.
+export function normalizujEmail(email: string): string {
+  return String(email || "").trim().replace(/^[.\s]+|[.\s]+$/g, "").toLowerCase();
+}
+
 export async function signIn(email: string, password: string): Promise<{ ok: boolean; error?: string }> {
-  const { error } = await sb.auth.signInWithPassword({ email: email.trim(), password });
+  const { error } = await sb.auth.signInWithPassword({ email: normalizujEmail(email), password });
   if (!error) return { ok: true };
   const m = (error.message || "").toLowerCase();
   if (m.includes("invalid login credentials")) {
@@ -65,7 +78,7 @@ export async function signOut(): Promise<void> {
 // Wysyłka linku do ustawienia nowego hasła. Zawsze zgłaszamy powodzenie, nawet gdy adresu nie ma
 // w bazie — po odpowiedzi nie można więc ustalić, które adresy są zarejestrowane.
 export async function requestPasswordReset(email: string): Promise<{ ok: boolean; error?: string }> {
-  const { error } = await sb.auth.resetPasswordForEmail(email.trim(), {
+  const { error } = await sb.auth.resetPasswordForEmail(normalizujEmail(email), {
     redirectTo: window.location.origin + window.location.pathname,
   });
   if (error && !/user not found/i.test(error.message)) {
@@ -160,7 +173,7 @@ export interface WniosekODostep {
 // „oczekuje". Hasło ustala sam zgłaszający i nie przechodzi przez żadną naszą tabelę.
 export async function zglosDostep(w: WniosekODostep): Promise<{ ok: boolean; error?: string }> {
   const { error } = await sb.auth.signUp({
-    email: w.email.trim(),
+    email: normalizujEmail(w.email),
     password: w.haslo,
     options: {
       data: {
