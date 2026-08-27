@@ -4342,9 +4342,33 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
         if(czysty){ alert('To nie jest adres z laczynaspilka.pl — nic nie zapisałem.'); return; }
       }
 
-      alert('Nie mam jeszcze żadnego adresu tej grupy ani klubu na „Łączy nas piłka".\n\n'
-        + 'Otworzę stronę rozgrywek — ustaw tam Sezon, Ligę i Grupę, a potem skopiuj adres '
-        + 'z paska przeglądarki i wklej go przyciskiem „🔗 Link ŁNP dla grupy" (Kluby → wybierz grupę).');
+      // PYTAMY RAZ NA GRUPĘ, ZAMIAST OTWIERAĆ CZTERYSTA RAZY NIE TĘ STRONĘ.
+      //
+      // Adresu grupy na ŁNP nie da się wyliczyć — to ciąg identyfikatorów (season, leagueGroup,
+      // subLeague), a nie nazwa. Dotąd przy braku adresu otwieraliśmy ogólne „/rozgrywki", które
+      // domyślnie pokazuje EKSTRAKLASĘ. Wyglądało to jak awaria: „klikam dolnośląską, a otwiera
+      // mi Ekstraklasę". Alert to tłumaczył, ale ginął w pośpiechu.
+      //
+      // Teraz prosimy o adres wprost i zapamiętujemy go na stałe. Jedno wklejenie na grupę,
+      // raz w sezonie — a potem przycisk otwiera właściwą kolejkę od razu.
+      const wpisanaGrupa = prompt(
+        `Adres kolejki grupy „${grupa}" na Łączy nas piłka.\n\n`
+        + `Nie da się go odgadnąć — ŁNP zapisuje grupę jako ciąg identyfikatorów, nie nazwę.\n`
+        + `Podaję go raz, potem otworzy się sam.\n\n`
+        + `1. Otwórz laczynaspilka.pl/rozgrywki\n`
+        + `2. Ustaw Sezon, Ligę i Grupę tak, żeby zobaczyć mecze TEJ grupy\n`
+        + `3. Skopiuj adres z paska przeglądarki i wklej tutaj`, '');
+      const czystaGrupa = String(wpisanaGrupa || '').trim();
+      if(czystaGrupa && /^https?:\/\/(www\.)?laczynaspilka\.pl\//i.test(czystaGrupa)){
+        DB.settings.lnpGrupy = { ...(DB.settings.lnpGrupy||{}), [grupa]: czystaGrupa };
+        void saveSettings();
+        window.open(czystaGrupa, '_blank', 'noopener');
+        return;
+      }
+      if(czystaGrupa){ alert('To nie jest adres z laczynaspilka.pl — nic nie zapisałem.'); return; }
+      // Zrezygnował z podania adresu — otwieramy stronę rozgrywek, ale mówiąc wprost, co się stanie.
+      alert('Bez adresu tej grupy otworzę ogólną stronę rozgrywek — pokaże Ekstraklasę.\n\n'
+        + 'Ustaw na niej Sezon, Ligę i Grupę, wróć tutaj i podaj adres, gdy zapytam ponownie.');
       window.open('https://www.laczynaspilka.pl/rozgrywki', '_blank', 'noopener');
     });
     overlay.querySelectorAll('[data-x="zapisz"]').forEach(b=>b.onclick=()=>{ void zapisz(); });
@@ -8105,8 +8129,7 @@ function attachHandlers(){
   });
   main.querySelectorAll('[data-action="protokoly-grupy"]').forEach(b=>b.onclick=()=>openProtokolMeczuModal(null));
   main.querySelectorAll('[data-action="lnp-otworz-grupe"]').forEach(b=>b.onclick=()=>{
-    const adres = (DB.settings.lnpGrupy||{})[clubBrowse.group];
-    if(adres) window.open(adres, '_blank', 'noopener');
+    otworzKolejkeGrupy(clubBrowse.group);
   });
   main.querySelectorAll('[data-action="stats-90minut-grupa"]').forEach(b=>b.onclick=()=>{
     // JEDEN PRZYCISK, DWIE DROGI — bo źródła są dwa i nic na to nie poradzimy.
@@ -8124,8 +8147,9 @@ function attachHandlers(){
       // strony z poziomu SBS — to zabezpieczenie, którego nie da się (i nie należy) obchodzić.
       // Otwieramy więc od razu właściwą stronę ŁNP i zostawiamy człowiekowi JEDEN ruch: kliknięcie
       // zakładki. Wszystko po nim dzieje się samo, łącznie z powrotem tutaj.
-      const adres = (DB.settings.lnpGrupy||{})[clubBrowse.group] || '';
-      if(adres) window.open(adres, '_blank', 'noopener');
+      // Adres grupy pytamy raz i zapamiętujemy — patrz otworzKolejkeGrupy(). Bez tego przycisk
+      // albo nie robił nic, albo otwierał ogólną stronę rozgrywek pokazującą Ekstraklasę.
+      otworzKolejkeGrupy(clubBrowse.group);
       openProtokolMeczuModal(null);
       return;
     }
@@ -10454,6 +10478,40 @@ function dopasujKlubDoNazwy(nazwa, podpowiedzGrupa){
 
 // Zapamiętanie adresu grupy na ŁNP na podstawie tego, skąd faktycznie przyszły protokoły.
 // Nie ruszamy adresu, który już jest — mógł być wpisany świadomie i celować w inną rundę.
+// OTWARCIE KOLEJKI GRUPY NA ŁNP — jedno miejsce dla wszystkich przycisków.
+//
+// Adresu grupy nie da się wyliczyć: ŁNP zapisuje ją jako ciąg identyfikatorów (season,
+// leagueGroup, subLeague), a nie jako nazwę. Dlatego przy pierwszym użyciu pytamy o niego raz
+// i zapamiętujemy na stałe.
+//
+// Wcześniej każdy z trzech przycisków radził sobie inaczej: jeden nie robił NIC, drugi otwierał
+// ogólne „/rozgrywki" — a ta strona domyślnie pokazuje Ekstraklasę. Z zewnątrz wyglądało to jak
+// awaria: „wybieram dolnośląską, a otwiera mi Ekstraklasę".
+function otworzKolejkeGrupy(grupa){
+  if(!grupa){ alert('Najpierw wybierz grupę.'); return; }
+  const zapisany = (DB.settings.lnpGrupy||{})[grupa];
+  if(zapisany){ window.open(zapisany, '_blank', 'noopener'); return; }
+
+  const wpisany = prompt(
+    `Adres kolejki grupy „${grupa}" na Łączy nas piłka.\n\n`
+    + `Nie da się go odgadnąć — ŁNP zapisuje grupę jako ciąg identyfikatorów, nie nazwę.\n`
+    + `Podajesz go RAZ, potem otworzy się sam.\n\n`
+    + `1. Otwórz laczynaspilka.pl/rozgrywki\n`
+    + `2. Ustaw Sezon, Ligę i Grupę tak, żeby zobaczyć mecze TEJ grupy\n`
+    + `3. Skopiuj adres z paska przeglądarki i wklej tutaj`, '');
+  const czysty = String(wpisany || '').trim();
+  if(czysty && /^https?:\/\/(www\.)?laczynaspilka\.pl\//i.test(czysty)){
+    DB.settings.lnpGrupy = { ...(DB.settings.lnpGrupy||{}), [grupa]: czysty };
+    void saveSettings();
+    window.open(czysty, '_blank', 'noopener');
+    return;
+  }
+  if(czysty){ alert('To nie jest adres z laczynaspilka.pl — nic nie zapisałem.'); return; }
+  alert('Bez adresu tej grupy otworzę ogólną stronę rozgrywek — pokaże Ekstraklasę.\n\n'
+    + 'Ustaw na niej Sezon, Ligę i Grupę, a potem podaj adres, gdy zapytam ponownie.');
+  window.open('https://www.laczynaspilka.pl/rozgrywki', '_blank', 'noopener');
+}
+
 function zapamietajAdresGrupy(zrodlo, protokoly){
   if(!zrodlo || !/^https:\/\/(www\.)?laczynaspilka\.pl\//i.test(zrodlo)) return [];
   // Strona pojedynczego meczu nie jest listą — zapamiętanie jej otwierałoby zawsze ten sam mecz.
