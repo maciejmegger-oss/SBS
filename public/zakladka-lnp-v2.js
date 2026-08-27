@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v8 z 28.08.2026";
+var SBS_ZBIERACZ="v9 z 28.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -628,6 +628,40 @@ function koniec(){
  }
  try{localStorage.setItem(KLUCZ,JSON.stringify(zebrane));}catch(e){}
  var tresc=zebrane.join('\n\n')+blokRocznikow();
+
+ // OSTATNI KROK MUSI ZACZAC SIE OD KLIKNIECIA.
+ //
+ // Zbieranie trwa dziesiatki sekund i konczy sie w kodzie asynchronicznym - a wtedy przegladarka
+ // (zwlaszcza Firefox) blokuje i window.open, i zapis do schowka, bo nie stoi za nimi zaden gest
+ // uzytkownika. Objaw byl mylacy: zakladka mowila, ze zebrala protokoly, okno SBS sie nie
+ // otwieralo, a w schowku zostawalo to, co bylo tam wczesniej. Wygladalo na zepsute wklejanie.
+ //
+ // Dlatego nie wysylamy nic sami. Pokazujemy przycisk; jego klikniecie jest gestem, wiec i okno,
+ // i schowek dzialaja bez wyjatkow.
+ box.textContent='';
+ box.style.maxWidth='320px';
+ var opis=document.createElement('div');
+ opis.style.cssText='margin-bottom:10px;line-height:1.45';
+ opis.textContent='SBS '+SBS_ZBIERACZ+': zebrane protokoly: '+zebrane.length
+  +' (nowych '+(zebrane.length-bylo)+', kolejek '+kolejek
+  +(pominietych?', pominietych nierozegranych '+pominietych:'')
+  +(zablokowanych?', zatrzymanych prob wyjscia '+zablokowanych:'')+').';
+ box.appendChild(opis);
+ var przycisk=document.createElement('button');
+ przycisk.textContent='Wyslij do SBS ('+zebrane.length+')';
+ przycisk.style.cssText='display:block;width:100%;padding:10px 14px;margin-bottom:6px;border:0;border-radius:6px;background:#C9A227;color:#16302A;font:600 14px sans-serif;cursor:pointer';
+ box.appendChild(przycisk);
+ var zamknij=document.createElement('button');
+ zamknij.textContent='Zamknij';
+ zamknij.style.cssText='display:block;width:100%;padding:6px;border:1px solid rgba(246,243,234,.35);border-radius:6px;background:transparent;color:#F6F3EA;font:13px sans-serif;cursor:pointer';
+ zamknij.onclick=function(){ box.remove(); };
+ box.appendChild(zamknij);
+ przycisk.onclick=function(){ wyslij(tresc); };
+ return;
+}
+
+// Wysylka odpalana KLIKNIECIEM — stad wolno jej otwierac okno i pisac do schowka.
+function wyslij(tresc){
  var udalo=false;
  var p=document.createElement('textarea');p.value=tresc;document.body.appendChild(p);p.select();
  try{udalo=document.execCommand('copy');}catch(e){udalo=false;}
