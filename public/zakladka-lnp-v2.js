@@ -98,6 +98,26 @@ var pominietych=0;
 var zebrane=[];try{zebrane=JSON.parse(localStorage.getItem(KLUCZ)||'[]');}catch(e){zebrane=[];}
 var bylo=zebrane.length, linki=[], i=0, kolejek=1, czekam=0, doliczen=0, rozwiniete=false, probowanoKlikac=false, wierszyNaEkranie=0, zakladkaNr=0;
 
+// Czy w ten element wolno kliknac?
+//
+// Zbieracz klika w elementy rozpoznane po TRESCI — "Mecze", "Pokaz wiecej". Ta sama tresc trafia
+// sie w nawigacji portalu: w stopce LNP jest "Wyniki" prowadzace na /rozgrywki, a przy liscie
+// zdarzen bywa "Pokaz wiecej" jako zwykly odnosnik. Klikniecie takiego elementu opuszcza strone
+// albo otwiera nowa karte i cala praca przepada.
+//
+// Kryterium: element sterujacy trescia albo nie ma adresu, albo prowadzi na TE SAMA sciezke
+// (zmienia sie co najwyzej parametr lub kotwica). Odnosnik otwierajacy nowa karte odsiewamy
+// zawsze — zakladka z meczami nigdy nie otwiera sie w nowym oknie.
+function wolnoKliknac(el){
+ if(!el) return false;
+ if(el.tagName!=='A') return true;
+ var t=(el.getAttribute&&el.getAttribute('target'))||'';
+ if(t && t!=='_self') return false;
+ var h=el.getAttribute&&el.getAttribute('href');
+ if(!h || h.charAt(0)==='#') return true;
+ try{ return new URL(el.href, location.href).pathname === location.pathname; }catch(e){ return false; }
+}
+
 function kandydaciMeczow(){
  var nazwy=/^(mecze|terminarz|wyniki|terminarz i wyniki|mecze i wyniki)$/i;
  var kand=[].slice.call(document.querySelectorAll('[role="tab"],button,a,li,span,div'));
@@ -141,7 +161,7 @@ function otworzZakladkeMecze(gotowe){
  var cel=k[zakladkaNr];
  zakladkaNr++;
  box.textContent='SBS '+SBS_ZBIERACZ+': otwieram zakladke z meczami ('+zakladkaNr+'/'+k.length+')...';
- try{cel.click();}catch(e){}
+ if(wolnoKliknac(cel)){try{cel.click();}catch(e){}}
  setTimeout(gotowe,1600);
 }
 function dociagnijStrone(gotowe){
@@ -152,7 +172,7 @@ function dociagnijStrone(gotowe){
   var wiecej=[].slice.call(document.querySelectorAll('button,a')).filter(function(el){
    return /zaladuj wiecej|załaduj więcej|pokaz wiecej|pokaż więcej/i.test((el.textContent||'').trim());
   });
-  wiecej.forEach(function(el){try{el.click();}catch(e){}});
+  wiecej.filter(wolnoKliknac).forEach(function(el){try{el.click();}catch(e){}});
   var n=naglowekRozegranych();
   if(n){ try{ n.scrollIntoView({block:'start'}); }catch(e){} box.textContent='SBS '+SBS_ZBIERACZ+': jestem przy \u201eRozegranych meczach\u201d ('+krok+')...'; }
   else box.textContent='SBS '+SBS_ZBIERACZ+': szukam rozegranych meczow ('+krok+')...';
@@ -333,7 +353,7 @@ function zbierzAdresyPrzezKlikanie(gotowe){
    if(ci>=cele.length){ k++; setTimeout(dalej,120); return; }
    var cel=cele[ci++];
    zlapane.length=0;
-   try{ cel.click(); }catch(e){}
+   if(wolnoKliknac(cel)){ try{ cel.click(); }catch(e){} }
    var n=0;
    var t=setInterval(function(){
     n++;
