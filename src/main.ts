@@ -4266,7 +4266,24 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
       ${wynik ? `<div style="max-height:280px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px;font-size:12.5px;">
         ${wynik.length>1 ? `<p class="note" style="margin:0 0 6px;">Rozpoznanych meczów: <strong>${wynik.length}</strong></p>` : ''}
         ${wynik.flatMap(prot=>prot.strony).map(s=>{
-          if(s.blad) return `<div style="padding:4px 0;color:var(--clay-dark);"><strong>${esc(s.nazwa)}</strong> — ${esc(s.blad)}</div>`;
+          if(s.blad){
+            // NAZWY NA ŁNP I NA 90MINUT BYWAJĄ ZUPEŁNIE INNE. „Pogoń Barlinek" u jednych to
+            // „CRS Barlinek" u drugich, a że wspólne jest samo miasto, żadne dopasowanie po
+            // rdzeniu nazwy tego nie połączy. Zamiast zostawiać klub bez statystyk, pytamy raz
+            // — i zapamiętujemy odpowiedź, więc następne protokoły trafiają już same.
+            const doWyboru = !/nie udało się odczytać/.test(s.blad);
+            return `<div style="padding:6px 0;color:var(--clay-dark);border-bottom:1px solid var(--chalk-dim);">
+              <strong>${esc(s.nazwa)}</strong> — ${esc(s.blad)}
+              ${doWyboru ? `<div style="margin-top:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                <span class="note" style="margin:0;">To ten klub u nas:</span>
+                <select data-przypisz="${esc(s.nazwa)}" style="font-size:12px;max-width:260px;">
+                  <option value="">— wybierz —</option>
+                  ${DB.clubs.slice().sort((a,b)=>a.name.localeCompare(b.name,'pl'))
+                    .map(c=>`<option value="${esc(c.id)}">${esc(c.name)}${c.league?` · ${esc(c.league)}`:''}</option>`).join('')}
+                </select>
+              </div>` : ''}
+            </div>`;
+          }
           const grali = s.wiersze.filter(w=>w.zagral);
           // Do kadry trafia CAŁY skład meczowy, więc liczymy dopisywanych ze wszystkich wierszy,
           // nie tylko z tych, którzy weszli na boisko.
@@ -4375,6 +4392,17 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
       window.open('https://www.laczynaspilka.pl/rozgrywki', '_blank', 'noopener');
     });
     overlay.querySelectorAll('[data-x="zapisz"]').forEach(b=>b.onclick=()=>{ void zapisz(); });
+    // Przypisanie nazwy z ŁNP do klubu w kartotece — zapamiętane raz, działa od następnego razu.
+    overlay.querySelectorAll('[data-przypisz]').forEach(sel=>sel.onchange = ()=>{
+      const nazwaLnp = sel.getAttribute('data-przypisz');
+      const klubId = sel.value;
+      if(!klubId) return;
+      const klub = DB.clubs.find(c=>c.id === klubId);
+      DB.settings.aliasyKlubow = { ...(DB.settings.aliasyKlubow||{}), [importNorm(nazwaLnp)]: klubId };
+      void saveSettings();
+      komunikat = `Zapamiętałem: „${nazwaLnp}" na Łączy nas piłka to ${klub ? klub.name : 'wybrany klub'}. Rozpoznaję protokoły jeszcze raz.`;
+      rozpoznaj();
+    });
     const chk = overlay.querySelector('#pm-dopisuj');
     if(chk) chk.onchange = ()=>{ dopisujBrak = chk.checked; };
     const pole = overlay.querySelector('#pm-tekst');
@@ -4462,7 +4490,8 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
   }
 
   async function zapiszWewnetrznie(){
-    let dopisanych = 0, nowych = 0, meczow = 0, rocznikow = 0;
+    let dopisanych = 0, nowych = 0, meczow = 0, rocznikow = 0, powtorzonych = 0;
+    const powtorzoneMecze = new Set();
     const dzis = new Date().toISOString().slice(0,10);
     wynik.forEach(protokol=>{
     meczow++;
@@ -4496,7 +4525,19 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
         }
         if(w.mlodziezowiec && !p.mlodziezowiec) p.mlodziezowiec = true;
         if(w.position && !p.position) p.position = w.position;
-        if(!w.zagral || (p.rozliczoneMecze||[]).includes(protokol.klucz)) return;
+        if(!w.zagral) return;
+        // TO SAMO SPOTKANIE LICZYMY RAZ — I POZNAJEMY JE PO MECZU, NIE PO KLUCZU Z TEKSTU.
+        //
+        // Klucz wyliczany z treści wklejki zawodził: przy powtórnym zebraniu tej samej kolejki
+        // wychodził inny (raz z datą, raz bez, raz z datą ze stopki strony), więc dorobek
+        // doliczał się drugi i trzeci raz. W sezonie każda para gra ze sobą dokładnie dwa razy —
+        // raz u siebie, raz na wyjeździe — więc para (rywal, czy u siebie) wskazuje spotkanie
+        // jednoznacznie i nie da się jej podrobić inną wklejką tego samego meczu.
+        const rywal = (protokol.druzyny.find(d=>d !== s.nazwa) || '');
+        const uSiebie = protokol.druzyny[0] === s.nazwa;
+        const juzRozliczony = (p.rozliczoneMecze||[]).includes(protokol.klucz)
+          || (p.przebieg||[]).some(x=> importNorm(x.rywal||'') === importNorm(rywal) && !!x.dom === uSiebie);
+        if(juzRozliczony){ powtorzonych++; powtorzoneMecze.add(`${s.nazwa} — ${rywal}`); return; }
         p.matches = (p.matches || 0) + 1;
         p.minutes = (p.minutes || 0) + w.minutyGry;
         // GOLE I KARTKI Z IKON PRZY MINUTACH. Doliczamy je tak samo jak mecze — raz na protokół,
@@ -4506,10 +4547,9 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
         if(w.czerwone) p.redCards = (p.redCards || 0) + w.czerwone;
         p.rozliczoneMecze = [...(p.rozliczoneMecze || []), protokol.klucz];
         // Minuty mecz po meczu — to z nich powstaje wykres dostępności w profilu i w PDF.
-        const rywal = (protokol.druzyny.find(d=>d !== s.nazwa) || '');
         const przebieg = (p.przebieg || []).filter(x=>x.mecz !== protokol.klucz);
         przebieg.push({ mecz: protokol.klucz, data: '', kolejka: null, rywal,
-          dom: protokol.druzyny[0] === s.nazwa, wynik: '', minuty: w.minutyGry,
+          dom: uSiebie, wynik: '', minuty: w.minutyGry,
           odMinuty: w.rezerwa ? (w.wszedl ?? null) : 0, doMinuty: w.rezerwa ? null : (w.zszedl ?? null),
           podstawowy: !w.rezerwa, zolte: w.zolte || 0, czerwone: w.czerwone || 0 });
         p.przebieg = przebieg;
@@ -4529,7 +4569,12 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
     // dotyczy. Od tej chwili „Odśwież statystyki" działa w niej tak samo jak w pomorskiej.
     const zapamietane = zapamietajAdresGrupy(zrodloLnp, wynik);
     zapisanychMeczow += meczow;
-    komunikat = `Zapisano ${meczow} ${meczow===1?'mecz':'meczów'}: ${dopisanych} wpisów dorobku${nowych?`, w tym ${nowych} nowych zawodników w kartotece`:''}${rocznikow?`; uzupełniłem ${rocznikow} roczników`:''}.`
+    const oPowtorkach = powtorzonych
+      ? ` Pominąłem ${powtorzonych} ${powtorzonych===1?'wpis':'wpisów'} — te spotkania są już rozliczone `
+        + `(${[...powtorzoneMecze].slice(0,4).join('; ')}${powtorzoneMecze.size>4?` i ${powtorzoneMecze.size-4} więcej`:''}). `
+        + `Nic się nie podwoiło.`
+      : '';
+    komunikat = `Zapisano ${meczow} ${meczow===1?'mecz':'meczów'}: ${dopisanych} wpisów dorobku${nowych?`, w tym ${nowych} nowych zawodników w kartotece`:''}${rocznikow?`; uzupełniłem ${rocznikow} roczników`:''}.` + oPowtorkach
       + (zapamietane.length ? ` Zapamiętałem też adres ŁNP dla ${zapamietane.join(' i ')} — następnym razem otworzy się jednym kliknięciem.` : ' Wklej kolejne protokoły.');
     wynik = null;
     rysuj();
@@ -10492,6 +10537,13 @@ const wielkoscKartoteki = (klub)=> DB.players.filter(p=>p.clubId === klub.id).le
 
 function dopasujKlubDoNazwy(nazwa, podpowiedzGrupa){
   const n = importNorm(nazwa);
+  // PRZYPISANIE WSKAZANE RĘKĄ MA PIERWSZEŃSTWO PRZED ZGADYWANIEM. Bez tego nazwy różniące się
+  // wszystkim poza miastem („Pogoń Barlinek" ↔ „CRS Barlinek") nie połączą się nigdy.
+  const wskazany = (DB.settings.aliasyKlubow || {})[n];
+  if(wskazany){
+    const c = DB.clubs.find(x=>x.id === wskazany);
+    if(c) return c;
+  }
   const a = rozbijNazweKlubu(nazwa);
   const dokladne = DB.clubs.filter(c=>importNorm(c.name)===n);
   const pasujace = dokladne.length ? dokladne : DB.clubs.filter(c=>{

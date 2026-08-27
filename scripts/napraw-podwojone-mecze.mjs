@@ -53,16 +53,24 @@ for (const p of zawodnicy) {
   const przebieg = Array.isArray(ext.przebieg) ? ext.przebieg : [];
   if (przebieg.length < 2) continue;
 
+  // RUSZAMY WYŁĄCZNIE WPISY Z PROTOKOŁÓW ŁNP. Mecze pobrane z 90minut mają w kluczu numer
+  // spotkania z tamtego serwisu — jest stabilny, nigdy się nie dublował i dotyczy zwykle
+  // POPRZEDNIEGO sezonu w innej lidze. Gdyby wpaść z deduplikacją i na nie, ten sam rywal
+  // spotkany raz w III, raz w IV lidze zlałby się w jeden mecz.
+  const zProtokolu = przebieg.filter((x) => /^lnp/.test(String(x.mecz || "")));
+  const pozostale = przebieg.filter((x) => !/^lnp/.test(String(x.mecz || "")));
+  if (zProtokolu.length < 2) continue;
+
   const wgSpotkania = new Map();
-  for (const x of przebieg) {
+  for (const x of zProtokolu) {
     const k = kluczSpotkania(x);
     // Zostawiamy wpis z największą liczbą minut — kopie bywają ucięte, oryginał nie.
     const stary = wgSpotkania.get(k);
     if (!stary || (x.minuty || 0) > (stary.minuty || 0)) wgSpotkania.set(k, x);
   }
-  if (wgSpotkania.size === przebieg.length) continue; // nic się nie powtarza
+  if (wgSpotkania.size === zProtokolu.length) continue; // nic się nie powtarza
 
-  const czysty = [...wgSpotkania.values()];
+  const czysty = [...pozostale, ...wgSpotkania.values()];
   const noweMecze = czysty.length;
   const noweMinuty = czysty.reduce((s, x) => s + (x.minuty || 0), 0);
   const noweZolte = czysty.reduce((s, x) => s + (x.zolte || 0), 0);
