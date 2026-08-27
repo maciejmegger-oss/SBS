@@ -1462,7 +1462,10 @@ function render() {
 
   app.innerHTML = `
     <div class="topbar">
-      <img class="mark" src="${LOGO}" alt="">
+      <button class="mark-btn" data-act="refresh" aria-busy="${odswiezanie}"
+              aria-label="Odśwież dane z SBS" title="Odśwież dane z SBS">
+        <img class="mark" src="${LOGO}" alt="">
+      </button>
       <h1>SBS Scout Live</h1>
       ${syncPill()}
       ${themeButtonHtml()}
@@ -1800,9 +1803,26 @@ function zapamietajPlan() {
 // obserwacji, która wciąż czeka w kolejce, i plan znika scoutowi z listy (patrz start()).
 let odswiezanie = false;
 
+// CO WPISANE, ZOSTAJE WPISANE.
+//
+// Odświeżenie kończy się przerysowaniem ekranu, a formularze panelu żyją w polach DOM — dopóki
+// ktoś nie naciśnie „Zapisz", wpisany tekst nie istnieje nigdzie indziej. Dopóki odświeżanie
+// siedziało w Ustawieniach, nie było czego stracić; herb w pasku górnym jest pod ręką na KAŻDYM
+// ekranie, więc trzeba to przenieść do stanu przed przerysowaniem — inaczej jedno dotknięcie
+// logo kasowałoby notatkę pisaną w przerwie meczu.
+function zachowajWpisane(): void {
+  if (view === "nowa") zapamietajPlan();
+  if (view === "ocena") zabezpieczOcene();
+  if (ocenianyZawodnik !== null) zabezpieczNotatke();
+}
+
 async function odswiezKopie(): Promise<void> {
   if (odswiezanie) return;
+  zachowajWpisane();
   odswiezanie = true;
+  // Herb kręci się od razu, zanim ruszy sieć. Bez tego dotknięcie logo wyglądało na nieskuteczne:
+  // przy dobrym zasięgu pobranie trwa ułamek sekundy i nic nie zdąży się zmienić na ekranie.
+  $("app")?.querySelector(".mark-btn")?.setAttribute("aria-busy", "true");
   toast("Pobieram…");
   try {
     await flushQueue().catch(() => 0);
@@ -1816,7 +1836,11 @@ async function odswiezKopie(): Promise<void> {
   } catch (e) {
     toast("Nie udało się pobrać: " + (e as Error).message);
   } finally {
+    // Zdejmujemy obrót Z BIEŻĄCEGO herbu, a nie z tego sprzed pobrania: render() w środku
+    // zbudował pasek górny od nowa, jeszcze przy podniesionej fladze, więc stary przycisk
+    // dawno nie istnieje, a nowy kręciłby się już bez końca.
     odswiezanie = false;
+    $("app")?.querySelector(".mark-btn")?.setAttribute("aria-busy", "false");
   }
 }
 
