@@ -4397,7 +4397,24 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
   }
 
   async function zapisz(){
-    pracuje = true; rysuj();
+    pracuje = true; komunikat = ''; rysuj();
+    try{
+      await zapiszWewnetrznie();
+    }catch(e){
+      // BEZ TEGO ZAPIS WISIAŁ W MILCZENIU. Cała ta funkcja przelicza dziesiątki zawodników
+      // z kilku protokołów naraz; wystarczył jeden nieprzewidziany kształt danych, żeby rzuciła
+      // wyjątkiem — a wtedy „pracuje" zostawało włączone i przycisk stał na „Zapisuję…" bez
+      // końca. Użytkownik nie miał jak odróżnić trwającej pracy od awarii i tracił zebrane
+      // protokoły. Teraz błąd wychodzi na wierzch razem z treścią.
+      pracuje = false;
+      komunikat = 'Zapis się nie powiódł: ' + (e && e.message ? e.message : e)
+        + ' — protokoły są nadal w oknie, nic nie przepadło. Wyślij mi tę treść, to poprawię.';
+      console.error('SBS zapis protokołów:', e);
+      rysuj();
+    }
+  }
+
+  async function zapiszWewnetrznie(){
     let dopisanych = 0, nowych = 0, meczow = 0;
     const dzis = new Date().toISOString().slice(0,10);
     wynik.forEach(protokol=>{
