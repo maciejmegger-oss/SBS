@@ -11,13 +11,20 @@
 // Podniesiona wersja czyści starą pamięć przy pierwszym uruchomieniu po wdrożeniu (activate
 // kasuje wszystkie klucze poza bieżącym). Konieczne przy zmianie adresów: pod "/m" mogła zostać
 // zapisana strona z czasów, gdy aplikacja na komputerze stała pod adresem głównym.
-const CACHE = "sbs-live-v4";
+const CACHE = "sbs-live-v5";
 
 self.addEventListener("install", (e) => {
   // Panel ma działać od razu po pierwszym wejściu, bez odświeżania strony.
   self.skipWaiting();
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(
-    ["/m", "/manifest.webmanifest", "/icon-192.png", "/apple-touch-icon.png", "/icon-maskable-512.png"],
+    // Krój marki wchodzi do pamięci OD RAZU, razem z herbem. Przy zwykłym cache'owaniu „przy
+    // pierwszym użyciu" scout, który wszedł do panelu w domu i pojechał na mecz, dostawał na
+    // stadionie nagłówki systemowym krojem — bo latin-ext (polskie ogonki) potrafi się nie
+    // pobrać, dopóki nie padnie pierwsze słowo z „ż" albo „ą".
+    ["/m", "/manifest.webmanifest", "/icon-192.png", "/apple-touch-icon.png", "/icon-maskable-512.png",
+     "/fonts/barlow-condensed-500-latin.woff2", "/fonts/barlow-condensed-500-latin-ext.woff2",
+     "/fonts/barlow-condensed-600-latin.woff2", "/fonts/barlow-condensed-600-latin-ext.woff2",
+     "/fonts/barlow-condensed-700-latin.woff2", "/fonts/barlow-condensed-700-latin-ext.woff2"],
   ).catch(() => {})));
 });
 
