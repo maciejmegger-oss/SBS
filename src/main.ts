@@ -4586,12 +4586,20 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
     // dotyczy. Od tej chwili „Odśwież statystyki" działa w niej tak samo jak w pomorskiej.
     const zapamietane = zapamietajAdresGrupy(zrodloLnp, wynik);
     zapisanychMeczow += meczow;
+    // NIE PISZEMY „ZAPISANO", GDY NIC NIE WESZŁO. Komunikat zaczynający się od „Zapisano 32
+    // meczów" i kończący na „0 wpisów dorobku" przeczy sam sobie i wygląda jak awaria, choć
+    // to działające zabezpieczenie przed podwójnym liczeniem.
     const oPowtorkach = powtorzonych
-      ? ` Pominąłem ${powtorzonych} ${powtorzonych===1?'wpis':'wpisów'} — te spotkania są już rozliczone `
-        + `(${[...powtorzoneMecze].slice(0,4).join('; ')}${powtorzoneMecze.size>4?` i ${powtorzoneMecze.size-4} więcej`:''}). `
-        + `Nic się nie podwoiło.`
+      ? `${powtorzonych} ${powtorzonych===1?'wpis pominięty':'wpisów pominiętych'} — te spotkania są już rozliczone `
+        + `(${[...powtorzoneMecze].slice(0,3).join('; ')}${powtorzoneMecze.size>3?` i ${powtorzoneMecze.size-3} więcej`:''}).`
       : '';
-    komunikat = `Zapisano ${meczow} ${meczow===1?'mecz':'meczów'}: ${dopisanych} wpisów dorobku${nowych?`, w tym ${nowych} nowych zawodników w kartotece`:''}${rocznikow?`; uzupełniłem ${rocznikow} roczników`:''}.` + oPowtorkach
+    komunikat = dopisanych || nowych || rocznikow
+      ? `Zapisano ${meczow} ${meczow===1?'mecz':'meczów'}: ${dopisanych} wpisów dorobku`
+        + `${nowych?`, w tym ${nowych} nowych zawodników w kartotece`:''}`
+        + `${rocznikow?`; uzupełniłem ${rocznikow} roczników`:''}.`
+        + (oPowtorkach ? ' ' + oPowtorkach + ' Nic się nie podwoiło.' : '')
+      : `Nic nowego nie zapisałem — wszystkie ${meczow} ${meczow===1?'mecz z tej wklejki jest':'meczów z tej wklejki jest'} `
+        + `już rozliczonych. ${oPowtorkach} Dorobek został nietknięty.`
       + (zapamietane.length ? ` Zapamiętałem też adres ŁNP dla ${zapamietane.join(' i ')} — następnym razem otworzy się jednym kliknięciem.` : ' Wklej kolejne protokoły.');
     wynik = null;
     rysuj();
