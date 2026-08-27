@@ -224,7 +224,15 @@ function start(){
  var zKodu=0;try{var hh=document.documentElement.innerHTML||'';var rr=/\/rozgrywki\/mecz\/[0-9a-fA-F-]{30,40}/g;var mm;while((mm=rr.exec(hh))!==null)zKodu++;}catch(e){}
  var maRozegrane=/rozegrane mecze/i.test(document.body.innerText||'');
  var slad=' [na stronie: odnosnikow '+wszystkieA+', w tym wskazujacych na mecz '+zMecz+'; numerow meczu w kodzie '+zKodu+'; wierszy z wynikiem '+wierszyNaEkranie+'; naglowek Rozegrane mecze: '+(maRozegrane?'jest':'brak')+'; tekstu '+dlugoscTekstu+' znakow; wysokosc '+document.body.scrollHeight+']';
- var rada = maRozegrane
+ // TABELA TO NIE LISTA MECZOW. Najczestsza pomylka: zakladka uruchamiana na tabeli ligowej,
+ // gdzie sa punkty i bilans, a nie ma ani jednego protokolu. Rozpoznajemy to po naglowkach
+ // kolumn i mowimy wprost, dokad przejsc \u2014 zamiast ogolnego "nie mam czego pobrac".
+ var tekstStrony=(document.body.innerText||'');
+ var toTabela = /\bPunkty\b/i.test(tekstStrony) && /\bBilans\b/i.test(tekstStrony)
+   && /\bWygrane\b/i.test(tekstStrony) && zMecz===0 && zKodu===0;
+ var rada = toTabela
+  ? 'Jestes na TABELI LIGOWEJ - sa tu punkty i bilans, ale nie ma protokolow. Przejdz do listy meczow tej grupy: u gory wybierz "Kolejka", zeby pokazaly sie spotkania z wynikami, i dopiero tam kliknij zakladke.'
+  : maRozegrane
   ? 'Sekcja \u201eRozegrane mecze\u201d jest, ale nie widze w niej ani jednego wiersza z wynikiem. Poczekaj, az wyniki sie wyswietla, i kliknij zakladke jeszcze raz.'
   : 'Na tej stronie sa same \u201ePlanowane mecze\u201d - w tym sezonie nie ma tu jeszcze zadnego rozegranego spotkania. Sprawdz u gory pole \u201eSezon\u201d i \u201eRozgrywki\u201d: wybierz sezon, w ktorym mecze juz sie odbyly.';
  alert('SBS '+SBS_ZBIERACZ+': nie mam z tej strony czego pobrac.\n\n'+rada+slad);
@@ -353,7 +361,12 @@ function zbierzAdresyPrzezKlikanie(gotowe){
    if(ci>=cele.length){ k++; setTimeout(dalej,120); return; }
    var cel=cele[ci++];
    zlapane.length=0;
-   if(wolnoKliknac(cel)){ try{ cel.click(); }catch(e){} }
+   // TU NAWIGACJA JEST ZAMIERZONA i nie wolno jej blokowac. Ta droga jest awaryjna: uruchamia sie
+   // dopiero, gdy na stronie nie da sie znalezc odnosnikow do meczow, a sa widoczne wiersze
+   // z wynikiem. Zbieracz wchodzi wtedy w mecz, zapisuje adres i wraca przez history.back().
+   // Strażnik wolnoKliknac() chroni miejsca, gdzie klikamy w element STERUJACY TRESCIA — tam
+   // wyjscie ze strony jest awaria. Tutaj jest metoda.
+   try{ cel.click(); }catch(e){}
    var n=0;
    var t=setInterval(function(){
     n++;
