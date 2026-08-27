@@ -14,7 +14,11 @@
 <meta name="robots" content="noindex, nofollow">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" type="image/png" href="/icon-192.png">
-<link rel="apple-touch-icon" href="/icon-192.png">
+<!-- apple-touch-icon MUSI być bez przezroczystości. iPhone nie zaokrągla go po naszemu, tylko
+     nakłada własną maskę, a pod przezroczyste piksele podkłada CZERŃ. Herb z własnymi
+     zaokrąglonymi rogami dostawał więc czarne kliny między swoim promieniem a maską systemu —
+     ikona na ekranie początkowym wyglądała na uszkodzoną. Ten plik jest pełnopłaszczyznowy. -->
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 </head>
 <body>
 <div class="app" id="app"></div>

@@ -347,6 +347,7 @@ function viewDzis(): string {
   return `
     <h2>Obserwacje</h2>
     <p class="hint">Zaplanowane${cache.fetchedAt ? " · kopia z " + new Date(cache.fetchedAt).toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}</p>
+    ${banerIkony()}
     ${przelacznik}
     ${lista.length ? lista.map((o) => kartaObserwacji(o, dzis)).join("") : '<div class="empty">Nic nie czeka.<br>Zaplanuj obserwację albo zajrzyj do zakończonych.</div>'}
     <button class="btn ghost" data-act="go-nowa">+ Zaplanuj obserwację</button>`;
@@ -1299,13 +1300,57 @@ function viewBaza(): string {
 //   false     — prawdziwe Safari, instrukcja ma sens,
 //   undefined — przeglądarka osadzona w innej aplikacji (Claude, Messenger, Instagram),
 //               gdzie opcji dodania po prostu nie ma i trzeba najpierw przejść do Safari.
-function instalacjaHtml(): string {
+// Czy panel jest już uruchomiony Z IKONY, a nie z zakładki przeglądarki?
+function zIkonyNaEkranie(): boolean {
   const nav = navigator as Navigator & { standalone?: boolean };
-  const zIkony = nav.standalone === true || window.matchMedia?.("(display-mode: standalone)").matches;
-  if (zIkony) return "";
+  return nav.standalone === true || !!window.matchMedia?.("(display-mode: standalone)").matches;
+}
 
+// Gdzie stoi ten, kto czyta. Trzy sytuacje, trzy różne instrukcje — patrz komentarz niżej.
+function gdzieJestem(): "z-ikony" | "obca-przegladarka" | "ios-safari" | "inna" {
+  if (zIkonyNaEkranie()) return "z-ikony";
+  const nav = navigator as Navigator & { standalone?: boolean };
   const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-  const wObcejPrzegladarce = iOS && nav.standalone === undefined;
+  if (!iOS) return "inna";
+  return nav.standalone === undefined ? "obca-przegladarka" : "ios-safari";
+}
+
+// ZAPROSZENIE DO DODANIA IKONY, NA PIERWSZYM EKRANIE.
+//
+// Instrukcja schowana w Ustawieniach nie działa: trzeba wiedzieć, że tam jest. Ten pasek stoi
+// nad listą obserwacji dopóty, dopóki panel chodzi z zakładki przeglądarki — i znika sam w chwili,
+// gdy zostanie uruchomiony z ikony. Da się go też odłożyć na bok, żeby nie zawadzał codziennie.
+const LS_BANER_IKONA = "sbs-m:baner-ikona";
+
+function banerIkony(): string {
+  const gdzie = gdzieJestem();
+  if (gdzie === "z-ikony") return "";
+  try {
+    if (localStorage.getItem(LS_BANER_IKONA) === "schowany") return "";
+  } catch {
+    /* tryb prywatny — pasek pokaże się za każdym razem, to mniejsze zło niż brak ikony */
+  }
+
+  const tresc = gdzie === "obca-przegladarka"
+    ? "Jesteś w przeglądarce wbudowanej w inną aplikację — <strong>tu iPhone nie pozwala dodać ikony</strong>. Otwórz panel w Safari, wtedy się uda."
+    : "Dodaj ikonę na ekran telefonu — panel otworzysz jednym dotknięciem, bez wpisywania adresu.";
+
+  return `
+    <div class="card" style="border-color:var(--accent-fg); margin-bottom:12px;">
+      <p class="sub" style="margin:0 0 10px; color:var(--text-strong);">📲 ${tresc}</p>
+      <div style="display:flex; gap:8px;">
+        <button class="btn" data-act="pokaz-instalacje">Pokaż jak</button>
+        <button class="btn ghost" style="flex:0 0 auto; width:112px; white-space:nowrap;" data-act="schowaj-baner">Nie teraz</button>
+      </div>
+    </div>`;
+}
+
+function instalacjaHtml(): string {
+  const gdzie = gdzieJestem();
+  if (gdzie === "z-ikony") return "";
+
+  const wObcejPrzegladarce = gdzie === "obca-przegladarka";
+  const iOS = gdzie === "ios-safari" || wObcejPrzegladarce;
   const adres = location.origin + "/m";
 
   const kroki = wObcejPrzegladarce
@@ -1329,7 +1374,7 @@ function instalacjaHtml(): string {
        </ol>`;
 
   return `
-    <div class="section">
+    <div class="section" id="instalacja">
       <span class="label">Ikona na ekranie telefonu</span>
       <div class="card">
         ${kroki}
@@ -1927,6 +1972,20 @@ document.addEventListener("click", (e) => {
     }
 
     case "odswiez-terminarz": void odswiezKopie(); break;
+
+    // Instrukcja dodania ikony stoi w Ustawieniach — przewijamy wprost do niej, żeby nie kazać
+    // jej szukać wzrokiem po całym ekranie.
+    case "pokaz-instalacje":
+      view = "baza";
+      render();
+      window.setTimeout(() => $("instalacja")?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
+      break;
+
+    case "schowaj-baner":
+      try { localStorage.setItem(LS_BANER_IKONA, "schowany"); } catch { /* tryb prywatny */ }
+      render();
+      toast("Instrukcja zostaje w Ustawieniach");
+      break;
 
     case "start-live": beginLive(el.dataset.id!); break;
     case "open-ocena": startOcena(el.dataset.id!); view = "ocena"; render(); break;
