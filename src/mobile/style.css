@@ -7,6 +7,72 @@
    Dlatego żaden kolor nie jest wpisany w regułę na sztywno — wszystkie idą przez zmienne,
    a przełącznik w pasku górnym podmienia ich zestaw (data-theme na <html>). */
 
+/* ---------- krój marki ----------
+   BARLOW CONDENSED, HOSTOWANY U NAS.
+   Panel wołał ten krój w zmiennej --display, ale nigdzie go nie wczytywał: aplikacja na komputerze
+   i strona publiczna pobierają go z Google Fonts, mobile.html nie robił tego wcale. Na iPhonie
+   żaden krój z listy zapasowej nie istnieje (Barlow Condensed, Oswald i Arial Narrow — wszystkie
+   nieobecne), więc nagłówki, zakładki i przyciski schodziły do systemowego San Francisco. Panel
+   wyglądał obco wobec własnej marki, i to na jedynym ekranie, który ktokolwiek ogląda na trybunie.
+
+   Krój leży U NAS, nie u Google, i to nie z upodobania: panel ma się otworzyć na stadionie bez
+   zasięgu. Plik z naszego adresu wpada do pamięci offline razem z resztą aplikacji (patrz
+   public/sw.js), plik z obcego serwera — nie, bo obsługa offline przepuszcza obce adresy wprost
+   do sieci. Przy okazji odpada zapytanie do trzeciej strony przy każdym uruchomieniu.
+
+   Zakres znaków obcięty do latin i latin-ext. Polskie ogonki (ĄĆĘŁŃÓŚŹŻ) siedzą w latin-ext;
+   wietnamski, który Google dokłada domyślnie, to połowa wagi na darmo. Razem 72 kB na trzy grubości.
+   font-display:swap — napis pojawia się natychmiast krojem zastępczym i podmienia się po wczytaniu,
+   więc brak sieci nigdy nie znaczy pustego ekranu. */
+@font-face{
+  font-family:'Barlow Condensed';
+  font-style:normal;
+  font-weight:500;
+  font-display:swap;
+  src:url('/fonts/barlow-condensed-500-latin.woff2') format('woff2');
+  unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face{
+  font-family:'Barlow Condensed';
+  font-style:normal;
+  font-weight:500;
+  font-display:swap;
+  src:url('/fonts/barlow-condensed-500-latin-ext.woff2') format('woff2');
+  unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face{
+  font-family:'Barlow Condensed';
+  font-style:normal;
+  font-weight:600;
+  font-display:swap;
+  src:url('/fonts/barlow-condensed-600-latin.woff2') format('woff2');
+  unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face{
+  font-family:'Barlow Condensed';
+  font-style:normal;
+  font-weight:600;
+  font-display:swap;
+  src:url('/fonts/barlow-condensed-600-latin-ext.woff2') format('woff2');
+  unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face{
+  font-family:'Barlow Condensed';
+  font-style:normal;
+  font-weight:700;
+  font-display:swap;
+  src:url('/fonts/barlow-condensed-700-latin.woff2') format('woff2');
+  unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face{
+  font-family:'Barlow Condensed';
+  font-style:normal;
+  font-weight:700;
+  font-display:swap;
+  src:url('/fonts/barlow-condensed-700-latin-ext.woff2') format('woff2');
+  unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
 :root{
   /* Barwy marki — wspólne dla obu motywów, wprost z aplikacji na komputerze (src/style.css). */
   --gold:#C69B3C;
@@ -79,7 +145,8 @@
   /* Na kredowej bieli odznaka odcina się sama — tu pracuje cień, schodkowy: bliski i twardy przy
      krawędzi, daleki i miękki pod spodem. Tak leży przedmiot uniesiony nad blatem. */
   --herb-cien:0 2px 4px rgba(11,26,21,.18), 0 10px 22px rgba(11,26,21,.16), 0 26px 50px rgba(11,26,21,.13);
-  --herb-poswiata:rgba(198,155,60,.30);   /* jasny motyw: delikatniej, bo tlo i tak kontrastuje */
+  --herb-poswiata:rgba(198,155,60,.16);   /* jasny motyw: ledwie muśnięcie — na kredowej bieli
+                                             mocniejsza poświata robi się żółtą plamą, nie światłem */
 }
 
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
@@ -345,7 +412,7 @@ textarea{resize:vertical; min-height:84px;}
    obręczy znaczyłoby to, że nie ma jej wcale, i to bez śladu w konsoli: efekt zniknąłby na
    telefonie, a na komputerze wyglądał dobrze. Barwy są tu więc wpisane wprost. */
 .login-halo{
-  position:absolute; inset:-42%; border-radius:50%; pointer-events:none;
+  position:absolute; inset:-36%; border-radius:50%; pointer-events:none;
   background:radial-gradient(circle, var(--herb-poswiata) 0%, transparent 66%);
   transform:translateZ(-60px);
   animation:herb-poswiata 7s ease-in-out infinite;
@@ -366,14 +433,10 @@ textarea{resize:vertical; min-height:84px;}
   animation:herb-obrot-pelny 13s cubic-bezier(.5,0,.5,1) 1.15s infinite;
 }
 
-/* Odznaka ma DWIE ściany, przód i tył. Bez tyłu w połowie obrotu zostawałaby pusta przestrzeń
-   i bryła znikałaby na sekundę — z monetą tak się nie dzieje. Obie ściany chowają swoją stronę
-   odwrotną (backface-visibility), więc widać zawsze dokładnie jedną. */
-.login-face{
-  position:absolute; inset:0;
-  backface-visibility:hidden; -webkit-backface-visibility:hidden;
-}
-.login-face--tyl{ transform:rotateY(180deg); }
+/* Lico odznaki. Druga ściana (tył) była tu, dopóki odznaka obracała się o pełne 360° — teraz
+   wychyla się najwyżej o 62° i tyłu nie widać nigdy, więc jej nie ma: to byłoby drugie pobranie
+   tego samego obrazka po nic. */
+.login-face{ position:absolute; inset:0; }
 
 .login-brand img{
   width:100%; height:100%; border-radius:24px; display:block;
@@ -419,10 +482,20 @@ textarea{resize:vertical; min-height:84px;}
 /* Obrót trwa mniej więcej połowę cyklu, resztę odznaka stoi frontem. Bez tego postoju byłby to
    kręcący się bez końca bąk; z nim — przedmiot, który raz na jakiś czas pokazuje się z każdej
    strony i wraca do pozycji. */
+/* OBRÓT ZATRZYMANY PRZED KRAWĘDZIĄ — i to jest decyzja, nie ograniczenie.
+   Pełne 360° wyglądało świetnie w opisie i źle na ekranie: odznaka jest płaską ścianą, nie monetą,
+   więc przy 90° schodziła do pionowej kreski. Raz na cykl aplikacja wyglądała na zepsutą. Nie da
+   się tego wyprostować przechyłem — rzecz naprawdę nie ma grubości.
+   Zostaje więc wychylenie do 62° w obie strony: odznaka wyraźnie się obraca, pokazuje bok pod
+   kątem (przy 62° zostaje jeszcze połowa szerokości, czyli bryła), i ani przez chwilę nie jest
+   płaska. Postój frontem w środku cyklu daje rytm zamiast bezustannego kręcenia. */
 @keyframes herb-obrot-pelny{
-  0%      {transform:rotateY(0deg)   rotateX(5deg);}
-  46%     {transform:rotateY(360deg) rotateX(5deg);}
-  100%    {transform:rotateY(360deg) rotateX(5deg);}
+  0%   {transform:rotateY(0deg)   rotateX(9deg);}
+  22%  {transform:rotateY(62deg)  rotateX(4deg);}
+  44%  {transform:rotateY(0deg)   rotateX(9deg);}
+  66%  {transform:rotateY(-62deg) rotateX(4deg);}
+  88%,
+  100% {transform:rotateY(0deg)   rotateX(9deg);}
 }
 @keyframes herb-poswiata{
   0%,100%{opacity:.45; transform:translateZ(-60px) scale(.9);}
