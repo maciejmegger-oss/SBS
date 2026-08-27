@@ -11220,6 +11220,19 @@ function koniec(){
 start();
 `;
 
+// Zakładka jako ADRES JEDNOLINIOWY.
+//
+// Kod zakładek piszemy w wielu wierszach, bo inaczej byłby nieczytelny. Ale adres „javascript:"
+// z prawdziwymi łamaniami wierszy rozpada się przy przeciąganiu na pasek zakładek — przeglądarka
+// ucina go na pierwszym łamaniu i na pasku ląduje ułomek, który nie jest już poprawnym adresem.
+// Kliknięcie takiej zakładki przenosi wtedy na stronę główną zamiast cokolwiek zrobić.
+//
+// Zamiana łamań na %0A rozwiązuje to bez tykania samego kodu: przeglądarka rozkodowuje adres
+// przed wykonaniem, więc komentarze i wyrażenia regularne zostają nietknięte. Kodujemy WYŁĄCZNIE
+// łamania wierszy — sprawdzone, że w żadnej zakładce nie występuje znak %, więc nic innego
+// nie zostanie przy okazji przekręcone.
+const zakladkaHref = (kod) => String(kod).split(String.fromCharCode(13)).join('').split(String.fromCharCode(10)).join('%0A');
+
 const LNP_HURT_BOOKMARKLET = `javascript:(function(){
 var A=${SBS_ADRES_JS};
 try{window.__SBS_ADRES=A;}catch(e){}
@@ -11866,7 +11879,7 @@ function openTmProfilBookmarkletModal(){
     <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
       <li>Włącz pasek zakładek: <strong>Ctrl+Shift+B</strong></li>
       <li>Przeciągnij ten przycisk na pasek zakładek:<br>
-        <a href="${esc(TM_PROFIL_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na profilu zawodnika.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">👤 Kopiuj profil do SBS</a>
+        <a href="${esc(zakladkaHref(TM_PROFIL_BOOKMARKLET))}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na profilu zawodnika.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">👤 Kopiuj profil do SBS</a>
       </li>
       <li>Otwórz profil zawodnika na Transfermarkcie</li>
       <li>Kliknij <strong>„👤 Kopiuj profil do SBS"</strong> — potwierdzi, kogo skopiował</li>
@@ -11876,7 +11889,7 @@ function openTmProfilBookmarkletModal(){
     i dorobek sezonu (mecze, minuty, gole, asysty). Nic nie zapisuje samo — sprawdzasz pola i klikasz „Zapisz".</p>
     <details style="margin-top:10px;">
       <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Przeciąganie nie działa? Pokaż kod do wklejenia ręcznie</summary>
-      <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;">${esc(TM_PROFIL_BOOKMARKLET)}</textarea>
+      <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;">${esc(zakladkaHref(TM_PROFIL_BOOKMARKLET))}</textarea>
     </details>
     <div class="modal-actions"><button class="secondary" data-action="close-modal">Zamknij</button></div>
   </div>`;
@@ -11902,7 +11915,7 @@ function openLnpBookmarkletModal(){
       kliknij ją <strong>prawym przyciskiem myszy</strong> i wybierz <strong>„Usuń"</strong>.</p>
       <p style="margin:0 0 8px;font-size:13px;"><strong>2.</strong> Przeciągnij myszą ten zielony przycisk na pasek zakładek:</p>
       <div style="text-align:center;margin:6px 0 10px;">
-        <a href="${esc(LNP_HURT_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki, a potem kliknij TAM — będąc na stronie klubu albo grupy na laczynaspilka.pl.');return false;" style="display:inline-block;padding:12px 22px;background:var(--pitch);color:var(--on-pitch);border-radius:8px;font-weight:800;font-size:15px;text-decoration:none;cursor:grab;box-shadow:0 2px 8px rgba(0,0,0,.18);">⚡ Zbierz całą kolejkę (${esc(ZAKLADKA_WERSJA)})</a>
+        <a href="${esc(zakladkaHref(LNP_HURT_BOOKMARKLET))}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki, a potem kliknij TAM — będąc na stronie klubu albo grupy na laczynaspilka.pl.');return false;" style="display:inline-block;padding:12px 22px;background:var(--pitch);color:var(--on-pitch);border-radius:8px;font-weight:800;font-size:15px;text-decoration:none;cursor:grab;box-shadow:0 2px 8px rgba(0,0,0,.18);">⚡ Zbierz całą kolejkę (${esc(ZAKLADKA_WERSJA)})</a>
       </div>
       <p style="margin:0 0 8px;font-size:13px;"><strong>3.</strong> Sprawdź, że się udało: kliknij ją na ŁNP.
       Komunikat <strong>musi</strong> zaczynać się od <strong style="background:var(--gold);padding:1px 5px;border-radius:3px;">SBS ${esc(ZAKLADKA_WERSJA)}</strong>.
@@ -11918,7 +11931,7 @@ function openLnpBookmarkletModal(){
     <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
       <li>Włącz pasek zakładek: <strong>Ctrl+Shift+B</strong></li>
       <li>Przeciągnij ten przycisk na pasek zakładek:<br>
-        <a href="${esc(LNP_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem klikaj go TAM, na stronach meczów.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">📋 Zbierz protokół</a>
+        <a href="${esc(zakladkaHref(LNP_BOOKMARKLET))}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem klikaj go TAM, na stronach meczów.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">📋 Zbierz protokół</a>
       </li>
       <li>Otwórz mecz na laczynaspilka.pl i poczekaj, aż pojawią się <strong>Składy</strong></li>
       <li>Kliknij <strong>„📋 Zbierz protokół"</strong> — powie, ile protokołów już zebrał</li>
@@ -11932,19 +11945,19 @@ function openLnpBookmarkletModal(){
       <p class="note" style="margin-top:0;">Ta druga zakładka nie wymaga wchodzenia w mecze. Uruchamiasz ją na <strong>liście meczów</strong>
       (Rozgrywki → wybrana kolejka), a ona sama otwiera po kolei każde spotkanie w tle, czeka na składy i zbiera protokoły.
       Dziewięć meczów to kilkanaście sekund i <strong>jedno</strong> kliknięcie.</p>
-      <a href="${esc(LNP_HURT_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go na pasek zakładek, a potem kliknij TAM — będąc na liście meczów na laczynaspilka.pl.');return false;" style="display:inline-block;margin:4px 0;padding:8px 16px;background:var(--pitch);color:var(--on-pitch);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">⚡ Zbierz całą kolejkę (${esc(ZAKLADKA_WERSJA)})</a>
+      <a href="${esc(zakladkaHref(LNP_HURT_BOOKMARKLET))}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go na pasek zakładek, a potem kliknij TAM — będąc na liście meczów na laczynaspilka.pl.');return false;" style="display:inline-block;margin:4px 0;padding:8px 16px;background:var(--pitch);color:var(--on-pitch);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">⚡ Zbierz całą kolejkę (${esc(ZAKLADKA_WERSJA)})</a>
       <p class="note" style="font-size:11.5px;">W rogu ekranu zobaczysz licznik postępu. Na końcu komplet trafia do schowka — wklejasz raz w aplikacji.
       Skrypt czyta wyłącznie strony tego samego serwisu, otwarte w Twojej przeglądarce.</p>
       <details style="margin-top:8px;">
         <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Kod do wklejenia ręcznie</summary>
-        <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;">${esc(LNP_HURT_BOOKMARKLET)}</textarea>
+        <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;">${esc(zakladkaHref(LNP_HURT_BOOKMARKLET))}</textarea>
       </details>
     </div>
     <p class="note" style="font-size:11px;color:var(--ink-soft);">Skrypt czyta tylko tekst strony, którą masz otwartą — nie loguje się nigdzie i nie chodzi po serwisie samodzielnie.</p>
     <details style="margin-top:10px;">
       <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Przeciąganie nie działa? Pokaż kod do wklejenia ręcznie</summary>
       <p class="note" style="font-size:11px;margin-top:6px;">Utwórz nową zakładkę i wklej to w pole adresu:</p>
-      <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;">${esc(LNP_BOOKMARKLET)}</textarea>
+      <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;">${esc(zakladkaHref(LNP_BOOKMARKLET))}</textarea>
     </details>
     <div class="modal-actions"><button class="secondary" data-action="close-modal">Zamknij</button></div>
   </div>`;
@@ -11981,7 +11994,7 @@ function openBookmarkletModal(){
     <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
       <li>Włącz pasek zakładek w przeglądarce: <strong>Ctrl+Shift+B</strong></li>
       <li>Przeciągnij ten przycisk na pasek zakładek:<br>
-        <a href="${esc(TM_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">⏱ Kopiuj do SBS</a>
+        <a href="${esc(zakladkaHref(TM_BOOKMARKLET))}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">⏱ Kopiuj do SBS</a>
       </li>
       <li>Wejdź na stronę klubu → <strong>Statystyki drużynowe</strong></li>
       <li>Kliknij <strong>„⏱ Kopiuj do SBS"</strong> na pasku zakładek — pojawi się potwierdzenie</li>
@@ -11996,7 +12009,7 @@ function openBookmarkletModal(){
     <details style="margin-top:10px;">
       <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Przeciąganie nie działa? Pokaż kod do wklejenia ręcznie</summary>
       <p class="note" style="font-size:11px;margin-top:6px;">Utwórz nową zakładkę i wklej to w pole adresu:</p>
-      <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;">${esc(TM_BOOKMARKLET)}</textarea>
+      <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;">${esc(zakladkaHref(TM_BOOKMARKLET))}</textarea>
     </details>
 
     <div class="modal-actions">
@@ -12531,14 +12544,14 @@ function openAgencyStaffModal(agencyId){
         <summary style="cursor:pointer;font-weight:700;color:var(--gold-dark);">Zakładka (opcjonalnie)</summary>
         <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
           <li>Przeciągnij na pasek zakładek:<br>
-            <a href="${esc(TM_AGENCY_STAFF_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">👥 Pracownicy agencji do SBS</a>
+            <a href="${esc(zakladkaHref(TM_AGENCY_STAFF_BOOKMARKLET))}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">👥 Pracownicy agencji do SBS</a>
           </li>
           ${agencja.tmLink ? `<li>Otwórz <a class="ext-link" href="${esc(agencja.tmLink)}" target="_blank" rel="noopener noreferrer">profil tej agencji &rarr;</a>, kliknij zakładkę</li>`
             : `<li>Otwórz profil agencji na Transfermarkcie i kliknij zakładkę</li>`}
         </ol>
         <details style="margin-top:6px;">
           <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Kod do wklejenia ręcznie</summary>
-          <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;margin-top:6px;">${esc(TM_AGENCY_STAFF_BOOKMARKLET)}</textarea>
+          <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;margin-top:6px;">${esc(zakladkaHref(TM_AGENCY_STAFF_BOOKMARKLET))}</textarea>
         </details>
       </details>
 
@@ -12686,7 +12699,7 @@ function openAgencySquadModal(agencyId){
         <summary style="cursor:pointer;font-weight:700;color:var(--gold-dark);">1. Ustaw zakładkę (raz)</summary>
         <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
           <li>Przeciągnij na pasek zakładek:<br>
-            <a href="${esc(TM_AGENCY_SQUAD_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">📥 Zawodnicy agencji do SBS</a>
+            <a href="${esc(zakladkaHref(TM_AGENCY_SQUAD_BOOKMARKLET))}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">📥 Zawodnicy agencji do SBS</a>
           </li>
           ${agencja.tmLink ? `<li>Otwórz <a class="ext-link" href="${esc(agencja.tmLink)}" target="_blank" rel="noopener noreferrer">profil tej agencji &rarr;</a></li>`
             : `<li>Otwórz profil tej agencji na Transfermarkcie <span class="note">(nie mam zapisanego adresu — dopisz go w „Edytuj agencję", to pojawi się tu odnośnik)</span></li>`}
@@ -12695,7 +12708,7 @@ function openAgencySquadModal(agencyId){
         </ol>
         <details style="margin-top:6px;">
           <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Kod do wklejenia ręcznie</summary>
-          <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;margin-top:6px;">${esc(TM_AGENCY_SQUAD_BOOKMARKLET)}</textarea>
+          <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;margin-top:6px;">${esc(zakladkaHref(TM_AGENCY_SQUAD_BOOKMARKLET))}</textarea>
         </details>
       </details>
 
@@ -12894,7 +12907,7 @@ function openAgenciesImportModal(){
         <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
           <li>Włącz pasek zakładek: <strong>Ctrl+Shift+B</strong></li>
           <li>Przeciągnij ten przycisk na pasek zakładek:<br>
-            <a href="${esc(TM_AGENCIES_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">📋 Agencje do SBS</a>
+            <a href="${esc(zakladkaHref(TM_AGENCIES_BOOKMARKLET))}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">📋 Agencje do SBS</a>
           </li>
           <li>Na Transfermarkcie: <strong>Zapoznaj się → Agencje</strong>, wybierz kraj, kliknij <strong>Pokaż wybór</strong></li>
           <li>Kliknij zakładkę. Przejdź na kolejną stronę (2, 3, …) i klikaj na każdej — bufor się sumuje,
@@ -12903,7 +12916,7 @@ function openAgenciesImportModal(){
         </ol>
         <details style="margin-top:6px;">
           <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Przeciąganie nie działa? Kod do wklejenia ręcznie</summary>
-          <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;margin-top:6px;">${esc(TM_AGENCIES_BOOKMARKLET)}</textarea>
+          <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;margin-top:6px;">${esc(zakladkaHref(TM_AGENCIES_BOOKMARKLET))}</textarea>
         </details>
       </details>
 
@@ -13121,14 +13134,14 @@ function openAgentImportModal(){
         <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
           <li>Włącz pasek zakładek: <strong>Ctrl+Shift+B</strong></li>
           <li>Przeciągnij ten przycisk na pasek zakładek:<br>
-            <a href="${esc(TM_AGENT_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">🕵 Menedżer do SBS</a>
+            <a href="${esc(zakladkaHref(TM_AGENT_BOOKMARKLET))}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">🕵 Menedżer do SBS</a>
           </li>
           <li>Wejdź na <strong>profil zawodnika</strong> na Transfermarkcie i kliknij zakładkę</li>
           <li>Powtórz dla kolejnych — bufor się sumuje. <strong>Shift+klik</strong> czyści zebrane.</li>
         </ol>
         <details style="margin-top:6px;">
           <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Przeciąganie nie działa? Kod do wklejenia ręcznie</summary>
-          <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;margin-top:6px;">${esc(TM_AGENT_BOOKMARKLET)}</textarea>
+          <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;margin-top:6px;">${esc(zakladkaHref(TM_AGENT_BOOKMARKLET))}</textarea>
         </details>
       </details>
 
@@ -14922,12 +14935,12 @@ function openTransferHistoryModal(playerId){
         — ginie wtedy podział na kolumny i nie da się odróżnić klubu opuszczanego od docelowego. Dlatego użyj zakładki,
         która czyta tabelę wprost ze strony:</p>
         <p style="margin:8px 0;">
-          <a href="${esc(TM_TRANSFERS_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">↔ Transfery do SBS</a>
+          <a href="${esc(zakladkaHref(TM_TRANSFERS_BOOKMARKLET))}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">↔ Transfery do SBS</a>
           <span class="note" style="display:block;font-size:11px;margin-top:4px;">Przeciągnij na pasek zakładek (Ctrl+Shift+B), wejdź na profil zawodnika, kliknij — i wklej poniżej.</span>
         </p>
         <details style="margin-bottom:6px;">
           <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Kod do wklejenia ręcznie</summary>
-          <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;margin-top:6px;">${esc(TM_TRANSFERS_BOOKMARKLET)}</textarea>
+          <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;margin-top:6px;">${esc(zakladkaHref(TM_TRANSFERS_BOOKMARKLET))}</textarea>
         </details>
         <textarea id="th-paste" rows="6" placeholder="26/27&#9;1 lip 2026&#9;Podhale Nowy Targ&#9;Cracovia&#9;100 tys. €&#9;free transfer" style="font-size:11.5px;font-family:monospace;"></textarea>
         <div class="modal-actions" style="justify-content:flex-start;margin-top:8px;">
