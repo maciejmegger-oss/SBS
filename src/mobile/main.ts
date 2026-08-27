@@ -199,6 +199,10 @@ let clockTimer: number | undefined;
 // bez sesji panel pokazuje ekran logowania i nic poza nim.
 let zalogowany = false;
 
+// Czy w tle doszła nowsza wersja panelu. Patrz komentarz przy rejestracji mechanizmu offline
+// na końcu pliku — bez tego wdrożona poprawka potrafiła tygodniami nie docierać do telefonu.
+let nowaWersja = false;
+
 // Formularz oceny — trzymany w pamięci, żeby przełączenie zakładki go nie kasowało.
 interface OcenaState {
   observationId: string;
@@ -1470,6 +1474,9 @@ function render() {
       ${syncPill()}
       ${themeButtonHtml()}
     </div>
+    ${nowaWersja
+      ? `<button class="nowa-wersja" data-act="wczytaj-wersje">Jest nowsza wersja panelu — dotknij, żeby ją wczytać</button>`
+      : ""}
     <main id="main">${body}</main>
     <nav class="tabbar">
       ${widoczneZakladki().map((t) => `
@@ -2016,6 +2023,11 @@ document.addEventListener("click", (e) => {
     }
 
     case "odswiez-terminarz": void odswiezKopie(); break;
+
+    // Przeładowanie robimy WYŁĄCZNIE na wyraźne dotknięcie, nigdy samo z siebie: w trakcie meczu
+    // strona przeładowana bez pytania to sekundy, w których nie da się nic zarejestrować.
+    // Stan meczu i kolejka wysyłki leżą w pamięci telefonu, więc samo przeładowanie nic nie gubi.
+    case "wczytaj-wersje": location.reload(); break;
 
     // Instrukcja dodania ikony stoi w Ustawieniach — przewijamy wprost do niej, żeby nie kazać
     // jej szukać wzrokiem po całym ekranie.
@@ -2677,8 +2689,35 @@ void boot();
 
 // Rejestracja mechanizmu offline tylko w wersji wdrożonej — w trybie deweloperskim przeszkadzałby
 // w podmianie plików na gorąco.
+//
+// WDROŻONA POPRAWKA MUSI DAĆ ZNAĆ, ŻE DOSZŁA.
+//
+// Panel dodany do ekranu telefonu zachowuje się jak aplikacja: karta zostaje otwarta tygodniami,
+// a system usypia ją zamiast zamykać. Wgrany kod wykonuje się więc RAZ i nowa wersja potrafiła
+// nie dotrzeć do telefonu przez wiele dni — poprawka była wdrożona, a na ekranie stało stare.
+// Jedynym sposobem było całkowite ubicie aplikacji z przełącznika, o czym nikt nie ma prawa
+// wiedzieć. Dlatego pytamy o nową wersję przy każdym powrocie do panelu, a gdy dojdzie —
+// mówimy o tym paskiem, zamiast czekać, aż ktoś się domyśli.
 if (import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch((e) => console.warn("Offline niedostępne:", e));
+    navigator.serviceWorker
+      .register("/sw.js")
+      .then((rejestracja) => {
+        const sprawdz = () => { void rejestracja.update().catch(() => { /* brak sieci — spróbujemy przy następnym powrocie */ }); };
+        document.addEventListener("visibilitychange", () => { if (!document.hidden) sprawdz(); });
+        window.setInterval(sprawdz, 30 * 60 * 1000);
+      })
+      .catch((e) => console.warn("Offline niedostępne:", e));
+
+    // Pierwsza instalacja też podmienia kontrolera — ale wtedy nie było jeszcze czego zastępować
+    // i nie ma o czym mówić. Dopiero podmiana ISTNIEJĄCEGO kontrolera znaczy „doszła nowa wersja".
+    const bylKontroler = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (!bylKontroler || nowaWersja) return;
+      nowaWersja = true;
+      // Sam pasek, bez przeładowania: decyzję zostawiamy scoutowi, bo w trakcie meczu
+      // przeładowanie strony to sekundy, w których nie da się nic zarejestrować.
+      if (zalogowany) render();
+    });
   });
 }
