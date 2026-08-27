@@ -2482,8 +2482,15 @@ function renderLogin(info?: string) {
     <div class="login">
       <div class="login-brand">
         <div class="login-stage">
-          <div class="login-logo"><img src="${LOGO}" alt="Scout Base System" width="88" height="88"></div>
+          <div class="login-halo" aria-hidden="true"></div>
+          <div class="login-logo">
+            <div class="login-badge">
+              <img src="${LOGO}" alt="Scout Base System" width="104" height="104">
+              <span class="login-sheen" aria-hidden="true"></span>
+            </div>
+          </div>
           <div class="login-orbit" aria-hidden="true"></div>
+          <div class="login-orbit login-orbit--druga" aria-hidden="true"></div>
         </div>
         <h1>SBS Scout Live</h1>
         <p class="hint">Zaloguj się tym samym kontem, co w Scout Base System.</p>
@@ -2635,8 +2642,15 @@ function renderCzekaNaZgode(konto: Konto) {
     <div class="login">
       <div class="login-brand">
         <div class="login-stage">
-          <div class="login-logo"><img src="${LOGO}" alt="Scout Base System" width="88" height="88"></div>
+          <div class="login-halo" aria-hidden="true"></div>
+          <div class="login-logo">
+            <div class="login-badge">
+              <img src="${LOGO}" alt="Scout Base System" width="104" height="104">
+              <span class="login-sheen" aria-hidden="true"></span>
+            </div>
+          </div>
           <div class="login-orbit" aria-hidden="true"></div>
+          <div class="login-orbit login-orbit--druga" aria-hidden="true"></div>
         </div>
         <h1>${odrzucone ? "Brak dostępu" : "Konto czeka na akceptację"}</h1>
         <p class="hint">${odrzucone
