@@ -4462,6 +4462,30 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
   function rozpoznaj(){
     const tekst = (overlay.querySelector('#pm-tekst') as any).value.trim();
     if(!tekst){ komunikat = 'Najpierw wklej stronę meczu.'; rysuj(); return; }
+
+    // WKLEJONY ADRES TO NIE POMYŁKA DO ZGANIENIA, TYLKO GOTOWA ODPOWIEDŹ NA PYTANIE, KTÓRE
+    // I TAK ZADAJEMY. Adresy grup na ŁNP przeterminowują się i trzeba je co jakiś czas podać
+    // na nowo. Kto skopiował adres z paska, ma w schowku dokładnie to, czego potrzebujemy —
+    // szkoda odsyłać go do innego okienka po to samo. Zapamiętujemy więc od razu.
+    const samAdres = tekst.replace(/\s+/g, ' ').trim();
+    if(/^https?:\/\/(www\.)?laczynaspilka\.pl\//i.test(samAdres) && samAdres.length < 600 && !/\s/.test(samAdres)){
+      if(/\/mecz\//i.test(samAdres)){
+        komunikat = 'To adres pojedynczego meczu, nie lista kolejek. Otwórz go w przeglądarce '
+          + 'i tam kliknij zakładkę „⚡ Zbierz całą kolejkę" — protokół przyjdzie tu sam.';
+        wynik = null; rysuj(); return;
+      }
+      if(!grupa){
+        komunikat = 'To adres strony ŁNP, a nie protokoły. Otwórz go w przeglądarce i tam kliknij zakładkę.';
+        wynik = null; rysuj(); return;
+      }
+      DB.settings.lnpGrupy = { ...(DB.settings.lnpGrupy||{}), [grupa]: samAdres };
+      void saveSettings();
+      (overlay.querySelector('#pm-tekst') as any).value = '';
+      komunikat = `Zapamiętałem ten adres dla grupy „${grupa}" — to był adres strony, nie protokoły. `
+        + `Teraz kliknij „↗ Otwórz kolejkę w ŁNP" niżej, a na otwartej stronie zakładkę „⚡ Zbierz całą kolejkę". `
+        + `Protokoły wrócą tutaj same.`;
+      wynik = null; rysuj(); return;
+    }
     // ROCZNIKI dołączone przez zakładkę. Protokół ich nie zawiera — zakładka dobiera je z profili
     // zawodników i dokleja osobnym blokiem. Odcinamy go, zanim podzielimy tekst na mecze,
     // żeby nie trafił do żadnego z nich.
