@@ -121,7 +121,8 @@ button{background:none; border:none; cursor:pointer;}
 /* Oszczędny ruch — patrz zastosujRuch() w src/mobile/main.ts. Arkusz NIE pyta tu systemu wprost:
    rozstrzygnięcie (podpowiedź systemu kontra własny wybór scouta) zapada raz, w jednym miejscu,
    i przychodzi tu gotowe jako data-ruch na <html>. */
-:root[data-ruch="oszczedne"] .mark-btn[aria-busy="true"] .mark{animation:none; opacity:.45;}
+:root[data-ruch="oszczedne"] .mark-btn[aria-busy="true"] .mark,
+:root[data-ruch="system-oszczedne"] .mark-btn[aria-busy="true"] .mark{animation:none; opacity:.45;}
 /* Nazwa ustępuje pierwsza. Pasek mieści cztery rzeczy (herb, nazwa, stan wysyłki, motyw), a na
    telefonie o szerokości 320 px brakuje na nie miejsca — bez tego stan wysyłki wchodził na
    przycisk motywu i przejmował dotknięcia, przez co motywu nie dawało się przełączyć. */
@@ -493,7 +494,14 @@ textarea{resize:vertical; min-height:84px;}
 /* Selektory pisane PŁASKO, bez zagnieżdżania CSS. Zagnieżdżanie działa dopiero od Safari 17.2,
    a panel ma się otworzyć także na starszym telefonie — na takim cały ten blok zostałby pominięty
    razem z wygaszeniem animacji, czyli zadziałałby dokładnie odwrotnie do zamiaru. */
-:root[data-ruch="oszczedne"] .toast{transition:none;}
+/* W TRAKCIE PRACY — wyciszane także wtedy, gdy prosi o to sam telefon. */
+:root[data-ruch="oszczedne"] .toast,
+:root[data-ruch="system-oszczedne"] .toast{transition:none;}
+
+/* EKRAN POWITALNY I LOGOWANIA gasną WYŁĄCZNIE przy jawnym wyłączeniu efektów (data-ruch
+   „oszczedne", bez przedrostka). Prośba systemu ich nie dotyczy: to jedyne dwa ekrany, na
+   których aplikacja się przedstawia, nikt na nich niczego nie rejestruje, a nieruchomy herb
+   nad formularzem wygląda jak zacięta strona, nie jak spokój. */
 :root[data-ruch="oszczedne"] .splash-orbit{display:none;}
 :root[data-ruch="oszczedne"] .splash-logo{animation:logo-lagodnie .7s ease both;}
 :root[data-ruch="oszczedne"] .splash-word{animation:slowo-lagodnie .7s ease .25s both;}

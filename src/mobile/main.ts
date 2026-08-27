@@ -172,10 +172,23 @@ const wybranyRuch = (): Ruch => {
 };
 const systemOgraniczaRuch = () => !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
+// Trzy stany, nie dwa — bo „system prosi o spokój" i „scout wyłączył efekty" to nie to samo:
+//
+//   pelne             — ruch wszędzie
+//   system-oszczedne  — system prosi o spokój, ale scout sam niczego nie wybrał. Wyciszamy to,
+//                       co dzieje się W TRAKCIE PRACY (kręcący się herb przy odświeżaniu,
+//                       przenikanie komunikatów), a ZOSTAWIAMY ekran powitalny i logowania.
+//                       Tam ruch nie przeszkadza w niczym: nikt wtedy nie rejestruje akcji,
+//                       a to jedyne dwa ekrany, na których aplikacja się przedstawia.
+//   oszczedne         — scout wyłączył efekty jawnie. Wtedy gasną wszystkie, bez wyjątku:
+//                       jawny wybór musi znaczyć dokładnie to, co mówi.
 function zastosujRuch(): void {
   const wybor = wybranyRuch();
-  const pelne = wybor === "pelne" || (wybor === "system" && !systemOgraniczaRuch());
-  document.documentElement.dataset.ruch = pelne ? "pelne" : "oszczedne";
+  document.documentElement.dataset.ruch =
+    wybor === "oszczedne" ? "oszczedne"
+    : wybor === "pelne" ? "pelne"
+    : systemOgraniczaRuch() ? "system-oszczedne"
+    : "pelne";
 }
 
 zastosujRuch();
@@ -1592,12 +1605,13 @@ function viewBaza(): string {
         <button class="pol seg" data-act="ruch" data-v="pelne" aria-pressed="${wybranyRuch() === "pelne"}">Włączone</button>
         <button class="pol seg" data-act="ruch" data-v="oszczedne" aria-pressed="${wybranyRuch() === "oszczedne"}">Wyłączone</button>
       </div>
-      <p class="hint" style="margin-top:8px;">${systemOgraniczaRuch()
-        ? "Twój iPhone ma włączone <strong>Ogranicz ruch</strong> (Ustawienia → Dostępność → Ruch), "
-          + "więc panel wygasił animacje — herb na ekranie logowania stoi nieruchomo, a ekran powitalny "
-          + "tylko się rozjaśnia. Wybierz <strong>Włączone</strong>, jeśli chcesz je mimo to widzieć."
-        : "Obrót herbu i obiegające go obręcze na ekranie logowania, animacja powitalna, kręcący się "
-          + "herb przy odświeżaniu. Nie dotyczy niczego, co dzieje się w trakcie meczu."}</p>
+      <p class="hint" style="margin-top:8px;">Ekran powitalny i logowania grają <strong>zawsze</strong> —
+        to jedyne miejsca, w których nic się nie rejestruje. Ten przełącznik dotyczy ruchu
+        w trakcie pracy: herb kręcącego się przy odświeżaniu i przenikania komunikatów.
+        <strong>Wyłączone</strong> gasi wszystko, łącznie z powitaniem.${systemOgraniczaRuch()
+        ? " Twój iPhone ma włączone <strong>Ogranicz ruch</strong> (Ustawienia → Dostępność → Ruch) — "
+          + "panel to uszanował w trakcie pracy, ale powitania i logowania nie wygasza."
+        : ""}</p>
     </div>
 
     ${instalacjaHtml()}`;
