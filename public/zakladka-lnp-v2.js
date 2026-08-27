@@ -1,8 +1,38 @@
 (function(){
 
-var SBS_ZBIERACZ="v4 z 26.08.2026";
+var SBS_ZBIERACZ="v5 z 28.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
+
+// RYGIEL NA CZAS ZBIERANIA.
+//
+// Zbieracz musi klikac w zakladki i "Pokaz wiecej", zeby strona pokazala wszystkie mecze. Kazde
+// takie klikniecie moze trafic w odnosnik prowadzacy gdzie indziej — i wtedy przegladarka
+// opuszcza strone z tabela, a razem z nia ginie caly zbieracz. Wygladalo to jak "otwiera strone
+// glowna i nic nie kopiuje".
+//
+// Sprawdzanie kazdego kandydata z osobna okazalo sie zawodne: zakladki na LNP bywaja <span>
+// wewnatrz <a>, wiec element wygladal niewinnie, a klikniecie i tak szlo pod adres rodzica.
+// Dlatego zamiast wylapywac wyjatki, zamykamy droge: dopoki zbieramy, zadne klikniecie nie
+// wyprowadzi z tej strony. Odnosniki prowadzace gdzie indziej sa unieszkodliwiane w fazie
+// przechwytywania, zanim przegladarka zdazy zareagowac.
+// Wyjatek: droga awaryjna, w ktorej zbieracz wchodzi w kolejne mecze i wraca przez history.back(),
+// nawiguje CELOWO. Na jej czas rygiel jest uchylany — patrz zbierzAdresyPrzezKlikanie().
+var ZBIERAM=true, POZWOL_NAWIGACJE=false;
+document.addEventListener('click', function(e){
+ if(!ZBIERAM || POZWOL_NAWIGACJE) return;
+ var el=e.target;
+ var a=null;
+ try{ a = el && el.closest ? el.closest('a') : null; }catch(err){ a=null; }
+ if(!a) return;
+ var h=a.getAttribute&&a.getAttribute('href');
+ if(!h || h.charAt(0)==='#') return;
+ var inna=true;
+ try{ inna = new URL(a.href, location.href).pathname !== location.pathname; }catch(err){}
+ var cel=(a.getAttribute&&a.getAttribute('target'))||'';
+ if(inna || (cel && cel!=='_self')){ e.preventDefault(); e.stopPropagation(); }
+}, true);
+window.addEventListener('beforeunload', function(){ ZBIERAM=false; });
 var box=document.createElement('div');
 box.style.cssText='position:fixed;right:16px;bottom:16px;z-index:2147483647;background:#16302A;color:#F6F3EA;padding:12px 16px;border-radius:8px;font:14px sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.4)';
 box.textContent='SBS '+SBS_ZBIERACZ+': zaczynam...';
@@ -108,14 +138,23 @@ var bylo=zebrane.length, linki=[], i=0, kolejek=1, czekam=0, doliczen=0, rozwini
 // Kryterium: element sterujacy trescia albo nie ma adresu, albo prowadzi na TE SAMA sciezke
 // (zmienia sie co najwyzej parametr lub kotwica). Odnosnik otwierajacy nowa karte odsiewamy
 // zawsze — zakladka z meczami nigdy nie otwiera sie w nowym oknie.
+// Klikniecie w SPAN wewnatrz <a> otwiera adres tego <a>. Dlatego pytamy nie o sam element,
+// tylko o najblizszy odnosnik NAD nim — inaczej "Wyniki" ze stopki (a > span) przechodzilo
+// przez ochrone i przegladarka opuszczala strone z tabela, zamiast zbierac protokoly.
+function odnosnikNad(el){
+ if(!el) return null;
+ if(el.tagName==='A') return el;
+ try{ return el.closest ? el.closest('a') : null; }catch(e){ return null; }
+}
 function wolnoKliknac(el){
  if(!el) return false;
- if(el.tagName!=='A') return true;
- var t=(el.getAttribute&&el.getAttribute('target'))||'';
+ var a=odnosnikNad(el);
+ if(!a) return true;
+ var t=(a.getAttribute&&a.getAttribute('target'))||'';
  if(t && t!=='_self') return false;
- var h=el.getAttribute&&el.getAttribute('href');
+ var h=a.getAttribute&&a.getAttribute('href');
  if(!h || h.charAt(0)==='#') return true;
- try{ return new URL(el.href, location.href).pathname === location.pathname; }catch(e){ return false; }
+ try{ return new URL(a.href, location.href).pathname === location.pathname; }catch(e){ return false; }
 }
 
 function kandydaciMeczow(){
@@ -136,11 +175,14 @@ function kandydaciMeczow(){
   // strone z tabela — wygladalo to jak "zamyka strone i otwiera glowna, nic nie kopiuje".
   // Prawdziwa zakladka z meczami albo nie ma adresu, albo prowadzi na TE SAMA sciezke
   // (zmienia sie co najwyzej parametr lub kotwica). Kazdy inny adres odsiewamy.
-  if(el.tagName==='A'){
-   var cel_href=el.getAttribute('href')||'';
+  // Sprawdzamy odnosnik NAD elementem, nie sam element: zakladki na LNP to czesto <span>
+  // albo <div> w srodku <a>, a klikniecie takiego dziecka i tak prowadzi pod adres rodzica.
+  var kotwica=odnosnikNad(el);
+  if(kotwica){
+   var cel_href=kotwica.getAttribute('href')||'';
    if(cel_href && cel_href.charAt(0)!=='#'){
     var innaStrona=true;
-    try{ innaStrona = new URL(el.href, location.href).pathname !== location.pathname; }catch(e){}
+    try{ innaStrona = new URL(kotwica.href, location.href).pathname !== location.pathname; }catch(e){}
     if(innaStrona) continue;
    }
   }
@@ -331,8 +373,11 @@ function zbierzAdresyPrzezKlikanie(gotowe){
  var wiersze=wierszeRozegrane();
  if(!wiersze.length){ gotowe([]); return; }
  var adresy=[], k=0, zlapane=[], staryOpen=window.open;
+ // Tu wychodzenie ze strony jest metoda, nie awaria — uchylamy rygiel na czas tej drogi.
+ POZWOL_NAWIGACJE=true;
  try{ window.open=function(u){ if(u) zlapane.push(String(u)); return null; }; }catch(e){}
  function skoncz(){
+  POZWOL_NAWIGACJE=false;
   try{ window.open=staryOpen; }catch(e){}
   var meczowe=adresy.filter(function(u){ return /mecz|match|spotkan/i.test(u); });
   gotowe(meczowe.length?meczowe:adresy);
