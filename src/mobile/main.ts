@@ -146,6 +146,43 @@ function toggleTheme() {
 // przy jasnym motywie mignęłoby ciemne tło.
 applyTheme(activeTheme());
 
+// ---------------------------------------------------------------------------
+// EFEKTY RUCHU
+// ---------------------------------------------------------------------------
+//
+// iPhone ma ustawienie „Ogranicz ruch" (Dostępność → Ruch), a przeglądarka podaje je stronie jako
+// prefers-reduced-motion. Panel to szanował i wyłączał animacje — i słusznie, bo dla części ludzi
+// ruch na ekranie to zawroty głowy, a nie ozdoba.
+//
+// Tyle że to ustawienie bywa włączone z zupełnie innych powodów (oszczędzanie baterii, dawna
+// decyzja, o której nikt już nie pamięta), a wtedy właściciel telefonu widzi martwy ekran
+// powitalny i nieruchomy herb, nie mając pojęcia dlaczego. Dlatego podpowiedź systemu zostaje
+// DOMYŚLNA, ale nie ostateczna: własny wybór w Ustawieniach jest ważniejszy, dokładnie tak samo
+// jak przy jasnym i ciemnym ekranie.
+//
+// Rozstrzygnięcie zapada TUTAJ, w jednym miejscu, i ląduje w atrybucie data-ruch na <html>.
+// Arkusz stylów nie pyta już systemu o zdanie — patrzy wyłącznie na ten atrybut. Bez tego każdą
+// regułę trzeba by pisać dwa razy: raz w zapytaniu medialnym, raz dla wymuszenia.
+type Ruch = "system" | "pelne" | "oszczedne";
+const RUCH_KEY = "sbs-m:ruch";
+
+const wybranyRuch = (): Ruch => {
+  const v = localStorage.getItem(RUCH_KEY);
+  return v === "pelne" || v === "oszczedne" ? v : "system";
+};
+const systemOgraniczaRuch = () => !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+function zastosujRuch(): void {
+  const wybor = wybranyRuch();
+  const pelne = wybor === "pelne" || (wybor === "system" && !systemOgraniczaRuch());
+  document.documentElement.dataset.ruch = pelne ? "pelne" : "oszczedne";
+}
+
+zastosujRuch();
+window.matchMedia?.("(prefers-reduced-motion: reduce)").addEventListener?.("change", () => {
+  if (wybranyRuch() === "system") zastosujRuch();
+});
+
 // Zmiana ustawienia systemowego (zachód słońca, tryb nocny) przestawia panel tylko wtedy, gdy
 // scout nie wybrał wariantu sam. Własny wybór jest ważniejszy niż podpowiedź systemu.
 window.matchMedia?.("(prefers-color-scheme: light)").addEventListener?.("change", () => {
@@ -1546,6 +1583,23 @@ function viewBaza(): string {
     <p class="hint">Kopia bazy to zawodnicy, kluby i plany trzymane w telefonie. Z niej bierze się
     kadra klubu przy składzie — odśwież ją przy zasięgu, zanim pojedziesz na mecz.</p>
 
+    <div class="section">
+      <span class="label">Efekty ruchu</span>
+      <!-- Trzy kolumny zamiast domyślnych dwóch: przy dwóch trzeci wariant spadał do drugiego
+           rzędu i wyglądał jak coś innego niż pozostałe dwa, choć jest z nimi równorzędny. -->
+      <div class="polarity" style="margin-top:6px; grid-template-columns:repeat(3,1fr);">
+        <button class="pol seg" data-act="ruch" data-v="system" aria-pressed="${wybranyRuch() === "system"}">Jak telefon</button>
+        <button class="pol seg" data-act="ruch" data-v="pelne" aria-pressed="${wybranyRuch() === "pelne"}">Włączone</button>
+        <button class="pol seg" data-act="ruch" data-v="oszczedne" aria-pressed="${wybranyRuch() === "oszczedne"}">Wyłączone</button>
+      </div>
+      <p class="hint" style="margin-top:8px;">${systemOgraniczaRuch()
+        ? "Twój iPhone ma włączone <strong>Ogranicz ruch</strong> (Ustawienia → Dostępność → Ruch), "
+          + "więc panel wygasił animacje — herb na ekranie logowania stoi nieruchomo, a ekran powitalny "
+          + "tylko się rozjaśnia. Wybierz <strong>Włączone</strong>, jeśli chcesz je mimo to widzieć."
+        : "Obrót herbu i obiegające go obręcze na ekranie logowania, animacja powitalna, kręcący się "
+          + "herb przy odświeżaniu. Nie dotyczy niczego, co dzieje się w trakcie meczu."}</p>
+    </div>
+
     ${instalacjaHtml()}`;
 }
 
@@ -2675,6 +2729,21 @@ document.addEventListener("click", (e) => {
       render();
       break;
     case "theme": toggleTheme(); break;
+
+    // Wybór efektów ruchu. „Jak w telefonie" kasujemy z pamięci, zamiast zapisywać — inaczej
+    // późniejsza zmiana ustawienia systemowego nie miałaby jak dojść do panelu.
+    case "ruch": {
+      if (v === "system") localStorage.removeItem(RUCH_KEY);
+      else localStorage.setItem(RUCH_KEY, v === "pelne" ? "pelne" : "oszczedne");
+      zastosujRuch();
+      render();
+      // Herb w pasku górnym stoi na każdym ekranie, ale ruch widać dopiero przy logowaniu
+      // i przy starcie — bez tego zdania wybór wyglądałby na nieskuteczny.
+      toast(document.documentElement.dataset.ruch === "pelne"
+        ? "Efekty włączone — zobaczysz je przy starcie i na ekranie logowania"
+        : "Efekty wyłączone");
+      break;
+    }
     case "dictate": dictate(); break;
     case "save-ocena": saveOcena(); break;
 

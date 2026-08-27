@@ -118,9 +118,10 @@ button{background:none; border:none; cursor:pointer;}
    przy dobrym zasięgu pobranie trwa ułamek sekundy i nic nie zdąży się zmienić na ekranie. */
 .mark-btn[aria-busy="true"] .mark{animation:herb-obrot 1s linear infinite;}
 @keyframes herb-obrot{ to{transform:rotate(360deg);} }
-@media (prefers-reduced-motion:reduce){
-  .mark-btn[aria-busy="true"] .mark{animation:none; opacity:.45;}
-}
+/* Oszczędny ruch — patrz zastosujRuch() w src/mobile/main.ts. Arkusz NIE pyta tu systemu wprost:
+   rozstrzygnięcie (podpowiedź systemu kontra własny wybór scouta) zapada raz, w jednym miejscu,
+   i przychodzi tu gotowe jako data-ruch na <html>. */
+:root[data-ruch="oszczedne"] .mark-btn[aria-busy="true"] .mark{animation:none; opacity:.45;}
 /* Nazwa ustępuje pierwsza. Pasek mieści cztery rzeczy (herb, nazwa, stan wysyłki, motyw), a na
    telefonie o szerokości 320 px brakuje na nie miejsca — bez tego stan wysyłki wchodził na
    przycisk motywu i przejmował dotknięcia, przez co motywu nie dawało się przełączyć. */
@@ -489,23 +490,24 @@ textarea{resize:vertical; min-height:84px;}
    bywa źle znoszony. Ale wygaszenie animacji do zera dawało nieruchomy obrazek i wrażenie, że
    aplikacja się zacięła. Zostaje więc samo rozjaśnienie — zmiana przezroczystości nie jest ruchem
    i pod tym ustawieniem uchodzi za dopuszczalną. */
-@media (prefers-reduced-motion:reduce){
-  .toast{transition:none;}
-  .splash-orbit{display:none;}
-  .splash-logo{animation:logo-lagodnie .7s ease both;}
-  .splash-word{animation:slowo-lagodnie .7s ease .25s both;}
-  /* Ekran logowania traktujemy tak samo jak powitalny: cały ruch znika, zostaje samo
-     rozjaśnienie. Herb nie może przy tym zostać niewidoczny — `logo-in` ma opacity:0 na starcie,
-     więc podmieniamy animację, zamiast ją po prostu wyłączać. Poświata i cień zostają: to nie
-     ruch, tylko głębia, i ona ma działać tak samo. */
-  .login-orbit{display:none;}
-  /* Znika sam przesuwający się refleks — FAZA na krawędzi zostaje. Bez niej odznaka rozpływa
-     się w ciemnym tle, a to nie jest kwestia ruchu, tylko czytelności. */
-  .login-sheen::after{display:none;}
-  .login-logo{animation:logo-lagodnie .7s ease both;}
-  .login-badge{animation:none; transform:rotateY(-8deg) rotateX(4deg);}
-  .login-halo{animation:none; opacity:.7;}
-}
+/* Selektory pisane PŁASKO, bez zagnieżdżania CSS. Zagnieżdżanie działa dopiero od Safari 17.2,
+   a panel ma się otworzyć także na starszym telefonie — na takim cały ten blok zostałby pominięty
+   razem z wygaszeniem animacji, czyli zadziałałby dokładnie odwrotnie do zamiaru. */
+:root[data-ruch="oszczedne"] .toast{transition:none;}
+:root[data-ruch="oszczedne"] .splash-orbit{display:none;}
+:root[data-ruch="oszczedne"] .splash-logo{animation:logo-lagodnie .7s ease both;}
+:root[data-ruch="oszczedne"] .splash-word{animation:slowo-lagodnie .7s ease .25s both;}
+/* Ekran logowania traktujemy tak samo jak powitalny: cały ruch znika, zostaje samo rozjaśnienie.
+   Herb nie może przy tym zostać niewidoczny — `logo-in` ma opacity:0 na starcie, więc podmieniamy
+   animację, zamiast ją po prostu wyłączać. Poświata i cień zostają: to nie ruch, tylko głębia,
+   i ona ma działać tak samo. */
+:root[data-ruch="oszczedne"] .login-orbit{display:none;}
+/* Znika sam przesuwający się refleks — FAZA na krawędzi zostaje. Bez niej odznaka rozpływa się
+   w ciemnym tle, a to nie jest kwestia ruchu, tylko czytelności. */
+:root[data-ruch="oszczedne"] .login-sheen::after{display:none;}
+:root[data-ruch="oszczedne"] .login-logo{animation:logo-lagodnie .7s ease both;}
+:root[data-ruch="oszczedne"] .login-badge{animation:none; transform:rotateY(-8deg) rotateX(4deg);}
+:root[data-ruch="oszczedne"] .login-halo{animation:none; opacity:.7;}
 @keyframes logo-lagodnie{ from{opacity:0;} to{opacity:1;} }
 @keyframes slowo-lagodnie{ from{opacity:0; letter-spacing:.2em;} to{opacity:1; letter-spacing:.14em;} }
 
