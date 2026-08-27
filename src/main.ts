@@ -4429,8 +4429,12 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
 
     // Zakładka do ŁNP zbiera protokoły całej kolejki i skleja je znacznikiem „### PROTOKOL:".
     // Dzieki temu jedno wklejenie rozlicza dziewięć meczów zamiast jednego.
+    // ADRESU NIE WOLNO WYRZUCIĆ RAZEM ZE ZNACZNIKIEM. To po nim rozpoznajemy, że dwa zebrania
+    // dotyczą tego samego meczu — bez niego ten sam protokół doliczał się drugi raz.
+    const adresy = (bezRocznikow.match(/^###\s*PROTOKOL:\s*(.*)$/gm) || [])
+      .map(l=>l.replace(/^###\s*PROTOKOL:\s*/, '').trim());
     const czesci = bezRocznikow.split(/^###\s*PROTOKOL:.*$/m).map(t=>t.trim()).filter(Boolean);
-    const wyniki = (czesci.length ? czesci : [tekst]).map(t=>przetworzProtokolLnp(t));
+    const wyniki = (czesci.length ? czesci : [tekst]).map((t,i)=>przetworzProtokolLnp(t, adresy[i] || ''));
     const dobre = wyniki.filter(w=>!w.blad);
     if(!dobre.length){ komunikat = wyniki[0].blad || 'Nie rozpoznałem protokołu.'; wynik = null; rysuj(); return; }
     komunikat = wyniki.length > dobre.length
@@ -10388,9 +10392,25 @@ function nazwyDruzynZProtokolu(rawText){
 // Tożsamość meczu — do pilnowania, żeby ten sam protokół wklejony dwa razy nie policzył
 // dorobku podwójnie. Statystyki z protokołów SUMUJĄ SIĘ mecz po meczu, więc bez tego
 // drugie kliknięcie podwoiłoby każdemu minuty.
-const kluczProtokolu = (druzyny, rawText)=>{
-  const data = (rawText.match(/(\d{1,2})\s+(stycznia|lutego|marca|kwietnia|maja|czerwca|lipca|sierpnia|września|października|listopada|grudnia)/i)||[]).slice(1).join(' ')
-    || (rawText.match(/\b(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{4})\b/)||[]).slice(1).join('.');
+const kluczProtokolu = (druzyny, rawText, adresMeczu)=>{
+  // ADRES MECZU NA ŁNP JEST NAJLEPSZĄ TOŻSAMOŚCIĄ, JAKĄ MAMY — i jedyną, która nie zmienia się
+  // między jednym a drugim zebraniem tej samej kolejki.
+  //
+  // Zgadywanie z treści okazało się zawodne w trzech naraz sposobach: starsze wklejki nie miały
+  // w kluczu daty w ogóle, wzorzec „dd.mm.rrrr" łapał datę ze STOPKI strony (stąd mecze podpisane
+  // 25.03.2019), a skrót całego tekstu zmieniał się przy każdym zebraniu, bo zakładka dokłada raz
+  // zdarzenia, raz roczniki. Efekt: ten sam mecz wpadał do dorobku po dwa i trzy razy, więc
+  // zawodnicy Arki II mieli po 6–7 spotkań przy czterech rozegranych.
+  const zAdresu = String(adresMeczu||'').match(/\/(?:mecz|match|spotkanie)\/([a-z0-9-]+)/i)
+    || String(adresMeczu||'').match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+  if(zAdresu) return 'lnp#' + zAdresu[1].toLowerCase();
+
+  // DATĘ BIERZEMY TYLKO Z POCZĄTKU PROTOKOŁU. Stopka i ozdobniki strony siedzą na końcu, więc
+  // ograniczenie zakresu odcina je bez zgadywania, co jest datą meczu, a co licencji.
+  const glowa = String(rawText||'').slice(0, 1500);
+  const data = (glowa.match(/(\d{1,2})\s+(stycznia|lutego|marca|kwietnia|maja|czerwca|lipca|sierpnia|września|października|listopada|grudnia)/i)||[]).slice(1).join(' ')
+    || (glowa.match(/\b(\d{4})-(\d{2})-(\d{2})\b/)||[]).slice(1).join('.')
+    || (glowa.match(/\b(\d{1,2})[.\-\/](\d{1,2})[.\-\/](20\d{2})\b/)||[]).slice(1).join('.');
   if(data) return 'lnp|' + druzyny.map(importNorm).join('|') + '|' + importNorm(data);
   // BEZ DATY DWA SPOTKANIA TEJ SAMEJ PARY BYŁYBY NIEROZRÓŻNIALNE — a każda para gra ze sobą
   // dwa razy w sezonie. Rewanż zostawał wtedy nierozliczony jako „już policzony". Gdy daty w
@@ -10553,7 +10573,7 @@ function zapamietajAdresGrupy(zrodlo, protokoly){
   return nowe;
 }
 
-function przetworzProtokolLnp(rawText){
+function przetworzProtokolLnp(rawText, adresMeczu){
   const zdarzenia = zdarzeniaZProtokolu(rawText);
   const druzyny = nazwyDruzynZProtokolu(rawText);
   if(druzyny.length < 1){
@@ -10570,7 +10590,7 @@ function przetworzProtokolLnp(rawText){
         + 'Uwaga: zakładkę trzeba było ostatnio wciągnąć na pasek NA NOWO — starsza nie kopiowała nic.')
       + ` Początek wklejki: „${czysty.slice(0,120)}…"`};
   }
-  const klucz = kluczProtokolu(druzyny, rawText);
+  const klucz = kluczProtokolu(druzyny, rawText, adresMeczu);
   const strony = [];
   // Gdy jedna z drużyn dopasuje się bez wątpliwości, jej grupa rozstrzyga wątpliwości przy drugiej.
   let podpowiedzGrupa = '';
