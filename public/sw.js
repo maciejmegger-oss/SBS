@@ -11,7 +11,7 @@
 // Podniesiona wersja czyści starą pamięć przy pierwszym uruchomieniu po wdrożeniu (activate
 // kasuje wszystkie klucze poza bieżącym). Konieczne przy zmianie adresów: pod "/m" mogła zostać
 // zapisana strona z czasów, gdy aplikacja na komputerze stała pod adresem głównym.
-const CACHE = "sbs-live-v3";
+const CACHE = "sbs-live-v4";
 
 self.addEventListener("install", (e) => {
   // Panel ma działać od razu po pierwszym wejściu, bez odświeżania strony.
@@ -37,6 +37,13 @@ self.addEventListener("fetch", (e) => {
   // Zapytania do Supabase idą zawsze do sieci. Podanie odpowiedzi z cache byłoby tu szkodliwe:
   // scout zobaczyłby nieaktualne dane i nie miałby jak odróżnić ich od świeżych.
   if (url.origin !== self.location.origin) return;
+
+  // ZNACZNIK WERSJI NIGDY Z KOPII.
+  //
+  // Po nim panel poznaje, że wdrożono poprawkę (patrz sprawdzWersje w src/mobile/main.ts).
+  // Podanie zapisanej kopii znaczyłoby, że plik mówiący „co stoi na serwerze" odpowiada tym,
+  // co stało tam poprzednio — i pasek o nowej wersji nie pokazałby się nigdy.
+  if (url.pathname === "/wersja.json") return;
 
   // Wejście na adres panelu: najpierw sieć (żeby wdrożona poprawka doszła od razu), a gdy jej
   // nie ma — zapisana wersja.

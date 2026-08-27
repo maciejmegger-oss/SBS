@@ -2754,24 +2754,41 @@ void boot();
 // mówimy o tym paskiem, zamiast czekać, aż ktoś się domyśli.
 if (import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker
-      .register("/sw.js")
-      .then((rejestracja) => {
-        const sprawdz = () => { void rejestracja.update().catch(() => { /* brak sieci — spróbujemy przy następnym powrocie */ }); };
-        document.addEventListener("visibilitychange", () => { if (!document.hidden) sprawdz(); });
-        window.setInterval(sprawdz, 30 * 60 * 1000);
-      })
-      .catch((e) => console.warn("Offline niedostępne:", e));
-
-    // Pierwsza instalacja też podmienia kontrolera — ale wtedy nie było jeszcze czego zastępować
-    // i nie ma o czym mówić. Dopiero podmiana ISTNIEJĄCEGO kontrolera znaczy „doszła nowa wersja".
-    const bylKontroler = !!navigator.serviceWorker.controller;
-    navigator.serviceWorker.addEventListener("controllerchange", () => {
-      if (!bylKontroler || nowaWersja) return;
-      nowaWersja = true;
-      // Sam pasek, bez przeładowania: decyzję zostawiamy scoutowi, bo w trakcie meczu
-      // przeładowanie strony to sekundy, w których nie da się nic zarejestrować.
-      if (zalogowany) render();
-    });
+    navigator.serviceWorker.register("/sw.js").catch((e) => console.warn("Offline niedostępne:", e));
   });
+}
+
+// SKĄD PANEL WIE, ŻE WDROŻONO POPRAWKĘ.
+//
+// Pyta serwer wprost: /wersja.json zawiera godzinę budowania i zmienia się przy każdym wdrożeniu
+// (patrz wersjaPlikPlugin w vite.config.ts). Różni się od tej, na której pracuje karta — znaczy,
+// że doszło coś nowego.
+//
+// Poprzednie podejście opierało się na mechanizmie offline: „nowy service worker = nowa wersja".
+// Brzmiało rozsądnie i NIE DZIAŁAŁO ANI RAZU. Plik sw.js nie zmienia się przy zwykłym wdrożeniu
+// (zmieniają się skrypty aplikacji, o nazwach ze skrótem treści), więc przeglądarka nie miała
+// czego instalować, zdarzenie „zmiana kontrolera" nie padało nigdy i pasek się nie pokazywał.
+// Skutek dla scouta: wdrożona poprawka nie docierała do telefonu tygodniami, a jedynym ratunkiem
+// było ubicie aplikacji z przełącznika — o czym nikt nie ma prawa wiedzieć.
+async function sprawdzWersje(): Promise<void> {
+  if (nowaWersja || !navigator.onLine) return;
+  try {
+    const odp = await fetch("/wersja.json", { cache: "no-store" });
+    if (!odp.ok) return;
+    const { wersja } = (await odp.json()) as { wersja?: string };
+    if (!wersja || wersja === WERSJA_PANELU) return;
+    nowaWersja = true;
+    // Sam pasek, bez przeładowania: decyzję zostawiamy scoutowi, bo w trakcie meczu
+    // przeładowanie strony to sekundy, w których nie da się nic zarejestrować.
+    if (zalogowany) render();
+  } catch {
+    /* brak sieci albo pliku (wersja robocza) — spróbujemy przy następnym powrocie do panelu */
+  }
+}
+
+if (import.meta.env.PROD) {
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) void sprawdzWersje(); });
+  window.addEventListener("online", () => { void sprawdzWersje(); });
+  window.setInterval(() => { void sprawdzWersje(); }, 30 * 60 * 1000);
+  window.setTimeout(() => { void sprawdzWersje(); }, 4000);   // pierwsze pytanie po starcie
 }
