@@ -4263,9 +4263,25 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
         <textarea id="pm-tekst" rows="4" placeholder="(pole zapasowe — gdybyś miał protokoły w schowku, naciśnij tu Ctrl+V)" style="font-size:12px;font-family:monospace;"></textarea>
       </div>
       ${komunikat ? `<p class="note" style="color:var(--clay-dark);">${esc(komunikat)}</p>` : ''}
-      ${wynik ? `<div style="max-height:280px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px;font-size:12.5px;">
-        ${wynik.length>1 ? `<p class="note" style="margin:0 0 6px;">Rozpoznanych meczów: <strong>${wynik.length}</strong></p>` : ''}
-        ${wynik.flatMap(prot=>prot.strony).map(s=>{
+      ${wynik ? (()=>{
+        // POKAZUJEMY TO, CO WCHODZI — NIE CAŁĄ HISTORIĘ.
+        //
+        // Zbieracz przynosi całą kolejkę, a w niej zwykle same mecze rozliczone dawno temu.
+        // Wypisywanie ich wszystkich zasypywało okno trzydziestoma spotkaniami, wśród których
+        // nie dało się znaleźć tego jednego nowego. Rozliczone zwijamy więc do jednej linijki.
+        const strony = wynik.flatMap(prot=>prot.strony);
+        const rozliczona = (s)=> !s.blad && s.wiersze
+          && s.wiersze.filter(w=>w.zagral).length > 0
+          && s.wiersze.filter(w=>w.zagral).every(w=>w.juzPoliczony);
+        const nowe = strony.filter(s=>!rozliczona(s));
+        const stare = strony.filter(rozliczona);
+        return `<div style="max-height:280px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px;font-size:12.5px;">
+        ${stare.length ? `<p class="note" style="margin:0 0 6px;padding:4px 6px;background:var(--chalk-dim);border-radius:6px;">
+          Pomijam ${stare.length} ${stare.length===1?'drużynę, której mecz jest':'drużyn, których mecze są'} już rozliczonych — nic się nie podwoi.
+        </p>` : ''}
+        ${!nowe.length ? `<p class="note" style="margin:0;">Nic nowego w tej wklejce — wszystkie te mecze są już w systemie.</p>` : ''}
+        ${nowe.length>2 ? `<p class="note" style="margin:0 0 6px;">Do zapisania: <strong>${Math.ceil(nowe.length/2)}</strong> ${Math.ceil(nowe.length/2)===1?'mecz':'meczów'}</p>` : ''}
+        ${nowe.map(s=>{
           if(s.blad){
             // NAZWY NA ŁNP I NA 90MINUT BYWAJĄ ZUPEŁNIE INNE. „Pogoń Barlinek" u jednych to
             // „CRS Barlinek" u drugich, a że wspólne jest samo miasto, żadne dopasowanie po
@@ -4300,7 +4316,8 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
               w.zawodnik?'':' <span style="color:var(--gold-dark);">nowy</span>'}`).join(' &middot; ')}</div>
           </div>`;
         }).join('')}
-      </div>` : ''}
+      </div>`;
+      })() : ''}
       <div class="modal-actions" style="justify-content:space-between;">
         <span>
           <button class="secondary" data-x="zakladka" title="Jedno kliknięcie na stronie meczu zamiast zaznaczania całej strony">🔖 Szybkie kopiowanie z ŁNP</button>
@@ -10669,10 +10686,19 @@ function przetworzProtokolLnp(rawText, adresMeczu){
       continue;
     }
 
+    const rywalStrony = (druzyny.find(d=>d !== nazwa) || '');
+    const uSiebieStrona = druzyny[0] === nazwa;
+
     const wiersze = dane.zawodnicy.map(z=>{
       const zawodnik = DB.players.find(p=>p.clubId===klub.id
         && importNorm(p.firstName+p.lastName) === importNorm(z.firstName+z.lastName));
-      const juzPoliczony = zawodnik && (zawodnik.rozliczoneMecze||[]).includes(klucz);
+      // TA SAMA REGUŁA CO PRZY ZAPISIE — inaczej okno pokazywałoby jako nowe mecze, których zapis
+      // i tak nie policzy. Klucz z treści wklejki bywa inny przy każdym zebraniu; para
+      // (rywal, czy u siebie) wskazuje spotkanie jednoznacznie.
+      const juzPoliczony = !!zawodnik && (
+        (zawodnik.rozliczoneMecze||[]).includes(klucz)
+        || (zawodnik.przebieg||[]).some(x=> importNorm(x.rywal||'') === importNorm(rywalStrony) && !!x.dom === uSiebieStrona)
+      );
       // Gole i kartki wiążemy z zawodnikiem po nazwisku — wiersz zdarzenia niesie tekst całego
       // wiersza z protokołu, więc nazwisko w nim stoi. Sprawdzamy oba człony, bo wiersz bywa
       // zapisany „Kowalski Jan" albo „Jan Kowalski".
