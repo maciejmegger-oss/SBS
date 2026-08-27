@@ -198,6 +198,9 @@ let clockTimer: number | undefined;
 // Czy panel pracuje na sesji użytkownika. Od zamknięcia systemu jest to WARUNEK WEJŚCIA:
 // bez sesji panel pokazuje ekran logowania i nic poza nim.
 let zalogowany = false;
+// Adres konta, na którym pracuje panel. Pokazujemy go przy wylogowaniu, bo scout bywa zalogowany
+// innym kontem niż na komputerze — a wtedy widzi pustą bazę i nie ma jak się domyślić dlaczego.
+let kontoEmail = "";
 
 // Czy w tle doszła nowsza wersja panelu. Patrz komentarz przy rejestracji mechanizmu offline
 // na końcu pliku — bez tego wdrożona poprawka potrafiła tygodniami nie docierać do telefonu.
@@ -326,6 +329,22 @@ function kartaObserwacji(o: Observation, dzis: string): string {
     </div>`;
 }
 
+// STOPKA KONTA na ekranie obserwacji.
+//
+// Wylogowanie stoi NA KOŃCU listy, nie przy jej górze: to jedyny przycisk w panelu, który
+// zabiera z telefonu kopię bazy, więc nie może sąsiadować z niczym, w co dotyka się w biegu.
+// Obok niego adres konta — scout bywa zalogowany innym kontem niż na komputerze i wtedy widzi
+// pustą bazę, nie mając jak dojść dlaczego.
+function stopkaKonta(): string {
+  if (!zalogowany) return '<button class="btn ghost" data-act="go-login">Zaloguj się</button>';
+  return `
+    <div class="section" style="display:flex; align-items:center; gap:10px;">
+      <span class="sub" style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+        ${kontoEmail ? esc(kontoEmail) : "Zalogowany"}</span>
+      <button class="btn ghost small" style="flex:0 0 auto; width:auto; margin:0;" data-act="logout">Wyloguj się</button>
+    </div>`;
+}
+
 function viewDzis(): string {
   const dzis = todayISO();
   const wczoraj = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
@@ -360,7 +379,8 @@ function viewDzis(): string {
               <span class="label">${esc(klucz === "bez daty" ? "Bez daty" : miesiacPl(klucz + "-01"))} · ${lista.length}</span>
               ${lista.map((o) => kartaObserwacji(o, dzis)).join("")}
             </div>`).join("")
-        : '<div class="empty">Nic jeszcze nie zostało zakończone.</div>'}`;
+        : '<div class="empty">Nic jeszcze nie zostało zakończone.</div>'}
+      ${stopkaKonta()}`;
   }
 
   const lista = cache.observations
@@ -373,7 +393,8 @@ function viewDzis(): string {
     ${banerIkony()}
     ${przelacznik}
     ${lista.length ? lista.map((o) => kartaObserwacji(o, dzis)).join("") : '<div class="empty">Nic nie czeka.<br>Zaplanuj obserwację albo zajrzyj do zakończonych.</div>'}
-    <button class="btn ghost" data-act="go-nowa">+ Zaplanuj obserwację</button>`;
+    <button class="btn ghost" data-act="go-nowa">+ Zaplanuj obserwację</button>
+    ${stopkaKonta()}`;
 }
 
 function viewNowa(): string {
@@ -1300,12 +1321,6 @@ function viewBaza(): string {
 
     <p class="hint">Kopia bazy to zawodnicy, kluby i plany trzymane w telefonie. Z niej bierze się
     kadra klubu przy składzie — odśwież ją przy zasięgu, zanim pojedziesz na mecz.</p>
-
-    <div class="section">
-      ${zalogowany
-        ? '<button class="btn danger" data-act="logout">Wyloguj się</button>'
-        : '<button class="btn ghost" data-act="go-login">Zaloguj się</button>'}
-    </div>
 
     ${instalacjaHtml()}`;
 }
@@ -2343,10 +2358,24 @@ document.addEventListener("click", (e) => {
     case "flush":
       flushQueue().then((left) => { refreshSyncPill(); render(); toast(left ? "Zostało " + left : "Wszystko wysłane"); });
       break;
-    case "logout":
+    // WYLOGOWANIE PYTA, ODKĄD STOI NA LIŚCIE OBSERWACJI.
+    //
+    // W Ustawieniach trafiało się tu z rozmysłem. Na ekranie, po którym przewija się w trakcie
+    // meczu, dotknięcie bywa przypadkowe — a skutek jest niebłahy: razem z sesją z telefonu
+    // znika kopia bazy (kadry klubów, plany) i stan trwającego meczu. Mówimy więc wprost, co
+    // przepadnie, i osobno uspokajamy co do rzeczy, która NIE przepada: kolejki wysyłki.
+    case "logout": {
+      const wKolejce = queueLength();
+      const skutki = [
+        "Kopia bazy zniknie z telefonu — kadry klubów i plany trzeba będzie pobrać na nowo, przy zasięgu.",
+        live ? "TRWA MECZ „" + (live.matchLabel || "") + "\" — zegar i niezapisane zdarzenia przepadną." : "",
+        wKolejce ? "Praca czekająca na wysyłkę (" + wKolejce + ") NIE przepada — zostaje w telefonie i pojedzie po ponownym zalogowaniu." : "",
+      ].filter(Boolean).join("\n\n");
+      if (!confirm("Wylogować się z " + (kontoEmail || "tego konta") + "?\n\n" + skutki)) break;
       // Kopię bazy zabieramy z telefonu razem z sesją — patrz wyczyscKopieBazy() w db.ts.
       signOut().then(() => { wyczyscKopieBazy(); location.reload(); });
       break;
+    }
     case "go-login": renderLogin(); break;
 
     case "kopiuj-adres": {
@@ -2637,6 +2666,7 @@ async function boot() {
   const user = await currentUser();
   if (!user) { renderLogin(); return; }
   zalogowany = true;
+  kontoEmail = user.email || "";
 
   // Stan konta czytamy z bazy; bez sieci pytanie się nie uda i wtedy wchodzimy do zapisanej kopii.
   // To nie jest zabezpieczenie (tym są reguły dostępu w bazie), tylko wyjaśnienie dla użytkownika.
