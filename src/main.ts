@@ -4481,9 +4481,16 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
       DB.settings.lnpGrupy = { ...(DB.settings.lnpGrupy||{}), [grupa]: samAdres };
       void saveSettings();
       (overlay.querySelector('#pm-tekst') as any).value = '';
+      // OD RAZU OTWIERAMY TĘ STRONĘ. Wklejenie adresu to gest użytkownika, więc przeglądarka
+      // pozwala tu otworzyć kartę — a następny krok i tak polega na wejściu właśnie tam.
+      // Bez tego zostaje polecenie „kliknij niżej", czyli jeszcze jedno miejsce do zgubienia.
+      let otwarte = false;
+      try{ otwarte = !!window.open(samAdres, '_blank', 'noopener'); }catch(e){ otwarte = false; }
       komunikat = `Zapamiętałem ten adres dla grupy „${grupa}" — to był adres strony, nie protokoły. `
-        + `Teraz kliknij „↗ Otwórz kolejkę w ŁNP" niżej, a na otwartej stronie zakładkę „⚡ Zbierz całą kolejkę". `
-        + `Protokoły wrócą tutaj same.`;
+        + (otwarte
+          ? `Otworzyłem tę kolejkę w nowej karcie. PRZEJDŹ DO NIEJ i kliknij tam zakładkę „⚡ Zbierz całą kolejkę”, `
+            + `a potem w panelu w prawym dolnym rogu „Wyślij do SBS”. Protokoły wrócą tutaj same.`
+          : `Kliknij teraz „↗ Otwórz kolejkę w ŁNP” niżej, a na otwartej stronie zakładkę „⚡ Zbierz całą kolejkę”.`);
       wynik = null; rysuj(); return;
     }
     // ROCZNIKI dołączone przez zakładkę. Protokół ich nie zawiera — zakładka dobiera je z profili
