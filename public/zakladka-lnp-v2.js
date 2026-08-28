@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v16 z 28.08.2026";
+var SBS_ZBIERACZ="v17 z 28.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -308,7 +308,10 @@ function kandydaciMeczow(){
  return lista;
 }
 function otworzZakladkeMecze(gotowe){
- var k=kandydaciMeczow();
+ // Najwyzej trzech kandydatow. Lista meczow na stronie grupy jest POD tabela, a nie za zakladka,
+ // wiec przebijanie sie przez dwadziescia kilka elementow tylko zjadalo czas — po jednym
+ // klikniecie i 1,6 s czekania — zanim zbieracz w ogole zaczal szukac meczow.
+ var k=kandydaciMeczow().slice(0,3);
  if(zakladkaNr>=k.length){ gotowe(); return; }
  var cel=k[zakladkaNr];
  zakladkaNr++;
@@ -316,23 +319,37 @@ function otworzZakladkeMecze(gotowe){
  if(wolnoKliknac(cel)){try{cel.click();}catch(e){}}
  setTimeout(gotowe,1600);
 }
+// CZEKAMY NA LISTE MECZOW, A NIE NA UPLYW SZESCIU KROKOW.
+//
+// Strona grupy pokazuje najpierw tabele; lista rozegranych spotkan siedzi pod nia i doczytuje sie
+// dopiero po przewinieciu. Dotad zbieracz przewijal szesc razy po 0,7 s i szedl dalej niezaleznie
+// od tego, czy cokolwiek sie pojawilo. Gdy LNP odpowiadalo wolniej, decyzja zapadala na pustej
+// stronie: zero wierszy, jeden przypadkowy odnosnik — i panel meldowal "zebrano 1 protokol"
+// zamiast calej kolejki.
+//
+// Teraz przewijamy dopoki lista sie nie pojawi (albo do dwudziestu sekund) i dopiero wtedy
+// decydujemy. Warunkiem konca jest ZOBACZENIE danych, nie zmeczenie licznika.
 function dociagnijStrone(gotowe){
- var krok=0;
+ var krok=0, MAX=28;
  var t=setInterval(function(){
   krok++;
-  try{window.scrollTo(0,document.body.scrollHeight);}catch(e){}
+  // Przewijamy w dol i z powrotem — czesc ukladow doczytuje przy ruchu, nie na samym koncu.
+  try{ window.scrollTo(0, document.body.scrollHeight); }catch(e){}
+  if(krok % 4 === 0){ try{ window.scrollTo(0, Math.round(document.body.scrollHeight/2)); }catch(e){} }
   var wiecej=[].slice.call(document.querySelectorAll('button,a')).filter(function(el){
    return /zaladuj wiecej|załaduj więcej|pokaz wiecej|pokaż więcej/i.test((el.textContent||'').trim());
   });
   wiecej.filter(wolnoKliknac).forEach(function(el){try{el.click();}catch(e){}});
-  var n=naglowekRozegranych();
-  if(n){ try{ n.scrollIntoView({block:'start'}); }catch(e){} box.textContent='SBS '+SBS_ZBIERACZ+': jestem przy \u201eRozegranych meczach\u201d ('+krok+')...'; }
-  else box.textContent='SBS '+SBS_ZBIERACZ+': szukam rozegranych meczow ('+krok+')...';
-  if(krok>=6){
+
+  var ileLinkow = zbierzLinki().length;
+  var ileWierszy = wierszeRozegrane().length;
+  var mamy = ileLinkow >= 2 || ileWierszy >= 2;
+  box.textContent='SBS '+SBS_ZBIERACZ+': szukam rozegranych meczow ('+krok+'/'+MAX+') - odnosnikow '+ileLinkow+', wierszy '+ileWierszy;
+
+  if(mamy || krok>=MAX || zaDlugo()){
    clearInterval(t);
    var k=naglowekRozegranych();
    if(k){ try{ k.scrollIntoView({block:'start'}); }catch(e){} }
-   else { try{window.scrollTo(0,0);}catch(e){} }
    gotowe();
   }
  },700);
