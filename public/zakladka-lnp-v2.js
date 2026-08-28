@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v13 z 28.08.2026";
+var SBS_ZBIERACZ="v14 z 28.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -734,13 +734,25 @@ function koniec(){
  // Zmierzone na zywej stronie: przy pieciu podejsciach pod rzad zdarza sie mecz, ktory i tak nie
  // wchodzi — awaryjnosc LNP potrafi trzymac sie kilkunastu sekund. Ponowienie po przejsciu calej
  // kolejki trafia w zupelnie inny moment, wiec te resztki zwykle wchodza bez problemu.
- if(!koniec.drugaTura && nieudaneUrl.length){
-  koniec.drugaTura = true;
-  box.textContent='SBS '+SBS_ZBIERACZ+': '+nieudaneUrl.length+' meczow nie weszlo za pierwszym razem - druga tura';
-  linki = nieudaneUrl.slice();
-  nieudaneUrl = []; nieudanych = 0; i = 0;
-  setTimeout(nastepny, 1200);
-  return;
+ // Zmierzone: jedna dodatkowa tura odzyskala polowe resztek, ale nie wszystko. Awaryjnosc LNP
+ // potrafi trzymac sie kilkunastu sekund pod rzad, wiec powtarzamy az do skutku — do czterech
+ // tur, z rosnaca przerwa. Konczymy wczesniej, gdy tura nic nie odzyskala: to znak, ze problem
+ // nie jest chwilowy i dalsze dobijanie sie nic nie da.
+ koniec.tura = koniec.tura || 0;
+ if(koniec.tura < 4 && nieudaneUrl.length){
+  var przedTura = nieudaneUrl.length;
+  if(koniec.tura > 0 && przedTura >= koniec.poprzednioNieudanych){
+   koniec.tura = 4;                       // ostatnia tura nic nie dala — nie ma po co dalej
+  } else {
+   koniec.tura++;
+   koniec.poprzednioNieudanych = przedTura;
+   box.textContent='SBS '+SBS_ZBIERACZ+': '+przedTura+' meczow nie weszlo - tura '+(koniec.tura+1)
+    +' (LNP odsyla 404 losowo, probuje dalej)';
+   linki = nieudaneUrl.slice();
+   nieudaneUrl = []; nieudanych = 0; i = 0;
+   setTimeout(nastepny, 1500 * koniec.tura);
+   return;
+  }
  }
  // Roczniki dobieramy PRZED skopiowaniem, zeby poleicaly razem z protokolami — jedno wklejenie
  // w aplikacji ma zalatwic i statystyki, i wiek.
