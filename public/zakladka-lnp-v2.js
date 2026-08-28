@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v12 z 28.08.2026";
+var SBS_ZBIERACZ="v13 z 28.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -416,7 +416,11 @@ function start(){
 // Zbieracz wczytywal kazdy mecz w ramce i przy 404 po prostu go pomijal - po cichu, bo warunek
 // mowil tylko "nie ma skladu". Polowa kolejki znikala bez sladu, a na koncu widac bylo mniej
 // protokolow, niz meczow na ekranie. Dlatego kazdy mecz dostaje teraz trzy podejscia.
-var nieudanych = 0;
+// Zmierzone na zywej stronie: przy trzech podejsciach jeden mecz na piec i tak przepadal.
+// Dlatego podejsc jest piec, a te, ktore mimo to nie weszly, wracaja w DRUGIEJ TURZE na koncu —
+// awaryjnosc LNP jest losowa, wiec ponowienie po kilkudziesieciu sekundach zwykle trafia lepiej.
+var PODEJSC = 5;
+var nieudanych = 0, nieudaneUrl = [];
 function nastepny(){
  if(i>=linki.length){ poKolejce(); return; }
  wczytajMecz(linki[i], 0);
@@ -435,12 +439,12 @@ function wczytajMecz(url, podejscie){
   var ok=/Sk\u0142ad wyj\u015bciowy/.test(txt);
   var bladLnp=/Ups! Pi\u0142ka za boiskiem/.test(txt) || /\/rozgrywki\/404/.test((function(){try{return f.contentWindow.location.pathname;}catch(e){return '';}})());
   // Przy 404 nie ma na co czekac \u2014 wchodzimy pod ten sam adres jeszcze raz, i to od razu.
-  if(bladLnp && podejscie < 2){
+  if(bladLnp && podejscie < PODEJSC-1){
    clearInterval(t); f.remove();
    setTimeout(function(){ wczytajMecz(url, podejscie+1); }, 400);
    return;
   }
-  if(ok||prob>16){
+  if(ok||prob>20){
    clearInterval(t);
    if(ok){
     // Adresy profili zbieramy przy okazji \u2014 dokument meczu i tak jest juz wczytany.
@@ -450,7 +454,7 @@ function wczytajMecz(url, podejscie){
     var byl=false;
     for(var q=0;q<zebrane.length;q++){if(zebrane[q].indexOf('### PROTOKOL: '+url+'\n')===0){zebrane[q]=wpis;byl=true;break;}}
     if(!byl)zebrane.push(wpis);
-   } else { nieudanych++; }
+   } else { nieudanych++; if(nieudaneUrl.indexOf(url)<0) nieudaneUrl.push(url); }
    f.remove();i++;setTimeout(nastepny,300);
   }
  },500);
@@ -725,6 +729,19 @@ function blokRocznikow(){
 }
 
 function koniec(){
+ // DRUGA TURA DLA TYCH, KTORE PRZEPADLY.
+ //
+ // Zmierzone na zywej stronie: przy pieciu podejsciach pod rzad zdarza sie mecz, ktory i tak nie
+ // wchodzi — awaryjnosc LNP potrafi trzymac sie kilkunastu sekund. Ponowienie po przejsciu calej
+ // kolejki trafia w zupelnie inny moment, wiec te resztki zwykle wchodza bez problemu.
+ if(!koniec.drugaTura && nieudaneUrl.length){
+  koniec.drugaTura = true;
+  box.textContent='SBS '+SBS_ZBIERACZ+': '+nieudaneUrl.length+' meczow nie weszlo za pierwszym razem - druga tura';
+  linki = nieudaneUrl.slice();
+  nieudaneUrl = []; nieudanych = 0; i = 0;
+  setTimeout(nastepny, 1200);
+  return;
+ }
  // Roczniki dobieramy PRZED skopiowaniem, zeby poleicaly razem z protokolami — jedno wklejenie
  // w aplikacji ma zalatwic i statystyki, i wiek.
  if(!koniec.poRocznikach){
