@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v10 z 28.08.2026";
+var SBS_ZBIERACZ="v11 z 28.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -238,6 +238,27 @@ function dociagnijStrone(gotowe){
  },700);
 }
 function start(){
+ // Ta sama losowa awaria LNP trafia sie na stronie, z ktorej wlasnie startujemy. Nie ma sensu
+ // nic z niej czytac — mowimy wprost, co sie stalo, i podajemy jedyne skuteczne lekarstwo.
+ if(/Ups! Piłka za boiskiem/.test(document.body.innerText||'') || /\/rozgrywki\/404/.test(location.pathname)){
+  box.textContent='';
+  var b=document.createElement('div');
+  b.style.cssText='margin-bottom:10px;line-height:1.45';
+  b.textContent='SBS '+SBS_ZBIERACZ+': LNP odeslalo strone 404. To ich chwilowa awaria - ten sam adres '
+   +'zwykle dziala za drugim razem. Wejdz pod niego ponownie (Enter w pasku adresu) i kliknij zakladke jeszcze raz.';
+  box.appendChild(b);
+  var wroc=document.createElement('button');
+  wroc.textContent='Cofnij i sprobuj ponownie';
+  wroc.style.cssText='display:block;width:100%;padding:9px;margin-bottom:6px;border:0;border-radius:6px;background:#C9A227;color:#16302A;font:600 13px sans-serif;cursor:pointer';
+  wroc.onclick=function(){ ZBIERAM=false; try{history.back();}catch(e){} };
+  box.appendChild(wroc);
+  var zam=document.createElement('button');
+  zam.textContent='Zamknij';
+  zam.style.cssText='display:block;width:100%;padding:6px;border:1px solid rgba(246,243,234,.35);border-radius:6px;background:transparent;color:#F6F3EA;font:13px sans-serif;cursor:pointer';
+  zam.onclick=function(){ box.remove(); };
+  box.appendChild(zam);
+  return;
+ }
  if(/\/mecz\//.test(location.pathname)){
   box.textContent='SBS '+SBS_ZBIERACZ+': jestes na stronie meczu - zbieram ten jeden';
   linki=[location.href];nastepny();return;
@@ -340,10 +361,23 @@ function start(){
  }
 }
 
+// LNP ODSYLA 404 LOSOWO \u2014 I TO BYLA PRAWDZIWA PRZYCZYNA "NIE ZGRYWA STATYSTYK".
+//
+// Sprawdzone na zywym adresie meczu: pierwsze wejscie konczy sie strona "404 Ups! Pilka za
+// boiskiem", drugie wejscie pod TEN SAM adres oddaje pelny protokol ze skladami. Dotyczy to tak
+// samo stron grup, jak i stron meczow, i zdarza sie mniej wiecej co drugie zadanie.
+//
+// Zbieracz wczytywal kazdy mecz w ramce i przy 404 po prostu go pomijal - po cichu, bo warunek
+// mowil tylko "nie ma skladu". Polowa kolejki znikala bez sladu, a na koncu widac bylo mniej
+// protokolow, niz meczow na ekranie. Dlatego kazdy mecz dostaje teraz trzy podejscia.
+var nieudanych = 0;
 function nastepny(){
  if(i>=linki.length){ poKolejce(); return; }
- var url=linki[i];
- box.textContent='SBS '+SBS_ZBIERACZ+': kolejka '+kolejek+' - protokoly '+i+'/'+linki.length+' (razem '+zebrane.length+')';
+ wczytajMecz(linki[i], 0);
+}
+function wczytajMecz(url, podejscie){
+ box.textContent='SBS '+SBS_ZBIERACZ+': kolejka '+kolejek+' - protokoly '+i+'/'+linki.length
+  +(podejscie?' (podejscie '+(podejscie+1)+')':'')+' (razem '+zebrane.length+')';
  var f=document.createElement('iframe');
  f.style.cssText='position:fixed;left:-9999px;width:1200px;height:2000px';
  f.src=url;document.body.appendChild(f);
@@ -353,6 +387,13 @@ function nastepny(){
   var txt='';
   try{txt=(f.contentDocument&&f.contentDocument.body)?f.contentDocument.body.innerText:'';}catch(e){txt='';}
   var ok=/Sk\u0142ad wyj\u015bciowy/.test(txt);
+  var bladLnp=/Ups! Pi\u0142ka za boiskiem/.test(txt) || /\/rozgrywki\/404/.test((function(){try{return f.contentWindow.location.pathname;}catch(e){return '';}})());
+  // Przy 404 nie ma na co czekac \u2014 wchodzimy pod ten sam adres jeszcze raz, i to od razu.
+  if(bladLnp && podejscie < 2){
+   clearInterval(t); f.remove();
+   setTimeout(function(){ wczytajMecz(url, podejscie+1); }, 400);
+   return;
+  }
   if(ok||prob>16){
    clearInterval(t);
    if(ok){
@@ -363,7 +404,7 @@ function nastepny(){
     var byl=false;
     for(var q=0;q<zebrane.length;q++){if(zebrane[q].indexOf('### PROTOKOL: '+url+'\n')===0){zebrane[q]=wpis;byl=true;break;}}
     if(!byl)zebrane.push(wpis);
-   }
+   } else { nieudanych++; }
    f.remove();i++;setTimeout(nastepny,300);
   }
  },500);
@@ -667,6 +708,7 @@ function koniec(){
  opis.textContent='SBS '+SBS_ZBIERACZ+': zebrane protokoly: '+zebrane.length
   +' (nowych '+(zebrane.length-bylo)+', kolejek '+kolejek
   +(pominietych?', pominietych nierozegranych '+pominietych:'')
+  +(nieudanych?', NIE UDALO SIE ODCZYTAC '+nieudanych+' (LNP odsylalo 404 mimo trzech podejsc)':'')
   +(zablokowanych?', zatrzymanych prob wyjscia '+zablokowanych:'')+').';
  box.appendChild(opis);
  var przycisk=document.createElement('button');
