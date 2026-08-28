@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v19 z 28.08.2026";
+var SBS_ZBIERACZ="v20 z 28.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -134,17 +134,45 @@ if(window.event&&window.event.shiftKey){try{localStorage.removeItem(KLUCZ);}catc
 function idMeczuZKontekstu(el){
  var WZOR = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  var NAZWA = /(^|[^a-z])(match|mecz|game|fixture)/i;
- function szukaj(o, glab, widziane){
-  if(!o || glab > 4 || typeof o !== 'object') return '';
-  if(widziane.indexOf(o) >= 0) return '';
-  widziane.push(o);
+
+ // OBIEKT MECZU POZNAJEMY PO TYM, CO W SOBIE MA, A NIE PO NAZWIE POLA.
+ //
+ // Pierwsza wersja szukala klucza ze slowem "match" i nie znajdowala nic — LNP nazywa pole po
+ // prostu "id", a obiekt trzyma pod nazwa, ktorej nie da sie odgadnac. Za to KSZTALT obiektu
+ // meczu jest niepodrabialny: obie druzyny plus wynik albo kolejka. Klub ani sezon takiego
+ // zestawu nie maja, wiec nie ma jak sie pomylic.
+ function wygladaNaMecz(o){
+  if(!o || typeof o !== 'object') return false;
+  var klucze = [];
+  try{ for(var k in o) klucze.push(k.toLowerCase()); }catch(e){ return false; }
+  var maGospodarza = klucze.some(function(k){ return /^(home|gospodarz)/.test(k); });
+  var maGoscia     = klucze.some(function(k){ return /^(away|guest|gosc)/.test(k); });
+  var maWynikLubKolejke = klucze.some(function(k){ return /(score|result|wynik|queue|round|kolejk)/.test(k); });
+  return maGospodarza && maGoscia && maWynikLubKolejke;
+ }
+ function idZObiektu(o){
   for(var k in o){
    var v;
    try{ v = o[k]; }catch(e){ continue; }
-   if(typeof v === 'string' && WZOR.test(v)){
-    if(NAZWA.test(k) || /^id$/i.test(k) && NAZWA.test(String(o.__typ||''))) return v;
-   }
-   if(v && typeof v === 'object' && !(v instanceof Node)){
+   if(typeof v === 'string' && WZOR.test(v) && /^id$/i.test(k)) return v;
+  }
+  for(var k2 in o){
+   var v2;
+   try{ v2 = o[k2]; }catch(e){ continue; }
+   if(typeof v2 === 'string' && WZOR.test(v2) && NAZWA.test(k2)) return v2;
+  }
+  return '';
+ }
+ function szukaj(o, glab, widziane){
+  if(!o || glab > 6 || typeof o !== 'object') return '';
+  if(widziane.indexOf(o) >= 0) return '';
+  widziane.push(o);
+  if(wygladaNaMecz(o)){ var wprost = idZObiektu(o); if(wprost) return wprost; }
+  for(var k in o){
+   var v;
+   try{ v = o[k]; }catch(e){ continue; }
+   if(typeof v === 'string' && WZOR.test(v) && NAZWA.test(k)) return v;
+   if(v && typeof v === 'object' && !(v instanceof Node) && !(v instanceof Window)){
     var r = szukaj(v, glab + 1, widziane);
     if(r) return r;
    }
@@ -152,7 +180,7 @@ function idMeczuZKontekstu(el){
   return '';
  }
  var w = el, glebokosc = 0;
- while(w && glebokosc < 4){
+ while(w && glebokosc < 5){
   try{
    var ctx = w.__ngContext__;
    if(ctx){ var id = szukaj(ctx, 0, []); if(id) return id; }
@@ -184,6 +212,10 @@ function zbierzAdresyZWierszy(gotowe){
   gotowe(adresy);
  }
  function dalej(){
+  // JESLI KLIKNIECIE JEDNAK PRZENIOSLO STRONE, dalsza praca nie ma sensu: lista meczow zniknela,
+  // a wiersze w pamieci sa juz odlaczone od dokumentu. Dotad zbieracz klikal w nie do konca i
+  // liczyl "35/35", choc od pierwszego przeniesienia nie zbieral juz nic. Konczymy z tym, co mamy.
+  if(location.pathname.indexOf('/mecz/') >= 0){ koncz(); return; }
   if(k >= wiersze.length || zaDlugo()){ koncz(); return; }
   box.textContent='SBS '+SBS_ZBIERACZ+': czytam adresy meczow '+(k+1)+'/'+wiersze.length;
   var el = wiersze[k];
