@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v11 z 28.08.2026";
+var SBS_ZBIERACZ="v12 z 28.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -135,6 +135,33 @@ function listaKolejek(){
  return null;
 }
 
+// LISTA MECZOW PRZEZYWA PRZERWANIE.
+//
+// LNP gubi sie przy byle czym: wejscie pod adres grupy konczy sie 404 mniej wiecej co drugi raz,
+// zmiana filtra "Runda" tak samo. Dotad kazde takie potkniecie kasowalo cala prace — zbieracz
+// nie mial skad wziac adresow meczow i zaczynal od zera.
+//
+// Dlatego raz zobaczona lista adresow zapisuje sie przy adresie strony. Gdy nastepnym razem
+// strona wroci pusta albo z bledem, bierzemy liste z pamieci i po prostu dalej wczytujemy mecze —
+// same strony meczow dzialaja po ponowieniu, wiec to wystarcza, zeby dojsc do konca.
+var KLUCZ_LISTY='sbs_lista_meczow';
+function kluczStrony(){ try{ var u=new URL(location.href); return u.pathname+u.search; }catch(e){ return location.href; } }
+function zapamietajListe(lista){
+ if(!lista||!lista.length) return;
+ try{
+  var m={}; try{ m=JSON.parse(localStorage.getItem(KLUCZ_LISTY)||'{}'); }catch(e){ m={}; }
+  m[kluczStrony()]=lista;
+  localStorage.setItem(KLUCZ_LISTY,JSON.stringify(m));
+ }catch(e){}
+}
+function listaZPamieci(){
+ try{
+  var m=JSON.parse(localStorage.getItem(KLUCZ_LISTY)||'{}');
+  var l=m[kluczStrony()];
+  return (l&&l.length)?l:[];
+ }catch(e){ return []; }
+}
+
 var pominietych=0;
 var zebrane=[];try{zebrane=JSON.parse(localStorage.getItem(KLUCZ)||'[]');}catch(e){zebrane=[];}
 var bylo=zebrane.length, linki=[], i=0, kolejek=1, czekam=0, doliczen=0, rozwiniete=false, probowanoKlikac=false, wierszyNaEkranie=0, zakladkaNr=0;
@@ -242,6 +269,15 @@ function start(){
  // nic z niej czytac — mowimy wprost, co sie stalo, i podajemy jedyne skuteczne lekarstwo.
  if(/Ups! Piłka za boiskiem/.test(document.body.innerText||'') || /\/rozgrywki\/404/.test(location.pathname)){
   box.textContent='';
+  // Nawet na stronie bledu mozemy pracowac dalej, jesli adresy meczow sa juz zapamietane.
+  var zapas=listaZPamieci();
+  if(zapas.length){
+   linki=zapas; i=0;
+   box.textContent='SBS '+SBS_ZBIERACZ+': LNP odeslalo 404, ale mam zapamietane '+zapas.length
+    +' adresow meczow tej grupy - wczytuje je mimo to.';
+   nastepny();
+   return;
+  }
   var b=document.createElement('div');
   b.style.cssText='margin-bottom:10px;line-height:1.45';
   b.textContent='SBS '+SBS_ZBIERACZ+': LNP odeslalo strone 404. To ich chwilowa awaria - ten sam adres '
@@ -277,7 +313,17 @@ function start(){
  // go za cala liste i konczyl prace z jednym protokolem zamiast dwudziestu. Gdy wierszy
  // z wynikiem jest wyraznie wiecej niz odnosnikow, idziemy droga klikania.
  var ileWierszy=wierszeRozegrane().length;
+ // Lista z pamieci ratuje sytuacje, gdy strona wrocila pusta — a to na LNP norma, nie wyjatek.
+ if(!linki.length){
+  var zpam=listaZPamieci();
+  if(zpam.length){
+   linki=zpam;i=0;
+   box.textContent='SBS '+SBS_ZBIERACZ+': strona nie oddala listy meczow, biore zapamietane '+linki.length+' adresow';
+   nastepny();return;
+  }
+ }
  if(linki.length && !(ileWierszy>=2 && linki.length*2<ileWierszy)){
+  zapamietajListe(linki);
   box.textContent='SBS '+SBS_ZBIERACZ+': zbieram protokoly 0/'+linki.length;nastepny();return;
  }
  if(linki.length && !probowanoKlikac && ileWierszy>=2){
