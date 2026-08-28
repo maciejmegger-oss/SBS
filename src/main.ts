@@ -10634,7 +10634,11 @@ function rozbijNazweKlubu(nazwa){
   // MYŚLNIK ROZDZIELA CZŁONY NAZWY, NIE SKLEJA ICH. „SPÓJNIA LANDEK-JASIENICA" bez tego dawała
   // rdzeń „landekjasienica", który nie ma nic wspólnego z naszym „Spójnia Landek" — klub zostawał
   // bez statystyk, choć chodzi o ten sam zespół.
-  const slowa = String(nazwa||'').replace(/[.,()]/g,' ').replace(/[-–—]/g,' ').split(/\s+/).filter(Boolean);
+  // „n/Wisłą" to skrót od „nad Wisłą" — bez tego „Wisła Dobrzyń n/Wisłą" z ŁNP nie miała nic
+  // wspólnego z naszą „Wisła Dobrzyń nad Wisłą" i klub zostawał nierozpoznany.
+  const slowa = String(nazwa||'').replace(/[.,()]/g,' ').replace(/[-–—]/g,' ')
+    .replace(/\bn\s*\/\s*/gi, 'nad ')
+    .split(/\s+/).filter(Boolean);
   let numer = '';
   const rdzen = [];
   for(const w of slowa){
@@ -10653,7 +10657,7 @@ function rozbijNazweKlubu(nazwa){
 const odciskKlubu = (nazwa)=>{ const b = rozbijNazweKlubu(nazwa); return b.numer + '|' + b.rdzen.slice().sort().join('-'); };
 const wielkoscKartoteki = (klub)=> DB.players.filter(p=>p.clubId === klub.id).length;
 
-function dopasujKlubDoNazwy(nazwa, podpowiedzGrupa){
+function dopasujKlubDoNazwy(nazwa, podpowiedzGrupa, poziom){
   const n = importNorm(nazwa);
   // PRZYPISANIE WSKAZANE RĘKĄ MA PIERWSZEŃSTWO PRZED ZGADYWANIEM. Bez tego nazwy różniące się
   // wszystkim poza miastem („Pogoń Barlinek" ↔ „CRS Barlinek") nie połączą się nigdy.
@@ -10664,7 +10668,7 @@ function dopasujKlubDoNazwy(nazwa, podpowiedzGrupa){
   }
   const a = rozbijNazweKlubu(nazwa);
   const dokladne = DB.clubs.filter(c=>importNorm(c.name)===n);
-  const pasujace = dokladne.length ? dokladne : DB.clubs.filter(c=>{
+  let pasujace = dokladne.length ? dokladne : DB.clubs.filter(c=>{
     const b = rozbijNazweKlubu(c.name);
     if(a.numer !== b.numer) return false;
     if(!a.rdzen.length || !b.rdzen.length) return false;
@@ -10674,6 +10678,14 @@ function dopasujKlubDoNazwy(nazwa, podpowiedzGrupa){
     return wspolne.length === krotszy && wspolne.some(x=>x.length>=4);
   });
   if(!pasujace.length) return null;
+
+  // POZIOM Z PROTOKOŁU ODCINA KLUBY Z INNYCH ROZGRYWEK. Ta sama nazwa bywa w IV lidze i wśród
+  // roczników młodzieżowych — bez tego dorobek seniorów trafiał do drużyny U13.
+  if(poziom){
+    const wPoziomie = pasujace.filter(c=>String(c.league||'').toLowerCase().startsWith(String(poziom).toLowerCase()));
+    if(wPoziomie.length) pasujace = wPoziomie;
+  }
+
   if(pasujace.length === 1) return pasujace[0];
 
   // KIEDY NAZWA PASUJE DO KILKU KLUBÓW, PIERWSZEŃSTWO MA GRUPA, W KTÓREJ PRACUJESZ. „Pogoń"
@@ -10771,6 +10783,25 @@ function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
   const klucz = kluczProtokolu(druzyny, rawText, adresMeczu);
   const strony = [];
   // Gdy jedna z drużyn dopasuje się bez wątpliwości, jej grupa rozstrzyga wątpliwości przy drugiej.
+  // POZIOM ROZGRYWEK CZYTAMY Z SAMEGO PROTOKOŁU — to najpewniejsze źródło, jakie mamy.
+  //
+  // Kluby powtarzają się między poziomami: „START PRUSZCZ" jest i w IV lidze, i w rozgrywkach
+  // Rocznik 2013. Gdy okno otwarto bez wskazanej grupy, wybór padał na kartotekę z większą
+  // liczbą zawodników — i dorobek z IV ligi wylądował u młodzieży, a klub seniorski został
+  // z samymi kreskami. Protokół podaje rozgrywki wprost („2 kolejka, Czwarta liga”), więc
+  // niech to on rozstrzyga.
+  const POZIOMY = [
+    [/czwarta\s+liga|\bIV\s+liga/i, 'IV liga'],
+    [/trzecia\s+liga|\bIII\s+liga/i, 'III liga'],
+    [/druga\s+liga|\bII\s+liga/i, 'II liga'],
+    [/pierwsza\s+liga|\bI\s+liga/i, 'I liga'],
+    [/klasa\s+okręgowa/i, 'Klasa okręgowa'],
+  ];
+  let poziomZProtokolu = '';
+  for(const [wzor, nazwaPoziomu] of POZIOMY){
+    if(wzor.test(rawText)){ poziomZProtokolu = nazwaPoziomu as string; break; }
+  }
+
   // Grupa otwartego okna jest pewniejsza niż zgadywanie z nazw — to w niej użytkownik pracuje.
   let podpowiedzGrupa = grupaOkna || '';
   if(!podpowiedzGrupa){
@@ -10784,7 +10815,7 @@ function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
     const dane = parseLnpProtokolMinuty(rawText, nazwa);
     if(!dane){ strony.push({nazwa, blad:'nie udało się odczytać składu'}); continue; }
     // Klub dopasowujemy po nazwie, z pominięciem polskich znaków i skrótów typu „KS".
-    let klub = dopasujKlubDoNazwy(nazwa, podpowiedzGrupa);
+    let klub = dopasujKlubDoNazwy(nazwa, podpowiedzGrupa, poziomZProtokolu);
     if(!klub){
       // Powiedz, do czego nazwa była najbliżej — inaczej „nie ma takiego klubu" nie mówi,
       // czy klubu brakuje w bazie, czy tylko nazwa jest zapisana inaczej.

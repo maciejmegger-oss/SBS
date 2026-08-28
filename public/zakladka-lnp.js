@@ -109,6 +109,63 @@ if(!/laczynaspilka\.pl/.test(location.host)){box.remove();alert('SBS '+SBS_ZBIER
 var KLUCZ='sbs_protokoly_hurt';
 if(window.event&&window.event.shiftKey){try{localStorage.removeItem(KLUCZ);}catch(e){}alert('SBS '+SBS_ZBIERACZ+': wyczyscilem zebrane protokoly.');return;}
 
+// ADRESY MECZOW Z LISTY POD TABELA — BEZ OPUSZCZANIA STRONY.
+//
+// Na stronie grupy wiersze rozegranych meczow nie sa odnosnikami: Angular otwiera mecz
+// kliknieciem, przez router. Dlatego zadne szukanie <a href="/mecz/..."> ich nie znajdzie,
+// a wchodzenie w kazdy mecz i cofanie sie trwalo wieki i lapalo bledy 404 LNP.
+//
+// Router konczy nawigacje wywolaniem history.pushState. Podsluchujemy wiec pushState, klikamy
+// wiersz, zapisujemy adres, ktory router chcial otworzyc, i natychmiast wracamy. Strona nie
+// przeladowuje sie ani razu, wiec nie ma jak sie zgubic.
+function zbierzAdresyZWierszy(gotowe){
+ var wiersze = wierszeRozegrane();
+ if(!wiersze.length){ gotowe([]); return; }
+ var adresy=[], k=0;
+ var pierwotnyPush = history.pushState, pierwotnyReplace = history.replaceState;
+ var zlapany = '';
+ function lap(u){
+  var s = String(u||'');
+  if(/\/mecz\//.test(s)){
+   try{ zlapany = new URL(s, location.origin).href; }catch(e){ zlapany = ''; }
+  }
+ }
+ history.pushState = function(a,b,u){ lap(u); return pierwotnyPush.apply(history, arguments); };
+ history.replaceState = function(a,b,u){ lap(u); return pierwotnyReplace.apply(history, arguments); };
+ var bazowy = location.href;
+ function koncz(){
+  history.pushState = pierwotnyPush;
+  history.replaceState = pierwotnyReplace;
+  try{ if(location.href !== bazowy) pierwotnyReplace.call(history, {}, '', bazowy); }catch(e){}
+  gotowe(adresy);
+ }
+ function dalej(){
+  if(k >= wiersze.length || zaDlugo()){ koncz(); return; }
+  box.textContent='SBS '+SBS_ZBIERACZ+': czytam adresy meczow '+(k+1)+'/'+wiersze.length;
+  var el = wiersze[k];
+  zlapany = '';
+  // Klikamy w sam wiersz oraz w jego wnetrze — rozne uklady wieszaja obsluge na roznych poziomach.
+  var cele = [el];
+  try{ var w = el.querySelector('[class*="match"],[class*="result"],td,div'); if(w) cele.push(w); }catch(e){}
+  var ci = 0;
+  function klik(){
+   if(ci >= cele.length || zlapany){ zapisz(); return; }
+   try{ cele[ci].click(); }catch(e){}
+   ci++;
+   setTimeout(function(){ if(zlapany) zapisz(); else klik(); }, 220);
+  }
+  function zapisz(){
+   if(zlapany && adresy.indexOf(zlapany) < 0) adresy.push(zlapany);
+   // Router mogl zmienic adres — wracamy do listy bez przeladowania strony.
+   try{ if(location.href !== bazowy) pierwotnyReplace.call(history, {}, '', bazowy); }catch(e){}
+   k++;
+   setTimeout(dalej, 60);
+  }
+  klik();
+ }
+ dalej();
+}
+
 function zbierzLinki(){
  var wynik=[], widziane={};
  pominietych=0;
@@ -352,14 +409,19 @@ function start(){
   zapamietajListe(linki);
   box.textContent='SBS '+SBS_ZBIERACZ+': zbieram protokoly 0/'+linki.length;nastepny();return;
  }
- if(linki.length && !probowanoKlikac && ileWierszy>=2){
+ // LISTA POD TABELA. Gdy na ekranie sa mecze z wynikiem, a odnosnikow do nich brak albo jest
+ // ich mniej — czytamy adresy prosto z wierszy, przechwytujac router. To jest zwykla droga na
+ // stronie grupy, nie awaryjna: tam wiersze nigdy nie sa odnosnikami.
+ if(!probowanoKlikac && ileWierszy>=2 && linki.length*2 < ileWierszy){
   probowanoKlikac=true;
-  box.textContent='SBS '+SBS_ZBIERACZ+': na ekranie '+ileWierszy+' meczow, a odnosnikow '+linki.length+' - wchodze w mecze po kolei';
-  zbierzAdresyPrzezKlikanie(function(adresy){
+  box.textContent='SBS '+SBS_ZBIERACZ+': na ekranie '+ileWierszy+' rozegranych meczow - czytam ich adresy';
+  zbierzAdresyZWierszy(function(adresy){
    var razem=linki.slice();
    for(var q=0;q<adresy.length;q++) if(razem.indexOf(adresy[q])<0) razem.push(adresy[q]);
+   if(!razem.length){ czekam=0; probowanoKlikac=false; setTimeout(start,300); return; }
    linki=razem;i=0;
-   box.textContent='SBS '+SBS_ZBIERACZ+': zbieram protokoly 0/'+linki.length;
+   zapamietajListe(linki);
+   box.textContent='SBS '+SBS_ZBIERACZ+': mam '+linki.length+' meczow - zbieram protokoly';
    nastepny();
   });
   return;
