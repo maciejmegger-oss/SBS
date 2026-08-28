@@ -3,6 +3,47 @@
 var SBS_ZBIERACZ="v10 z 28.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
+
+// RYGIEL NA CZAS ZBIERANIA.
+//
+// Zbieracz musi klikac w zakladki i "Pokaz wiecej", zeby strona pokazala wszystkie mecze. Kazde
+// takie klikniecie moze trafic w odnosnik prowadzacy gdzie indziej — i wtedy przegladarka
+// opuszcza strone z tabela, a razem z nia ginie caly zbieracz. Wygladalo to jak "otwiera strone
+// glowna i nic nie kopiuje".
+//
+// Sprawdzanie kazdego kandydata z osobna okazalo sie zawodne: zakladki na LNP bywaja <span>
+// wewnatrz <a>, wiec element wygladal niewinnie, a klikniecie i tak szlo pod adres rodzica.
+// Dlatego zamiast wylapywac wyjatki, zamykamy droge: dopoki zbieramy, zadne klikniecie nie
+// wyprowadzi z tej strony. Odnosniki prowadzace gdzie indziej sa unieszkodliwiane w fazie
+// przechwytywania, zanim przegladarka zdazy zareagowac.
+// Wyjatek: droga awaryjna, w ktorej zbieracz wchodzi w kolejne mecze i wraca przez history.back(),
+// nawiguje CELOWO. Na jej czas rygiel jest uchylany — patrz zbierzAdresyPrzezKlikanie().
+var ZBIERAM=true, POZWOL_NAWIGACJE=false, zablokowanych=0;
+
+// PORoWNUJEMY CALY ADRES, NIE SAMA SCIEZKE.
+//
+// LNP to aplikacja Angulara: strona grupy ma te sama sciezke "/rozgrywki" co strona ogolna,
+// a sezon, liga i grupa siedza w PARAMETRACH. Porownywanie samych sciezek uznawalo wiec odnosnik
+// "Wyniki" ze stopki (href="/rozgrywki") za "ta sama strona" i przepuszczalo klikniecie —
+// Angular resetowal widok do Ekstraklasy i zbieracz tracil kolejke IV ligi.
+//
+// Kotwica bez adresu albo z sama kotwica (#) nie nawiguje nigdzie i jest bezpieczna.
+function bezKotwicy(u){ try{ var x=new URL(u, location.href); return x.origin+x.pathname+x.search; }catch(e){ return ''; } }
+document.addEventListener('click', function(e){
+ if(!ZBIERAM || POZWOL_NAWIGACJE) return;
+ var el=e.target;
+ var a=null;
+ try{ a = el && el.closest ? el.closest('a') : null; }catch(err){ a=null; }
+ if(!a) return;
+ var h=a.getAttribute&&a.getAttribute('href');
+ if(!h || h.charAt(0)==='#') return;
+ var cel=(a.getAttribute&&a.getAttribute('target'))||'';
+ var gdzieIndziej = bezKotwicy(a.href) !== bezKotwicy(location.href);
+ if(gdzieIndziej || (cel && cel!=='_self')){
+  e.preventDefault(); e.stopPropagation(); zablokowanych++;
+ }
+}, true);
+window.addEventListener('beforeunload', function(){ ZBIERAM=false; });
 var box=document.createElement('div');
 box.style.cssText='position:fixed;right:16px;bottom:16px;z-index:2147483647;background:#16302A;color:#F6F3EA;padding:12px 16px;border-radius:8px;font:14px sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.4)';
 box.textContent='SBS '+SBS_ZBIERACZ+': zaczynam...';
@@ -98,6 +139,36 @@ var pominietych=0;
 var zebrane=[];try{zebrane=JSON.parse(localStorage.getItem(KLUCZ)||'[]');}catch(e){zebrane=[];}
 var bylo=zebrane.length, linki=[], i=0, kolejek=1, czekam=0, doliczen=0, rozwiniete=false, probowanoKlikac=false, wierszyNaEkranie=0, zakladkaNr=0;
 
+// Czy w ten element wolno kliknac?
+//
+// Zbieracz klika w elementy rozpoznane po TRESCI — "Mecze", "Pokaz wiecej". Ta sama tresc trafia
+// sie w nawigacji portalu: w stopce LNP jest "Wyniki" prowadzace na /rozgrywki, a przy liscie
+// zdarzen bywa "Pokaz wiecej" jako zwykly odnosnik. Klikniecie takiego elementu opuszcza strone
+// albo otwiera nowa karte i cala praca przepada.
+//
+// Kryterium: element sterujacy trescia albo nie ma adresu, albo prowadzi na TE SAMA sciezke
+// (zmienia sie co najwyzej parametr lub kotwica). Odnosnik otwierajacy nowa karte odsiewamy
+// zawsze — zakladka z meczami nigdy nie otwiera sie w nowym oknie.
+// Klikniecie w SPAN wewnatrz <a> otwiera adres tego <a>. Dlatego pytamy nie o sam element,
+// tylko o najblizszy odnosnik NAD nim — inaczej "Wyniki" ze stopki (a > span) przechodzilo
+// przez ochrone i przegladarka opuszczala strone z tabela, zamiast zbierac protokoly.
+function odnosnikNad(el){
+ if(!el) return null;
+ if(el.tagName==='A') return el;
+ try{ return el.closest ? el.closest('a') : null; }catch(e){ return null; }
+}
+function wolnoKliknac(el){
+ if(!el) return false;
+ var a=odnosnikNad(el);
+ if(!a) return true;
+ var t=(a.getAttribute&&a.getAttribute('target'))||'';
+ if(t && t!=='_self') return false;
+ var h=a.getAttribute&&a.getAttribute('href');
+ if(!h || h.charAt(0)==='#') return true;
+ // Caly adres, nie sama sciezka — grupa siedzi w parametrach (patrz komentarz przy ryglu).
+ return bezKotwicy(a.href) === bezKotwicy(location.href);
+}
+
 function kandydaciMeczow(){
  var nazwy=/^(mecze|terminarz|wyniki|terminarz i wyniki|mecze i wyniki)$/i;
  var kand=[].slice.call(document.querySelectorAll('[role="tab"],button,a,li,span,div'));
@@ -109,6 +180,24 @@ function kandydaciMeczow(){
   if(!nazwy.test(t)) continue;
   if(el.tagName==='TH'||el.tagName==='TD') continue;
   if(el.closest&&el.closest('table')) continue;
+  // NIE KLIKAMY W NIC, CO PROWADZI NA INNA STRONE.
+  //
+  // W stopce LNP jest odnosnik "Wyniki" kierujacy na laczynaspilka.pl/rozgrywki. Pasowal do
+  // tej samej nazwy co zakladka z meczami, wiec zakladka go klikala i przegladarka opuszczala
+  // strone z tabela — wygladalo to jak "zamyka strone i otwiera glowna, nic nie kopiuje".
+  // Prawdziwa zakladka z meczami albo nie ma adresu, albo prowadzi na TE SAMA sciezke
+  // (zmienia sie co najwyzej parametr lub kotwica). Kazdy inny adres odsiewamy.
+  // Sprawdzamy odnosnik NAD elementem, nie sam element: zakladki na LNP to czesto <span>
+  // albo <div> w srodku <a>, a klikniecie takiego dziecka i tak prowadzi pod adres rodzica.
+  var kotwica=odnosnikNad(el);
+  if(kotwica){
+   var cel_href=kotwica.getAttribute('href')||'';
+   if(cel_href && cel_href.charAt(0)!=='#'){
+    if(bezKotwicy(kotwica.href) !== bezKotwicy(location.href)) continue;
+   }
+  }
+  // Stopka i naglowek serwisu nie zawieraja zakladek tresci — tylko nawigacje po calym portalu.
+  if(el.closest&&el.closest('footer,header')) continue;
   var waga=(el.getAttribute&&el.getAttribute('role')==='tab')?0:((el.tagName==='BUTTON'||el.tagName==='A')?1:2);
   if(el.closest&&el.closest('[class*="tab"],[class*="Tab"],[class*="nav"],[class*="Nav"]')) waga=waga-1;
   out.push({el:el,waga:waga});
@@ -124,7 +213,7 @@ function otworzZakladkeMecze(gotowe){
  var cel=k[zakladkaNr];
  zakladkaNr++;
  box.textContent='SBS '+SBS_ZBIERACZ+': otwieram zakladke z meczami ('+zakladkaNr+'/'+k.length+')...';
- try{cel.click();}catch(e){}
+ if(wolnoKliknac(cel)){try{cel.click();}catch(e){}}
  setTimeout(gotowe,1600);
 }
 function dociagnijStrone(gotowe){
@@ -135,7 +224,7 @@ function dociagnijStrone(gotowe){
   var wiecej=[].slice.call(document.querySelectorAll('button,a')).filter(function(el){
    return /zaladuj wiecej|załaduj więcej|pokaz wiecej|pokaż więcej/i.test((el.textContent||'').trim());
   });
-  wiecej.forEach(function(el){try{el.click();}catch(e){}});
+  wiecej.filter(wolnoKliknac).forEach(function(el){try{el.click();}catch(e){}});
   var n=naglowekRozegranych();
   if(n){ try{ n.scrollIntoView({block:'start'}); }catch(e){} box.textContent='SBS '+SBS_ZBIERACZ+': jestem przy \u201eRozegranych meczach\u201d ('+krok+')...'; }
   else box.textContent='SBS '+SBS_ZBIERACZ+': szukam rozegranych meczow ('+krok+')...';
@@ -160,7 +249,28 @@ function start(){
   return;
  }
  linki=zbierzLinki();
- if(linki.length){box.textContent='SBS '+SBS_ZBIERACZ+': zbieram protokoly 0/'+linki.length;nastepny();return;}
+ // JEDEN ODNOSNIK PRZY DWUDZIESTU MECZACH NA EKRANIE TO NIE KOMPLET.
+ //
+ // Strona druzyny pokazuje wszystkie rozegrane spotkania, ale wiersze nie sa odnosnikami —
+ // Angular otwiera mecz kliknieciem. Zbieracz znajdowal wtedy jeden przypadkowy adres, uznawal
+ // go za cala liste i konczyl prace z jednym protokolem zamiast dwudziestu. Gdy wierszy
+ // z wynikiem jest wyraznie wiecej niz odnosnikow, idziemy droga klikania.
+ var ileWierszy=wierszeRozegrane().length;
+ if(linki.length && !(ileWierszy>=2 && linki.length*2<ileWierszy)){
+  box.textContent='SBS '+SBS_ZBIERACZ+': zbieram protokoly 0/'+linki.length;nastepny();return;
+ }
+ if(linki.length && !probowanoKlikac && ileWierszy>=2){
+  probowanoKlikac=true;
+  box.textContent='SBS '+SBS_ZBIERACZ+': na ekranie '+ileWierszy+' meczow, a odnosnikow '+linki.length+' - wchodze w mecze po kolei';
+  zbierzAdresyPrzezKlikanie(function(adresy){
+   var razem=linki.slice();
+   for(var q=0;q<adresy.length;q++) if(razem.indexOf(adresy[q])<0) razem.push(adresy[q]);
+   linki=razem;i=0;
+   box.textContent='SBS '+SBS_ZBIERACZ+': zbieram protokoly 0/'+linki.length;
+   nastepny();
+  });
+  return;
+ }
  czekam++;
  if(czekam<6){box.textContent='SBS '+SBS_ZBIERACZ+': czekam, az strona sie zaladuje...';setTimeout(start,500);return;}
  if(!probowanoKlikac&&wierszeRozegrane().length){
@@ -187,10 +297,47 @@ function start(){
  var zKodu=0;try{var hh=document.documentElement.innerHTML||'';var rr=/\/rozgrywki\/mecz\/[0-9a-fA-F-]{30,40}/g;var mm;while((mm=rr.exec(hh))!==null)zKodu++;}catch(e){}
  var maRozegrane=/rozegrane mecze/i.test(document.body.innerText||'');
  var slad=' [na stronie: odnosnikow '+wszystkieA+', w tym wskazujacych na mecz '+zMecz+'; numerow meczu w kodzie '+zKodu+'; wierszy z wynikiem '+wierszyNaEkranie+'; naglowek Rozegrane mecze: '+(maRozegrane?'jest':'brak')+'; tekstu '+dlugoscTekstu+' znakow; wysokosc '+document.body.scrollHeight+']';
- var rada = maRozegrane
+ // TABELA TO NIE LISTA MECZOW. Najczestsza pomylka: zakladka uruchamiana na tabeli ligowej,
+ // gdzie sa punkty i bilans, a nie ma ani jednego protokolu. Rozpoznajemy to po naglowkach
+ // kolumn i mowimy wprost, dokad przejsc \u2014 zamiast ogolnego "nie mam czego pobrac".
+ var tekstStrony=(document.body.innerText||'');
+ var toTabela = /\bPunkty\b/i.test(tekstStrony) && /\bBilans\b/i.test(tekstStrony)
+   && /\bWygrane\b/i.test(tekstStrony) && zMecz===0 && zKodu===0;
+ // STRONA BLEDU TO NIE PUSTA KOLEJKA. Zapamietany adres grupy potrafi sie zdezaktualizowac —
+ // LNP trzyma w nim identyfikatory sezonu i grupy, a te zmieniaja sie miedzy sezonami. Wtedy
+ // otwiera sie 404 i rada "sprawdz pole Sezon" jest bez sensu, bo na stronie bledu nie ma
+ // zadnych pol. Mowimy wprost, ze trzeba podac nowy adres.
+ var to404 = /\b404\b/.test(tekstStrony) && /ups|nie znaleziono|not found/i.test(tekstStrony);
+ var rada = to404
+  ? 'To jest strona bledu 404 - zapamietany adres tej grupy jest juz nieaktualny (LNP zmienia identyfikatory miedzy sezonami).\n\nW aplikacji: Kluby -> wybierz te grupe -> przycisk "Link LNP dla grupy" -> wklej tam ADRES Z PASKA przegladarki, gdy bedziesz na dzialajacej liscie meczow tej grupy.'
+  : toTabela
+  ? 'Jestes na TABELI LIGOWEJ - sa tu punkty i bilans, ale nie ma protokolow. Przejdz do listy meczow tej grupy: u gory wybierz "Kolejka", zeby pokazaly sie spotkania z wynikami, i dopiero tam kliknij zakladke.'
+  : maRozegrane
   ? 'Sekcja \u201eRozegrane mecze\u201d jest, ale nie widze w niej ani jednego wiersza z wynikiem. Poczekaj, az wyniki sie wyswietla, i kliknij zakladke jeszcze raz.'
   : 'Na tej stronie sa same \u201ePlanowane mecze\u201d - w tym sezonie nie ma tu jeszcze zadnego rozegranego spotkania. Sprawdz u gory pole \u201eSezon\u201d i \u201eRozgrywki\u201d: wybierz sezon, w ktorym mecze juz sie odbyly.';
  alert('SBS '+SBS_ZBIERACZ+': nie mam z tej strony czego pobrac.\n\n'+rada+slad);
+ // Bufor moze byc pelen protokolow z innej grupy — daj go wyczyscic bez szukania skrotu.
+ if(zebrane.length && box.parentNode){
+  box.textContent='';
+  var inf=document.createElement('div');
+  inf.style.cssText='margin-bottom:8px;line-height:1.45';
+  inf.textContent='W buforze zakladki leza jeszcze protokoly z poprzednich zebran: '+zebrane.length+'.';
+  box.appendChild(inf);
+  var czysc=document.createElement('button');
+  czysc.textContent='Wyczysc zebrane ('+zebrane.length+')';
+  czysc.style.cssText='display:block;width:100%;padding:8px;margin-bottom:6px;border:0;border-radius:6px;background:#C9A227;color:#16302A;font:600 13px sans-serif;cursor:pointer';
+  czysc.onclick=function(){
+   try{localStorage.removeItem(KLUCZ);}catch(e){}
+   zebrane=[];
+   box.textContent='SBS '+SBS_ZBIERACZ+': wyczyscilem bufor. Wejdz na liste meczow wlasciwej grupy i kliknij zakladke.';
+  };
+  box.appendChild(czysc);
+  var x=document.createElement('button');
+  x.textContent='Zamknij';
+  x.style.cssText='display:block;width:100%;padding:6px;border:1px solid rgba(246,243,234,.35);border-radius:6px;background:transparent;color:#F6F3EA;font:13px sans-serif;cursor:pointer';
+  x.onclick=function(){ box.remove(); };
+  box.appendChild(x);
+ }
 }
 
 function nastepny(){
@@ -209,6 +356,8 @@ function nastepny(){
   if(ok||prob>16){
    clearInterval(t);
    if(ok){
+    // Adresy profili zbieramy przy okazji \u2014 dokument meczu i tak jest juz wczytany.
+    zbierzProfile(f.contentDocument);
     var j=txt.search(/^\s*Sk\u0142ady\s*$/m);
     var wpis='### PROTOKOL: '+url+'\n'+txt.slice(j<0?0:Math.max(0,j-400))+zdarzenia(f.contentDocument);
     var byl=false;
@@ -239,10 +388,20 @@ function naglowekRozegranych(){
  }
  return null;
 }
-function wierszeRozegrane(){
- var szuk='tr,li,[role="row"],[class*="match"],[class*="mecz"],[class*="Match"]';
+// Wiersze rozegranych meczow — szukane po TRESCI, nie po znacznikach.
+//
+// Pierwotnie pytalismy o "tr, li, [class*=match]". Na liscie kolejek to wystarczalo, ale strona
+// DRUZYNY (/rozgrywki/druzyna/...?tab=tab-mecz) buduje wiersze z wlasnych komponentow Angulara
+// bez zadnej z tych klas — zbieracz mowil "wierszy z wynikiem 0" i konczyl prace, choc mecze
+// byly na ekranie. Do tego filtr "tylko ponizej naglowka Rozegrane mecze" potrafil odciac
+// wszystko, gdy naglowek stoi gdzie indziej niz lista.
+//
+// Dlatego szukamy szeroko i schodzimy tylko wtedy, gdy weziej nic nie znalezlismy. Kryterium
+// jest tresc: wynik meczu plus data albo slowo "Rozegrany". Z zagniezdzonych trafien zostawiamy
+// najglebsze, zeby nie wziac calej listy jako jednego wiersza.
+function wierszeZSelektora(szuk, stosujGranice){
  var kand=[].slice.call(document.querySelectorAll(szuk));
- var granica=naglowekRozegranych();
+ var granica=stosujGranice?naglowekRozegranych():null;
  var out=[];
  for(var i=0;i<kand.length;i++){
   var el=kand[i], t=(el.textContent||'').replace(/\s+/g,' ').trim();
@@ -259,6 +418,15 @@ function wierszeRozegrane(){
   for(var b=0;b<out.length;b++){ if(a!==b&&out[a].contains(out[b])){zawiera=true;break;} }
   if(!zawiera) fin.push(out[a]);
  }
+ return fin;
+}
+function wierszeRozegrane(){
+ var waski='tr,li,[role="row"],[class*="match"],[class*="mecz"],[class*="Match"]';
+ var szeroki=waski+',div,section,article,a';
+ var fin=wierszeZSelektora(waski,true);
+ if(!fin.length) fin=wierszeZSelektora(waski,false);      // naglowek stal w zlym miejscu
+ if(!fin.length) fin=wierszeZSelektora(szeroki,true);     // wlasne komponenty Angulara
+ if(!fin.length) fin=wierszeZSelektora(szeroki,false);    // i jedno, i drugie naraz
  wierszyNaEkranie=fin.length;
  return fin.slice(0,80);
 }
@@ -284,8 +452,11 @@ function zbierzAdresyPrzezKlikanie(gotowe){
  var wiersze=wierszeRozegrane();
  if(!wiersze.length){ gotowe([]); return; }
  var adresy=[], k=0, zlapane=[], staryOpen=window.open;
+ // Tu wychodzenie ze strony jest metoda, nie awaria — uchylamy rygiel na czas tej drogi.
+ POZWOL_NAWIGACJE=true;
  try{ window.open=function(u){ if(u) zlapane.push(String(u)); return null; }; }catch(e){}
  function skoncz(){
+  POZWOL_NAWIGACJE=false;
   try{ window.open=staryOpen; }catch(e){}
   var meczowe=adresy.filter(function(u){ return /mecz|match|spotkan/i.test(u); });
   gotowe(meczowe.length?meczowe:adresy);
@@ -316,6 +487,11 @@ function zbierzAdresyPrzezKlikanie(gotowe){
    if(ci>=cele.length){ k++; setTimeout(dalej,120); return; }
    var cel=cele[ci++];
    zlapane.length=0;
+   // TU NAWIGACJA JEST ZAMIERZONA i nie wolno jej blokowac. Ta droga jest awaryjna: uruchamia sie
+   // dopiero, gdy na stronie nie da sie znalezc odnosnikow do meczow, a sa widoczne wiersze
+   // z wynikiem. Zbieracz wchodzi wtedy w mecz, zapisuje adres i wraca przez history.back().
+   // Strażnik wolnoKliknac() chroni miejsca, gdzie klikamy w element STERUJACY TRESCIA — tam
+   // wyjscie ze strony jest awaria. Tutaj jest metoda.
    try{ cel.click(); }catch(e){}
    var n=0;
    var t=setInterval(function(){
@@ -364,9 +540,165 @@ function poKolejce(){
  koniec();
 }
 
+// ---------------------------------------------------------------------------
+// ROCZNIKI Z PROFILI ZAWODNIKOW
+//
+// Protokol podaje nazwisko, numer i znacznik mlodziezowca — ale NIE date urodzenia. Bez rocznika
+// kartoteka IV ligi zostaje bez wieku, a to wlasnie tam gra najwiecej mlodziezy.
+//
+// Data urodzenia jest w PROFILU zawodnika, pod stalym adresem, do ktorego protokol linkuje.
+// Zbieramy te adresy przy okazji czytania protokolow (nic to nie kosztuje), a potem odwiedzamy
+// tylko te profile, ktorych rocznika jeszcze nie znamy.
+//
+// Wynik zapamietujemy w przegladarce NA STALE. Przy drugim uruchomieniu tej samej grupy nie ma
+// juz czego dobierac — inaczej kazde zbieranie kolejki oznaczalo trzysta dodatkowych wczytan.
+var KLUCZ_ROCZNIKI='sbs_roczniki';
+var profileZawodnikow={};
+var roczniki={};
+try{roczniki=JSON.parse(localStorage.getItem(KLUCZ_ROCZNIKI)||'{}');}catch(e){roczniki={};}
+
+function kluczOsoby(s){
+ return String(s||'').toLowerCase()
+  .replace(/[łøđ]/g,function(c){return {'ł':'l','ø':'o','đ':'d'}[c];})
+  .normalize('NFD').replace(/[̀-ͯ]/g,'')
+  .replace(/[^a-z0-9 ]/g,'').replace(/\s+/g,' ').trim();
+}
+
+function zbierzProfile(doc){
+ try{
+  var a=doc.querySelectorAll('a[href*="/zawodnik/"]');
+  for(var i=0;i<a.length;i++){
+   var nazwa=(a[i].textContent||'').replace(/\s+/g,' ').replace(/\(.\)/g,'').trim();
+   // Podpis odnosnika bywa sama strzalka albo "Zobacz profil" — nazwisko jest wtedy obok.
+   if(!/[a-zA-ZÀ-ſ]{3,}/.test(nazwa)||/zobacz profil/i.test(nazwa)){
+    var w=a[i].closest('tr,li,div');
+    nazwa=w?(w.textContent||'').replace(/\s+/g,' ').replace(/\d+/g,'').replace(/\(.\)/g,'').replace(/zobacz profil.*/i,'').trim():'';
+   }
+   var k=kluczOsoby(nazwa);
+   if(k&&k.indexOf(' ')>0&&!profileZawodnikow[k]) profileZawodnikow[k]=a[i].href;
+  }
+ }catch(e){}
+}
+
+function rocznikZTekstu(t){
+ var s=String(t||'');
+ // Rok STOI PIERWSZY w zapisie ISO (1990-05-02) i ostatni w polskim (14.03.2007). Sprawdzamy
+ // ISO wczesniej, bo inaczej "1990-05-02" dalby rocznik 0002 z drugiego wzorca.
+ var m=s.match(/urodz\w*[^0-9]{0,30}((?:19|20)\d{2})[.\-\/]\d{1,2}[.\-\/]\d{1,2}/i);
+ if(m) return m[1];
+ m=s.match(/urodz\w*[^0-9]{0,30}\d{1,2}[.\-\/]\d{1,2}[.\-\/]((?:19|20)\d{2})/i);
+ if(m) return m[1];
+ m=s.match(/urodz\w*[^0-9]{0,30}\d{1,2}\s+[a-ząćęłńóśźż]+\s+((?:19|20)\d{2})/i);
+ if(m) return m[1];
+ return '';
+}
+
+function pobierzRoczniki(gotowe){
+ var doZrobienia=[];
+ for(var k in profileZawodnikow){ if(!roczniki[k]) doZrobienia.push(k); }
+ // Limit na jedno uruchomienie. Pierwsza kolejka w grupie to okolo trzystu zawodnikow —
+ // wczytywanie wszystkich naraz trwaloby kilkanascie minut i wygladalo na zawieszenie.
+ // Reszta dobierze sie przy kolejnym zbieraniu, bo to, co juz wiemy, zostaje zapamietane.
+ var LIMIT=60;
+ var zostalo=Math.max(0,doZrobienia.length-LIMIT);
+ doZrobienia=doZrobienia.slice(0,LIMIT);
+ if(!doZrobienia.length){ gotowe(0,0); return; }
+ var n=0, zdobyte=0;
+ function nastepnyProfil(){
+  if(n>=doZrobienia.length){
+   try{localStorage.setItem(KLUCZ_ROCZNIKI,JSON.stringify(roczniki));}catch(e){}
+   gotowe(zdobyte,zostalo); return;
+  }
+  var k=doZrobienia[n];
+  box.textContent='SBS '+SBS_ZBIERACZ+': roczniki '+(n+1)+'/'+doZrobienia.length+(zostalo?' (zostanie '+zostalo+' na potem)':'');
+  var f=document.createElement('iframe');
+  f.style.cssText='position:fixed;left:-9999px;width:1000px;height:1400px';
+  f.src=profileZawodnikow[k];
+  document.body.appendChild(f);
+  var prob=0;
+  var t=setInterval(function(){
+   prob++;
+   var txt='';
+   try{txt=(f.contentDocument&&f.contentDocument.body)?f.contentDocument.body.innerText:'';}catch(e){txt='';}
+   var r=rocznikZTekstu(txt);
+   if(r||prob>14){
+    clearInterval(t);
+    if(r){ roczniki[k]=r; zdobyte++; }
+    f.remove(); n++; setTimeout(nastepnyProfil,120);
+   }
+  },500);
+ }
+ nastepnyProfil();
+}
+
+function blokRocznikow(){
+ var linie=[];
+ for(var k in roczniki){ if(roczniki[k]) linie.push(k+'|'+roczniki[k]); }
+ return linie.length?('\n\n### ROCZNIKI\n'+linie.join('\n')):'';
+}
+
 function koniec(){
+ // Roczniki dobieramy PRZED skopiowaniem, zeby poleicaly razem z protokolami — jedno wklejenie
+ // w aplikacji ma zalatwic i statystyki, i wiek.
+ if(!koniec.poRocznikach){
+  koniec.poRocznikach=true;
+  pobierzRoczniki(function(zdobyte,zostalo){
+   box.textContent='SBS '+SBS_ZBIERACZ+': roczniki gotowe (+'+zdobyte+')';
+   koniec();
+  });
+  return;
+ }
  try{localStorage.setItem(KLUCZ,JSON.stringify(zebrane));}catch(e){}
- var tresc=zebrane.join('\n\n');
+ var tresc=zebrane.join('\n\n')+blokRocznikow();
+
+ // OSTATNI KROK MUSI ZACZAC SIE OD KLIKNIECIA.
+ //
+ // Zbieranie trwa dziesiatki sekund i konczy sie w kodzie asynchronicznym - a wtedy przegladarka
+ // (zwlaszcza Firefox) blokuje i window.open, i zapis do schowka, bo nie stoi za nimi zaden gest
+ // uzytkownika. Objaw byl mylacy: zakladka mowila, ze zebrala protokoly, okno SBS sie nie
+ // otwieralo, a w schowku zostawalo to, co bylo tam wczesniej. Wygladalo na zepsute wklejanie.
+ //
+ // Dlatego nie wysylamy nic sami. Pokazujemy przycisk; jego klikniecie jest gestem, wiec i okno,
+ // i schowek dzialaja bez wyjatkow.
+ box.textContent='';
+ box.style.maxWidth='320px';
+ var opis=document.createElement('div');
+ opis.style.cssText='margin-bottom:10px;line-height:1.45';
+ opis.textContent='SBS '+SBS_ZBIERACZ+': zebrane protokoly: '+zebrane.length
+  +' (nowych '+(zebrane.length-bylo)+', kolejek '+kolejek
+  +(pominietych?', pominietych nierozegranych '+pominietych:'')
+  +(zablokowanych?', zatrzymanych prob wyjscia '+zablokowanych:'')+').';
+ box.appendChild(opis);
+ var przycisk=document.createElement('button');
+ przycisk.textContent='Wyslij do SBS ('+zebrane.length+')';
+ przycisk.style.cssText='display:block;width:100%;padding:10px 14px;margin-bottom:6px;border:0;border-radius:6px;background:#C9A227;color:#16302A;font:600 14px sans-serif;cursor:pointer';
+ box.appendChild(przycisk);
+ // CZYSZCZENIE MUSI BYC PRZYCISKIEM, NIE SKROTEM KLAWISZOWYM.
+ //
+ // Dotad bufor czyscilo Shift + klikniecie zakladki. W Chrome to dziala, ale FIREFOX na
+ // Shift + klikniecie bookmarka otwiera go w NOWYM OKNIE - zakladka uruchamia sie wtedy na
+ // pustej karcie i mowi "to nie jest strona Laczy nas pilka". Gest byl wiec nie do wykonania
+ // akurat w przegladarce, ktorej uzywamy.
+ var wyczysc=document.createElement('button');
+ wyczysc.textContent='Wyczysc zebrane ('+zebrane.length+')';
+ wyczysc.style.cssText='display:block;width:100%;padding:6px;margin-bottom:6px;border:1px solid rgba(246,243,234,.35);border-radius:6px;background:transparent;color:#F6F3EA;font:13px sans-serif;cursor:pointer';
+ wyczysc.onclick=function(){
+  try{localStorage.removeItem(KLUCZ);}catch(e){}
+  zebrane=[];
+  box.textContent='SBS '+SBS_ZBIERACZ+': wyczyscilem zebrane protokoly. Kliknij zakladke jeszcze raz, zeby zebrac te grupe od nowa.';
+ };
+ box.appendChild(wyczysc);
+ var zamknij=document.createElement('button');
+ zamknij.textContent='Zamknij';
+ zamknij.style.cssText='display:block;width:100%;padding:6px;border:1px solid rgba(246,243,234,.35);border-radius:6px;background:transparent;color:#F6F3EA;font:13px sans-serif;cursor:pointer';
+ zamknij.onclick=function(){ box.remove(); };
+ box.appendChild(zamknij);
+ przycisk.onclick=function(){ wyslij(tresc); };
+ return;
+}
+
+// Wysylka odpalana KLIKNIECIEM — stad wolno jej otwierac okno i pisac do schowka.
+function wyslij(tresc){
  var udalo=false;
  var p=document.createElement('textarea');p.value=tresc;document.body.appendChild(p);p.select();
  try{udalo=document.execCommand('copy');}catch(e){udalo=false;}
@@ -403,7 +735,7 @@ function koniec(){
  }
  box.remove();
  if(!udalo){alert('SBS '+SBS_ZBIERACZ+': zebralem '+zebrane.length+' protokolow, ale przegladarka nie pozwolila zapisac ich do schowka.\n\nKliknij zakladke jeszcze raz - za drugim razem zwykle sie udaje.');return;}
- alert('SBS '+SBS_ZBIERACZ+': dolozylem '+(zebrane.length-bylo)+' protokolow (kolejek przejrzanych: '+kolejek+(pominietych?', pominietych nierozegranych: '+pominietych:'')+'). W schowku masz teraz '+zebrane.length+' protokolow ('+tresc.length+' znakow).\n\nW aplikacji: Kluby -> wybierz grupe -> \u201eProtokoly z LNP\u201d -> Ctrl+V.\n\nShift + klikniecie tej zakladki czysci zebrana liste.');
+ alert('SBS '+SBS_ZBIERACZ+': dolozylem '+(zebrane.length-bylo)+' protokolow (kolejek przejrzanych: '+kolejek+(pominietych?', pominietych nierozegranych: '+pominietych:'')+(zablokowanych?', zatrzymanych prob wyjscia ze strony: '+zablokowanych:'')+'). W schowku masz teraz '+zebrane.length+' protokolow ('+tresc.length+' znakow).\n\nW aplikacji: Kluby -> wybierz grupe -> \u201eProtokoly z LNP\u201d -> Ctrl+V.\n\nShift + klikniecie tej zakladki czysci zebrana liste.');
 }
 
 start();
