@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v14 z 28.08.2026";
+var SBS_ZBIERACZ="v15 z 28.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -19,6 +19,21 @@ var STRONA_STARTOWA=location.href;
 // Wyjatek: droga awaryjna, w ktorej zbieracz wchodzi w kolejne mecze i wraca przez history.back(),
 // nawiguje CELOWO. Na jej czas rygiel jest uchylany — patrz zbierzAdresyPrzezKlikanie().
 var ZBIERAM=true, POZWOL_NAWIGACJE=false, zablokowanych=0;
+
+// STRAZNIK CZASU — ZAWSZE KONCZYMY PANELEM, NIGDY MILCZENIEM.
+//
+// Najczestsza skarga brzmiala "kliknalem i nic sie nie dzieje". Tak wygladalo utkniecie
+// w ktorejs fazie: zbieracz szukal listy meczow, przebijal sie przez kandydatow na zakladke
+// albo czekal na strone, ktora nigdy sie nie doczytala. Licznik w rogu owszem, mrugal, ale
+// przycisku "Wyslij do SBS" nie bylo, wiec nie bylo tez czego przeslac.
+//
+// Teraz po dwoch minutach przerywamy to, co akurat trwa, i pokazujemy panel z tym, co udalo sie
+// zebrac. Lepiej oddac czesc kolejki i powiedziec o tym wprost, niz zostawic czlowieka
+// z mrugajacym licznikiem.
+var CZAS_STARTU = 0;                       // ustawiany w start(), zeby liczyc od pierwszego ruchu
+var PRZERWANO_CZASEM = false;
+function minelo(){ return CZAS_STARTU ? (new Date().getTime() - CZAS_STARTU) : 0; }
+function zaDlugo(){ return minelo() > 120000; }
 
 // PORoWNUJEMY CALY ADRES, NIE SAMA SCIEZKE.
 //
@@ -265,6 +280,17 @@ function dociagnijStrone(gotowe){
  },700);
 }
 function start(){
+ if(!CZAS_STARTU){
+  CZAS_STARTU = new Date().getTime();
+  // Twardy limit: cokolwiek by sie nie dzialo, po dwoch minutach pokazujemy panel.
+  setTimeout(function(){
+   if(koniec.pokazano) return;
+   PRZERWANO_CZASEM = true;
+   ZBIERAM = false;                       // przestajemy blokowac klikniecia, praca i tak sie konczy
+   koniec();
+  }, 120000);
+ }
+ if(zaDlugo()){ koniec(); return; }
  // Ta sama losowa awaria LNP trafia sie na stronie, z ktorej wlasnie startujemy. Nie ma sensu
  // nic z niej czytac — mowimy wprost, co sie stalo, i podajemy jedyne skuteczne lekarstwo.
  if(/Ups! Piłka za boiskiem/.test(document.body.innerText||'') || /\/rozgrywki\/404/.test(location.pathname)){
@@ -729,6 +755,7 @@ function blokRocznikow(){
 }
 
 function koniec(){
+ if(koniec.pokazano) return;               // panel pokazujemy raz — strażnik czasu może wejść w trakcie
  // DRUGA TURA DLA TYCH, KTORE PRZEPADLY.
  //
  // Zmierzone na zywej stronie: przy pieciu podejsciach pod rzad zdarza sie mecz, ktory i tak nie
@@ -739,7 +766,7 @@ function koniec(){
  // tur, z rosnaca przerwa. Konczymy wczesniej, gdy tura nic nie odzyskala: to znak, ze problem
  // nie jest chwilowy i dalsze dobijanie sie nic nie da.
  koniec.tura = koniec.tura || 0;
- if(koniec.tura < 4 && nieudaneUrl.length){
+ if(!PRZERWANO_CZASEM && koniec.tura < 4 && nieudaneUrl.length){
   var przedTura = nieudaneUrl.length;
   if(koniec.tura > 0 && przedTura >= koniec.poprzednioNieudanych){
    koniec.tura = 4;                       // ostatnia tura nic nie dala — nie ma po co dalej
@@ -756,7 +783,7 @@ function koniec(){
  }
  // Roczniki dobieramy PRZED skopiowaniem, zeby poleicaly razem z protokolami — jedno wklejenie
  // w aplikacji ma zalatwic i statystyki, i wiek.
- if(!koniec.poRocznikach){
+ if(!PRZERWANO_CZASEM && !koniec.poRocznikach){
   koniec.poRocznikach=true;
   pobierzRoczniki(function(zdobyte,zostalo){
    box.textContent='SBS '+SBS_ZBIERACZ+': roczniki gotowe (+'+zdobyte+')';
@@ -776,15 +803,26 @@ function koniec(){
  //
  // Dlatego nie wysylamy nic sami. Pokazujemy przycisk; jego klikniecie jest gestem, wiec i okno,
  // i schowek dzialaja bez wyjatkow.
+ koniec.pokazano=true;
  box.textContent='';
  box.style.maxWidth='320px';
  var opis=document.createElement('div');
  opis.style.cssText='margin-bottom:10px;line-height:1.45';
- opis.textContent='SBS '+SBS_ZBIERACZ+': zebrane protokoly: '+zebrane.length
-  +' (nowych '+(zebrane.length-bylo)+', kolejek '+kolejek
-  +(pominietych?', pominietych nierozegranych '+pominietych:'')
-  +(nieudanych?', NIE UDALO SIE ODCZYTAC '+nieudanych+' (LNP odsylalo 404 mimo trzech podejsc)':'')
-  +(zablokowanych?', zatrzymanych prob wyjscia '+zablokowanych:'')+').';
+ // PANEL MA POWIEDZIEC TRZY RZECZY: ile zebrano, czy to komplet i CO ZROBIC DALEJ.
+ // Samo "zebrane protokoly: 32" nie mowilo, czy statystyki sa juz w SBS — a nie sa: klikniecie
+ // zakladki tylko zbiera, wgranie dzieje sie dopiero po "Wyslij do SBS" i "Zapisz protokoly".
+ var nowych = zebrane.length - bylo;
+ opis.innerHTML = '<div style="font-weight:600;margin-bottom:6px">SBS ' + SBS_ZBIERACZ + '</div>'
+  + (nowych > 0
+     ? '<div style="color:#9BD8A6">Zebrano ' + nowych + ' nowych protokolow.</div>'
+     : '<div style="color:#F0C674">Nie zebralem ani jednego nowego protokolu.</div>')
+  + '<div style="margin-top:4px">W buforze razem: ' + zebrane.length + '</div>'
+  + (pominietych ? '<div>Pominiete (nierozegrane): ' + pominietych + '</div>' : '')
+  + (nieudanych ? '<div style="color:#F0A0A0">Nie udalo sie odczytac: ' + nieudanych + ' (LNP odsylalo 404)</div>' : '')
+  + (PRZERWANO_CZASEM ? '<div style="color:#F0C674">Przerwane po 2 minutach — LNP odpowiadalo za wolno.</div>' : '')
+  + '<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(246,243,234,.2);font-size:12.5px;line-height:1.5">'
+  + 'To dopiero ZEBRANIE. Statystyk jeszcze nie ma w SBS — kliknij ponizej, a potem w SBS '
+  + '<b>Zapisz protokoly</b>.</div>';
  box.appendChild(opis);
  var przycisk=document.createElement('button');
  przycisk.textContent='Wyslij do SBS ('+zebrane.length+')';
