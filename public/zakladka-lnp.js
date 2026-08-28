@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v17 z 28.08.2026";
+var SBS_ZBIERACZ="v18 z 28.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -31,6 +31,8 @@ var ZBIERAM=true, POZWOL_NAWIGACJE=false, zablokowanych=0;
 // zebrac. Lepiej oddac czesc kolejki i powiedziec o tym wprost, niz zostawic czlowieka
 // z mrugajacym licznikiem.
 var trybJedenMecz = false;
+// Ostatnie liczby widziane przy szukaniu listy — trafiaja do panelu, gdy nic nie udalo sie zebrac.
+var ostatnioLinkow = 0, ostatnioWierszy = 0, ostatnioKrokow = 0;
 var CZAS_STARTU = 0;                       // ustawiany w start(), zeby liczyc od pierwszego ruchu
 var PRZERWANO_CZASEM = false;
 function minelo(){ return CZAS_STARTU ? (new Date().getTime() - CZAS_STARTU) : 0; }
@@ -343,6 +345,7 @@ function dociagnijStrone(gotowe){
 
   var ileLinkow = zbierzLinki().length;
   var ileWierszy = wierszeRozegrane().length;
+  ostatnioLinkow = ileLinkow; ostatnioWierszy = ileWierszy; ostatnioKrokow = krok;
   var mamy = ileLinkow >= 2 || ileWierszy >= 2;
   box.textContent='SBS '+SBS_ZBIERACZ+': szukam rozegranych meczow ('+krok+'/'+MAX+') - odnosnikow '+ileLinkow+', wierszy '+ileWierszy;
 
@@ -898,7 +901,9 @@ function koniec(){
  opis.innerHTML = '<div style="font-weight:600;margin-bottom:6px">SBS ' + SBS_ZBIERACZ + '</div>'
   + (nowych > 0
      ? '<div style="color:#9BD8A6">Zebrano ' + nowych + ' nowych protokolow.</div>'
-     : '<div style="color:#F0C674">Nie zebralem ani jednego nowego protokolu.</div>')
+     : '<div style="color:#F0C674">Nie zebralem ani jednego nowego protokolu.</div>'
+        + '<div style="margin-top:4px;font-size:12px;opacity:.85">Co widzialem na stronie: odnosnikow do meczow ' + ostatnioLinkow
+        + ', wierszy z wynikiem ' + ostatnioWierszy + ', nierozegranych ' + pominietych + ' (krokow szukania ' + ostatnioKrokow + ').</div>')
   + '<div style="margin-top:4px">W buforze razem: ' + zebrane.length + '</div>'
   + (pominietych ? '<div>Pominiete (nierozegrane): ' + pominietych + '</div>' : '')
   + (nieudanych ? '<div style="color:#F0A0A0">Nie udalo sie odczytac: ' + nieudanych + ' (LNP odsylalo 404)</div>' : '')
