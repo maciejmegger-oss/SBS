@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v20 z 28.08.2026";
+var SBS_ZBIERACZ="v21 z 28.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -190,85 +190,92 @@ function idMeczuZKontekstu(el){
  return '';
 }
 
-function zbierzAdresyZWierszy(gotowe){
+// PRZECHODZIMY PO MECZACH TAK, JAK ZROBILBY TO CZLOWIEK: otworz, przepisz, wroc, nastepny.
+//
+// Wszystkie sprytniejsze drogi zawiodly, kazda inaczej. Odczyt adresu z danych Angulara nic nie
+// zwracal. Klikniecie w wiersz NAPRAWDE przenosilo strone na mecz — a poniewaz przywracalismy
+// potem sam adres w pasku, zabezpieczenie przed tym nie mialo jak zadzialac: adres wygladal na
+// liste, widok byl meczem, i zbieracz do konca klikal w wiersze odlaczone od dokumentu.
+//
+// Skoro klikniecie i tak otwiera mecz, nie walczymy z tym. Otwieramy mecz, przepisujemy protokol
+// PROSTO ZE STRONY (bez ramki — jestesmy juz na niej), wracamy przez historie i bierzemy nastepny
+// wiersz. Wolniej, ale kazdy krok jest sprawdzalny i nic nie zalezy od zgadywania.
+function przejdzPoMeczach(gotowe){
  var wiersze = wierszeRozegrane();
- if(!wiersze.length){ gotowe([]); return; }
- var adresy=[], k=0;
- var pierwotnyPush = history.pushState, pierwotnyReplace = history.replaceState;
- var zlapany = '';
- function lap(u){
-  var s = String(u||'');
-  if(/\/mecz\//.test(s)){
-   try{ zlapany = new URL(s, location.origin).href; }catch(e){ zlapany = ''; }
-  }
- }
- history.pushState = function(a,b,u){ lap(u); return pierwotnyPush.apply(history, arguments); };
- history.replaceState = function(a,b,u){ lap(u); return pierwotnyReplace.apply(history, arguments); };
+ if(!wiersze.length){ gotowe(); return; }
  var bazowy = location.href;
- function koncz(){
-  history.pushState = pierwotnyPush;
-  history.replaceState = pierwotnyReplace;
-  try{ if(location.href !== bazowy) pierwotnyReplace.call(history, {}, '', bazowy); }catch(e){}
-  gotowe(adresy);
+ var k = 0, zebranychTu = 0;
+
+ function koncz(){ gotowe(); }
+
+ // Protokol czytamy z biezacej strony meczu — dokladnie tak samo, jak przy pojedynczym meczu.
+ function przepiszProtokol(){
+  var txt = document.body.innerText || '';
+  if(!/Skład wyjściowy/.test(txt)) return false;
+  var url = location.href.split('?')[0];
+  var j = txt.search(/^\s*Składy\s*$/m);
+  var wpis = '### PROTOKOL: ' + url + '\n' + txt.slice(j < 0 ? 0 : Math.max(0, j - 400)) + zdarzenia(document);
+  for(var q = 0; q < zebrane.length; q++){
+   if(zebrane[q].indexOf('### PROTOKOL: ' + url + '\n') === 0){ zebrane[q] = wpis; return true; }
+  }
+  zebrane.push(wpis);
+  try{ localStorage.setItem(KLUCZ, JSON.stringify(zebrane)); }catch(e){}
+  zebranychTu++;
+  return true;
  }
+
+ // Czekamy, az strona meczu sie wyswietli. LNP potrafi oddac 404 — wtedy wracamy i idziemy dalej,
+ // bo mecz i tak zostanie policzony jako nieodczytany, a cala kolejka nie moze przez to stanac.
+ function czekajNaMecz(){
+  var prob = 0;
+  var t = setInterval(function(){
+   prob++;
+   var txt = document.body.innerText || '';
+   if(/Skład wyjściowy/.test(txt)){ clearInterval(t); przepiszProtokol(); wroc(); return; }
+   if(/Ups! Piłka za boiskiem/.test(txt) || prob > 24){ clearInterval(t); nieudanych++; wroc(); return; }
+   box.textContent = 'SBS ' + SBS_ZBIERACZ + ': mecz ' + (k+1) + '/' + wiersze.length + ' - czekam na sklad (' + prob + ')';
+  }, 500);
+ }
+
+ function wroc(){
+  try{ history.back(); }catch(e){}
+  var prob = 0;
+  var t = setInterval(function(){
+   prob++;
+   if(location.pathname.indexOf('/mecz/') < 0){
+    clearInterval(t);
+    // Po powrocie lista jest renderowana od nowa — stare elementy sa juz odlaczone.
+    setTimeout(function(){
+     wiersze = wierszeRozegrane();
+     k++;
+     dalej();
+    }, 700);
+    return;
+   }
+   if(prob > 30){ clearInterval(t); koncz(); }
+  }, 300);
+ }
+
  function dalej(){
-  // JESLI KLIKNIECIE JEDNAK PRZENIOSLO STRONE, dalsza praca nie ma sensu: lista meczow zniknela,
-  // a wiersze w pamieci sa juz odlaczone od dokumentu. Dotad zbieracz klikal w nie do konca i
-  // liczyl "35/35", choc od pierwszego przeniesienia nie zbieral juz nic. Konczymy z tym, co mamy.
-  if(location.pathname.indexOf('/mecz/') >= 0){ koncz(); return; }
   if(k >= wiersze.length || zaDlugo()){ koncz(); return; }
-  box.textContent='SBS '+SBS_ZBIERACZ+': czytam adresy meczow '+(k+1)+'/'+wiersze.length;
+  box.textContent = 'SBS ' + SBS_ZBIERACZ + ': mecz ' + (k+1) + '/' + wiersze.length + ' (zebranych ' + zebranychTu + ')';
   var el = wiersze[k];
-  zlapany = '';
-  // Najpierw droga tansza i pewniejsza: identyfikator z danych Angulara. Klikamy dopiero,
-  // gdy jej nie ma — klikanie jest wolne i zalezy od tego, jak strona wiesza obsluge.
-  var zDanych = idMeczuZKontekstu(el);
-  if(zDanych){ zlapany = location.origin + '/rozgrywki/mecz/' + zDanych; zapisz(); return; }
-  // PELNA SEKWENCJA ZDARZEN MYSZY, NIE SAMO .click().
-  //
-  // Zmierzone na zywej stronie: zbieracz widzial wszystkie 36 wierszy, a mimo to nie wyciagnal
-  // ani jednego adresu. Powod: Angular wiesza obsluge na zdarzeniach mousedown/mouseup albo na
-  // elemencie glebiej w wierszu, a samo el.click() na kontenerze nic nie wywolywalo.
-  //
-  // Dlatego wysylamy pelna sekwencje (pointerdown, mousedown, mouseup, click) i probujemy nie
-  // tylko wiersza, ale i jego wnetrza — od najglebszych elementow z trescia, bo to na nich
-  // najczesciej siedzi obsluga.
+  if(!el || !el.isConnected){ k++; setTimeout(dalej, 80); return; }
+  // Klikamy w wiersz i w jego wnetrze — az strona przejdzie na mecz.
   var cele = [el];
   try{
    var srodek = [].slice.call(el.querySelectorAll('*')).filter(function(x){
     return x.children.length === 0 && (x.textContent||'').trim().length > 1;
    });
-   for(var s=0; s<srodek.length && cele.length<14; s++) cele.push(srodek[s]);
+   for(var s = 0; s < srodek.length && cele.length < 10; s++) cele.push(srodek[s]);
   }catch(e){}
-  function wyslijKlik(cel){
-   var typy = ['pointerdown','mousedown','mouseup','click'];
-   for(var y=0; y<typy.length; y++){
-    try{
-     var ev;
-     try{ ev = new MouseEvent(typy[y], {bubbles:true, cancelable:true, view:window, button:0}); }
-     catch(e2){ ev = document.createEvent('MouseEvents'); ev.initEvent(typy[y], true, true); }
-     cel.dispatchEvent(ev);
-    }catch(e3){}
-   }
-   try{ if(cel.click) cel.click(); }catch(e4){}
-  }
   var ci = 0;
   function klik(){
-   if(ci >= cele.length || zlapany || zaDlugo()){ zapisz(); return; }
-   wyslijKlik(cele[ci]);
+   if(location.pathname.indexOf('/mecz/') >= 0){ czekajNaMecz(); return; }
+   if(ci >= cele.length){ k++; setTimeout(dalej, 80); return; }   // ten wiersz sie nie otwiera
+   try{ cele[ci].click(); }catch(e){}
    ci++;
-   // Nawigacje poznajemy takze po zmianie adresu — nie kazdy router idzie przez pushState.
-   setTimeout(function(){
-    if(!zlapany && /\/mecz\//.test(location.pathname)) zlapany = location.href;
-    if(zlapany) zapisz(); else klik();
-   }, 180);
-  }
-  function zapisz(){
-   if(zlapany && adresy.indexOf(zlapany) < 0) adresy.push(zlapany);
-   // Router mogl zmienic adres — wracamy do listy bez przeladowania strony.
-   try{ if(location.href !== bazowy) pierwotnyReplace.call(history, {}, '', bazowy); }catch(e){}
-   k++;
-   setTimeout(dalej, 60);
+   setTimeout(klik, 260);
   }
   klik();
  }
@@ -539,24 +546,15 @@ function start(){
   zapamietajListe(linki);
   box.textContent='SBS '+SBS_ZBIERACZ+': zbieram protokoly 0/'+linki.length;nastepny();return;
  }
- // LISTA POD TABELA. Gdy na ekranie sa mecze z wynikiem, a odnosnikow do nich brak albo jest
- // ich mniej — czytamy adresy prosto z wierszy, przechwytujac router. To jest zwykla droga na
- // stronie grupy, nie awaryjna: tam wiersze nigdy nie sa odnosnikami.
- if(!probowanoKlikac && ileWierszy>=2 && linki.length*2 < ileWierszy){
+ // LISTA POD TABELA — PRZECHODZIMY PO MECZACH JEDEN PO DRUGIM.
+ //
+ // Wiersze na stronie grupy nie sa odnosnikami: klikniecie otwiera mecz przez router Angulara.
+ // Nie da sie tego przechwycic ani obejsc, wiec nie walczymy — otwieramy mecz, przepisujemy
+ // protokol prosto ze strony i wracamy przez historie. Wolniej, ale kazdy krok jest sprawdzalny.
+ if(!probowanoKlikac && ileWierszy>=2){
   probowanoKlikac=true;
-  box.textContent='SBS '+SBS_ZBIERACZ+': na ekranie '+ileWierszy+' rozegranych meczow - czytam ich adresy';
-  zbierzAdresyZWierszy(function(adresy){
-   var razem=linki.slice();
-   for(var q=0;q<adresy.length;q++) if(razem.indexOf(adresy[q])<0) razem.push(adresy[q]);
-   // BEZ PETLI. Gdy z wierszy nie da sie wyciagnac ani jednego adresu, powtarzanie tego samego
-   // nic nie zmieni — dotad zbieracz probowal w kolko az do limitu dwoch minut i konczyl zerem
-   // bez slowa wyjasnienia. Konczymy od razu i mowimy, co widzielismy.
-   if(!razem.length){ koniec(); return; }
-   linki=razem;i=0;
-   zapamietajListe(linki);
-   box.textContent='SBS '+SBS_ZBIERACZ+': mam '+linki.length+' meczow - zbieram protokoly';
-   nastepny();
-  });
+  box.textContent='SBS '+SBS_ZBIERACZ+': na ekranie '+ileWierszy+' rozegranych meczow - otwieram je po kolei';
+  przejdzPoMeczach(function(){ koniec(); });
   return;
  }
  czekam++;
