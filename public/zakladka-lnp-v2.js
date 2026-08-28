@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v18 z 28.08.2026";
+var SBS_ZBIERACZ="v19 z 28.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -121,6 +121,47 @@ if(window.event&&window.event.shiftKey){try{localStorage.removeItem(KLUCZ);}catc
 // Router konczy nawigacje wywolaniem history.pushState. Podsluchujemy wiec pushState, klikamy
 // wiersz, zapisujemy adres, ktory router chcial otworzyc, i natychmiast wracamy. Strona nie
 // przeladowuje sie ani razu, wiec nie ma jak sie zgubic.
+// DRUGA DROGA: IDENTYFIKATOR MECZU WPROST Z DANYCH ANGULARA.
+//
+// Angular trzyma przy kazdym wyrenderowanym elemencie odnosnik do swoich danych (__ngContext__).
+// Siedzi tam obiekt meczu, a w nim jego identyfikator — ten sam, ktory stoi w adresie
+// /rozgrywki/mecz/<id>. Gdy klikanie w wiersz nic nie daje (a tak bywa, bo obsluga wisi na
+// zdarzeniach, ktorych nie da sie wiernie podrobic), czytamy identyfikator stad.
+//
+// Bierzemy WYLACZNIE pola, ktorych nazwa mowi o meczu — inaczej trafilibysmy w identyfikator
+// klubu albo sezonu. Zly adres i tak odpadnie przy wczytywaniu: strona meczu bez skladu nie
+// zostanie zapisana.
+function idMeczuZKontekstu(el){
+ var WZOR = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+ var NAZWA = /(^|[^a-z])(match|mecz|game|fixture)/i;
+ function szukaj(o, glab, widziane){
+  if(!o || glab > 4 || typeof o !== 'object') return '';
+  if(widziane.indexOf(o) >= 0) return '';
+  widziane.push(o);
+  for(var k in o){
+   var v;
+   try{ v = o[k]; }catch(e){ continue; }
+   if(typeof v === 'string' && WZOR.test(v)){
+    if(NAZWA.test(k) || /^id$/i.test(k) && NAZWA.test(String(o.__typ||''))) return v;
+   }
+   if(v && typeof v === 'object' && !(v instanceof Node)){
+    var r = szukaj(v, glab + 1, widziane);
+    if(r) return r;
+   }
+  }
+  return '';
+ }
+ var w = el, glebokosc = 0;
+ while(w && glebokosc < 4){
+  try{
+   var ctx = w.__ngContext__;
+   if(ctx){ var id = szukaj(ctx, 0, []); if(id) return id; }
+  }catch(e){}
+  w = w.parentElement; glebokosc++;
+ }
+ return '';
+}
+
 function zbierzAdresyZWierszy(gotowe){
  var wiersze = wierszeRozegrane();
  if(!wiersze.length){ gotowe([]); return; }
@@ -147,15 +188,48 @@ function zbierzAdresyZWierszy(gotowe){
   box.textContent='SBS '+SBS_ZBIERACZ+': czytam adresy meczow '+(k+1)+'/'+wiersze.length;
   var el = wiersze[k];
   zlapany = '';
-  // Klikamy w sam wiersz oraz w jego wnetrze — rozne uklady wieszaja obsluge na roznych poziomach.
+  // Najpierw droga tansza i pewniejsza: identyfikator z danych Angulara. Klikamy dopiero,
+  // gdy jej nie ma — klikanie jest wolne i zalezy od tego, jak strona wiesza obsluge.
+  var zDanych = idMeczuZKontekstu(el);
+  if(zDanych){ zlapany = location.origin + '/rozgrywki/mecz/' + zDanych; zapisz(); return; }
+  // PELNA SEKWENCJA ZDARZEN MYSZY, NIE SAMO .click().
+  //
+  // Zmierzone na zywej stronie: zbieracz widzial wszystkie 36 wierszy, a mimo to nie wyciagnal
+  // ani jednego adresu. Powod: Angular wiesza obsluge na zdarzeniach mousedown/mouseup albo na
+  // elemencie glebiej w wierszu, a samo el.click() na kontenerze nic nie wywolywalo.
+  //
+  // Dlatego wysylamy pelna sekwencje (pointerdown, mousedown, mouseup, click) i probujemy nie
+  // tylko wiersza, ale i jego wnetrza — od najglebszych elementow z trescia, bo to na nich
+  // najczesciej siedzi obsluga.
   var cele = [el];
-  try{ var w = el.querySelector('[class*="match"],[class*="result"],td,div'); if(w) cele.push(w); }catch(e){}
+  try{
+   var srodek = [].slice.call(el.querySelectorAll('*')).filter(function(x){
+    return x.children.length === 0 && (x.textContent||'').trim().length > 1;
+   });
+   for(var s=0; s<srodek.length && cele.length<14; s++) cele.push(srodek[s]);
+  }catch(e){}
+  function wyslijKlik(cel){
+   var typy = ['pointerdown','mousedown','mouseup','click'];
+   for(var y=0; y<typy.length; y++){
+    try{
+     var ev;
+     try{ ev = new MouseEvent(typy[y], {bubbles:true, cancelable:true, view:window, button:0}); }
+     catch(e2){ ev = document.createEvent('MouseEvents'); ev.initEvent(typy[y], true, true); }
+     cel.dispatchEvent(ev);
+    }catch(e3){}
+   }
+   try{ if(cel.click) cel.click(); }catch(e4){}
+  }
   var ci = 0;
   function klik(){
-   if(ci >= cele.length || zlapany){ zapisz(); return; }
-   try{ cele[ci].click(); }catch(e){}
+   if(ci >= cele.length || zlapany || zaDlugo()){ zapisz(); return; }
+   wyslijKlik(cele[ci]);
    ci++;
-   setTimeout(function(){ if(zlapany) zapisz(); else klik(); }, 220);
+   // Nawigacje poznajemy takze po zmianie adresu — nie kazdy router idzie przez pushState.
+   setTimeout(function(){
+    if(!zlapany && /\/mecz\//.test(location.pathname)) zlapany = location.href;
+    if(zlapany) zapisz(); else klik();
+   }, 180);
   }
   function zapisz(){
    if(zlapany && adresy.indexOf(zlapany) < 0) adresy.push(zlapany);
@@ -442,7 +516,10 @@ function start(){
   zbierzAdresyZWierszy(function(adresy){
    var razem=linki.slice();
    for(var q=0;q<adresy.length;q++) if(razem.indexOf(adresy[q])<0) razem.push(adresy[q]);
-   if(!razem.length){ czekam=0; probowanoKlikac=false; setTimeout(start,300); return; }
+   // BEZ PETLI. Gdy z wierszy nie da sie wyciagnac ani jednego adresu, powtarzanie tego samego
+   // nic nie zmieni — dotad zbieracz probowal w kolko az do limitu dwoch minut i konczyl zerem
+   // bez slowa wyjasnienia. Konczymy od razu i mowimy, co widzielismy.
+   if(!razem.length){ koniec(); return; }
    linki=razem;i=0;
    zapamietajListe(linki);
    box.textContent='SBS '+SBS_ZBIERACZ+': mam '+linki.length+' meczow - zbieram protokoly';
