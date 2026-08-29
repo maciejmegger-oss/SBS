@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v24 z 29.08.2026";
+var SBS_ZBIERACZ="v25 z 29.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -713,15 +713,17 @@ function start(){
   zapamietajListe(linki);
   linia.textContent='SBS '+SBS_ZBIERACZ+': zbieram protokoly 0/'+linki.length;nastepny();return;
  }
- // LISTA POD TABELA — PRZECHODZIMY PO MECZACH JEDEN PO DRUGIM.
+ // LISTA MECZOW NA TEJ STRONIE — ZBIERAMY PRZEZ UKRYTA RAMKE.
  //
- // Wiersze na stronie grupy nie sa odnosnikami: klikniecie otwiera mecz przez router Angulara.
- // Nie da sie tego przechwycic ani obejsc, wiec nie walczymy — otwieramy mecz, przepisujemy
- // protokol prosto ze strony i wracamy przez historie. Wolniej, ale kazdy krok jest sprawdzalny.
+ // Ta sama droga, ktora sprawdzila sie na stronie druzyny. Wiersze nie sa odnosnikami: klikniecie
+ // otwiera mecz przez router Angulara i wyprowadza okno, zabijajac zbieracz. W ramce tego problemu
+ // nie ma — podmieniona atrapa pushState zapisuje adres, protokol renderuje sie w miejscu,
+ // a strona nadrzedna stoi nietknieta. Dziala tak samo na liscie rozgrywek, jak i u pojedynczego
+ // klubu, wiec nie trzeba juz wchodzic w kazdy klub z osobna.
  if(!probowanoKlikac && ileWierszy>=2){
   probowanoKlikac=true;
-  linia.textContent='SBS '+SBS_ZBIERACZ+': na ekranie '+ileWierszy+' rozegranych meczow - otwieram je po kolei';
-  przejdzPoMeczach(function(){ koniec(); });
+  linia.textContent='SBS '+SBS_ZBIERACZ+': na ekranie '+ileWierszy+' rozegranych meczow - zbieram protokoly';
+  zbierzZeStronyDruzyny(function(){ koniec(); });
   return;
  }
  czekam++;
