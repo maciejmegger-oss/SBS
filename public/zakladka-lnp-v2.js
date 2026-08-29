@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v25 z 29.08.2026";
+var SBS_ZBIERACZ="v26 z 29.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -27,7 +27,8 @@ var ZBIERAM=true, POZWOL_NAWIGACJE=false, zablokowanych=0;
 // albo czekal na strone, ktora nigdy sie nie doczytala. Licznik w rogu owszem, mrugal, ale
 // przycisku "Wyslij do SBS" nie bylo, wiec nie bylo tez czego przeslac.
 //
-// Teraz po czterdziestu pieciu sekundach przerywamy to, co akurat trwa, i pokazujemy panel z tym, co udalo sie
+// Limit to dziesiec minut — tyle trwa zebranie calej grupy. Przerwac mozna w kazdej chwili
+// przyciskiem w panelu, wiec dlugi limit nie wiezi nikogo. Po jego uplywie przerywamy to, co akurat trwa, i pokazujemy panel z tym, co udalo sie
 // zebrac. Lepiej oddac czesc kolejki i powiedziec o tym wprost, niz zostawic czlowieka
 // z mrugajacym licznikiem.
 var trybJedenMecz = false;
@@ -36,7 +37,7 @@ var ostatnioLinkow = 0, ostatnioWierszy = 0, ostatnioKrokow = 0;
 var CZAS_STARTU = 0;                       // ustawiany w start(), zeby liczyc od pierwszego ruchu
 var PRZERWANO_CZASEM = false;
 function minelo(){ return CZAS_STARTU ? (new Date().getTime() - CZAS_STARTU) : 0; }
-function zaDlugo(){ return minelo() > 45000; }
+function zaDlugo(){ return minelo() > 600000; }
 
 // PORoWNUJEMY CALY ADRES, NIE SAMA SCIEZKE.
 //
@@ -640,7 +641,7 @@ function start(){
    PRZERWANO_CZASEM = true;
    ZBIERAM = false;                       // przestajemy blokowac klikniecia, praca i tak sie konczy
    koniec();
-  }, 45000);
+  }, 600000);
  }
  if(zaDlugo()){ koniec(); return; }
  // Ta sama losowa awaria LNP trafia sie na stronie, z ktorej wlasnie startujemy. Nie ma sensu
