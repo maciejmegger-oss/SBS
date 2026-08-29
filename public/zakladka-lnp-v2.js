@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v27 z 29.08.2026";
+var SBS_ZBIERACZ="v28 z 29.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -553,6 +553,8 @@ function zdejmijMeczZDruzyny(adresDruzyny, nr, gotowe){
 
   if(faza==='ladowanie'){
    if(/Ups! Piłka za boiskiem/.test(txt)){ clearInterval(t); f.remove(); gotowe({blad:'404'}); return; }
+   // Lista rozegranych doczytuje sie dopiero po przewinieciu — w ramce robimy to sami.
+   try{ W.scrollTo(0, d.body.scrollHeight); }catch(e){}
    if(/Rozegrany/.test(txt)){
     var w=wierszeRozegraneW(d);
     if(nr>=w.length){ clearInterval(t); f.remove(); gotowe({koniec:true, wierszy:w.length}); return; }
@@ -567,7 +569,7 @@ function zdejmijMeczZDruzyny(adresDruzyny, nr, gotowe){
     faza='protokol'; n=0;
     return;
    }
-   if(n>30){ clearInterval(t); f.remove(); gotowe({blad:'brak listy meczow'}); }
+   if(n>60){ clearInterval(t); f.remove(); gotowe({blad:'brak listy meczow'}); }
    return;
   }
 
@@ -1179,7 +1181,7 @@ function koniec(){
   + '<div style="margin-top:4px">W buforze razem: ' + zebrane.length + '</div>'
   + (pominietych ? '<div>Pominiete (nierozegrane): ' + pominietych + '</div>' : '')
   + (nieudanych ? '<div style="color:#F0A0A0">Nie udalo sie odczytac: ' + nieudanych + ' (LNP odsylalo 404)</div>' : '')
-  + (PRZERWANO_CZASEM ? '<div style="color:#F0C674">Przerwane po 2 minutach — LNP odpowiadalo za wolno.</div>' : '')
+  + (PRZERWANO_CZASEM ? '<div style="color:#F0C674">Przerwane recznie — ponizej to, co zdazylem zebrac.</div>' : '')
   + (trybJedenMecz ? '<div style="margin-top:6px;color:#F0C674">To byla strona JEDNEGO meczu, wiec zebralem tylko jego. Zeby wziac cala kolejke, kliknij zakladke na stronie z TABELA grupy.</div>' : '')
   + '<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(246,243,234,.2);font-size:12.5px;line-height:1.5">'
   + 'To dopiero ZEBRANIE. Statystyk jeszcze nie ma w SBS — kliknij ponizej, a potem w SBS '
