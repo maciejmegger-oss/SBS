@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v33 z 29.08.2026";
+var SBS_ZBIERACZ="v34 z 29.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -905,6 +905,21 @@ function start(){
  // klubu, wiec nie trzeba juz wchodzic w kazdy klub z osobna.
  if(!probowanoKlikac && ileWierszy>=2){
   probowanoKlikac=true;
+  // HERBY BIERZEMY OD RAZU, ZANIM RUSZYMY PO PROTOKOLY.
+  //
+  // Osobny przycisk w panelu zostaje, ale nikt nie ma obowiazku go szukac: tabela grupy jest
+  // wlasnie na ekranie i to jedyny moment, w ktorym herby sa pod reka. Zbieranie ich nic nie
+  // kosztuje - czytamy to, co juz widac, niczego nie klikajac.
+  try{
+   var herby=herbyZTabeli();
+   if(herby.length>=4){
+    var wpisH='### KLUBY\n'+herby.join('\n');
+    var bylH=false;
+    for(var qh=0;qh<zebrane.length;qh++){ if(zebrane[qh].indexOf('### KLUBY\n')===0){ zebrane[qh]=wpisH; bylH=true; break; } }
+    if(!bylH) zebrane.push(wpisH);
+    try{ localStorage.setItem(KLUCZ, JSON.stringify(zebrane)); }catch(e){}
+   }
+  }catch(e){}
   linia.textContent='SBS '+SBS_ZBIERACZ+': na ekranie '+ileWierszy+' rozegranych meczow - zbieram protokoly';
   zbierzGrupePrzezDruzyny(function(){ koniec(); });
   return;

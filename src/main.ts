@@ -4478,7 +4478,7 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
   });
 
   function rozpoznaj(){
-    const tekst = (overlay.querySelector('#pm-tekst') as any).value.trim();
+    let tekst = (overlay.querySelector('#pm-tekst') as any).value.trim();
     if(!tekst){ komunikat = 'Najpierw wklej stronę meczu.'; rysuj(); return; }
 
     // WKLEJONY ADRES TO NIE POMYŁKA DO ZGANIENIA, TYLKO GOTOWA ODPOWIEDŹ NA PYTANIE, KTÓRE
@@ -4521,27 +4521,37 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
     // Herbów nie da się pobrać z serwera: ŁNP oddaje mu pustą skorupę Angulara. W otwartej
     // tabeli są jednak wprost przy każdym klubie, więc zakładka je stamtąd odczytuje i przysyła
     // tą samą drogą co protokoły. Zapisujemy sam adres obrazka — nie kopiujemy grafiki do bazy.
-    const blokK = tekst.match(/^###\s*KLUBY\s*$([\s\S]*?)(?=^###\s|\s*$)/m);
-    if(blokK){
-      const nierozpoznane: string[] = [];
-      let ustawionych = 0, juzBylo = 0;
-      blokK[1].split('\n').map(l=>l.trim()).filter(Boolean).forEach(l=>{
-        const ciecie = l.lastIndexOf('|');
-        if(ciecie < 1) return;
-        const nazwa = l.slice(0, ciecie).trim();
-        const adres = l.slice(ciecie + 1).trim();
-        if(!/^https?:\/\//i.test(adres)) return;
-        const klub = dopasujKlubDoNazwy(nazwa, grupa, 'IV liga');
-        if(!klub){ nierozpoznane.push(nazwa); return; }
-        if(klub.crestUrl === adres){ juzBylo++; return; }
-        klub.crestUrl = adres;
-        ustawionych++;
-      });
-      if(ustawionych) void saveClubs();
-      komunikat = `Herby: zapisałem ${ustawionych}, bez zmian ${juzBylo}`
-        + (nierozpoznane.length ? `, nie rozpoznałem klubu: ${nierozpoznane.join(', ')}` : '')
-        + '.';
-      wynik = null; rysuj(); return;
+    // Blok wycinamy z tekstu i pracujemy dalej — w jednej przesyłce przychodzą i herby,
+    // i protokoły całej grupy. Wcześniej samo natrafienie na herby kończyło rozpoznanie
+    // i wszystkie mecze przepadały bez śladu.
+    let komunikatHerbow = '';
+    {
+      const linie = tekst.split('\n');
+      const poczatek = linie.findIndex(l=>/^###\s*KLUBY\s*$/.test(l.trim()));
+      if(poczatek >= 0){
+        let koniec = poczatek + 1;
+        while(koniec < linie.length && !/^###\s/.test(linie[koniec])) koniec++;
+        const nierozpoznane: string[] = [];
+        let ustawionych = 0, juzBylo = 0;
+        linie.slice(poczatek + 1, koniec).map(l=>l.trim()).filter(Boolean).forEach(l=>{
+          const ciecie = l.lastIndexOf('|');
+          if(ciecie < 1) return;
+          const nazwa = l.slice(0, ciecie).trim();
+          const adres = l.slice(ciecie + 1).trim();
+          if(!/^https?:\/\//i.test(adres)) return;
+          const klub = dopasujKlubDoNazwy(nazwa, grupa, 'IV liga');
+          if(!klub){ nierozpoznane.push(nazwa); return; }
+          if(klub.crestUrl === adres){ juzBylo++; return; }
+          klub.crestUrl = adres;
+          ustawionych++;
+        });
+        if(ustawionych) void saveClubs();
+        komunikatHerbow = `Herby: zapisałem ${ustawionych}, bez zmian ${juzBylo}`
+          + (nierozpoznane.length ? `, nie rozpoznałem klubu: ${nierozpoznane.join(', ')}` : '') + '. ';
+        linie.splice(poczatek, koniec - poczatek);
+        tekst = linie.join('\n').trim();
+        if(!tekst){ komunikat = komunikatHerbow; wynik = null; rysuj(); return; }
+      }
     }
 
     rocznikiZWklejki = {};
@@ -4566,9 +4576,9 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
     // i w Szczecinie; bez wskazania grupy dorobek mógłby trafić do klubu z drugiego końca Polski.
     const wyniki = (czesci.length ? czesci : [tekst]).map((t,i)=>przetworzProtokolLnp(t, adresy[i] || '', grupa));
     const dobre = wyniki.filter(w=>!w.blad);
-    if(!dobre.length){ komunikat = wyniki[0].blad || 'Nie rozpoznałem protokołu.'; wynik = null; rysuj(); return; }
-    komunikat = wyniki.length > dobre.length
-      ? `Rozpoznałem ${dobre.length} z ${wyniki.length} protokołów — reszty nie umiem odczytać.` : '';
+    if(!dobre.length){ komunikat = komunikatHerbow + (wyniki[0].blad || 'Nie rozpoznałem protokołu.'); wynik = null; rysuj(); return; }
+    komunikat = komunikatHerbow + (wyniki.length > dobre.length
+      ? `Rozpoznałem ${dobre.length} z ${wyniki.length} protokołów — reszty nie umiem odczytać.` : '');
 
     // CZY TA WKLEJKA W OGÓLE DOTYCZY TEGO KLUBU?
     //
@@ -11276,7 +11286,7 @@ function sprawdzZakladke(nazwa, kod){
 
 // Wersja zakładki. Widnieje w każdym jej komunikacie i w oknie SBS, żeby dało się jednym
 // spojrzeniem stwierdzić, czy w pasku siedzi kod sprzed poprawek.
-const ZAKLADKA_WERSJA = 'v33 z 29.08.2026';
+const ZAKLADKA_WERSJA = 'v34 z 29.08.2026';
 const SBS_ADRES_JS = JSON.stringify(location.origin);
 // ZAKŁADKA W PASKU NIE AKTUALIZUJE SIĘ SAMA — I TO BYŁ PRAWDZIWY PROBLEM.
 //
