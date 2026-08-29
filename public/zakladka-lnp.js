@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v22 z 28.08.2026";
+var SBS_ZBIERACZ="v23 z 28.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -27,7 +27,7 @@ var ZBIERAM=true, POZWOL_NAWIGACJE=false, zablokowanych=0;
 // albo czekal na strone, ktora nigdy sie nie doczytala. Licznik w rogu owszem, mrugal, ale
 // przycisku "Wyslij do SBS" nie bylo, wiec nie bylo tez czego przeslac.
 //
-// Teraz po dwoch minutach przerywamy to, co akurat trwa, i pokazujemy panel z tym, co udalo sie
+// Teraz po czterdziestu pieciu sekundach przerywamy to, co akurat trwa, i pokazujemy panel z tym, co udalo sie
 // zebrac. Lepiej oddac czesc kolejki i powiedziec o tym wprost, niz zostawic czlowieka
 // z mrugajacym licznikiem.
 var trybJedenMecz = false;
@@ -36,7 +36,7 @@ var ostatnioLinkow = 0, ostatnioWierszy = 0, ostatnioKrokow = 0;
 var CZAS_STARTU = 0;                       // ustawiany w start(), zeby liczyc od pierwszego ruchu
 var PRZERWANO_CZASEM = false;
 function minelo(){ return CZAS_STARTU ? (new Date().getTime() - CZAS_STARTU) : 0; }
-function zaDlugo(){ return minelo() > 120000; }
+function zaDlugo(){ return minelo() > 45000; }
 
 // PORoWNUJEMY CALY ADRES, NIE SAMA SCIEZKE.
 //
@@ -63,9 +63,66 @@ document.addEventListener('click', function(e){
 }, true);
 window.addEventListener('beforeunload', function(){ ZBIERAM=false; });
 var box=document.createElement('div');
-box.style.cssText='position:fixed;right:16px;bottom:16px;z-index:2147483647;background:#16302A;color:#F6F3EA;padding:12px 16px;border-radius:8px;font:14px sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.4)';
-box.textContent='SBS '+SBS_ZBIERACZ+': zaczynam...';
+box.style.cssText='position:fixed;right:16px;bottom:16px;z-index:2147483647;background:#16302A;color:#F6F3EA;padding:12px 16px;border-radius:8px;font:14px sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.4);max-width:340px';
+// Linijka postepu i stopka z przyciskami sa OSOBNE. Dzieki temu nadpisywanie tekstu postepu
+// nie kasuje przyciskow — dotad kazde box.textContent=... zmiatalo je razem z trescia.
+var linia=document.createElement('div');
+linia.style.cssText='line-height:1.45';
+linia.textContent='SBS '+SBS_ZBIERACZ+': zaczynam...';
+box.appendChild(linia);
+var stopka=document.createElement('div');
+stopka.style.cssText='margin-top:10px;padding-top:8px;border-top:1px solid rgba(246,243,234,.2)';
+box.appendChild(stopka);
 (document.body||document.documentElement).appendChild(box);
+
+// OPIS STRONY — dostepny natychmiast, nie dopiero na koncu.
+//
+// Zbieranie calej kolejki zacina sie w polowie i panel koncowy nie powstaje. Tymczasem to
+// wlasnie wtedy potrzebny jest opis strony: jak zbudowane sa wiersze meczow, czy sa w nich
+// odnosniki, czy identyfikatory. Przycisk czyta WYLACZNIE otwarta strone i kopiuje opis do
+// schowka — niczego nie klika, nie wysyla i nie zmienia.
+function opisStrony(){
+ var dane={};
+ try{
+  dane.wersja = SBS_ZBIERACZ;
+  dane.adres = location.pathname + location.search.slice(0,100);
+  dane.linkiDoMeczow = document.querySelectorAll('a[href*="/mecz/"]').length;
+  dane.idWKodzie = (document.documentElement.innerHTML.match(/mecz\/[0-9a-f-]{30,40}/gi)||[]).length;
+  dane.slowoRozegrany = ((document.body.innerText||'').match(/Rozegrany/g)||[]).length;
+  try{ dane.wierszyZWynikiem = wierszeRozegrane().length; }catch(e){ dane.wierszyZWynikiem='blad'; }
+  var wyniki=[].slice.call(document.querySelectorAll('*')).filter(function(e){
+   return e.children.length===0 && /^\d{1,2}\s*:\s*\d{1,2}$/.test((e.textContent||'').trim());
+  });
+  dane.elementowZWynikiem = wyniki.length;
+  dane.probki = wyniki.slice(0,2).map(function(e){
+   var w=e; for(var i=0;i<4 && w.parentElement;i++) w=w.parentElement;
+   var atr=[];
+   try{ for(var a=0;a<w.attributes.length;a++) atr.push(w.attributes[a].name+'='+String(w.attributes[a].value).slice(0,50)); }catch(e2){}
+   return { tag:w.tagName, atrybuty:atr, maNgContext:(typeof w.__ngContext__!=='undefined'), html:(w.outerHTML||'').slice(0,600) };
+  });
+ }catch(e3){ dane.blad=String(e3 && e3.message); }
+ return JSON.stringify(dane, null, 1);
+}
+function doSchowka(tekst){
+ var pole=document.createElement('textarea'); pole.value=tekst;
+ document.body.appendChild(pole); pole.select();
+ var ok=false; try{ ok=document.execCommand('copy'); }catch(e){}
+ document.body.removeChild(pole);
+ return ok;
+}
+var przyciskOpisu=document.createElement('button');
+przyciskOpisu.textContent='Skopiuj opis strony (dla SBS)';
+przyciskOpisu.style.cssText='display:block;width:100%;padding:7px;margin-bottom:6px;border:1px solid rgba(246,243,234,.35);border-radius:6px;background:transparent;color:#F6F3EA;font:13px sans-serif;cursor:pointer';
+przyciskOpisu.onclick=function(){
+ przyciskOpisu.textContent = doSchowka(opisStrony()) ? 'Skopiowane — wklej to w rozmowie z SBS' : 'Nie udalo sie skopiowac';
+};
+stopka.appendChild(przyciskOpisu);
+
+var przyciskStop=document.createElement('button');
+przyciskStop.textContent='Przerwij i pokaz, co mam';
+przyciskStop.style.cssText='display:block;width:100%;padding:7px;border:1px solid rgba(246,243,234,.35);border-radius:6px;background:transparent;color:#F6F3EA;font:13px sans-serif;cursor:pointer';
+przyciskStop.onclick=function(){ PRZERWANO_CZASEM=true; ZBIERAM=false; try{ koniec(); }catch(e){} };
+stopka.appendChild(przyciskStop);
 
 function zdarzenia(d){try{
  if(!d) return '';
@@ -233,7 +290,7 @@ function przejdzPoMeczach(gotowe){
    var txt = document.body.innerText || '';
    if(/Skład wyjściowy/.test(txt)){ clearInterval(t); przepiszProtokol(); wroc(); return; }
    if(/Ups! Piłka za boiskiem/.test(txt) || prob > 24){ clearInterval(t); nieudanych++; wroc(); return; }
-   box.textContent = 'SBS ' + SBS_ZBIERACZ + ': mecz ' + (k+1) + '/' + wiersze.length + ' - czekam na sklad (' + prob + ')';
+   linia.textContent='SBS ' + SBS_ZBIERACZ + ': mecz ' + (k+1) + '/' + wiersze.length + ' - czekam na sklad (' + prob + ')';
   }, 500);
  }
 
@@ -258,7 +315,7 @@ function przejdzPoMeczach(gotowe){
 
  function dalej(){
   if(k >= wiersze.length || zaDlugo()){ koncz(); return; }
-  box.textContent = 'SBS ' + SBS_ZBIERACZ + ': mecz ' + (k+1) + '/' + wiersze.length + ' (zebranych ' + zebranychTu + ')';
+  linia.textContent='SBS ' + SBS_ZBIERACZ + ': mecz ' + (k+1) + '/' + wiersze.length + ' (zebranych ' + zebranychTu + ')';
   var el = wiersze[k];
   if(!el || !el.isConnected){ k++; setTimeout(dalej, 80); return; }
   // Klikamy w wiersz i w jego wnetrze — az strona przejdzie na mecz.
@@ -430,7 +487,7 @@ function otworzZakladkeMecze(gotowe){
  if(zakladkaNr>=k.length){ gotowe(); return; }
  var cel=k[zakladkaNr];
  zakladkaNr++;
- box.textContent='SBS '+SBS_ZBIERACZ+': otwieram zakladke z meczami ('+zakladkaNr+'/'+k.length+')...';
+ linia.textContent='SBS '+SBS_ZBIERACZ+': otwieram zakladke z meczami ('+zakladkaNr+'/'+k.length+')...';
  if(wolnoKliknac(cel)){try{cel.click();}catch(e){}}
  setTimeout(gotowe,1600);
 }
@@ -460,7 +517,7 @@ function dociagnijStrone(gotowe){
   var ileWierszy = wierszeRozegrane().length;
   ostatnioLinkow = ileLinkow; ostatnioWierszy = ileWierszy; ostatnioKrokow = krok;
   var mamy = ileLinkow >= 2 || ileWierszy >= 2;
-  box.textContent='SBS '+SBS_ZBIERACZ+': szukam rozegranych meczow ('+krok+'/'+MAX+') - odnosnikow '+ileLinkow+', wierszy '+ileWierszy;
+  linia.textContent='SBS '+SBS_ZBIERACZ+': szukam rozegranych meczow ('+krok+'/'+MAX+') - odnosnikow '+ileLinkow+', wierszy '+ileWierszy;
 
   if(mamy || krok>=MAX || zaDlugo()){
    clearInterval(t);
@@ -479,7 +536,7 @@ function start(){
    PRZERWANO_CZASEM = true;
    ZBIERAM = false;                       // przestajemy blokowac klikniecia, praca i tak sie konczy
    koniec();
-  }, 120000);
+  }, 45000);
  }
  if(zaDlugo()){ koniec(); return; }
  // Ta sama losowa awaria LNP trafia sie na stronie, z ktorej wlasnie startujemy. Nie ma sensu
@@ -490,7 +547,7 @@ function start(){
   var zapas=listaZPamieci();
   if(zapas.length){
    linki=zapas; i=0;
-   box.textContent='SBS '+SBS_ZBIERACZ+': LNP odeslalo 404, ale mam zapamietane '+zapas.length
+   linia.textContent='SBS '+SBS_ZBIERACZ+': LNP odeslalo 404, ale mam zapamietane '+zapas.length
     +' adresow meczow tej grupy - wczytuje je mimo to.';
    nastepny();
    return;
@@ -516,12 +573,12 @@ function start(){
   // Na stronie meczu bierzemy ten jeden — i MOWIMY O TYM W PANELU. Bez tego wyglada, jakby
   // zakladka zebrala cala kolejke i znalazla w niej tylko jeden mecz.
   trybJedenMecz = true;
-  box.textContent='SBS '+SBS_ZBIERACZ+': jestes na stronie meczu - zbieram ten jeden';
+  linia.textContent='SBS '+SBS_ZBIERACZ+': jestes na stronie meczu - zbieram ten jeden';
   linki=[location.href];nastepny();return;
  }
  if(!rozwiniete){
   rozwiniete=true;
-  box.textContent='SBS '+SBS_ZBIERACZ+': rozwijam liste meczow...';
+  linia.textContent='SBS '+SBS_ZBIERACZ+': rozwijam liste meczow...';
   otworzZakladkeMecze(function(){ dociagnijStrone(start); });
   return;
  }
@@ -538,13 +595,13 @@ function start(){
   var zpam=listaZPamieci();
   if(zpam.length){
    linki=zpam;i=0;
-   box.textContent='SBS '+SBS_ZBIERACZ+': strona nie oddala listy meczow, biore zapamietane '+linki.length+' adresow';
+   linia.textContent='SBS '+SBS_ZBIERACZ+': strona nie oddala listy meczow, biore zapamietane '+linki.length+' adresow';
    nastepny();return;
   }
  }
  if(linki.length && !(ileWierszy>=2 && linki.length*2<ileWierszy)){
   zapamietajListe(linki);
-  box.textContent='SBS '+SBS_ZBIERACZ+': zbieram protokoly 0/'+linki.length;nastepny();return;
+  linia.textContent='SBS '+SBS_ZBIERACZ+': zbieram protokoly 0/'+linki.length;nastepny();return;
  }
  // LISTA POD TABELA — PRZECHODZIMY PO MECZACH JEDEN PO DRUGIM.
  //
@@ -553,18 +610,18 @@ function start(){
  // protokol prosto ze strony i wracamy przez historie. Wolniej, ale kazdy krok jest sprawdzalny.
  if(!probowanoKlikac && ileWierszy>=2){
   probowanoKlikac=true;
-  box.textContent='SBS '+SBS_ZBIERACZ+': na ekranie '+ileWierszy+' rozegranych meczow - otwieram je po kolei';
+  linia.textContent='SBS '+SBS_ZBIERACZ+': na ekranie '+ileWierszy+' rozegranych meczow - otwieram je po kolei';
   przejdzPoMeczach(function(){ koniec(); });
   return;
  }
  czekam++;
- if(czekam<6){box.textContent='SBS '+SBS_ZBIERACZ+': czekam, az strona sie zaladuje...';setTimeout(start,500);return;}
+ if(czekam<6){linia.textContent='SBS '+SBS_ZBIERACZ+': czekam, az strona sie zaladuje...';setTimeout(start,500);return;}
  if(!probowanoKlikac&&wierszeRozegrane().length){
   probowanoKlikac=true;
   zbierzAdresyPrzezKlikanie(function(adresy){
    if(adresy.length){
     linki=adresy;i=0;
-    box.textContent='SBS '+SBS_ZBIERACZ+': zbieram protokoly 0/'+linki.length;
+    linia.textContent='SBS '+SBS_ZBIERACZ+': zbieram protokoly 0/'+linki.length;
     nastepny();return;
    }
    czekam=0;start();
@@ -615,7 +672,7 @@ function start(){
   czysc.onclick=function(){
    try{localStorage.removeItem(KLUCZ);}catch(e){}
    zebrane=[];
-   box.textContent='SBS '+SBS_ZBIERACZ+': wyczyscilem bufor. Wejdz na liste meczow wlasciwej grupy i kliknij zakladke.';
+   linia.textContent='SBS '+SBS_ZBIERACZ+': wyczyscilem bufor. Wejdz na liste meczow wlasciwej grupy i kliknij zakladke.';
   };
   box.appendChild(czysc);
   var x=document.createElement('button');
@@ -645,7 +702,7 @@ function nastepny(){
  wczytajMecz(linki[i], 0);
 }
 function wczytajMecz(url, podejscie){
- box.textContent='SBS '+SBS_ZBIERACZ+': kolejka '+kolejek+' - protokoly '+i+'/'+linki.length
+ linia.textContent='SBS '+SBS_ZBIERACZ+': kolejka '+kolejek+' - protokoly '+i+'/'+linki.length
   +(podejscie?' (podejscie '+(podejscie+1)+')':'')+' (razem '+zebrane.length+')';
  var f=document.createElement('iframe');
  f.style.cssText='position:fixed;left:-9999px;width:1200px;height:2000px';
@@ -788,7 +845,7 @@ function zbierzAdresyPrzezKlikanie(gotowe){
  }
  function dalej(){
   if(k>=wiersze.length){ skoncz(); return; }
-  box.textContent='SBS '+SBS_ZBIERACZ+': otwieram mecz '+(k+1)+'/'+wiersze.length+' (adresow '+adresy.length+')';
+  linia.textContent='SBS '+SBS_ZBIERACZ+': otwieram mecz '+(k+1)+'/'+wiersze.length+' (adresow '+adresy.length+')';
   var lista=wierszeRozegrane();
   var el=lista[k]||wiersze[k];
   if(!el||!el.isConnected){ k++; setTimeout(dalej,80); return; }
@@ -828,13 +885,13 @@ function poKolejce(){
  });
  if(swieze.length&&doliczen<6){
   doliczen++;
-  box.textContent='SBS '+SBS_ZBIERACZ+': doszlo '+swieze.length+' meczow - zbieram dalej';
+  linia.textContent='SBS '+SBS_ZBIERACZ+': doszlo '+swieze.length+' meczow - zbieram dalej';
   linki=swieze;i=0;nastepny();return;
  }
  var wybor=listaKolejek();
  if(wybor&&wybor.selectedIndex+1<wybor.options.length&&kolejek<40){
   kolejek++;
-  box.textContent='SBS '+SBS_ZBIERACZ+': przechodze do kolejki '+kolejek+'...';
+  linia.textContent='SBS '+SBS_ZBIERACZ+': przechodze do kolejki '+kolejek+'...';
   var poprzednie=linki.join('|');
   wybor.selectedIndex=wybor.selectedIndex+1;
   wybor.dispatchEvent(new Event('change',{bubbles:true}));
@@ -920,7 +977,7 @@ function pobierzRoczniki(gotowe){
    gotowe(zdobyte,zostalo); return;
   }
   var k=doZrobienia[n];
-  box.textContent='SBS '+SBS_ZBIERACZ+': roczniki '+(n+1)+'/'+doZrobienia.length+(zostalo?' (zostanie '+zostalo+' na potem)':'');
+  linia.textContent='SBS '+SBS_ZBIERACZ+': roczniki '+(n+1)+'/'+doZrobienia.length+(zostalo?' (zostanie '+zostalo+' na potem)':'');
   var f=document.createElement('iframe');
   f.style.cssText='position:fixed;left:-9999px;width:1000px;height:1400px';
   f.src=profileZawodnikow[k];
@@ -966,7 +1023,7 @@ function koniec(){
   } else {
    koniec.tura++;
    koniec.poprzednioNieudanych = przedTura;
-   box.textContent='SBS '+SBS_ZBIERACZ+': '+przedTura+' meczow nie weszlo - tura '+(koniec.tura+1)
+   linia.textContent='SBS '+SBS_ZBIERACZ+': '+przedTura+' meczow nie weszlo - tura '+(koniec.tura+1)
     +' (LNP odsyla 404 losowo, probuje dalej)';
    linki = nieudaneUrl.slice();
    nieudaneUrl = []; nieudanych = 0; i = 0;
@@ -979,7 +1036,7 @@ function koniec(){
  if(!PRZERWANO_CZASEM && !koniec.poRocznikach){
   koniec.poRocznikach=true;
   pobierzRoczniki(function(zdobyte,zostalo){
-   box.textContent='SBS '+SBS_ZBIERACZ+': roczniki gotowe (+'+zdobyte+')';
+   linia.textContent='SBS '+SBS_ZBIERACZ+': roczniki gotowe (+'+zdobyte+')';
    koniec();
   });
   return;
@@ -1072,7 +1129,7 @@ function koniec(){
  wyczysc.onclick=function(){
   try{localStorage.removeItem(KLUCZ);}catch(e){}
   zebrane=[];
-  box.textContent='SBS '+SBS_ZBIERACZ+': wyczyscilem zebrane protokoly. Kliknij zakladke jeszcze raz, zeby zebrac te grupe od nowa.';
+  linia.textContent='SBS '+SBS_ZBIERACZ+': wyczyscilem zebrane protokoly. Kliknij zakladke jeszcze raz, zeby zebrac te grupe od nowa.';
  };
  box.appendChild(wyczysc);
  var zamknij=document.createElement('button');
@@ -1094,7 +1151,7 @@ function wyslij(tresc){
   try{navigator.clipboard.writeText(tresc);udalo=true;}catch(e){}
  }
  var doSbs=SBS_ADRES+'/app?sbs=odbior';
- box.textContent='SBS '+SBS_ZBIERACZ+': wysylam '+zebrane.length+' protokolow do aplikacji...';
+ linia.textContent='SBS '+SBS_ZBIERACZ+': wysylam '+zebrane.length+' protokolow do aplikacji...';
  var okno=null;
  try{okno=window.open(doSbs,'sbs_odbior');}catch(e){okno=null;}
  if(okno){
