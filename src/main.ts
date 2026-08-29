@@ -4467,6 +4467,14 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
     const pole = overlay.querySelector('#pm-tekst') as any;
     if(pole) pole.value = tekst;
     rozpoznaj();
+    // WKLEJONE PROTOKOŁY TEŻ ZAPISUJEMY SAME.
+    //
+    // Rozpoznanie bez zapisu wygląda jak zapis: okno wypisuje składy, minuty i nazwiska, więc
+    // widok jest ten sam, a w bazie nie ma nic. Kto zebrał kolejkę i wkleił ją tutaj, odchodził
+    // przekonany, że statystyki są wgrane — i wracał do klubu z połową meczów. Zapisujemy więc
+    // od razu; mecz policzony wcześniej i tak zostaje odrzucony, więc nadmiarowe wklejenie
+    // niczego nie psuje. „Zapisz protokoły" zostaje na wypadek ponowienia po błędzie.
+    if(wynik && wynik.length) void zapisz();
   });
 
   function rozpoznaj(){
