@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v26 z 29.08.2026";
+var SBS_ZBIERACZ="v27 z 29.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -37,7 +37,7 @@ var ostatnioLinkow = 0, ostatnioWierszy = 0, ostatnioKrokow = 0;
 var CZAS_STARTU = 0;                       // ustawiany w start(), zeby liczyc od pierwszego ruchu
 var PRZERWANO_CZASEM = false;
 function minelo(){ return CZAS_STARTU ? (new Date().getTime() - CZAS_STARTU) : 0; }
-function zaDlugo(){ return minelo() > 600000; }
+function zaDlugo(){ return PRZERWANO_CZASEM; }   // tylko recznie: przycisk "Przerwij"
 
 // PORoWNUJEMY CALY ADRES, NIE SAMA SCIEZKE.
 //
@@ -615,7 +615,7 @@ function zbierzZeStronyDruzyny(gotowe){
    if(w.koniec){ gotowe(dodanych); return; }
    if(w.blad){
     nieudane++;
-    if(nieudane>12){ gotowe(dodanych); return; }
+    if(nieudane>40){ gotowe(dodanych); return; }
     setTimeout(dalej, 600); return;
    }
    if(w.adres && w.tekst){
@@ -635,13 +635,8 @@ function zbierzZeStronyDruzyny(gotowe){
 function start(){
  if(!CZAS_STARTU){
   CZAS_STARTU = new Date().getTime();
-  // Twardy limit: cokolwiek by sie nie dzialo, po dwoch minutach pokazujemy panel.
-  setTimeout(function(){
-   if(koniec.pokazano) return;
-   PRZERWANO_CZASEM = true;
-   ZBIERAM = false;                       // przestajemy blokowac klikniecia, praca i tak sie konczy
-   koniec();
-  }, 600000);
+  // BEZ BUDZIKA. Zbieranie konczy sie, gdy skoncza sie mecze — albo gdy uzytkownik nacisnie
+  // "Przerwij i pokaz, co mam". Kazdy limit czasu, jaki tu wstawialem, urywal prace w polowie.
  }
  if(zaDlugo()){ koniec(); return; }
  // Ta sama losowa awaria LNP trafia sie na stronie, z ktorej wlasnie startujemy. Nie ma sensu
@@ -808,7 +803,7 @@ function start(){
 // Zmierzone na zywej stronie: przy trzech podejsciach jeden mecz na piec i tak przepadal.
 // Dlatego podejsc jest piec, a te, ktore mimo to nie weszly, wracaja w DRUGIEJ TURZE na koncu —
 // awaryjnosc LNP jest losowa, wiec ponowienie po kilkudziesieciu sekundach zwykle trafia lepiej.
-var PODEJSC = 5;
+var PODEJSC = 10;
 var nieudanych = 0, nieudaneUrl = [];
 function nastepny(){
  if(i>=linki.length){ poKolejce(); return; }
@@ -1129,10 +1124,10 @@ function koniec(){
  // tur, z rosnaca przerwa. Konczymy wczesniej, gdy tura nic nie odzyskala: to znak, ze problem
  // nie jest chwilowy i dalsze dobijanie sie nic nie da.
  koniec.tura = koniec.tura || 0;
- if(!PRZERWANO_CZASEM && koniec.tura < 4 && nieudaneUrl.length){
+ if(!PRZERWANO_CZASEM && !koniec.bezSensu && nieudaneUrl.length){
   var przedTura = nieudaneUrl.length;
   if(koniec.tura > 0 && przedTura >= koniec.poprzednioNieudanych){
-   koniec.tura = 4;                       // ostatnia tura nic nie dala — nie ma po co dalej
+   koniec.bezSensu = true;                // ostatnia tura nic nie odzyskala — dalsze proby nic nie dadza
   } else {
    koniec.tura++;
    koniec.poprzednioNieudanych = przedTura;
