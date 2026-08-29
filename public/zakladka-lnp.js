@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v30 z 29.08.2026";
+var SBS_ZBIERACZ="v31 z 29.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -713,14 +713,39 @@ function zbierzGrupePrzezDruzyny(gotowe){
   wiersz();
  }
 
+ // IDENTYFIKATORY DRUZYN CZYTAMY Z OTWARTEJ STRONY, NIE Z RAMKI.
+ //
+ // Po klikniecu pierwszego wiersza Angular pokazuje ten mecz JUZ TUTAJ — razem z odnosnikami do
+ // obu druzyn. Wczytywanie go po raz drugi w ramce bylo zbedne i zabojcze: jedno 404 z LNP na tym
+ // kroku konczylo caly przebieg, zanim cokolwiek zdazyl zebrac. Teraz siegamy po to, co jest
+ // pod reka, a ramka zostaje dopiero do wlasciwej pracy.
  linia.textContent='SBS '+SBS_ZBIERACZ+': czytam pierwszy mecz z listy...';
  var adres=pierwszyAdresZListy();
- if(!adres){ gotowe(0); return; }
- druzynyZMeczu(adres, function(ids){
-  if(!ids.length){ gotowe(0); return; }
-  doZrobienia = ids.slice();
-  poDruzynie();
- });
+ var czekam=0;
+ var t=setInterval(function(){
+  czekam++;
+  var ids=[];
+  try{
+   var trafienia=(document.documentElement.innerHTML||'').match(/druzyna\/[0-9a-f-]{30,40}/gi)||[];
+   trafienia.forEach(function(x){ var id=x.split('/')[1]; if(ids.indexOf(id)<0) ids.push(id); });
+  }catch(e){}
+  if(ids.length>=2){
+   clearInterval(t);
+   doZrobienia=ids.slice();
+   linia.textContent='SBS '+SBS_ZBIERACZ+': mam '+ids.length+' klubow na start - zbieram';
+   poDruzynie();
+   return;
+  }
+  if(czekam>30){
+   clearInterval(t);
+   // Ostatnia deska ratunku: mecz z ramki, tak jak dotad — ale juz bez uzaleznienia calego biegu.
+   if(!adres){ gotowe(0); return; }
+   druzynyZMeczu(adres, function(z){
+    if(!z.length){ gotowe(0); return; }
+    doZrobienia=z.slice(); poDruzynie();
+   });
+  }
+ },400);
 }
 
 function start(){
