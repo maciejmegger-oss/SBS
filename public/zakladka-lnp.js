@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v31 z 29.08.2026";
+var SBS_ZBIERACZ="v32 z 29.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -578,8 +578,12 @@ function zdejmijMeczZDruzyny(adresDruzyny, nr, gotowe){
     clearInterval(t);
     var j=txt.search(/^\s*Składy\s*$/m);
     var adres=zlapany ? (location.origin+zlapany) : '';
-    var idsD=[].slice.call((d.documentElement.innerHTML||'').matchAll(/druzyna\/([0-9a-f-]{30,40})/gi)).map(function(m){return m[1];});
-    var jedyneD=[]; idsD.forEach(function(x){ if(jedyneD.indexOf(x)<0) jedyneD.push(x); });
+    // matchAll oddaje ITERATOR, a nie cos podobnego do tablicy — [].slice.call(...) dawalo wiec
+    // zawsze pusta liste. Przez to kolejka klubow nigdy sie nie rozwijala i caly przebieg konczyl
+    // sie na dwoch startowych druzynach. Zwykle match() oddaje tablice i to dziala.
+    var jedyneD=[];
+    ((d.documentElement.innerHTML||'').match(/druzyna\/[0-9a-f-]{30,40}/gi)||[]).forEach(function(x){
+     var q=x.split('/')[1]; if(jedyneD.indexOf(q)<0) jedyneD.push(q); });
     var wynik={ nr:nr, adres:adres, druzynyZMeczu:jedyneD, tekst:txt.slice(j<0?0:Math.max(0,j-400))+zdarzenia(d) };
     f.remove(); gotowe(wynik); return;
    }
@@ -667,8 +671,9 @@ function druzynyZMeczu(adres, gotowe){
   var txt=(d&&d.body)?(d.body.innerText||''):'';
   if(/Skład wyjściowy/.test(txt)){
    clearInterval(t);
-   var ids=[].slice.call((d.documentElement.innerHTML||'').matchAll(/druzyna\/([0-9a-f-]{30,40})/gi)).map(function(m){return m[1];});
-   var jedyne=[]; ids.forEach(function(x){ if(jedyne.indexOf(x)<0) jedyne.push(x); });
+   var jedyne=[];
+   ((d.documentElement.innerHTML||'').match(/druzyna\/[0-9a-f-]{30,40}/gi)||[]).forEach(function(x){
+    var q=x.split('/')[1]; if(jedyne.indexOf(q)<0) jedyne.push(q); });
    f.remove(); gotowe(jedyne); return;
   }
   if(/Ups! Piłka za boiskiem/.test(txt) || n>40){ clearInterval(t); f.remove(); gotowe([]); }

@@ -4431,11 +4431,19 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
 
   // Protokoły przysłane wprost ze strony ŁNP (zakładka) — wpadają tu bez udziału schowka
   // i od razu idą do rozpoznania, tak jakby ktoś je wkleił.
+  // ZAPISUJEMY SAMI, BEZ PYTANIA O ZGODĘ.
+  //
+  // Przy wklejaniu ręcznym „Zapisz protokoły" ma sens — można się pomylić co do zawartości
+  // schowka. Tu pomyłka jest niemożliwa: treść przyszła prosto z zakładki, z konkretnych
+  // protokołów ŁNP, a mecz policzony wcześniej i tak zostaje odrzucony. Dodatkowe kliknięcie
+  // było tylko przeszkodą — po zebraniu całej grupy statystyki potrafiły zostać w oknie
+  // nierozliczone, bo nikt go już nie oglądał.
   if(tekstZZewnatrz && String(tekstZZewnatrz).trim()){
     rysuj();
     const pole = overlay.querySelector('#pm-tekst') as any;
     if(pole) pole.value = tekstZZewnatrz;
     rozpoznaj();
+    if(wynik && wynik.length) void zapisz();
     return;
   }
 
@@ -11184,7 +11192,7 @@ function sprawdzZakladke(nazwa, kod){
 
 // Wersja zakładki. Widnieje w każdym jej komunikacie i w oknie SBS, żeby dało się jednym
 // spojrzeniem stwierdzić, czy w pasku siedzi kod sprzed poprawek.
-const ZAKLADKA_WERSJA = 'v31 z 29.08.2026';
+const ZAKLADKA_WERSJA = 'v32 z 29.08.2026';
 const SBS_ADRES_JS = JSON.stringify(location.origin);
 // ZAKŁADKA W PASKU NIE AKTUALIZUJE SIĘ SAMA — I TO BYŁ PRAWDZIWY PROBLEM.
 //
