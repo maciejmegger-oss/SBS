@@ -10643,7 +10643,8 @@ function zdarzeniaZProtokolu(rawText){
 // Rozbieramy więc nazwę na RDZEŃ: zdejmujemy skróty formy prawnej (KS, MKS, GKS…), rok założenia
 // („1930") i numer zespołu. Numer trzymamy OSOBNO i musi się zgadzać — „Arka II Gdynia" to inny
 // klub niż „Arka Gdynia" i pomylenie ich wpisałoby dorobek rezerw pierwszej drużynie.
-const SZUM_NAZWY_KLUBU = /^(ks|mks|gks|lks|mlks|uks|kp|ts|rks|wks|zks|mkp|oks|sks|cks|mzks|klub|sportowy|gminny|miejski|ludowy|akademia|ap|as|fc|kkp|of)$/;
+// „w" to przyimek z nazw typu „MKS Limanovia w Limanowej", nie człon nazwy klubu.
+const SZUM_NAZWY_KLUBU = /^(ks|mks|gks|lks|mlks|uks|kp|ts|rks|wks|zks|mkp|oks|sks|cks|mzks|klub|sportowy|gminny|miejski|ludowy|akademia|ap|as|fc|kkp|of|w)$/;
 const NUMER_ZESPOLU = { ii:'2', iii:'3', iv:'4', '2':'2', '3':'3', '4':'4' };
 
 function rozbijNazweKlubu(nazwa){
@@ -10670,6 +10671,24 @@ function rozbijNazweKlubu(nazwa){
 
 // Zwraca klub albo null. Gdy nazwa pasuje do kilku klubów naraz (samo „Gryf" pasuje i do
 // Wejherowa, i do Słupska), NIE zgadujemy — lepszy brak statystyk niż dopisane nie temu klubowi.
+// TEN SAM CZŁON NAZWY, TYLKO INACZEJ ODMIENIONY.
+//
+// Na ŁNP miasto bywa w innym przypadku: „MKS Limanovia w Limanowej" wobec naszej „Limanovia
+// Limanowa". Reguła niżej wymaga zgodności WSZYSTKICH członów krótszej nazwy, więc jedna litera
+// końcówki zostawiała całą drużynę bez statystyk, choć protokół przyszedł w komplecie.
+//
+// Zgadywania z tego nie robimy. Wspólny początek musi mieć co najmniej sześć znaków, a to za
+// dużo dla nazw naprawdę różnych: „Kleczew" i „Ostróda" dzielą zero, „Bochnia" i „Bocheński"
+// tylko cztery — te zostają do wskazania ręką. Odmiana tej samej nazwy dzieli zwykle wszystko
+// poza ostatnią literą albo dwiema.
+const tenSamCzlon = (x, y)=>{
+  if(x === y) return true;
+  if(x.length < 6 || y.length < 6) return false;
+  let i = 0;
+  while(i < x.length && i < y.length && x[i] === y[i]) i++;
+  return i >= 6;
+};
+
 const odciskKlubu = (nazwa)=>{ const b = rozbijNazweKlubu(nazwa); return b.numer + '|' + b.rdzen.slice().sort().join('-'); };
 const wielkoscKartoteki = (klub)=> DB.players.filter(p=>p.clubId === klub.id).length;
 
@@ -10688,7 +10707,7 @@ function dopasujKlubDoNazwy(nazwa, podpowiedzGrupa, poziom){
     const b = rozbijNazweKlubu(c.name);
     if(a.numer !== b.numer) return false;
     if(!a.rdzen.length || !b.rdzen.length) return false;
-    const wspolne = a.rdzen.filter(x=>b.rdzen.includes(x));
+    const wspolne = a.rdzen.filter(x=>b.rdzen.some(y=>tenSamCzlon(x,y)));
     if(!wspolne.length) return false;
     const krotszy = Math.min(a.rdzen.length, b.rdzen.length);
     return wspolne.length === krotszy && wspolne.some(x=>x.length>=4);
