@@ -10643,9 +10643,26 @@ function zdarzeniaZProtokolu(rawText){
 // Rozbieramy więc nazwę na RDZEŃ: zdejmujemy skróty formy prawnej (KS, MKS, GKS…), rok założenia
 // („1930") i numer zespołu. Numer trzymamy OSOBNO i musi się zgadzać — „Arka II Gdynia" to inny
 // klub niż „Arka Gdynia" i pomylenie ich wpisałoby dorobek rezerw pierwszej drużynie.
+// SKRÓTY ODMIENIAJĄ SIĘ TAK SAMO JAK SŁOWA, KTÓRE ZASTĘPUJĄ.
+//
+// ŁNP skraca miasta i przymiotniki: „RKS Ursus W-wa", „MKS PODLASIE SOKOŁÓW PODL.". Dla
+// dopasowania „wwa" i „warszawa" to dwa różne słowa, więc klub zostawał bez statystyk mimo
+// poprawnie zebranego protokołu. Rozwijamy je przed porównaniem — a odmianę końcówki
+// („podlaski" wobec „podlaska") dobiera już `tenSamCzlon`.
+const SKROTY_NAZWY = {
+  wwa: 'warszawa', wawa: 'warszawa',
+  podl: 'podlaski', wlkp: 'wielkopolski', maz: 'mazowiecki', kuj: 'kujawski',
+  pom: 'pomorski', dolnosl: 'dolnoslaski', zdr: 'zdroj', gorn: 'gorniczy',
+};
+
 // „w" to przyimek z nazw typu „MKS Limanovia w Limanowej", nie człon nazwy klubu.
-const SZUM_NAZWY_KLUBU = /^(ks|mks|gks|lks|mlks|uks|kp|ts|rks|wks|zks|mkp|oks|sks|cks|mzks|klub|sportowy|gminny|miejski|ludowy|akademia|ap|as|fc|kkp|of|w)$/;
+// „sp z o o" i „sa" to forma prawna spółki, doklejana na ŁNP do nazw klubów zawodowych
+// („SS HUTNIK W-WA SP. Z O.O."), a nie część nazwy, pod którą klub gra.
+const SZUM_NAZWY_KLUBU = /^(ks|mks|gks|lks|mlks|uks|kp|ts|rks|wks|zks|mkp|oks|sks|cks|mzks|ss|lzs|kks|muks|mgks|tkkf|klub|sportowy|gminny|miejski|ludowy|akademia|ap|as|fc|kkp|of|w|z|o|oo|sp|sa)$/;
 const NUMER_ZESPOLU = { ii:'2', iii:'3', iv:'4', '2':'2', '3':'3', '4':'4' };
+
+// „W-wa" trzeba skleić ZANIM myślnik rozdzieli człony, inaczej zostaje bezużyteczne „wa".
+const rozwinSkroty = (nazwa)=> String(nazwa||'').replace(/\bw[-–—.\s]?\s?wa\b/gi, ' Warszawa ');
 
 function rozbijNazweKlubu(nazwa){
   // MYŚLNIK ROZDZIELA CZŁONY NAZWY, NIE SKLEJA ICH. „SPÓJNIA LANDEK-JASIENICA" bez tego dawała
@@ -10653,7 +10670,7 @@ function rozbijNazweKlubu(nazwa){
   // bez statystyk, choć chodzi o ten sam zespół.
   // „n/Wisłą" to skrót od „nad Wisłą" — bez tego „Wisła Dobrzyń n/Wisłą" z ŁNP nie miała nic
   // wspólnego z naszą „Wisła Dobrzyń nad Wisłą" i klub zostawał nierozpoznany.
-  const slowa = String(nazwa||'').replace(/[.,()]/g,' ').replace(/[-–—]/g,' ')
+  const slowa = rozwinSkroty(nazwa).replace(/[.,()]/g,' ').replace(/[-–—]/g,' ')
     .replace(/\bn\s*\/\s*/gi, 'nad ')
     .split(/\s+/).filter(Boolean);
   let numer = '';
@@ -10664,7 +10681,7 @@ function rozbijNazweKlubu(nazwa){
     if(NUMER_ZESPOLU[czysty]){ numer = NUMER_ZESPOLU[czysty]; continue; }
     if(/^\d{4}$/.test(czysty)) continue;
     if(SZUM_NAZWY_KLUBU.test(czysty)) continue;
-    rdzen.push(czysty);
+    rdzen.push(SKROTY_NAZWY[czysty] || czysty);
   }
   return { numer, rdzen };
 }
@@ -10716,9 +10733,16 @@ function dopasujKlubDoNazwy(nazwa, podpowiedzGrupa, poziom){
 
   // POZIOM Z PROTOKOŁU ODCINA KLUBY Z INNYCH ROZGRYWEK. Ta sama nazwa bywa w IV lidze i wśród
   // roczników młodzieżowych — bez tego dorobek seniorów trafiał do drużyny U13.
+  // BRAK KANDYDATA NA TYM POZIOMIE TO ODMOWA, NIE POWÓD DO SIĘGNIĘCIA PO INNY.
+  //
+  // Wcześniej filtr działał tylko wtedy, gdy coś po nim zostało — a gdy nie zostało nic, brany
+  // był kandydat z dowolnych rozgrywek. Tak dorobek seniorów trafiał do drużyny rocznikowej:
+  // „Limanovia Nowy Sącz" z protokołu IV ligi wskazywała młodzieżowe „MKS LIMANOVIA", bo tylko
+  // ono dzieliło z nią człon nazwy. Protokół IV ligi ma prawo trafić wyłącznie do klubu IV ligi;
+  // jeśli takiego nie ma, pytamy listą rozwijaną zamiast zgadywać.
   if(poziom){
-    const wPoziomie = pasujace.filter(c=>String(c.league||'').toLowerCase().startsWith(String(poziom).toLowerCase()));
-    if(wPoziomie.length) pasujace = wPoziomie;
+    pasujace = pasujace.filter(c=>String(c.league||'').toLowerCase().startsWith(String(poziom).toLowerCase()));
+    if(!pasujace.length) return null;
   }
 
   if(pasujace.length === 1) return pasujace[0];
