@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v29 z 29.08.2026";
+var SBS_ZBIERACZ="v30 z 29.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -688,13 +688,13 @@ function zbierzGrupePrzezDruzyny(gotowe){
   var nr=0, nieudane=0;
   function wiersz(){
    if(zaDlugo()){ gotowe(dodanych); return; }
-   linia.textContent='SBS '+SBS_ZBIERACZ+': klub '+Object.keys(zrobione).length+'/'+(Object.keys(zrobione).length+doZrobienia.length)
-    +' - mecz '+(nr+1)+' (zebranych '+dodanych+')'+(nieudane?' - podejscie '+(nieudane+1):'');
+   linia.textContent='SBS '+SBS_ZBIERACZ+': klub '+Object.keys(zrobione).length+' z '+(Object.keys(zrobione).length+doZrobienia.length)
+    +', mecz '+(nr+1)+', zebranych '+dodanych+(nieudane?' (podejscie '+(nieudane+1)+' - LNP odsyla 404)':'');
    zdejmijMeczZDruzyny(adres, nr, function(w){
     if(w.koniec){ setTimeout(poDruzynie,200); return; }
     if(w.blad){
      nieudane++;
-     if(nieudane>20){ setTimeout(poDruzynie,200); return; }
+     if(nieudane>45){ setTimeout(poDruzynie,300); return; }
      setTimeout(wiersz, 500); return;
     }
     if(w.adres && w.tekst){
