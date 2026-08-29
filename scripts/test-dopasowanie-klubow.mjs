@@ -67,6 +67,24 @@ const PRZYPADKI = [
   ['GKS LZS Wikielec',             'GKS Wikielec'],
   ['KKS Granica Kętrzyn',          'Granica Kętrzyn'],
   ['UKS Naki Olsztyn',             'Naki Olsztyn'],
+  // IV liga lubuska, prosto z tabeli LNP
+  ['ŁUCZNIK POLNED STRZELCE KRAJ.', 'Łucznik Strzelce Krajeńskie'],
+  ['GRUPA CHMIEL POLONIA SŁUBICE',  'Polonia Słubice'],
+  ['TS CELULOZA KOSTRZYN NAD ODRĄ', 'Celuloza Kostrzyn nad Odrą'],
+  ['CZARNI ŻAGAŃ 1957',             'Czarni Żagań'],
+  ['PIAST KARNIN',                  'Piast Karnin (Gorzów Wielkopolski)'],
+  ['PIAST IŁOWA',                   'KP Piast Iłowa'],
+  // IV liga łódzka
+  ['PKS Polonia Piotrków Trybunalski', 'Polonia Piotrków Trybunalski'],
+  ['Concordia 1909 Piotrków Tryb.', 'Concordia Piotrków Trybunalski'],
+  ['PGE GiEK GKS Bełchatów',        'GKS Bełchatów'],
+  ['ŁKS III Łódź S.A.',             'ŁKS III Łódź'],
+  ['Sokół Aleksandrów',             'Sokół Aleksandrów Łódzki'],
+  ['LKS EKOLOG WOJSŁAWICE',         'Ekolog Wojsławice'],
+  ['MUKS Włókniarz Pabianice',      'Włókniarz Pabianice'],
+  // Nazwy wlasne, ktore WYGLADAJA jak skroty — nie wolno ich zamienic.
+  ['Mazur Ełk',                     'Mazur Ełk'],
+  ['LKS Mazur Karczew',             'Mazur Karczew'],
   // Tych klubów w bazie NIE MA, a każdy dzieli mocny człon z dokładnie jednym klubem IV ligi.
   // Muszą zostać nierozpoznane — inaczej dorobek całej drużyny trafiłby nie temu klubowi.
   ['Granica Bogatynia',            null],   // w bazie jest Granica Kętrzyn

@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v32 z 29.08.2026";
+var SBS_ZBIERACZ="v33 z 29.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -111,6 +111,62 @@ function doSchowka(tekst){
  document.body.removeChild(pole);
  return ok;
 }
+// HERBY I NAZWY KLUBOW Z TABELI GRUPY.
+//
+// Herbow nie da sie pobrac po stronie serwera: LNP oddaje mu pusta skorupe Angulara, a i tak
+// nie znalby adresow obrazkow. W otwartej tabeli sa jednak wprost — kazdy wiersz ma obrazek
+// i nazwe. Czytamy je z tego, co juz widac, niczego nie klikajac.
+//
+// Nazwe bierzemy z PIERWSZEGO liscia wiersza, ktory zawiera litery — w tabeli LNP to wlasnie
+// nazwa klubu ("CZARNI ZAGAN 1957"), bo pozycja stoi w osobnym elemencie. Odsiewamy obrazki
+// serwisu (herb PZPN, banery sponsorow), zeby nie wziac ich za herb klubu.
+function herbyZTabeli(){
+ var out=[], widziane={};
+ [].slice.call(document.querySelectorAll('img')).forEach(function(img){
+  var src=img.currentSrc||img.getAttribute('src')||'';
+  if(!src || /^data:/.test(src)) return;
+  if(/pzpn|orlen|sponsor|banner|placeholder|avatar/i.test(src)) return;
+  if((img.naturalWidth && img.naturalWidth>260) || (img.width && img.width>120)) return;
+
+  var wiersz=img;
+  for(var i=0;i<6 && wiersz.parentElement;i++){
+   wiersz=wiersz.parentElement;
+   var t=(wiersz.textContent||'').replace(/\s+/g,' ').trim();
+   if(t.length>=4 && t.length<=220 && /[A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż]{3}/.test(t)) break;
+  }
+  var nazwa='';
+  [].slice.call(wiersz.querySelectorAll('*')).forEach(function(el){
+   if(nazwa || el.children.length) return;
+   var t=(el.textContent||'').replace(/\s+/g,' ').trim();
+   if(t.length<3 || t.length>70) return;
+   if(!/[A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż]{3}/.test(t)) return;
+   if(/^\d+\.?$/.test(t)) return;
+   nazwa=t;
+  });
+  if(!nazwa) return;
+  var klucz=nazwa.toLowerCase();
+  if(widziane[klucz]) return;
+  widziane[klucz]=1;
+  out.push(nazwa+'|'+(src.indexOf('//')===0 ? location.protocol+src : src));
+ });
+ return out;
+}
+
+var przyciskHerby=document.createElement('button');
+przyciskHerby.textContent='Zbierz herby i nazwy klubow';
+przyciskHerby.style.cssText='display:block;width:100%;padding:7px;margin-bottom:6px;border:1px solid rgba(246,243,234,.35);border-radius:6px;background:transparent;color:#F6F3EA;font:13px sans-serif;cursor:pointer';
+przyciskHerby.onclick=function(){
+ var lista=herbyZTabeli();
+ if(!lista.length){ przyciskHerby.textContent='Nie widze tu tabeli z herbami'; return; }
+ var wpis='### KLUBY\n'+lista.join('\n');
+ var byl=false;
+ for(var q=0;q<zebrane.length;q++){ if(zebrane[q].indexOf('### KLUBY\n')===0){ zebrane[q]=wpis; byl=true; break; } }
+ if(!byl) zebrane.push(wpis);
+ try{ localStorage.setItem(KLUCZ, JSON.stringify(zebrane)); }catch(e){}
+ przyciskHerby.textContent='Mam '+lista.length+' herbow — wyslij do SBS';
+};
+stopka.appendChild(przyciskHerby);
+
 var przyciskOpisu=document.createElement('button');
 przyciskOpisu.textContent='Skopiuj opis strony (dla SBS)';
 przyciskOpisu.style.cssText='display:block;width:100%;padding:7px;margin-bottom:6px;border:1px solid rgba(246,243,234,.35);border-radius:6px;background:transparent;color:#F6F3EA;font:13px sans-serif;cursor:pointer';
@@ -574,7 +630,17 @@ function zdejmijMeczZDruzyny(adresDruzyny, nr, gotowe){
   }
 
   if(faza==='protokol'){
-   if(/Skład wyjściowy/.test(txt)){
+   // CZEKAMY NA OBA SKLADY, NIE NA PIERWSZY.
+   //
+   // Protokol renderuje sie czesciami: najpierw gospodarze, chwile pozniej goscie. Zdejmowanie go
+   // przy pierwszym "Sklad wyjsciowy" lapalo wiec czasem polowe strony i SBS meldowal potem
+   // "nie udalo sie odczytac skladu" — dla tej samej druzyny, ktora w innym meczu wchodzila
+   // w komplecie. Kazdy mecz ma dwa sklady, wiec na tyle czekamy.
+   //
+   // Po szesnastu probach (okolo szesciu sekundach) bierzemy to, co jest: lepiej oddac jedna
+   // polowe protokolu niz nie oddac nic. Druga strona i tak dojdzie od swojej druzyny.
+   var ileSkladow=(txt.match(/Skład wyjściowy/g)||[]).length;
+   if(ileSkladow>=2 || (ileSkladow>=1 && n>16)){
     clearInterval(t);
     var j=txt.search(/^\s*Składy\s*$/m);
     var adres=zlapany ? (location.origin+zlapany) : '';

@@ -4516,6 +4516,34 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
     // żeby nie trafił do żadnego z nich.
     // Klucz niezależny od kolejności słów: ŁNP pisze raz „Jan Kowalski", raz „Kowalski Jan",
     // a w kartotece imię i nazwisko są w osobnych polach. Sortowanie słów godzi wszystkie trzy.
+    // HERBY Z TABELI GRUPY — osobny blok, bo to nie protokół i nie liczy żadnych minut.
+    //
+    // Herbów nie da się pobrać z serwera: ŁNP oddaje mu pustą skorupę Angulara. W otwartej
+    // tabeli są jednak wprost przy każdym klubie, więc zakładka je stamtąd odczytuje i przysyła
+    // tą samą drogą co protokoły. Zapisujemy sam adres obrazka — nie kopiujemy grafiki do bazy.
+    const blokK = tekst.match(/^###\s*KLUBY\s*$([\s\S]*?)(?=^###\s|\s*$)/m);
+    if(blokK){
+      const nierozpoznane: string[] = [];
+      let ustawionych = 0, juzBylo = 0;
+      blokK[1].split('\n').map(l=>l.trim()).filter(Boolean).forEach(l=>{
+        const ciecie = l.lastIndexOf('|');
+        if(ciecie < 1) return;
+        const nazwa = l.slice(0, ciecie).trim();
+        const adres = l.slice(ciecie + 1).trim();
+        if(!/^https?:\/\//i.test(adres)) return;
+        const klub = dopasujKlubDoNazwy(nazwa, grupa, 'IV liga');
+        if(!klub){ nierozpoznane.push(nazwa); return; }
+        if(klub.crestUrl === adres){ juzBylo++; return; }
+        klub.crestUrl = adres;
+        ustawionych++;
+      });
+      if(ustawionych) void saveClubs();
+      komunikat = `Herby: zapisałem ${ustawionych}, bez zmian ${juzBylo}`
+        + (nierozpoznane.length ? `, nie rozpoznałem klubu: ${nierozpoznane.join(', ')}` : '')
+        + '.';
+      wynik = null; rysuj(); return;
+    }
+
     rocznikiZWklejki = {};
     const blokR = tekst.match(/^###\s*ROCZNIKI\s*$([\s\S]*)/m);
     if(blokR){
@@ -10653,12 +10681,17 @@ const SKROTY_NAZWY = {
   wwa: 'warszawa', wawa: 'warszawa',
   podl: 'podlaski', wlkp: 'wielkopolski', maz: 'mazowiecki', kuj: 'kujawski',
   pom: 'pomorski', dolnosl: 'dolnoslaski', zdr: 'zdroj', gorn: 'gorniczy',
+  tryb: 'trybunalski',   // Concordia 1909 Piotrków Tryb.
+  kraj: 'krajenski',     // Łucznik Polned Strzelce Kraj.
+  // UWAGA przy dopisywaniu: tu wolno wpisywać wyłącznie skróty, których nikt nie używa jako
+  // nazwy klubu. „Mazur" (Ełk, Karczew) i „Śląsk" (Wrocław) wyglądają na skróty od „mazurski"
+  // i „śląski", ale są nazwami własnymi — zamiana rozjechałaby te kluby zamiast je połączyć.
 };
 
 // „w" to przyimek z nazw typu „MKS Limanovia w Limanowej", nie człon nazwy klubu.
 // „sp z o o" i „sa" to forma prawna spółki, doklejana na ŁNP do nazw klubów zawodowych
 // („SS HUTNIK W-WA SP. Z O.O."), a nie część nazwy, pod którą klub gra.
-const SZUM_NAZWY_KLUBU = /^(ks|mks|gks|lks|mlks|uks|kp|ts|rks|wks|zks|mkp|oks|sks|cks|mzks|ss|lzs|kks|muks|mgks|tkkf|klub|sportowy|gminny|miejski|ludowy|akademia|ap|as|fc|kkp|of|w|z|o|oo|sp|sa)$/;
+const SZUM_NAZWY_KLUBU = /^(ks|mks|gks|lks|mlks|uks|kp|ts|rks|wks|zks|mkp|oks|sks|cks|mzks|ss|lzs|kks|pks|muks|mgks|tkkf|klub|sportowy|gminny|miejski|ludowy|akademia|ap|as|fc|kkp|of|w|z|o|oo|sp|sa)$/;
 const NUMER_ZESPOLU = { ii:'2', iii:'3', iv:'4', '2':'2', '3':'3', '4':'4' };
 
 // „W-wa" trzeba skleić ZANIM myślnik rozdzieli człony, inaczej zostaje bezużyteczne „wa".
@@ -11243,7 +11276,7 @@ function sprawdzZakladke(nazwa, kod){
 
 // Wersja zakładki. Widnieje w każdym jej komunikacie i w oknie SBS, żeby dało się jednym
 // spojrzeniem stwierdzić, czy w pasku siedzi kod sprzed poprawek.
-const ZAKLADKA_WERSJA = 'v32 z 29.08.2026';
+const ZAKLADKA_WERSJA = 'v33 z 29.08.2026';
 const SBS_ADRES_JS = JSON.stringify(location.origin);
 // ZAKŁADKA W PASKU NIE AKTUALIZUJE SIĘ SAMA — I TO BYŁ PRAWDZIWY PROBLEM.
 //
