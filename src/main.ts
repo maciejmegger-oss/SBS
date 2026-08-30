@@ -4532,7 +4532,8 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
         let koniec = poczatek + 1;
         while(koniec < linie.length && !/^###\s/.test(linie[koniec])) koniec++;
         const nierozpoznane: string[] = [];
-        let ustawionych = 0, juzBylo = 0;
+        const przemianowane: string[] = [];
+        let ustawionych = 0, juzBylo = 0, zmienionych = 0;
         linie.slice(poczatek + 1, koniec).map(l=>l.trim()).filter(Boolean).forEach(l=>{
           const ciecie = l.lastIndexOf('|');
           if(ciecie < 1) return;
@@ -4541,12 +4542,24 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
           if(!/^https?:\/\//i.test(adres)) return;
           const klub = dopasujKlubDoNazwy(nazwa, grupa, 'IV liga');
           if(!klub){ nierozpoznane.push(nazwa); return; }
+          // NAZWA Z ŁNP JEST TĄ WŁAŚCIWĄ — to z niej lecą protokoły.
+          //
+          // Każda różnica („LKS Kadłub (k. Strzelec Opolskich)" wobec „LZS Adamietz Kadłub")
+          // wraca przy kolejnym zbieraniu jako błąd do ręcznego wskazania. Skoro tabela grupy
+          // i tak jest pod ręką, przepisujemy nazwę raz i problem znika na stałe. Różnicę samej
+          // wielkości liter zostawiamy — to nie pomyłka, tylko zapis tabeli.
+          if(importNorm(klub.name) !== importNorm(nazwa)){
+            przemianowane.push(`${klub.name} → ${czytelnaNazwa(nazwa)}`);
+            klub.name = czytelnaNazwa(nazwa);
+            zmienionych++;
+          }
           if(klub.crestUrl === adres){ juzBylo++; return; }
           klub.crestUrl = adres;
           ustawionych++;
         });
-        if(ustawionych) void saveClubs();
+        if(ustawionych || zmienionych) void saveClubs();
         komunikatHerbow = `Herby: zapisałem ${ustawionych}, bez zmian ${juzBylo}`
+          + (zmienionych ? `. Nazwy poprawione na wersję z ŁNP (${zmienionych}): ${przemianowane.join('; ')}` : '')
           + (nierozpoznane.length ? `, nie rozpoznałem klubu: ${nierozpoznane.join(', ')}` : '') + '. ';
         linie.splice(poczatek, koniec - poczatek);
         tekst = linie.join('\n').trim();
@@ -10568,8 +10581,14 @@ function powodBrakuSkladu(rawText, nazwaKlubu, nrDruzyny){
   if(ileSkladow === 1) return 'w protokole jest tylko jeden skład — zbierz tę kolejkę jeszcze raz zakładką';
   const od = naglowekSkladu(linie, nazwaKlubu, nrDruzyny);
   if(od < 0) return 'nie rozpoznaję nagłówka nad składem. Nad składami stoi: ' + podgladNaglowkow(rawText);
-  const probka = linie.slice(od + 1, od + 12).filter(Boolean).slice(0, 6).join(' / ');
-  return `nagłówek znalazłem, ale nie odczytałem z niego zawodników. Pierwsze wiersze składu: „${probka}"`;
+  const blok = linie.slice(od + 1, od + 12).filter(Boolean);
+  // „Brak danych" to odpowiedź ŁNP, nie nasza usterka — tego meczu po prostu nie obsadzono
+  // składem w systemie PZPN. Mówimy to wprost, bo inaczej wygląda na błąd do naprawienia
+  // i kusi, żeby zbierać tę kolejkę w kółko.
+  if(blok.slice(0, 6).some(l=>/^Brak danych$/i.test(l))){
+    return 'ŁNP nie opublikował składu tej drużyny w tym meczu („Brak danych") — nie ma czego wczytać';
+  }
+  return `nagłówek znalazłem, ale nie odczytałem z niego zawodników. Pierwsze wiersze składu: „${blok.slice(0,6).join(' / ')}"`;
 }
 
 // Co dokładnie stoi w protokole nad sekcją „Skład wyjściowy" — dwie linie wyżej i jedna wyżej.
@@ -10755,6 +10774,24 @@ const SKROTY_NAZWY = {
 const SZUM_NAZWY_KLUBU = /^(ks|mks|gks|lks|mlks|uks|kp|ts|rks|wks|zks|mkp|oks|sks|cks|mzks|ss|lzs|kks|pks|muks|mgks|tkkf|klub|sportowy|gminny|miejski|ludowy|akademia|ap|as|fc|kkp|of|w|z|o|oo|sp|sa)$/;
 const NUMER_ZESPOLU = { ii:'2', iii:'3', iv:'4', '2':'2', '3':'3', '4':'4' };
 
+// NAZWA Z TABELI ŁNP DO POSTACI NADAJĄCEJ SIĘ DO KARTOTEKI.
+//
+// Część związków wpisuje nazwy WERSALIKAMI i tabela oddaje je tak, jak stoją („LZS ADAMIETZ
+// KADŁUB"). Przepisanie tego wprost zaśmieciłoby listę klubów krzykiem, więc zapisujemy wielkimi
+// literami tylko to, co nimi jest z natury: skróty klubowe (LZS, MKS), numer zespołu (II, III)
+// i formę prawną. Nazwy pisane normalnie zostawiamy nietknięte.
+const SKROTY_WERSALIKAMI = /^(ks|mks|gks|lks|mlks|uks|kp|ts|rks|wks|zks|mkp|oks|sks|cks|mzks|ss|lzs|kks|muks|mgks|tkkf|pks|kkp|ap|as|fc|sa|ii|iii|iv|sms|zpn|pzpn)$/i;
+function czytelnaNazwa(nazwa){
+  const s = String(nazwa||'').trim();
+  if(!/[A-ZĄĆĘŁŃÓŚŹŻ]/.test(s)) return s;
+  if(s !== s.toUpperCase()) return s;          // nie same wersaliki — zapis jest już normalny
+  return s.split(/\s+/).map(w=>{
+    const goly = w.replace(/[^A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż]/g, '');
+    if(SKROTY_WERSALIKAMI.test(goly)) return w;
+    return w.charAt(0) + w.slice(1).toLowerCase();
+  }).join(' ');
+}
+
 // „W-wa" trzeba skleić ZANIM myślnik rozdzieli człony, inaczej zostaje bezużyteczne „wa".
 const rozwinSkroty = (nazwa)=> String(nazwa||'').replace(/\bw[-–—.\s]?\s?wa\b/gi, ' Warszawa ');
 
@@ -10764,7 +10801,12 @@ function rozbijNazweKlubu(nazwa){
   // bez statystyk, choć chodzi o ten sam zespół.
   // „n/Wisłą" to skrót od „nad Wisłą" — bez tego „Wisła Dobrzyń n/Wisłą" z ŁNP nie miała nic
   // wspólnego z naszą „Wisła Dobrzyń nad Wisłą" i klub zostawał nierozpoznany.
-  const slowa = rozwinSkroty(nazwa).replace(/[.,()]/g,' ').replace(/[-–—]/g,' ')
+  // DOPISEK W NAWIASIE TO OBJAŚNIENIE, NIE CZĘŚĆ NAZWY.
+  //
+  // W kartotece stoi „LKS Kadłub (k. Strzelec Opolskich)" — nawias mówi, o który Kadłub chodzi.
+  // Liczyliśmy jednak jego treść jako człony nazwy, więc krótsza nazwa z ŁNP („LZS Adamietz
+  // Kadłub") nigdy nie mogła pokryć wszystkich czterech i klub zostawał nierozpoznany.
+  const slowa = rozwinSkroty(nazwa).replace(/\([^)]*\)/g,' ').replace(/[.,()]/g,' ').replace(/[-–—]/g,' ')
     .replace(/\bn\s*\/\s*/gi, 'nad ')
     .split(/\s+/).filter(Boolean);
   let numer = '';
@@ -11353,7 +11395,7 @@ function sprawdzZakladke(nazwa, kod){
 
 // Wersja zakładki. Widnieje w każdym jej komunikacie i w oknie SBS, żeby dało się jednym
 // spojrzeniem stwierdzić, czy w pasku siedzi kod sprzed poprawek.
-const ZAKLADKA_WERSJA = 'v38 z 29.08.2026';
+const ZAKLADKA_WERSJA = 'v39 z 29.08.2026';
 const SBS_ADRES_JS = JSON.stringify(location.origin);
 // ZAKŁADKA W PASKU NIE AKTUALIZUJE SIĘ SAMA — I TO BYŁ PRAWDZIWY PROBLEM.
 //
