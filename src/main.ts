@@ -4537,6 +4537,7 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
         while(koniec < linie.length && !/^###\s/.test(linie[koniec])) koniec++;
         const nierozpoznane: string[] = [];
         const przemianowane: string[] = [];
+        const bezHerbu: string[] = [];
         let ustawionych = 0, juzBylo = 0, zmienionych = 0;
         linie.slice(poczatek + 1, koniec).map(l=>l.trim()).filter(Boolean).forEach(l=>{
           const ciecie = l.lastIndexOf('|');
@@ -4546,6 +4547,13 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
           if(!/^https?:\/\//i.test(adres)) return;
           const klub = dopasujKlubDoNazwy(nazwa, grupa, 'IV liga');
           if(!klub){ nierozpoznane.push(nazwa); return; }
+          // ZAŚLEPKA ŁNP TO NIE HERB.
+          //
+          // Gdy związek nie wgrał godła klubu, ŁNP podstawia własną szarą tarczę
+          // („assets/icons/crest_default…"). Zapisana w kartotece wygląda jak herb, który się
+          // wgrał, więc brak prawdziwego godła przestaje być widoczny — a to jedyny sygnał,
+          // że trzeba go dobrać skądinąd.
+          if(/crest_default|crest-default|placeholder/i.test(adres)){ bezHerbu.push(klub.name); return; }
           // NAZWA Z ŁNP JEST TĄ WŁAŚCIWĄ — to z niej lecą protokoły.
           //
           // Każda różnica („LKS Kadłub (k. Strzelec Opolskich)" wobec „LZS Adamietz Kadłub")
@@ -4564,6 +4572,7 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
         if(ustawionych || zmienionych) void saveClubs();
         komunikatHerbow = `Herby: zapisałem ${ustawionych}, bez zmian ${juzBylo}`
           + (zmienionych ? `. Nazwy poprawione na wersję z ŁNP (${zmienionych}): ${przemianowane.join('; ')}` : '')
+          + (bezHerbu.length ? `. ŁNP nie ma herbu (zostawiam bez zmian): ${bezHerbu.join(', ')}` : '')
           + (nierozpoznane.length ? `, nie rozpoznałem klubu: ${nierozpoznane.join(', ')}` : '') + '. ';
         linie.splice(poczatek, koniec - poczatek);
         tekst = linie.join('\n').trim();
@@ -11422,7 +11431,7 @@ function sprawdzZakladke(nazwa, kod){
 
 // Wersja zakładki. Widnieje w każdym jej komunikacie i w oknie SBS, żeby dało się jednym
 // spojrzeniem stwierdzić, czy w pasku siedzi kod sprzed poprawek.
-const ZAKLADKA_WERSJA = 'v40 z 29.08.2026';
+const ZAKLADKA_WERSJA = 'v41 z 29.08.2026';
 const SBS_ADRES_JS = JSON.stringify(location.origin);
 // ZAKŁADKA W PASKU NIE AKTUALIZUJE SIĘ SAMA — I TO BYŁ PRAWDZIWY PROBLEM.
 //
