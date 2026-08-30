@@ -54,6 +54,7 @@ type QueueJob = QueueJobPayload & { id: string };
 const LS = {
   cache: "sbs-m:cache",          // kopia bazy do pracy offline
   queue: "sbs-m:queue",          // zadania czekające na sieć
+  zablokowane: "sbs-m:zablokowane", // zadania ODRZUCONE przez bazę — patrz flushQueue
   live: "sbs-m:live",            // stan trwającej obserwacji (zdarzenia, zegar)
   archiwum: "sbs-m:zdarzenia",   // zdarzenia zakończonych meczów, wg obserwacji
   scout: "sbs-m:scout",          // ostatnio wybrany scout
@@ -223,7 +224,10 @@ const sprobuj = async <T>(fn: () => Promise<T>): Promise<Wynik<T>> => {
 // Dlatego po złożeniu kopii nakładamy na nią wszystko, co wciąż czeka na wysyłkę. Wersja lokalna
 // jest z definicji nowsza od serwerowej — to ona dopiero ma tam pojechać.
 function nalozKolejke(c: Cache): void {
-  for (const j of getQueue()) {
+  // ODSTAWIONE TEŻ, nie tylko czekające. Zadanie odrzucone przez bazę wypada z kolejki, więc bez
+  // tego obserwacja nie byłaby ani na serwerze, ani w kolejce — i znikałaby scoutowi z listy przy
+  // pierwszym odświeżeniu. Czyli dokładnie ta praca, o której panel mówi „nic nie przepadło".
+  for (const j of [...getQueue(), ...zablokowaneZadania().map((z) => z.job)]) {
     if (j.kind === "observation") {
       const obs = liftObsExt(objFromRow(j.row)) as unknown as Observation;
       const i = c.observations.findIndex((o) => o.id === obs.id);
@@ -401,28 +405,76 @@ async function pushLiveEvents(observationId: string, events: LiveEvent[]): Promi
   if (error) throw new Error(error.message);
 }
 
+// ODRZUCENIE PRZEZ BAZĘ TO CO INNEGO NIŻ BRAK ZASIĘGU.
+//
+// Brak zasięgu mija — wystarczy poczekać i ponowić. Odrzucenie „nie ma takiej kolumny" albo
+// „narusza klucz obcy" nie minie NIGDY: ten sam wiersz wysłany za godzinę zostanie odrzucony
+// tak samo. Rozróżnienie jest tu po to, żeby jedno takie zadanie nie zatrzymało wszystkich
+// pozostałych na zawsze (patrz flushQueue).
+class BladBazy extends Error {}
+
+// Świadomie wąska lista: wpisujemy tu WYŁĄCZNIE błędy, o których wiadomo, że ponowienie ich nie
+// naprawi. Wszystko inne — przeciążenie serwera, wygasły token, zerwane połączenie — zostaje
+// „przejściowe", czyli kolejka poczeka i spróbuje jeszcze raz. Lepiej czekać na coś, co się
+// naprawi, niż odstawić na bok pracę, która by przeszła.
+const ODRZUCENIE_TRWALE = [
+  /column .* does not exist/i,          // 42703 — pole bez kolumny w tabeli
+  /could not find the .* column/i,      // PGRST204 — to samo, widziane przez PostgREST
+  /violates foreign key constraint/i,   // 23503 — odwołanie do nieistniejącego rekordu
+  /violates not-null constraint/i,      // 23502 — brak wymaganej wartości
+  /invalid input syntax/i,              // 22P02 — wartość w złym formacie
+  /violates row-level security|permission denied/i,  // 42501 — konto bez prawa zapisu
+];
+
+const czyTrwale = (komunikat: string) => ODRZUCENIE_TRWALE.some((w) => w.test(komunikat));
+
+const zglos = (error: { message: string } | null) => {
+  if (!error) return;
+  throw czyTrwale(error.message) ? new BladBazy(error.message) : new Error(error.message);
+};
+
+export interface ZablokowaneZadanie {
+  job: QueueJob;
+  blad: string;
+  kiedy: string;
+}
+
+export const zablokowaneZadania = (): ZablokowaneZadanie[] =>
+  readLS<ZablokowaneZadanie[]>(LS.zablokowane, []);
+
+const setZablokowane = (z: ZablokowaneZadanie[]) => writeLS(LS.zablokowane, z);
+
+export const liczbaZablokowanych = () => zablokowaneZadania().length;
+
+// Ponowna próba dla odstawionych. Wracają na KONIEC kolejki, żeby nie zablokowały od nowa tego,
+// co czeka i przeszłoby bez przeszkód.
+export function ponowZablokowane(): number {
+  const z = zablokowaneZadania();
+  if (!z.length) return 0;
+  setQueue([...getQueue(), ...z.map((x) => x.job)]);
+  setZablokowane([]);
+  void flushQueue();
+  return z.length;
+}
+
 async function runJob(job: QueueJob): Promise<void> {
   if (job.kind === "observation") {
     const { error } = await sb.from("sbs_observations").upsert(job.row, { onConflict: "id" });
-    if (error) throw new Error(error.message);
-    return;
+    return zglos(error);
   }
   if (job.kind === "report") {
     const { error } = await sb.from("sbs_reports").upsert(job.row, { onConflict: "id" });
-    if (error) throw new Error(error.message);
-    return;
+    return zglos(error);
   }
   if (job.kind === "usunObserwacje") {
     const { error } = await sb.from("sbs_observations").delete().eq("id", job.observationId);
-    if (error) throw new Error(error.message);
-    return;
+    return zglos(error);
   }
   if (job.kind === "playerStatus") {
     // Świadomie update, nie upsert: telefon zmienia JEDNO pole istniejącego zawodnika i nie może
     // nadpisać reszty jego profilu wersją z lokalnej kopii, która bywa nieaktualna.
     const { error } = await sb.from("sbs_players").update({ status: job.status }).eq("id", job.playerId);
-    if (error) throw new Error(error.message);
-    return;
+    return zglos(error);
   }
   await pushLiveEvents(job.observationId, job.events);
 }
@@ -437,6 +489,17 @@ let flushing = false;
 // (obserwacja, raport, status zawodnika) — a wysyłka pierwszego z nich trwa na tyle długo, że
 // pozostałe dwa trafiają do kolejki już w trakcie. Odłożenie migawki pomniejszonej o wykonane
 // zadanie kasowałoby je bezgłośnie: raport i status nigdy nie docierały do bazy.
+// JEDNO ODRZUCONE ZADANIE NIE MOŻE ZATRZYMAĆ CAŁEJ KOLEJKI.
+//
+// Dotąd pierwsze niepowodzenie przerywało wysyłkę — słusznie przy braku zasięgu, katastrofalnie
+// przy wierszu, którego baza nie przyjmie NIGDY. Jeden taki wiersz na początku kolejki blokował
+// wszystko, co za nim: scout widział „W kolejce · 24", pracy z całego weekendu nie było na
+// komputerze, a jedyny ślad przyczyny szedł do konsoli przeglądarki, do której na telefonie
+// nikt nie zagląda.
+//
+// Teraz: brak zasięgu i inne przejściowe kłopoty nadal wstrzymują wysyłkę (nie ma sensu dobijać
+// się resztą), ale odrzucenie trwałe ODSTAWIAMY NA BOK i idziemy dalej. Nic nie ginie — odstawione
+// zadania czekają razem z treścią błędu, panel je pokazuje, a przycisk wraca je do kolejki.
 export async function flushQueue(): Promise<number> {
   if (flushing) return queueLength();
   if (!navigator.onLine) return queueLength();
@@ -445,13 +508,20 @@ export async function flushQueue(): Promise<number> {
     for (;;) {
       const q = getQueue();
       if (!q.length) return 0;
+      const zadanie = q[0];
       try {
-        await runJob(q[0]);
+        await runJob(zadanie);
       } catch (e) {
-        console.warn("Wysyłka wstrzymana:", (e as Error).message);
-        return getQueue().length;
+        if (!(e instanceof BladBazy)) {
+          console.warn("Wysyłka wstrzymana:", (e as Error).message);
+          return getQueue().length;
+        }
+        console.warn("Baza odrzuciła zadanie — odstawiam i idę dalej:", (e as Error).message);
+        setZablokowane([...zablokowaneZadania(), {
+          job: zadanie, blad: (e as Error).message, kiedy: new Date().toISOString(),
+        }]);
       }
-      setQueue(getQueue().filter((j) => j.id !== q[0].id));
+      setQueue(getQueue().filter((j) => j.id !== zadanie.id));
     }
   } finally {
     flushing = false;

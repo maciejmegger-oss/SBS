@@ -10,6 +10,7 @@ import { currentUser, signIn, signOut, requestPasswordReset, mojeKonto, type Kon
 import {
   uid, getCache, refreshCache, patchCache, flushQueue, queueLength,
   saveObservation, saveReport, savePlayerStatus, saveLiveEvents, deleteObservation,
+  zablokowaneZadania, liczbaZablokowanych, ponowZablokowane,
   getLive, setLive, getScout, setScout, zarchiwizujZdarzenia, zdarzeniaObserwacji,
   wyczyscKopieBazy,
   type Cache, type LiveEvent, type LiveState, type Period,
@@ -1553,12 +1554,33 @@ function ocenieniZeSkladu(obs?: Observation): string {
     </div>`;
 }
 
+// Czego dotyczą odrzucone zapisy — po ludzku, nazwami meczów, a nie identyfikatorami.
+// „24 zapisy" nic nie mówi; „Legia Warszawa - Lech Poznań i 3 inne" mówi wszystko.
+function opisZablokowanych(lista: ReturnType<typeof zablokowaneZadania>): string {
+  const nazwy = new Set<string>();
+  lista.forEach((z) => {
+    const j = z.job;
+    const id = j.kind === "observation" ? String(j.row.id || "")
+      : j.kind === "liveEvents" || j.kind === "usunObserwacje" ? j.observationId
+      : "";
+    if (id) {
+      const o = cache.observations.find((x) => x.id === id);
+      nazwy.add(o?.match || "obserwacja");
+    } else if (j.kind === "report") nazwy.add("raport");
+    else if (j.kind === "playerStatus") nazwy.add("decyzja o zawodniku");
+  });
+  const lista3 = [...nazwy].slice(0, 3);
+  const reszta = nazwy.size - lista3.length;
+  return lista3.join(", ") + (reszta > 0 ? ` i ${reszta} inne` : "");
+}
+
 function viewBaza(): string {
   const n = queueLength();
   const ostatnia = cache.fetchedAt
     ? new Date(cache.fetchedAt).toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
     : "brak";
   const problemy = cache.problemy || [];
+  const zablokowane = zablokowaneZadania();
 
   return `
     <h2>Ustawienia</h2>
@@ -1583,6 +1605,18 @@ function viewBaza(): string {
       <button class="btn ghost" data-act="refresh">Odśwież kopię bazy</button>
       ${n ? '<button class="btn ghost" data-act="flush">Wyślij teraz</button>' : ""}
     </div>
+
+    ${zablokowane.length ? `
+      <div class="card" style="border-color:var(--bad-fg);">
+        <span class="label" style="color:var(--bad-fg);">Baza odrzuciła ${zablokowane.length} ${zablokowane.length === 1 ? "zapis" : "zapisów"}</span>
+        <p class="hint" style="margin:6px 0 0; color:var(--text-strong);">
+          Te zapisy NIE dotarły do SBS i nie zobaczysz ich na komputerze. Nic nie przepadło —
+          czekają w telefonie. Poniżej treść odmowy prosto z bazy:</p>
+        ${[...new Set(zablokowane.map((z) => z.blad))].slice(0, 3).map((b) => `
+          <p class="hint" style="margin:6px 0 0; font-family:var(--data); font-size:11.5px; color:var(--bad-fg); word-break:break-word;">${esc(b)}</p>`).join("")}
+        <p class="hint" style="margin-top:8px;">Czego dotyczą: ${esc(opisZablokowanych(zablokowane))}.</p>
+        <button class="btn ghost" data-act="ponow-zablokowane">Spróbuj wysłać jeszcze raz</button>
+      </div>` : ""}
 
     ${problemy.length ? `
       <div class="card" style="border-color:var(--accent-fg);">
@@ -1753,8 +1787,13 @@ function widoczneZakladki(): typeof TABS {
 
 function syncPill(): string {
   const n = queueLength();
+  const odrzucone = liczbaZablokowanych();
   if (!navigator.onLine) return `<span class="sync offline">Offline${n ? " · " + n : ""}</span>`;
   if (n) return `<span class="sync pending">W kolejce · ${n}</span>`;
+  // ODRZUCONE MAJĄ WŁASNY STAN, nie „wysłane". Zapis, którego baza nie przyjęła, wypada z kolejki
+  // — i gdyby pasek pokazywał wtedy „Wysłane", scout miałby czarno na białym potwierdzenie
+  // czegoś, co się nie stało. To najgorszy możliwy komunikat w całym panelu.
+  if (odrzucone) return `<span class="sync offline">Odrzucone · ${odrzucone}</span>`;
   // Krótko, bo pasek dzieli szerokość z nazwą aplikacji i przyciskiem motywu.
   return '<span class="sync">Wysłane</span>';
 }
@@ -2764,6 +2803,16 @@ document.addEventListener("click", (e) => {
     case "refresh":
       void odswiezKopie();
       break;
+    case "ponow-zablokowane": {
+      const ile = ponowZablokowane();
+      refreshSyncPill();
+      render();
+      toast(ile ? `Wracam z ${ile} zapisami do kolejki` : "Nie ma czego ponawiać");
+      // Wynik ponowienia widać dopiero po przejściu kolejki — odświeżamy ekran chwilę później,
+      // inaczej lista odrzuconych wyglądałaby na pustą także wtedy, gdy baza odmówi po raz drugi.
+      window.setTimeout(() => { refreshSyncPill(); render(); }, 2500);
+      break;
+    }
     case "flush":
       flushQueue().then((left) => { refreshSyncPill(); render(); toast(left ? "Zostało " + left : "Wszystko wysłane"); });
       break;
