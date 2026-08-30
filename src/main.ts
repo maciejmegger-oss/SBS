@@ -9326,19 +9326,49 @@ function parseSquadLnp(rawText){
 // a po skopiowaniu zostaje sama liczba — nie da się odróżnić gola od kartki ani od zejścia
 // z boiska. Poprzednia wersja tego importu zgadywała i wpisywała rezerwowym odwrotność ich
 // dorobku; lepiej nie podać nic niż podać liczbę, która wygląda wiarygodnie i jest nieprawdziwa.
-function parseLnpProtokol(rawText, nazwaKlubu){
+// GDZIE ZACZYNA SIĘ SKŁAD TEJ DRUŻYNY.
+//
+// Szukały tego dwie funkcje, każda po swojemu — i to była przyczyna błędu „nie rozpoznaję
+// nagłówka". Ta niżej wymagała DOKŁADNEJ równości nazwy, więc gdy ŁNP pisze nad składem
+// „GKS Bełchatów", a w nagłówku wyniku „PGE GiEK GKS Bełchatów", cały skład przepadał. Tolerancja
+// istniała, ale w drugiej funkcji, która i tak najpierw wołała tę pierwszą i kończyła na jej
+// odmowie. Teraz obie pytają tego samego.
+//
+// „Kolejnosc" to ostatnia deska ratunku: gdy nazwa nad składem nie przypomina żadnej z nagłówka
+// (sponsor, forma prawna, zupełnie inny zapis), bierzemy po prostu pierwszy skład dla gospodarzy
+// i drugi dla gości — protokół zawsze wypisuje je w tej kolejności.
+function naglowekSkladu(linie, nazwaKlubu, kolejnosc){
+  const bezOzdob = (l)=> String(l||'').replace(/\[([^\]]*)\]\([^)]*\)/g,'$1').trim();
+  const szukany = importNorm(nazwaKlubu);
+  const maSkladPod = (i)=> /skład wyjściowy/i.test(linie[i+1]||'') || /skład wyjściowy/i.test(linie[i+2]||'');
+  const pasuje = (i)=>{
+    const a = importNorm(bezOzdob(linie[i]));
+    if(!a) return false;
+    if(a === szukany) return true;
+    if(importNorm(bezOzdob(linie[i]) + ' ' + bezOzdob(linie[i+1]||'')) === szukany) return true;
+    // Zawieranie tylko przy nazwach na tyle długich, żeby nie trafić w przypadkowy fragment.
+    return a.length >= 8 && (szukany.includes(a) || a.includes(szukany));
+  };
+  for(let i=0;i<linie.length;i++) if(pasuje(i) && maSkladPod(i)) return i;
+
+  if(typeof kolejnosc === 'number' && kolejnosc >= 0){
+    const naglowki = [];
+    for(let i=0;i<linie.length;i++) if(/skład wyjściowy/i.test(linie[i])) naglowki.push(i);
+    const trafiony = naglowki[kolejnosc];
+    if(typeof trafiony === 'number') return Math.max(0, trafiony - 1);
+  }
+  return -1;
+}
+
+function parseLnpProtokol(rawText, nazwaKlubu, kolejnosc){
   const linie = rawText.split('\n').map(l=>l.replace(/\s+/g,' ').trim());
   const start = linie.findIndex(l=>/^Składy$/i.test(l));
   if(start < 0 || !nazwaKlubu) return null;
 
   const bezOzdob = (l)=> l.replace(/\[([^\]]*)\]\([^)]*\)/g,'$1').trim();
-  const szukany = importNorm(nazwaKlubu);
 
-  // Granice sekcji naszej drużyny: od jej nazwy do „Sztab" (dalej idzie sztab i druga drużyna).
-  let od = -1;
-  for(let i=start;i<linie.length;i++){
-    if(importNorm(bezOzdob(linie[i])) === szukany && /skład wyjściowy/i.test(linie[i+1]||'')){ od = i; break; }
-  }
+  // Granice sekcji naszej drużyny: od jej nagłówka do „Sztab" (dalej idzie sztab i druga drużyna).
+  const od = naglowekSkladu(linie, nazwaKlubu, kolejnosc);
   if(od < 0) return null;
   let doIdx = linie.findIndex((l,i)=> i>od && /^Sztab$/i.test(l));
   if(doIdx < 0) doIdx = linie.length;
@@ -10513,37 +10543,29 @@ function detectStatsSource(raw){
 // rezerwowym odwrotność ich dorobku.
 const DLUGOSC_MECZU = 90;
 
-function parseLnpProtokolMinuty(rawText, nazwaKlubu){
-  const zawodnicy = parseLnpProtokol(rawText, nazwaKlubu);
+// Co dokładnie stoi w protokole nad sekcją „Skład wyjściowy" — dwie linie wyżej i jedna wyżej.
+// Nazwa nad składem bywa inna niż ta z tabeli wyników i to ona rozstrzyga o dopasowaniu.
+function podgladNaglowkow(rawText){
+  const linie = String(rawText||'').split('\n').map(l=>l.replace(/\s+/g,' ').trim());
+  const out = [];
+  for(let i=0;i<linie.length && out.length<2;i++){
+    if(!/skład wyjściowy/i.test(linie[i])) continue;
+    const przed = [linie[i-2], linie[i-1]].filter(Boolean).join(' / ');
+    out.push('„' + (przed || '(nic)') + '"');
+  }
+  return out.join(' oraz ') || '(nie znalazłem)';
+}
+
+function parseLnpProtokolMinuty(rawText, nazwaKlubu, kolejnosc){
+  const zawodnicy = parseLnpProtokol(rawText, nazwaKlubu, kolejnosc);
   if(!zawodnicy) return null;
 
   // Minuty zapisane przy każdym nazwisku — wyciągamy je ponownie, tym razem z przypisaniem.
   const linie = rawText.split('\n').map(l=>l.replace(/\s+/g,' ').trim());
   const bezOzdob = (l)=> l.replace(/\[([^\]]*)\]\([^)]*\)/g,'$1').trim();
   const szukany = importNorm(nazwaKlubu);
-  let od = -1;
-  // NAGŁÓWEK Z NAZWĄ DRUŻYNY BYWA ROZBITY NA DWIE LINIE. „LGKS 38 PODLESIANKA KATOWICE" nie
-  // mieści się w jednym wierszu i strona łamie go w połowie — wtedy dokładna równość nigdy nie
-  // zachodzi, cały skład wraca jako nieodczytany i klub zostaje bez jednego zawodnika. Krótsze
-  // nazwy (Przemsza Siewierz) mieściły się w linii i działały, przez co wyglądało to na kaprys.
-  //
-  // Dlatego dopuszczamy trzy postacie nagłówka: samą linię, tę linię sklejoną z następną oraz
-  // zawieranie się jednej nazwy w drugiej. Warunek „Skład wyjściowy" tuż pod spodem pilnuje,
-  // żeby nie złapać nazwy z menu albo z tabeli wyników.
-  const pasujeNaglowek = (i)=>{
-    const a = importNorm(bezOzdob(linie[i]));
-    if(!a) return false;
-    if(a === szukany) return true;
-    const sklejone = importNorm(bezOzdob(linie[i]) + ' ' + bezOzdob(linie[i+1]||''));
-    if(sklejone === szukany) return true;
-    // Zawieranie tylko przy nazwach na tyle długich, żeby nie trafić w przypadkowy fragment.
-    if(a.length >= 8 && (szukany.includes(a) || a.includes(szukany))) return true;
-    return false;
-  };
-  for(let i=0;i<linie.length;i++){
-    // Nagłówek sklejony z dwóch linii ma „Skład wyjściowy" o wiersz dalej — sprawdzamy oba.
-    if(pasujeNaglowek(i) && (/skład wyjściowy/i.test(linie[i+1]||'') || /skład wyjściowy/i.test(linie[i+2]||''))){ od = i; break; }
-  }
+  // Ten sam sposob co w parseLnpProtokol — jedna reguła zamiast dwoch rozjezdzajacych sie.
+  const od = naglowekSkladu(linie, nazwaKlubu, kolejnosc);
   if(od < 0) return null;
   let doIdx = linie.findIndex((l,i)=> i>od && /^Sztab$/i.test(l));
   if(doIdx < 0) doIdx = linie.length;
@@ -10913,8 +10935,10 @@ function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
     }
   }
 
-  for(const nazwa of druzyny){
-    const dane = parseLnpProtokolMinuty(rawText, nazwa);
+  // Numer druzyny w naglowku wyniku (gospodarze, potem goscie) to awaryjny sposob na
+  // przypisanie skladu, gdy nazwa nad nim nie przypomina zadnej z nagliwka.
+  druzyny.forEach((nazwa, nrDruzyny)=>{
+    const dane = parseLnpProtokolMinuty(rawText, nazwa, nrDruzyny);
     if(!dane){
       // DWIE ZUPEŁNIE RÓŻNE PRZYCZYNY, DOTĄD POD JEDNYM KOMUNIKATEM.
       //
@@ -10927,8 +10951,11 @@ function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
         ? 'protokół przyszedł bez sekcji składów — zbierz tę kolejkę jeszcze raz zakładką'
         : (ileSkladow === 1
           ? 'w protokole jest tylko jeden skład — zbierz tę kolejkę jeszcze raz zakładką'
-          : 'są oba składy, ale nie rozpoznaję nad nimi nagłówka tej drużyny')});
-      continue;
+          // Pokazujemy, co NAPRAWDĘ stoi nad składem. Bez tego poprawianie dopasowania nagłówka
+          // jest zgadywaniem: nazwa z tabeli wyników bywa inna niż ta nad składem.
+          : 'są oba składy, ale nie rozpoznaję nad nimi nagłówka. Nad składami stoi: '
+            + podgladNaglowkow(rawText))});
+      return;
     }
     // Klub dopasowujemy po nazwie, z pominięciem polskich znaków i skrótów typu „KS".
     let klub = dopasujKlubDoNazwy(nazwa, podpowiedzGrupa, poziomZProtokolu);
@@ -10942,7 +10969,7 @@ function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
       strony.push({nazwa, dane, blad: bliskie.length
         ? `nie ma takiego klubu w bazie — najbliżej: ${bliskie.join(', ')}`
         : 'nie ma takiego klubu w bazie'});
-      continue;
+      return;
     }
 
     const rywalStrony = (druzyny.find(d=>d !== nazwa) || '');
@@ -10978,7 +11005,7 @@ function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
         czerwone: czerwone.length};
     });
     strony.push({nazwa, klub, dane, wiersze});
-  }
+  });
   return {klucz, druzyny, strony};
 }
 
@@ -11300,7 +11327,7 @@ function sprawdzZakladke(nazwa, kod){
 
 // Wersja zakładki. Widnieje w każdym jej komunikacie i w oknie SBS, żeby dało się jednym
 // spojrzeniem stwierdzić, czy w pasku siedzi kod sprzed poprawek.
-const ZAKLADKA_WERSJA = 'v35 z 29.08.2026';
+const ZAKLADKA_WERSJA = 'v36 z 29.08.2026';
 const SBS_ADRES_JS = JSON.stringify(location.origin);
 // ZAKŁADKA W PASKU NIE AKTUALIZUJE SIĘ SAMA — I TO BYŁ PRAWDZIWY PROBLEM.
 //
