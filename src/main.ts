@@ -9378,16 +9378,27 @@ function parseLnpProtokol(rawText, nazwaKlubu, kolejnosc){
   for(let i=od+1;i<doIdx;i++){
     const l = linie[i];
     if(/skład rezerwowy/i.test(l)){ rezerwa = true; continue; }
-    if(!/^\d{1,2}$/.test(l)) continue;                       // szukamy numeru koszulki
-    const numer = parseInt(l,10);
-    // Nazwisko to pierwsza kolejna linia, która nie jest minutą zdarzenia ani pusta.
-    let nazwa = '';
-    for(let j=i+1;j<Math.min(i+4,doIdx);j++){
-      const kandydat = bezOzdob(linie[j]);
-      if(!kandydat || /^\d{1,3}'(\s*\+\s*\d+')?$/.test(kandydat)) continue;
-      nazwa = kandydat; i = j; break;
+
+    // NUMER BYWA W OSOBNEJ LINII, A BYWA SKLEJONY Z NAZWISKIEM.
+    //
+    // ŁNP renderuje część protokołów tabelą, w której numer i nazwisko trafiają do jednej
+    // komórki („12 Jan Kowalski"). Czytaliśmy tylko postać rozbitą na dwie linie, więc takie
+    // protokoły dawały zero zawodników — a że próg wynosi pięciu, cały mecz przepadał dla obu
+    // drużyn naraz. Stąd mecze, w których nie wchodziła żadna ze stron.
+    let numer = null, nazwa = '';
+    if(/^\d{1,2}$/.test(l)){
+      numer = parseInt(l,10);
+      // Nazwisko to pierwsza kolejna linia, która nie jest minutą zdarzenia ani pusta.
+      for(let j=i+1;j<Math.min(i+4,doIdx);j++){
+        const kandydat = bezOzdob(linie[j]);
+        if(!kandydat || /^\d{1,3}'(\s*\+\s*\d+')?$/.test(kandydat)) continue;
+        nazwa = kandydat; i = j; break;
+      }
+    } else {
+      const sklejone = bezOzdob(l).match(/^(\d{1,2})\s+(\D.*)$/);
+      if(sklejone){ numer = parseInt(sklejone[1],10); nazwa = sklejone[2].trim(); }
     }
-    if(!nazwa) continue;
+    if(numer === null || !nazwa) continue;
     const mlodziezowiec = /\(M\)/.test(nazwa);
     const bramkarz = /\(B\)/.test(nazwa);
     const czyste = nazwa.replace(/\((?:M|B|C)\)/g,'').replace(/\s+/g,' ').trim();
@@ -10543,6 +10554,24 @@ function detectStatsSource(raw){
 // rezerwowym odwrotność ich dorobku.
 const DLUGOSC_MECZU = 90;
 
+// DLACZEGO SKŁAD SIĘ NIE ODCZYTAŁ — konkretnie, a nie „nie udało się".
+//
+// Pod jednym komunikatem chodziły trzy zupełnie różne rzeczy: protokół zebrany w połowie,
+// nierozpoznany nagłówek i skład, którego nie umiem odczytać mimo znalezionego nagłówka. Dwie
+// pierwsze naprawia ponowne zebranie, trzecia wymaga poprawki w kodzie — i dopóki komunikat ich
+// nie rozróżniał, można było w kółko zbierać na nowo coś, czego zbieranie nie ruszy. Ostatni
+// przypadek dokłada próbkę wierszy, żeby dało się poprawić parser bez zgadywania.
+function powodBrakuSkladu(rawText, nazwaKlubu, nrDruzyny){
+  const linie = String(rawText||'').split('\n').map(l=>l.replace(/\s+/g,' ').trim());
+  const ileSkladow = linie.filter(l=>/skład wyjściowy/i.test(l)).length;
+  if(ileSkladow === 0) return 'protokół przyszedł bez sekcji składów — zbierz tę kolejkę jeszcze raz zakładką';
+  if(ileSkladow === 1) return 'w protokole jest tylko jeden skład — zbierz tę kolejkę jeszcze raz zakładką';
+  const od = naglowekSkladu(linie, nazwaKlubu, nrDruzyny);
+  if(od < 0) return 'nie rozpoznaję nagłówka nad składem. Nad składami stoi: ' + podgladNaglowkow(rawText);
+  const probka = linie.slice(od + 1, od + 12).filter(Boolean).slice(0, 6).join(' / ');
+  return `nagłówek znalazłem, ale nie odczytałem z niego zawodników. Pierwsze wiersze składu: „${probka}"`;
+}
+
 // Co dokładnie stoi w protokole nad sekcją „Skład wyjściowy" — dwie linie wyżej i jedna wyżej.
 // Nazwa nad składem bywa inna niż ta z tabeli wyników i to ona rozstrzyga o dopasowaniu.
 function podgladNaglowkow(rawText){
@@ -10946,15 +10975,7 @@ function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
       // doładowało — albo składy są, lecz nie rozpoznaję nad nimi nagłówka tej drużyny. Pierwsze
       // naprawia się ponownym zebraniem, drugie muszę poprawić w kodzie. Bez tego rozróżnienia
       // można w kółko zbierać na nowo coś, czego zbieranie nie naprawi.
-      const ileSkladow = (String(rawText).match(/Skład wyjściowy/gi) || []).length;
-      strony.push({nazwa, blad: ileSkladow === 0
-        ? 'protokół przyszedł bez sekcji składów — zbierz tę kolejkę jeszcze raz zakładką'
-        : (ileSkladow === 1
-          ? 'w protokole jest tylko jeden skład — zbierz tę kolejkę jeszcze raz zakładką'
-          // Pokazujemy, co NAPRAWDĘ stoi nad składem. Bez tego poprawianie dopasowania nagłówka
-          // jest zgadywaniem: nazwa z tabeli wyników bywa inna niż ta nad składem.
-          : 'są oba składy, ale nie rozpoznaję nad nimi nagłówka. Nad składami stoi: '
-            + podgladNaglowkow(rawText))});
+      strony.push({nazwa, blad: powodBrakuSkladu(rawText, nazwa, nrDruzyny)});
       return;
     }
     // Klub dopasowujemy po nazwie, z pominięciem polskich znaków i skrótów typu „KS".
@@ -11327,7 +11348,7 @@ function sprawdzZakladke(nazwa, kod){
 
 // Wersja zakładki. Widnieje w każdym jej komunikacie i w oknie SBS, żeby dało się jednym
 // spojrzeniem stwierdzić, czy w pasku siedzi kod sprzed poprawek.
-const ZAKLADKA_WERSJA = 'v36 z 29.08.2026';
+const ZAKLADKA_WERSJA = 'v37 z 29.08.2026';
 const SBS_ADRES_JS = JSON.stringify(location.origin);
 // ZAKŁADKA W PASKU NIE AKTUALIZUJE SIĘ SAMA — I TO BYŁ PRAWDZIWY PROBLEM.
 //
