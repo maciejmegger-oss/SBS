@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v41 z 29.08.2026";
+var SBS_ZBIERACZ="v42 z 30.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -122,11 +122,19 @@ function doSchowka(tekst){
 // serwisu (herb PZPN, banery sponsorow), zeby nie wziac ich za herb klubu.
 function herbyZTabeli(){
  var out=[], widziane={};
+ // ROZPOZNAJEMY HERB PO ADRESIE, NIE PO ROZMIARZE.
+ //
+ // Poprzednio odrzucalismy obrazki wieksze niz 260 punktow — a to wlasnie sa herby: w tabeli
+ // widac miniature, ale plik zrodlowy bywa duzy. Z szesnastu klubow wchodzilo wiec piec.
+ // LNP trzyma herby na swoim CDN (cdn.laczynaspilka.pl/content/static/pz/images/...), a gdy
+ // klubu nie ma — podstawia wlasna tarcze (assets/icons/crest_default). Bierzemy jedno i drugie:
+ // zaslepke tez, bo dopiero SBS ma powiedziec, ze dla tego klubu herbu brakuje.
  [].slice.call(document.querySelectorAll('img')).forEach(function(img){
   var src=img.currentSrc||img.getAttribute('src')||'';
   if(!src || /^data:/.test(src)) return;
-  if(/pzpn|orlen|sponsor|banner|placeholder|avatar/i.test(src)) return;
-  if((img.naturalWidth && img.naturalWidth>260) || (img.width && img.width>120)) return;
+  if(src.indexOf('//')===0) src=location.protocol+src;
+  if(!/cdn\.laczynaspilka\.pl|crest|herb|logo-klub/i.test(src)) return;
+  if(/pzpn|orlen|sponsor|banner|site-logo/i.test(src)) return;
 
   var wiersz=img;
   for(var i=0;i<6 && wiersz.parentElement;i++){
@@ -147,7 +155,7 @@ function herbyZTabeli(){
   var klucz=nazwa.toLowerCase();
   if(widziane[klucz]) return;
   widziane[klucz]=1;
-  out.push(nazwa+'|'+(src.indexOf('//')===0 ? location.protocol+src : src));
+  out.push(nazwa+'|'+src);
  });
  return out;
 }
@@ -155,6 +163,11 @@ function herbyZTabeli(){
 var przyciskHerby=document.createElement('button');
 przyciskHerby.textContent='Zbierz herby i nazwy klubow';
 przyciskHerby.style.cssText='display:block;width:100%;padding:7px;margin-bottom:6px;border:1px solid rgba(246,243,234,.35);border-radius:6px;background:transparent;color:#F6F3EA;font:13px sans-serif;cursor:pointer';
+// PRZYCISK MA WYSLAC, A NIE TYLKO ZEBRAC.
+//
+// Dotad zmienial tylko napis na "Mam 5 herbow — wyslij do SBS", a sam niczego nie wysylal:
+// trzeba bylo doczekac do konca zbierania protokolow i uzyc zlotego przycisku. Kto klikal
+// wylacznie herby, nie doczekal sie niczego i mial prawo sadzic, ze nie dzialaja.
 przyciskHerby.onclick=function(){
  var lista=herbyZTabeli();
  if(!lista.length){ przyciskHerby.textContent='Nie widze tu tabeli z herbami'; return; }
@@ -163,7 +176,8 @@ przyciskHerby.onclick=function(){
  for(var q=0;q<zebrane.length;q++){ if(zebrane[q].indexOf('### KLUBY\n')===0){ zebrane[q]=wpis; byl=true; break; } }
  if(!byl) zebrane.push(wpis);
  try{ localStorage.setItem(KLUCZ, JSON.stringify(zebrane)); }catch(e){}
- przyciskHerby.textContent='Mam '+lista.length+' herbow — wyslij do SBS';
+ przyciskHerby.textContent='Wysylam '+lista.length+' herbow...';
+ wyslij(zebrane.join('\n\n'));
 };
 stopka.appendChild(przyciskHerby);
 
@@ -594,6 +608,20 @@ function dociagnijStrone(gotowe){
 //
 // Jeden mecz = jedna ramka. LNP odsyla 404 mniej wiecej co drugi raz, wiec kazdy krok ma az
 // dwanascie podejsc — bez tego gubilismy cale druzyny.
+
+// Linijka z rozgrywkami („5 kolejka, Czwarta liga") stoi w naglowku meczu, wysoko nad skladami.
+// Ucinalismy tekst 400 znakow przed „Skladu", wiec przy meczu z dlugim przebiegiem ta linijka
+// wypadala poza wycinek. SBS nie wiedzial wtedy, jakie to rozgrywki, i nie umial wybrac miedzy
+// seniorami a druzyna U17 o tej samej nazwie — „Stomil Olsztyn SA" nie trafial w zaden klub.
+function naglowekRozgrywek(txt){
+ var linie=String(txt||'').split('\n');
+ for(var i=0;i<linie.length;i++){
+  var l=linie[i].trim();
+  if(/kolejka,/i.test(l) && l.length<120) return l+'\n';
+ }
+ return '';
+}
+
 function zdejmijMeczZDruzyny(adresDruzyny, nr, gotowe){
  var f=document.createElement('iframe');
  f.style.cssText='position:fixed;left:-9999px;top:0;width:1500px;height:2400px';
@@ -650,7 +678,7 @@ function zdejmijMeczZDruzyny(adresDruzyny, nr, gotowe){
     var jedyneD=[];
     ((d.documentElement.innerHTML||'').match(/druzyna\/[0-9a-f-]{30,40}/gi)||[]).forEach(function(x){
      var q=x.split('/')[1]; if(jedyneD.indexOf(q)<0) jedyneD.push(q); });
-    var wynik={ nr:nr, adres:adres, druzynyZMeczu:jedyneD, tekst:txt.slice(j<0?0:Math.max(0,j-400))+zdarzenia(d) };
+    var wynik={ nr:nr, adres:adres, druzynyZMeczu:jedyneD, tekst:naglowekRozgrywek(txt)+txt.slice(j<0?0:Math.max(0,j-400))+zdarzenia(d) };
     f.remove(); gotowe(wynik); return;
    }
    if(n>26){ clearInterval(t); f.remove(); gotowe({blad:'protokol sie nie pokazal'}); }
@@ -1036,7 +1064,7 @@ function wczytajMecz(url, podejscie){
     // Adresy profili zbieramy przy okazji \u2014 dokument meczu i tak jest juz wczytany.
     zbierzProfile(f.contentDocument);
     var j=txt.search(/^\s*Sk\u0142ady\s*$/m);
-    var wpis='### PROTOKOL: '+url+'\n'+txt.slice(j<0?0:Math.max(0,j-400))+zdarzenia(f.contentDocument);
+    var wpis='### PROTOKOL: '+url+'\n'+naglowekRozgrywek(txt)+txt.slice(j<0?0:Math.max(0,j-400))+zdarzenia(f.contentDocument);
     var byl=false;
     for(var q=0;q<zebrane.length;q++){if(zebrane[q].indexOf('### PROTOKOL: '+url+'\n')===0){zebrane[q]=wpis;byl=true;break;}}
     if(!byl)zebrane.push(wpis);
