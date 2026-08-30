@@ -4219,6 +4219,10 @@ function scalDuplikatyPoNazwie(nazwy, docelowaLiga){
 // kolejki, bo protokół niesie obie drużyny, a każdą dopasowujemy do kartoteki po nazwie. Klub
 // służy tylko za punkt wyjścia (tytuł, licznik, link do ŁNP), więc wolno go nie podawać: wtedy
 // oknem rządzi wybrana grupa i nie trzeba wchodzić w żaden klub.
+// Wspólna dla wszystkich okien z protokołami — „pracuje" jest osobne dla każdego z nich i nie
+// chroniło przed dwoma oknami zapisującymi ten sam protokół naraz.
+let zapisProtokolowTrwa = false;
+
 function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
   const klub = DB.clubs.find(c=>c.id===clubId);
   const grupa = klub ? klub.league : (clubBrowse.group || clubBrowse.top || '');
@@ -4618,6 +4622,18 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
   }
 
   async function zapisz(){
+    // JEDEN ZAPIS PROTOKOŁÓW NARAZ — INACZEJ POWSTAJĄ PODWÓJNE KARTOTEKI.
+    //
+    // Zakładka potrafi wysłać protokoły dwa razy, a każda przesyłka otwierała własne okno, które
+    // od razu zapisywało. Dwa zapisy ruszały równolegle i żaden nie widział zawodników zakładanych
+    // przez drugi — bo szuka ich po nazwisku w klubie, a tamtych jeszcze nie było. Tak powstało
+    // 150 podwójnych kartotek w 22 klubach: te same nazwiska, ten sam mecz, ta sama sekunda.
+    // „pracuje" tego nie łapało, bo jest osobne dla każdego okna.
+    if(zapisProtokolowTrwa){
+      komunikat = 'Inny zapis protokołów właśnie trwa — poczekaj, aż się skończy.';
+      rysuj(); return;
+    }
+    zapisProtokolowTrwa = true;
     pracuje = true; komunikat = ''; rysuj();
     try{
       await zapiszWewnetrznie();
@@ -4632,6 +4648,8 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
         + ' — protokoły są nadal w oknie, nic nie przepadło. Wyślij mi tę treść, to poprawię.';
       console.error('SBS zapis protokołów:', e);
       rysuj();
+    }finally{
+      zapisProtokolowTrwa = false;
     }
   }
 
@@ -11299,6 +11317,8 @@ function tmStatsLink(club){
 // kształcie. Cokolwiek innego przyjdzie z dowolnej innej strony, jest po prostu pomijane.
 const ZRODLO_LNP = 'https://www.laczynaspilka.pl';
 let protokolyZLnpDoOdbioru = '';
+// Treść ostatniej przesyłki z zakładki — po niej poznajemy powtórzone wysłanie tego samego.
+let ostatniaPrzesylkaZLnp = '';
 // Adres strony ŁNP, z której zakładka zebrała protokoły. Zapamiętujemy go przy zapisie, dzięki
 // czemu KAŻDA grupa zaczyna działać jak pomorska — bez wklejania linku ręcznie.
 let zrodloZLnpDoOdbioru = '';
@@ -11317,6 +11337,13 @@ function podlaczOdbiorZLnp(){
     const d = e.data;
     if(!d || d.typ !== 'sbs-protokoly' || typeof d.tresc !== 'string' || !d.tresc.trim()) return;
     try{ (e.source as any).postMessage({typ:'sbs-odebrano'}, ZRODLO_LNP); }catch(err){}
+    // TA SAMA PRZESYŁKA DRUGI RAZ TO NIE NOWE PROTOKOŁY.
+    //
+    // Zakładka ponawia wysyłkę, gdy nie doczeka się potwierdzenia. Każde powtórzenie otwierało
+    // kolejne okno, a odkąd okna zapisują same — kolejny zapis tego samego. Rozpoznajemy
+    // powtórkę po treści i po prostu ją pomijamy.
+    if(d.tresc === ostatniaPrzesylkaZLnp) return;
+    ostatniaPrzesylkaZLnp = d.tresc;
     // Wiadomość potrafi przyjść, zanim aplikacja wczyta kartotekę klubów — wtedy rozpoznanie
     // nie miałoby czego z czym dopasować. Odkładamy ją i otwieramy okno, gdy dane już są.
     protokolyZLnpDoOdbioru = d.tresc;
@@ -11395,7 +11422,7 @@ function sprawdzZakladke(nazwa, kod){
 
 // Wersja zakładki. Widnieje w każdym jej komunikacie i w oknie SBS, żeby dało się jednym
 // spojrzeniem stwierdzić, czy w pasku siedzi kod sprzed poprawek.
-const ZAKLADKA_WERSJA = 'v39 z 29.08.2026';
+const ZAKLADKA_WERSJA = 'v40 z 29.08.2026';
 const SBS_ADRES_JS = JSON.stringify(location.origin);
 // ZAKŁADKA W PASKU NIE AKTUALIZUJE SIĘ SAMA — I TO BYŁ PRAWDZIWY PROBLEM.
 //
