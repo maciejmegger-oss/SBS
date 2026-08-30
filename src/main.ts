@@ -10915,7 +10915,21 @@ function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
 
   for(const nazwa of druzyny){
     const dane = parseLnpProtokolMinuty(rawText, nazwa);
-    if(!dane){ strony.push({nazwa, blad:'nie udało się odczytać składu'}); continue; }
+    if(!dane){
+      // DWIE ZUPEŁNIE RÓŻNE PRZYCZYNY, DOTĄD POD JEDNYM KOMUNIKATEM.
+      //
+      // Albo protokół przyszedł bez sekcji składów — bo zakładka zdjęła stronę, zanim ŁNP ją
+      // doładowało — albo składy są, lecz nie rozpoznaję nad nimi nagłówka tej drużyny. Pierwsze
+      // naprawia się ponownym zebraniem, drugie muszę poprawić w kodzie. Bez tego rozróżnienia
+      // można w kółko zbierać na nowo coś, czego zbieranie nie naprawi.
+      const ileSkladow = (String(rawText).match(/Skład wyjściowy/gi) || []).length;
+      strony.push({nazwa, blad: ileSkladow === 0
+        ? 'protokół przyszedł bez sekcji składów — zbierz tę kolejkę jeszcze raz zakładką'
+        : (ileSkladow === 1
+          ? 'w protokole jest tylko jeden skład — zbierz tę kolejkę jeszcze raz zakładką'
+          : 'są oba składy, ale nie rozpoznaję nad nimi nagłówka tej drużyny')});
+      continue;
+    }
     // Klub dopasowujemy po nazwie, z pominięciem polskich znaków i skrótów typu „KS".
     let klub = dopasujKlubDoNazwy(nazwa, podpowiedzGrupa, poziomZProtokolu);
     if(!klub){
@@ -11286,7 +11300,7 @@ function sprawdzZakladke(nazwa, kod){
 
 // Wersja zakładki. Widnieje w każdym jej komunikacie i w oknie SBS, żeby dało się jednym
 // spojrzeniem stwierdzić, czy w pasku siedzi kod sprzed poprawek.
-const ZAKLADKA_WERSJA = 'v34 z 29.08.2026';
+const ZAKLADKA_WERSJA = 'v35 z 29.08.2026';
 const SBS_ADRES_JS = JSON.stringify(location.origin);
 // ZAKŁADKA W PASKU NIE AKTUALIZUJE SIĘ SAMA — I TO BYŁ PRAWDZIWY PROBLEM.
 //
