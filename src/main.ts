@@ -10795,6 +10795,11 @@ function rozbijNazweKlubu(nazwa){
 const tenSamCzlon = (x, y)=>{
   if(x === y) return true;
   if(x.length < 6 || y.length < 6) return false;
+  // Odmiana zmienia końcówkę o literę albo dwie — nie o cztery. Bez tego warunku „Legion"
+  // uchodził za odmianę „Legionovii" (sześć wspólnych znaków i koniec krótszego słowa), przez co
+  // „KS Legionovia" pasowało naraz do Legionovii Legionowo i do Legionu Pilzno. Dwa kluby to
+  // niejednoznaczność, więc nie trafiało w żaden i cała drużyna zostawała bez statystyk.
+  if(Math.abs(x.length - y.length) > 3) return false;
   let i = 0;
   while(i < x.length && i < y.length && x[i] === y[i]) i++;
   return i >= 6;
@@ -11348,7 +11353,7 @@ function sprawdzZakladke(nazwa, kod){
 
 // Wersja zakładki. Widnieje w każdym jej komunikacie i w oknie SBS, żeby dało się jednym
 // spojrzeniem stwierdzić, czy w pasku siedzi kod sprzed poprawek.
-const ZAKLADKA_WERSJA = 'v37 z 29.08.2026';
+const ZAKLADKA_WERSJA = 'v38 z 29.08.2026';
 const SBS_ADRES_JS = JSON.stringify(location.origin);
 // ZAKŁADKA W PASKU NIE AKTUALIZUJE SIĘ SAMA — I TO BYŁ PRAWDZIWY PROBLEM.
 //

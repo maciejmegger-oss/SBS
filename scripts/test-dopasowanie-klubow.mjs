@@ -82,6 +82,10 @@ const PRZYPADKI = [
   ['Sokół Aleksandrów',             'Sokół Aleksandrów Łódzki'],
   ['LKS EKOLOG WOJSŁAWICE',         'Ekolog Wojsławice'],
   ['MUKS Włókniarz Pabianice',      'Włókniarz Pabianice'],
+  // IV liga mazowiecka — nazwy, ktore wczoraj nie wchodzily
+  ['KS Legionovia',                'Legionovia Legionowo'],
+  ['MLKS Victoria Sulejówek',      'Victoria Sulejówek'],
+
   // Nazwy wlasne, ktore WYGLADAJA jak skroty — nie wolno ich zamienic.
   ['Mazur Ełk',                     'Mazur Ełk'],
   ['LKS Mazur Karczew',             'Mazur Karczew'],
