@@ -56,6 +56,7 @@ const LS = {
   queue: "sbs-m:queue",          // zadania czekające na sieć
   zablokowane: "sbs-m:zablokowane", // zadania ODRZUCONE przez bazę — patrz flushQueue
   bladWysylki: "sbs-m:blad-wysylki", // czemu kolejka stanęła — patrz flushQueue
+  brakKolumn: "sbs-m:brak-kolumn",  // kolumny, których ta baza nie ma — patrz zapamietajBrakKolumny
   live: "sbs-m:live",            // stan trwającej obserwacji (zdarzenia, zegar)
   archiwum: "sbs-m:zdarzenia",   // zdarzenia zakończonych meczów, wg obserwacji
   scout: "sbs-m:scout",          // ostatnio wybrany scout
@@ -140,6 +141,47 @@ const objFromRow = (row: Record<string, unknown>): Record<string, unknown> => {
 // o których ten plik nie wiedział — a pole spoza listy nie trafia do `__ext`, tylko leci jako
 // osobna kolumna, której w tabeli nie ma. Zapis kończy się wtedy odmową bazy.
 
+// CZEGO W TEJ BAZIE NIE MA — NAUKA Z ODMOWY.
+//
+// Schemat zakłada tabele przez „create table if not exists", a to NIGDY nie dopisuje kolumn do
+// tabeli, która już istnieje. Kolumna dodana do schematu później nie powstaje więc w bazie
+// założonej wcześniej — mimo że w supabase/schema.sql stoi jak wół. Jeden taki brak wywala CAŁY
+// zapis, a naprawa polegała dotąd na: rozpoznaj po komunikacie, dopisz pole do listy wyjątków
+// w kodzie, wdróż, poproś scouta o ponowienie. Raz na kolumnę, przy czym każda runda to godzina
+// i mecz obejrzany na darmo.
+//
+// PostgREST podaje nazwę brakującej kolumny wprost w odmowie. Panel ją czyta, zapamiętuje
+// i od tej chwili wysyła to pole tak samo jak pozostałe pola bez kolumn — schowane w jsonb.
+// Zapamiętane w telefonie, bo to cecha KONKRETNEJ bazy, a nie wersji aplikacji.
+const WZOR_BRAKU_KOLUMNY = /could not find the '([a-z0-9_]+)' column of '([a-z0-9_]+)'/i;
+
+const brakujaceKolumny = (): Record<string, string[]> => readLS<Record<string, string[]>>(LS.brakKolumn, {});
+
+// Zwraca true, gdy dowiedzieliśmy się czegoś NOWEGO — tylko wtedy warto ponawiać. Bez tego
+// warunku ta sama odmowa wracałaby w kółko i kolejka kręciłaby się w miejscu.
+function zapamietajBrakKolumny(komunikat: string): boolean {
+  const m = WZOR_BRAKU_KOLUMNY.exec(komunikat || "");
+  if (!m) return false;
+  const [, kolumna, tabela] = m;
+  const mapa = brakujaceKolumny();
+  const lista = mapa[tabela] || [];
+  if (lista.includes(kolumna)) return false;
+  mapa[tabela] = [...lista, kolumna];
+  writeLS(LS.brakKolumn, mapa);
+  return true;
+}
+
+// Pola do schowania w jsonb: stałe z EXT_CONFIG plus te, o których brak baza sama powiedziała.
+function polaBezKolumn(table: string): string[] {
+  const cfg = EXT_CONFIG[table];
+  if (!cfg) return [];
+  // Ani klucza głównego, ani samej kolumny-gospodarza nie wolno schować w niej samej — a baza
+  // potrafi zgłosić brak czegokolwiek, także w odpowiedzi na zupełnie inną usterkę.
+  const zakazane = new Set([cfg.hostField, "id"]);
+  const nauczone = (brakujaceKolumny()[table] || []).map(snakeToCamel).filter((f) => !zakazane.has(f));
+  return [...new Set([...cfg.fields, ...nauczone])];
+}
+
 // PAKOWANIE I ROZPAKOWYWANIE DLA DOWOLNEJ TABELI, nie tylko dla obserwacji.
 //
 // Wcześniej te dwie funkcje obsługiwały WYŁĄCZNIE obserwacje, a raporty szły do bazy surowe.
@@ -155,7 +197,7 @@ const packExt = (table: string, o: Record<string, unknown>): Record<string, unkn
   const clone = { ...o };
   if (!cfg) return clone;
   const ext: Record<string, unknown> = {};
-  for (const f of cfg.fields) {
+  for (const f of polaBezKolumn(table)) {
     if (f in clone && clone[f] !== undefined) ext[f] = clone[f];
     delete clone[f];
   }
@@ -574,6 +616,18 @@ export async function flushQueue(): Promise<number> {
           console.warn("Wysyłka wstrzymana:", (e as Error).message);
           zapiszBladWysylki(`${zadanie.kind}: ${(e as Error).message || "nieznany błąd"}`);
           return getQueue().length;
+        }
+        // ODMOWA, Z KTÓREJ DA SIĘ CZEGOŚ NAUCZYĆ, nie kończy sprawy.
+        //
+        // „Nie ma takiej kolumny" to jedyna odmowa, którą panel potrafi naprawić sam: wystarczy
+        // wysłać to pole schowane w jsonb. Uczymy się więc i próbujemy JESZCZE RAZ, od razu,
+        // zamiast odstawiać zapis i czekać, aż ktoś zauważy czerwoną kartę. Nauka dotyczy nowej
+        // kolumny (patrz zapamietajBrakKolumny), więc każda daje najwyżej jedną dodatkową próbę
+        // i kolejka nie ma jak się zapętlić.
+        if (zapamietajBrakKolumny((e as Error).message)) {
+          console.warn("Baza nie ma tej kolumny — chowam pole i próbuję jeszcze raz:", (e as Error).message);
+          setQueue([odswiezKsztalt(zadanie), ...getQueue().filter((j) => j.id !== zadanie.id)]);
+          continue;
         }
         console.warn("Baza odrzuciła zadanie — odstawiam i idę dalej:", (e as Error).message);
         setZablokowane([...zablokowaneZadania(), {

@@ -145,7 +145,11 @@ export const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }>
     //   bo brak zawodnika sam w sobie znaczy też „zawodnik skasowany z kartoteki".
     // fromObservationId: z której obserwacji raport powstał — pozwala ponowny zapis tej samej
     //   obserwacji potraktować jako aktualizację zamiast dokładać drugi raport o tym samym.
-    fields: ["match", "kind", "fromObservationId"],
+    // obsType: „Live" / „Online" / „Video". Kolumna obs_type figuruje w supabase/schema.sql, ale
+    //   w bazach założonych wcześniej NIE ISTNIEJE — schemat zakłada tabele przez „create table
+    //   if not exists", co nigdy nie dopisuje kolumn do tabeli już istniejącej. Skutek: każdy
+    //   raport z telefonu odbijał się od bazy z „Could not find the 'obs_type' column".
+    fields: ["match", "kind", "fromObservationId", "obsType"],
   },
 };
 
