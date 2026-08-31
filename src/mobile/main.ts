@@ -893,6 +893,10 @@ interface SkladZawodnik {
   // zapisie idą wprost do pól raportu, bez tłumaczenia.
   fazy?: Record<string, number>;
   sfg?: Record<string, number>;
+  // Decyzja o zawodniku — te same wartości, co w raporcie na komputerze (STATUS_OPTIONS):
+  // „Do Obserwacji", „Na Testy", „Do transferu"… Zapada NA TRYBUNIE, przy nazwisku, a nie pół
+  // godziny później przy jednym wspólnym formularzu po meczu, gdzie dotyczyła tylko jednej osoby.
+  status?: string;
   notatka?: string;
   noga?: string;
   // Wskazanie na zawodnika z bazy, gdy skład powstał z kadry klubu, a nie z wklejki. Dzięki temu
@@ -1266,7 +1270,21 @@ function viewOcenaZawodnika(z: SkladZawodnik, podKaflami = false): string {
         <button class="btn ghost small" data-act="dyktuj-notatke" id="dyktuj-btn">Dyktuj</button>
       </div>
       <textarea id="notatka-zawodnika" placeholder="Co zwróciło uwagę…">${esc(z.notatka || "")}</textarea>
-      <p class="hint" style="margin-top:6px;">Zapisuje się samo. Wszystko z tego panelu wejdzie do raportu tego zawodnika w SBS.</p>
+    </div>
+
+    ${/* DECYZJA PRZY NAZWISKU, NA TRYBUNIE.
+          Ten sam zestaw, co w raporcie na komputerze. Dotąd dawało się ją wskazać wyłącznie po
+          gwizdku, w jednym formularzu na cały mecz — czyli dotyczyła jednej osoby, a przy
+          obserwacji zespołu nie dotyczyła nikogo. Tymczasem „tego chcę na testy" wie się w chwili,
+          gdy się go ogląda, i przy dziewięciu wyróżnionych po meczu nikt tego nie odtworzy. */""}
+    <div class="section">
+      <span class="label">Decyzja</span>
+      <div class="chips">
+        ${STATUS_OPTIONS.map((s) => `
+          <button class="chip" data-act="status-zawodnika" data-v="${esc(s.value)}" aria-pressed="${z.status === s.value}">${esc(s.label)}</button>`).join("")}
+      </div>
+      <p class="hint" style="margin-top:8px;">Zapisuje się samo. Wszystko z tego panelu — z decyzją —
+      wejdzie do raportu tego zawodnika w SBS, a status trafi na jego profil.</p>
     </div>`;
 }
 
@@ -1429,6 +1447,8 @@ function skrotOcen(z: SkladZawodnik): string {
     .forEach((x) => { if (Number(z.ocena?.[x.k]) > 0) czesci.push(`${x.l} ${z.ocena![x.k]}`); });
   REPORT_PHASES.forEach((f) => { if (Number(z.fazy?.[f.key]) > 0) czesci.push(`${f.label} ${z.fazy![f.key]}`); });
   REPORT_SET_PIECES.forEach((f) => { if (Number(z.sfg?.[f.key]) > 0) czesci.push(`${f.label} ${z.sfg![f.key]}`); });
+  // Decyzja na PIERWSZYM miejscu — to jedyna rzecz z tego panelu, która zmienia coś poza raportem.
+  if (z.status) czesci.unshift(z.status.toUpperCase());
   return czesci.join(" · ");
 }
 
@@ -1586,7 +1606,7 @@ function viewPodglad(): string {
 
   const skladHtml = STRONY.map((strona) => {
     const dane = obs.skladMeczu?.[strona];
-    const oznaczeni = (dane?.zawodnicy || []).filter((z) => z.wyrozniony || z.pozycja || z.notatka || z.noga ||
+    const oznaczeni = (dane?.zawodnicy || []).filter((z) => z.wyrozniony || z.pozycja || z.notatka || z.noga || z.status ||
       [z.ocena, z.fazy, z.sfg].some((w) => w && Object.values(w).some((n) => Number(n) > 0)));
     if (!oznaczeni.length) return "";
     return `
@@ -1618,7 +1638,10 @@ function viewPodglad(): string {
           <div class="card" style="padding:11px 12px;">
             <div class="row">
               <div class="name" style="font-size:15px;">${z.wyrozniony ? "★ " : ""}${esc(kluczZawodnika(z))}</div>
-              ${z.pozycja ? `<span class="tag">${esc(POZYCJE[z.pozycja])}</span>` : ""}
+              <span style="display:flex; gap:6px;">
+                ${z.status ? `<span class="tag" style="background:var(--accent-bg); color:var(--accent-fg);">${esc(z.status)}</span>` : ""}
+                ${z.pozycja ? `<span class="tag">${esc(POZYCJE[z.pozycja])}</span>` : ""}
+              </span>
             </div>
             ${z.noga ? `<div class="sub" style="margin-top:4px;">noga: ${esc(z.noga)}</div>` : ""}
             ${z.ocena && Object.values(z.ocena).some((n) => Number(n) > 0)
@@ -2224,7 +2247,7 @@ function saveOcena() {
   const cosOceniono = (z: SkladZawodnik) => [z.ocena, z.fazy, z.sfg]
     .some((w) => w && Object.values(w).some((n) => Number(n) > 0));
   const cosZeSkladu = STRONY.some((strona) => (o?.skladMeczu?.[strona]?.zawodnicy || [])
-    .some((z) => z.wyrozniony || z.notatka || cosOceniono(z)));
+    .some((z) => z.wyrozniony || z.notatka || z.status || cosOceniono(z)));
   const cosJest = wystawione.length || o?.poziomMeczu || (o?.warunki || []).length || o?.notatkaMeczu || cosZeSkladu;
   if (!cosJest) { toast("Nie ma czego zapisać — wystaw ocenę albo opisz mecz"); return; }
 
@@ -2331,7 +2354,7 @@ function saveOcena() {
         const sfgZ: Record<string, number> = {};
         REPORT_SET_PIECES.forEach((f) => { if (Number(z.sfg?.[f.key]) > 0) sfgZ[f.key] = Number(z.sfg![f.key]); });
         const maProtokol = Object.keys(fazyZ).length > 0 || Object.keys(sfgZ).length > 0;
-        if (!maOcene && !maProtokol && !z.wyrozniony && !z.notatka) return;
+        if (!maOcene && !maProtokol && !z.wyrozniony && !z.notatka && !z.status) return;
 
         const playerId = znajdzZawodnika(z.nazwa, dane?.nazwa);
         if (!playerId) { nierozpoznani.push(z.nazwa); return; }
@@ -2340,11 +2363,17 @@ function saveOcena() {
         // żeby liczyła się do jego średniej tak samo jak ocena z obserwacji indywidualnej.
         savePlayerRatingsFromSquad(playerId, oceny, dataRap, scout, obs, z);
 
+        // Decyzja wskazana przy nazwisku ustawia status NA PROFILU. Bez tego „do transferu"
+        // wskazane na trybunie zostawałoby zdaniem w opisie raportu, a listy w SBS — Monitoring,
+        // mapa rankingowa, Scout Transfer — budują się właśnie ze statusów.
+        if (z.status) savePlayerStatus(playerId, z.status);
+
         // Dorobek z kafli przy nazwisku: to jedyna droga, żeby stukanie w trakcie meczu
         // zostawiło ślad w raporcie, a nie tylko na osi zdarzeń w telefonie.
         const zdarzeniaZ = zdarzeniaZawodnika(obs.id, kluczZawodnika(z));
         const opis = [
           z.wyrozniony ? "Wyróżnił się w tym meczu." : "",
+          z.status ? `Decyzja: ${z.status}.` : "",
           z.notatka || "",
           // Gra głową nie ma własnego pola w raporcie, a jest oceniana osobno w ataku i w obronie.
           // Bez przepisania do opisu przepadałaby po drodze na komputer.
@@ -2932,6 +2961,19 @@ document.addEventListener("click", (e) => {
       if (!dane) break;
       dane.z.noga = dane.z.noga === v ? undefined : v;
       saveObservation(dane.obs);
+      render();
+      break;
+    }
+
+    // Decyzja o zawodniku wskazana wprost przy nazwisku. Ponowne dotknięcie ją zdejmuje:
+    // „nie wskazano decyzji" to inna informacja niż „wskazano do obserwacji".
+    case "status-zawodnika": {
+      zabezpieczNotatke();
+      const dane = ocenianyTeraz();
+      if (!dane) break;
+      dane.z.status = dane.z.status === v ? undefined : v;
+      saveObservation(dane.obs);
+      if (navigator.vibrate) navigator.vibrate(10);
       render();
       break;
     }
