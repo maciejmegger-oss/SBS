@@ -29,8 +29,7 @@ const czesci = [
   wytnij('rozbijNazweKlubu', /function rozbijNazweKlubu\(nazwa\)\{[\s\S]*?\n\}/),
   wytnij('tenSamCzlon', /const tenSamCzlon = \(x, y\)=>\{[\s\S]*?\n\};/),
   wytnij('odciskKlubu', /const odciskKlubu = \(nazwa\)=>\{[\s\S]*?\};/),
-  wytnij('poziomGrupy', /function poziomGrupy(nazwaGrupy){[sS]*?
-}/),
+  wytnij('poziomGrupy', /function poziomGrupy\(nazwaGrupy\)\{[\s\S]*?\n\}/),
   wytnij('dopasujKlubDoNazwy', /function dopasujKlubDoNazwy\(nazwa, podpowiedzGrupa, poziom\)\{[\s\S]*?\n\}/),
 ];
 

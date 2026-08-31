@@ -4160,7 +4160,7 @@ function viewClubs(){
   ${groupRow}
   <div class="toolbar" style="margin-top:14px;">
     <div class="note">${list.length} ${list.length===1?'klub':'klubów'} w widoku${
-      (clubBrowse.top === 'IV liga' || clubBrowse.top === 'Klasa okręgowa')
+      bezProtokolowNa90minut(clubBrowse.top)
         // Sprawdzone na produkcji: ŁNP oddaje serwerom atrapę strony (plik z kodem aplikacji ma
         // dwieście znaków zamiast megabajtów), więc odświeżanie z serwera tej ligi nie rozliczy.
         // Zamiast zapraszać w ślepy zaułek, mówimy od razu, która droga działa.
@@ -4168,9 +4168,9 @@ function viewClubs(){
           + ' „📋 Protokoły z ŁNP" i <strong>Ctrl+V</strong>. Jedno wklejenie rozlicza całą grupę.'
         : ''}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
-      ${clubBrowse.top && clubBrowse.top !== 'IV liga' && clubBrowse.top !== 'Klasa okręgowa'
+      ${clubBrowse.top && !bezProtokolowNa90minut(clubBrowse.top)
         ? `<button class="secondary" data-action="league-stats" data-league="${esc(clubBrowse.top)}" title="Wklej statystyki wszystkich klubów tej ligi w jednym oknie">⏱ Statystyki ligi</button>` : ''}
-      ${clubBrowse.group && (clubBrowse.top === 'IV liga' || clubBrowse.top === 'Klasa okręgowa')
+      ${clubBrowse.group && bezProtokolowNa90minut(clubBrowse.top)
         // LINK DO GRUPY W ŁNP. Adresy rozgrywek na „Łączy nas piłka" to same numery — z samego
         // adresu nie da się poznać, które to województwo. Dlatego link przypisuje człowiek, mając
         // wybraną grupę na ekranie. Potem jedno kliknięcie otwiera właściwą kolejkę i można na niej
@@ -6066,6 +6066,16 @@ function poziomGrupy(nazwaGrupy){
   if(/ekstraklasa/i.test(t)) return 'Ekstraklasa';
   return '';
 }
+
+// ROZGRYWKI, KTÓRYCH 90MINUT NIE OBSŁUŻY — sprawdzone, nie przypuszczane.
+//
+// IV liga i klasa okręgowa: ŁNP oddaje serwerom atrapę strony, a 90minut nie ma tam protokołów.
+// Centralna Liga Juniorów: 90minut ma komplet terminarza i wyników, ale ANI JEDNEGO protokołu —
+// przy 240 spotkaniach zero odnośników „mecz.php", a strona klubu podaje samą historię rozgrywek.
+// We wszystkich trzech przypadkach jedyną drogą jest zakładka z ŁNP, więc nie pokazujemy przycisku,
+// który i tak skończy się listą krzyżyków.
+const bezProtokolowNa90minut = (top)=>
+  top === 'IV liga' || top === 'Klasa okręgowa' || top === 'Kategorie juniorskie';
 
 const ROCZNIK_MLODZIEZOWCA = 2006;
 
@@ -11395,16 +11405,19 @@ function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
     }
   }
 
-  // GRUPA, Z KTÓREJ KOPIUJESZ, ROZSTRZYGA — I MA PIERWSZEŃSTWO PRZED TREŚCIĄ PROTOKOŁU.
+  // POZIOM Z PROTOKOŁU IDZIE PIERWSZY, GRUPA DOPIERO GDY PROTOKÓŁ MILCZY.
   //
-  // W CLJ nazwy klubów na ŁNP nie mają końcówki („Arkonia Szczecin"), a w kartotece mają
-  // („Arkonia Szczecin U19") — i ten sam klub gra jednocześnie w rozgrywkach seniorskich.
-  // Sam protokół nie zawsze mówi, o który zespół chodzi, więc dorobek juniorów potrafił trafić
-  // do pierwszej drużyny albo nie trafić nigdzie. Skoro protokoły zbierasz z konkretnej grupy
-  // i w niej otwierasz okno, to ta grupa jest odpowiedzią: zbierane z CLJ U19 idzie do CLJ U19,
-  // zbierane z U17 zachodniej — do U17 zachodniej. Poziom z protokołu zostaje jako zapasowy,
-  // dla wklejek robionych poza widokiem grupy.
-  const poziomRozliczenia = poziomGrupy(podpowiedzGrupa) || poziomZProtokolu;
+  // Protokół podaje rozgrywki wprost („6 kolejka, Ekstraklasa", „Centralna Liga Juniorów") i to
+  // jest fakt o TYM spotkaniu — pewniejszy niż to, którą grupę masz akurat otwartą na ekranie.
+  // Odwrotna kolejność, którą chwilowo tu miałem, odcinała kluby istniejące w bazie: wklejka
+  // z I ligi przy otwartej grupie juniorskiej dawała „nie ma takiego klubu" dla Stomilu Olsztyn
+  // i Widzewa, choć oba są w kartotece.
+  //
+  // Grupa zostaje jako rozstrzygnięcie tam, gdzie protokół nie mówi nic — a to właśnie CLJ, gdzie
+  // nazwy klubów na ŁNP nie mają końcówki („Arkonia Szczecin") i ten sam klub gra jednocześnie
+  // w rozgrywkach seniorskich. Wtedy zbierane z CLJ U19 idzie do CLJ U19, a z U17 zachodniej —
+  // do U17 zachodniej.
+  const poziomRozliczenia = poziomZProtokolu || poziomGrupy(podpowiedzGrupa);
 
   // Numer druzyny w naglowku wyniku (gospodarze, potem goscie) to awaryjny sposob na
   // przypisanie skladu, gdy nazwa nad nim nie przypomina zadnej z nagliwka.
@@ -11423,6 +11436,21 @@ function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
     // Klub dopasowujemy po nazwie, z pominięciem polskich znaków i skrótów typu „KS".
     let klub = dopasujKlubDoNazwy(nazwa, podpowiedzGrupa, poziomRozliczenia);
     if(!klub){
+      // PROTOKÓŁ Z INNYCH ROZGRYWEK TO NIE „BRAK KLUBU W BAZIE".
+      //
+      // Odkąd grupa rozstrzyga o docelowej lidze, protokół seniorski wklejony przy otwartej
+      // grupie juniorskiej jest odrzucany — i słusznie, bo dorobek Ekstraklasy nie ma prawa
+      // trafić do U17. Ale komunikat mówił wtedy „nie ma takiego klubu w bazie", choć klub
+      // jest — wysyłał więc do zakładania kartoteki, której nie trzeba, zamiast powiedzieć,
+      // że w buforze została kolejka z zupełnie innych rozgrywek.
+      const bezPoziomu = dopasujKlubDoNazwy(nazwa, '', '');
+      if(bezPoziomu && poziomRozliczenia){
+        strony.push({nazwa, dane, blad:
+          `„${bezPoziomu.name}" gra w rozgrywkach ${bezPoziomu.league}, a zbierasz do ${podpowiedzGrupa || poziomRozliczenia}. `
+          + 'Ten protokół jest z innych rozgrywek — najpewniej został w buforze zakładki. '
+          + 'Na ŁNP kliknij zakładkę i „Wyczysc zebrane", potem zbierz właściwą grupę.'});
+        return;
+      }
       // Powiedz, do czego nazwa była najbliżej — inaczej „nie ma takiego klubu" nie mówi,
       // czy klubu brakuje w bazie, czy tylko nazwa jest zapisana inaczej.
       const rdzen = rozbijNazweKlubu(nazwa).rdzen;
@@ -11799,7 +11827,7 @@ function sprawdzZakladke(nazwa, kod){
 
 // Wersja zakładki. Widnieje w każdym jej komunikacie i w oknie SBS, żeby dało się jednym
 // spojrzeniem stwierdzić, czy w pasku siedzi kod sprzed poprawek.
-const ZAKLADKA_WERSJA = 'v44 z 30.08.2026';
+const ZAKLADKA_WERSJA = 'v45 z 31.08.2026';
 const SBS_ADRES_JS = JSON.stringify(location.origin);
 // ZAKŁADKA W PASKU NIE AKTUALIZUJE SIĘ SAMA — I TO BYŁ PRAWDZIWY PROBLEM.
 //

@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v44 z 30.08.2026";
+var SBS_ZBIERACZ="v45 z 31.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -177,7 +177,13 @@ przyciskHerby.onclick=function(){
  if(!byl) zebrane.push(wpis);
  try{ localStorage.setItem(KLUCZ, JSON.stringify(zebrane)); }catch(e){}
  przyciskHerby.textContent='Wysylam '+lista.length+' herbow...';
- wyslij(zebrane.join('\n\n'));
+ // PANEL ZOSTAJE PO WYSLANIU HERBOW.
+ //
+ // wyslij() sprzata po sobie panel, bo konczy prace nad cala kolejka. Przy samych herbach to
+ // przeszkadza: zbieranie protokolow chodzi dalej w tle, a razem z panelem znika licznik postepu
+ // i pozostale przyciski — nie ma juz czego wybrac ani czym przerwac.
+ wyslij(zebrane.join('\n\n'), true);
+ setTimeout(function(){ przyciskHerby.textContent='Wyslano '+lista.length+' herbow — mozesz zbierac dalej'; }, 600);
 };
 stopka.appendChild(przyciskHerby);
 
@@ -1509,7 +1515,8 @@ function koniec(){
 }
 
 // Wysylka odpalana KLIKNIECIEM — stad wolno jej otwierac okno i pisac do schowka.
-function wyslij(tresc){
+function wyslij(tresc, zostawPanel){
+ var usunPanel=function(){ if(!zostawPanel && box.parentNode) usunPanel(); };
  var udalo=false;
  var p=document.createElement('textarea');p.value=tresc;document.body.appendChild(p);p.select();
  try{udalo=document.execCommand('copy');}catch(e){udalo=false;}
@@ -1531,7 +1538,7 @@ function wyslij(tresc){
    if(!ev.data||ev.data.typ!=='sbs-odebrano') return;
    window.removeEventListener('message',nasluch);
    window.removeEventListener('message',potwierdzenie);
-   box.remove();
+   usunPanel();
    alert('SBS '+SBS_ZBIERACZ+': wyslalem '+zebrane.length+' protokolow prosto do aplikacji (kolejek: '+kolejek+(pominietych?', pominietych nierozegranych: '+pominietych:'')+').\n\nPrzejdz do karty Scout Base System - protokoly juz tam sa, nic nie musisz wklejac.');
   };
   window.addEventListener('message',nasluch);
@@ -1539,12 +1546,12 @@ function wyslij(tresc){
   setTimeout(function(){
    window.removeEventListener('message',nasluch);
    window.removeEventListener('message',potwierdzenie);
-   if(box.parentNode) box.remove();
+   usunPanel();
    if(!wyslane) alert('SBS '+SBS_ZBIERACZ+': zebralem '+zebrane.length+' protokolow, ale aplikacja sie nie odezwala.'+(udalo?' Sa w schowku - wejdz do SBS i nacisnij Ctrl+V.':' Kliknij zakladke jeszcze raz.'));
   },20000);
   return;
  }
- box.remove();
+ usunPanel();
  if(!udalo){alert('SBS '+SBS_ZBIERACZ+': zebralem '+zebrane.length+' protokolow, ale przegladarka nie pozwolila zapisac ich do schowka.\n\nKliknij zakladke jeszcze raz - za drugim razem zwykle sie udaje.');return;}
  alert('SBS '+SBS_ZBIERACZ+': dolozylem '+(zebrane.length-bylo)+' protokolow (kolejek przejrzanych: '+kolejek+(pominietych?', pominietych nierozegranych: '+pominietych:'')+(zablokowanych?', zatrzymanych prob wyjscia ze strony: '+zablokowanych:'')+'). W schowku masz teraz '+zebrane.length+' protokolow ('+tresc.length+' znakow).\n\nW aplikacji: Kluby -> wybierz grupe -> \u201eProtokoly z LNP\u201d -> Ctrl+V.\n\nShift + klikniecie tej zakladki czysci zebrana liste.');
 }
