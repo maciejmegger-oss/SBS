@@ -7233,6 +7233,31 @@ function viewRankingNumbersMode(){
   let anyChanged = false;
   let anyRealCandidatesFound = false;
   const zMeczow = wyroznieniZMeczow(rankingLeague, rankingFormationFilter);
+
+  // JEDEN ZAWODNIK — JEDNO POLE NA BOISKU.
+  //
+  // Przypisania na mapie są trwałe, a kolejność podpowiedzi zmienia się z każdym nowym zawodnikiem
+  // w lidze. Stoper, który przy pierwszym otwarciu mapy trafił na lewe pole, przy kolejnym mieścił
+  // się już w szóstce prawego — i zostawał w obu, bo raz zapisanego przypisania nic nie zdejmowało.
+  // Madej stał tak jednocześnie pod „5" i pod „4". Zliczamy więc, gdzie kto już jest, i pilnujemy,
+  // żeby drugi raz nie wszedł. Przypisania zrobione ręką zostają nietknięte — usuwamy wyłącznie
+  // powtórzenia, zachowując pierwsze wystąpienie.
+  const gdzieJuzStoi = new Map();
+  POSITION_NUMBERS.forEach(posDef=>{
+    const key = positionMapKey(rankingLeague, rankingFormationFilter, posDef.number);
+    const lista = positionMapAssignments[key];
+    if(!Array.isArray(lista)) return;
+    const bezPowtorzen = lista.filter(id=>{
+      if(gdzieJuzStoi.has(id)) return false;
+      gdzieJuzStoi.set(id, posDef.number);
+      return true;
+    });
+    if(bezPowtorzen.length !== lista.length){
+      positionMapAssignments[key] = bezPowtorzen;
+      anyChanged = true;
+    }
+  });
+
   POSITION_NUMBERS.forEach(posDef=>{
     const key = positionMapKey(rankingLeague, rankingFormationFilter, posDef.number);
     const wykluczeni = positionMapAssignments[kluczWykluczonych(key)] || [];
@@ -7242,7 +7267,10 @@ function viewRankingNumbersMode(){
     const auto = [...zMeczu, ...buildAutoPositionCandidates(rankingLeague, rankingFormationFilter, posDef.number)
       .filter(id=> !wykluczeni.includes(id) && !zMeczu.includes(id))];
     if(positionMapAssignments[key] === undefined){
-      positionMapAssignments[key] = auto;
+      // Pierwsze wypełnienie pola też pilnuje, żeby nikt nie wszedł tu, stojąc już gdzie indziej.
+      const bezPowtorzen = auto.filter(id=>!gdzieJuzStoi.has(id));
+      bezPowtorzen.forEach(id=>gdzieJuzStoi.set(id, posDef.number));
+      positionMapAssignments[key] = bezPowtorzen;
       anyChanged = true;
     } else {
       // Dołącz automatycznie zawodników ze statusem (Do transferu/Testy), których jeszcze nie ma na tej
@@ -7270,8 +7298,11 @@ function viewRankingNumbersMode(){
       }
       auto.forEach(id=>{
         if(cur.includes(id) || cur.length >= 6) return;
+        // Kto stoi już na innym polu tej samej mapy, nie wchodzi na drugie.
+        if(gdzieJuzStoi.has(id) && gdzieJuzStoi.get(id) !== posDef.number) return;
         const pl = DB.players.find(p=>p.id===id);
         if(pl && pl.status==='Do transferu') cur.unshift(id); else cur.push(id);
+        gdzieJuzStoi.set(id, posDef.number);
         anyChanged = true;
       });
     }
@@ -11864,7 +11895,7 @@ function sprawdzZakladke(nazwa, kod){
 
 // Wersja zakładki. Widnieje w każdym jej komunikacie i w oknie SBS, żeby dało się jednym
 // spojrzeniem stwierdzić, czy w pasku siedzi kod sprzed poprawek.
-const ZAKLADKA_WERSJA = 'v46 z 31.08.2026';
+const ZAKLADKA_WERSJA = 'v47 z 31.08.2026';
 const SBS_ADRES_JS = JSON.stringify(location.origin);
 // ZAKŁADKA W PASKU NIE AKTUALIZUJE SIĘ SAMA — I TO BYŁ PRAWDZIWY PROBLEM.
 //
@@ -11903,12 +11934,12 @@ try{window.__SBS_ADRES=A;}catch(e){}
 function awaryjnie(){${LNP_ZBIERACZ}}
 var ruszyl=false, budzik=null;
 function odpal(co){ if(ruszyl) return; ruszyl=true; if(budzik) clearTimeout(budzik); try{ co(); }catch(e){ alert('SBS: '+e.message); } }
-budzik=setTimeout(function(){ odpal(awaryjnie); },4000);
+budzik=setTimeout(function(){ odpal(function(){ try{window.__SBS_STARA=1;}catch(e){} awaryjnie(); }); },12000);
 try{
  fetch(A+'/zakladka-lnp-v2.js?t='+Date.now(),{cache:'no-store'})
   .then(function(r){ if(!r.ok) throw 0; return r.text(); })
   .then(function(t){ if(t.indexOf('SBS_ZBIERACZ')<0) throw 0; odpal(function(){ (new Function(t))(); }); })
-  .catch(function(){ odpal(awaryjnie); });
+  .catch(function(){ odpal(function(){ try{window.__SBS_STARA=1;}catch(e){} awaryjnie(); }); });
 }catch(e){ odpal(awaryjnie); }
 })();`;
 

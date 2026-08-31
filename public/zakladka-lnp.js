@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v46 z 31.08.2026";
+var SBS_ZBIERACZ="v47 z 31.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -70,6 +70,7 @@ box.style.cssText='position:fixed;right:16px;bottom:16px;z-index:2147483647;back
 var linia=document.createElement('div');
 linia.style.cssText='line-height:1.45';
 linia.textContent='SBS '+SBS_ZBIERACZ+': zaczynam...';
+try{ if(window.__SBS_STARA){ linia.innerHTML='<b style=\"color:#F0A0A0\">UWAGA: zakladka na pasku jest stara</b><br>Uzywam kopii z dnia, w ktorym ja zapisales (' + SBS_ZBIERACZ + '). Nowe przyciski beda dopiero po wymianie zakladki: w SBS otworz „Protokoly z LNP” i kliknij „Szybkie kopiowanie z LNP”.'; } }catch(e){}
 box.appendChild(linia);
 var stopka=document.createElement('div');
 stopka.style.cssText='margin-top:10px;padding-top:8px;border-top:1px solid rgba(246,243,234,.2)';
