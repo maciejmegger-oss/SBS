@@ -5573,11 +5573,26 @@ function obsCalendarHtml(){
   ${obsCalendarSelectedDay ? `
   <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px;">
     <strong style="font-size:13px;color:var(--heading);">${esc(obsCalendarSelectedDay)}</strong>
-    ${selectedObs.length ? selectedObs.map(o=>{
+    ${selectedObs.length ? selectedObs.slice().sort((a,b)=>String(a.matchTime||'').localeCompare(String(b.matchTime||''))).map(o=>{
       const pl = DB.players.find(p=>p.id===o.playerId);
-      return `<div class="obs-item" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+      // GODZINA I MIEJSCE STOJĄ PRZY MECZU, NIE W EDYCJI.
+      //
+      // Kalendarz służy do planowania wyjazdu — samo „z kim gra" nie mówi, o której wyjechać ani
+      // dokąd. Te dwie rzeczy trzeba było wyklikać w edycji każdej obserwacji z osobna. Adres jest
+      // odnośnikiem do mapy, bo i tak kończy się szukaniem dojazdu.
+      const czas = String(o.matchTime||'').trim();
+      const gdzie = String(o.location||'').trim();
+      const szczegoly = [
+        czas ? `<strong style="color:var(--heading);">${esc(czas)}</strong>` : '',
+        gdzie ? `<a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(gdzie)}"
+                    target="_blank" rel="noopener noreferrer">📍 ${esc(gdzie)}</a>` : '',
+      ].filter(Boolean).join(' &middot; ');
+      return `<div class="obs-item" style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
         <span>${pl ? `<strong>${esc(pl.firstName+' '+pl.lastName)}</strong> — ${esc(o.match||'brak danych meczu')}`
-          : `<strong>${esc(o.match || 'Obserwacja meczu')}</strong>`} <span class="meta">(${esc(o.scout)})</span></span>
+          : `<strong>${esc(o.match || 'Obserwacja meczu')}</strong>`} <span class="meta">(${esc(o.scout)})</span>
+          ${szczegoly ? `<div class="meta" style="margin-top:2px;">${szczegoly}</div>` : ''}
+          ${!czas && !gdzie ? `<div class="meta" style="margin-top:2px;">bez godziny i miejsca — uzupełnij przez ✎</div>` : ''}
+        </span>
         <span style="flex-shrink:0;white-space:nowrap;">
           <button class="link-btn" data-action="edit-obs" data-id="${o.id}" style="font-size:11px;">✎</button>
           <button class="link-btn" data-action="delete-obs" data-id="${o.id}" style="font-size:11px;color:var(--clay-dark);">✕</button>
