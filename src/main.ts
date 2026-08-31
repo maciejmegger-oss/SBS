@@ -11321,6 +11321,17 @@ function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
     }
   }
 
+  // GRUPA, Z KTÓREJ KOPIUJESZ, ROZSTRZYGA — I MA PIERWSZEŃSTWO PRZED TREŚCIĄ PROTOKOŁU.
+  //
+  // W CLJ nazwy klubów na ŁNP nie mają końcówki („Arkonia Szczecin"), a w kartotece mają
+  // („Arkonia Szczecin U19") — i ten sam klub gra jednocześnie w rozgrywkach seniorskich.
+  // Sam protokół nie zawsze mówi, o który zespół chodzi, więc dorobek juniorów potrafił trafić
+  // do pierwszej drużyny albo nie trafić nigdzie. Skoro protokoły zbierasz z konkretnej grupy
+  // i w niej otwierasz okno, to ta grupa jest odpowiedzią: zbierane z CLJ U19 idzie do CLJ U19,
+  // zbierane z U17 zachodniej — do U17 zachodniej. Poziom z protokołu zostaje jako zapasowy,
+  // dla wklejek robionych poza widokiem grupy.
+  const poziomRozliczenia = poziomGrupy(podpowiedzGrupa) || poziomZProtokolu;
+
   // Numer druzyny w naglowku wyniku (gospodarze, potem goscie) to awaryjny sposob na
   // przypisanie skladu, gdy nazwa nad nim nie przypomina zadnej z nagliwka.
   druzyny.forEach((nazwa, nrDruzyny)=>{
@@ -11336,7 +11347,7 @@ function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
       return;
     }
     // Klub dopasowujemy po nazwie, z pominięciem polskich znaków i skrótów typu „KS".
-    let klub = dopasujKlubDoNazwy(nazwa, podpowiedzGrupa, poziomZProtokolu);
+    let klub = dopasujKlubDoNazwy(nazwa, podpowiedzGrupa, poziomRozliczenia);
     if(!klub){
       // Powiedz, do czego nazwa była najbliżej — inaczej „nie ma takiego klubu" nie mówi,
       // czy klubu brakuje w bazie, czy tylko nazwa jest zapisana inaczej.
@@ -11714,7 +11725,7 @@ function sprawdzZakladke(nazwa, kod){
 
 // Wersja zakładki. Widnieje w każdym jej komunikacie i w oknie SBS, żeby dało się jednym
 // spojrzeniem stwierdzić, czy w pasku siedzi kod sprzed poprawek.
-const ZAKLADKA_WERSJA = 'v43 z 30.08.2026';
+const ZAKLADKA_WERSJA = 'v44 z 30.08.2026';
 const SBS_ADRES_JS = JSON.stringify(location.origin);
 // ZAKŁADKA W PASKU NIE AKTUALIZUJE SIĘ SAMA — I TO BYŁ PRAWDZIWY PROBLEM.
 //

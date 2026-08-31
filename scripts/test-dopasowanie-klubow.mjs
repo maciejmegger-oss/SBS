@@ -29,6 +29,8 @@ const czesci = [
   wytnij('rozbijNazweKlubu', /function rozbijNazweKlubu\(nazwa\)\{[\s\S]*?\n\}/),
   wytnij('tenSamCzlon', /const tenSamCzlon = \(x, y\)=>\{[\s\S]*?\n\};/),
   wytnij('odciskKlubu', /const odciskKlubu = \(nazwa\)=>\{[\s\S]*?\};/),
+  wytnij('poziomGrupy', /function poziomGrupy(nazwaGrupy){[sS]*?
+}/),
   wytnij('dopasujKlubDoNazwy', /function dopasujKlubDoNazwy\(nazwa, podpowiedzGrupa, poziom\)\{[\s\S]*?\n\}/),
 ];
 
@@ -47,7 +49,7 @@ const DB = { clubs: __KLUBY__, players: [], settings: {} };
 const wielkoscKartoteki = (klub)=> 0;
 `.replace('__KLUBY__', JSON.stringify(kluby.map(c=>({ id:c.id, name:c.name, league:c.league }))));
 
-const modul = glowa + czesci.join('\n') + '\nexport { dopasujKlubDoNazwy, rozbijNazweKlubu };\n';
+const modul = glowa + czesci.join('\n') + '\nexport { dopasujKlubDoNazwy, rozbijNazweKlubu, poziomGrupy };\n';
 const plik = 'node_modules/.sbs-dopasowanie.mjs';
 fs.writeFileSync(plik, modul, 'utf8');
 const { dopasujKlubDoNazwy } = await import('../' + plik + '?v=' + kluby.length + '-' + modul.length);

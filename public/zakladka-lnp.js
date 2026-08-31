@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v43 z 30.08.2026";
+var SBS_ZBIERACZ="v44 z 30.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -687,6 +687,28 @@ function zdejmijMeczZDruzyny(adresDruzyny, nr, gotowe){
 }
 
 // Wiersze rozegranych meczow w PODANYM dokumencie (ramka albo biezaca strona).
+// ROZGRYWKI, Z KTORYCH ZBIERAMY. Ustalane raz, na stronie grupy.
+//
+// Strona klubu na LNP wymienia mecze WSZYSTKICH jego druzyn: pierwszej, rezerw i juniorow.
+// Zbieracz ruszal z Centralnej Ligi Juniorow, wchodzil na strone Lecha i zdejmowal protokol
+// z Ekstraklasy - dorobek seniorow wladowywalby sie juniorom. Nazwa rozgrywek stoi w kazdym
+// wierszu terminarza, wiec filtrujemy po niej.
+var ROZGRYWKI_GRUPY = '';
+
+// Nazwa rozgrywek z otwartej strony grupy — bierzemy najczestsza z wierszy terminarza.
+function rozpoznajRozgrywki(d){
+ var NAZWY=['Centralna Liga Juniorow','Centralna Liga Juniorów','Ekstraklasa','Pierwsza liga',
+   'Druga liga','Trzecia liga','Czwarta liga','Klasa okregowa','Klasa okręgowa'];
+ var txt=((d||document).body ? (d||document).body.innerText : '')||'';
+ var licznik={}, najlepsza='', ile=0;
+ NAZWY.forEach(function(n){
+  var trafien=(txt.match(new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi'))||[]).length;
+  if(trafien>ile){ ile=trafien; najlepsza=n; }
+  licznik[n]=trafien;
+ });
+ return ile>=2 ? najlepsza : '';
+}
+
 function wierszeRozegraneW(d){
  function maWynik(t){
   var m=t.match(/\d{1,2}\s*:\s*\d{1,2}/g); if(!m) return false;
@@ -701,6 +723,9 @@ function wierszeRozegraneW(d){
   if(/Nierozegran/i.test(t)) continue;
   if(!/Rozegrany/i.test(t)) continue;
   if(!maWynik(t)) continue;
+  // Mecz z innych rozgrywek tego samego klubu pomijamy — inaczej z Centralnej Ligi Juniorow
+  // zeszlibysmy na Ekstraklase.
+  if(ROZGRYWKI_GRUPY && t.toLowerCase().indexOf(ROZGRYWKI_GRUPY.toLowerCase())<0) continue;
   out.push(el);
  }
  return out.filter(function(a){ return !out.some(function(b){ return a!==b && a.contains(b); }); });
@@ -933,6 +958,10 @@ function start(){
  // klubu, wiec nie trzeba juz wchodzic w kazdy klub z osobna.
  if(!probowanoKlikac && ileWierszy>=2){
   probowanoKlikac=true;
+  // Zapamietujemy rozgrywki TEJ strony, zanim ruszymy po klubach — dalej filtrujemy nimi wiersze
+  // na stronach druzyn, ktore wymieniaja mecze wszystkich zespolow klubu naraz.
+  ROZGRYWKI_GRUPY = rozpoznajRozgrywki(document);
+  if(ROZGRYWKI_GRUPY) linia.textContent='SBS '+SBS_ZBIERACZ+': rozgrywki - '+ROZGRYWKI_GRUPY;
   // HERBY BIERZEMY OD RAZU, ZANIM RUSZYMY PO PROTOKOLY.
   //
   // Osobny przycisk w panelu zostaje, ale nikt nie ma obowiazku go szukac: tabela grupy jest
