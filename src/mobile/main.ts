@@ -407,6 +407,23 @@ function naglowekObserwacji(podtytul: string): string {
     <p class="hint">${podtytul}</p>`;
 }
 
+// OBSERWACJE POCHODNE — po jednej na ocenionego zawodnika — NIE POKAZUJĄ SIĘ NA LIŚCIE.
+//
+// Ocena wystawiona z trybuny zakłada zawodnikowi jego własną obserwację (patrz
+// savePlayerRatingsFromSquad): bez tego nie liczyłaby się do jego średniej ani do mapy rankingowej
+// w SBS. Identyfikator takiej obserwacji to „<obserwacja meczu>:<zawodnik>".
+//
+// Na komputerze to jest dokładnie to, czego trzeba. Na liście w telefonie — nie: jeden mecz z
+// dziewięcioma wyróżnionymi rozsypywał się na dziesięć kart z tą samą nazwą spotkania, przez które
+// trzeba przewijać, żeby znaleźć następny mecz. Obserwacja meczu jest tu jedyną sensowną
+// jednostką; nazwiska widać po jej otwarciu.
+const jestPochodnaZawodnika = (o: Observation): boolean => {
+  const i = String(o.id || "").lastIndexOf(":");
+  if (i <= 0) return false;
+  const rodzic = o.id.slice(0, i);
+  return cache.observations.some((x) => x.id === rodzic);
+};
+
 function viewDzis(): string {
   const dzis = todayISO();
   const wczoraj = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
@@ -421,6 +438,7 @@ function viewDzis(): string {
   // ekranu i pokazuje mniej niż zwykła lista; miesiąc jako nagłówek daje ten sam porządek taniej.
   if (listaTryb === "zakonczone") {
     const skonczone = cache.observations
+      .filter((o) => !jestPochodnaZawodnika(o))
       .filter((o) => o.statsFilledIn || (o.date || "") < wczoraj)
       .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 
@@ -444,6 +462,7 @@ function viewDzis(): string {
   }
 
   const lista = cache.observations
+    .filter((o) => !jestPochodnaZawodnika(o))
     .filter((o) => (o.date || "") >= wczoraj && !o.statsFilledIn)
     .sort((a, b) => ((a.date || "") + (a.matchTime || "")).localeCompare((b.date || "") + (b.matchTime || "")));
 
@@ -1530,6 +1549,19 @@ function viewOcena(): string {
 
     ${oceniony}
 
+    ${/* PO GWIZDKU OCENIA SIĘ MECZ, NIE ZAWODNIKÓW.
+          Zawodników ocenia się w trakcie, przy nazwisku — panel na ekranie zdarzeń ma komplet:
+          skale 1–10, fazy gry, stałe fragmenty, notatkę i decyzję. Powtarzanie tego samego po
+          gwizdku było resztką po czasach, gdy nie było gdzie tego zrobić wcześniej, i pytało
+          o rzecz niemożliwą: JEDEN komplet ocen na mecz, w którym wyróżniono dziewięciu.
+
+          Zostaje więc tylko to, co dotyczy spotkania: poziom, pogoda i charakterystyka — a one
+          i tak dopisują się do raportu każdego ocenionego zawodnika.
+
+          WYJĄTEK: obserwacja umówiona na KONKRETNEGO zawodnika. Tam nie ma składu ani paska
+          wyróżnionych, więc ten ekran jest jedynym miejscem, gdzie da się go ocenić — i zostaje
+          w całości. */""}
+    ${!obs?.playerId ? "" : `
     <div class="section">
     <span class="label">Ocena zawodnika · skala 1–10</span>
     ${RATING_KEYS.map((k) => skala("ratings", k, RATING_LABELS[k], ocena!.ratings[k], 10)).join("")}
@@ -1544,7 +1576,7 @@ function viewOcena(): string {
       <span class="label">Stałe fragmenty · skala 1–6</span>
       ${REPORT_SET_PIECES.map((f) => skala("setPieces", f.key, f.label, ocena!.setPieces[f.key], 6)).join("")}
       <div class="field" style="margin-top:8px;">
-        <textarea id="o-sfg" placeholder="Uwagi o stałych fragmentach…" style="min-height:60px;">${esc(ocena.setPieceComment)}</textarea>
+        <textarea id="o-sfg" placeholder="Uwagi o stałych fragmentach…" style="min-height:60px;">${esc(ocena!.setPieceComment)}</textarea>
       </div>
     </div>
 
@@ -1568,8 +1600,8 @@ function viewOcena(): string {
         <span class="label" style="margin:0;">Opis</span>
         <button class="btn ghost small" data-act="dictate" id="dictate-btn">Dyktuj</button>
       </div>
-      <textarea id="o-desc" placeholder="Wrażenie ogólne, kontekst meczu…">${esc(ocena.description)}</textarea>
-    </div>
+      <textarea id="o-desc" placeholder="Wrażenie ogólne, kontekst meczu…">${esc(ocena!.description)}</textarea>
+    </div>`}
 
     <button class="btn" data-act="save-ocena">Zapisz i wyślij do SBS</button>
     <p class="hint" style="text-align:center; margin-top:8px;">Bez zasięgu trafi do kolejki i pójdzie samo.</p>`;
@@ -2157,7 +2189,8 @@ function finishLive() {
   setLive(live);
   view = "ocena";
   render();
-  toast("Zdarzenia zapisane — wystaw oceny");
+  // Nie „wystaw oceny": te zapadły już w trakcie meczu, przy nazwiskach. Tu opisuje się spotkanie.
+  toast("Zdarzenia zapisane — opisz mecz");
 }
 
 // Treść pól tekstowych ekranu oceny żyje w DOM — przed przerysowaniem trzeba ją przepisać
@@ -2317,20 +2350,6 @@ function saveOcena() {
       fromObservationId: obs.id,
     });
   } else {
-    // Obserwacja CAŁEGO MECZU. Powstają dwie rzeczy naraz, bo to dwa różne dokumenty:
-    //   1. raport meczowy — ocena samego spotkania, faz gry i stałych fragmentów,
-    //   2. raport każdego zawodnika, którego oceniono lub wyróżniono ze składu.
-    // Bez tego drugiego cała praca z trybun zostawała w składzie i nie docierała do profilu.
-    saveReport({
-      id: `rep:${obs.id}:mecz`,
-      date: dataRap, scout, description,
-      match: obs.match || "", kind: "mecz",
-      perspektywa: ocena.perspektywa,
-      obsType: typObs,
-      phases, setPieces, setPieceComment,
-      fromObservationId: obs.id,
-    });
-
     // KONTEKST SPOTKANIA — dopisywany do raportu KAŻDEGO ocenionego zawodnika.
     //
     // Pogoda, poziom rywalizacji i charakterystyka meczu są warunkami, w jakich powstała ocena.
@@ -2343,6 +2362,24 @@ function saveOcena() {
       (o?.warunki || []).length ? `Warunki: ${(o!.warunki as string[]).join(", ")}.` : "",
       o?.notatkaMeczu ? `Charakterystyka meczu: ${o.notatkaMeczu}` : "",
     ].filter(Boolean).join(" ");
+
+    // Obserwacja CAŁEGO MECZU. Powstają dwie rzeczy naraz, bo to dwa różne dokumenty:
+    //   1. raport meczowy — ocena samego spotkania,
+    //   2. raport każdego zawodnika, którego oceniono lub wyróżniono ze składu.
+    // Bez tego drugiego cała praca z trybun zostawała w składzie i nie docierała do profilu.
+    //
+    // Treścią raportu meczowego jest KONTEKST SPOTKANIA, a nie osobne pole „Opis": ekran po
+    // gwizdku pyta teraz wyłącznie o mecz, więc opisu do wpisania po prostu nie ma. Bez tego
+    // raport meczowy szedłby do SBS pusty.
+    saveReport({
+      id: `rep:${obs.id}:mecz`,
+      date: dataRap, scout, description: description || kontekstMeczu,
+      match: obs.match || "", kind: "mecz",
+      perspektywa: ocena.perspektywa,
+      obsType: typObs,
+      phases, setPieces, setPieceComment,
+      fromObservationId: obs.id,
+    });
 
     const sklad = (o?.skladMeczu || {}) as Sklad;
     const nierozpoznani: string[] = [];
