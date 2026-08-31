@@ -10,7 +10,7 @@ import { currentUser, signIn, signOut, requestPasswordReset, mojeKonto, type Kon
 import {
   uid, getCache, refreshCache, patchCache, flushQueue, queueLength,
   saveObservation, saveReport, savePlayerStatus, saveLiveEvents, deleteObservation,
-  zablokowaneZadania, liczbaZablokowanych, ponowZablokowane,
+  zablokowaneZadania, liczbaZablokowanych, ponowZablokowane, ostatniBladWysylki,
   getLive, setLive, getScout, setScout, zarchiwizujZdarzenia, zdarzeniaObserwacji,
   wyczyscKopieBazy,
   type Cache, type LiveEvent, type LiveState, type Period,
@@ -1581,6 +1581,7 @@ function viewBaza(): string {
     : "brak";
   const problemy = cache.problemy || [];
   const zablokowane = zablokowaneZadania();
+  const bladWysylki = ostatniBladWysylki();
 
   return `
     <h2>Ustawienia</h2>
@@ -1589,6 +1590,11 @@ function viewBaza(): string {
     <div class="card">
       <div class="row"><span class="sub">Czeka na wysyłkę</span>
         <strong style="font-family:var(--data); color:${n ? "var(--accent-fg)" : "var(--good-fg)"};">${n}</strong></div>
+      <!-- Czemu kolejka stoi. Bez tego „W kolejce · 10" znaczy naraz: nie ma sieci, baza śpi,
+           token wygasł albo panel po prostu jeszcze nie spróbował — cztery różne rzeczy z czterema
+           różnymi rozwiązaniami, nie do odróżnienia z ekranu. -->
+      ${n && bladWysylki ? `<p class="hint" style="margin:4px 0 0; font-family:var(--data); font-size:11.5px;
+        color:var(--bad-fg); word-break:break-word;">${esc(bladWysylki)}</p>` : ""}
       <div class="row" style="margin-top:6px;"><span class="sub">Kopia bazy</span>
         <strong style="font-family:var(--data); font-size:12.5px; color:var(--text-2);">${esc(ostatnia)}</strong></div>
       <div class="row" style="margin-top:6px;"><span class="sub">Zawodników w kopii</span>
@@ -2206,7 +2212,7 @@ async function odswiezKopie(): Promise<void> {
   $("app")?.querySelector(".mark-btn")?.setAttribute("aria-busy", "true");
   toast("Pobieram…");
   try {
-    await flushQueue().catch(() => 0);
+    await wyslijKolejke();
     cache = await refreshCache();
     refreshSyncPill();
     render();
@@ -2825,7 +2831,7 @@ document.addEventListener("click", (e) => {
       break;
     }
     case "flush":
-      flushQueue().then((left) => { refreshSyncPill(); render(); toast(left ? "Zostało " + left : "Wszystko wysłane"); });
+      wyslijKolejke().then((left) => { render(); toast(left ? "Zostało " + left : "Wszystko wysłane"); });
       break;
     // WYLOGOWANIE PYTA, ODKĄD STOI NA LIŚCIE OBSERWACJI.
     //
@@ -3086,6 +3092,35 @@ function splash() {
 // Start
 // ---------------------------------------------------------------------------
 
+// PONAWIANIE WYSYŁKI SAMO Z SIEBIE.
+//
+// Kolejka próbowała ruszyć wyłącznie przy zdarzeniach: starcie panelu, powrocie do aplikacji,
+// odzyskaniu sieci. Gdy baza akurat spała (usypia się po okresie bezczynności i budzi kilkanaście
+// sekund), pierwsza próba trafiała w próżnię — i kolejka stała do następnego POWROTU do panelu.
+// Scout, który zamknął telefon i pojechał do domu, miał tam pracę z całego dnia, o niczym nie
+// wiedząc.
+//
+// Odstępy rosną: 15 s, minuta, pięć minut, kwadrans. Krótki pierwszy odstęp załatwia uśpioną bazę,
+// długie kolejne nie zjadają baterii przy awarii, która potrwa. Licznik zeruje się, gdy kolejka
+// przejdzie do końca.
+const KROKI_PONOWIENIA = [15_000, 60_000, 300_000, 900_000];
+let ponowienieWysylki: number | undefined;
+let krokPonowienia = 0;
+
+function wyslijKolejke(): Promise<number> {
+  return flushQueue()
+    .catch(() => queueLength())
+    .then((zostalo) => {
+      refreshSyncPill();
+      window.clearTimeout(ponowienieWysylki);
+      if (!zostalo) { krokPonowienia = 0; return 0; }
+      const za = KROKI_PONOWIENIA[Math.min(krokPonowienia, KROKI_PONOWIENIA.length - 1)];
+      krokPonowienia++;
+      ponowienieWysylki = window.setTimeout(() => { void wyslijKolejke(); }, za);
+      return zostalo;
+    });
+}
+
 async function start(pobranaKopia?: Cache) {
   cache = pobranaKopia || getCache();
   live = getLive();
@@ -3097,7 +3132,7 @@ async function start(pobranaKopia?: Cache) {
   // Obie rzeczy puszczone równolegle ścigały się ze sobą: pobranie zdążało odpytać serwer, zanim
   // dojechała tam obserwacja z kolejki, więc świeża kopia jej nie zawierała i plan znikał z listy.
   // Scout planował go wtedy po raz drugi — i tak w bazie lądowały dwie obserwacje tego samego meczu.
-  await flushQueue().then(refreshSyncPill).catch(() => refreshSyncPill());
+  await wyslijKolejke();
   if (pobranaKopia) return; // kopia przyszła już przy sprawdzaniu dostępu — nie pobieramy drugi raz
 
   // Kopię bazy pobieramy w tle. Panel jest użyteczny natychmiast — z tym, co zostało w telefonie
@@ -3187,7 +3222,7 @@ async function boot() {
   start();
 }
 
-window.addEventListener("online", () => { void flushQueue().then(refreshSyncPill); });
+window.addEventListener("online", () => { krokPonowienia = 0; void wyslijKolejke(); });
 window.addEventListener("offline", refreshSyncPill);
 
 // Zegar bywa zatrzymywany przez system, gdy karta idzie w tło. Po powrocie przeliczamy czas
@@ -3208,7 +3243,7 @@ document.addEventListener("visibilitychange", () => {
 
   paintClock();
   void pilnujEkranu();
-  void flushQueue().then(refreshSyncPill);
+  void wyslijKolejke();
 
   const przerwa = ukryteOd ? Date.now() - ukryteOd : 0;
   ukryteOd = null;
