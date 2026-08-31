@@ -4180,11 +4180,17 @@ function viewClubs(){
            ${(DB.settings.lnpGrupy||{})[clubBrowse.group]
              ? `<button class="secondary" data-action="lnp-otworz-grupe" title="Otwiera kolejkę tej grupy na Łączy nas piłka">↗ Otwórz kolejkę w ŁNP</button>` : ''}`
         : ''}
-      ${list.length
+      ${list.length && clubBrowse.top !== 'Kategorie juniorskie'
         // ODŚWIEŻENIE CAŁEJ LIGI, NIE KLUB PO KLUBIE. Osiemnaście klubów w grupie to osiemnaście
         // wejść w kartotekę i osiemnaście kliknięć — przy szesnastu grupach IV ligi robota na cały
         // wieczór. Przycisk przechodzi wszystkie kluby z widoku po kolei. IV liga stała tu dotąd
         // z boku, bo jej protokołów nie dawało się czytać z serwera; teraz idzie tą samą drogą.
+        //
+        // KATEGORII JUNIORSKICH TU NIE MA i to nie jest przeoczenie. 90minut ma dla Centralnej Ligi
+        // Juniorów komplet terminarza i wyników, ale ANI JEDNEGO protokołu — sprawdzone na żywej
+        // stronie: przy 240 spotkaniach zero odnośników „mecz.php". Przycisk kończył się listą
+        // szesnastu krzyżyków i wyglądał na usterkę, choć po prostu nie ma tam czego pobrać.
+        // Jedyna droga to zakładka z ŁNP, więc pokazujemy wyłącznie ją.
         ? `<button class="gold" data-action="stats-90minut-grupa" title="${
             clubBrowse.top === 'IV liga' || clubBrowse.top === 'Klasa okręgowa'
               ? 'Wczytaj protokoły zebrane zakładką z ŁNP — jedno wklejenie rozlicza wszystkie kluby grupy'
