@@ -3450,6 +3450,30 @@ function wyslijKolejke(): Promise<number> {
     });
 }
 
+// ODSTAWIONE ZAPISY CZEKAJĄ NA POPRAWKĘ — NIECH SIĘ SAME ZGŁOSZĄ, GDY PRZYJDZIE.
+//
+// Baza odrzuca zapis trwale prawie zawsze z jednego powodu: aplikacja wysyła coś, czego ta baza
+// nie przyjmuje. Naprawa idzie wtedy w kodzie i przychodzi z nową wersją panelu. Dotąd trzeba było
+// jednak samemu wejść w Ustawienia, znaleźć czerwoną kartę i dotknąć „spróbuj jeszcze raz" — czyli
+// wiedzieć, że poprawka doszła i że w ogóle jest gdzie kliknąć. Praktyka pokazała, jak to wygląda:
+// dziesięć raportów z meczu leżało odstawionych przez pół dnia, mimo trzech wdrożonych poprawek.
+//
+// Zapamiętujemy więc wersję, przy której coś odstawiono. Gdy panel startuje na innej — czyli gdy
+// coś się w międzyczasie zmieniło — próbujemy jeszcze raz sami. Ponowienie i tak przebudowuje
+// wiersze bieżącymi regułami, więc nic nie kosztuje, a jedna odmowa więcej wraca po prostu na
+// czerwoną kartę.
+const WERSJA_ODSTAWIENIA = "sbs-m:wersja-odstawienia";
+
+function ponowPoAktualizacji(): void {
+  if (!liczbaZablokowanych()) return;
+  let zapisana = "";
+  try { zapisana = localStorage.getItem(WERSJA_ODSTAWIENIA) || ""; } catch { /* tryb prywatny */ }
+  try { localStorage.setItem(WERSJA_ODSTAWIENIA, WERSJA_PANELU); } catch { /* j.w. */ }
+  if (zapisana === WERSJA_PANELU) return;   // ta sama wersja — nic się nie zmieniło, nie ma po co
+  const ile = ponowZablokowane();
+  if (ile) toast(`Nowa wersja panelu — próbuję wysłać ${ile} odrzuconych zapisów`);
+}
+
 async function start(pobranaKopia?: Cache) {
   cache = pobranaKopia || getCache();
   live = getLive();
@@ -3461,6 +3485,7 @@ async function start(pobranaKopia?: Cache) {
   // Obie rzeczy puszczone równolegle ścigały się ze sobą: pobranie zdążało odpytać serwer, zanim
   // dojechała tam obserwacja z kolejki, więc świeża kopia jej nie zawierała i plan znikał z listy.
   // Scout planował go wtedy po raz drugi — i tak w bazie lądowały dwie obserwacje tego samego meczu.
+  ponowPoAktualizacji();
   await wyslijKolejke();
   if (pobranaKopia) return; // kopia przyszła już przy sprawdzaniu dostępu — nie pobieramy drugi raz
 
