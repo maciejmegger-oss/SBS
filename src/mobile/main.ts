@@ -251,9 +251,6 @@ let skladStrona: "gospodarze" | "goscie" = "gospodarze";
 let wyborZKadry: "gospodarze" | "goscie" | null = null;   // otwarta lista kadry klubu z bazy
 let obsadzanaPozycja: number | null = null;   // wybrane puste pole na planszy — czeka na zawodnika
 let ocenianyZawodnik: number | null = null;   // indeks zawodnika, którego panel oceny jest otwarty
-// Czy panel zawodnika otwarto z ekranu zdarzeń. Wtedy „Wróć" ma wrócić WŁAŚNIE tam, a nie na
-// planszę: scout wszedł ocenić jedną rzecz i chce dalej rejestrować akcje.
-let wrocDoZdarzen = false;
 let searchQuery = "";
 let clockTimer: number | undefined;
 // Czy panel pracuje na sesji użytkownika. Od zamknięcia systemu jest to WARUNEK WEJŚCIA:
@@ -827,29 +824,13 @@ function viewLive(): string {
       </div>
     </div>
 
-    ${/* Przy protokole otwartym z ekranu zdarzeń przełączniki zakładek znikają. Scout wszedł tu
-          ocenić JEDNEGO zawodnika i wrócić — dwa paski nawigacji nad panelem tylko zabierają
-          ekran i podpowiadają drogę, którą właśnie się nie idzie. Wyjście jest jedno i widoczne:
-          „Wróć do zdarzeń". */""}
-    ${wrocDoZdarzen ? "" : `
     <div class="polarity" style="grid-template-columns:1fr 1fr; margin-bottom:10px;">
       <button class="pol seg" data-act="live-tab" data-v="zdarzenia" aria-pressed="${liveTab === "zdarzenia"}">Zdarzenia</button>
       <button class="pol seg" data-act="live-tab" data-v="sklady" aria-pressed="${liveTab === "sklady"}">Składy${skladLiczba(live.observationId) ? " · " + skladLiczba(live.observationId) : ""}</button>
-    </div>`}
+    </div>
 
     ${liveTab === "sklady" ? viewSklady() : `
     ${pasekZawodnikow()}
-    ${/* DROGA DO PROTOKOŁU JEDNYM DOTKNIĘCIEM.
-          Kafle rejestrują, CO się stało; protokół ocenia, JAK zawodnik gra. Jedno i drugie robi
-          się w trakcie meczu i jedno i drugie dotyczy tej samej osoby — więc przejście musi być
-          tutaj, a nie przez zakładkę Składy i planszę.
-
-          Świadomie NIE robimy tego dotknięciem samego kafelka z nazwiskiem: ten wybiera, komu
-          przypisują się zdarzenia, i naciska się go w środku akcji. Otwieranie wtedy pełnego
-          panelu kosztowałoby przegapioną akcję. */""}
-    ${live.wybranyZawodnik
-      ? `<button class="btn ghost" style="margin-top:0; margin-bottom:10px;" data-act="protokol-taguj">Protokół oceny — ${esc(live.wybranyZawodnik)}</button>`
-      : ""}
     <div class="polarity">
       <button class="pol plus" data-act="pol" data-v="1" aria-pressed="${polarity === 1}">+ udane</button>
       <button class="pol minus" data-act="pol" data-v="-1" aria-pressed="${polarity === -1}">− nieudane</button>
@@ -866,7 +847,16 @@ function viewLive(): string {
       <input id="quick-note" placeholder="Notatka do bieżącej minuty…">
     </div>
 
-    <div class="row" style="margin-bottom:6px;">
+    ${/* PANEL OCENY POD KAFLAMI — dla zawodnika wskazanego w pasku „Tagujesz".
+          Kafle rejestrują, CO się stało; ten panel ocenia, JAK zawodnik gra. To jedna praca
+          o jednym człowieku, robiona naprzemiennie przez dziewięćdziesiąt minut, więc jest
+          na jednym ekranie: dotknięcie nazwiska u góry przełącza i tagowanie, i ocenianie. */""}
+    ${(() => {
+      const dane = ocenianyTeraz();
+      return dane ? viewOcenaZawodnika(dane.z, true) : "";
+    })()}
+
+    <div class="row" style="margin-bottom:6px; margin-top:16px;">
       <span class="label" style="margin:0;">Oś zdarzeń · ${live.events.length}</span>
       <span style="display:flex; gap:8px;">
         <button class="btn ghost small" data-act="undo">Cofnij</button>
@@ -1065,9 +1055,7 @@ function viewSklady(): string {
       ${STRONY.map((k) => `<button class="btn ghost small" style="flex:1;" data-act="otworz-kadre" data-strona="${k}">+ kadra: ${esc(k === "gospodarze" ? gosp : gosc)}</button>`).join("")}
     </div>`;
 
-  // Ten sam powód, co przy zakładkach wyżej: przy protokole otwartym z ekranu zdarzeń nie ma
-  // po co pokazywać wyboru między listą a planszą.
-  const przelacznik = wrocDoZdarzen ? "" : `
+  const przelacznik = `
     <div class="polarity" style="margin-bottom:10px;">
       <button class="pol seg" data-act="sklad-widok" data-v="lista" aria-pressed="${skladWidok === "lista"}">Lista</button>
       <button class="pol seg" data-act="sklad-widok" data-v="mapa" aria-pressed="${skladWidok === "mapa"}">Ustawienie</button>
@@ -1211,29 +1199,46 @@ function zdarzeniaZawodnika(obsId: string, klucz: string): string {
   return [...licznik.entries()].map(([co, ile]) => `${co} ${ile}`).join(" · ");
 }
 
-function viewOcenaZawodnika(z: SkladZawodnik): string {
+// Panel oceny jednego zawodnika. Dwa warianty tego samego:
+//
+//   osobny ekran — otwarty z planszy w zakładce Składy, zajmuje całe okno,
+//   pod kaflami   — stoi na ekranie zdarzeń, pod tym, czym się właśnie taguje.
+//
+// Wariant drugi jest ważniejszy i to on rządzi układem: w trakcie meczu jedno i drugie robi się
+// naprzemiennie, o tym samym zawodniku. Rozdzielenie ich na dwa ekrany oznaczało przechodzenie
+// tam i z powrotem po każdej akcji — czyli oderwanie wzroku od boiska dokładnie wtedy, gdy się
+// patrzy. Dlatego pod kaflami nie ma tu ani przycisku powrotu, ani nagłówka z nazwiskiem:
+// nazwisko stoi kilka centymetrów wyżej, w pasku „Tagujesz", podświetlone.
+function viewOcenaZawodnika(z: SkladZawodnik, podKaflami = false): string {
   const ocena = z.ocena || {};
   const fazy = z.fazy || {};
   const sfg = z.sfg || {};
   const zdarzenia = live ? zdarzeniaZawodnika(live.observationId, kluczZawodnika(z)) : "";
   return `
+    ${podKaflami ? `
+    <div class="section">
+      ${/* „Oceniasz" celowo w parze z „Tagujesz" nad kaflami: to jedno zdanie o dwóch czynnościach
+            wykonywanych na tym samym zawodniku. Nie „Ocena" — tuż niżej stoi „Ocena · skala 1–10"
+            i dwie etykiety od tego samego słowa zlewałyby się w jedną. */""}
+      <span class="label">Oceniasz · ${esc(kluczZawodnika(z))}</span>
+    </div>` : `
     <div class="row" style="margin-bottom:10px;">
       <div>
         <div class="name">${esc(z.nazwa)}</div>
         <div class="sub">${z.numer ? "nr " + esc(z.numer) + " · " : ""}${z.pozycja ? esc(POZYCJE_PELNE[z.pozycja]) : "poza ustawieniem"}</div>
       </div>
-      <button class="btn ghost small" data-act="zamknij-zawodnika">${wrocDoZdarzen ? "Wróć do zdarzeń" : "Wróć"}</button>
+      <button class="btn ghost small" data-act="zamknij-zawodnika">Wróć</button>
     </div>
 
-    ${/* Co już zarejestrowano kaflami. Bez tego oba panele — protokół i zdarzenia — byłyby
-          osobnymi światami, a to jest ten sam zawodnik i ten sam mecz. */
+    ${/* Co już zarejestrowano kaflami. Na osobnym ekranie trzeba to pokazać, bo kafli stąd nie
+          widać. Pod kaflami byłoby powtórzeniem — liczniki stoją wprost na nich. */
       zdarzenia ? `<div class="card" style="padding:10px 12px; margin-bottom:10px;">
         <span class="label" style="margin:0;">Zdarzenia z kafli</span>
         <div class="sub" style="margin-top:4px;">${esc(zdarzenia)}</div>
       </div>` : ""}
 
     ${z.pozycja ? `<button class="btn ghost" style="margin-top:0;" data-act="zmien-na-pozycji" data-numer="${z.pozycja}">
-      Zmiana — wstaw innego na ${esc(POZYCJE_PELNE[z.pozycja])}</button>` : ""}
+      Zmiana — wstaw innego na ${esc(POZYCJE_PELNE[z.pozycja])}</button>` : ""}`}
 
     <button class="btn ${z.wyrozniony ? "" : "ghost"}" style="margin-top:0;" data-act="wyroznij-otwartego">
       ${z.wyrozniony ? "★ Wyróżniony" : "☆ Wyróżnij"}
@@ -1284,14 +1289,34 @@ function biezacyObsSklad(): { obs: Observation & { skladMeczu?: Sklad }; strona:
   return obs && strona ? { obs, strona } : null;
 }
 
+// KOGO DOTYCZĄ OCENY WYSTAWIANE WŁAŚNIE TERAZ.
+//
+// Do tego samego panelu prowadzą dwie drogi: plansza w zakładce Składy (wskazany indeks) oraz
+// pasek „Tagujesz" na ekranie zdarzeń (wybrany zawodnik). Rozstrzygamy to w JEDNYM miejscu —
+// inaczej każda obsługa dotknięcia musiałaby wiedzieć, z którego ekranu przyszła, a dwie kopie
+// tej samej logiki rozjeżdżają się przy pierwszej zmianie.
+function ocenianyTeraz(): { obs: Observation & { skladMeczu?: Sklad }; z: SkladZawodnik } | null {
+  if (!live) return null;
+  const obs = cache.observations.find((o) => o.id === live!.observationId) as (Observation & { skladMeczu?: Sklad }) | undefined;
+  if (!obs) return null;
+  if (liveTab === "sklady") {
+    const z = obs.skladMeczu?.[skladStrona]?.zawodnicy[ocenianyZawodnik ?? -1];
+    return z ? { obs, z } : null;
+  }
+  if (!live.wybranyZawodnik) return null;
+  for (const strona of STRONY) {
+    const z = (obs.skladMeczu?.[strona]?.zawodnicy || []).find((x) => kluczZawodnika(x) === live!.wybranyZawodnik);
+    if (z) return { obs, z };
+  }
+  return null;
+}
+
 // Treść pól tekstowych żyje w DOM, nie w stanie — przed każdym przerysowaniem trzeba ją przepisać
 // do zawodnika, inaczej notatka przepada przy pierwszym dotknięciu kropki oceny.
 function zabezpieczNotatke() {
-  if (ocenianyZawodnik === null) return;
   const pole = $<HTMLTextAreaElement>("notatka-zawodnika");
-  const dane = biezacyObsSklad();
-  const z = dane?.strona.zawodnicy[ocenianyZawodnik];
-  if (pole && z) z.notatka = pole.value;
+  const dane = ocenianyTeraz();
+  if (pole && dane) dane.z.notatka = pole.value;
 }
 
 // ROZPOZNAWANIE WKLEJONEGO SKŁADU.
@@ -1905,9 +1930,29 @@ function syncPill(): string {
   return '<span class="sync">Wysłane</span>';
 }
 
+// Który to ekran — nie sam widok, ale i zakładka wewnątrz Live. Po tym poznajemy, czy właśnie
+// przerysowujemy TO SAMO (dotknięcie kropki oceny), czy przechodzimy gdzie indziej.
+const sygnaturaEkranu = () => [view, liveTab, skladWidok, ocenianyZawodnik ?? "", wyborZKadry ?? "", obsadzanaPozycja ?? ""].join("|");
+let poprzedniEkran = "";
+
 function render() {
   const app = $("app");
   if (!app) return;
+  // ILE BYŁO PRZEWINIĘTE.
+  //
+  // Strona budowana jest od nowa (innerHTML), więc wszystko wraca na początek. Dopóki ekrany
+  // mieściły się bez przewijania, nikt tego nie zauważał. Odkąd pod kaflami zdarzeń stoi panel
+  // oceny, każde dotknięcie kropki odrzucałoby scouta na górę ekranu — czyli po każdej ocenie
+  // trzeba by przewijać całą jego długość z powrotem, w trakcie meczu.
+  //
+  // Przewija się <main>, a NIE okno: pasek górny i zakładki stoją nieruchomo, a treść między nimi
+  // ma własne okno przewijania (overflow-y:auto w arkuszu). window.scrollY jest tu zawsze zerem.
+  const przewiniete = $("main")?.scrollTop || 0;
+  // Pasek „Tagujesz" przewija się w bok i też zaczynałby od nowa. Przy dziewięciu wyróżnionych
+  // dotknięcie ostatniego z nich odrzucałoby pasek na sam początek — czyli w miejsce, z którego
+  // nie widać tego, kogo się właśnie wybrało.
+  const przewinietyPasek = (document.querySelector(".tagujesz") as HTMLElement | null)?.scrollLeft || 0;
+  const tenSamEkran = sygnaturaEkranu() === poprzedniEkran;
   const body =
     view === "dzis" ? viewDzis() :
     view === "nowa" ? viewNowa() :
@@ -1952,6 +1997,16 @@ function render() {
              Zaloguj
            </button>`}
     </nav>`;
+
+  // Przewinięcie wraca tylko przy przerysowaniu TEGO SAMEGO ekranu. Po przejściu gdzie indziej
+  // zaczynamy od góry — nowy ekran otwarty w połowie wygląda na uszkodzony. Pasek wyróżnionych
+  // wraca zawsze: on nie zmienia treści przy przejściu między zakładkami Live.
+  poprzedniEkran = sygnaturaEkranu();
+  if (tenSamEkran && przewiniete) { const m = $("main"); if (m) m.scrollTop = przewiniete; }
+  if (przewinietyPasek) {
+    const pasek = document.querySelector(".tagujesz") as HTMLElement | null;
+    if (pasek) pasek.scrollLeft = przewinietyPasek;
+  }
 
   if (view === "live" && live) startClockTicker();
   else window.clearInterval(clockTimer);
@@ -2679,30 +2734,10 @@ document.addEventListener("click", (e) => {
       setLive(live);
       render();
       break;
-    case "live-tab": liveTab = v === "sklady" ? "sklady" : "zdarzenia"; wrocDoZdarzen = false; render(); break;
+    // Przejście między zakładkami zamyka panel oceny otwarty z planszy — po powrocie do Składów
+    // ma być plansza, a nie zawodnik, którego oglądało się kwadrans temu.
+    case "live-tab": liveTab = v === "sklady" ? "sklady" : "zdarzenia"; ocenianyZawodnik = null; render(); break;
 
-    // Protokół oceny zawodnika, którego właśnie tagujemy — otwierany wprost z ekranu zdarzeń.
-    case "protokol-taguj": {
-      if (!live?.wybranyZawodnik) break;
-      const sklad = skladObserwacji(live.observationId);
-      const trafienie = STRONY.map((strona) => ({
-        strona, i: (sklad?.[strona]?.zawodnicy || []).findIndex((z) => kluczZawodnika(z) === live!.wybranyZawodnik),
-      })).find((x) => x.i >= 0);
-      // Wyróżnieni biorą się ze składu, więc to nie powinno się zdarzyć — ale gdyby skład
-      // przebudowano w międzyczasie, milczenie byłoby najgorszą z możliwych odpowiedzi.
-      if (!trafienie) { toast("Nie znalazłem tego zawodnika w składzie"); break; }
-      skladStrona = trafienie.strona;
-      ocenianyZawodnik = trafienie.i;
-      liveTab = "sklady";
-      skladWidok = "mapa";
-      // Ekrany pośrednie zakładki Składy muszą być zamknięte, inaczej otwarta wcześniej lista
-      // kadry przesłoniłaby panel, który właśnie otwieramy.
-      wyborZKadry = null;
-      obsadzanaPozycja = null;
-      wrocDoZdarzen = true;
-      render();
-      break;
-    }
     case "usun-zawodnika": {
       if (!live) break;
       const obs = cache.observations.find((o) => o.id === live!.observationId) as (Observation & { skladMeczu?: Sklad }) | undefined;
@@ -2761,7 +2796,7 @@ document.addEventListener("click", (e) => {
       break;
     }
 
-    case "sklad-widok": skladWidok = v === "mapa" ? "mapa" : "lista"; ocenianyZawodnik = null; obsadzanaPozycja = null; wyborZKadry = null; wrocDoZdarzen = false; render(); break;
+    case "sklad-widok": skladWidok = v === "mapa" ? "mapa" : "lista"; ocenianyZawodnik = null; obsadzanaPozycja = null; wyborZKadry = null; render(); break;
     case "sklad-strona": skladStrona = v === "goscie" ? "goscie" : "gospodarze"; ocenianyZawodnik = null; obsadzanaPozycja = null; render(); break;
 
     case "wybierz-pozycje": obsadzanaPozycja = Number(el.dataset.numer); render(); break;
@@ -2789,7 +2824,7 @@ document.addEventListener("click", (e) => {
       break;
     }
 
-    case "otworz-zawodnika": ocenianyZawodnik = Number(el.dataset.i); wrocDoZdarzen = false; render(); break;
+    case "otworz-zawodnika": ocenianyZawodnik = Number(el.dataset.i); render(); break;
 
     // ZMIANA W SKŁADZIE. Po zmianie zawodnika na planszy stał ten z pierwszego składu i nie było
     // jak ocenić tego, który wszedł. Wstawienie kogoś na zajętą pozycję zdejmuje z niej poprzednika,
@@ -2797,7 +2832,6 @@ document.addEventListener("click", (e) => {
     case "zmien-na-pozycji":
       obsadzanaPozycja = Number(el.dataset.numer);
       ocenianyZawodnik = null;
-      wrocDoZdarzen = false;
       render();
       break;
 
@@ -2806,17 +2840,21 @@ document.addEventListener("click", (e) => {
       const dane = biezacyObsSklad();
       if (dane) saveObservation(dane.obs);
       ocenianyZawodnik = null;
-      if (wrocDoZdarzen) { liveTab = "zdarzenia"; wrocDoZdarzen = false; }
       render();
       break;
     }
 
     case "wyroznij-otwartego": {
       zabezpieczNotatke();
-      const dane = biezacyObsSklad();
-      const z = dane?.strona.zawodnicy[ocenianyZawodnik ?? -1];
-      if (!dane || !z) break;
-      z.wyrozniony = !z.wyrozniony;
+      const dane = ocenianyTeraz();
+      if (!dane) break;
+      dane.z.wyrozniony = !dane.z.wyrozniony;
+      // Zdjęcie wyróżnienia zabiera zawodnika z paska „Tagujesz", więc panel pod kaflami nie ma
+      // się już przy kim trzymać. Bez tego wybór wskazywałby kogoś, kogo na pasku nie ma.
+      if (!dane.z.wyrozniony && live?.wybranyZawodnik === kluczZawodnika(dane.z)) {
+        live.wybranyZawodnik = undefined;
+        setLive(live);
+      }
       saveObservation(dane.obs);
       if (navigator.vibrate) navigator.vibrate(10);
       render();
@@ -2827,10 +2865,9 @@ document.addEventListener("click", (e) => {
 
     case "noga": {
       zabezpieczNotatke();
-      const dane = biezacyObsSklad();
-      const z = dane?.strona.zawodnicy[ocenianyZawodnik ?? -1];
-      if (!dane || !z) break;
-      z.noga = z.noga === v ? undefined : v;
+      const dane = ocenianyTeraz();
+      if (!dane) break;
+      dane.z.noga = dane.z.noga === v ? undefined : v;
       saveObservation(dane.obs);
       render();
       break;
@@ -2909,9 +2946,9 @@ document.addEventListener("click", (e) => {
       const worek = workiZawodnika[el.dataset.host || ""];
       if (worek) {
         zabezpieczNotatke();
-        const dane = biezacyObsSklad();
-        const z = dane?.strona.zawodnicy[ocenianyZawodnik ?? -1];
-        if (!dane || !z) break;
+        const dane = ocenianyTeraz();
+        if (!dane) break;
+        const z = dane.z;
         z[worek] = z[worek] || {};
         const klucz = el.dataset.k!;
         const wartosc = Number(v);
