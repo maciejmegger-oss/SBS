@@ -1463,7 +1463,22 @@ function viewPodglad(): string {
     if (!oznaczeni.length) return "";
     return `
       <div class="section">
-        <span class="label">${esc(dane?.nazwa || strona)}${dane?.formacja ? " · " + esc(dane.formacja) : ""}</span>
+        <span class="label">${esc(dane?.nazwa || strona)}</span>
+        <!-- SYSTEM GRY DA SIĘ USTAWIĆ PO MECZU.
+             Dotąd wybierało się go wyłącznie w trakcie obserwacji, przy planszy — a na trybunie
+             rzadko na to czas. Bez systemu wyróżnieni zawodnicy nie trafiają na mapę pozycji
+             w SBS na komputerze: mapa zestawia zawodników W OBRĘBIE JEDNEGO systemu, więc mecz
+             bez wskazanego układu nie ma jak się do niej podłączyć. Tu można to dopisać
+             spokojnie, po powrocie. -->
+        <div class="field" style="margin-bottom:8px;">
+          <select data-act="podglad-formacja" data-strona="${strona}" aria-label="System gry — ${esc(dane?.nazwa || strona)}">
+            <option value="">— system gry: nie wskazano —</option>
+            ${FORMACJE.map((f) => `<option value="${esc(f)}" ${dane?.formacja === f ? "selected" : ""}>${esc(f)}</option>`).join("")}
+          </select>
+          ${dane?.formacja
+            ? '<span class="hint" style="display:block; margin-top:4px; color:var(--good-fg);">Wyróżnieni trafią na mapę tego systemu w SBS.</span>'
+            : '<span class="hint" style="display:block; margin-top:4px;">Wskaż system, żeby wyróżnieni trafili na mapę pozycji w SBS.</span>'}
+        </div>
         ${oznaczeni.map((z) => `
           <div class="card" style="padding:11px 12px;">
             <div class="row">
@@ -2902,6 +2917,24 @@ document.addEventListener("change", (e) => {
     if (nowy) z.numer = nowy; else delete z.numer;
     saveObservation(obs);
     render();
+    return;
+  }
+
+  // System gry wskazany W PODGLĄDZIE, już po meczu. Ta sama zmiana co przy planszy, tylko
+  // dosięgalna wtedy, gdy jest na nią czas.
+  const wybor = e.target as HTMLSelectElement;
+  if (wybor.dataset.act === "podglad-formacja") {
+    const obs = cache.observations.find((x) => x.id === podgladObsId) as (Observation & { skladMeczu?: Sklad }) | undefined;
+    const strona = wybor.dataset.strona as "gospodarze" | "goscie";
+    const dane = obs?.skladMeczu?.[strona];
+    if (!obs || !dane) return;
+    dane.formacja = wybor.value;
+    saveObservation(obs);
+    cache = getCache();
+    render();
+    toast(wybor.value
+      ? `${dane.nazwa || strona}: ${wybor.value} — wyróżnieni trafią na mapę tego systemu`
+      : "System gry wyczyszczony");
     return;
   }
 

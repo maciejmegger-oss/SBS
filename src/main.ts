@@ -6802,6 +6802,40 @@ const kluczWykluczonych = (key) => key + '|||wykluczeni';
 // Liczy się to przy każdym wejściu na mapę, a nie w chwili zapisu z telefonu. Dzięki temu działa
 // także dla meczów obejrzanych WCZEŚNIEJ, bez powtarzania pracy — a jedna implementacja obsługuje
 // obie drogi zamiast dwóch, które musiałyby się zgadzać.
+// POZYCJA Z KARTOTEKI NA NUMER NA PLANSZY.
+//
+// Na planszy pozycje są ponumerowane 1–11 i numer znaczy to samo w każdym systemie (zmieniają się
+// tylko współrzędne). Kartoteka opisuje pozycję słowem — to jest przełożenie jednego na drugie.
+//
+// Potrzebne, bo wyróżnienie zawodnika na trybunie i postawienie go na planszy to dwie różne
+// czynności. Scout w trakcie meczu robi zwykle pierwszą: gwiazdka przy nazwisku zajmuje sekundę,
+// obsadzanie planszy — nie. Bez tego przełożenia taki zawodnik nie trafiał na mapę NIGDY, choć
+// jego pozycja jest znana z kartoteki.
+// Tablica OBIEKTÓW, nie par. Przy parach TypeScript widzi obie pozycje jako „wzorzec albo
+// liczba" i nie pozwala wywołać na nich niczego konkretnego; nazwane pola rozstrzygają to same.
+const POZYCJA_NA_NUMER = [
+  { wzor: /^bramkarz/i, numer: 1 },
+  { wzor: /wahadłowy prawy|wahadlowy prawy/i, numer: 2 },
+  { wzor: /wahadłowy lewy|wahadlowy lewy/i, numer: 3 },
+  { wzor: /obrońca środkowy lewy|obronca srodkowy lewy/i, numer: 5 },
+  { wzor: /obrońca środkowy|obronca srodkowy/i, numer: 4 },
+  { wzor: /obrońca prawy|obronca prawy|obrońca boczny|obronca boczny/i, numer: 2 },
+  { wzor: /obrońca lewy|obronca lewy/i, numer: 3 },
+  { wzor: /pomocnik defensywny/i, numer: 6 },
+  { wzor: /pomocnik ofensywny/i, numer: 10 },
+  { wzor: /pomocnik/i, numer: 8 },
+  { wzor: /skrzydłowy lewy|skrzydlowy lewy/i, numer: 11 },
+  { wzor: /skrzydłowy/i, numer: 7 },
+  { wzor: /napastnik/i, numer: 9 },
+];
+
+function numerZPozycji(opis){
+  const t = String(opis||'').trim();
+  if(!t) return 0;
+  for(const p of POZYCJA_NA_NUMER) if(p.wzor.test(t)) return p.numer;
+  return 0;   // pozycja nieznana — lepiej nie stawiać nikogo, niż postawić byle gdzie
+}
+
 function wyroznieniZMeczow(liga, system){
   if(!system) return {};       // „Wszystkie systemy" — bez przypisań do konkretnych pozycji
   const wg = {};               // numer pozycji -> [playerId]
@@ -6814,7 +6848,6 @@ function wyroznieniZMeczow(liga, system){
       const dane = sklad[strona];
       if(!dane || dane.formacja !== system) return;
       (dane.zawodnicy||[]).forEach(z=>{
-        if(!z.pozycja) return;
         const oceniony = z.ocena && Object.values(z.ocena).some(n=>Number(n)>0);
         if(!oceniony && !z.wyrozniony && !z.notatka) return;
         // Dopasowanie po ZBIORZE słów — protokoły podają raz „Jan Kowalski", raz „Kowalski Jan".
@@ -6832,7 +6865,12 @@ function wyroznieniZMeczow(liga, system){
         // niż postawić na mapie niewłaściwego zawodnika.
         if(kand.length !== 1) return;
         if(clubLeague(kand[0].clubId) !== liga) return;
-        (wg[z.pozycja] = wg[z.pozycja] || []).push(kand[0].id);
+        // Pozycja WSKAZANA na planszy w telefonie jest ważniejsza niż ta z kartoteki: scout
+        // widział, gdzie ten zawodnik naprawdę grał w tym meczu, a kartoteka opisuje jego pozycję
+        // ogólnie i bywa nieaktualna. Kartoteka wchodzi dopiero wtedy, gdy planszy nie obsadzono.
+        const numer = z.pozycja || numerZPozycji(kand[0].position);
+        if(!numer) return;
+        (wg[numer] = wg[numer] || []).push(kand[0].id);
       });
     });
   });
