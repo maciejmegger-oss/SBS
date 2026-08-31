@@ -3679,6 +3679,26 @@ async function toggleHasAgent(id){
   render();
 }
 
+// MECZE, W KTÓRYCH SKAUT GO WYRÓŻNIŁ.
+//
+// Sam licznik („wyróżniony 3 razy") nie mówi nic o formie: trzy razy w jednym tygodniu to co
+// innego niż trzy razy przez pół roku. Wypisujemy więc spotkania, od najnowszego.
+function wyroznieniaHtml(p){
+  const lista = (p.wyroznienia || []).slice()
+    .sort((a,b)=> String(b.data||'').localeCompare(String(a.data||'')));
+  if(!lista.length) return '';
+  return `
+  <div class="card">
+    <h4 style="margin-top:0;color:var(--heading);">⭐ Wyróżniony w meczach (${lista.length})</h4>
+    ${lista.map(w=>`<div class="obs-item">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <strong>${esc(w.data||'—')} &middot; ${esc(w.mecz||'—')}</strong>
+      </div>
+      <div class="meta">${w.klub?esc(w.klub)+' &middot; ':''}zaznaczył: ${esc(w.scout||'—')}</div>
+    </div>`).join('')}
+  </div>`;
+}
+
 function viewPlayerDetail(id){
   const p = DB.players.find(x=>x.id===id);
   if(!p){ viewingPlayerId=null; return viewPlayers(); }
@@ -3791,6 +3811,7 @@ function viewPlayerDetail(id){
       </div>`;
     }).join('') : `<div class="empty">Brak obserwacji dla tego zawodnika.</div>`}
   </div>
+  ${wyroznieniaHtml(p)}
   <div class="card">
     <h4 style="margin-top:0;color:var(--heading);">⚡ Szybkie statystyki sezonu${
       p.statsSeason ? ` <span class="note" style="font-weight:400;">— ${esc(p.statsSeason)}</span>` : ''}</h4>
@@ -7304,6 +7325,35 @@ function viewMonitoring(){
     <table>
       <thead><tr><th>Zawodnik</th><th>Rocznik</th><th>Klub</th><th>Region</th><th>Obs.</th><th>Śr. ocena</th><th>Ostatnia obs.</th><th>Dni temu</th><th>Agent</th><th>Priorytet</th><th></th></tr></thead>
       <tbody>${trs || `<tr><td colspan="11"><div class="empty">Brak ręcznie dodanych zawodników — ci z masowych importów składów tu się nie pokazują. Dodaj zawodnika przez "Zawodnicy → Dodaj zawodnika", aby pojawił się na tej liście.</div></td></tr>`}</tbody>
+    </table>
+  </div>
+  ${wyroznieniZMeczowHtml()}`;
+}
+
+// WYRÓŻNIENI Z MECZÓW — kto, w jakim spotkaniu i przez kogo zaznaczony.
+//
+// Tabela wyżej pokazuje zawodnika raz, bez kontekstu. Tu liczy się okoliczność: ten sam człowiek
+// wyróżniony w trzech meczach w miesiąc to inna historia niż jedno zaznaczenie sprzed pół roku.
+// Wpisy idą od najnowszego, a nazwisko prowadzi wprost do profilu.
+function wyroznieniZMeczowHtml(){
+  const wpisy = [];
+  DB.players.forEach(p=>(p.wyroznienia||[]).forEach(w=>wpisy.push({p, w})));
+  wpisy.sort((a,b)=> String(b.w.data||'').localeCompare(String(a.w.data||'')));
+  if(!wpisy.length) return '';
+  const ile = new Set(wpisy.map(x=>x.p.id)).size;
+  return `
+  <h3 style="margin:22px 0 6px;color:var(--heading);">⭐ Wyróżnieni z meczów</h3>
+  <p class="view-sub" style="margin-top:0;">${wpisy.length} ${wpisy.length===1?'zaznaczenie':'zaznaczeń'} &middot; ${ile} ${ile===1?'zawodnik':'zawodników'} — z okien „Skład meczu". Kliknij nazwisko, żeby otworzyć profil.</p>
+  <div class="card" style="padding:0;overflow:auto;">
+    <table>
+      <thead><tr><th>Data</th><th>Zawodnik</th><th>Klub</th><th>Mecz</th><th>Zaznaczył</th></tr></thead>
+      <tbody>${wpisy.map(({p, w})=>`<tr data-action="view-player" data-id="${p.id}" style="cursor:pointer;">
+        <td>${esc(w.data||'—')}</td>
+        <td><strong>${esc((p.firstName||'')+' '+(p.lastName||''))}</strong></td>
+        <td>${esc(clubName(p.clubId)||w.klub||'—')}</td>
+        <td>${esc(w.mecz||'—')}</td>
+        <td class="meta">${esc(w.scout||'—')}</td>
+      </tr>`).join('')}</tbody>
     </table>
   </div>`;
 }
@@ -13965,21 +14015,112 @@ function openObsSkladModal(obsId){
     draw();
   }
 
+  // ZAZNACZENIE „WYRÓŻNIONY" MA SKUTEK W BAZIE, A NIE TYLKO W TYM OKNIE.
+  //
+  // Dotąd checkbox zasilał wyłącznie mapę pozycji w Rankingu — i to jedynie wtedy, gdy zawodnik
+  // miał już kartotekę o dokładnie tym nazwisku i w tej samej lidze. Kto wyłowił kogoś nowego
+  // z protokołu, zaznaczał go i… nic. Nazwisko zostawało w oknie obserwacji, a przy następnym
+  // meczu trzeba było je pamiętać z głowy.
+  //
+  // Teraz zaznaczenie robi trzy rzeczy naraz: zakłada kartotekę, jeśli jej nie ma, stawia
+  // zawodnika w Monitoringu i zapisuje mecz, w którym się wyróżnił. Dzięki temu widać różnicę
+  // między jednym dobrym meczem a regularną formą.
+  const kluczOsobyWyr = (s)=> String(s||'').split(/\s+/).map(importNorm).filter(Boolean).sort().join(' ');
+
+  function klubStronyMeczu(nazwaDruzyny){
+    if(!nazwaDruzyny) return null;
+    return dopasujKlubDoNazwy(nazwaDruzyny, '', '');
+  }
+
+  function znajdzZawodnikaWyr(nazwa, klub){
+    const szukany = kluczOsobyWyr(nazwa);
+    if(!szukany) return null;
+    const wKlubie = klub ? DB.players.filter(p=>p.clubId === klub.id
+      && kluczOsobyWyr(`${p.firstName||''} ${p.lastName||''}`) === szukany) : [];
+    if(wKlubie.length) return wKlubie[0];
+    // Bez klubu nie zgadujemy: to samo nazwisko potrafi wystąpić w kilku klubach naraz.
+    const wszedzie = DB.players.filter(p=>kluczOsobyWyr(`${p.firstName||''} ${p.lastName||''}`) === szukany);
+    return wszedzie.length === 1 ? wszedzie[0] : null;
+  }
+
+  function zalozKartoteke(z, klub){
+    const slowa = String(z.nazwa||'').trim().split(/\s+/);
+    const p = {
+      id: uid('Z'),
+      firstName: slowa[0] || '',
+      lastName: slowa.slice(1).join(' '),
+      clubId: klub.id,
+      position: z.pozycja || '',
+      birthYear: z.rocznik || '',
+      status: '',
+      dateAdded: new Date().toISOString().slice(0,10),
+      source: 'wyróżniony w meczu',
+      matches: 0, minutes: 0, goals: 0,
+      monitored: true,
+    };
+    DB.players.push(p);
+    return p;
+  }
+
+  function ustawWyroznienie(strona, i, zaznaczony){
+    const dane = (obs.skladMeczu||{})[strona] || {};
+    const z = (dane.zawodnicy||[])[i];
+    if(!z) return null;
+    z.wyrozniony = zaznaczony;
+
+    const klub = klubStronyMeczu(dane.nazwa);
+    let p = znajdzZawodnikaWyr(z.nazwa, klub);
+
+    if(zaznaczony){
+      if(!p && klub) p = zalozKartoteke(z, klub);
+      if(!p){
+        komunikat = `Zaznaczyłem „${z.nazwa}", ale nie wiem, do którego klubu go przypisać `
+          + `(„${dane.nazwa||'—'}" nie pasuje jednoznacznie do żadnego w bazie), więc nie zakładam kartoteki.`;
+        return null;
+      }
+      p.monitored = true;
+      p.watchlistRemoved = false;
+      p.wyroznienia = (p.wyroznienia || []).filter(w=>w.obsId !== obs.id);
+      p.wyroznienia.push({
+        obsId: obs.id, data: obs.date || '', mecz: obs.match || '',
+        scout: obs.scout || '', klub: dane.nazwa || '',
+      });
+      void savePlayers();
+      return p;
+    }
+
+    // ODZNACZENIE COFA TYLKO WYRÓŻNIENIE. Kartoteki nie kasujemy i z Monitoringu nie wyrzucamy —
+    // zawodnik mógł tam trafić z zupełnie innego powodu, a pomyłkowe kliknięcie nie ma prawa
+    // wymazać czyjejś pracy. Z Monitoringu usuwa się osobnym przyciskiem.
+    if(p && (p.wyroznienia||[]).length){
+      p.wyroznienia = p.wyroznienia.filter(w=>w.obsId !== obs.id);
+      void savePlayers();
+    }
+    return p;
+  }
+
   function kolumnaHtml(strona, tytulZapasowy){
     const dane = (obs.skladMeczu||{})[strona];
     const zawodnicy = (dane && dane.zawodnicy) || [];
     return `<div style="flex:1;min-width:250px;">
       <h4 style="margin:0 0 6px;color:var(--heading);font-size:13px;">${esc((dane&&dane.nazwa)||tytulZapasowy||'—')}
         <span class="meta" style="font-weight:400;">(${zawodnicy.length})</span></h4>
-      ${zawodnicy.length ? zawodnicy.map((z,i)=>`
+      ${zawodnicy.length ? zawodnicy.map((z,i)=>{
+        // Wyróżniony ma kartotekę, więc jego nazwisko prowadzi do profilu. Reszta zostaje
+        // zwykłym tekstem — klikanie w kogoś, kogo nie ma w bazie, nie miałoby dokąd prowadzić.
+        const kartoteka = z.wyrozniony ? znajdzZawodnikaWyr(z.nazwa, klubStronyMeczu((dane&&dane.nazwa))) : null;
+        return `
         <label style="display:flex;align-items:center;gap:7px;padding:3px 4px;border-radius:5px;cursor:pointer;font-size:12.5px;${z.wyrozniony?'background:var(--card-warm);font-weight:700;':''}">
           <input type="checkbox" class="obs-wyroz" data-strona="${strona}" data-i="${i}" ${z.wyrozniony?'checked':''}>
           <span style="color:var(--ink-soft);min-width:20px;">${z.numer!=null?esc(String(z.numer)):''}</span>
-          <span style="flex:1;">${esc(z.nazwa)}</span>
+          <span style="flex:1;">${kartoteka
+            ? `<a href="#" class="obs-wyroz-profil" data-id="${kartoteka.id}" title="Otwórz profil zawodnika">${esc(z.nazwa)} →</a>`
+            : esc(z.nazwa)}</span>
           <span class="meta" style="font-size:10.5px;white-space:nowrap;">${
             z.podstawowy===false ? 'ław.' : (z.zszedl ? z.zszedl+"'" : '')
           }${z.zolte?' 🟨':''}${z.czerwone?' 🟥':''}${z.pozycja?esc(z.pozycja):''}${z.rocznik?' '+esc(String(z.rocznik)):''}</span>
-        </label>`).join('')
+        </label>`;
+      }).join('')
       : `<p class="note" style="font-size:11.5px;">Brak — wczytaj skład przyciskiem powyżej.</p>`}
     </div>`;
   }
@@ -14026,9 +14167,17 @@ function openObsSkladModal(obsId){
     overlay.querySelector('[data-x="baza"]').onclick = wczytajZBazy;
     overlay.querySelector('[data-x="protokol"]').onclick = wczytajZ90minut;
     overlay.querySelectorAll('.obs-wyroz').forEach(inp=>inp.onchange = ()=>{
-      const lista = obs.skladMeczu[inp.dataset.strona].zawodnicy;
-      lista[Number(inp.dataset.i)].wyrozniony = inp.checked;
-      zapisz();
+      const p = ustawWyroznienie(inp.dataset.strona, Number(inp.dataset.i), inp.checked);
+      if(inp.checked && p) komunikat = `„${p.firstName} ${p.lastName}" — w Monitoringu, kliknij nazwisko, by otworzyć profil.`;
+      zapisz();     // zapisuje obserwację i przerysowuje okno (nazwisko staje się odnośnikiem)
+    });
+    // Przejście do profilu z okna składu — okno zamykamy, bo profil otwiera się w tle strony.
+    overlay.querySelectorAll('.obs-wyroz-profil').forEach(a=>a.onclick = (e)=>{
+      e.preventDefault();
+      overlay.remove();
+      viewingPlayerId = (a as HTMLElement).dataset.id;
+      currentView = 'players';
+      render();
     });
   }
 

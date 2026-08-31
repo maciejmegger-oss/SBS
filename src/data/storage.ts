@@ -113,6 +113,10 @@ export const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }>
       // Z ilu meczów policzony był dorobek przy ostatnim odświeżeniu — bez tego nie da się
       // odróżnić "źródło jest spóźnione" od "widzimy tylko część kolejek".
       "statsMeczow",
+      // Mecze, w których skaut zaznaczył zawodnika jako wyróżniającego się — data, spotkanie,
+      // kto zaznaczył. Bez tej listy zaznaczenie żyłoby tylko w oknie składu i nie dałoby się
+      // odróżnić jednego dobrego meczu od regularnej formy.
+      "wyroznienia",
     ],
   },
   sbs_observations: {
