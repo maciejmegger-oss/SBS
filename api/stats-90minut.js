@@ -204,6 +204,24 @@ export default async function handler(req, res) {
     const terminarz = parseSchedule(html);
     const nasze = terminarz
       .filter((m) => m.rozegrany && (toSamKlub(m.homeTeam, klub.name) || toSamKlub(m.awayTeam, klub.name)));
+
+    // ROZGRYWKI BEZ PROTOKOŁÓW — POWIEDZ TO WPROST, ZAMIAST UDAWAĆ BRAK MECZÓW.
+    //
+    // Centralna Liga Juniorów ma na 90minut komplet terminarza i wyników, ale ANI JEDNEGO
+    // protokołu: przy 240 spotkaniach zero odnośników „mecz.php", a strona klubu podaje tylko
+    // historię rozgrywek, bez składu. Nie ma więc skąd wziąć minut. Dotąd wychodziło z tego
+    // „brak meczów tego klubu" razem z radą, żeby wyrównać nazwę — a nazwa była poprawna
+    // i poprawianie jej nic nie mogło dać.
+    if (nasze.length && !html.includes("mecz.php?id_mecz=")) {
+      return res.status(404).json({
+        error: `90minut nie publikuje protokołów rozgrywek ${klub.league} — są tylko wyniki, bez składów i minut.`,
+        podpowiedz: `„${klub.name}" ma tam ${nasze.length} rozegranych meczów, ale żaden nie ma protokołu, `
+          + "więc nie ma skąd policzyć minut. Statystyki tych rozgrywek zbierz zakładką z „Łączy nas piłka” "
+          + "— tak samo jak w IV lidze: otwórz grupę na ŁNP, kliknij zakładkę, potem „Wyślij do SBS”.",
+        bezProtokolow: true,
+        rozegranych: nasze.length,
+      });
+    }
     // Adres protokołu: identyfikator z odnośnika, a gdy go nie ma — surowy adres z wiersza,
     // rozwinięty względem strony ligi. Bez tego mecz z wynikiem, ale o nietypowym odnośniku,
     // przepadał bez śladu.

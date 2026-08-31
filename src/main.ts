@@ -4571,7 +4571,9 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
           const nazwa = l.slice(0, ciecie).trim();
           const adres = l.slice(ciecie + 1).trim();
           if(!/^https?:\/\//i.test(adres)) return;
-          const klub = dopasujKlubDoNazwy(nazwa, grupa, 'IV liga');
+          // Poziom bierzemy z OTWARTEJ GRUPY, a nie na sztywno z IV ligi — herby i nazwy zbiera
+          // się tak samo w CLJ, a wpisany na stałe poziom odciąłby tam wszystkie kluby.
+          const klub = dopasujKlubDoNazwy(nazwa, grupa, poziomGrupy(grupa));
           if(!klub){ nierozpoznane.push(nazwa); return; }
           // NAZWA Z ŁNP JEST TĄ WŁAŚCIWĄ — to z niej lecą protokoły.
           //
@@ -5979,6 +5981,19 @@ function podsumowanieMinut(przebieg){
 
 // Granica rocznika młodzieżowca — w jednym miejscu, bo wisi i w odznace, i w podpowiedziach,
 // i w filtrach. Rozjechane kopie tej liczby pokazywałyby dwie różne prawdy w jednym oknie.
+// Poziom rozgrywek z nazwy grupy w kartotece („IV liga (opolska)" → „IV liga", „CLJ U17 (zachodnia)"
+// → „CLJ U17"). Służy do odcinania klubów z innych rozgrywek przy dopasowaniu nazwy — ta sama nazwa
+// klubu występuje przecież w pierwszej drużynie i w juniorach.
+function poziomGrupy(nazwaGrupy){
+  const t = String(nazwaGrupy || '');
+  if(/u\s*-?\s*17/i.test(t)) return 'CLJ U17';
+  if(/u\s*-?\s*19/i.test(t) || /\bclj\b/i.test(t)) return 'CLJ U19';
+  const m = t.match(/^(IV|III|II|I)\s+liga/i);
+  if(m) return `${m[1].toUpperCase()} liga`;
+  if(/ekstraklasa/i.test(t)) return 'Ekstraklasa';
+  return '';
+}
+
 const ROCZNIK_MLODZIEZOWCA = 2006;
 
 // Rozgrywki, w których minuta młodzieżowca coś znaczy skautingowo. W IV lidze i niżej młodzież
@@ -11280,6 +11295,12 @@ function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
   // z samymi kreskami. Protokół podaje rozgrywki wprost („2 kolejka, Czwarta liga”), więc
   // niech to on rozstrzyga.
   const POZIOMY = [
+    // CLJ SPRAWDZAMY PIERWSZE, bo w nazwie tych rozgrywek też stoi słowo „liga" („Centralna Liga
+    // Juniorów") — przy odwrotnej kolejności protokół juniorski wziąłby poziom seniorski i dorobek
+    // U17 wylądowałby w pierwszej drużynie o tej samej nazwie. U-17 przed U-19 z tego samego
+    // powodu: „U19" nie występuje w napisie „Centralna Liga Juniorów", więc to on jest domyślny.
+    [/u\s*-?\s*17|clj\s*u\s*-?\s*17/i, 'CLJ U17'],
+    [/centralna\s+liga\s+junior|clj\b|u\s*-?\s*19/i, 'CLJ U19'],
     [/czwarta\s+liga|\bIV\s+liga/i, 'IV liga'],
     [/trzecia\s+liga|\bIII\s+liga/i, 'III liga'],
     [/druga\s+liga|\bII\s+liga/i, 'II liga'],
