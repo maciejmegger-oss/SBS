@@ -1755,6 +1755,16 @@ function viewBaza(): string {
         <strong style="font-family:var(--data); font-size:12.5px; color:${cache.matches.length ? "var(--text-2)" : "var(--accent-fg)"};">${cache.matches.length}</strong></div>
       <div class="row" style="margin-top:6px;"><span class="sub">Wersja panelu</span>
         <strong style="font-family:var(--data); font-size:12.5px; color:var(--text-2);">${esc(WERSJA_PANELU)}</strong></div>
+      <!-- ADRES, POD KTÓRYM STOI TEN PANEL.
+           Aplikacja dodana do ekranu głównego nie ma paska adresu, więc z jej wnętrza nie da się
+           stwierdzić, gdzie właściwie się jest. A to bywa rozstrzygające: serwer wydaje dwa rodzaje
+           adresów — stały adres aplikacji, który dostaje każdą kolejną wersję, i adres KONKRETNEGO
+           wdrożenia, zamrożony na zawsze. Ikona zapisana kiedyś na ten drugi pokazuje w kółko tę
+           samą wersję sprzed miesięcy, mimo poprawnych wdrożeń i pełnego zasięgu — i nie ma z niej
+           żadnego sygnału, że tak jest. -->
+      <div class="row" style="margin-top:6px;"><span class="sub">Adres</span>
+        <strong style="font-family:var(--data); font-size:12.5px; color:var(--text-2); min-width:0;
+                       overflow:hidden; text-overflow:ellipsis;">${esc(location.host)}</strong></div>
       <!-- Wynik ostatniego pytania o wersję. Bez tego wiersza „nie ma paska o nowszej wersji"
            znaczy naraz dwie rzeczy: że nowszej nie ma i że nie udało się o nią zapytać. -->
       <div class="row" style="margin-top:6px;"><span class="sub">Sprawdzenie wersji</span>
