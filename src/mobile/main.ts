@@ -251,6 +251,9 @@ let skladStrona: "gospodarze" | "goscie" = "gospodarze";
 let wyborZKadry: "gospodarze" | "goscie" | null = null;   // otwarta lista kadry klubu z bazy
 let obsadzanaPozycja: number | null = null;   // wybrane puste pole na planszy — czeka na zawodnika
 let ocenianyZawodnik: number | null = null;   // indeks zawodnika, którego panel oceny jest otwarty
+// Czy panel zawodnika otwarto z ekranu zdarzeń. Wtedy „Wróć" ma wrócić WŁAŚNIE tam, a nie na
+// planszę: scout wszedł ocenić jedną rzecz i chce dalej rejestrować akcje.
+let wrocDoZdarzen = false;
 let searchQuery = "";
 let clockTimer: number | undefined;
 // Czy panel pracuje na sesji użytkownika. Od zamknięcia systemu jest to WARUNEK WEJŚCIA:
@@ -824,13 +827,29 @@ function viewLive(): string {
       </div>
     </div>
 
+    ${/* Przy protokole otwartym z ekranu zdarzeń przełączniki zakładek znikają. Scout wszedł tu
+          ocenić JEDNEGO zawodnika i wrócić — dwa paski nawigacji nad panelem tylko zabierają
+          ekran i podpowiadają drogę, którą właśnie się nie idzie. Wyjście jest jedno i widoczne:
+          „Wróć do zdarzeń". */""}
+    ${wrocDoZdarzen ? "" : `
     <div class="polarity" style="grid-template-columns:1fr 1fr; margin-bottom:10px;">
       <button class="pol seg" data-act="live-tab" data-v="zdarzenia" aria-pressed="${liveTab === "zdarzenia"}">Zdarzenia</button>
       <button class="pol seg" data-act="live-tab" data-v="sklady" aria-pressed="${liveTab === "sklady"}">Składy${skladLiczba(live.observationId) ? " · " + skladLiczba(live.observationId) : ""}</button>
-    </div>
+    </div>`}
 
     ${liveTab === "sklady" ? viewSklady() : `
     ${pasekZawodnikow()}
+    ${/* DROGA DO PROTOKOŁU JEDNYM DOTKNIĘCIEM.
+          Kafle rejestrują, CO się stało; protokół ocenia, JAK zawodnik gra. Jedno i drugie robi
+          się w trakcie meczu i jedno i drugie dotyczy tej samej osoby — więc przejście musi być
+          tutaj, a nie przez zakładkę Składy i planszę.
+
+          Świadomie NIE robimy tego dotknięciem samego kafelka z nazwiskiem: ten wybiera, komu
+          przypisują się zdarzenia, i naciska się go w środku akcji. Otwieranie wtedy pełnego
+          panelu kosztowałoby przegapioną akcję. */""}
+    ${live.wybranyZawodnik
+      ? `<button class="btn ghost" style="margin-top:0; margin-bottom:10px;" data-act="protokol-taguj">Protokół oceny — ${esc(live.wybranyZawodnik)}</button>`
+      : ""}
     <div class="polarity">
       <button class="pol plus" data-act="pol" data-v="1" aria-pressed="${polarity === 1}">+ udane</button>
       <button class="pol minus" data-act="pol" data-v="-1" aria-pressed="${polarity === -1}">− nieudane</button>
@@ -884,6 +903,11 @@ interface SkladZawodnik {
   // i te pola by wtedy przepadły — dlatego mapę układa się po wczytaniu składu, nie przed.
   pozycja?: number;
   ocena?: Record<string, number>;
+  // Protokół w skali 1–6 wystawiany TEMU zawodnikowi, nie meczowi: fazy gry i stałe fragmenty.
+  // Te same klucze, co w raporcie na komputerze (REPORT_PHASES, REPORT_SET_PIECES), więc przy
+  // zapisie idą wprost do pól raportu, bez tłumaczenia.
+  fazy?: Record<string, number>;
+  sfg?: Record<string, number>;
   notatka?: string;
   noga?: string;
   // Wskazanie na zawodnika z bazy, gdy skład powstał z kadry klubu, a nie z wklejki. Dzięki temu
@@ -1041,7 +1065,9 @@ function viewSklady(): string {
       ${STRONY.map((k) => `<button class="btn ghost small" style="flex:1;" data-act="otworz-kadre" data-strona="${k}">+ kadra: ${esc(k === "gospodarze" ? gosp : gosc)}</button>`).join("")}
     </div>`;
 
-  const przelacznik = `
+  // Ten sam powód, co przy zakładkach wyżej: przy protokole otwartym z ekranu zdarzeń nie ma
+  // po co pokazywać wyboru między listą a planszą.
+  const przelacznik = wrocDoZdarzen ? "" : `
     <div class="polarity" style="margin-bottom:10px;">
       <button class="pol seg" data-act="sklad-widok" data-v="lista" aria-pressed="${skladWidok === "lista"}">Lista</button>
       <button class="pol seg" data-act="sklad-widok" data-v="mapa" aria-pressed="${skladWidok === "mapa"}">Ustawienie</button>
@@ -1170,16 +1196,41 @@ function skrotNazwiska(z: SkladZawodnik): string {
   return (z.numer ? z.numer + " " : "") + nazwisko;
 }
 
+// ZDARZENIA JEDNEGO ZAWODNIKA, po ludzku: „Strzał + 3 · Strata − 2".
+//
+// To samo zestawienie służy dwóm rzeczom: pokazaniu na ekranie, ile już zarejestrowano, i wpisaniu
+// dorobku do raportu. Liczymy z bieżącego meczu, jeśli trwa, a po gwizdku z archiwum — po zapisaniu
+// ocen stan meczu jest kasowany, a raport ma powstać z tego samego materiału.
+function zdarzeniaZawodnika(obsId: string, klucz: string): string {
+  const wszystkie = live && live.observationId === obsId ? live.events : zdarzeniaObserwacji(obsId);
+  const licznik = new Map<string, number>();
+  wszystkie.filter((e) => (e.zawodnik || "") === klucz).forEach((e) => {
+    const k = e.label + (e.quality === 1 ? " +" : " −");
+    licznik.set(k, (licznik.get(k) || 0) + 1);
+  });
+  return [...licznik.entries()].map(([co, ile]) => `${co} ${ile}`).join(" · ");
+}
+
 function viewOcenaZawodnika(z: SkladZawodnik): string {
   const ocena = z.ocena || {};
+  const fazy = z.fazy || {};
+  const sfg = z.sfg || {};
+  const zdarzenia = live ? zdarzeniaZawodnika(live.observationId, kluczZawodnika(z)) : "";
   return `
     <div class="row" style="margin-bottom:10px;">
       <div>
         <div class="name">${esc(z.nazwa)}</div>
         <div class="sub">${z.numer ? "nr " + esc(z.numer) + " · " : ""}${z.pozycja ? esc(POZYCJE_PELNE[z.pozycja]) : "poza ustawieniem"}</div>
       </div>
-      <button class="btn ghost small" data-act="zamknij-zawodnika">Wróć</button>
+      <button class="btn ghost small" data-act="zamknij-zawodnika">${wrocDoZdarzen ? "Wróć do zdarzeń" : "Wróć"}</button>
     </div>
+
+    ${/* Co już zarejestrowano kaflami. Bez tego oba panele — protokół i zdarzenia — byłyby
+          osobnymi światami, a to jest ten sam zawodnik i ten sam mecz. */
+      zdarzenia ? `<div class="card" style="padding:10px 12px; margin-bottom:10px;">
+        <span class="label" style="margin:0;">Zdarzenia z kafli</span>
+        <div class="sub" style="margin-top:4px;">${esc(zdarzenia)}</div>
+      </div>` : ""}
 
     ${z.pozycja ? `<button class="btn ghost" style="margin-top:0;" data-act="zmien-na-pozycji" data-numer="${z.pozycja}">
       Zmiana — wstaw innego na ${esc(POZYCJE_PELNE[z.pozycja])}</button>` : ""}
@@ -1201,13 +1252,27 @@ function viewOcenaZawodnika(z: SkladZawodnik): string {
       ${OCENA_GLOWA.map((f) => skala("mapa", f.key, f.label, Number(ocena[f.key]) || 0, 10)).join("")}
     </div>
 
+    ${/* PROTOKÓŁ 1–6 PRZY KONKRETNYM ZAWODNIKU, wystawiany NA ŻYWO.
+          Dotąd fazy gry i stałe fragmenty dało się ocenić dopiero po gwizdku i tylko raz — dla
+          całego meczu. Tymczasem to są oceny zawodnika: jak zachowuje się w ataku, jak wraca,
+          co robi przy rożnym. Ocenia się je patrząc, a nie z pamięci pół godziny później. */""}
+    <div class="section">
+      <span class="label">Fazy gry · skala 1–6</span>
+      ${REPORT_PHASES.map((f) => skala("fazy", f.key, f.label, Number(fazy[f.key]) || 0, 6)).join("")}
+    </div>
+
+    <div class="section">
+      <span class="label">Stałe fragmenty · skala 1–6</span>
+      ${REPORT_SET_PIECES.map((f) => skala("sfg", f.key, f.label, Number(sfg[f.key]) || 0, 6)).join("")}
+    </div>
+
     <div class="section">
       <div class="row" style="margin-bottom:6px;">
         <span class="label" style="margin:0;">Notatka</span>
         <button class="btn ghost small" data-act="dyktuj-notatke" id="dyktuj-btn">Dyktuj</button>
       </div>
       <textarea id="notatka-zawodnika" placeholder="Co zwróciło uwagę…">${esc(z.notatka || "")}</textarea>
-      <p class="hint" style="margin-top:6px;">Zapisuje się samo — po wpisaniu możesz od razu wrócić na planszę.</p>
+      <p class="hint" style="margin-top:6px;">Zapisuje się samo. Wszystko z tego panelu wejdzie do raportu tego zawodnika w SBS.</p>
     </div>`;
 }
 
@@ -1371,13 +1436,19 @@ function viewOcena(): string {
     <span class="label">Ocena meczu</span>
     ${skala("mecz", "poziom", "Poziom meczu", Number(o?.poziomMeczu) || 0, 10)}
     <div class="field">
-      <span class="label">Warunki</span>
+      <span class="label">Pogoda i warunki</span>
       <div class="chips">
         ${WARUNKI.map((w) => `<button class="chip" data-act="warunki" data-v="${esc(w)}" aria-pressed="${warunki.includes(w)}">${esc(w)}</button>`).join("")}
       </div>
     </div>
     <div class="field">
-      <textarea id="o-mecz-notatka" placeholder="Krótka notatka o meczu…" style="min-height:58px;">${esc(o?.notatkaMeczu || "")}</textarea>
+      <span class="label">Charakterystyka meczu</span>
+      <textarea id="o-mecz-notatka" placeholder="Tempo, poziom rywalizacji, jak wyglądało spotkanie…" style="min-height:58px;">${esc(o?.notatkaMeczu || "")}</textarea>
+      ${/* Kontekst meczu jest częścią KAŻDEJ oceny indywidualnej, a nie osobnym dokumentem.
+            Te same siedem na dziesięć znaczy co innego w ulewie przy zerowym tempie, a co innego
+            w meczu o czubek tabeli — dlatego ta adnotacja dopisuje się do raportu każdego
+            ocenionego zawodnika, zamiast zostawać wyłącznie przy meczu. */""}
+      <p class="hint" style="margin-top:6px;">Pogoda, poziom i ta charakterystyka wejdą do raportu <strong>każdego</strong> ocenionego zawodnika — bez tego ocena 7/10 nic nie znaczy.</p>
     </div>
 
     ${oceniony}
@@ -1459,7 +1530,7 @@ function viewPodglad(): string {
   const skladHtml = STRONY.map((strona) => {
     const dane = obs.skladMeczu?.[strona];
     const oznaczeni = (dane?.zawodnicy || []).filter((z) => z.wyrozniony || z.pozycja || z.notatka || z.noga ||
-      (z.ocena && Object.values(z.ocena).some((n) => Number(n) > 0)));
+      [z.ocena, z.fazy, z.sfg].some((w) => w && Object.values(w).some((n) => Number(n) > 0)));
     if (!oznaczeni.length) return "";
     return `
       <div class="section">
@@ -1479,7 +1550,14 @@ function viewPodglad(): string {
             ? '<span class="hint" style="display:block; margin-top:4px; color:var(--good-fg);">Wyróżnieni trafią na mapę tego systemu w SBS.</span>'
             : '<span class="hint" style="display:block; margin-top:4px;">Wskaż system, żeby wyróżnieni trafili na mapę pozycji w SBS.</span>'}
         </div>
-        ${oznaczeni.map((z) => `
+        ${oznaczeni.map((z) => {
+          // Protokół 1–6 wystawiony na żywo. Widoczny tu, bo inaczej scout nie miałby jak
+          // sprawdzić, co właściwie zapisał — a to jest ekran, na którym się to sprawdza.
+          const protokol = [
+            ...REPORT_PHASES.filter((f) => Number(z.fazy?.[f.key]) > 0).map((f) => `${f.label} ${z.fazy![f.key]}/6`),
+            ...REPORT_SET_PIECES.filter((f) => Number(z.sfg?.[f.key]) > 0).map((f) => `${f.label} ${z.sfg![f.key]}/6`),
+          ].join(" · ");
+          return `
           <div class="card" style="padding:11px 12px;">
             <div class="row">
               <div class="name" style="font-size:15px;">${z.wyrozniony ? "★ " : ""}${esc(kluczZawodnika(z))}</div>
@@ -1492,8 +1570,10 @@ function viewPodglad(): string {
                   ...OCENA_GLOWA.map((f) => ({ k: f.key, l: f.label })),
                 ].filter((x) => Number(z.ocena![x.k]) > 0)
                   .map((x) => x.l + " " + z.ocena![x.k]).join(" · ")}</div>` : ""}
+            ${protokol ? `<div class="sub" style="margin-top:5px; font-family:var(--data);">${esc(protokol)}</div>` : ""}
             ${z.notatka ? `<div class="sub" style="margin-top:5px;">${esc(z.notatka)}</div>` : ""}
-          </div>`).join("")}
+          </div>`;
+        }).join("")}
       </div>`;
   }).join("");
 
@@ -1557,7 +1637,7 @@ function ocenieniZeSkladu(obs?: Observation): string {
   const lista: string[] = [];
   STRONY.forEach((strona) => {
     (sklad[strona]?.zawodnicy || []).forEach((z) => {
-      const ma = z.ocena && [...OCENA_MAPY, ...OCENA_GLOWA.map((f) => f.key)].some((k) => Number(z.ocena![k]) > 0);
+      const ma = [z.ocena, z.fazy, z.sfg].some((w) => w && Object.values(w).some((n) => Number(n) > 0));
       if (ma || z.wyrozniony) lista.push((z.wyrozniony ? "★ " : "") + kluczZawodnika(z));
     });
   });
@@ -2037,8 +2117,10 @@ function saveOcena() {
   // wymaganie atrybutu na poziomie obserwacji blokowałoby zapis meczu, w którym oceniono
   // trzech zmienników i poziom spotkania. Wystarczy, że cokolwiek zostało wypełnione.
   const o = cache.observations.find((x) => x.id === ocena!.observationId) as (Observation & { poziomMeczu?: number; warunki?: string[]; notatkaMeczu?: string; skladMeczu?: Sklad }) | undefined;
+  const cosOceniono = (z: SkladZawodnik) => [z.ocena, z.fazy, z.sfg]
+    .some((w) => w && Object.values(w).some((n) => Number(n) > 0));
   const cosZeSkladu = STRONY.some((strona) => (o?.skladMeczu?.[strona]?.zawodnicy || [])
-    .some((z) => z.wyrozniony || z.notatka || (z.ocena && Object.values(z.ocena).some((n) => Number(n) > 0))));
+    .some((z) => z.wyrozniony || z.notatka || cosOceniono(z)));
   const cosJest = wystawione.length || o?.poziomMeczu || (o?.warunki || []).length || o?.notatkaMeczu || cosZeSkladu;
   if (!cosJest) { toast("Nie ma czego zapisać — wystaw ocenę albo opisz mecz"); return; }
 
@@ -2081,6 +2163,8 @@ function saveOcena() {
   const zOceny = (k: string) => ocena!.ratings[k] > 0 ? `Ocena z obserwacji: ${ocena!.ratings[k]}/10` : "";
   const typObs = (obs.obsType as string) === "online" ? "Online" : (obs.obsType as string) === "video" ? "Video" : "Live";
   const dataRap = obs.date || todayISO();
+  // Co powiedzieć na końcu o raportach ze składu — dopisywane do komunikatu o zapisie.
+  let podsumowanieSkladu = "";
 
   if (obs.playerId) {
     // Obserwacja JEDNEGO zawodnika — jeden raport, jak dotąd.
@@ -2115,6 +2199,19 @@ function saveOcena() {
       fromObservationId: obs.id,
     });
 
+    // KONTEKST SPOTKANIA — dopisywany do raportu KAŻDEGO ocenionego zawodnika.
+    //
+    // Pogoda, poziom rywalizacji i charakterystyka meczu są warunkami, w jakich powstała ocena.
+    // Trzymane wyłącznie przy meczu byłyby niewidoczne tam, gdzie się ich potrzebuje: przy
+    // nazwisku, pół roku później, gdy nikt już nie pamięta, że tamtego dnia wiało i grało się
+    // na zamarzniętym boisku.
+    const kontekstMeczu = [
+      obs.match ? `Mecz: ${obs.match}.` : "",
+      o?.poziomMeczu ? `Poziom meczu: ${o.poziomMeczu}/10.` : "",
+      (o?.warunki || []).length ? `Warunki: ${(o!.warunki as string[]).join(", ")}.` : "",
+      o?.notatkaMeczu ? `Charakterystyka meczu: ${o.notatkaMeczu}` : "",
+    ].filter(Boolean).join(" ");
+
     const sklad = (o?.skladMeczu || {}) as Sklad;
     const nierozpoznani: string[] = [];
     let zapisanych = 0;
@@ -2123,7 +2220,14 @@ function saveOcena() {
       (dane?.zawodnicy || []).forEach((z) => {
         const oceny = z.ocena || {};
         const maOcene = Object.values(oceny).some((n) => Number(n) > 0);
-        if (!maOcene && !z.wyrozniony && !z.notatka) return;
+        // Protokół 1–6 wystawiony na żywo. Puste rubryki pomijamy, a nie zerujemy: „nieocenione"
+        // i „ocenione na zero" to w raporcie dwie różne informacje.
+        const fazyZ: Record<string, number> = {};
+        REPORT_PHASES.forEach((f) => { if (Number(z.fazy?.[f.key]) > 0) fazyZ[f.key] = Number(z.fazy![f.key]); });
+        const sfgZ: Record<string, number> = {};
+        REPORT_SET_PIECES.forEach((f) => { if (Number(z.sfg?.[f.key]) > 0) sfgZ[f.key] = Number(z.sfg![f.key]); });
+        const maProtokol = Object.keys(fazyZ).length > 0 || Object.keys(sfgZ).length > 0;
+        if (!maOcene && !maProtokol && !z.wyrozniony && !z.notatka) return;
 
         const playerId = znajdzZawodnika(z.nazwa, dane?.nazwa);
         if (!playerId) { nierozpoznani.push(z.nazwa); return; }
@@ -2132,9 +2236,17 @@ function saveOcena() {
         // żeby liczyła się do jego średniej tak samo jak ocena z obserwacji indywidualnej.
         savePlayerRatingsFromSquad(playerId, oceny, dataRap, scout, obs, z);
 
+        // Dorobek z kafli przy nazwisku: to jedyna droga, żeby stukanie w trakcie meczu
+        // zostawiło ślad w raporcie, a nie tylko na osi zdarzeń w telefonie.
+        const zdarzeniaZ = zdarzeniaZawodnika(obs.id, kluczZawodnika(z));
         const opis = [
           z.wyrozniony ? "Wyróżnił się w tym meczu." : "",
           z.notatka || "",
+          // Gra głową nie ma własnego pola w raporcie, a jest oceniana osobno w ataku i w obronie.
+          // Bez przepisania do opisu przepadałaby po drodze na komputer.
+          OCENA_GLOWA.filter((f) => Number(oceny[f.key]) > 0)
+            .map((f) => `${f.label}: ${oceny[f.key]}/10.`).join(" "),
+          zdarzeniaZ ? `Zdarzenia: ${zdarzeniaZ}.` : "",
           z.noga ? `Noga: ${z.noga}.` : "",
           z.numer ? `Nr ${z.numer}.` : "",
         ].filter(Boolean).join(" ");
@@ -2143,21 +2255,28 @@ function saveOcena() {
           id: `rep:${obs.id}:${playerId}`,
           playerId,
           date: dataRap, scout,
-          description: [opis, obs.match ? `Mecz: ${obs.match}` : ""].filter(Boolean).join(" "),
+          description: [opis, kontekstMeczu].filter(Boolean).join(" "),
           technika: zSkladu("technika"),
           taktyka: zSkladu("taktyka"),
           motoryka: zSkladu("motoryka"),
           obsType: typObs,
           match: obs.match || "",
+          // Protokół z trybuny idzie do TYCH SAMYCH pól, które na komputerze wypełnia się ręcznie
+          // po meczu — więc raport z telefonu otwiera się tam kompletny, a nie z pustymi rubrykami.
+          phases: fazyZ, setPieces: sfgZ,
           fromObservationId: obs.id,
         });
         zapisanych++;
       });
     });
-    // Mówimy wprost, kogo nie dało się dopasować. Milczenie sprawiłoby, że scout byłby
-    // przekonany, że ocenił kogoś, kto w kartotece nic nie dostał.
+    // ILE RAPORTÓW POWSTAŁO I KOGO POMINIĘTO — w komunikacie KOŃCOWYM, nie tutaj.
+    //
+    // Dotąd stało w tym miejscu własne `toast(...)`, które kasował komunikat wyświetlany chwilę
+    // później na końcu zapisu. Ostrzeżenie „nie ma w bazie" nie pokazało się więc ani razu, choć
+    // kod je budował: scout był przekonany, że ocenił kogoś, kto w kartotece nic nie dostał.
+    podsumowanieSkladu = zapisanych ? ` · raporty: ${zapisanych}` : "";
     if (nierozpoznani.length) {
-      toast(`Zapisano ${zapisanych}. Nie ma w bazie: ${nierozpoznani.slice(0, 3).join(", ")}${nierozpoznani.length > 3 ? ` i ${nierozpoznani.length - 3} in.` : ""}`);
+      podsumowanieSkladu += ` · nie ma w bazie: ${nierozpoznani.slice(0, 3).join(", ")}${nierozpoznani.length > 3 ? ` i ${nierozpoznani.length - 3} in.` : ""}`;
     }
   }
 
@@ -2179,7 +2298,7 @@ function saveOcena() {
   listaTryb = "zakonczone";
   view = "dzis";
   render();
-  toast(navigator.onLine ? "Zapisano i wysłano do SBS" : "Zapisano — wyślę, gdy wróci zasięg");
+  toast((navigator.onLine ? "Zapisano i wysłano do SBS" : "Zapisano — wyślę, gdy wróci zasięg") + podsumowanieSkladu);
 }
 
 // Treść formularza planowania żyje w polach DOM — przed odejściem do terminarza trzeba ją przenieść
@@ -2560,7 +2679,30 @@ document.addEventListener("click", (e) => {
       setLive(live);
       render();
       break;
-    case "live-tab": liveTab = v === "sklady" ? "sklady" : "zdarzenia"; render(); break;
+    case "live-tab": liveTab = v === "sklady" ? "sklady" : "zdarzenia"; wrocDoZdarzen = false; render(); break;
+
+    // Protokół oceny zawodnika, którego właśnie tagujemy — otwierany wprost z ekranu zdarzeń.
+    case "protokol-taguj": {
+      if (!live?.wybranyZawodnik) break;
+      const sklad = skladObserwacji(live.observationId);
+      const trafienie = STRONY.map((strona) => ({
+        strona, i: (sklad?.[strona]?.zawodnicy || []).findIndex((z) => kluczZawodnika(z) === live!.wybranyZawodnik),
+      })).find((x) => x.i >= 0);
+      // Wyróżnieni biorą się ze składu, więc to nie powinno się zdarzyć — ale gdyby skład
+      // przebudowano w międzyczasie, milczenie byłoby najgorszą z możliwych odpowiedzi.
+      if (!trafienie) { toast("Nie znalazłem tego zawodnika w składzie"); break; }
+      skladStrona = trafienie.strona;
+      ocenianyZawodnik = trafienie.i;
+      liveTab = "sklady";
+      skladWidok = "mapa";
+      // Ekrany pośrednie zakładki Składy muszą być zamknięte, inaczej otwarta wcześniej lista
+      // kadry przesłoniłaby panel, który właśnie otwieramy.
+      wyborZKadry = null;
+      obsadzanaPozycja = null;
+      wrocDoZdarzen = true;
+      render();
+      break;
+    }
     case "usun-zawodnika": {
       if (!live) break;
       const obs = cache.observations.find((o) => o.id === live!.observationId) as (Observation & { skladMeczu?: Sklad }) | undefined;
@@ -2619,7 +2761,7 @@ document.addEventListener("click", (e) => {
       break;
     }
 
-    case "sklad-widok": skladWidok = v === "mapa" ? "mapa" : "lista"; ocenianyZawodnik = null; obsadzanaPozycja = null; wyborZKadry = null; render(); break;
+    case "sklad-widok": skladWidok = v === "mapa" ? "mapa" : "lista"; ocenianyZawodnik = null; obsadzanaPozycja = null; wyborZKadry = null; wrocDoZdarzen = false; render(); break;
     case "sklad-strona": skladStrona = v === "goscie" ? "goscie" : "gospodarze"; ocenianyZawodnik = null; obsadzanaPozycja = null; render(); break;
 
     case "wybierz-pozycje": obsadzanaPozycja = Number(el.dataset.numer); render(); break;
@@ -2647,7 +2789,7 @@ document.addEventListener("click", (e) => {
       break;
     }
 
-    case "otworz-zawodnika": ocenianyZawodnik = Number(el.dataset.i); render(); break;
+    case "otworz-zawodnika": ocenianyZawodnik = Number(el.dataset.i); wrocDoZdarzen = false; render(); break;
 
     // ZMIANA W SKŁADZIE. Po zmianie zawodnika na planszy stał ten z pierwszego składu i nie było
     // jak ocenić tego, który wszedł. Wstawienie kogoś na zajętą pozycję zdejmuje z niej poprzednika,
@@ -2655,6 +2797,7 @@ document.addEventListener("click", (e) => {
     case "zmien-na-pozycji":
       obsadzanaPozycja = Number(el.dataset.numer);
       ocenianyZawodnik = null;
+      wrocDoZdarzen = false;
       render();
       break;
 
@@ -2663,6 +2806,7 @@ document.addEventListener("click", (e) => {
       const dane = biezacyObsSklad();
       if (dane) saveObservation(dane.obs);
       ocenianyZawodnik = null;
+      if (wrocDoZdarzen) { liveTab = "zdarzenia"; wrocDoZdarzen = false; }
       render();
       break;
     }
@@ -2758,15 +2902,20 @@ document.addEventListener("click", (e) => {
         render();
         break;
       }
-      if (el.dataset.host === "mapa") {
+      // Trzy skale w panelu zawodnika trzymają się w trzech osobnych workach: „mapa" to atrybuty
+      // 1–10, „fazy" i „sfg" to protokół 1–6. Rozdzielone, bo w raporcie idą do innych pól i mają
+      // inne skale — wspólny worek wymagałby zgadywania po nazwie klucza.
+      const workiZawodnika: Record<string, "ocena" | "fazy" | "sfg"> = { mapa: "ocena", fazy: "fazy", sfg: "sfg" };
+      const worek = workiZawodnika[el.dataset.host || ""];
+      if (worek) {
         zabezpieczNotatke();
         const dane = biezacyObsSklad();
         const z = dane?.strona.zawodnicy[ocenianyZawodnik ?? -1];
         if (!dane || !z) break;
-        z.ocena = z.ocena || {};
+        z[worek] = z[worek] || {};
         const klucz = el.dataset.k!;
         const wartosc = Number(v);
-        z.ocena[klucz] = z.ocena[klucz] === wartosc ? 0 : wartosc;
+        z[worek]![klucz] = z[worek]![klucz] === wartosc ? 0 : wartosc;
         saveObservation(dane.obs);
         render();
         break;
