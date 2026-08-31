@@ -13385,7 +13385,18 @@ function openAgencySquadModal(agencyId){
     rozpoznane.zawodnicy.forEach(z=>{
       const rocznik = z.wiek ? String(new Date().getFullYear() - z.wiek) : '';
       const klub = znajdzKlubPoNazwieTM(z.klub);
-      const kandydaci = matchPlayersByFullName(z.nazwa, rocznik);
+      let kandydaci = matchPlayersByFullName(z.nazwa, rocznik);
+      // KLUB ROZSTRZYGA, GDY NAZWISKO NIE WYSTARCZA.
+      //
+      // „Krystian Wachowiak" bywa w bazie dwa razy — to nie ta sama osoba, tylko dwaj zawodnicy
+      // z różnych klubów. Wklejka z Transfermarktu podaje jednak klub przy każdym nazwisku,
+      // więc pytanie „przypisz ręcznie" było zadawane mimo posiadanej odpowiedzi. Pytamy dopiero
+      // wtedy, gdy nawet klub nie rozstrzyga — bo dwie osoby o tym samym nazwisku w JEDNYM klubie
+      // to już naprawdę niejednoznaczność.
+      if(kandydaci.length > 1 && klub){
+        const wKlubie = kandydaci.filter(p=>p.clubId === klub.id);
+        if(wKlubie.length === 1) kandydaci = wKlubie;
+      }
       if(kandydaci.length === 1){ trafione.push({...z, player: kandydaci[0], klubBazy: klub}); return; }
       if(kandydaci.length > 1){ niejednoznaczne.push({...z, kandydaci}); return; }
       if(klub){ doZalozenia.push({...z, klubBazy: klub, rocznik}); return; }
