@@ -3523,7 +3523,7 @@ function viewDashboard(){
                         : esc(o.match || 'Obserwacja meczu'));
         return `<div class="obs-item">
           <strong>${naglowek}</strong>${pl || o.playerId ? ` — <span class="avg-chip">${fmt1(avg)}</span>` : ''}
-          <div class="meta">${esc(o.date)}${pl || o.playerId ? ' &middot; ' + esc(o.match) : ''} &middot; scout: ${esc(o.scout)}</div>
+          <div class="meta">${esc(o.date)}${pl || o.playerId ? ' &middot; ' + esc(o.match) : ''}${ligaTag(o)} &middot; scout: ${esc(o.scout)}</div>
         </div>`;
       }).join('') : `<div class="empty">Brak obserwacji — dodaj pierwszą w zakładce „Plan Obserwacji”.</div>`}
     </div>
@@ -5418,9 +5418,45 @@ function obsMonthListHtml(){
           <button class="link-btn" data-action="delete-obs" data-id="${o.id}" style="font-size:11px;color:var(--clay-dark);">Usuń</button>
         </span>
       </div>
-      <div class="meta">${pl ? esc(o.match||'brak danych meczu') : '<em>obserwacja całego meczu</em>'}${o.location?' &middot; 📍 '+esc(o.location):''} &middot; scout: ${esc(o.scout)}</div>
+      <div class="meta">${pl ? esc(o.match||'brak danych meczu') : '<em>obserwacja całego meczu</em>'}${ligaTag(o)}${o.location?' &middot; 📍 '+esc(o.location):''} &middot; scout: ${esc(o.scout)}</div>
     </div>`;
   }).join('');
+}
+
+// ROZGRYWKI I KATEGORIA NA LIŚCIE OBSERWACJI.
+//
+// Panel mobilny zapisuje przy obserwacji nazwę rozgrywek („III liga, grupa 2", „A1") i to, czy
+// grali seniorzy, czy młodzież. Do bazy szło to od początku, ale komputer nie pokazywał tego
+// nigdzie — więc scout, który na trybunie odnotował, że ogląda A1, na komputerze widział mecz
+// nie do odróżnienia od spotkania seniorów. Ta sama ocena znaczy w obu wypadkach co innego.
+//
+// Rozpoznanie z nazwy jest awaryjne: obserwacje sprzed wprowadzenia tych pól nie mają zapisanej
+// kategorii, a nazwę rozgrywek często mają. Wzorce są te same, co w src/mobile/main.ts —
+// świadomie powtórzone, bo aplikacje nie dzielą jeszcze wspólnego modułu dziedzinowego.
+const MLODZIEZ_WZORCE_PC = [/\b[ABCD][12]\b/i, /\bU-?\d{1,2}\b/i, /juniorz?k?[aiy]?\b|juniorsk/i,
+  /młodzik|mlodzik|młodzicz|mlodzicz/i, /trampkarz|orlik|żak\b|zak\b/i, /\bCLJ\b/i, /młodzieżow|mlodziezow/i];
+const SENIORZY_WZORCE_PC = [/ekstraklasa|ekstraliga|betclic/i, /\b(I|II|III|IV|V)\s*liga\b/i,
+  /\b[1-5]\s*liga\b/i, /klasa\s+[ABC]\b|\b[ABC]\s+klasa|okręgow|okregow/i, /puchar\s+polski/i];
+
+function kategoriaObserwacji(o){
+  if(o && o.kategoria) return o.kategoria;
+  const n = String((o && o.rozgrywki) || '').trim();
+  if(!n) return '';
+  if(MLODZIEZ_WZORCE_PC.some(w=>w.test(n))) return 'mlodziez';
+  if(SENIORZY_WZORCE_PC.some(w=>w.test(n))) return 'seniorzy';
+  return '';
+}
+
+// Znacznik na karcie. Kategoria barwą, bo to ona rozstrzyga, jak czytać ocenę; nazwa rozgrywek
+// obok, jako uszczegółowienie.
+function ligaTag(o){
+  const kat = kategoriaObserwacji(o);
+  const nazwa = (o && o.rozgrywki) || '';
+  if(!kat && !nazwa) return '';
+  const etykieta = kat === 'mlodziez' ? 'Młodzież' : kat === 'seniorzy' ? 'Seniorzy' : '';
+  const barwa = kat === 'mlodziez' ? 'var(--gold-dark, #8C6C21)' : 'var(--green-dark, #2F6B41)';
+  const tekst = [etykieta, nazwa].filter(Boolean).join(' · ');
+  return ` &middot; <span style="color:${barwa};font-weight:600;">${esc(tekst)}</span>`;
 }
 
 function obsCalendarHtml(){
@@ -5481,7 +5517,7 @@ function obsCalendarHtml(){
       const pl = DB.players.find(p=>p.id===o.playerId);
       return `<div class="obs-item" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
         <span>${pl ? `<strong>${esc(pl.firstName+' '+pl.lastName)}</strong> — ${esc(o.match||'brak danych meczu')}`
-          : `<strong>${esc(o.match || 'Obserwacja meczu')}</strong>`} <span class="meta">(${esc(o.scout)})</span></span>
+          : `<strong>${esc(o.match || 'Obserwacja meczu')}</strong>`}<span class="meta">${ligaTag(o)} (${esc(o.scout)})</span></span>
         <span style="flex-shrink:0;white-space:nowrap;">
           <button class="link-btn" data-action="edit-obs" data-id="${o.id}" style="font-size:11px;">✎</button>
           <button class="link-btn" data-action="delete-obs" data-id="${o.id}" style="font-size:11px;color:var(--clay-dark);">✕</button>
