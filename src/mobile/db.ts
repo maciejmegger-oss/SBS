@@ -134,34 +134,46 @@ const objFromRow = (row: Record<string, unknown>): Record<string, unknown> => {
 // wyciągnąć na wierzch, przy zapisie — schować z powrotem, inaczej rodzaj obserwacji i punkt
 // startowy znikałyby po każdej edycji z telefonu.
 //
-// Listę bierzemy WPROST z warstwy aplikacji na komputerze, zamiast trzymać tu jej odpowiednik.
-// Własna kopia już raz się rozjechała: doszły tam `skladMeczu` i `googleEventId`, o których ten
-// plik nie wiedział — a pole spoza listy nie trafia do `__ext`, tylko leci jako osobna kolumna,
-// której w tabeli nie ma. Zapis obserwacji z telefonu kończyłby się wtedy błędem i zawieszał
-// kolejkę wysyłki, a przy okazji gubił powiązanie z wydarzeniem w Kalendarzu Google.
-const OBS_EXT_FIELDS = EXT_CONFIG.sbs_observations.fields;
+// Listę bierzemy WPROST z warstwy aplikacji na komputerze (EXT_CONFIG), zamiast trzymać tu jej
+// odpowiednik. Własna kopia już raz się rozjechała: doszły tam `skladMeczu` i `googleEventId`,
+// o których ten plik nie wiedział — a pole spoza listy nie trafia do `__ext`, tylko leci jako
+// osobna kolumna, której w tabeli nie ma. Zapis kończy się wtedy odmową bazy.
 
-const liftObsExt = (o: Record<string, unknown>) => {
-  const host = o.ratings as Record<string, unknown> | undefined;
+// PAKOWANIE I ROZPAKOWYWANIE DLA DOWOLNEJ TABELI, nie tylko dla obserwacji.
+//
+// Wcześniej te dwie funkcje obsługiwały WYŁĄCZNIE obserwacje, a raporty szły do bazy surowe.
+// Skutek był dokładnie taki, jak przy każdym polu bez kolumny: baza odrzucała KAŻDY raport
+// z telefonu komunikatem „Could not find the 'from_observation_id' column of 'sbs_reports'".
+// Obserwacje zapisywały się poprawnie, więc na komputerze widać było mecze bez treści — a to,
+// po co scout jedzie na mecz, czyli oceny zawodników, zostawało w telefonie.
+//
+// Stąd jedna para funkcji sterowana wprost przez EXT_CONFIG. Dołożenie pola do dowolnej tabeli
+// nie wymaga już niczego tutaj i nie da się o tym zapomnieć dla jednej z nich.
+const packExt = (table: string, o: Record<string, unknown>): Record<string, unknown> => {
+  const cfg = EXT_CONFIG[table];
+  const clone = { ...o };
+  if (!cfg) return clone;
+  const ext: Record<string, unknown> = {};
+  for (const f of cfg.fields) {
+    if (f in clone && clone[f] !== undefined) ext[f] = clone[f];
+    delete clone[f];
+  }
+  const host: Record<string, unknown> = { ...((clone[cfg.hostField] as Record<string, unknown>) || {}) };
+  if (Object.keys(ext).length) host.__ext = ext; else delete host.__ext;
+  clone[cfg.hostField] = host;
+  return clone;
+};
+
+const liftExt = (table: string, o: Record<string, unknown>) => {
+  const cfg = EXT_CONFIG[table];
+  if (!cfg) return o;
+  const host = o[cfg.hostField] as Record<string, unknown> | undefined;
   if (host && host.__ext) {
     const ext = host.__ext as Record<string, unknown>;
     for (const k in ext) if (o[k] === undefined || o[k] === null) o[k] = ext[k];
     delete host.__ext;
   }
   return o;
-};
-
-const packObsExt = (o: Record<string, unknown>): Record<string, unknown> => {
-  const clone = { ...o };
-  const ext: Record<string, unknown> = {};
-  for (const f of OBS_EXT_FIELDS) {
-    if (f in clone && clone[f] !== undefined) ext[f] = clone[f];
-    delete clone[f];
-  }
-  const ratings: Record<string, unknown> = { ...((clone.ratings as Record<string, unknown>) || {}) };
-  if (Object.keys(ext).length) ratings.__ext = ext;
-  clone.ratings = ratings;
-  return clone;
 };
 
 const rowFromObj = (obj: Record<string, unknown>): Record<string, unknown> => {
@@ -229,7 +241,7 @@ function nalozKolejke(c: Cache): void {
   // pierwszym odświeżeniu. Czyli dokładnie ta praca, o której panel mówi „nic nie przepadło".
   for (const j of [...getQueue(), ...zablokowaneZadania().map((z) => z.job)]) {
     if (j.kind === "observation") {
-      const obs = liftObsExt(objFromRow(j.row)) as unknown as Observation;
+      const obs = liftExt("sbs_observations", objFromRow(j.row)) as unknown as Observation;
       const i = c.observations.findIndex((o) => o.id === obs.id);
       if (i >= 0) c.observations[i] = obs; else c.observations.push(obs);
     } else if (j.kind === "report") {
@@ -300,8 +312,8 @@ export async function refreshCache(): Promise<Cache> {
   const cache: Cache = {
     players: zTabeli<Player>(players, "zawodnicy", poprzednia.players, objFromRow),
     clubs: zTabeli<Club>(clubs, "kluby", poprzednia.clubs, objFromRow),
-    observations: zTabeli<Observation>(observations, "obserwacje", poprzednia.observations, (r) => liftObsExt(objFromRow(r))),
-    reports: zTabeli<Report>(reports, "raporty", poprzednia.reports, objFromRow),
+    observations: zTabeli<Observation>(observations, "obserwacje", poprzednia.observations, (r) => liftExt("sbs_observations", objFromRow(r))),
+    reports: zTabeli<Report>(reports, "raporty", poprzednia.reports, (r) => liftExt("sbs_reports", objFromRow(r))),
     matches,
     scouts,
     fetchedAt: new Date().toISOString(),
@@ -451,10 +463,25 @@ export const liczbaZablokowanych = () => zablokowaneZadania().length;
 export function ponowZablokowane(): number {
   const z = zablokowaneZadania();
   if (!z.length) return 0;
-  setQueue([...getQueue(), ...z.map((x) => x.job)]);
+  setQueue([...getQueue(), ...z.map((x) => odswiezKsztalt(x.job))]);
   setZablokowane([]);
   void flushQueue();
   return z.length;
+}
+
+// PONOWIENIE MUSI WYSŁAĆ WIERSZ ZBUDOWANY OD NOWA, nie ten sprzed odmowy.
+//
+// Zadanie zapamiętuje gotowy wiersz — taki, jaki poszedł do bazy. Jeśli baza odrzuciła go
+// z powodu pola bez kolumny, to odesłanie tego samego wiersza skończy się identyczną odmową,
+// choćby usterkę dawno naprawiono. Przycisk „spróbuj jeszcze raz" wyglądałby na zepsuty, a w
+// istocie sumiennie powtarzałby błąd.
+//
+// Dlatego rozpakowujemy wiersz z powrotem do postaci obiektu i składamy go BIEŻĄCYMI regułami.
+// Pole, które kiedyś poleciało jako osobna kolumna, trafia teraz tam, gdzie jego miejsce.
+function odswiezKsztalt(job: QueueJob): QueueJob {
+  if (job.kind !== "observation" && job.kind !== "report") return job;
+  const tabela = job.kind === "observation" ? "sbs_observations" : "sbs_reports";
+  return { ...job, row: rowFromObj(packExt(tabela, liftExt(tabela, objFromRow(job.row)))) };
 }
 
 async function runJob(job: QueueJob): Promise<void> {
@@ -537,7 +564,7 @@ export function saveObservation(obs: Observation): void {
     const i = c.observations.findIndex((o) => o.id === obs.id);
     if (i >= 0) c.observations[i] = obs; else c.observations.push(obs);
   });
-  enqueue({ kind: "observation", row: rowFromObj(packObsExt(obs as unknown as Record<string, unknown>)) });
+  enqueue({ kind: "observation", row: rowFromObj(packExt("sbs_observations", obs as unknown as Record<string, unknown>)) });
   void flushQueue();
 }
 
@@ -572,7 +599,7 @@ export function saveReport(rep: Report): void {
     const i = c.reports.findIndex((r) => r.id === rep.id);
     if (i >= 0) c.reports[i] = rep; else c.reports.push(rep);
   });
-  enqueue({ kind: "report", row: rowFromObj(rep as unknown as Record<string, unknown>) });
+  enqueue({ kind: "report", row: rowFromObj(packExt("sbs_reports", rep as unknown as Record<string, unknown>)) });
   void flushQueue();
 }
 
