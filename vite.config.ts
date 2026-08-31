@@ -72,8 +72,13 @@ function friendlyRoutesDevPlugin() {
     name: "friendly-routes-dev",
     configureServer(server) {
       server.middlewares.use((req, _res, next) => {
-        const czysty = (req.url || "").replace(/\/$/, "") || "/";
-        if (TRASY[czysty]) req.url = TRASY[czysty];
+        // Ścieżka BEZ parametrów. Wcześniej porównywaliśmy cały adres, więc „/m?cokolwiek"
+        // nie pasowało do żadnej trasy i lądowało na stronie publicznej zamiast w panelu —
+        // czyli każdy adres panelu z parametrem prowadził w trybie deweloperskim nie tam,
+        // co trzeba, a wdrożona wersja zachowywała się inaczej niż lokalna.
+        const [sciezka, parametry] = (req.url || "").split("?");
+        const czysty = sciezka.replace(/\/$/, "") || "/";
+        if (TRASY[czysty]) req.url = TRASY[czysty] + (parametry ? "?" + parametry : "");
         next();
       });
     },
