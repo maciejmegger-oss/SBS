@@ -4178,7 +4178,8 @@ function viewClubs(){
         ? `<button class="secondary" data-action="lnp-link-grupy" title="Przypisz do tej grupy adres jej rozgrywek na Łączy nas piłka">🔗 Link ŁNP dla grupy${
             (DB.settings.lnpGrupy||{})[clubBrowse.group] ? ' ✔' : ''}</button>
            ${(DB.settings.lnpGrupy||{})[clubBrowse.group]
-             ? `<button class="secondary" data-action="lnp-otworz-grupe" title="Otwiera kolejkę tej grupy na Łączy nas piłka">↗ Otwórz kolejkę w ŁNP</button>` : ''}`
+             ? `<button class="secondary" data-action="lnp-otworz-grupe" title="Otwiera kolejkę tej grupy na Łączy nas piłka">↗ Otwórz kolejkę w ŁNP</button>` : ''}
+           <button class="gold" data-action="protokoly-grupy" title="Wczytaj protokoły zebrane zakładką — jedno wklejenie rozlicza wszystkie kluby tej grupy">📋 Wgraj statystyki z ŁNP</button>`
         : ''}
       ${list.length && clubBrowse.top !== 'Kategorie juniorskie'
         // ODŚWIEŻENIE CAŁEJ LIGI, NIE KLUB PO KLUBIE. Osiemnaście klubów w grupie to osiemnaście
@@ -8789,6 +8790,10 @@ function attachHandlers(){
     if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
     render();
   });
+  main.querySelectorAll('[data-action="protokoly-grupy"]').forEach(b=>b.onclick=()=>openProtokolMeczuModal(null));
+  // Wgrywanie protokołów wprost z widoku grupy — bez wchodzenia w którykolwiek klub. Okno i tak
+  // rozlicza całą grupę naraz, więc wymaganie, żeby najpierw otworzyć czyjąś kartotekę, było
+  // zbędnym krokiem: w CLJ i IV lidze to jedyna droga na statystyki, a stała schowana o klik dalej.
   main.querySelectorAll('[data-action="protokoly-grupy"]').forEach(b=>b.onclick=()=>openProtokolMeczuModal(null));
   main.querySelectorAll('[data-action="lnp-otworz-grupe"]').forEach(b=>b.onclick=()=>{
     otworzKolejkeGrupy(clubBrowse.group);
