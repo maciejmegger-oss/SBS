@@ -64,9 +64,9 @@ const PRZYPADKI = [
   ['MKS PIASECZNO',                'MKS Piaseczno'],
   ['LKS Mazur Karczew',            'Mazur Karczew'],
   ['BKS Hal-Mont Bochnia',         'BKS Hal-Mont Bochnia'],
-  ['GKS LZS Wikielec',             'GKS Wikielec'],
-  ['KKS Granica Kętrzyn',          'Granica Kętrzyn'],
-  ['UKS Naki Olsztyn',             'Naki Olsztyn'],
+  ['GKS LZS Wikielec',             'GKS LZS Wikielec'],
+  ['KKS Granica Kętrzyn',          'KKS Granica Kętrzyn'],
+  ['UKS Naki Olsztyn',             'UKS Naki Olsztyn'],
   // IV liga lubuska, prosto z tabeli LNP
   ['ŁUCZNIK POLNED STRZELCE KRAJ.', 'Łucznik Strzelce Krajeńskie'],
   ['GRUPA CHMIEL POLONIA SŁUBICE',  'Polonia Słubice'],
@@ -87,7 +87,7 @@ const PRZYPADKI = [
   ['MLKS Victoria Sulejówek',      'Victoria Sulejówek'],
 
   // Nazwy wlasne, ktore WYGLADAJA jak skroty — nie wolno ich zamienic.
-  ['Mazur Ełk',                     'Mazur Ełk'],
+  ['Mazur Ełk',                     'MKS Mazur Ełk'],
   ['LKS Mazur Karczew',             'Mazur Karczew'],
   // Tych klubów w bazie NIE MA, a każdy dzieli mocny człon z dokładnie jednym klubem IV ligi.
   // Muszą zostać nierozpoznane — inaczej dorobek całej drużyny trafiłby nie temu klubowi.

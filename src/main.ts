@@ -4547,13 +4547,6 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
           if(!/^https?:\/\//i.test(adres)) return;
           const klub = dopasujKlubDoNazwy(nazwa, grupa, 'IV liga');
           if(!klub){ nierozpoznane.push(nazwa); return; }
-          // ZAŚLEPKA ŁNP TO NIE HERB.
-          //
-          // Gdy związek nie wgrał godła klubu, ŁNP podstawia własną szarą tarczę
-          // („assets/icons/crest_default…"). Zapisana w kartotece wygląda jak herb, który się
-          // wgrał, więc brak prawdziwego godła przestaje być widoczny — a to jedyny sygnał,
-          // że trzeba go dobrać skądinąd.
-          if(/crest_default|crest-default|placeholder/i.test(adres)){ bezHerbu.push(klub.name); return; }
           // NAZWA Z ŁNP JEST TĄ WŁAŚCIWĄ — to z niej lecą protokoły.
           //
           // Każda różnica („LKS Kadłub (k. Strzelec Opolskich)" wobec „LZS Adamietz Kadłub")
@@ -4565,6 +4558,15 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
             klub.name = czytelnaNazwa(nazwa);
             zmienionych++;
           }
+          // ZAŚLEPKA ŁNP TO NIE HERB — ALE NAZWĘ Z TEGO WIERSZA I TAK JUŻ WZIĘLIŚMY.
+          //
+          // Gdy związek nie wgrał godła, ŁNP podstawia własną szarą tarczę
+          // („assets/icons/crest_default…"). Zapisana w kartotece wygląda jak herb, który się
+          // wgrał, więc brak prawdziwego godła przestaje być widoczny — a to jedyny sygnał, że
+          // trzeba go dobrać skądinąd. Sprawdzamy to jednak DOPIERO TERAZ: wcześniej ten warunek
+          // stał wyżej i przerywał pracę nad wierszem, więc klub bez herbu nie dostawał też
+          // poprawionej nazwy — a nazwa jest tu ważniejsza, bo od niej zależy wczytanie statystyk.
+          if(/crest_default|crest-default|placeholder/i.test(adres)){ bezHerbu.push(klub.name); return; }
           if(klub.crestUrl === adres){ juzBylo++; return; }
           klub.crestUrl = adres;
           ustawionych++;
@@ -11431,7 +11433,7 @@ function sprawdzZakladke(nazwa, kod){
 
 // Wersja zakładki. Widnieje w każdym jej komunikacie i w oknie SBS, żeby dało się jednym
 // spojrzeniem stwierdzić, czy w pasku siedzi kod sprzed poprawek.
-const ZAKLADKA_WERSJA = 'v42 z 30.08.2026';
+const ZAKLADKA_WERSJA = 'v43 z 30.08.2026';
 const SBS_ADRES_JS = JSON.stringify(location.origin);
 // ZAKŁADKA W PASKU NIE AKTUALIZUJE SIĘ SAMA — I TO BYŁ PRAWDZIWY PROBLEM.
 //

@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v42 z 30.08.2026";
+var SBS_ZBIERACZ="v43 z 30.08.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
