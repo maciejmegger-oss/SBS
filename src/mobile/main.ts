@@ -1768,7 +1768,12 @@ function viewBaza(): string {
       <!-- Czemu kolejka stoi. Bez tego „W kolejce · 10" znaczy naraz: nie ma sieci, baza śpi,
            token wygasł albo panel po prostu jeszcze nie spróbował — cztery różne rzeczy z czterema
            różnymi rozwiązaniami, nie do odróżnienia z ekranu. -->
-      ${n && bladWysylki ? `<p class="hint" style="margin:4px 0 0; font-family:var(--data); font-size:11.5px;
+      ${/* Warunek jest na SAMEJ TREŚCI, nie na „coś czeka w kolejce". Przy tym drugim powód
+            znikał dokładnie wtedy, gdy był najbardziej potrzebny: po dotknięciu „spróbuj jeszcze
+            raz" zapisy schodziły z kolejki do odstawionych, licznik czekających spadał do zera
+            i wraz z nim gasło jedyne zdanie mówiące, czemu baza odmówiła. Treść kasuje się sama
+            po udanej wysyłce, więc nie ma czego pilnować dodatkowym warunkiem. */""}
+      ${bladWysylki ? `<p class="hint" style="margin:4px 0 0; font-family:var(--data); font-size:11.5px;
         color:var(--bad-fg); word-break:break-word;">${esc(bladWysylki)}</p>` : ""}
       <div class="row" style="margin-top:6px;"><span class="sub">Kopia bazy</span>
         <strong style="font-family:var(--data); font-size:12.5px; color:var(--text-2);">${esc(ostatnia)}</strong></div>
