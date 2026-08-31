@@ -4178,10 +4178,9 @@ function viewClubs(){
         ? `<button class="secondary" data-action="lnp-link-grupy" title="Przypisz do tej grupy adres jej rozgrywek na Łączy nas piłka">🔗 Link ŁNP dla grupy${
             (DB.settings.lnpGrupy||{})[clubBrowse.group] ? ' ✔' : ''}</button>
            ${(DB.settings.lnpGrupy||{})[clubBrowse.group]
-             ? `<button class="secondary" data-action="lnp-otworz-grupe" title="Otwiera kolejkę tej grupy na Łączy nas piłka">↗ Otwórz kolejkę w ŁNP</button>` : ''}
-           <button class="gold" data-action="protokoly-grupy" title="Wczytaj protokoły zebrane zakładką — jedno wklejenie rozlicza wszystkie kluby tej grupy">📋 Wgraj statystyki z ŁNP</button>`
+             ? `<button class="secondary" data-action="lnp-otworz-grupe" title="Otwiera kolejkę tej grupy na Łączy nas piłka">↗ Otwórz kolejkę w ŁNP</button>` : ''}`
         : ''}
-      ${list.length && clubBrowse.top !== 'Kategorie juniorskie'
+      ${list.length
         // ODŚWIEŻENIE CAŁEJ LIGI, NIE KLUB PO KLUBIE. Osiemnaście klubów w grupie to osiemnaście
         // wejść w kartotekę i osiemnaście kliknięć — przy szesnastu grupach IV ligi robota na cały
         // wieczór. Przycisk przechodzi wszystkie kluby z widoku po kolei. IV liga stała tu dotąd
@@ -4193,7 +4192,7 @@ function viewClubs(){
         // szesnastu krzyżyków i wyglądał na usterkę, choć po prostu nie ma tam czego pobrać.
         // Jedyna droga to zakładka z ŁNP, więc pokazujemy wyłącznie ją.
         ? `<button class="gold" data-action="stats-90minut-grupa" title="${
-            clubBrowse.top === 'IV liga' || clubBrowse.top === 'Klasa okręgowa'
+            bezProtokolowNa90minut(clubBrowse.top)
               ? 'Wczytaj protokoły zebrane zakładką z ŁNP — jedno wklejenie rozlicza wszystkie kluby grupy'
               : 'Pobierz i zapisz statystyki wszystkich klubów widocznych na liście — po kolei, jeden po drugim'
           }">⏱ Odśwież statystyki — cały widok (${list.length})</button>`
@@ -8809,7 +8808,7 @@ function attachHandlers(){
     // protokołów zebranych zakładką — jedno wklejenie rozlicza wszystkie kluby grupy naraz,
     // z minutami, golami i kartkami ze wszystkich rozegranych kolejek.
     const poziom = clubBrowse.top;
-    if(poziom === 'IV liga' || poziom === 'Klasa okręgowa'){
+    if(bezProtokolowNa90minut(poziom)){
       // JEDNO KLIKNIĘCIE ROBI TYLE, ILE MOŻE. Przeglądarka nie pozwala nam sięgnąć do cudzej
       // strony z poziomu SBS — to zabezpieczenie, którego nie da się (i nie należy) obchodzić.
       // Otwieramy więc od razu właściwą stronę ŁNP i zostawiamy człowiekowi JEDEN ruch: kliknięcie
