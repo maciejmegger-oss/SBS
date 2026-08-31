@@ -55,6 +55,7 @@ const LS = {
   cache: "sbs-m:cache",          // kopia bazy do pracy offline
   queue: "sbs-m:queue",          // zadania czekające na sieć
   zablokowane: "sbs-m:zablokowane", // zadania ODRZUCONE przez bazę — patrz flushQueue
+  bladWysylki: "sbs-m:blad-wysylki", // czemu kolejka stanęła — patrz flushQueue
   live: "sbs-m:live",            // stan trwającej obserwacji (zdarzenia, zegar)
   archiwum: "sbs-m:zdarzenia",   // zdarzenia zakończonych meczów, wg obserwacji
   scout: "sbs-m:scout",          // ostatnio wybrany scout
@@ -527,6 +528,19 @@ let flushing = false;
 // Teraz: brak zasięgu i inne przejściowe kłopoty nadal wstrzymują wysyłkę (nie ma sensu dobijać
 // się resztą), ale odrzucenie trwałe ODSTAWIAMY NA BOK i idziemy dalej. Nic nie ginie — odstawione
 // zadania czekają razem z treścią błędu, panel je pokazuje, a przycisk wraca je do kolejki.
+// Czemu kolejka stanęła. Zapisane, a nie tylko wypisane w konsoli: kolejka, ktora stoi bez podania
+// powodu, jest nie do odróżnienia od kolejki, ktora o sobie zapomniala — a na telefonie nikt do
+// konsoli nie zajrzy. Ten sam blad popelnilem juz raz przy odrzuceniach trwalych.
+export const ostatniBladWysylki = (): string => {
+  try { return localStorage.getItem(LS.bladWysylki) || ""; } catch { return ""; }
+};
+const zapiszBladWysylki = (tekst: string) => {
+  try {
+    if (tekst) localStorage.setItem(LS.bladWysylki, tekst);
+    else localStorage.removeItem(LS.bladWysylki);
+  } catch { /* tryb prywatny — trudno, zostaje konsola */ }
+};
+
 export async function flushQueue(): Promise<number> {
   if (flushing) return queueLength();
   if (!navigator.onLine) return queueLength();
@@ -534,13 +548,14 @@ export async function flushQueue(): Promise<number> {
   try {
     for (;;) {
       const q = getQueue();
-      if (!q.length) return 0;
+      if (!q.length) { zapiszBladWysylki(""); return 0; }
       const zadanie = q[0];
       try {
         await runJob(zadanie);
       } catch (e) {
         if (!(e instanceof BladBazy)) {
           console.warn("Wysyłka wstrzymana:", (e as Error).message);
+          zapiszBladWysylki(`${zadanie.kind}: ${(e as Error).message || "nieznany błąd"}`);
           return getQueue().length;
         }
         console.warn("Baza odrzuciła zadanie — odstawiam i idę dalej:", (e as Error).message);
