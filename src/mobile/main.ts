@@ -3631,7 +3631,26 @@ async function wymusAktualizacje(): Promise<void> {
   location.reload();
 }
 
+// MECHANIZM OFFLINE TEŻ TRZEBA POPCHNĄĆ.
+//
+// Sprawdzanie /wersja.json mówi tylko, ŻE na serwerze stoi coś nowszego. Nowe pliki i tak nie
+// przyjdą, dopóki przeglądarka nie pobierze nowego sw.js — a robi to przy wejściu na adres panelu.
+// Aplikacja dodana do ekranu głównego bywa trzymana w pamięci telefonu tygodniami: przełączenie
+// się do niej NIE jest wejściem na adres, więc takiego pobrania może nie być ani razu. Panel stoi
+// wtedy na wersji sprzed poprawek, mimo że urządzenie ma pełny zasięg i codziennie jest używane.
+//
+// Prosimy więc wprost o sprawdzenie sw.js przy każdym powrocie do aplikacji. Nowy mechanizm
+// instaluje się od razu (skipWaiting w public/sw.js), a scout dostaje pasek o nowszej wersji.
+function popchnijMechanizmOffline(): void {
+  if (!("serviceWorker" in navigator)) return;
+  navigator.serviceWorker.getRegistration()
+    .then((r) => r?.update())
+    .catch(() => { /* brak mechanizmu offline nie jest błędem — panel działa bez niego */ });
+}
+
 if (import.meta.env.PROD) {
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) popchnijMechanizmOffline(); });
+  window.setInterval(popchnijMechanizmOffline, 15 * 60 * 1000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) void sprawdzWersje(); });
   window.addEventListener("online", () => { void sprawdzWersje(); });
   window.setInterval(() => { void sprawdzWersje(); }, 30 * 60 * 1000);
