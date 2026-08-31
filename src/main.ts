@@ -3484,7 +3484,8 @@ function viewDashboard(){
 
   return `
   <h2 class="view-title">Dashboard</h2>
-  <p class="view-sub">Scout: <select id="kto-jestem" style="font:inherit;padding:2px 6px;border-radius:6px;border:1px solid var(--border-strong);background:var(--card);">
+  <p class="view-sub" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">Scout:
+    <select id="kto-jestem" style="font:inherit;padding:2px 8px;border-radius:6px;border:1px solid var(--border-strong);background:var(--card);width:auto;max-width:260px;">
       ${DB.settings.scouts.length
         ? DB.settings.scouts.map(s=>`<option ${s===currentScout?'selected':''}>${esc(s)}</option>`).join('')
         : '<option value="">— dodaj scoutów w Ustawieniach —</option>'}
@@ -17154,10 +17155,25 @@ function renderLoginScreen(){
   }));
 }
 
+// WYLOGOWANIE NIE PYTA O ZGODĘ — I DLATEGO DZIAŁA.
+//
+// Stało tu `confirm()`, a przeglądarka po serii okienek dialogowych proponuje „nie pokazuj więcej
+// okien tej strony". Kto to zaznaczył (a przy zbieraniu protokołów okienek są dziesiątki), dostawał
+// od `confirm()` odpowiedź „nie" bez żadnego pytania — przycisk wyglądał na zepsuty, choć wykonywał
+// dokładnie to, co mu kazano. Wylogowanie niczego nie kasuje: dane są w bazie, a powrót to jedno
+// zalogowanie. Nie ma więc czego potwierdzać.
+//
+// Odświeżenie strony robimy ZAWSZE, także gdy wylogowanie w bazie się nie powiedzie — inaczej
+// przy zerwanej sieci zostawalibyśmy w systemie z przyciskiem, który nic nie robi.
 async function performLogout(){
-  if(!confirm('Wylogować się z systemu?')) return;
-  await signOut();
-  window.location.reload();
+  try{
+    await signOut();
+  }catch(e){
+    console.error('Wylogowanie:', e);
+  }finally{
+    try{ localStorage.removeItem('sbs-scout'); }catch(e){ /* tryb prywatny */ }
+    window.location.reload();
+  }
 }
 
 // ---------- EKRAN „KONTO CZEKA NA AKCEPTACJĘ" ----------
@@ -17191,10 +17207,8 @@ function renderKontoScreen(konto){
     </div>
   </div></div>`;
 
-  host.querySelectorAll('[data-action="konto-wyloguj"]').forEach(b=>b.onclick=async()=>{
-    await signOut();
-    window.location.reload();
-  });
+  // Ten sam sposób co w panelu — jedna droga wyjścia, żeby nie rozjechały się zachowaniem.
+  host.querySelectorAll('[data-action="konto-wyloguj"]').forEach(b=>b.onclick=()=>performLogout());
   host.querySelectorAll('[data-action="konto-sprawdz"]').forEach(b=>b.onclick=async()=>{
     b.disabled = true; b.textContent = 'Sprawdzam…';
     const swieze = await mojeKonto();
