@@ -464,6 +464,14 @@ export const liczbaZablokowanych = () => zablokowaneZadania().length;
 export function ponowZablokowane(): number {
   const z = zablokowaneZadania();
   if (!z.length) return 0;
+  // TREŚĆ ODMOWY MUSI PRZEŻYĆ PONOWIENIE.
+  //
+  // Dotąd znikała razem z odstawionymi zadaniami: dotknięcie „spróbuj jeszcze raz" kasowało
+  // jedyne miejsce, w którym baza powiedziała, CZEMU odmówiła. Gdy próba kończyła się tak samo,
+  // nie było już czego pokazać ani czym się podeprzeć przy zgłoszeniu — zostawało samo „10
+  // w kolejce". Zapisujemy ją więc jako ostatni powód wstrzymania, dopóki wysyłka nie przejdzie.
+  const powod = z[0]?.blad;
+  if (powod) zapiszBladWysylki(`ostatnia odmowa bazy — ${powod}`);
   setQueue([...getQueue(), ...z.map((x) => odswiezKsztalt(x.job))]);
   setZablokowane([]);
   void flushQueue();
@@ -548,7 +556,16 @@ export async function flushQueue(): Promise<number> {
   try {
     for (;;) {
       const q = getQueue();
-      if (!q.length) { zapiszBladWysylki(""); return 0; }
+      if (!q.length) {
+        // PUSTA KOLEJKA NIE ZNACZY „WSZYSTKO POSZŁO".
+        //
+        // Opróżnić się mogła również dlatego, że każdy zapis został ODSTAWIONY jako odrzucony —
+        // a wtedy skasowanie powodu gasi jedyne zdanie mówiące, czemu baza odmówiła, dokładnie
+        // w chwili, gdy jest najbardziej potrzebne. Powód wolno wyczyścić dopiero wtedy, gdy nic
+        // nie czeka ani w kolejce, ani wśród odstawionych.
+        if (!liczbaZablokowanych()) zapiszBladWysylki("");
+        return 0;
+      }
       const zadanie = q[0];
       try {
         await runJob(zadanie);
