@@ -1597,12 +1597,18 @@ function viewBaza(): string {
         <strong style="font-family:var(--data); font-size:12.5px; color:${cache.matches.length ? "var(--text-2)" : "var(--accent-fg)"};">${cache.matches.length}</strong></div>
       <div class="row" style="margin-top:6px;"><span class="sub">Wersja panelu</span>
         <strong style="font-family:var(--data); font-size:12.5px; color:var(--text-2);">${esc(WERSJA_PANELU)}</strong></div>
+      <!-- Wynik ostatniego pytania o wersję. Bez tego wiersza „nie ma paska o nowszej wersji"
+           znaczy naraz dwie rzeczy: że nowszej nie ma i że nie udało się o nią zapytać. -->
+      <div class="row" style="margin-top:6px;"><span class="sub">Sprawdzenie wersji</span>
+        <strong style="font-family:var(--data); font-size:12px; min-width:0; overflow:hidden; text-overflow:ellipsis;
+                       color:${stanWersji.startsWith("na serwerze") ? "var(--accent-fg)" : stanWersji === "masz najnowszą" ? "var(--good-fg)" : "var(--text-2)"};">${esc(stanWersji)}</strong></div>
       <!-- Konto zostaje tu jako INFORMACJA, nie przycisk (wylogowanie przeniosło się na ekran
            obserwacji). Bez niego zalogowanie się w telefonie innym kontem niż na komputerze daje
            pustą bazę bez jednej wskazówki, skąd się wzięła. -->
       <div class="row" style="margin-top:6px;"><span class="sub">Konto</span>
         <strong style="font-family:var(--data); font-size:12.5px; color:var(--text-2); min-width:0; overflow:hidden; text-overflow:ellipsis;">${esc(kontoEmail || "—")}</strong></div>
       <button class="btn ghost" data-act="refresh">Odśwież kopię bazy</button>
+      <button class="btn ghost" data-act="sprawdz-wersje">Sprawdź, czy jest nowsza wersja</button>
       ${n ? '<button class="btn ghost" data-act="flush">Wyślij teraz</button>' : ""}
     </div>
 
@@ -2803,6 +2809,11 @@ document.addEventListener("click", (e) => {
     case "refresh":
       void odswiezKopie();
       break;
+    case "sprawdz-wersje":
+      toast("Pytam serwer…");
+      void sprawdzWersje(false);
+      break;
+
     case "ponow-zablokowane": {
       const ile = ponowZablokowane();
       refreshSyncPill();
@@ -3241,19 +3252,34 @@ if (import.meta.env.PROD && "serviceWorker" in navigator) {
 // czego instalować, zdarzenie „zmiana kontrolera" nie padało nigdy i pasek się nie pokazywał.
 // Skutek dla scouta: wdrożona poprawka nie docierała do telefonu tygodniami, a jedynym ratunkiem
 // było ubicie aplikacji z przełącznika — o czym nikt nie ma prawa wiedzieć.
-async function sprawdzWersje(): Promise<void> {
-  if (nowaWersja || !navigator.onLine) return;
+// Co odpowiedział serwer przy ostatnim pytaniu o wersję. Pokazujemy to w Ustawieniach.
+//
+// Pierwsza wersja tej funkcji łykała KAŻDE niepowodzenie po cichu — i doprowadziła dokładnie do
+// sytuacji, dla której powstała: panel chodził na wersji sprzed poprawki, pasek o nowszej się nie
+// pokazał, a jedynym sposobem sprawdzenia, czy sprawdzanie w ogóle działa, było zgadywanie.
+// Narzędzie do diagnozy, które ukrywa własną diagnozę, jest gorsze niż jego brak.
+let stanWersji = "jeszcze nie pytałem";
+
+async function sprawdzWersje(cicho = true): Promise<void> {
+  if (!navigator.onLine) { stanWersji = "brak sieci"; return; }
   try {
-    const odp = await fetch("/wersja.json", { cache: "no-store" });
-    if (!odp.ok) return;
+    // Znacznik czasu w adresie dokłada się do nagłówka no-store: pośrednik po drodze (CDN, sieć
+    // operatora) potrafi zignorować nagłówek, ale nie potrafi zignorować innego adresu.
+    const odp = await fetch("/wersja.json?t=" + Date.now(), { cache: "no-store" });
+    if (!odp.ok) { stanWersji = "serwer odpowiedział " + odp.status; return; }
     const { wersja } = (await odp.json()) as { wersja?: string };
-    if (!wersja || wersja === WERSJA_PANELU) return;
+    if (!wersja) { stanWersji = "serwer nie podał wersji"; return; }
+    if (wersja === WERSJA_PANELU) { stanWersji = "masz najnowszą"; return; }
+    stanWersji = "na serwerze: " + wersja;
+    if (nowaWersja) return;
     nowaWersja = true;
     // Sam pasek, bez przeładowania: decyzję zostawiamy scoutowi, bo w trakcie meczu
     // przeładowanie strony to sekundy, w których nie da się nic zarejestrować.
     if (zalogowany) render();
-  } catch {
-    /* brak sieci albo pliku (wersja robocza) — spróbujemy przy następnym powrocie do panelu */
+  } catch (e) {
+    stanWersji = "nie udało się zapytać: " + ((e as Error).message || "nieznany błąd");
+  } finally {
+    if (!cicho) { render(); }
   }
 }
 
