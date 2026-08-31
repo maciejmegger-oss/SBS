@@ -11,7 +11,7 @@
 // Podniesiona wersja czyści starą pamięć przy pierwszym uruchomieniu po wdrożeniu (activate
 // kasuje wszystkie klucze poza bieżącym). Konieczne przy zmianie adresów: pod "/m" mogła zostać
 // zapisana strona z czasów, gdy aplikacja na komputerze stała pod adresem głównym.
-const CACHE = "sbs-live-v5";
+const CACHE = "sbs-live-v6";
 
 self.addEventListener("install", (e) => {
   // Panel ma działać od razu po pierwszym wejściu, bez odświeżania strony.

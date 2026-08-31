@@ -1767,6 +1767,13 @@ function viewBaza(): string {
         <strong style="font-family:var(--data); font-size:12.5px; color:var(--text-2); min-width:0; overflow:hidden; text-overflow:ellipsis;">${esc(kontoEmail || "—")}</strong></div>
       <button class="btn ghost" data-act="refresh">Odśwież kopię bazy</button>
       <button class="btn ghost" data-act="sprawdz-wersje">Sprawdź, czy jest nowsza wersja</button>
+      <!-- WYJŚCIE AWARYJNE, dostępne ZAWSZE — nie tylko wtedy, gdy panel sam wykrył nowszą wersję.
+           Zdarzyło się dokładnie odwrotnie: wdrożona poprawka nie docierała do telefonu, a jedyny
+           przycisk, który mógł to naprawić, pokazywał się wyłącznie po wykryciu — czyli wtedy,
+           gdy problem już nie istniał. -->
+      <button class="btn ghost" data-act="wymus-aktualizacje">Wymuś pobranie najnowszej wersji</button>
+      <p class="hint" style="margin-top:6px;">Czyści zapisane pliki aplikacji i pobiera ją od nowa.
+      Obserwacje, trwający mecz i kolejka wysyłki zostają nietknięte.</p>
       ${n ? '<button class="btn ghost" data-act="flush">Wyślij teraz</button>' : ""}
     </div>
 
@@ -2708,7 +2715,13 @@ document.addEventListener("click", (e) => {
     // Przeładowanie robimy WYŁĄCZNIE na wyraźne dotknięcie, nigdy samo z siebie: w trakcie meczu
     // strona przeładowana bez pytania to sekundy, w których nie da się nic zarejestrować.
     // Stan meczu i kolejka wysyłki leżą w pamięci telefonu, więc samo przeładowanie nic nie gubi.
-    case "wczytaj-wersje": location.reload(); break;
+    //
+    // Nie samo location.reload(): to pod nim wdrożone poprawki potrafiły nie dotrzeć do telefonu.
+    // Patrz wymusAktualizacje().
+    case "wczytaj-wersje":
+    case "wymus-aktualizacje":
+      void wymusAktualizacje();
+      break;
 
     // Instrukcja dodania ikony stoi w Ustawieniach — przewijamy wprost do niej, żeby nie kazać
     // jej szukać wzrokiem po całym ekranie.
@@ -3575,6 +3588,47 @@ async function sprawdzWersje(cicho = true): Promise<void> {
   } finally {
     if (!cicho) { render(); }
   }
+}
+
+// WYMUSZONE POBRANIE NAJNOWSZEJ WERSJI.
+//
+// Samo przeładowanie strony NIE WYSTARCZA i to była prawdziwa przyczyna tego, że wdrożone
+// poprawki nie docierały do telefonu. Nad panelem stoją dwie warstwy pamięci: mechanizm offline
+// (public/sw.js) i zwykła pamięć przeglądarki. Po przeładowaniu potrafią obie zgodnie podać
+// dokładnie to samo, co przed — a na telefonie z aplikacją dodaną do ekranu głównego widać to
+// najostrzej, bo tam nie ma paska adresu ani żadnego „odśwież bez pamięci".
+//
+// Skutek jest najgorszy z możliwych: scout odświeża, widzi tę samą wersję i nie ma jak odróżnić
+// „poprawka nie działa" od „poprawka do mnie nie dotarła". Traci czas na opisywanie błędu, który
+// dawno naprawiono.
+//
+// Dlatego przed przeładowaniem sprzątamy jedno i drugie: kasujemy zapisane pliki aplikacji
+// i wyrejestrowujemy mechanizm offline. Zarejestruje się z powrotem sam, przy najbliższym
+// uruchomieniu — praca bez zasięgu wraca po pierwszym wejściu z siecią.
+//
+// DANE SĄ BEZPIECZNE. Obserwacje, stan trwającego meczu i kolejka wysyłki leżą w pamięci telefonu
+// (localStorage), której to w ogóle nie dotyka. Kasujemy wyłącznie pliki samej aplikacji.
+async function wymusAktualizacje(): Promise<void> {
+  toast("Pobieram najnowszą wersję…");
+  try {
+    if ("caches" in window) {
+      await Promise.all((await caches.keys()).map((k) => caches.delete(k)));
+    }
+    if ("serviceWorker" in navigator) {
+      const rejestracje = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(rejestracje.map((r) => r.unregister()));
+    }
+  } catch (e) {
+    // Nieudane sprzątanie nie może zablokować przeładowania: gorzej niż stara wersja jest tylko
+    // stara wersja, której nie da się nawet spróbować odświeżyć.
+    console.warn("Nie udało się wyczyścić pamięci aplikacji:", e);
+  }
+  // Zwykłe przeładowanie, BEZ znacznika czasu w adresie. Adres panelu jest wysyłany z nagłówkiem
+  // „no-store" (patrz vercel.json), więc pamięć przeglądarki i tak go nie trzyma — a doklejony
+  // parametr niósł własne ryzyko: to od niego zależałoby, czy przepisanie adresu „/m" na stronę
+  // panelu w ogóle zadziała. Prawdziwą przyczyną było sprzątnięte wyżej: zapisana kopia strony
+  // w mechanizmie offline.
+  location.reload();
 }
 
 if (import.meta.env.PROD) {
