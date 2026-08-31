@@ -700,11 +700,29 @@ textarea{resize:vertical; min-height:84px;}
 
 /* Pasek „Tagujesz" — przewijany poziomo, bo wyróżnionych bywa kilkunastu, a zawijanie ich
    w wiersze zepchnęłoby kafle zdarzeń poza ekran. */
+/* PASEK WYRÓŻNIONYCH PRZYKLEJONY DO GÓRY.
+   Ekran zdarzeń ma teraz trzy piętra: kafle do tagowania, panel oceny wskazanego zawodnika
+   i oś zdarzeń. Razem znacznie więcej, niż mieści telefon — a nazwisko rozstrzyga, kogo dotyczy
+   JEDNO I DRUGIE. Bez przyklejenia trzeba by wracać na samą górę przy każdej zmianie zawodnika,
+   czyli po każdej akcji na boisku. Ujemne marginesy rozciągają tło na całą szerokość, żeby
+   przewijana treść nie prześwitywała spod paska. */
+.tagujesz-strefa{
+  /* top:-10px, a nie 0: przyklejenie liczy się od PADDING-BOXA przewijanej treści, a <main> ma
+     u góry 10 px odstępu. Przy top:0 zostawała nad paskiem dziesięciopikselowa szczelina, przez
+     którą przejeżdżała przewijana treść — widać było wjeżdżający pod spód róg przycisku.
+     Ujemne przyklejenie wsuwa tło w tę szczelinę, a własny padding oddaje zawartości jej miejsce. */
+  position:sticky; top:-10px; z-index:5;
+  margin:0 -14px; padding:10px 14px 0;
+  background:var(--bg);
+}
 .tagujesz{
   display:flex; gap:7px; overflow-x:auto; padding-bottom:6px; margin-bottom:8px;
   scrollbar-width:none;
 }
 .tagujesz::-webkit-scrollbar{display:none;}
+/* Przewijanie do panelu oceny musi się zatrzymać POD przyklejonym paskiem, a nie za nim —
+   inaczej pasek zasłania nagłówek z nazwiskiem, czyli jedyną informację o tym, kogo się ocenia. */
+#panel-oceny{scroll-margin-top:92px;}
 .tagujesz .chip{flex-shrink:0; padding:10px 13px;}
 .tagujesz .chip.wybrany{background:var(--accent); border-color:var(--accent); color:var(--accent-ink);}
 

@@ -850,10 +850,15 @@ function viewLive(): string {
     ${/* PANEL OCENY POD KAFLAMI — dla zawodnika wskazanego w pasku „Tagujesz".
           Kafle rejestrują, CO się stało; ten panel ocenia, JAK zawodnik gra. To jedna praca
           o jednym człowieku, robiona naprzemiennie przez dziewięćdziesiąt minut, więc jest
-          na jednym ekranie: dotknięcie nazwiska u góry przełącza i tagowanie, i ocenianie. */""}
+          na jednym ekranie: dotknięcie nazwiska u góry przełącza i tagowanie, i ocenianie.
+
+          Trzynaście skal nie zmieści się nad kaflami, a kafle muszą zostać pod kciukiem — więc
+          panel stoi NIŻEJ, poza pierwszym ekranem. Dlatego dotknięcie nazwiska go tu przewija
+          (patrz „taguj-kogo"): bez tego zmiana zachodziłaby siedemset pikseli niżej i wyglądałaby
+          na to, że dotknięcie nic nie zrobiło. */""}
     ${(() => {
       const dane = ocenianyTeraz();
-      return dane ? viewOcenaZawodnika(dane.z, true) : "";
+      return dane ? `<div id="panel-oceny">${viewOcenaZawodnika(dane.z, true)}</div>` : "";
     })()}
 
     <div class="row" style="margin-bottom:6px; margin-top:16px;">
@@ -1418,12 +1423,17 @@ function pasekZawodnikow(): string {
     return '<p class="hint">Wyróżnij zawodników w zakładce Składy, a pojawią się tutaj — wtedy zdarzenia przypiszesz konkretnej osobie.</p>';
   }
   const wybrany = live?.wybranyZawodnik || "";
+  // Pasek zostaje przyklejony do góry ekranu (patrz .tagujesz-strefa w arkuszu): nazwisko
+  // rozstrzyga, kogo dotyczą i kafle, i oceny, więc musi być pod ręką z każdego miejsca
+  // przewijanej strony, a nie tylko z jej początku.
   return `
-    <span class="label">Tagujesz</span>
-    <div class="tagujesz">
-      <button class="chip ${wybrany ? "" : "wybrany"}" data-act="taguj-kogo" data-v="" aria-pressed="${!wybrany}">Zespół</button>
-      ${lista.map((z) => `
-        <button class="chip ${wybrany === z.klucz ? "wybrany" : ""}" data-act="taguj-kogo" data-v="${esc(z.klucz)}" aria-pressed="${wybrany === z.klucz}">${esc(z.etykieta)}</button>`).join("")}
+    <div class="tagujesz-strefa">
+      <span class="label">Tagujesz i oceniasz</span>
+      <div class="tagujesz">
+        <button class="chip ${wybrany ? "" : "wybrany"}" data-act="taguj-kogo" data-v="" aria-pressed="${!wybrany}">Zespół</button>
+        ${lista.map((z) => `
+          <button class="chip ${wybrany === z.klucz ? "wybrany" : ""}" data-act="taguj-kogo" data-v="${esc(z.klucz)}" aria-pressed="${wybrany === z.klucz}">${esc(z.etykieta)}</button>`).join("")}
+      </div>
     </div>`;
 }
 
@@ -2733,6 +2743,15 @@ document.addEventListener("click", (e) => {
       live.wybranyZawodnik = v || undefined;
       setLive(live);
       render();
+      // PANEL OCENY MA BYĆ WIDOCZNY, nie tylko obecny.
+      //
+      // Trzynaście skal nie mieści się nad kaflami, więc panel stoi pod nimi — poza pierwszym
+      // ekranem. Bez tego przewinięcia dotknięcie nazwiska wyglądało dokładnie tak, jakby nic nie
+      // zrobiło: zaznaczał się kafelek i tyle, a cała zmiana zachodziła siedemset pikseli niżej.
+      // Kafle zostają jedno machnięcie palcem wyżej, więc tagowanie na tym nie traci.
+      if (live.wybranyZawodnik) {
+        $("panel-oceny")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
       break;
     // Przejście między zakładkami zamyka panel oceny otwarty z planszy — po powrocie do Składów
     // ma być plansza, a nie zawodnik, którego oglądało się kwadrans temu.
