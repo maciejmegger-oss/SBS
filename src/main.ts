@@ -45,6 +45,8 @@ let viewingRocznikGroup = null;
 let rankingLeague = null;
 let rankingFormationFilter = ''; // '' = wszystkie systemy; inaczej jedna z wartości FORMATIONS
 let positionMapAssignments = {}; // { "league|||number": [playerId, ...] up to 6 }
+// Radar mlodziezy: kogo juz przejrzalismy. { playerId: 'YYYY-MM-DD' } — data pierwszego przejrzenia.
+let radarPrzejrzane = {};
 let editingClubId = null;
 let clubBrowse = {top:"", group:""};
 let dashboardLeagueSelected = null;
@@ -1826,7 +1828,7 @@ async function loadAllInner(){
     }
   };
 
-  const [p, c, o, rp, tl, ct, mt, ag, agt, pmaRow, s,
+  const [p, c, o, rp, tl, ct, mt, ag, agt, pmaRow, radarRow, s,
     seedFlag, enrichFlag, enrichAviaFlag, enrichGornikFlag, enrichAviaV2Flag, recoMigrationFlag, statusMigrationFlag] = await Promise.all([
     czytaj('scouting:players'),
     czytaj('scouting:clubs'),
@@ -1838,6 +1840,7 @@ async function loadAllInner(){
     czytaj('scouting:agencies'),
     czytaj('scouting:agents'),
     czytaj('scouting:position_map_assignments'),
+    czytaj('scouting:radar_przejrzane'),
     // Ustawienia to jedyny wiersz, który zapis NADPISUJE w całości (logotypy lig, lista scoutów).
     // Nieudany odczyt musi być więc widoczny, inaczej pierwszy zapis ustawień skasowałby logotypy.
     czytaj('scouting:settings'),
@@ -1865,6 +1868,7 @@ async function loadAllInner(){
   try{ DB.agencies = ag ? JSON.parse(ag.value) : []; }catch(e){ DB.agencies = []; }
   try{ DB.agents = agt ? JSON.parse(agt.value) : []; }catch(e){ DB.agents = []; }
   try{ positionMapAssignments = pmaRow ? JSON.parse(pmaRow.value) : {}; }catch(e){ positionMapAssignments = {}; }
+  try{ radarPrzejrzane = radarRow ? JSON.parse(radarRow.value) : {}; }catch(e){ radarPrzejrzane = {}; }
   try{
     const loaded = s ? JSON.parse(s.value) : {};
     DB.settings = Object.assign(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), loaded);
@@ -2333,6 +2337,7 @@ async function refreshStatsInBackground(){
 }
 async function saveSettings(){ return robustStorageSet('scouting:settings', JSON.stringify(DB.settings)); }
 async function savePositionMapAssignments(){ return robustStorageSet('scouting:position_map_assignments', JSON.stringify(positionMapAssignments)); }
+async function saveRadarPrzejrzane(){ return robustStorageSet('scouting:radar_przejrzane', JSON.stringify(radarPrzejrzane)); }
 
 // JAWNE, punktowe usunięcie jednego rekordu z bazy. Zapisy (save*) NIGDY nie kasują — kasujemy tylko
 // tutaj, gdy użytkownik świadomie kliknie "usuń". Ponawiamy do 3 razy; przy porażce pokazujemy baner
@@ -2854,6 +2859,7 @@ const NAV_ITEMS = [
   {id:"newobs", label:"Plan Obserwacji"},
   {id:"reports", label:"Raporty"},
   {id:"monitoring", label:"Monitoring"},
+  {id:"radar", label:"Radar młodzieży"},
   {id:"ranking", label:"Ranking"},
   {id:"talent", label:"Talent"},
   {id:"committee", label:"Scout Transfer"},
@@ -2864,7 +2870,7 @@ const NAV_ITEMS = [
 const SAVE_FN_BY_KEY = {
   'scouting:players': ()=>savePlayers(), 'scouting:clubs': ()=>saveClubs(), 'scouting:observations': ()=>saveObservations(),
   'scouting:reports': ()=>saveReports(), 'scouting:talents': ()=>saveTalents(), 'scouting:contacts': ()=>saveContacts(),
-  'scouting:settings': ()=>saveSettings(), 'scouting:position_map_assignments': ()=>savePositionMapAssignments(),
+  'scouting:settings': ()=>saveSettings(), 'scouting:position_map_assignments': ()=>savePositionMapAssignments(), 'scouting:radar_przejrzane': ()=>saveRadarPrzejrzane(),
   'scouting:agencies': ()=>saveAgencies(), 'scouting:agents': ()=>saveAgents(),
   'scouting:agency_logos': ()=>saveAgencyLogos(),
 };
@@ -2992,6 +2998,7 @@ function render(){
   else if(currentView==="observedlist") main.innerHTML = viewObservedList();
   else if(currentView==="monitoring") main.innerHTML = viewMonitoring();
   else if(currentView==="committee") main.innerHTML = viewTransferCommittee();
+  else if(currentView==="radar") main.innerHTML = viewRadarMlodziezy();
   else if(currentView==="ranking") main.innerHTML = viewRanking();
   else if(currentView==="reports") main.innerHTML = viewReports();
   else if(currentView==="talent") main.innerHTML = viewTalent();
@@ -7592,6 +7599,106 @@ function openPlayerAnalysisModal(playerId){
   document.body.appendChild(overlay);
 }
 
+// ---------- RADAR MŁODZIEŻY ----------
+//
+// NAJWCZEŚNIEJSZY PUBLICZNY SYGNAŁ W KARIERZE ZAWODNIKA to moment, w którym jego nazwisko po raz
+// pierwszy trafia do protokołu seniorskiego. Dzieje się to miesiące przed tym, zanim ktokolwiek
+// nakręci o nim materiał wideo, i o wiele wcześniej, niż zauważy go serwis transferowy. My te
+// protokoły zbieramy co tydzień — z szesnastu grup IV ligi i z CLJ, czyli stamtąd, skąd nikt
+// inny danych nie ma. Ten widok zamienia to pokrycie w przewagę czasową.
+//
+// DLACZEGO PORÓWNANIE STANU, A NIE DATA MECZU: protokoły z ŁNP nie niosą daty spotkania (sprawdzone
+// — z 10 755 wpisów przebiegu daty mają wyłącznie te z 90minut). Wykrywanie debiutu po dacie
+// działałoby więc dla Ekstraklasy, a milczało dokładnie tam, gdzie mamy przewagę. Zamiast tego
+// zapamiętujemy, kogo już przejrzałeś, i pokazujemy różnicę — to działa niezależnie od tego, czy
+// źródło podaje datę.
+const RADAR_POZIOMY = ['Ekstraklasa','I liga','II liga','III liga','IV liga','CLJ U19','CLJ U17'];
+
+function radarPoziom(liga){
+  const l = String(liga || '');
+  return RADAR_POZIOMY.find(p => l === p || l.startsWith(p + ',') || l.startsWith(p + ' (') || l.startsWith(p + ' gr.')) || '';
+}
+
+// Kto liczy się jako młodzieżowiec: rocznik 2006 i młodszy albo znacznik „(M)" z protokołu PZPN.
+// Protokół jest tu źródłem pewniejszym niż rocznik, bo w IV lidze rocznika często nie ma skąd wziąć.
+function radarMlodziezowiec(p){
+  const rocznik = Number(p.birthYear || 0);
+  return (rocznik && rocznik >= ROCZNIK_MLODZIEZOWCA) || p.mlodziezowiec === true;
+}
+
+function radarKandydaci(){
+  return DB.players
+    .map(p=>({ p, liga: clubLeague(p.clubId), minuty: Number(p.minutes || 0) }))
+    .filter(x=>x.minuty > 0 && radarMlodziezowiec(x.p) && radarPoziom(x.liga))
+    .map(x=>({ ...x, poziom: radarPoziom(x.liga) }));
+}
+
+function viewRadarMlodziezy(){
+  const wszyscy = radarKandydaci();
+  const nowi = wszyscy.filter(x=>!radarPrzejrzane[x.p.id]);
+  const pierwszeUruchomienie = Object.keys(radarPrzejrzane).length === 0;
+
+  const kolejnosc = (poziom)=> RADAR_POZIOMY.indexOf(poziom);
+  nowi.sort((a,b)=> kolejnosc(a.poziom) - kolejnosc(b.poziom) || b.minuty - a.minuty);
+
+  const wgPoziomu = {};
+  nowi.forEach(x=>{ wgPoziomu[x.poziom] = (wgPoziomu[x.poziom] || 0) + 1; });
+
+  const naglowek = `
+  <h2 class="view-title">Radar młodzieży</h2>
+  <p class="view-sub">Młodzieżowcy, którzy pojawili się w protokołach od Twojego ostatniego przeglądu.
+    Zbieramy protokoły z IV ligi i CLJ — czyli stamtąd, skąd nie ma ich żaden komercyjny serwis.
+    Nazwisko trafia tu <strong>zanim</strong> pojawi się gdziekolwiek indziej.</p>`;
+
+  if(pierwszeUruchomienie){
+    return `${naglowek}
+    <div class="card">
+      <h4 style="margin-top:0;color:var(--heading);">Najpierw punkt odniesienia</h4>
+      <p class="note">W bazie jest <strong>${wszyscy.length}</strong> młodzieżowców z rozegranymi minutami
+        (Ekstraklasa – IV liga oraz CLJ). Wszyscy są dla radaru „nowi", bo nigdy jeszcze nie zaznaczyłeś,
+        że ich przejrzałeś — a to nie byłaby użyteczna lista.</p>
+      <p class="note">Kliknij poniżej, żeby uznać dzisiejszy stan za punkt wyjścia. Od następnego zbierania
+        protokołów radar pokaże <strong>wyłącznie nazwiska, których wcześniej nie było</strong>.</p>
+      <button class="gold" data-action="radar-punkt-odniesienia">Ustaw dzisiejszy stan jako punkt odniesienia (${wszyscy.length})</button>
+    </div>`;
+  }
+
+  if(!nowi.length){
+    return `${naglowek}
+    <div class="card"><div class="empty">Od ostatniego przeglądu nie pojawił się nikt nowy.
+      Przejrzanych do tej pory: <strong>${Object.keys(radarPrzejrzane).length}</strong>.</div></div>`;
+  }
+
+  const wiersze = nowi.map(x=>{
+    const p = x.p;
+    const klub = DB.clubs.find(c=>c.id === p.clubId);
+    return `<tr data-action="view-player" data-id="${p.id}" style="cursor:pointer;">
+      <td><span class="badge new">${esc(x.poziom)}</span></td>
+      <td><strong>${esc((p.firstName||'') + ' ' + (p.lastName||''))}</strong></td>
+      <td>${p.birthYear ? esc(String(p.birthYear)) : '<span class="meta">—</span>'}</td>
+      <td>${esc(klub ? klub.name : '—')}</td>
+      <td>${esc(p.position || '—')}</td>
+      <td style="text-align:right;"><strong>${x.minuty}</strong></td>
+      <td style="text-align:right;">${p.matches != null ? p.matches : '—'}</td>
+    </tr>`;
+  }).join('');
+
+  return `${naglowek}
+  <div class="toolbar" style="margin-bottom:10px;">
+    <div class="note">Nowych nazwisk: <strong>${nowi.length}</strong>
+      &middot; ${Object.entries(wgPoziomu).sort((a,b)=>kolejnosc(a[0])-kolejnosc(b[0])).map(([l,n])=>`${esc(l)}: ${n}`).join(' &middot; ')}</div>
+    <button class="gold" data-action="radar-przejrzane">Oznacz wszystkich jako przejrzanych (${nowi.length})</button>
+  </div>
+  <div class="card" style="padding:0;overflow:auto;">
+    <table>
+      <thead><tr><th>Poziom</th><th>Zawodnik</th><th>Rocznik</th><th>Klub</th><th>Pozycja</th><th style="text-align:right;">Minuty</th><th style="text-align:right;">Mecze</th></tr></thead>
+      <tbody>${wiersze}</tbody>
+    </table>
+  </div>
+  <p class="note" style="margin-top:8px;">Kliknij wiersz, aby otworzyć profil. „Oznacz jako przejrzanych"
+    czyści listę — zawodnicy zostają w bazie, znikają tylko z radaru.</p>`;
+}
+
 const MONITORING_STATUSES = ['Do Obserwacji','Na Testy','Do transferu','Z polecenia'];
 function viewMonitoring(){
   // Pokazuj zawodników dodanych ręcznie ORAZ tych z decyzją statusu z raportu (pierwsze cztery opcje).
@@ -8815,6 +8922,15 @@ function attachHandlers(){
   // rozlicza całą grupę naraz, więc wymaganie, żeby najpierw otworzyć czyjąś kartotekę, było
   // zbędnym krokiem: w CLJ i IV lidze to jedyna droga na statystyki, a stała schowana o klik dalej.
   main.querySelectorAll('[data-action="protokoly-grupy"]').forEach(b=>b.onclick=()=>openProtokolMeczuModal(null));
+  // Radar młodzieży: oznaczanie przejrzanych. Datę zapisujemy, bo to ona pozwoli później
+  // odpowiedzieć na pytanie „kiedy zobaczyliśmy go po raz pierwszy" — czyli zmierzyć wyprzedzenie.
+  main.querySelectorAll('[data-action="radar-przejrzane"], [data-action="radar-punkt-odniesienia"]').forEach(b=>b.onclick=async()=>{
+    const dzis = new Date().toISOString().slice(0,10);
+    radarKandydaci().forEach(x=>{ if(!radarPrzejrzane[x.p.id]) radarPrzejrzane[x.p.id] = dzis; });
+    const ok = await saveRadarPrzejrzane();
+    if(!ok) alert('Nie udało się zapisać. Sprawdź baner u góry strony — lista radaru została bez zmian.');
+    render();
+  });
   main.querySelectorAll('[data-action="lnp-otworz-grupe"]').forEach(b=>b.onclick=()=>{
     otworzKolejkeGrupy(clubBrowse.group);
   });
