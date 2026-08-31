@@ -3704,6 +3704,78 @@ function wyroznieniaHtml(p){
   </div>`;
 }
 
+// UZUPEŁNIENIE PROFILU Z TRANSFERMARKTU — po adresie, bez przepisywania.
+//
+// Wzrost, noga, agent, koniec umowy, wartość rynkowa i zdjęcie nie pojawiają się w polskich
+// protokołach; przepisywało się je ręcznie z otwartej obok karty. Przy kilkuset zawodnikach to
+// godziny pracy nad czymś, co stoi gotowe pod adresem, który i tak mamy w kartotece.
+//
+// NIE NADPISUJEMY TEGO, CO JUŻ WPISAŁEŚ. Uzupełniamy wyłącznie puste pola — poza zdjęciem
+// i wartością rynkową, które są odzwierciedleniem stanu na TM i mają się odświeżać. Statystyk
+// nie ruszamy w ogóle: te liczymy z protokołów związkowych, a nie z Transfermarktu.
+async function odswiezZTransfermarktu(playerId, przycisk){
+  const p = DB.players.find(x=>x.id===playerId);
+  if(!p) return;
+  const adres = String(p.profileTm||'').trim();
+  if(!adres){ alert('Ten zawodnik nie ma zapisanego adresu profilu na Transfermarkcie.'); return; }
+
+  const napis = przycisk ? przycisk.textContent : '';
+  if(przycisk){ przycisk.disabled = true; przycisk.textContent = 'Pobieram…'; }
+  try{
+    const odp = await fetch('/api/transfermarkt?url=' + encodeURIComponent(adres));
+    const d = await odp.json();
+    if(!odp.ok || d.error){
+      alert('Nie udało się pobrać profilu: ' + (d.error || ('kod ' + odp.status))
+        + (d.podpowiedz ? '\n\n' + d.podpowiedz : ''));
+      return;
+    }
+
+    const zmiany = [];
+    const ustawGdyPuste = (pole, wartosc, etykieta)=>{
+      if(wartosc == null || wartosc === '') return;
+      if(p[pole] != null && String(p[pole]).trim() !== '') return;
+      p[pole] = wartosc;
+      zmiany.push(`${etykieta}: ${wartosc}`);
+    };
+    ustawGdyPuste('height', d.wzrostCm, 'wzrost');
+    ustawGdyPuste('foot', d.noga, 'noga');
+    ustawGdyPuste('position', d.pozycja, 'pozycja');
+    ustawGdyPuste('nationality', d.narodowosc, 'narodowość');
+    ustawGdyPuste('birthDate', d.dataUrodzenia, 'data urodzenia');
+    if(d.dataUrodzenia && !p.birthYear) p.birthYear = String(d.dataUrodzenia).slice(0,4);
+    if(d.menadzer && !String(p.agencyName||'').trim()){
+      p.hasAgent = true; p.agencyName = d.menadzer;
+      zmiany.push('agent: ' + d.menadzer);
+    }
+    if(d.umowaDo && !String(p.contractUntil||'').trim()){
+      p.hasContract = true; p.contractUntil = d.umowaDo;
+      zmiany.push('umowa do: ' + d.umowaDo);
+    }
+    // Wartość rynkowa i zdjęcie ODŚWIEŻAMY zawsze — jedno i drugie zmienia się na TM, a kartoteka
+    // ma pokazywać stan bieżący, nie ten sprzed roku.
+    if(d.wartoscRynkowa){
+      const notatka = `Transfermarkt — narodowość: ${d.narodowosc || '—'}, wartość rynkowa: ${d.wartoscRynkowa}.`;
+      if(p.notes !== notatka){ p.notes = notatka; zmiany.push('wartość rynkowa: ' + d.wartoscRynkowa); }
+    }
+    if(d.zdjecie && p.photoUrl !== d.zdjecie){
+      p.photoUrl = d.zdjecie;
+      zmiany.push('zdjęcie');
+    }
+
+    const ok = await savePlayerOne(p);
+    if(!ok){ alert('Pobrałem dane, ale nie udało się ich zapisać. Sprawdź baner u góry strony.'); return; }
+    render();
+    alert(zmiany.length
+      ? `Uzupełniłem z Transfermarktu:\n\n${zmiany.join('\n')}\n\nPola, które już były wypełnione, zostawiłem bez zmian.`
+      : 'Profil był już kompletny — nic nie wymagało uzupełnienia.');
+  }catch(e){
+    console.error('Transfermarkt:', e);
+    alert('Nie udało się pobrać profilu: ' + ((e && e.message) || e));
+  }finally{
+    if(przycisk){ przycisk.disabled = false; przycisk.textContent = napis; }
+  }
+}
+
 function viewPlayerDetail(id){
   const p = DB.players.find(x=>x.id===id);
   if(!p){ viewingPlayerId=null; return viewPlayers(); }
@@ -3733,6 +3805,7 @@ function viewPlayerDetail(id){
     <div style="display:flex;gap:8px;">
       <button class="secondary" data-action="edit-player" data-id="${p.id}">Edytuj</button>
       ${has90minutLink(p) ? `<button class="secondary" data-action="refresh-stats" data-id="${p.id}" title="Pobierz mecze i bramki z 90minut.pl">🔄 Odśwież statystyki</button>` : ''}
+      ${/transfermarkt\./i.test(String(p.profileTm||'')) ? `<button class="gold" data-action="tm-odswiez" data-id="${p.id}" title="Pobiera z Transfermarktu wzrost, nogę, pozycję, narodowość, agenta, datę końca umowy, wartość rynkową i zdjęcie">⟳ Aktualizuj dane</button>` : ''}
       <button class="gold" data-action="paste-stats" data-id="${p.id}">📊 Wklej statystyki</button>
       <button class="danger" data-action="delete-player" data-id="${p.id}">Usuń</button>
     </div>
@@ -7975,6 +8048,7 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="add-player"]').forEach(b=>b.onclick=()=>openPlayerModal(null));
   main.querySelectorAll('[data-action="edit-player"]').forEach(b=>b.onclick=()=>openPlayerModal(b.dataset.id));
   main.querySelectorAll('[data-action="paste-stats"]').forEach(b=>b.onclick=()=>openPasteStatsModal(b.dataset.id));
+  main.querySelectorAll('[data-action="tm-odswiez"]').forEach(b=>b.onclick=()=>odswiezZTransfermarktu(b.dataset.id, b));
   main.querySelectorAll('[data-action="refresh-stats"]').forEach(b=>b.onclick=async()=>{
     const p = DB.players.find(x=>x.id===b.dataset.id);
     if(!p) return;
