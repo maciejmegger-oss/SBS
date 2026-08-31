@@ -5530,6 +5530,7 @@ function obsMonthListHtml(){
         <span style="display:flex;align-items:center;gap:8px;">
           <span class="obs-type-tag" style="background:${obsTypeMeta(obsTypeOf(o)).color};">${esc(obsTypeMeta(obsTypeOf(o)).label)}</span>
           <span class="meta">${esc(o.date)}${o.matchTime?' &middot; '+esc(o.matchTime):''}</span>
+          <button class="link-btn" data-action="obs-pokaz" data-id="${o.id}" style="font-size:11px;font-weight:700;" title="Cały mecz: informacje, systemy gry, składy i wyróżnieni">👁 Pokaż</button>
           <button class="link-btn" data-action="obs-sklad" data-id="${o.id}" style="font-size:11px;" title="Składy obu drużyn i zaznaczanie zawodników wyróżniających się">👥 Skład${liczbaWyroznionych(o)?' ('+liczbaWyroznionych(o)+')':''}</button>
           <button class="link-btn" data-action="edit-obs" data-id="${o.id}" style="font-size:11px;">✎ Edytuj</button>
           <button class="link-btn" data-action="delete-obs" data-id="${o.id}" style="font-size:11px;color:var(--clay-dark);">Usuń</button>
@@ -5538,6 +5539,126 @@ function obsMonthListHtml(){
       <div class="meta">${pl ? esc(o.match||'brak danych meczu') : '<em>obserwacja całego meczu</em>'}${o.location?' &middot; 📍 '+esc(o.location):''} &middot; scout: ${esc(o.scout)}</div>
     </div>`;
   }).join('');
+}
+
+// PODGLĄD CAŁEJ OBSERWACJI — wszystko, co o tym meczu wiadomo, w jednym miejscu.
+//
+// Dotąd te informacje leżały w trzech oknach: dane meczu w edycji planu, składy w oknie składu,
+// a wyróżnieni tylko jako pogrubione nazwiska wewnątrz tych składów. Żeby wrócić do obejrzanego
+// spotkania, trzeba było otworzyć wszystkie trzy po kolei.
+//
+// SYSTEM GRY USTAWIA SIĘ TUTAJ i to jest tu najważniejsze. Mapa pozycji w Rankingu czyta
+// wyróżnionych wyłącznie z obserwacji, w których zapisano formację drużyny — a nie było gdzie jej
+// zapisać, więc mapa nigdy nic z obserwacji nie dostawała.
+function openObsPodgladModal(obsId){
+  const obs = DB.observations.find(o=>o.id===obsId);
+  if(!obs) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+
+  const stronaHtml = (strona, tytulZapasowy)=>{
+    const dane = (obs.skladMeczu||{})[strona] || {};
+    const zawodnicy = dane.zawodnicy || [];
+    const wyr = zawodnicy.filter(z=>z.wyrozniony).length;
+    return `<div style="flex:1;min-width:250px;">
+      <h4 style="margin:0 0 4px;color:var(--heading);font-size:13px;">${esc(dane.nazwa || tytulZapasowy || '—')}
+        <span class="meta" style="font-weight:400;">(${zawodnicy.length}${wyr?`, wyróżnionych ${wyr}`:''})</span></h4>
+      <div class="field-wrap" style="margin:0 0 8px;">
+        <label class="field" style="font-size:11px;">System gry</label>
+        <select class="obs-formacja" data-strona="${strona}" style="font-size:12.5px;padding:4px 6px;">
+          <option value="">— nie określono —</option>
+          ${FORMATIONS.map(f=>`<option ${dane.formacja===f?'selected':''}>${esc(f)}</option>`).join('')}
+        </select>
+      </div>
+      ${zawodnicy.length ? zawodnicy.map(z=>`
+        <div style="display:flex;gap:7px;padding:2px 4px;border-radius:5px;font-size:12.5px;${z.wyrozniony?'background:var(--card-warm);font-weight:700;':''}">
+          <span style="color:var(--ink-soft);min-width:20px;">${z.numer!=null?esc(String(z.numer)):''}</span>
+          <span style="flex:1;">${z.wyrozniony?'⭐ ':''}${esc(z.nazwa)}</span>
+          <span class="meta" style="font-size:10.5px;white-space:nowrap;">${
+            z.podstawowy===false ? 'ław.' : (z.zszedl ? z.zszedl+"'" : '')
+          }${z.zolte?' 🟨':''}${z.czerwone?' 🟥':''}</span>
+        </div>`).join('')
+      : `<p class="note" style="font-size:11.5px;">Brak składu — wczytaj go przyciskiem „👥 Skład".</p>`}
+    </div>`;
+  };
+
+  const draw = ()=>{
+    const s = obs.skladMeczu || {};
+    const pl = DB.players.find(p=>p.id===obs.playerId);
+    // Wyróżnieni z OBU stron, razem z kartoteką — jeśli któraś powstała przy zaznaczaniu.
+    const wyrozniowani = ['gospodarze','goscie'].flatMap(strona=>
+      (((s[strona]||{}).zawodnicy)||[]).filter(z=>z.wyrozniony).map(z=>({ z, strona, klub: (s[strona]||{}).nazwa })));
+    const kluczOsoby = (t)=> String(t||'').split(/\s+/).map(importNorm).filter(Boolean).sort().join(' ');
+
+    overlay.innerHTML = `
+    <div class="modal" style="max-width:900px;">
+      <h3>👁 ${esc(obs.match || 'Obserwacja meczu')}</h3>
+      <p class="note" style="margin:-4px 0 10px;">
+        ${esc(obs.date||'')}${obs.matchTime?' &middot; '+esc(obs.matchTime):''}
+        &middot; ${esc(obsTypeMeta(obsTypeOf(obs)).label)}
+        ${obs.rozgrywki?' &middot; '+esc(obs.rozgrywki):''}${obs.kategoria?' &middot; '+esc(obs.kategoria):''}
+        &middot; scout: ${esc(obs.scout||'—')}
+        ${obs.location?` &middot; <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(obs.location)}" target="_blank" rel="noopener noreferrer">📍 ${esc(obs.location)}</a>`:''}
+      </p>
+      ${pl ? `<p class="note" style="margin-top:-6px;">Obserwowany zawodnik: <strong>${esc(pl.firstName+' '+pl.lastName)}</strong></p>` : ''}
+      ${obs.poziomMeczu||obs.warunki||obs.notatkaMeczu ? `<div class="card" style="padding:8px 10px;margin-bottom:10px;">
+        ${obs.poziomMeczu?`<div class="meta">Poziom spotkania: <strong>${esc(obs.poziomMeczu)}</strong></div>`:''}
+        ${obs.warunki?`<div class="meta">Warunki: ${esc(obs.warunki)}</div>`:''}
+        ${obs.notatkaMeczu?`<div style="font-size:12.5px;margin-top:4px;">${esc(obs.notatkaMeczu)}</div>`:''}
+      </div>`:''}
+
+      <div style="display:flex;gap:18px;flex-wrap:wrap;">
+        ${stronaHtml('gospodarze','Gospodarze')}
+        ${stronaHtml('goscie','Goście')}
+      </div>
+
+      <h4 style="margin:16px 0 4px;color:var(--heading);">⭐ Wyróżniający się (${wyrozniowani.length})</h4>
+      ${wyrozniowani.length ? `<div class="card" style="padding:0;overflow:auto;">
+        <table><thead><tr><th>Zawodnik</th><th>Klub</th><th>Pozycja</th><th></th></tr></thead>
+        <tbody>${wyrozniowani.map(({z, klub})=>{
+          const szukany = kluczOsoby(z.nazwa);
+          const kand = DB.players.filter(p=>kluczOsoby(`${p.firstName||''} ${p.lastName||''}`)===szukany);
+          const p = kand.length===1 ? kand[0] : null;
+          return `<tr>
+            <td><strong>${esc(z.nazwa)}</strong></td>
+            <td>${esc(klub||'—')}</td>
+            <td>${esc(z.pozycja || (p&&p.position) || '—')}</td>
+            <td style="text-align:right;">${p
+              ? `<button class="link-btn obs-pokaz-profil" data-id="${p.id}" style="font-size:11px;">Profil →</button>`
+              : `<span class="meta" style="font-size:11px;">bez kartoteki</span>`}</td>
+          </tr>`;
+        }).join('')}</tbody></table>
+      </div>
+      <p class="note" style="font-size:11.5px;margin-top:6px;">Ci zawodnicy są w <strong>Monitoringu</strong>. Na <strong>mapę pozycji</strong> w Rankingu wchodzą, gdy powyżej ustawisz <strong>system gry</strong> ich drużyny, a przy nazwisku jest pozycja — pozycję wczytujesz przyciskiem „👥 Skład → Kadry z bazy SBS".</p>`
+      : `<p class="note">Nikogo jeszcze nie zaznaczyłeś. Otwórz „👥 Skład" i zaznacz tych, którzy się wyróżnili.</p>`}
+
+      <div style="display:flex;justify-content:space-between;gap:8px;margin-top:16px;">
+        <button class="secondary" data-x="sklad">👥 Otwórz składy</button>
+        <button class="secondary" data-x="zamknij">Zamknij</button>
+      </div>
+    </div>`;
+
+    overlay.querySelector('[data-x="zamknij"]').onclick = ()=>{ overlay.remove(); render(); };
+    overlay.querySelector('[data-x="sklad"]').onclick = ()=>{ overlay.remove(); openObsSkladModal(obs.id); };
+    overlay.querySelectorAll('.obs-pokaz-profil').forEach(b=>b.onclick = ()=>{
+      overlay.remove();
+      viewingPlayerId = (b as HTMLElement).dataset.id;
+      currentView = 'players';
+      render();
+    });
+    overlay.querySelectorAll('.obs-formacja').forEach(sel=>sel.onchange = async ()=>{
+      const strona = (sel as HTMLElement).dataset.strona;
+      obs.skladMeczu = obs.skladMeczu || {};
+      obs.skladMeczu[strona] = obs.skladMeczu[strona] || { nazwa:'', zawodnicy:[] };
+      obs.skladMeczu[strona].formacja = (sel as HTMLSelectElement).value;
+      await saveObservations();
+      draw();
+    });
+  };
+
+  overlay.addEventListener('click', e=>{ if(e.target===overlay){ overlay.remove(); render(); } });
+  document.body.appendChild(overlay);
+  draw();
 }
 
 function obsCalendarHtml(){
@@ -8627,6 +8748,7 @@ function attachHandlers(){
     const card = document.querySelector('.main .card'); if(card) card.scrollIntoView({behavior:'smooth', block:'start'});
   });
   main.querySelectorAll('[data-action="obs-sklad"]').forEach(b=>b.onclick=()=>openObsSkladModal(b.dataset.id));
+  main.querySelectorAll('[data-action="obs-pokaz"]').forEach(b=>b.onclick=()=>openObsPodgladModal(b.dataset.id));
   main.querySelectorAll('[data-action="cancel-edit-obs"]').forEach(b=>b.onclick=()=>{ editingObsId = null; render(); });
   main.querySelectorAll('[data-action="delete-obs"]').forEach(b=>b.onclick=async()=>{
     if(!confirm('Usunąć tę obserwację?')) return;
