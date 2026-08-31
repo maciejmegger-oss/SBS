@@ -2141,6 +2141,11 @@ async function loadAll(){
   // Kartoteka jest już w pamięci — jeśli zakładka z ŁNP zdążyła przysłać protokoły, teraz je otwieramy.
   bazaGotowaDlaLnp = true;
   odbierzZalegleProtokoly();
+  // Młodzieżowcy, którym dorobek przekroczył próg, wchodzą do Monitoringu sami. Poza wyścigiem
+  // z limitem czasu i bez przerywania startu — to praca w tle, a nie warunek pokazania bazy.
+  dopiszMlodziezowcowDoMonitoringu()
+    .then(ile=>{ if(ile) render(); })
+    .catch(e=>console.warn('Dopisywanie młodzieżowców do Monitoringu nie powiodło się:', e));
   // Odświeżanie statystyk celowo POZA wyścigiem z limitem czasu — to praca w tle, która nie może
   // opóźnić pokazania bazy. Błędy tu nie mogą przewrócić startu aplikacji.
   refreshStatsInBackground().catch(e=>console.warn('Odświeżanie statystyk w tle nie powiodło się:', e));
@@ -5976,6 +5981,41 @@ function podsumowanieMinut(przebieg){
 // i w filtrach. Rozjechane kopie tej liczby pokazywałyby dwie różne prawdy w jednym oknie.
 const ROCZNIK_MLODZIEZOWCA = 2006;
 
+// Rozgrywki, w których minuta młodzieżowca coś znaczy skautingowo. W IV lidze i niżej młodzież
+// gra masowo, więc automat zasypałby mapę setkami nazwisk — tam wybór zostaje przy skaucie.
+const LIGI_Z_MLODZIEZOWCAMI = new Set([
+  'Ekstraklasa', 'I liga', 'II liga',
+  'III liga, gr. I', 'III liga, gr. II', 'III liga, gr. III', 'III liga, gr. IV',
+]);
+
+// PRÓG, OD KTÓREGO MŁODZIEŻOWIEC WCHODZI DO MONITORINGU SAM.
+//
+// 270 minut to trzy pełne mecze. Jeden występ bywa przypadkiem — kontuzje, kartki, obowiązek
+// regulaminowy. Trzy mecze to już decyzja trenera powtórzona, czyli coś, czego nie wolno przegapić.
+const MINUTY_DO_MONITORINGU = 270;
+
+const minutyZawodnika = (p)=> Number(p && p.minutes) || 0;
+
+// Młodzieżowcy, których dorobek przekroczył próg, trafiają do Monitoringu bez pytania.
+//
+// Robimy to przy wczytaniu aplikacji, bo statystyki dochodzą nocnym odświeżeniem — gdyby wpisywać
+// ich tylko w chwili importu, zawodnik, który przekroczył próg o piątej rano, czekałby na kolejny
+// import zamiast pojawić się na liście od razu.
+async function dopiszMlodziezowcowDoMonitoringu(){
+  const nowi = DB.players.filter(p=>
+    !p.monitored && !p.watchlistRemoved
+    && LIGI_Z_MLODZIEZOWCAMI.has(clubLeague(p.clubId))
+    && isYouthPlayer(p)
+    && minutyZawodnika(p) >= MINUTY_DO_MONITORINGU);
+  if(!nowi.length) return 0;
+  nowi.forEach(p=>{ p.monitored = true; });
+  // Pojedyncze wiersze, nie cała baza — przy jedenastu tysiącach zawodników przepisanie wszystkiego
+  // na starcie aplikacji trwałoby dłużej niż samo wczytanie.
+  for(const p of nowi) await savePlayerOne(p);
+  console.info(`Monitoring: dopisałem ${nowi.length} młodzieżowców z ${MINUTY_DO_MONITORINGU}+ minutami.`);
+  return nowi.length;
+}
+
 function isYouthPlayer(p){
   // Protokół PZPN oznacza młodzieżowca wprost — i to źródło jest pewniejsze niż rocznik, bo
   // w IV lidze rocznika nie ma skąd wziąć, a przepis o młodzieżowcu obowiązuje tam tak samo.
@@ -6994,9 +7034,17 @@ function buildAutoPositionCandidates(league, formation, number){
   // Na mapę wchodzi każdy, kogo AKTYWNIE prowadzisz: ze statusem decyzyjnym albo z Monitoringu.
   // Wcześniej liczyły się wyłącznie dwa statusy, przez co zawodnik „Rekomendowany" albo świeżo
   // dodany do Monitoringu nie pojawiał się nigdzie — a to on jest przedmiotem pracy skautingowej.
-  const kwalifikujeSie = (p)=> p.status==='Do transferu' || p.status==='Na Testy' || !!p.monitored;
+  // MŁODZIEŻOWIEC, KTÓRY JUŻ WSZEDŁ NA BOISKO, JEST KANDYDATEM SAM Z SIEBIE.
+  //
+  // W Ekstraklasie, I, II i III lidze minuta młodzieżowca jest decyzją trenera, a nie przypadkiem —
+  // to najtwardszy sygnał, jaki mamy, mocniejszy niż czyjaś ocena. Mapa pokazywała dotąd wyłącznie
+  // tych, których ktoś wcześniej ręcznie wziął na warsztat, więc trzeba było wiedzieć o zawodniku,
+  // zanim się go zobaczyło. Teraz wchodzą wszyscy, którzy zagrali choć minutę.
+  const kwalifikujeSie = (p)=> p.status==='Do transferu' || p.status==='Na Testy' || !!p.monitored
+    || (LIGI_Z_MLODZIEZOWCAMI.has(clubLeague(p.clubId)) && isYouthPlayer(p) && minutyZawodnika(p) > 0);
   const statusRank = {'Do transferu':0, 'Na Testy':1};
-  const rangaZawodnika = (p)=> statusRank[p.status] !== undefined ? statusRank[p.status] : 2;
+  // Młodzieżowiec bez statusu ląduje za prowadzonymi, ale przed resztą — i wyżej, im więcej zagrał.
+  const rangaZawodnika = (p)=> statusRank[p.status] !== undefined ? statusRank[p.status] : (p.monitored ? 2 : 3);
   const candidates = DB.players
     // System gry: po wybraniu konkretnego układu zawodnik pojawia się WYŁĄCZNIE w tym, który ma
     // zapisany w profilu. Wcześniej ci bez wpisanego systemu wchodzili do każdego układu naraz,
