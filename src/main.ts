@@ -11254,7 +11254,17 @@ function dopasujKlubDoNazwy(nazwa, podpowiedzGrupa, poziom){
     if(c) return c;
   }
   const a = rozbijNazweKlubu(nazwa);
-  const dokladne = DB.clubs.filter(c=>importNorm(c.name)===n);
+  // DOKŁADNA NAZWA NIE MOŻE OMIJAĆ POZIOMU ROZGRYWEK.
+  //
+  // W CLJ kluby noszą na ŁNP nazwę bez końcówki — „Widzew Łódź", nie „Widzew Łódź U17" — czyli
+  // dokładnie taką samą jak pierwsza drużyna. Trafienie w nazwę kończyło wtedy poszukiwania na
+  // seniorach, filtr poziomu odrzucał ich jako niewłaściwe rozgrywki i drużyna juniorska nie
+  // dostawała szansy w ogóle. Gdy znamy poziom, dokładne trafienia zawężamy najpierw do niego,
+  // a gdy na tym poziomie nie ma nikogo o tej nazwie — szukamy dalej, po członach.
+  const wszystkieDokladne = DB.clubs.filter(c=>importNorm(c.name)===n);
+  const dokladne = poziom
+    ? wszystkieDokladne.filter(c=>String(c.league||'').toLowerCase().startsWith(String(poziom).toLowerCase()))
+    : wszystkieDokladne;
   let pasujace = dokladne.length ? dokladne : DB.clubs.filter(c=>{
     const b = rozbijNazweKlubu(c.name);
     if(a.numer !== b.numer) return false;
@@ -11387,10 +11397,19 @@ function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
   const POZIOMY = [
     // CLJ SPRAWDZAMY PIERWSZE, bo w nazwie tych rozgrywek też stoi słowo „liga" („Centralna Liga
     // Juniorów") — przy odwrotnej kolejności protokół juniorski wziąłby poziom seniorski i dorobek
-    // U17 wylądowałby w pierwszej drużynie o tej samej nazwie. U-17 przed U-19 z tego samego
-    // powodu: „U19" nie występuje w napisie „Centralna Liga Juniorów", więc to on jest domyślny.
-    [/u\s*-?\s*17|clj\s*u\s*-?\s*17/i, 'CLJ U17'],
-    [/centralna\s+liga\s+junior|clj\b|u\s*-?\s*19/i, 'CLJ U19'],
+    // U17 wylądowałby w pierwszej drużynie o tej samej nazwie.
+    //
+    // „U17" MUSI STAĆ PRZY NAZWIE ROZGRYWEK, a nie gdziekolwiek w protokole. Wzorzec /u\s*-?\s*17/
+    // wystarczał, żeby zwykła minuta zejścia zapisana jako „…u 17'" ustawiła protokołowi Ekstraklasy
+    // poziom CLJ U17 — a wtedy odcinane były wszystkie kluby i wychodziło absurdalne „Zagłębie Lubin
+    // gra w Ekstraklasie, a zbierasz do Ekstraklasy". Ten sam powód każe wymagać „CLJ" jako całego
+    // słowa: bez tego dowolne „clj" wewnątrz nazwiska zmieniałoby rozgrywki.
+    [/(?:centralna\s+liga\s+junior\w*|\bclj\b)[^\n]{0,40}u\s*-?\s*17/i, 'CLJ U17'],
+    [/centralna\s+liga\s+junior|\bclj\b/i, 'CLJ U19'],
+    // Ekstraklasy tu dotąd nie było w ogóle — jej protokoły szły bez poziomu, więc o docelowym
+    // klubie decydowała otwarta grupa. Przy grupie juniorskiej albo rocznikowej odcinało to
+    // wszystkie kluby naraz.
+    [/ekstraklasa/i, 'Ekstraklasa'],
     [/czwarta\s+liga|\bIV\s+liga/i, 'IV liga'],
     [/trzecia\s+liga|\bIII\s+liga/i, 'III liga'],
     [/druga\s+liga|\bII\s+liga/i, 'II liga'],
@@ -11423,7 +11442,19 @@ function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
   // nazwy klubów na ŁNP nie mają końcówki („Arkonia Szczecin") i ten sam klub gra jednocześnie
   // w rozgrywkach seniorskich. Wtedy zbierane z CLJ U19 idzie do CLJ U19, a z U17 zachodniej —
   // do U17 zachodniej.
-  const poziomRozliczenia = poziomZProtokolu || poziomGrupy(podpowiedzGrupa);
+  // W CLJ SAMA GRUPA WIE WIĘCEJ NIŻ PROTOKÓŁ.
+  //
+  // Na ŁNP kluby juniorskie noszą nazwę bez końcówki — „Widzew Łódź", nie „Widzew Łódź U17" —
+  // więc z samej nazwy nie da się odróżnić juniorów od pierwszej drużyny. Protokół mówi wprawdzie
+  // „Centralna Liga Juniorów", ale nie zawsze rozstrzyga, czy to U19, czy U17, i z której grupy.
+  // Kiedy więc protokół wskazuje CLJ, a Ty pracujesz w grupie CLJ, to grupa jest odpowiedzią —
+  // to z niej zebrałeś te protokoły. W pozostałych rozgrywkach rozstrzyga protokół: dzięki temu
+  // wklejka z Ekstraklasy trafia do Widzewa z Ekstraklasy nawet przy otwartej grupie juniorskiej.
+  const grupaToCLJ = /^CLJ/.test(poziomGrupy(podpowiedzGrupa) || '');
+  const protokolToCLJ = /^CLJ/.test(poziomZProtokolu || '');
+  const poziomRozliczenia = (protokolToCLJ && grupaToCLJ)
+    ? poziomGrupy(podpowiedzGrupa)
+    : (poziomZProtokolu || poziomGrupy(podpowiedzGrupa));
 
   // Numer druzyny w naglowku wyniku (gospodarze, potem goscie) to awaryjny sposob na
   // przypisanie skladu, gdy nazwa nad nim nie przypomina zadnej z nagliwka.
@@ -11833,7 +11864,7 @@ function sprawdzZakladke(nazwa, kod){
 
 // Wersja zakładki. Widnieje w każdym jej komunikacie i w oknie SBS, żeby dało się jednym
 // spojrzeniem stwierdzić, czy w pasku siedzi kod sprzed poprawek.
-const ZAKLADKA_WERSJA = 'v45 z 31.08.2026';
+const ZAKLADKA_WERSJA = 'v46 z 31.08.2026';
 const SBS_ADRES_JS = JSON.stringify(location.origin);
 // ZAKŁADKA W PASKU NIE AKTUALIZUJE SIĘ SAMA — I TO BYŁ PRAWDZIWY PROBLEM.
 //

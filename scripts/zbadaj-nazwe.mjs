@@ -60,5 +60,5 @@ kandydaci.forEach(c=>console.log('   ' + c.name.padEnd(34) + '[' + c.league + ']
 const wIV = kandydaci.filter(c=>String(c.league||'').toLowerCase().startsWith('iv liga'));
 console.log(`\nPo odcięciu innych poziomów rozgrywek (${wIV.length}): ${wIV.map(c=>c.name).join(' | ') || '(brak)'}`);
 
-const trafiony = M.dopasujKlubDoNazwy(NAZWA, '', 'IV liga');
+const trafiony = M.dopasujKlubDoNazwy(NAZWA, '', (process.env.POZIOM||'IV liga'));
 console.log(`\nWYNIK: ${trafiony ? trafiony.name + ' [' + trafiony.league + ']' : 'brak — do wskazania ręką'}`);
