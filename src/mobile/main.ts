@@ -251,6 +251,9 @@ let skladStrona: "gospodarze" | "goscie" = "gospodarze";
 let wyborZKadry: "gospodarze" | "goscie" | null = null;   // otwarta lista kadry klubu z bazy
 let obsadzanaPozycja: number | null = null;   // wybrane puste pole na planszy — czeka na zawodnika
 let ocenianyZawodnik: number | null = null;   // indeks zawodnika, którego panel oceny jest otwarty
+// Czy panel ocen na ekranie zdarzeń jest rozwinięty. Zwinięty pokazuje sam pasek z nazwiskiem
+// i tym, co już wystawiono; rozwinięty — pełne skale, kosztem zejścia kafli niżej.
+let ocenaRozwinieta = false;
 let searchQuery = "";
 let clockTimer: number | undefined;
 // Czy panel pracuje na sesji użytkownika. Od zamknięcia systemu jest to WARUNEK WEJŚCIA:
@@ -831,6 +834,7 @@ function viewLive(): string {
 
     ${liveTab === "sklady" ? viewSklady() : `
     ${pasekZawodnikow()}
+    ${blokOceny()}
     <div class="polarity">
       <button class="pol plus" data-act="pol" data-v="1" aria-pressed="${polarity === 1}">+ udane</button>
       <button class="pol minus" data-act="pol" data-v="-1" aria-pressed="${polarity === -1}">− nieudane</button>
@@ -846,20 +850,6 @@ function viewLive(): string {
     <div class="field" style="margin-top:12px;">
       <input id="quick-note" placeholder="Notatka do bieżącej minuty…">
     </div>
-
-    ${/* PANEL OCENY POD KAFLAMI — dla zawodnika wskazanego w pasku „Tagujesz".
-          Kafle rejestrują, CO się stało; ten panel ocenia, JAK zawodnik gra. To jedna praca
-          o jednym człowieku, robiona naprzemiennie przez dziewięćdziesiąt minut, więc jest
-          na jednym ekranie: dotknięcie nazwiska u góry przełącza i tagowanie, i ocenianie.
-
-          Trzynaście skal nie zmieści się nad kaflami, a kafle muszą zostać pod kciukiem — więc
-          panel stoi NIŻEJ, poza pierwszym ekranem. Dlatego dotknięcie nazwiska go tu przewija
-          (patrz „taguj-kogo"): bez tego zmiana zachodziłaby siedemset pikseli niżej i wyglądałaby
-          na to, że dotknięcie nic nie zrobiło. */""}
-    ${(() => {
-      const dane = ocenianyTeraz();
-      return dane ? `<div id="panel-oceny">${viewOcenaZawodnika(dane.z, true)}</div>` : "";
-    })()}
 
     <div class="row" style="margin-bottom:6px; margin-top:16px;">
       <span class="label" style="margin:0;">Oś zdarzeń · ${live.events.length}</span>
@@ -1220,13 +1210,7 @@ function viewOcenaZawodnika(z: SkladZawodnik, podKaflami = false): string {
   const sfg = z.sfg || {};
   const zdarzenia = live ? zdarzeniaZawodnika(live.observationId, kluczZawodnika(z)) : "";
   return `
-    ${podKaflami ? `
-    <div class="section">
-      ${/* „Oceniasz" celowo w parze z „Tagujesz" nad kaflami: to jedno zdanie o dwóch czynnościach
-            wykonywanych na tym samym zawodniku. Nie „Ocena" — tuż niżej stoi „Ocena · skala 1–10"
-            i dwie etykiety od tego samego słowa zlewałyby się w jedną. */""}
-      <span class="label">Oceniasz · ${esc(kluczZawodnika(z))}</span>
-    </div>` : `
+    ${podKaflami ? "" : `
     <div class="row" style="margin-bottom:10px;">
       <div>
         <div class="name">${esc(z.nazwa)}</div>
@@ -1434,6 +1418,44 @@ function pasekZawodnikow(): string {
         ${lista.map((z) => `
           <button class="chip ${wybrany === z.klucz ? "wybrany" : ""}" data-act="taguj-kogo" data-v="${esc(z.klucz)}" aria-pressed="${wybrany === z.klucz}">${esc(z.etykieta)}</button>`).join("")}
       </div>
+    </div>`;
+}
+
+// Co już wystawiono temu zawodnikowi — jedną linijką, do nagłówka zwiniętego panelu.
+// Bez tego zwinięty panel nie mówiłby nic o tym, czy ktoś jest już oceniony, czy jeszcze nie.
+function skrotOcen(z: SkladZawodnik): string {
+  const czesci: string[] = [];
+  [...OCENA_MAPY.map((k) => ({ k, l: RATING_LABELS[k] })), ...OCENA_GLOWA.map((f) => ({ k: f.key, l: f.label }))]
+    .forEach((x) => { if (Number(z.ocena?.[x.k]) > 0) czesci.push(`${x.l} ${z.ocena![x.k]}`); });
+  REPORT_PHASES.forEach((f) => { if (Number(z.fazy?.[f.key]) > 0) czesci.push(`${f.label} ${z.fazy![f.key]}`); });
+  REPORT_SET_PIECES.forEach((f) => { if (Number(z.sfg?.[f.key]) > 0) czesci.push(`${f.label} ${z.sfg![f.key]}`); });
+  return czesci.join(" · ");
+}
+
+// PANEL OCENY ZARAZ POD NAZWISKAMI, NAD KAFLAMI.
+//
+// Stał wcześniej pod kaflami — i tam go po prostu nie było widać. Trzynaście skal nie mieści się
+// nad kaflami rozwiniętych, więc panel zaczyna się zwinięty: jeden pasek z nazwiskiem i tym, co
+// już wystawiono. Dotknięcie nazwiska zmienia go natychmiast, w miejscu, na które właśnie patrzy
+// scout — a nie siedemset pikseli niżej.
+//
+// Rozwinięcie spycha kafle w dół, ale to świadome dotknięcie: kto otwiera oceny, ten w tej chwili
+// ocenia. Zwija się z powrotem jednym dotknięciem tego samego paska, a wybór zostaje na cały mecz,
+// bo scout pracuje seriami — albo taguje akcje, albo obchodzi wyróżnionych z ocenami.
+function blokOceny(): string {
+  const dane = ocenianyTeraz();
+  if (!dane) return "";
+  const z = dane.z;
+  const skrot = skrotOcen(z);
+  return `
+    <div id="panel-oceny" class="ocena-blok">
+      <button class="ocena-naglowek" data-act="rozwin-ocene" aria-expanded="${ocenaRozwinieta}">
+        <span class="on-tytul">Oceniasz</span>
+        <span class="on-kto">${esc(kluczZawodnika(z))}</span>
+        <span class="on-strzalka" aria-hidden="true">${ocenaRozwinieta ? "▲" : "▼"}</span>
+      </button>
+      <div class="on-skrot">${skrot ? esc(skrot) : (ocenaRozwinieta ? "Wystaw oceny poniżej." : "Dotknij, żeby wystawić oceny — 1–10 i fazy gry 1–6.")}</div>
+      ${ocenaRozwinieta ? `<div class="ocena-tresc">${viewOcenaZawodnika(z, true)}</div>` : ""}
     </div>`;
 }
 
@@ -2743,15 +2765,14 @@ document.addEventListener("click", (e) => {
       live.wybranyZawodnik = v || undefined;
       setLive(live);
       render();
-      // PANEL OCENY MA BYĆ WIDOCZNY, nie tylko obecny.
-      //
-      // Trzynaście skal nie mieści się nad kaflami, więc panel stoi pod nimi — poza pierwszym
-      // ekranem. Bez tego przewinięcia dotknięcie nazwiska wyglądało dokładnie tak, jakby nic nie
-      // zrobiło: zaznaczał się kafelek i tyle, a cała zmiana zachodziła siedemset pikseli niżej.
-      // Kafle zostają jedno machnięcie palcem wyżej, więc tagowanie na tym nie traci.
-      if (live.wybranyZawodnik) {
-        $("panel-oceny")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
+      break;
+
+    // Rozwinięcie i zwinięcie panelu ocen wskazanego zawodnika. Wybór zostaje na cały mecz:
+    // scout pracuje seriami — albo taguje akcje kaflami, albo obchodzi wyróżnionych z ocenami.
+    case "rozwin-ocene":
+      zabezpieczNotatke();
+      ocenaRozwinieta = !ocenaRozwinieta;
+      render();
       break;
     // Przejście między zakładkami zamyka panel oceny otwarty z planszy — po powrocie do Składów
     // ma być plansza, a nie zawodnik, którego oglądało się kwadrans temu.
