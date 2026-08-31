@@ -1869,7 +1869,10 @@ async function loadAllInner(){
     const loaded = s ? JSON.parse(s.value) : {};
     DB.settings = Object.assign(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), loaded);
   }catch(e){ DB.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS)); }
-  if(DB.settings.scouts && DB.settings.scouts.length){ currentScout = DB.settings.scouts[0]; }
+  if(DB.settings.scouts && DB.settings.scouts.length){
+    let zapamietany=''; try{ zapamietany=localStorage.getItem('sbs-scout')||''; }catch(e){}
+    currentScout = DB.settings.scouts.includes(zapamietany) ? zapamietany : DB.settings.scouts[0];
+  }
   // Wczesny render — użytkownik widzi bazę natychmiast po równoległym odczycie; migracje/seed/wzbogacanie
   // (poniżej) na istniejącej instalacji są prawie natychmiastowe i i tak wywołają końcowe render().
   try{ render(); }catch(e){ console.error('Wczesny render() nie powiódł się (niekrytyczny):', e); }
@@ -2105,7 +2108,10 @@ async function loadAllInner(){
   if(quietFlagFailCount > 0){
     console.log('Uwaga (niegroźne): ' + quietFlagFailCount + ' znaczników "już to zrobione" w tle nie zapisało się — te operacje mogą się powtórzyć przy następnym otwarciu, ale to nie dotyczy Twoich danych.');
   }
-  if(DB.settings.scouts.length){ currentScout = DB.settings.scouts[0]; }
+  if(DB.settings.scouts.length){
+    let zapamietany=''; try{ zapamietany=localStorage.getItem('sbs-scout')||''; }catch(e){}
+    currentScout = DB.settings.scouts.includes(zapamietany) ? zapamietany : DB.settings.scouts[0];
+  }
   render();
 }
 // loadAllInner() ma dziesiątki sekwencyjnych kroków (import składów, wzbogacanie danych, migracje) i nie
@@ -3478,7 +3484,12 @@ function viewDashboard(){
 
   return `
   <h2 class="view-title">Dashboard</h2>
-  <p class="view-sub">Zalogowany scout: <strong>${esc(currentScout || 'Nieznany')}</strong></p>
+  <p class="view-sub">Scout: <select id="kto-jestem" style="font:inherit;padding:2px 6px;border-radius:6px;border:1px solid var(--border-strong);background:var(--card);">
+      ${DB.settings.scouts.length
+        ? DB.settings.scouts.map(s=>`<option ${s===currentScout?'selected':''}>${esc(s)}</option>`).join('')
+        : '<option value="">— dodaj scoutów w Ustawieniach —</option>'}
+    </select>
+    <span class="note" style="margin-left:6px;">tym nazwiskiem podpisują się Twoje nowe obserwacje i raporty</span></p>
   <div class="grid grid-5" style="margin-bottom:18px;">
     <div class="stat" data-action="goto-clubs" style="cursor:pointer;" title="Wszystkie kluby w systemie (wszystkie ligi) — kliknij, aby przejść"><div class="num">${totalClubs}</div><div class="lbl">Kluby</div></div>
     <div class="stat"><div class="num">${totalPlayers}</div><div class="lbl">Zawodnicy</div></div>
@@ -8052,6 +8063,15 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="goto-addplayer"]').forEach(b=>b.onclick=()=>{currentView='players';render();openPlayerModal(null);});
   main.querySelectorAll('[data-action="goto-monitoring"]').forEach(b=>b.onclick=()=>{currentView='monitoring';render();});
   main.querySelectorAll('[data-action="goto-clubs"]').forEach(b=>b.onclick=()=>{currentView='clubs';viewingClubId=null;render();});
+  // KTO SIEDZI PRZY TEJ PRZEGLĄDARCE. Dotąd system brał po prostu pierwszego scouta z listy
+  // w Ustawieniach — a więc każdy członek zespołu podpisywał się tym samym nazwiskiem, i to nie
+  // swoim. Wybór trzymamy w pamięci przeglądarki, bo to ustawienie osobiste, nie wspólne dla bazy.
+  const ktoJestem = main.querySelector('#kto-jestem');
+  if(ktoJestem) ktoJestem.onchange = ()=>{
+    currentScout = (ktoJestem as HTMLSelectElement).value;
+    try{ localStorage.setItem('sbs-scout', currentScout); }catch(e){ /* tryb prywatny */ }
+    render();
+  };
 
   const sponsorInput = main.querySelector('#sponsor-logo-input');
   if(sponsorInput){
@@ -16044,6 +16064,20 @@ function openPositionSlotModal(league, formation, number){
   draw('');
 }
 
+// KTO NAPRAWDĘ SPORZĄDZIŁ RAPORT.
+//
+// W nagłówku PDF stał zalogowany użytkownik, a nie autorzy raportów — więc dokument o zawodniku
+// obserwowanym przez trzech skautów podpisywał się jednym nazwiskiem, i to tego, kto akurat
+// klikał „Pobierz PDF". Gdy nikt nie ustawił scouta, wychodziło z tego „Nieznany". Podpisujemy
+// więc tym, co stoi w raportach; obserwacje dokładamy, gdy raportów jeszcze nie ma.
+function autorzyRaportu(p){
+  const zRaportow = DB.reports.filter(r=>r.playerId === p.id).map(r=>String(r.scout||'').trim());
+  const zObserwacji = DB.observations.filter(o=>o.playerId === p.id).map(o=>String(o.scout||'').trim());
+  const lista = [...new Set((zRaportow.length ? zRaportow : zObserwacji).filter(Boolean))]
+    .filter(s=>s.toLowerCase() !== 'nieznany');
+  return lista.join(', ');
+}
+
 async function generatePlayerPDF(playerId){
   const p = DB.players.find(x=>x.id===playerId);
   if(!p) return;
@@ -16172,7 +16206,7 @@ async function generatePlayerPDF(playerId){
     <div class="brand-block">
       <p class="brand-name">SCOUT BASE SYSTEM</p>
       <p class="brand-sub">Raport scoutingowy zawodnika</p>
-      <p class="brand-signature">Sporządził: ${esc(currentScout || 'Nieznany scout')}</p>
+      <p class="brand-signature">Sporządził: ${esc(autorzyRaportu(p) || currentScout || 'Nieznany scout')}</p>
     </div>
     <div class="report-date">Wygenerowano<br>${new Date().toLocaleDateString('pl-PL')}</div>
   </div>
