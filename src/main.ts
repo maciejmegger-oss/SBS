@@ -5615,17 +5615,20 @@ function openObsPodgladModal(obsId){
       <h4 style="margin:16px 0 4px;color:var(--heading);">⭐ Wyróżniający się (${wyrozniowani.length})</h4>
       ${wyrozniowani.length ? `<div class="card" style="padding:0;overflow:auto;">
         <table><thead><tr><th>Zawodnik</th><th>Klub</th><th>Pozycja</th><th></th></tr></thead>
-        <tbody>${wyrozniowani.map(({z, klub})=>{
+        <tbody>${wyrozniowani.map(({z, strona, klub}, nr)=>{
           const szukany = kluczOsoby(z.nazwa);
           const kand = DB.players.filter(p=>kluczOsoby(`${p.firstName||''} ${p.lastName||''}`)===szukany);
           const p = kand.length===1 ? kand[0] : null;
+          // PRZYCISK JEST ZAWSZE — bez kartoteki zakłada ją i od razu otwiera. Zawodnicy
+          // zaznaczeni starszą wersją aplikacji nie mają kartotek, bo wtedy checkbox ich nie
+          // tworzył; „bez kartoteki" byłoby dla nich ślepym zaułkiem.
           return `<tr>
             <td><strong>${esc(z.nazwa)}</strong></td>
             <td>${esc(klub||'—')}</td>
             <td>${esc(z.pozycja || (p&&p.position) || '—')}</td>
             <td style="text-align:right;">${p
               ? `<button class="link-btn obs-pokaz-profil" data-id="${p.id}" style="font-size:11px;">Profil →</button>`
-              : `<span class="meta" style="font-size:11px;">bez kartoteki</span>`}</td>
+              : `<button class="link-btn obs-pokaz-zaloz" data-strona="${strona}" data-nazwa="${esc(z.nazwa)}" style="font-size:11px;">+ Załóż profil</button>`}</td>
           </tr>`;
         }).join('')}</tbody></table>
       </div>
@@ -5643,6 +5646,22 @@ function openObsPodgladModal(obsId){
     overlay.querySelectorAll('.obs-pokaz-profil').forEach(b=>b.onclick = ()=>{
       overlay.remove();
       viewingPlayerId = (b as HTMLElement).dataset.id;
+      currentView = 'players';
+      render();
+    });
+    // Zakładanie kartoteki wstecz — dla zaznaczonych, zanim checkbox zaczął je tworzyć.
+    overlay.querySelectorAll('.obs-pokaz-zaloz').forEach(b=>b.onclick = async ()=>{
+      const strona = (b as HTMLElement).dataset.strona;
+      const nazwa = (b as HTMLElement).dataset.nazwa;
+      const lista = (((obs.skladMeczu||{})[strona]||{}).zawodnicy)||[];
+      const i = lista.findIndex(x=>x.nazwa === nazwa);
+      if(i < 0) return;
+      const wynik = ustawWyroznienie(obs, strona, i, true);
+      if(wynik && wynik.blad){ alert(wynik.blad); return; }
+      await saveObservations();
+      if(!wynik) return;
+      overlay.remove();
+      viewingPlayerId = wynik.id;
       currentView = 'players';
       render();
     });
@@ -8325,7 +8344,13 @@ function attachHandlers(){
     if(!pl) return;
     try{
       pl.photoUrl = await processPlayerPhotoFile(file);
-      await savePlayers();
+      // JEDNO ZDJĘCIE ZAPISUJEMY JAKO JEDEN WIERSZ, NIE CAŁĄ BAZĘ.
+      //
+      // savePlayers() przepisuje wszystkich zawodników — przy dzisiejszych 11 tysiącach to
+      // kilkadziesiąt wsadów po sieci, z których wystarczy, że jeden padnie, i zapis nie udaje
+      // się w całości. Zdjęcie pokazywało się wtedy na ekranie, a po odświeżeniu znikało.
+      const ok = await savePlayerOne(pl);
+      if(!ok) alert('Zdjęcie wczytało się, ale nie udało się go zapisać w bazie. Sprawdź baner u góry strony i spróbuj ponownie.');
       render();
     }catch(e){
       alert('Nie udało się wczytać tego pliku. Spróbuj PNG/JPG lub PDF.');
@@ -14043,6 +14068,90 @@ function paraDruzynZObserwacji(tekst){
   return (gospodarz && gosc) ? {gospodarz, gosc} : null;
 }
 
+// ZAZNACZENIE „WYRÓŻNIONY" MA SKUTEK W BAZIE, A NIE TYLKO W TYM OKNIE.
+//
+// Dotąd checkbox zasilał wyłącznie mapę pozycji w Rankingu — i to jedynie wtedy, gdy zawodnik
+// miał już kartotekę o dokładnie tym nazwisku i w tej samej lidze. Kto wyłowił kogoś nowego
+// z protokołu, zaznaczał go i… nic. Nazwisko zostawało w oknie obserwacji, a przy następnym
+// meczu trzeba było je pamiętać z głowy.
+//
+// Teraz zaznaczenie robi trzy rzeczy naraz: zakłada kartotekę, jeśli jej nie ma, stawia
+// zawodnika w Monitoringu i zapisuje mecz, w którym się wyróżnił. Dzięki temu widać różnicę
+// między jednym dobrym meczem a regularną formą.
+const kluczOsobyWyr = (s)=> String(s||'').split(/\s+/).map(importNorm).filter(Boolean).sort().join(' ');
+
+function klubStronyMeczu(nazwaDruzyny){
+  if(!nazwaDruzyny) return null;
+  return dopasujKlubDoNazwy(nazwaDruzyny, '', '');
+}
+
+function znajdzZawodnikaWyr(nazwa, klub){
+  const szukany = kluczOsobyWyr(nazwa);
+  if(!szukany) return null;
+  const wKlubie = klub ? DB.players.filter(p=>p.clubId === klub.id
+    && kluczOsobyWyr(`${p.firstName||''} ${p.lastName||''}`) === szukany) : [];
+  if(wKlubie.length) return wKlubie[0];
+  // Bez klubu nie zgadujemy: to samo nazwisko potrafi wystąpić w kilku klubach naraz.
+  const wszedzie = DB.players.filter(p=>kluczOsobyWyr(`${p.firstName||''} ${p.lastName||''}`) === szukany);
+  return wszedzie.length === 1 ? wszedzie[0] : null;
+}
+
+function zalozKartoteke(z, klub){
+  const slowa = String(z.nazwa||'').trim().split(/\s+/);
+  const p = {
+    id: uid('Z'),
+    firstName: slowa[0] || '',
+    lastName: slowa.slice(1).join(' '),
+    clubId: klub.id,
+    position: z.pozycja || '',
+    birthYear: z.rocznik || '',
+    status: '',
+    dateAdded: new Date().toISOString().slice(0,10),
+    source: 'wyróżniony w meczu',
+    matches: 0, minutes: 0, goals: 0,
+    monitored: true,
+  };
+  DB.players.push(p);
+  return p;
+}
+
+function ustawWyroznienie(obs, strona, i, zaznaczony){
+  const dane = (obs.skladMeczu||{})[strona] || {};
+  const z = (dane.zawodnicy||[])[i];
+  if(!z) return null;
+  z.wyrozniony = zaznaczony;
+
+  const klub = klubStronyMeczu(dane.nazwa);
+  let p = znajdzZawodnikaWyr(z.nazwa, klub);
+
+  if(zaznaczony){
+    if(!p && klub) p = zalozKartoteke(z, klub);
+    // Bez klubu nie ma gdzie założyć kartoteki. Mówimy to wywołującemu, zamiast po cichu nic
+    // nie robić — inaczej zaznaczenie wygląda na przyjęte, a nigdzie go nie ma.
+    if(!p) return { blad: `Zaznaczyłem „${z.nazwa}", ale nie wiem, do którego klubu go przypisać `
+      + `(„${dane.nazwa||'—'}" nie pasuje jednoznacznie do żadnego w bazie), więc nie zakładam kartoteki.` };
+    p.monitored = true;
+    p.watchlistRemoved = false;
+    p.wyroznienia = (p.wyroznienia || []).filter(w=>w.obsId !== obs.id);
+    p.wyroznienia.push({
+      obsId: obs.id, data: obs.date || '', mecz: obs.match || '',
+      scout: obs.scout || '', klub: dane.nazwa || '',
+    });
+    void savePlayers();
+    return p;
+  }
+
+  // ODZNACZENIE COFA TYLKO WYRÓŻNIENIE. Kartoteki nie kasujemy i z Monitoringu nie wyrzucamy —
+  // zawodnik mógł tam trafić z zupełnie innego powodu, a pomyłkowe kliknięcie nie ma prawa
+  // wymazać czyjejś pracy. Z Monitoringu usuwa się osobnym przyciskiem.
+  if(p && (p.wyroznienia||[]).length){
+    p.wyroznienia = p.wyroznienia.filter(w=>w.obsId !== obs.id);
+    void savePlayers();
+  }
+  return p;
+}
+
+
 function openObsSkladModal(obsId){
   const obs = DB.observations.find(o=>o.id===obsId);
   if(!obs) return;
@@ -14137,90 +14246,6 @@ function openObsSkladModal(obsId){
     draw();
   }
 
-  // ZAZNACZENIE „WYRÓŻNIONY" MA SKUTEK W BAZIE, A NIE TYLKO W TYM OKNIE.
-  //
-  // Dotąd checkbox zasilał wyłącznie mapę pozycji w Rankingu — i to jedynie wtedy, gdy zawodnik
-  // miał już kartotekę o dokładnie tym nazwisku i w tej samej lidze. Kto wyłowił kogoś nowego
-  // z protokołu, zaznaczał go i… nic. Nazwisko zostawało w oknie obserwacji, a przy następnym
-  // meczu trzeba było je pamiętać z głowy.
-  //
-  // Teraz zaznaczenie robi trzy rzeczy naraz: zakłada kartotekę, jeśli jej nie ma, stawia
-  // zawodnika w Monitoringu i zapisuje mecz, w którym się wyróżnił. Dzięki temu widać różnicę
-  // między jednym dobrym meczem a regularną formą.
-  const kluczOsobyWyr = (s)=> String(s||'').split(/\s+/).map(importNorm).filter(Boolean).sort().join(' ');
-
-  function klubStronyMeczu(nazwaDruzyny){
-    if(!nazwaDruzyny) return null;
-    return dopasujKlubDoNazwy(nazwaDruzyny, '', '');
-  }
-
-  function znajdzZawodnikaWyr(nazwa, klub){
-    const szukany = kluczOsobyWyr(nazwa);
-    if(!szukany) return null;
-    const wKlubie = klub ? DB.players.filter(p=>p.clubId === klub.id
-      && kluczOsobyWyr(`${p.firstName||''} ${p.lastName||''}`) === szukany) : [];
-    if(wKlubie.length) return wKlubie[0];
-    // Bez klubu nie zgadujemy: to samo nazwisko potrafi wystąpić w kilku klubach naraz.
-    const wszedzie = DB.players.filter(p=>kluczOsobyWyr(`${p.firstName||''} ${p.lastName||''}`) === szukany);
-    return wszedzie.length === 1 ? wszedzie[0] : null;
-  }
-
-  function zalozKartoteke(z, klub){
-    const slowa = String(z.nazwa||'').trim().split(/\s+/);
-    const p = {
-      id: uid('Z'),
-      firstName: slowa[0] || '',
-      lastName: slowa.slice(1).join(' '),
-      clubId: klub.id,
-      position: z.pozycja || '',
-      birthYear: z.rocznik || '',
-      status: '',
-      dateAdded: new Date().toISOString().slice(0,10),
-      source: 'wyróżniony w meczu',
-      matches: 0, minutes: 0, goals: 0,
-      monitored: true,
-    };
-    DB.players.push(p);
-    return p;
-  }
-
-  function ustawWyroznienie(strona, i, zaznaczony){
-    const dane = (obs.skladMeczu||{})[strona] || {};
-    const z = (dane.zawodnicy||[])[i];
-    if(!z) return null;
-    z.wyrozniony = zaznaczony;
-
-    const klub = klubStronyMeczu(dane.nazwa);
-    let p = znajdzZawodnikaWyr(z.nazwa, klub);
-
-    if(zaznaczony){
-      if(!p && klub) p = zalozKartoteke(z, klub);
-      if(!p){
-        komunikat = `Zaznaczyłem „${z.nazwa}", ale nie wiem, do którego klubu go przypisać `
-          + `(„${dane.nazwa||'—'}" nie pasuje jednoznacznie do żadnego w bazie), więc nie zakładam kartoteki.`;
-        return null;
-      }
-      p.monitored = true;
-      p.watchlistRemoved = false;
-      p.wyroznienia = (p.wyroznienia || []).filter(w=>w.obsId !== obs.id);
-      p.wyroznienia.push({
-        obsId: obs.id, data: obs.date || '', mecz: obs.match || '',
-        scout: obs.scout || '', klub: dane.nazwa || '',
-      });
-      void savePlayers();
-      return p;
-    }
-
-    // ODZNACZENIE COFA TYLKO WYRÓŻNIENIE. Kartoteki nie kasujemy i z Monitoringu nie wyrzucamy —
-    // zawodnik mógł tam trafić z zupełnie innego powodu, a pomyłkowe kliknięcie nie ma prawa
-    // wymazać czyjejś pracy. Z Monitoringu usuwa się osobnym przyciskiem.
-    if(p && (p.wyroznienia||[]).length){
-      p.wyroznienia = p.wyroznienia.filter(w=>w.obsId !== obs.id);
-      void savePlayers();
-    }
-    return p;
-  }
-
   function kolumnaHtml(strona, tytulZapasowy){
     const dane = (obs.skladMeczu||{})[strona];
     const zawodnicy = (dane && dane.zawodnicy) || [];
@@ -14289,8 +14314,9 @@ function openObsSkladModal(obsId){
     overlay.querySelector('[data-x="baza"]').onclick = wczytajZBazy;
     overlay.querySelector('[data-x="protokol"]').onclick = wczytajZ90minut;
     overlay.querySelectorAll('.obs-wyroz').forEach(inp=>inp.onchange = ()=>{
-      const p = ustawWyroznienie(inp.dataset.strona, Number(inp.dataset.i), inp.checked);
-      if(inp.checked && p) komunikat = `„${p.firstName} ${p.lastName}" — w Monitoringu, kliknij nazwisko, by otworzyć profil.`;
+      const wynik = ustawWyroznienie(obs, inp.dataset.strona, Number(inp.dataset.i), inp.checked);
+      if(wynik && wynik.blad) komunikat = wynik.blad;
+      else if(inp.checked && wynik) komunikat = `„${wynik.firstName} ${wynik.lastName}" — w Monitoringu, kliknij nazwisko, by otworzyć profil.`;
       zapisz();     // zapisuje obserwację i przerysowuje okno (nazwisko staje się odnośnikiem)
     });
     // Przejście do profilu z okna składu — okno zamykamy, bo profil otwiera się w tle strony.
