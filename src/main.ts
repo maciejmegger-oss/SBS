@@ -3,6 +3,8 @@ import { storage } from "./data/storage";
 import { currentUser, signIn, signOut, requestPasswordReset, setNewPassword, isPasswordRecoveryLink,
          mojeKonto, listaKont, ustawStatusKonta, ustawRoleKonta, tokenSesji } from "./data/auth";
 import { VOIVODESHIP_PATHS } from "./data/voivodeships";
+// Kod zbieracza ŁNP — ten sam plik, który serwujemy pod /zakladka-lnp-v2.js.
+import LNP_ZBIERACZ from "../public/zakladka-lnp-v2.js?raw";
 import type { Database } from "./types";
 import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
@@ -3521,7 +3523,7 @@ function viewDashboard(){
                         : esc(o.match || 'Obserwacja meczu'));
         return `<div class="obs-item">
           <strong>${naglowek}</strong>${pl || o.playerId ? ` — <span class="avg-chip">${fmt1(avg)}</span>` : ''}
-          <div class="meta">${esc(o.date)}${pl || o.playerId ? ' &middot; ' + esc(o.match) : ''} &middot; scout: ${esc(o.scout)}</div>
+          <div class="meta">${esc(o.date)}${pl || o.playerId ? ' &middot; ' + esc(o.match) : ''}${ligaTag(o)} &middot; scout: ${esc(o.scout)}</div>
         </div>`;
       }).join('') : `<div class="empty">Brak obserwacji — dodaj pierwszą w zakładce „Plan Obserwacji”.</div>`}
     </div>
@@ -4226,6 +4228,9 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
   overlay.className = 'modal-overlay';
   document.body.appendChild(overlay);
   let wynik = null, komunikat = '', pracuje = false, zapisanychMeczow = 0, dopisujBrak = true;
+  // Roczniki z bloku „### ROCZNIKI" — klucz to znormalizowane imię i nazwisko, wartość to rok.
+  let rocznikiZWklejki: Record<string,string> = {};
+  const kluczRocznika = (s)=> String(s||'').split(/\s+/).map(importNorm).filter(Boolean).sort().join(' ');
 
   // Ile meczów tego klubu jest już rozliczonych — liczymy z znaczników przy zawodnikach.
   const juzRozliczone = ()=>{
@@ -4260,10 +4265,43 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
         <textarea id="pm-tekst" rows="4" placeholder="(pole zapasowe — gdybyś miał protokoły w schowku, naciśnij tu Ctrl+V)" style="font-size:12px;font-family:monospace;"></textarea>
       </div>
       ${komunikat ? `<p class="note" style="color:var(--clay-dark);">${esc(komunikat)}</p>` : ''}
-      ${wynik ? `<div style="max-height:280px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px;font-size:12.5px;">
-        ${wynik.length>1 ? `<p class="note" style="margin:0 0 6px;">Rozpoznanych meczów: <strong>${wynik.length}</strong></p>` : ''}
-        ${wynik.flatMap(prot=>prot.strony).map(s=>{
-          if(s.blad) return `<div style="padding:4px 0;color:var(--clay-dark);"><strong>${esc(s.nazwa)}</strong> — ${esc(s.blad)}</div>`;
+      ${wynik ? (()=>{
+        // POKAZUJEMY TO, CO WCHODZI — NIE CAŁĄ HISTORIĘ.
+        //
+        // Zbieracz przynosi całą kolejkę, a w niej zwykle same mecze rozliczone dawno temu.
+        // Wypisywanie ich wszystkich zasypywało okno trzydziestoma spotkaniami, wśród których
+        // nie dało się znaleźć tego jednego nowego. Rozliczone zwijamy więc do jednej linijki.
+        const strony = wynik.flatMap(prot=>prot.strony);
+        const rozliczona = (s)=> !s.blad && s.wiersze
+          && s.wiersze.filter(w=>w.zagral).length > 0
+          && s.wiersze.filter(w=>w.zagral).every(w=>w.juzPoliczony);
+        const nowe = strony.filter(s=>!rozliczona(s));
+        const stare = strony.filter(rozliczona);
+        return `<div style="max-height:280px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px;font-size:12.5px;">
+        ${stare.length ? `<p class="note" style="margin:0 0 6px;padding:4px 6px;background:var(--chalk-dim);border-radius:6px;">
+          Pomijam ${stare.length} ${stare.length===1?'drużynę, której mecz jest':'drużyn, których mecze są'} już rozliczonych — nic się nie podwoi.
+        </p>` : ''}
+        ${!nowe.length ? `<p class="note" style="margin:0;">Nic nowego w tej wklejce — wszystkie te mecze są już w systemie.</p>` : ''}
+        ${nowe.length>2 ? `<p class="note" style="margin:0 0 6px;">Do zapisania: <strong>${Math.ceil(nowe.length/2)}</strong> ${Math.ceil(nowe.length/2)===1?'mecz':'meczów'}</p>` : ''}
+        ${nowe.map(s=>{
+          if(s.blad){
+            // NAZWY NA ŁNP I NA 90MINUT BYWAJĄ ZUPEŁNIE INNE. „Pogoń Barlinek" u jednych to
+            // „CRS Barlinek" u drugich, a że wspólne jest samo miasto, żadne dopasowanie po
+            // rdzeniu nazwy tego nie połączy. Zamiast zostawiać klub bez statystyk, pytamy raz
+            // — i zapamiętujemy odpowiedź, więc następne protokoły trafiają już same.
+            const doWyboru = !/nie udało się odczytać/.test(s.blad);
+            return `<div style="padding:6px 0;color:var(--clay-dark);border-bottom:1px solid var(--chalk-dim);">
+              <strong>${esc(s.nazwa)}</strong> — ${esc(s.blad)}
+              ${doWyboru ? `<div style="margin-top:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                <span class="note" style="margin:0;">To ten klub u nas:</span>
+                <select data-przypisz="${esc(s.nazwa)}" style="font-size:12px;max-width:260px;">
+                  <option value="">— wybierz —</option>
+                  ${DB.clubs.slice().sort((a,b)=>a.name.localeCompare(b.name,'pl'))
+                    .map(c=>`<option value="${esc(c.id)}">${esc(c.name)}${c.league?` · ${esc(c.league)}`:''}</option>`).join('')}
+                </select>
+              </div>` : ''}
+            </div>`;
+          }
           const grali = s.wiersze.filter(w=>w.zagral);
           // Do kadry trafia CAŁY skład meczowy, więc liczymy dopisywanych ze wszystkich wierszy,
           // nie tylko z tych, którzy weszli na boisko.
@@ -4280,7 +4318,8 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
               w.zawodnik?'':' <span style="color:var(--gold-dark);">nowy</span>'}`).join(' &middot; ')}</div>
           </div>`;
         }).join('')}
-      </div>` : ''}
+      </div>`;
+      })() : ''}
       <div class="modal-actions" style="justify-content:space-between;">
         <span>
           <button class="secondary" data-x="zakladka" title="Jedno kliknięcie na stronie meczu zamiast zaznaczania całej strony">🔖 Szybkie kopiowanie z ŁNP</button>
@@ -4342,16 +4381,52 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
         if(czysty){ alert('To nie jest adres z laczynaspilka.pl — nic nie zapisałem.'); return; }
       }
 
-      alert('Nie mam jeszcze żadnego adresu tej grupy ani klubu na „Łączy nas piłka".\n\n'
-        + 'Otworzę stronę rozgrywek — ustaw tam Sezon, Ligę i Grupę, a potem skopiuj adres '
-        + 'z paska przeglądarki i wklej go przyciskiem „🔗 Link ŁNP dla grupy" (Kluby → wybierz grupę).');
+      // PYTAMY RAZ NA GRUPĘ, ZAMIAST OTWIERAĆ CZTERYSTA RAZY NIE TĘ STRONĘ.
+      //
+      // Adresu grupy na ŁNP nie da się wyliczyć — to ciąg identyfikatorów (season, leagueGroup,
+      // subLeague), a nie nazwa. Dotąd przy braku adresu otwieraliśmy ogólne „/rozgrywki", które
+      // domyślnie pokazuje EKSTRAKLASĘ. Wyglądało to jak awaria: „klikam dolnośląską, a otwiera
+      // mi Ekstraklasę". Alert to tłumaczył, ale ginął w pośpiechu.
+      //
+      // Teraz prosimy o adres wprost i zapamiętujemy go na stałe. Jedno wklejenie na grupę,
+      // raz w sezonie — a potem przycisk otwiera właściwą kolejkę od razu.
+      const wpisanaGrupa = prompt(
+        `Adres kolejki grupy „${grupa}" na Łączy nas piłka.\n\n`
+        + `Nie da się go odgadnąć — ŁNP zapisuje grupę jako ciąg identyfikatorów, nie nazwę.\n`
+        + `Podaję go raz, potem otworzy się sam.\n\n`
+        + `1. Otwórz laczynaspilka.pl/rozgrywki\n`
+        + `2. Ustaw Sezon, Ligę i Grupę tak, żeby zobaczyć mecze TEJ grupy\n`
+        + `3. Skopiuj adres z paska przeglądarki i wklej tutaj`, '');
+      const czystaGrupa = String(wpisanaGrupa || '').trim();
+      if(czystaGrupa && /^https?:\/\/(www\.)?laczynaspilka\.pl\//i.test(czystaGrupa)){
+        DB.settings.lnpGrupy = { ...(DB.settings.lnpGrupy||{}), [grupa]: czystaGrupa };
+        void saveSettings();
+        window.open(czystaGrupa, '_blank', 'noopener');
+        return;
+      }
+      if(czystaGrupa){ alert('To nie jest adres z laczynaspilka.pl — nic nie zapisałem.'); return; }
+      // Zrezygnował z podania adresu — otwieramy stronę rozgrywek, ale mówiąc wprost, co się stanie.
+      alert('Bez adresu tej grupy otworzę ogólną stronę rozgrywek — pokaże Ekstraklasę.\n\n'
+        + 'Ustaw na niej Sezon, Ligę i Grupę, wróć tutaj i podaj adres, gdy zapytam ponownie.');
       window.open('https://www.laczynaspilka.pl/rozgrywki', '_blank', 'noopener');
     });
     overlay.querySelectorAll('[data-x="zapisz"]').forEach(b=>b.onclick=()=>{ void zapisz(); });
+    // Przypisanie nazwy z ŁNP do klubu w kartotece — zapamiętane raz, działa od następnego razu.
+    overlay.querySelectorAll('[data-przypisz]').forEach(sel=>sel.onchange = ()=>{
+      const nazwaLnp = sel.getAttribute('data-przypisz');
+      const klubId = sel.value;
+      if(!klubId) return;
+      const klub = DB.clubs.find(c=>c.id === klubId);
+      DB.settings.aliasyKlubow = { ...(DB.settings.aliasyKlubow||{}), [importNorm(nazwaLnp)]: klubId };
+      void saveSettings();
+      komunikat = `Zapamiętałem: „${nazwaLnp}" na Łączy nas piłka to ${klub ? klub.name : 'wybrany klub'}. Rozpoznaję protokoły jeszcze raz.`;
+      rozpoznaj();
+    });
     const chk = overlay.querySelector('#pm-dopisuj');
     if(chk) chk.onchange = ()=>{ dopisujBrak = chk.checked; };
     const pole = overlay.querySelector('#pm-tekst');
-    if(pole && !wynik) pole.focus();
+    // Pole trzyma ognisko także po rozpoznaniu — żeby kolejne Ctrl+V miało gdzie trafić.
+    if(pole && !pracuje) pole.focus();
   };
 
   // Protokoły przysłane wprost ze strony ŁNP (zakładka) — wpadają tu bez udziału schowka
@@ -4371,7 +4446,12 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
   // całym oknie: gdziekolwiek klikniesz Ctrl+V, treść trafia do pola i od razu ją rozpoznaję.
   // Dzięki temu „bez wklejania" i „z wklejaniem" kosztują tyle samo — jeden ruch.
   overlay.addEventListener('paste', (e)=>{
-    if(wynik) return;                       // po rozpoznaniu czekamy na „Zapisz", nie na kolejne wklejki
+    // WKLEJENIE ZAWSZE COŚ ROBI. Wcześniej po pierwszym rozpoznaniu okno przestawało reagować na
+    // Ctrl+V — czekało na „Zapisz". Kto zebrał kolejkę na nowo i wklejał ją do otwartego okna,
+    // nie widział żadnej reakcji i miał prawo sądzić, że wklejanie jest zepsute. Nowa wklejka
+    // po prostu zastępuje poprzednie rozpoznanie; blokujemy ją tylko w trakcie samego zapisu,
+    // żeby nie podmienić danych w połowie wysyłki.
+    if(pracuje) return;
     const dane = (e.clipboardData || (window as any).clipboardData);
     const tekst = dane ? dane.getData('text') : '';
     if(!String(tekst||'').trim()) return;
@@ -4384,21 +4464,113 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
   function rozpoznaj(){
     const tekst = (overlay.querySelector('#pm-tekst') as any).value.trim();
     if(!tekst){ komunikat = 'Najpierw wklej stronę meczu.'; rysuj(); return; }
+
+    // WKLEJONY ADRES TO NIE POMYŁKA DO ZGANIENIA, TYLKO GOTOWA ODPOWIEDŹ NA PYTANIE, KTÓRE
+    // I TAK ZADAJEMY. Adresy grup na ŁNP przeterminowują się i trzeba je co jakiś czas podać
+    // na nowo. Kto skopiował adres z paska, ma w schowku dokładnie to, czego potrzebujemy —
+    // szkoda odsyłać go do innego okienka po to samo. Zapamiętujemy więc od razu.
+    const samAdres = tekst.replace(/\s+/g, ' ').trim();
+    if(/^https?:\/\/(www\.)?laczynaspilka\.pl\//i.test(samAdres) && samAdres.length < 600 && !/\s/.test(samAdres)){
+      if(/\/mecz\//i.test(samAdres)){
+        komunikat = 'To adres pojedynczego meczu, nie lista kolejek. Otwórz go w przeglądarce '
+          + 'i tam kliknij zakładkę „⚡ Zbierz całą kolejkę" — protokół przyjdzie tu sam.';
+        wynik = null; rysuj(); return;
+      }
+      if(!grupa){
+        komunikat = 'To adres strony ŁNP, a nie protokoły. Otwórz go w przeglądarce i tam kliknij zakładkę.';
+        wynik = null; rysuj(); return;
+      }
+      DB.settings.lnpGrupy = { ...(DB.settings.lnpGrupy||{}), [grupa]: samAdres };
+      void saveSettings();
+      (overlay.querySelector('#pm-tekst') as any).value = '';
+      // OD RAZU OTWIERAMY TĘ STRONĘ. Wklejenie adresu to gest użytkownika, więc przeglądarka
+      // pozwala tu otworzyć kartę — a następny krok i tak polega na wejściu właśnie tam.
+      // Bez tego zostaje polecenie „kliknij niżej", czyli jeszcze jedno miejsce do zgubienia.
+      let otwarte = false;
+      try{ otwarte = !!window.open(samAdres, '_blank', 'noopener'); }catch(e){ otwarte = false; }
+      komunikat = `Zapamiętałem ten adres dla grupy „${grupa}" — to był adres strony, nie protokoły. `
+        + (otwarte
+          ? `Otworzyłem tę kolejkę w nowej karcie. PRZEJDŹ DO NIEJ i kliknij tam zakładkę „⚡ Zbierz całą kolejkę”, `
+            + `a potem w panelu w prawym dolnym rogu „Wyślij do SBS”. Protokoły wrócą tutaj same.`
+          : `Kliknij teraz „↗ Otwórz kolejkę w ŁNP” niżej, a na otwartej stronie zakładkę „⚡ Zbierz całą kolejkę”.`);
+      wynik = null; rysuj(); return;
+    }
+    // ROCZNIKI dołączone przez zakładkę. Protokół ich nie zawiera — zakładka dobiera je z profili
+    // zawodników i dokleja osobnym blokiem. Odcinamy go, zanim podzielimy tekst na mecze,
+    // żeby nie trafił do żadnego z nich.
+    // Klucz niezależny od kolejności słów: ŁNP pisze raz „Jan Kowalski", raz „Kowalski Jan",
+    // a w kartotece imię i nazwisko są w osobnych polach. Sortowanie słów godzi wszystkie trzy.
+    rocznikiZWklejki = {};
+    const blokR = tekst.match(/^###\s*ROCZNIKI\s*$([\s\S]*)/m);
+    if(blokR){
+      blokR[1].split('\n').forEach(l=>{
+        const [kto, rok] = l.split('|');
+        const k = kluczRocznika(kto);
+        if(k && /^(19|20)\d{2}$/.test(String(rok||'').trim())) rocznikiZWklejki[k] = rok.trim();
+      });
+    }
+    const bezRocznikow = tekst.replace(/^###\s*ROCZNIKI\s*$[\s\S]*/m, '');
+
     // Zakładka do ŁNP zbiera protokoły całej kolejki i skleja je znacznikiem „### PROTOKOL:".
     // Dzieki temu jedno wklejenie rozlicza dziewięć meczów zamiast jednego.
-    const czesci = tekst.split(/^###\s*PROTOKOL:.*$/m).map(t=>t.trim()).filter(Boolean);
-    const wyniki = (czesci.length ? czesci : [tekst]).map(t=>przetworzProtokolLnp(t));
+    // ADRESU NIE WOLNO WYRZUCIĆ RAZEM ZE ZNACZNIKIEM. To po nim rozpoznajemy, że dwa zebrania
+    // dotyczą tego samego meczu — bez niego ten sam protokół doliczał się drugi raz.
+    const adresy = (bezRocznikow.match(/^###\s*PROTOKOL:\s*(.*)$/gm) || [])
+      .map(l=>l.replace(/^###\s*PROTOKOL:\s*/, '').trim());
+    const czesci = bezRocznikow.split(/^###\s*PROTOKOL:.*$/m).map(t=>t.trim()).filter(Boolean);
+    // GRUPA, W KTÓREJ PRACUJESZ, ROZSTRZYGA WĄTPLIWOŚCI. „Pogoń" jest i w Barlinku, i w Lęborku,
+    // i w Szczecinie; bez wskazania grupy dorobek mógłby trafić do klubu z drugiego końca Polski.
+    const wyniki = (czesci.length ? czesci : [tekst]).map((t,i)=>przetworzProtokolLnp(t, adresy[i] || '', grupa));
     const dobre = wyniki.filter(w=>!w.blad);
     if(!dobre.length){ komunikat = wyniki[0].blad || 'Nie rozpoznałem protokołu.'; wynik = null; rysuj(); return; }
     komunikat = wyniki.length > dobre.length
       ? `Rozpoznałem ${dobre.length} z ${wyniki.length} protokołów — reszty nie umiem odczytać.` : '';
+
+    // CZY TA WKLEJKA W OGÓLE DOTYCZY TEGO KLUBU?
+    //
+    // Schowek pamięta poprzednie zebranie. Stojąc w klubie z grupy śląskiej łatwo wkleić kolejkę
+    // pomorską sprzed godziny — protokoły rozpoznają się bez zarzutu, zapis nawet je przyjmie
+    // (trafią do właściwych klubów), ale w otwartym klubie nie pojawi się ani jeden zawodnik.
+    // Bez tego ostrzeżenia wygląda to jak awaria zapisu, a jest pomyłką w schowku.
+    if(klub){
+      const strony = dobre.flatMap(p=>p.strony);
+      const tenKlub = strony.some(s=>s.klub && s.klub.id === klub.id);
+      const taGrupa = strony.some(s=>s.klub && s.klub.league === klub.league);
+      if(!tenKlub){
+        const obceGrupy = [...new Set(strony.map(s=>s.klub && s.klub.league).filter(Boolean))];
+        komunikat = `⚠️ W tej wklejce nie ma ${esc(klub.name)}. `
+          + (taGrupa
+            ? `Są mecze z tej samej grupy, ale bez tego klubu — ten zespół w tej kolejce nie grał albo pauzował.`
+            : `To kolejka ${obceGrupy.length ? `z grupy: ${obceGrupy.join(', ')}` : 'z innej grupy'}, a ${esc(klub.name)} gra w ${esc(klub.league||'innej')}. `
+              + `Najpewniej w schowku została poprzednia wklejka — otwórz kolejkę tej grupy przyciskiem „↗ Otwórz mecze klubu" i zbierz ją na nowo.`)
+          + (komunikat ? ' ' + komunikat : '');
+      }
+    }
     wynik = dobre;
     rysuj();
   }
 
   async function zapisz(){
-    pracuje = true; rysuj();
-    let dopisanych = 0, nowych = 0, meczow = 0;
+    pracuje = true; komunikat = ''; rysuj();
+    try{
+      await zapiszWewnetrznie();
+    }catch(e){
+      // BEZ TEGO ZAPIS WISIAŁ W MILCZENIU. Cała ta funkcja przelicza dziesiątki zawodników
+      // z kilku protokołów naraz; wystarczył jeden nieprzewidziany kształt danych, żeby rzuciła
+      // wyjątkiem — a wtedy „pracuje" zostawało włączone i przycisk stał na „Zapisuję…" bez
+      // końca. Użytkownik nie miał jak odróżnić trwającej pracy od awarii i tracił zebrane
+      // protokoły. Teraz błąd wychodzi na wierzch razem z treścią.
+      pracuje = false;
+      komunikat = 'Zapis się nie powiódł: ' + (e && e.message ? e.message : e)
+        + ' — protokoły są nadal w oknie, nic nie przepadło. Wyślij mi tę treść, to poprawię.';
+      console.error('SBS zapis protokołów:', e);
+      rysuj();
+    }
+  }
+
+  async function zapiszWewnetrznie(){
+    let dopisanych = 0, nowych = 0, meczow = 0, rocznikow = 0, powtorzonych = 0;
+    const powtorzoneMecze = new Set();
     const dzis = new Date().toISOString().slice(0,10);
     wynik.forEach(protokol=>{
     meczow++;
@@ -4423,9 +4595,28 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
           nowych++;
         }
         if(!p) return;
+        // ROCZNIK Z PROFILU ŁNP. Protokół meczu roczników nie podaje — zakładka dobiera je
+        // ze stron zawodników i dokleja osobnym blokiem. Wpisujemy tylko w puste pole: dane
+        // z Transfermarktu czy z ręki są pewniejsze i nie wolno ich nadpisać.
+        if(!p.birthYear && !p.birthDate){
+          const rok = rocznikiZWklejki[kluczRocznika(w.firstName + ' ' + w.lastName)];
+          if(rok){ p.birthYear = rok; rocznikow++; }
+        }
         if(w.mlodziezowiec && !p.mlodziezowiec) p.mlodziezowiec = true;
         if(w.position && !p.position) p.position = w.position;
-        if(!w.zagral || (p.rozliczoneMecze||[]).includes(protokol.klucz)) return;
+        if(!w.zagral) return;
+        // TO SAMO SPOTKANIE LICZYMY RAZ — I POZNAJEMY JE PO MECZU, NIE PO KLUCZU Z TEKSTU.
+        //
+        // Klucz wyliczany z treści wklejki zawodził: przy powtórnym zebraniu tej samej kolejki
+        // wychodził inny (raz z datą, raz bez, raz z datą ze stopki strony), więc dorobek
+        // doliczał się drugi i trzeci raz. W sezonie każda para gra ze sobą dokładnie dwa razy —
+        // raz u siebie, raz na wyjeździe — więc para (rywal, czy u siebie) wskazuje spotkanie
+        // jednoznacznie i nie da się jej podrobić inną wklejką tego samego meczu.
+        const rywal = (protokol.druzyny.find(d=>d !== s.nazwa) || '');
+        const uSiebie = protokol.druzyny[0] === s.nazwa;
+        const juzRozliczony = (p.rozliczoneMecze||[]).includes(protokol.klucz)
+          || (p.przebieg||[]).some(x=> importNorm(x.rywal||'') === importNorm(rywal) && !!x.dom === uSiebie);
+        if(juzRozliczony){ powtorzonych++; powtorzoneMecze.add(`${s.nazwa} — ${rywal}`); return; }
         p.matches = (p.matches || 0) + 1;
         p.minutes = (p.minutes || 0) + w.minutyGry;
         // GOLE I KARTKI Z IKON PRZY MINUTACH. Doliczamy je tak samo jak mecze — raz na protokół,
@@ -4435,10 +4626,9 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
         if(w.czerwone) p.redCards = (p.redCards || 0) + w.czerwone;
         p.rozliczoneMecze = [...(p.rozliczoneMecze || []), protokol.klucz];
         // Minuty mecz po meczu — to z nich powstaje wykres dostępności w profilu i w PDF.
-        const rywal = (protokol.druzyny.find(d=>d !== s.nazwa) || '');
         const przebieg = (p.przebieg || []).filter(x=>x.mecz !== protokol.klucz);
         przebieg.push({ mecz: protokol.klucz, data: '', kolejka: null, rywal,
-          dom: protokol.druzyny[0] === s.nazwa, wynik: '', minuty: w.minutyGry,
+          dom: uSiebie, wynik: '', minuty: w.minutyGry,
           odMinuty: w.rezerwa ? (w.wszedl ?? null) : 0, doMinuty: w.rezerwa ? null : (w.zszedl ?? null),
           podstawowy: !w.rezerwa, zolte: w.zolte || 0, czerwone: w.czerwone || 0 });
         p.przebieg = przebieg;
@@ -4458,7 +4648,20 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
     // dotyczy. Od tej chwili „Odśwież statystyki" działa w niej tak samo jak w pomorskiej.
     const zapamietane = zapamietajAdresGrupy(zrodloLnp, wynik);
     zapisanychMeczow += meczow;
-    komunikat = `Zapisano ${meczow} ${meczow===1?'mecz':'meczów'}: ${dopisanych} wpisów dorobku${nowych?`, w tym ${nowych} nowych zawodników w kartotece`:''}.`
+    // NIE PISZEMY „ZAPISANO", GDY NIC NIE WESZŁO. Komunikat zaczynający się od „Zapisano 32
+    // meczów" i kończący na „0 wpisów dorobku" przeczy sam sobie i wygląda jak awaria, choć
+    // to działające zabezpieczenie przed podwójnym liczeniem.
+    const oPowtorkach = powtorzonych
+      ? `${powtorzonych} ${powtorzonych===1?'wpis pominięty':'wpisów pominiętych'} — te spotkania są już rozliczone `
+        + `(${[...powtorzoneMecze].slice(0,3).join('; ')}${powtorzoneMecze.size>3?` i ${powtorzoneMecze.size-3} więcej`:''}).`
+      : '';
+    komunikat = dopisanych || nowych || rocznikow
+      ? `Zapisano ${meczow} ${meczow===1?'mecz':'meczów'}: ${dopisanych} wpisów dorobku`
+        + `${nowych?`, w tym ${nowych} nowych zawodników w kartotece`:''}`
+        + `${rocznikow?`; uzupełniłem ${rocznikow} roczników`:''}.`
+        + (oPowtorkach ? ' ' + oPowtorkach + ' Nic się nie podwoiło.' : '')
+      : `Nic nowego nie zapisałem — wszystkie ${meczow} ${meczow===1?'mecz z tej wklejki jest':'meczów z tej wklejki jest'} `
+        + `już rozliczonych. ${oPowtorkach} Dorobek został nietknięty.`
       + (zapamietane.length ? ` Zapamiętałem też adres ŁNP dla ${zapamietane.join(' i ')} — następnym razem otworzy się jednym kliknięciem.` : ' Wklej kolejne protokoły.');
     wynik = null;
     rysuj();
@@ -5215,9 +5418,45 @@ function obsMonthListHtml(){
           <button class="link-btn" data-action="delete-obs" data-id="${o.id}" style="font-size:11px;color:var(--clay-dark);">Usuń</button>
         </span>
       </div>
-      <div class="meta">${pl ? esc(o.match||'brak danych meczu') : '<em>obserwacja całego meczu</em>'}${o.location?' &middot; 📍 '+esc(o.location):''} &middot; scout: ${esc(o.scout)}</div>
+      <div class="meta">${pl ? esc(o.match||'brak danych meczu') : '<em>obserwacja całego meczu</em>'}${ligaTag(o)}${o.location?' &middot; 📍 '+esc(o.location):''} &middot; scout: ${esc(o.scout)}</div>
     </div>`;
   }).join('');
+}
+
+// ROZGRYWKI I KATEGORIA NA LIŚCIE OBSERWACJI.
+//
+// Panel mobilny zapisuje przy obserwacji nazwę rozgrywek („III liga, grupa 2", „A1") i to, czy
+// grali seniorzy, czy młodzież. Do bazy szło to od początku, ale komputer nie pokazywał tego
+// nigdzie — więc scout, który na trybunie odnotował, że ogląda A1, na komputerze widział mecz
+// nie do odróżnienia od spotkania seniorów. Ta sama ocena znaczy w obu wypadkach co innego.
+//
+// Rozpoznanie z nazwy jest awaryjne: obserwacje sprzed wprowadzenia tych pól nie mają zapisanej
+// kategorii, a nazwę rozgrywek często mają. Wzorce są te same, co w src/mobile/main.ts —
+// świadomie powtórzone, bo aplikacje nie dzielą jeszcze wspólnego modułu dziedzinowego.
+const MLODZIEZ_WZORCE_PC = [/\b[ABCD][12]\b/i, /\bU-?\d{1,2}\b/i, /juniorz?k?[aiy]?\b|juniorsk/i,
+  /młodzik|mlodzik|młodzicz|mlodzicz/i, /trampkarz|orlik|żak\b|zak\b/i, /\bCLJ\b/i, /młodzieżow|mlodziezow/i];
+const SENIORZY_WZORCE_PC = [/ekstraklasa|ekstraliga|betclic/i, /\b(I|II|III|IV|V)\s*liga\b/i,
+  /\b[1-5]\s*liga\b/i, /klasa\s+[ABC]\b|\b[ABC]\s+klasa|okręgow|okregow/i, /puchar\s+polski/i];
+
+function kategoriaObserwacji(o){
+  if(o && o.kategoria) return o.kategoria;
+  const n = String((o && o.rozgrywki) || '').trim();
+  if(!n) return '';
+  if(MLODZIEZ_WZORCE_PC.some(w=>w.test(n))) return 'mlodziez';
+  if(SENIORZY_WZORCE_PC.some(w=>w.test(n))) return 'seniorzy';
+  return '';
+}
+
+// Znacznik na karcie. Kategoria barwą, bo to ona rozstrzyga, jak czytać ocenę; nazwa rozgrywek
+// obok, jako uszczegółowienie.
+function ligaTag(o){
+  const kat = kategoriaObserwacji(o);
+  const nazwa = (o && o.rozgrywki) || '';
+  if(!kat && !nazwa) return '';
+  const etykieta = kat === 'mlodziez' ? 'Młodzież' : kat === 'seniorzy' ? 'Seniorzy' : '';
+  const barwa = kat === 'mlodziez' ? 'var(--gold-dark, #8C6C21)' : 'var(--green-dark, #2F6B41)';
+  const tekst = [etykieta, nazwa].filter(Boolean).join(' · ');
+  return ` &middot; <span style="color:${barwa};font-weight:600;">${esc(tekst)}</span>`;
 }
 
 function obsCalendarHtml(){
@@ -5278,7 +5517,7 @@ function obsCalendarHtml(){
       const pl = DB.players.find(p=>p.id===o.playerId);
       return `<div class="obs-item" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
         <span>${pl ? `<strong>${esc(pl.firstName+' '+pl.lastName)}</strong> — ${esc(o.match||'brak danych meczu')}`
-          : `<strong>${esc(o.match || 'Obserwacja meczu')}</strong>`} <span class="meta">(${esc(o.scout)})</span></span>
+          : `<strong>${esc(o.match || 'Obserwacja meczu')}</strong>`}<span class="meta">${ligaTag(o)} (${esc(o.scout)})</span></span>
         <span style="flex-shrink:0;white-space:nowrap;">
           <button class="link-btn" data-action="edit-obs" data-id="${o.id}" style="font-size:11px;">✎</button>
           <button class="link-btn" data-action="delete-obs" data-id="${o.id}" style="font-size:11px;color:var(--clay-dark);">✕</button>
@@ -6572,6 +6811,40 @@ const kluczWykluczonych = (key) => key + '|||wykluczeni';
 // Liczy się to przy każdym wejściu na mapę, a nie w chwili zapisu z telefonu. Dzięki temu działa
 // także dla meczów obejrzanych WCZEŚNIEJ, bez powtarzania pracy — a jedna implementacja obsługuje
 // obie drogi zamiast dwóch, które musiałyby się zgadzać.
+// POZYCJA Z KARTOTEKI NA NUMER NA PLANSZY.
+//
+// Na planszy pozycje są ponumerowane 1–11 i numer znaczy to samo w każdym systemie (zmieniają się
+// tylko współrzędne). Kartoteka opisuje pozycję słowem — to jest przełożenie jednego na drugie.
+//
+// Potrzebne, bo wyróżnienie zawodnika na trybunie i postawienie go na planszy to dwie różne
+// czynności. Scout w trakcie meczu robi zwykle pierwszą: gwiazdka przy nazwisku zajmuje sekundę,
+// obsadzanie planszy — nie. Bez tego przełożenia taki zawodnik nie trafiał na mapę NIGDY, choć
+// jego pozycja jest znana z kartoteki.
+// Tablica OBIEKTÓW, nie par. Przy parach TypeScript widzi obie pozycje jako „wzorzec albo
+// liczba" i nie pozwala wywołać na nich niczego konkretnego; nazwane pola rozstrzygają to same.
+const POZYCJA_NA_NUMER = [
+  { wzor: /^bramkarz/i, numer: 1 },
+  { wzor: /wahadłowy prawy|wahadlowy prawy/i, numer: 2 },
+  { wzor: /wahadłowy lewy|wahadlowy lewy/i, numer: 3 },
+  { wzor: /obrońca środkowy lewy|obronca srodkowy lewy/i, numer: 5 },
+  { wzor: /obrońca środkowy|obronca srodkowy/i, numer: 4 },
+  { wzor: /obrońca prawy|obronca prawy|obrońca boczny|obronca boczny/i, numer: 2 },
+  { wzor: /obrońca lewy|obronca lewy/i, numer: 3 },
+  { wzor: /pomocnik defensywny/i, numer: 6 },
+  { wzor: /pomocnik ofensywny/i, numer: 10 },
+  { wzor: /pomocnik/i, numer: 8 },
+  { wzor: /skrzydłowy lewy|skrzydlowy lewy/i, numer: 11 },
+  { wzor: /skrzydłowy/i, numer: 7 },
+  { wzor: /napastnik/i, numer: 9 },
+];
+
+function numerZPozycji(opis){
+  const t = String(opis||'').trim();
+  if(!t) return 0;
+  for(const p of POZYCJA_NA_NUMER) if(p.wzor.test(t)) return p.numer;
+  return 0;   // pozycja nieznana — lepiej nie stawiać nikogo, niż postawić byle gdzie
+}
+
 function wyroznieniZMeczow(liga, system){
   if(!system) return {};       // „Wszystkie systemy" — bez przypisań do konkretnych pozycji
   const wg = {};               // numer pozycji -> [playerId]
@@ -6584,7 +6857,6 @@ function wyroznieniZMeczow(liga, system){
       const dane = sklad[strona];
       if(!dane || dane.formacja !== system) return;
       (dane.zawodnicy||[]).forEach(z=>{
-        if(!z.pozycja) return;
         const oceniony = z.ocena && Object.values(z.ocena).some(n=>Number(n)>0);
         if(!oceniony && !z.wyrozniony && !z.notatka) return;
         // Dopasowanie po ZBIORZE słów — protokoły podają raz „Jan Kowalski", raz „Kowalski Jan".
@@ -6602,7 +6874,12 @@ function wyroznieniZMeczow(liga, system){
         // niż postawić na mapie niewłaściwego zawodnika.
         if(kand.length !== 1) return;
         if(clubLeague(kand[0].clubId) !== liga) return;
-        (wg[z.pozycja] = wg[z.pozycja] || []).push(kand[0].id);
+        // Pozycja WSKAZANA na planszy w telefonie jest ważniejsza niż ta z kartoteki: scout
+        // widział, gdzie ten zawodnik naprawdę grał w tym meczu, a kartoteka opisuje jego pozycję
+        // ogólnie i bywa nieaktualna. Kartoteka wchodzi dopiero wtedy, gdy planszy nie obsadzono.
+        const numer = z.pozycja || numerZPozycji(kand[0].position);
+        if(!numer) return;
+        (wg[numer] = wg[numer] || []).push(kand[0].id);
       });
     });
   });
@@ -8080,10 +8357,19 @@ function attachHandlers(){
     const grupa = clubBrowse.group;
     if(!grupa) return;
     const teraz = (DB.settings.lnpGrupy||{})[grupa] || '';
+    // ADRESY NA ŁNP SIĘ PRZETERMINOWUJĄ. Trzymają identyfikatory grupy i klasy rozgrywkowej,
+    // a te ŁNP wydaje na nowo — stary adres prowadzi wtedy na stronę „404 Ups! Piłka za boiskiem".
+    // Dlatego podajemy tu dokładną drogę do zdobycia świeżego, zamiast samego „wklej adres".
     const wpisany = prompt(
       `Adres rozgrywek grupy „${grupa}" na Łączy nas piłka.\n\n`
-      + `Otwórz tę grupę na laczynaspilka.pl, skopiuj adres z paska przeglądarki i wklej tutaj.\n`
-      + `Puste pole usuwa zapisany link.`, teraz);
+      + `JAK ZDOBYĆ ŚWIEŻY (stary potrafi prowadzić na stronę 404 — ŁNP zmienia identyfikatory):\n`
+      + `1. Wejdź na laczynaspilka.pl/rozgrywki\n`
+      + `2. Liga: „Niższe ligi"\n`
+      + `3. Województwa: wybierz swoje\n`
+      + `4. Klasa rozgrywkowa: „Czwarta liga"\n`
+      + `5. Grupa: wybierz tę właściwą\n`
+      + `6. Gdy zobaczysz tabelę tej grupy, skopiuj adres Z PASKA przeglądarki i wklej tutaj\n\n`
+      + `Puste pole usuwa zapisany link — wtedy otworzy się ogólna strona rozgrywek.`, teraz);
     if(wpisany === null) return;
     const adres = String(wpisany).trim();
     if(adres && !/^https?:\/\/(www\.)?laczynaspilka\.pl\//i.test(adres)){
@@ -8097,8 +8383,7 @@ function attachHandlers(){
   });
   main.querySelectorAll('[data-action="protokoly-grupy"]').forEach(b=>b.onclick=()=>openProtokolMeczuModal(null));
   main.querySelectorAll('[data-action="lnp-otworz-grupe"]').forEach(b=>b.onclick=()=>{
-    const adres = (DB.settings.lnpGrupy||{})[clubBrowse.group];
-    if(adres) window.open(adres, '_blank', 'noopener');
+    otworzKolejkeGrupy(clubBrowse.group);
   });
   main.querySelectorAll('[data-action="stats-90minut-grupa"]').forEach(b=>b.onclick=()=>{
     // JEDEN PRZYCISK, DWIE DROGI — bo źródła są dwa i nic na to nie poradzimy.
@@ -8116,8 +8401,9 @@ function attachHandlers(){
       // strony z poziomu SBS — to zabezpieczenie, którego nie da się (i nie należy) obchodzić.
       // Otwieramy więc od razu właściwą stronę ŁNP i zostawiamy człowiekowi JEDEN ruch: kliknięcie
       // zakładki. Wszystko po nim dzieje się samo, łącznie z powrotem tutaj.
-      const adres = (DB.settings.lnpGrupy||{})[clubBrowse.group] || '';
-      if(adres) window.open(adres, '_blank', 'noopener');
+      // Adres grupy pytamy raz i zapamiętujemy — patrz otworzKolejkeGrupy(). Bez tego przycisk
+      // albo nie robił nic, albo otwierał ogólną stronę rozgrywek pokazującą Ekstraklasę.
+      otworzKolejkeGrupy(clubBrowse.group);
       openProtokolMeczuModal(null);
       return;
     }
@@ -10268,8 +10554,27 @@ function parseLnpProtokolMinuty(rawText, nazwaKlubu){
   const bezOzdob = (l)=> l.replace(/\[([^\]]*)\]\([^)]*\)/g,'$1').trim();
   const szukany = importNorm(nazwaKlubu);
   let od = -1;
+  // NAGŁÓWEK Z NAZWĄ DRUŻYNY BYWA ROZBITY NA DWIE LINIE. „LGKS 38 PODLESIANKA KATOWICE" nie
+  // mieści się w jednym wierszu i strona łamie go w połowie — wtedy dokładna równość nigdy nie
+  // zachodzi, cały skład wraca jako nieodczytany i klub zostaje bez jednego zawodnika. Krótsze
+  // nazwy (Przemsza Siewierz) mieściły się w linii i działały, przez co wyglądało to na kaprys.
+  //
+  // Dlatego dopuszczamy trzy postacie nagłówka: samą linię, tę linię sklejoną z następną oraz
+  // zawieranie się jednej nazwy w drugiej. Warunek „Skład wyjściowy" tuż pod spodem pilnuje,
+  // żeby nie złapać nazwy z menu albo z tabeli wyników.
+  const pasujeNaglowek = (i)=>{
+    const a = importNorm(bezOzdob(linie[i]));
+    if(!a) return false;
+    if(a === szukany) return true;
+    const sklejone = importNorm(bezOzdob(linie[i]) + ' ' + bezOzdob(linie[i+1]||''));
+    if(sklejone === szukany) return true;
+    // Zawieranie tylko przy nazwach na tyle długich, żeby nie trafić w przypadkowy fragment.
+    if(a.length >= 8 && (szukany.includes(a) || a.includes(szukany))) return true;
+    return false;
+  };
   for(let i=0;i<linie.length;i++){
-    if(importNorm(bezOzdob(linie[i])) === szukany && /skład wyjściowy/i.test(linie[i+1]||'')){ od = i; break; }
+    // Nagłówek sklejony z dwóch linii ma „Skład wyjściowy" o wiersz dalej — sprawdzamy oba.
+    if(pasujeNaglowek(i) && (/skład wyjściowy/i.test(linie[i+1]||'') || /skład wyjściowy/i.test(linie[i+2]||''))){ od = i; break; }
   }
   if(od < 0) return null;
   let doIdx = linie.findIndex((l,i)=> i>od && /^Sztab$/i.test(l));
@@ -10333,9 +10638,25 @@ function nazwyDruzynZProtokolu(rawText){
 // Tożsamość meczu — do pilnowania, żeby ten sam protokół wklejony dwa razy nie policzył
 // dorobku podwójnie. Statystyki z protokołów SUMUJĄ SIĘ mecz po meczu, więc bez tego
 // drugie kliknięcie podwoiłoby każdemu minuty.
-const kluczProtokolu = (druzyny, rawText)=>{
-  const data = (rawText.match(/(\d{1,2})\s+(stycznia|lutego|marca|kwietnia|maja|czerwca|lipca|sierpnia|września|października|listopada|grudnia)/i)||[]).slice(1).join(' ')
-    || (rawText.match(/\b(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{4})\b/)||[]).slice(1).join('.');
+const kluczProtokolu = (druzyny, rawText, adresMeczu)=>{
+  // ADRES MECZU NA ŁNP JEST NAJLEPSZĄ TOŻSAMOŚCIĄ, JAKĄ MAMY — i jedyną, która nie zmienia się
+  // między jednym a drugim zebraniem tej samej kolejki.
+  //
+  // Zgadywanie z treści okazało się zawodne w trzech naraz sposobach: starsze wklejki nie miały
+  // w kluczu daty w ogóle, wzorzec „dd.mm.rrrr" łapał datę ze STOPKI strony (stąd mecze podpisane
+  // 25.03.2019), a skrót całego tekstu zmieniał się przy każdym zebraniu, bo zakładka dokłada raz
+  // zdarzenia, raz roczniki. Efekt: ten sam mecz wpadał do dorobku po dwa i trzy razy, więc
+  // zawodnicy Arki II mieli po 6–7 spotkań przy czterech rozegranych.
+  const zAdresu = String(adresMeczu||'').match(/\/(?:mecz|match|spotkanie)\/([a-z0-9-]+)/i)
+    || String(adresMeczu||'').match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+  if(zAdresu) return 'lnp#' + zAdresu[1].toLowerCase();
+
+  // DATĘ BIERZEMY TYLKO Z POCZĄTKU PROTOKOŁU. Stopka i ozdobniki strony siedzą na końcu, więc
+  // ograniczenie zakresu odcina je bez zgadywania, co jest datą meczu, a co licencji.
+  const glowa = String(rawText||'').slice(0, 1500);
+  const data = (glowa.match(/(\d{1,2})\s+(stycznia|lutego|marca|kwietnia|maja|czerwca|lipca|sierpnia|września|października|listopada|grudnia)/i)||[]).slice(1).join(' ')
+    || (glowa.match(/\b(\d{4})-(\d{2})-(\d{2})\b/)||[]).slice(1).join('.')
+    || (glowa.match(/\b(\d{1,2})[.\-\/](\d{1,2})[.\-\/](20\d{2})\b/)||[]).slice(1).join('.');
   if(data) return 'lnp|' + druzyny.map(importNorm).join('|') + '|' + importNorm(data);
   // BEZ DATY DWA SPOTKANIA TEJ SAMEJ PARY BYŁYBY NIEROZRÓŻNIALNE — a każda para gra ze sobą
   // dwa razy w sezonie. Rewanż zostawał wtedy nierozliczony jako „już policzony". Gdy daty w
@@ -10396,7 +10717,14 @@ const SZUM_NAZWY_KLUBU = /^(ks|mks|gks|lks|mlks|uks|kp|ts|rks|wks|zks|mkp|oks|sk
 const NUMER_ZESPOLU = { ii:'2', iii:'3', iv:'4', '2':'2', '3':'3', '4':'4' };
 
 function rozbijNazweKlubu(nazwa){
-  const slowa = String(nazwa||'').replace(/[.,()]/g,' ').split(/\s+/).filter(Boolean);
+  // MYŚLNIK ROZDZIELA CZŁONY NAZWY, NIE SKLEJA ICH. „SPÓJNIA LANDEK-JASIENICA" bez tego dawała
+  // rdzeń „landekjasienica", który nie ma nic wspólnego z naszym „Spójnia Landek" — klub zostawał
+  // bez statystyk, choć chodzi o ten sam zespół.
+  // „n/Wisłą" to skrót od „nad Wisłą" — bez tego „Wisła Dobrzyń n/Wisłą" z ŁNP nie miała nic
+  // wspólnego z naszą „Wisła Dobrzyń nad Wisłą" i klub zostawał nierozpoznany.
+  const slowa = String(nazwa||'').replace(/[.,()]/g,' ').replace(/[-–—]/g,' ')
+    .replace(/\bn\s*\/\s*/gi, 'nad ')
+    .split(/\s+/).filter(Boolean);
   let numer = '';
   const rdzen = [];
   for(const w of slowa){
@@ -10415,11 +10743,18 @@ function rozbijNazweKlubu(nazwa){
 const odciskKlubu = (nazwa)=>{ const b = rozbijNazweKlubu(nazwa); return b.numer + '|' + b.rdzen.slice().sort().join('-'); };
 const wielkoscKartoteki = (klub)=> DB.players.filter(p=>p.clubId === klub.id).length;
 
-function dopasujKlubDoNazwy(nazwa, podpowiedzGrupa){
+function dopasujKlubDoNazwy(nazwa, podpowiedzGrupa, poziom){
   const n = importNorm(nazwa);
+  // PRZYPISANIE WSKAZANE RĘKĄ MA PIERWSZEŃSTWO PRZED ZGADYWANIEM. Bez tego nazwy różniące się
+  // wszystkim poza miastem („Pogoń Barlinek" ↔ „CRS Barlinek") nie połączą się nigdy.
+  const wskazany = (DB.settings.aliasyKlubow || {})[n];
+  if(wskazany){
+    const c = DB.clubs.find(x=>x.id === wskazany);
+    if(c) return c;
+  }
   const a = rozbijNazweKlubu(nazwa);
   const dokladne = DB.clubs.filter(c=>importNorm(c.name)===n);
-  const pasujace = dokladne.length ? dokladne : DB.clubs.filter(c=>{
+  let pasujace = dokladne.length ? dokladne : DB.clubs.filter(c=>{
     const b = rozbijNazweKlubu(c.name);
     if(a.numer !== b.numer) return false;
     if(!a.rdzen.length || !b.rdzen.length) return false;
@@ -10429,7 +10764,23 @@ function dopasujKlubDoNazwy(nazwa, podpowiedzGrupa){
     return wspolne.length === krotszy && wspolne.some(x=>x.length>=4);
   });
   if(!pasujace.length) return null;
+
+  // POZIOM Z PROTOKOŁU ODCINA KLUBY Z INNYCH ROZGRYWEK. Ta sama nazwa bywa w IV lidze i wśród
+  // roczników młodzieżowych — bez tego dorobek seniorów trafiał do drużyny U13.
+  if(poziom){
+    const wPoziomie = pasujace.filter(c=>String(c.league||'').toLowerCase().startsWith(String(poziom).toLowerCase()));
+    if(wPoziomie.length) pasujace = wPoziomie;
+  }
+
   if(pasujace.length === 1) return pasujace[0];
+
+  // KIEDY NAZWA PASUJE DO KILKU KLUBÓW, PIERWSZEŃSTWO MA GRUPA, W KTÓREJ PRACUJESZ. „Pogoń"
+  // pasuje do Barlinka, Lęborka i Szczecina naraz — bez tego dorobek trafiałby do klubu
+  // z drugiego końca Polski albo nie trafiał nigdzie.
+  if(podpowiedzGrupa){
+    const wlasciwaGrupa = pasujace.filter(c=>c.league === podpowiedzGrupa);
+    if(wlasciwaGrupa.length === 1) return wlasciwaGrupa[0];
+  }
 
   // TEN SAM KLUB WPISANY KILKA RAZY to nie jest niejednoznaczność, tylko duplikat w bazie —
   // a takich jest sporo, dopóki nie przejdzie „Scal duplikaty". Odmowa dopisania czegokolwiek
@@ -10449,6 +10800,40 @@ function dopasujKlubDoNazwy(nazwa, podpowiedzGrupa){
 
 // Zapamiętanie adresu grupy na ŁNP na podstawie tego, skąd faktycznie przyszły protokoły.
 // Nie ruszamy adresu, który już jest — mógł być wpisany świadomie i celować w inną rundę.
+// OTWARCIE KOLEJKI GRUPY NA ŁNP — jedno miejsce dla wszystkich przycisków.
+//
+// Adresu grupy nie da się wyliczyć: ŁNP zapisuje ją jako ciąg identyfikatorów (season,
+// leagueGroup, subLeague), a nie jako nazwę. Dlatego przy pierwszym użyciu pytamy o niego raz
+// i zapamiętujemy na stałe.
+//
+// Wcześniej każdy z trzech przycisków radził sobie inaczej: jeden nie robił NIC, drugi otwierał
+// ogólne „/rozgrywki" — a ta strona domyślnie pokazuje Ekstraklasę. Z zewnątrz wyglądało to jak
+// awaria: „wybieram dolnośląską, a otwiera mi Ekstraklasę".
+function otworzKolejkeGrupy(grupa){
+  if(!grupa){ alert('Najpierw wybierz grupę.'); return; }
+  const zapisany = (DB.settings.lnpGrupy||{})[grupa];
+  if(zapisany){ window.open(zapisany, '_blank', 'noopener'); return; }
+
+  const wpisany = prompt(
+    `Adres kolejki grupy „${grupa}" na Łączy nas piłka.\n\n`
+    + `Nie da się go odgadnąć — ŁNP zapisuje grupę jako ciąg identyfikatorów, nie nazwę.\n`
+    + `Podajesz go RAZ, potem otworzy się sam.\n\n`
+    + `1. Otwórz laczynaspilka.pl/rozgrywki\n`
+    + `2. Ustaw Sezon, Ligę i Grupę tak, żeby zobaczyć mecze TEJ grupy\n`
+    + `3. Skopiuj adres z paska przeglądarki i wklej tutaj`, '');
+  const czysty = String(wpisany || '').trim();
+  if(czysty && /^https?:\/\/(www\.)?laczynaspilka\.pl\//i.test(czysty)){
+    DB.settings.lnpGrupy = { ...(DB.settings.lnpGrupy||{}), [grupa]: czysty };
+    void saveSettings();
+    window.open(czysty, '_blank', 'noopener');
+    return;
+  }
+  if(czysty){ alert('To nie jest adres z laczynaspilka.pl — nic nie zapisałem.'); return; }
+  alert('Bez adresu tej grupy otworzę ogólną stronę rozgrywek — pokaże Ekstraklasę.\n\n'
+    + 'Ustaw na niej Sezon, Ligę i Grupę, a potem podaj adres, gdy zapytam ponownie.');
+  window.open('https://www.laczynaspilka.pl/rozgrywki', '_blank', 'noopener');
+}
+
 function zapamietajAdresGrupy(zrodlo, protokoly){
   if(!zrodlo || !/^https:\/\/(www\.)?laczynaspilka\.pl\//i.test(zrodlo)) return [];
   // Strona pojedynczego meczu nie jest listą — zapamiętanie jej otwierałoby zawsze ten sam mecz.
@@ -10464,7 +10849,7 @@ function zapamietajAdresGrupy(zrodlo, protokoly){
   return nowe;
 }
 
-function przetworzProtokolLnp(rawText){
+function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
   const zdarzenia = zdarzeniaZProtokolu(rawText);
   const druzyny = nazwyDruzynZProtokolu(rawText);
   if(druzyny.length < 1){
@@ -10481,20 +10866,42 @@ function przetworzProtokolLnp(rawText){
         + 'Uwaga: zakładkę trzeba było ostatnio wciągnąć na pasek NA NOWO — starsza nie kopiowała nic.')
       + ` Początek wklejki: „${czysty.slice(0,120)}…"`};
   }
-  const klucz = kluczProtokolu(druzyny, rawText);
+  const klucz = kluczProtokolu(druzyny, rawText, adresMeczu);
   const strony = [];
   // Gdy jedna z drużyn dopasuje się bez wątpliwości, jej grupa rozstrzyga wątpliwości przy drugiej.
-  let podpowiedzGrupa = '';
-  for(const nazwa of druzyny){
-    const trafiony = DB.clubs.find(c=>importNorm(c.name)===importNorm(nazwa));
-    if(trafiony){ podpowiedzGrupa = trafiony.league; break; }
+  // POZIOM ROZGRYWEK CZYTAMY Z SAMEGO PROTOKOŁU — to najpewniejsze źródło, jakie mamy.
+  //
+  // Kluby powtarzają się między poziomami: „START PRUSZCZ" jest i w IV lidze, i w rozgrywkach
+  // Rocznik 2013. Gdy okno otwarto bez wskazanej grupy, wybór padał na kartotekę z większą
+  // liczbą zawodników — i dorobek z IV ligi wylądował u młodzieży, a klub seniorski został
+  // z samymi kreskami. Protokół podaje rozgrywki wprost („2 kolejka, Czwarta liga”), więc
+  // niech to on rozstrzyga.
+  const POZIOMY = [
+    [/czwarta\s+liga|\bIV\s+liga/i, 'IV liga'],
+    [/trzecia\s+liga|\bIII\s+liga/i, 'III liga'],
+    [/druga\s+liga|\bII\s+liga/i, 'II liga'],
+    [/pierwsza\s+liga|\bI\s+liga/i, 'I liga'],
+    [/klasa\s+okręgowa/i, 'Klasa okręgowa'],
+  ];
+  let poziomZProtokolu = '';
+  for(const [wzor, nazwaPoziomu] of POZIOMY){
+    if(wzor.test(rawText)){ poziomZProtokolu = nazwaPoziomu as string; break; }
+  }
+
+  // Grupa otwartego okna jest pewniejsza niż zgadywanie z nazw — to w niej użytkownik pracuje.
+  let podpowiedzGrupa = grupaOkna || '';
+  if(!podpowiedzGrupa){
+    for(const nazwa of druzyny){
+      const trafiony = DB.clubs.find(c=>importNorm(c.name)===importNorm(nazwa));
+      if(trafiony){ podpowiedzGrupa = trafiony.league; break; }
+    }
   }
 
   for(const nazwa of druzyny){
     const dane = parseLnpProtokolMinuty(rawText, nazwa);
     if(!dane){ strony.push({nazwa, blad:'nie udało się odczytać składu'}); continue; }
     // Klub dopasowujemy po nazwie, z pominięciem polskich znaków i skrótów typu „KS".
-    let klub = dopasujKlubDoNazwy(nazwa, podpowiedzGrupa);
+    let klub = dopasujKlubDoNazwy(nazwa, podpowiedzGrupa, poziomZProtokolu);
     if(!klub){
       // Powiedz, do czego nazwa była najbliżej — inaczej „nie ma takiego klubu" nie mówi,
       // czy klubu brakuje w bazie, czy tylko nazwa jest zapisana inaczej.
@@ -10508,10 +10915,19 @@ function przetworzProtokolLnp(rawText){
       continue;
     }
 
+    const rywalStrony = (druzyny.find(d=>d !== nazwa) || '');
+    const uSiebieStrona = druzyny[0] === nazwa;
+
     const wiersze = dane.zawodnicy.map(z=>{
       const zawodnik = DB.players.find(p=>p.clubId===klub.id
         && importNorm(p.firstName+p.lastName) === importNorm(z.firstName+z.lastName));
-      const juzPoliczony = zawodnik && (zawodnik.rozliczoneMecze||[]).includes(klucz);
+      // TA SAMA REGUŁA CO PRZY ZAPISIE — inaczej okno pokazywałoby jako nowe mecze, których zapis
+      // i tak nie policzy. Klucz z treści wklejki bywa inny przy każdym zebraniu; para
+      // (rywal, czy u siebie) wskazuje spotkanie jednoznacznie.
+      const juzPoliczony = !!zawodnik && (
+        (zawodnik.rozliczoneMecze||[]).includes(klucz)
+        || (zawodnik.przebieg||[]).some(x=> importNorm(x.rywal||'') === importNorm(rywalStrony) && !!x.dom === uSiebieStrona)
+      );
       // Gole i kartki wiążemy z zawodnikiem po nazwisku — wiersz zdarzenia niesie tekst całego
       // wiersza z protokołu, więc nazwisko w nim stoi. Sprawdzamy oba człony, bo wiersz bywa
       // zapisany „Kowalski Jan" albo „Jan Kowalski".
@@ -10854,7 +11270,7 @@ function sprawdzZakladke(nazwa, kod){
 
 // Wersja zakładki. Widnieje w każdym jej komunikacie i w oknie SBS, żeby dało się jednym
 // spojrzeniem stwierdzić, czy w pasku siedzi kod sprzed poprawek.
-const ZAKLADKA_WERSJA = 'v4 z 26.08.2026';
+const ZAKLADKA_WERSJA = 'v31 z 29.08.2026';
 const SBS_ADRES_JS = JSON.stringify(location.origin);
 // ZAKŁADKA W PASKU NIE AKTUALIZUJE SIĘ SAMA — I TO BYŁ PRAWDZIWY PROBLEM.
 //
@@ -10863,374 +11279,29 @@ const SBS_ADRES_JS = JSON.stringify(location.origin);
 // ŁADOWACZEM: pobiera świeży kod z SBS i uruchamia go. Gdy pobranie się nie uda (brak sieci
 // albo zasady bezpieczeństwa ŁNP blokują uruchamianie pobranego kodu), wpada wbudowana kopia —
 // ta sama co dotąd — więc gorzej niż wcześniej być nie może.
-const LNP_ZBIERACZ = `
-var SBS_ZBIERACZ=${JSON.stringify(ZAKLADKA_WERSJA)};
-var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:${SBS_ADRES_JS};
-var STRONA_STARTOWA=location.href;
-var box=document.createElement('div');
-box.style.cssText='position:fixed;right:16px;bottom:16px;z-index:2147483647;background:#16302A;color:#F6F3EA;padding:12px 16px;border-radius:8px;font:14px sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.4)';
-box.textContent='SBS '+SBS_ZBIERACZ+': zaczynam...';
-(document.body||document.documentElement).appendChild(box);
-${LNP_ZDARZENIA}
-if(!/laczynaspilka\\.pl/.test(location.host)){box.remove();alert('SBS '+SBS_ZBIERACZ+': to nie jest strona Laczy nas pilka.');return;}
-var KLUCZ='sbs_protokoly_hurt';
-if(window.event&&window.event.shiftKey){try{localStorage.removeItem(KLUCZ);}catch(e){}alert('SBS '+SBS_ZBIERACZ+': wyczyscilem zebrane protokoly.');return;}
+// KOPIA AWARYJNA JEST TYM SAMYM PLIKIEM, CO SERWOWANY — NIE JEGO ODPOWIEDNIKIEM.
+//
+// Dotąd była to osobna, ręcznie utrzymywana kopia — i rozjechała się: plik na serwerze miał
+// 743 linie ze wszystkimi dzisiejszymi poprawkami, kopia awaryjna 368 i żadnej z nich. Gorzej:
+// numer wersji brała z osobnej stałej, więc meldowała się jako aktualna, choć była sprzed
+// poprawek. Kto trafił na tę drogę — a ŁNP potrafi zablokować uruchomienie pobranego kodu —
+// widział stary błąd i nowy numer wersji naraz, czyli najgorszy możliwy zestaw.
+//
+// Teraz Vite wkleja tu ten sam plik, który leży w public/. Rozjechać się nie mogą.
+// (import na górze pliku, razem z pozostałymi)
 
-function zbierzLinki(){
- var wynik=[], widziane={};
- pominietych=0;
- function stan(el){
-  var w=el, g=0;
-  while(w&&g<5){
-   var t=(w.textContent||'');
-   if(/nierozegran|odwo\u0142an|prze\u0142o\u017con/i.test(t)) return 'nie';
-   if(/rozegran/i.test(t)) return 'tak';
-   w=w.parentElement; g++;
-  }
-  return '?';
- }
- function dodaj(url, el){
-  if(!url||widziane[url]) return;
-  if(el&&stan(el)==='nie'){ pominietych++; widziane[url]=1; return; }
-  widziane[url]=1; wynik.push(url);
- }
- [].slice.call(document.querySelectorAll('a[href*="/mecz/"]')).forEach(function(a){dodaj(a.href,a);});
- [].slice.call(document.querySelectorAll('[routerlink],[ng-reflect-router-link],[data-href],[data-url]'))
-  .forEach(function(el){for(var i=0;i<el.attributes.length;i++){var v=el.attributes[i].value||'';
-   if(/\\/mecz\\//.test(v)){try{dodaj(new URL(v,location.origin).href,el);}catch(e){}}}});
- if(!wynik.length){
-  var html=document.documentElement.innerHTML||'';
-  var re=/\\/rozgrywki\\/mecz\\/([0-9a-fA-F-]{30,40})/g,m;
-  while((m=re.exec(html))!==null) dodaj(location.origin+'/rozgrywki/mecz/'+m[1],null);
- }
- return wynik;
-}
-
-function listaKolejek(){
- var sel=[].slice.call(document.querySelectorAll('select'));
- for(var i=0;i<sel.length;i++){
-  var opcje=[].slice.call(sel[i].options||[]);
-  if(opcje.length<2) continue;
-  var pasuje=opcje.filter(function(o){return /kolejk|runda|round/i.test(o.textContent||'');});
-  if(pasuje.length>1||/kolejk|runda|round/i.test((sel[i].getAttribute('aria-label')||'')+' '+(sel[i].name||''))) return sel[i];
- }
- return null;
-}
-
-var pominietych=0;
-var zebrane=[];try{zebrane=JSON.parse(localStorage.getItem(KLUCZ)||'[]');}catch(e){zebrane=[];}
-var bylo=zebrane.length, linki=[], i=0, kolejek=1, czekam=0, doliczen=0, rozwiniete=false, probowanoKlikac=false, wierszyNaEkranie=0, zakladkaNr=0;
-
-function kandydaciMeczow(){
- var nazwy=/^(mecze|terminarz|wyniki|terminarz i wyniki|mecze i wyniki)$/i;
- var kand=[].slice.call(document.querySelectorAll('[role="tab"],button,a,li,span,div'));
- var out=[];
- for(var i=0;i<kand.length;i++){
-  var el=kand[i];
-  if(el.children.length>1) continue;
-  var t=(el.textContent||'').replace(/\\s+/g,' ').trim();
-  if(!nazwy.test(t)) continue;
-  if(el.tagName==='TH'||el.tagName==='TD') continue;
-  if(el.closest&&el.closest('table')) continue;
-  var waga=(el.getAttribute&&el.getAttribute('role')==='tab')?0:((el.tagName==='BUTTON'||el.tagName==='A')?1:2);
-  if(el.closest&&el.closest('[class*="tab"],[class*="Tab"],[class*="nav"],[class*="Nav"]')) waga=waga-1;
-  out.push({el:el,waga:waga});
- }
- out.sort(function(a,b){return a.waga-b.waga;});
- var lista=[];
- for(var j=0;j<out.length;j++) lista.push(out[j].el);
- return lista;
-}
-function otworzZakladkeMecze(gotowe){
- var k=kandydaciMeczow();
- if(zakladkaNr>=k.length){ gotowe(); return; }
- var cel=k[zakladkaNr];
- zakladkaNr++;
- box.textContent='SBS '+SBS_ZBIERACZ+': otwieram zakladke z meczami ('+zakladkaNr+'/'+k.length+')...';
- try{cel.click();}catch(e){}
- setTimeout(gotowe,1600);
-}
-function dociagnijStrone(gotowe){
- var krok=0;
- var t=setInterval(function(){
-  krok++;
-  try{window.scrollTo(0,document.body.scrollHeight);}catch(e){}
-  var wiecej=[].slice.call(document.querySelectorAll('button,a')).filter(function(el){
-   return /zaladuj wiecej|za\u0142aduj wi\u0119cej|pokaz wiecej|poka\u017c wi\u0119cej/i.test((el.textContent||'').trim());
-  });
-  wiecej.forEach(function(el){try{el.click();}catch(e){}});
-  var n=naglowekRozegranych();
-  if(n){ try{ n.scrollIntoView({block:'start'}); }catch(e){} box.textContent='SBS '+SBS_ZBIERACZ+': jestem przy \\u201eRozegranych meczach\\u201d ('+krok+')...'; }
-  else box.textContent='SBS '+SBS_ZBIERACZ+': szukam rozegranych meczow ('+krok+')...';
-  if(krok>=6){
-   clearInterval(t);
-   var k=naglowekRozegranych();
-   if(k){ try{ k.scrollIntoView({block:'start'}); }catch(e){} }
-   else { try{window.scrollTo(0,0);}catch(e){} }
-   gotowe();
-  }
- },700);
-}
-function start(){
- if(/\\/mecz\\//.test(location.pathname)){
-  box.textContent='SBS '+SBS_ZBIERACZ+': jestes na stronie meczu - zbieram ten jeden';
-  linki=[location.href];nastepny();return;
- }
- if(!rozwiniete){
-  rozwiniete=true;
-  box.textContent='SBS '+SBS_ZBIERACZ+': rozwijam liste meczow...';
-  otworzZakladkeMecze(function(){ dociagnijStrone(start); });
-  return;
- }
- linki=zbierzLinki();
- if(linki.length){box.textContent='SBS '+SBS_ZBIERACZ+': zbieram protokoly 0/'+linki.length;nastepny();return;}
- czekam++;
- if(czekam<6){box.textContent='SBS '+SBS_ZBIERACZ+': czekam, az strona sie zaladuje...';setTimeout(start,500);return;}
- if(!probowanoKlikac&&wierszeRozegrane().length){
-  probowanoKlikac=true;
-  zbierzAdresyPrzezKlikanie(function(adresy){
-   if(adresy.length){
-    linki=adresy;i=0;
-    box.textContent='SBS '+SBS_ZBIERACZ+': zbieram protokoly 0/'+linki.length;
-    nastepny();return;
-   }
-   czekam=0;start();
-  });
-  return;
- }
- if(zakladkaNr<kandydaciMeczow().length){
-  rozwiniete=false; czekam=0; probowanoKlikac=false;
-  start();
-  return;
- }
- box.remove();
- var wszystkieA=document.querySelectorAll('a').length;
- var zMecz=[].slice.call(document.querySelectorAll('a')).filter(function(a){return /mecz/i.test(a.getAttribute('href')||'');}).length;
- var dlugoscTekstu=(document.body.innerText||'').length;
- var zKodu=0;try{var hh=document.documentElement.innerHTML||'';var rr=/\\/rozgrywki\\/mecz\\/[0-9a-fA-F-]{30,40}/g;var mm;while((mm=rr.exec(hh))!==null)zKodu++;}catch(e){}
- var maRozegrane=/rozegrane mecze/i.test(document.body.innerText||'');
- var slad=' [na stronie: odnosnikow '+wszystkieA+', w tym wskazujacych na mecz '+zMecz+'; numerow meczu w kodzie '+zKodu+'; wierszy z wynikiem '+wierszyNaEkranie+'; naglowek Rozegrane mecze: '+(maRozegrane?'jest':'brak')+'; tekstu '+dlugoscTekstu+' znakow; wysokosc '+document.body.scrollHeight+']';
- var rada = maRozegrane
-  ? 'Sekcja \\u201eRozegrane mecze\\u201d jest, ale nie widze w niej ani jednego wiersza z wynikiem. Poczekaj, az wyniki sie wyswietla, i kliknij zakladke jeszcze raz.'
-  : 'Na tej stronie sa same \\u201ePlanowane mecze\\u201d - w tym sezonie nie ma tu jeszcze zadnego rozegranego spotkania. Sprawdz u gory pole \\u201eSezon\\u201d i \\u201eRozgrywki\\u201d: wybierz sezon, w ktorym mecze juz sie odbyly.';
- alert('SBS '+SBS_ZBIERACZ+': nie mam z tej strony czego pobrac.\\n\\n'+rada+slad);
-}
-
-function nastepny(){
- if(i>=linki.length){ poKolejce(); return; }
- var url=linki[i];
- box.textContent='SBS '+SBS_ZBIERACZ+': kolejka '+kolejek+' - protokoly '+i+'/'+linki.length+' (razem '+zebrane.length+')';
- var f=document.createElement('iframe');
- f.style.cssText='position:fixed;left:-9999px;width:1200px;height:2000px';
- f.src=url;document.body.appendChild(f);
- var prob=0;
- var t=setInterval(function(){
-  prob++;
-  var txt='';
-  try{txt=(f.contentDocument&&f.contentDocument.body)?f.contentDocument.body.innerText:'';}catch(e){txt='';}
-  var ok=/Sk\\u0142ad wyj\\u015bciowy/.test(txt);
-  if(ok||prob>16){
-   clearInterval(t);
-   if(ok){
-    var j=txt.search(/^\\s*Sk\\u0142ady\\s*$/m);
-    var wpis='### PROTOKOL: '+url+'\\n'+txt.slice(j<0?0:Math.max(0,j-400))+zdarzenia(f.contentDocument);
-    var byl=false;
-    for(var q=0;q<zebrane.length;q++){if(zebrane[q].indexOf('### PROTOKOL: '+url+'\\n')===0){zebrane[q]=wpis;byl=true;break;}}
-    if(!byl)zebrane.push(wpis);
-   }
-   f.remove();i++;setTimeout(nastepny,300);
-  }
- },500);
-}
-
-function maWynikMeczu(t){
- var m=t.match(/\\d{1,2}\\s*:\\s*\\d{1,2}/g);
- if(!m) return false;
- for(var i=0;i<m.length;i++){
-  var s=m[i].replace(/\\s+/g,'');
-  if(/^\\d{2}:\\d{2}$/.test(s)) continue;
-  return true;
- }
- return false;
-}
-function naglowekRozegranych(){
- var kand=[].slice.call(document.querySelectorAll('h1,h2,h3,h4,div,span,p'));
- for(var i=0;i<kand.length;i++){
-  if(kand[i].children.length) continue;
-  var t=(kand[i].textContent||'').replace(/\\s+/g,' ').trim();
-  if(/^rozegrane mecze$/i.test(t)) return kand[i];
- }
- return null;
-}
-function wierszeRozegrane(){
- var szuk='tr,li,[role="row"],[class*="match"],[class*="mecz"],[class*="Match"]';
- var kand=[].slice.call(document.querySelectorAll(szuk));
- var granica=naglowekRozegranych();
- var out=[];
- for(var i=0;i<kand.length;i++){
-  var el=kand[i], t=(el.textContent||'').replace(/\\s+/g,' ').trim();
-  if(t.length<8||t.length>400) continue;
-  if(/nierozegran|odwo\u0142an|prze\u0142o\u017con/i.test(t)) continue;
-  if(!maWynikMeczu(t)) continue;
-  if(!/rozegran/i.test(t)&&!/\\d{1,2}[.\\-\\/]\\d{1,2}[.\\-\\/]\\d{2,4}/.test(t)) continue;
-  if(granica&&!(granica.compareDocumentPosition(el)&Node.DOCUMENT_POSITION_FOLLOWING)) continue;
-  out.push(el);
- }
- var fin=[];
- for(var a=0;a<out.length;a++){
-  var zawiera=false;
-  for(var b=0;b<out.length;b++){ if(a!==b&&out[a].contains(out[b])){zawiera=true;break;} }
-  if(!zawiera) fin.push(out[a]);
- }
- wierszyNaEkranie=fin.length;
- return fin.slice(0,80);
-}
-function celeKlikania(el){
- var c=[];
- try{
-  var a=el.querySelector('a[href],button,[role="link"],[role="button"]');
-  if(a) c.push(a);
- }catch(e){}
- c.push(el);
- try{
-  var dz=[].slice.call(el.querySelectorAll('*'));
-  for(var i=0;i<dz.length&&c.length<6;i++){
-   if(dz[i].children.length) continue;
-   if((dz[i].textContent||'').trim().length<2) continue;
-   if(c.indexOf(dz[i])<0) c.push(dz[i]);
-  }
- }catch(e){}
- return c;
-}
-function zbierzAdresyPrzezKlikanie(gotowe){
- var baza=location.href, bazaP=location.pathname+location.search;
- var wiersze=wierszeRozegrane();
- if(!wiersze.length){ gotowe([]); return; }
- var adresy=[], k=0, zlapane=[], staryOpen=window.open;
- try{ window.open=function(u){ if(u) zlapane.push(String(u)); return null; }; }catch(e){}
- function skoncz(){
-  try{ window.open=staryOpen; }catch(e){}
-  var meczowe=adresy.filter(function(u){ return /mecz|match|spotkan/i.test(u); });
-  gotowe(meczowe.length?meczowe:adresy);
- }
- function dodajAdres(u){
-  var pelny='';
-  try{ pelny=new URL(u,location.origin).href; }catch(e){ return; }
-  if(pelny===baza) return;
-  if(adresy.indexOf(pelny)<0) adresy.push(pelny);
- }
- function wroc(dalejGotowe){
-  try{ history.back(); }catch(e){}
-  var n=0;
-  var t=setInterval(function(){
-   n++;
-   if(location.pathname+location.search===bazaP){ clearInterval(t); setTimeout(dalejGotowe,700); return; }
-   if(n>=25){ clearInterval(t); skoncz(); }
-  },200);
- }
- function dalej(){
-  if(k>=wiersze.length){ skoncz(); return; }
-  box.textContent='SBS '+SBS_ZBIERACZ+': otwieram mecz '+(k+1)+'/'+wiersze.length+' (adresow '+adresy.length+')';
-  var lista=wierszeRozegrane();
-  var el=lista[k]||wiersze[k];
-  if(!el||!el.isConnected){ k++; setTimeout(dalej,80); return; }
-  var cele=celeKlikania(el), ci=0;
-  function probuj(){
-   if(ci>=cele.length){ k++; setTimeout(dalej,120); return; }
-   var cel=cele[ci++];
-   zlapane.length=0;
-   try{ cel.click(); }catch(e){}
-   var n=0;
-   var t=setInterval(function(){
-    n++;
-    if(zlapane.length){ clearInterval(t); dodajAdres(zlapane[0]); k++; setTimeout(dalej,120); return; }
-    if(location.pathname+location.search!==bazaP){
-     clearInterval(t);
-     dodajAdres(location.href);
-     wroc(function(){ k++; dalej(); });
-     return;
-    }
-    if(n>=12){ clearInterval(t); probuj(); }
-   },100);
-  }
-  probuj();
- }
- dalej();
-}
-function poKolejce(){
- try{localStorage.setItem(KLUCZ,JSON.stringify(zebrane));}catch(e){}
- var swieze=zbierzLinki().filter(function(u){
-  for(var q=0;q<zebrane.length;q++) if(zebrane[q].indexOf('### PROTOKOL: '+u+'\\n')===0) return false;
-  return true;
- });
- if(swieze.length&&doliczen<6){
-  doliczen++;
-  box.textContent='SBS '+SBS_ZBIERACZ+': doszlo '+swieze.length+' meczow - zbieram dalej';
-  linki=swieze;i=0;nastepny();return;
- }
- var wybor=listaKolejek();
- if(wybor&&wybor.selectedIndex+1<wybor.options.length&&kolejek<40){
-  kolejek++;
-  box.textContent='SBS '+SBS_ZBIERACZ+': przechodze do kolejki '+kolejek+'...';
-  var poprzednie=linki.join('|');
-  wybor.selectedIndex=wybor.selectedIndex+1;
-  wybor.dispatchEvent(new Event('change',{bubbles:true}));
-  var czek=0;
-  var licz=setInterval(function(){
-   czek++;
-   var teraz=zbierzLinki();
-   if(teraz.length&&teraz.join('|')!==poprzednie){clearInterval(licz);linki=teraz;i=0;nastepny();return;}
-   if(czek>16){clearInterval(licz);koniec();}
-  },500);
-  return;
- }
- koniec();
-}
-
-function koniec(){
- try{localStorage.setItem(KLUCZ,JSON.stringify(zebrane));}catch(e){}
- var tresc=zebrane.join('\\n\\n');
- var udalo=false;
- var p=document.createElement('textarea');p.value=tresc;document.body.appendChild(p);p.select();
- try{udalo=document.execCommand('copy');}catch(e){udalo=false;}
- document.body.removeChild(p);
- if(!udalo&&navigator.clipboard&&navigator.clipboard.writeText){
-  try{navigator.clipboard.writeText(tresc);udalo=true;}catch(e){}
- }
- var doSbs=SBS_ADRES+'/app?sbs=odbior';
- box.textContent='SBS '+SBS_ZBIERACZ+': wysylam '+zebrane.length+' protokolow do aplikacji...';
- var okno=null;
- try{okno=window.open(doSbs,'sbs_odbior');}catch(e){okno=null;}
- if(okno){
-  var wyslane=false;
-  var nasluch=function(ev){
-   if(!ev.data||ev.data.typ!=='sbs-gotowy') return;
-   try{okno.postMessage({typ:'sbs-protokoly',tresc:tresc,zrodlo:STRONA_STARTOWA},SBS_ADRES);wyslane=true;}catch(e){}
-  };
-  var potwierdzenie=function(ev){
-   if(!ev.data||ev.data.typ!=='sbs-odebrano') return;
-   window.removeEventListener('message',nasluch);
-   window.removeEventListener('message',potwierdzenie);
-   box.remove();
-   alert('SBS '+SBS_ZBIERACZ+': wyslalem '+zebrane.length+' protokolow prosto do aplikacji (kolejek: '+kolejek+(pominietych?', pominietych nierozegranych: '+pominietych:'')+').\\n\\nPrzejdz do karty Scout Base System - protokoly juz tam sa, nic nie musisz wklejac.');
-  };
-  window.addEventListener('message',nasluch);
-  window.addEventListener('message',potwierdzenie);
-  setTimeout(function(){
-   window.removeEventListener('message',nasluch);
-   window.removeEventListener('message',potwierdzenie);
-   if(box.parentNode) box.remove();
-   if(!wyslane) alert('SBS '+SBS_ZBIERACZ+': zebralem '+zebrane.length+' protokolow, ale aplikacja sie nie odezwala.'+(udalo?' Sa w schowku - wejdz do SBS i nacisnij Ctrl+V.':' Kliknij zakladke jeszcze raz.'));
-  },20000);
-  return;
- }
- box.remove();
- if(!udalo){alert('SBS '+SBS_ZBIERACZ+': zebralem '+zebrane.length+' protokolow, ale przegladarka nie pozwolila zapisac ich do schowka.\\n\\nKliknij zakladke jeszcze raz - za drugim razem zwykle sie udaje.');return;}
- alert('SBS '+SBS_ZBIERACZ+': dolozylem '+(zebrane.length-bylo)+' protokolow (kolejek przejrzanych: '+kolejek+(pominietych?', pominietych nierozegranych: '+pominietych:'')+'). W schowku masz teraz '+zebrane.length+' protokolow ('+tresc.length+' znakow).\\n\\nW aplikacji: Kluby -> wybierz grupe -> \\u201eProtokoly z LNP\\u201d -> Ctrl+V.\\n\\nShift + klikniecie tej zakladki czysci zebrana liste.');
-}
-
-start();
-`;
+// Zakładka jako ADRES JEDNOLINIOWY.
+//
+// Kod zakładek piszemy w wielu wierszach, bo inaczej byłby nieczytelny. Ale adres „javascript:"
+// z prawdziwymi łamaniami wierszy rozpada się przy przeciąganiu na pasek zakładek — przeglądarka
+// ucina go na pierwszym łamaniu i na pasku ląduje ułomek, który nie jest już poprawnym adresem.
+// Kliknięcie takiej zakładki przenosi wtedy na stronę główną zamiast cokolwiek zrobić.
+//
+// Zamiana łamań na %0A rozwiązuje to bez tykania samego kodu: przeglądarka rozkodowuje adres
+// przed wykonaniem, więc komentarze i wyrażenia regularne zostają nietknięte. Kodujemy WYŁĄCZNIE
+// łamania wierszy — sprawdzone, że w żadnej zakładce nie występuje znak %, więc nic innego
+// nie zostanie przy okazji przekręcone.
+const zakladkaHref = (kod) => String(kod).split(String.fromCharCode(13)).join('').split(String.fromCharCode(10)).join('%0A');
 
 const LNP_HURT_BOOKMARKLET = `javascript:(function(){
 var A=${SBS_ADRES_JS};
@@ -11240,7 +11311,7 @@ var ruszyl=false, budzik=null;
 function odpal(co){ if(ruszyl) return; ruszyl=true; if(budzik) clearTimeout(budzik); try{ co(); }catch(e){ alert('SBS: '+e.message); } }
 budzik=setTimeout(function(){ odpal(awaryjnie); },4000);
 try{
- fetch(A+'/zakladka-lnp.js?t='+Date.now(),{cache:'no-store'})
+ fetch(A+'/zakladka-lnp-v2.js?t='+Date.now(),{cache:'no-store'})
   .then(function(r){ if(!r.ok) throw 0; return r.text(); })
   .then(function(t){ if(t.indexOf('SBS_ZBIERACZ')<0) throw 0; odpal(function(){ (new Function(t))(); }); })
   .catch(function(){ odpal(awaryjnie); });
@@ -11878,7 +11949,7 @@ function openTmProfilBookmarkletModal(){
     <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
       <li>Włącz pasek zakładek: <strong>Ctrl+Shift+B</strong></li>
       <li>Przeciągnij ten przycisk na pasek zakładek:<br>
-        <a href="${esc(TM_PROFIL_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na profilu zawodnika.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">👤 Kopiuj profil do SBS</a>
+        <a href="${esc(zakladkaHref(TM_PROFIL_BOOKMARKLET))}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na profilu zawodnika.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">👤 Kopiuj profil do SBS</a>
       </li>
       <li>Otwórz profil zawodnika na Transfermarkcie</li>
       <li>Kliknij <strong>„👤 Kopiuj profil do SBS"</strong> — potwierdzi, kogo skopiował</li>
@@ -11888,7 +11959,7 @@ function openTmProfilBookmarkletModal(){
     i dorobek sezonu (mecze, minuty, gole, asysty). Nic nie zapisuje samo — sprawdzasz pola i klikasz „Zapisz".</p>
     <details style="margin-top:10px;">
       <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Przeciąganie nie działa? Pokaż kod do wklejenia ręcznie</summary>
-      <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;">${esc(TM_PROFIL_BOOKMARKLET)}</textarea>
+      <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;">${esc(zakladkaHref(TM_PROFIL_BOOKMARKLET))}</textarea>
     </details>
     <div class="modal-actions"><button class="secondary" data-action="close-modal">Zamknij</button></div>
   </div>`;
@@ -11914,7 +11985,7 @@ function openLnpBookmarkletModal(){
       kliknij ją <strong>prawym przyciskiem myszy</strong> i wybierz <strong>„Usuń"</strong>.</p>
       <p style="margin:0 0 8px;font-size:13px;"><strong>2.</strong> Przeciągnij myszą ten zielony przycisk na pasek zakładek:</p>
       <div style="text-align:center;margin:6px 0 10px;">
-        <a href="${esc(LNP_HURT_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki, a potem kliknij TAM — będąc na stronie klubu albo grupy na laczynaspilka.pl.');return false;" style="display:inline-block;padding:12px 22px;background:var(--pitch);color:var(--on-pitch);border-radius:8px;font-weight:800;font-size:15px;text-decoration:none;cursor:grab;box-shadow:0 2px 8px rgba(0,0,0,.18);">⚡ Zbierz całą kolejkę (${esc(ZAKLADKA_WERSJA)})</a>
+        <a href="${esc(zakladkaHref(LNP_HURT_BOOKMARKLET))}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki, a potem kliknij TAM — będąc na stronie klubu albo grupy na laczynaspilka.pl.');return false;" style="display:inline-block;padding:12px 22px;background:var(--pitch);color:var(--on-pitch);border-radius:8px;font-weight:800;font-size:15px;text-decoration:none;cursor:grab;box-shadow:0 2px 8px rgba(0,0,0,.18);">⚡ Zbierz całą kolejkę (${esc(ZAKLADKA_WERSJA)})</a>
       </div>
       <p style="margin:0 0 8px;font-size:13px;"><strong>3.</strong> Sprawdź, że się udało: kliknij ją na ŁNP.
       Komunikat <strong>musi</strong> zaczynać się od <strong style="background:var(--gold);padding:1px 5px;border-radius:3px;">SBS ${esc(ZAKLADKA_WERSJA)}</strong>.
@@ -11930,7 +12001,7 @@ function openLnpBookmarkletModal(){
     <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
       <li>Włącz pasek zakładek: <strong>Ctrl+Shift+B</strong></li>
       <li>Przeciągnij ten przycisk na pasek zakładek:<br>
-        <a href="${esc(LNP_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem klikaj go TAM, na stronach meczów.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">📋 Zbierz protokół</a>
+        <a href="${esc(zakladkaHref(LNP_BOOKMARKLET))}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem klikaj go TAM, na stronach meczów.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">📋 Zbierz protokół</a>
       </li>
       <li>Otwórz mecz na laczynaspilka.pl i poczekaj, aż pojawią się <strong>Składy</strong></li>
       <li>Kliknij <strong>„📋 Zbierz protokół"</strong> — powie, ile protokołów już zebrał</li>
@@ -11944,19 +12015,19 @@ function openLnpBookmarkletModal(){
       <p class="note" style="margin-top:0;">Ta druga zakładka nie wymaga wchodzenia w mecze. Uruchamiasz ją na <strong>liście meczów</strong>
       (Rozgrywki → wybrana kolejka), a ona sama otwiera po kolei każde spotkanie w tle, czeka na składy i zbiera protokoły.
       Dziewięć meczów to kilkanaście sekund i <strong>jedno</strong> kliknięcie.</p>
-      <a href="${esc(LNP_HURT_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go na pasek zakładek, a potem kliknij TAM — będąc na liście meczów na laczynaspilka.pl.');return false;" style="display:inline-block;margin:4px 0;padding:8px 16px;background:var(--pitch);color:var(--on-pitch);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">⚡ Zbierz całą kolejkę (${esc(ZAKLADKA_WERSJA)})</a>
+      <a href="${esc(zakladkaHref(LNP_HURT_BOOKMARKLET))}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go na pasek zakładek, a potem kliknij TAM — będąc na liście meczów na laczynaspilka.pl.');return false;" style="display:inline-block;margin:4px 0;padding:8px 16px;background:var(--pitch);color:var(--on-pitch);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">⚡ Zbierz całą kolejkę (${esc(ZAKLADKA_WERSJA)})</a>
       <p class="note" style="font-size:11.5px;">W rogu ekranu zobaczysz licznik postępu. Na końcu komplet trafia do schowka — wklejasz raz w aplikacji.
       Skrypt czyta wyłącznie strony tego samego serwisu, otwarte w Twojej przeglądarce.</p>
       <details style="margin-top:8px;">
         <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Kod do wklejenia ręcznie</summary>
-        <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;">${esc(LNP_HURT_BOOKMARKLET)}</textarea>
+        <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;">${esc(zakladkaHref(LNP_HURT_BOOKMARKLET))}</textarea>
       </details>
     </div>
     <p class="note" style="font-size:11px;color:var(--ink-soft);">Skrypt czyta tylko tekst strony, którą masz otwartą — nie loguje się nigdzie i nie chodzi po serwisie samodzielnie.</p>
     <details style="margin-top:10px;">
       <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Przeciąganie nie działa? Pokaż kod do wklejenia ręcznie</summary>
       <p class="note" style="font-size:11px;margin-top:6px;">Utwórz nową zakładkę i wklej to w pole adresu:</p>
-      <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;">${esc(LNP_BOOKMARKLET)}</textarea>
+      <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;">${esc(zakladkaHref(LNP_BOOKMARKLET))}</textarea>
     </details>
     <div class="modal-actions"><button class="secondary" data-action="close-modal">Zamknij</button></div>
   </div>`;
@@ -11993,7 +12064,7 @@ function openBookmarkletModal(){
     <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
       <li>Włącz pasek zakładek w przeglądarce: <strong>Ctrl+Shift+B</strong></li>
       <li>Przeciągnij ten przycisk na pasek zakładek:<br>
-        <a href="${esc(TM_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">⏱ Kopiuj do SBS</a>
+        <a href="${esc(zakladkaHref(TM_BOOKMARKLET))}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">⏱ Kopiuj do SBS</a>
       </li>
       <li>Wejdź na stronę klubu → <strong>Statystyki drużynowe</strong></li>
       <li>Kliknij <strong>„⏱ Kopiuj do SBS"</strong> na pasku zakładek — pojawi się potwierdzenie</li>
@@ -12008,7 +12079,7 @@ function openBookmarkletModal(){
     <details style="margin-top:10px;">
       <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Przeciąganie nie działa? Pokaż kod do wklejenia ręcznie</summary>
       <p class="note" style="font-size:11px;margin-top:6px;">Utwórz nową zakładkę i wklej to w pole adresu:</p>
-      <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;">${esc(TM_BOOKMARKLET)}</textarea>
+      <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;">${esc(zakladkaHref(TM_BOOKMARKLET))}</textarea>
     </details>
 
     <div class="modal-actions">
@@ -12543,14 +12614,14 @@ function openAgencyStaffModal(agencyId){
         <summary style="cursor:pointer;font-weight:700;color:var(--gold-dark);">Zakładka (opcjonalnie)</summary>
         <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
           <li>Przeciągnij na pasek zakładek:<br>
-            <a href="${esc(TM_AGENCY_STAFF_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">👥 Pracownicy agencji do SBS</a>
+            <a href="${esc(zakladkaHref(TM_AGENCY_STAFF_BOOKMARKLET))}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">👥 Pracownicy agencji do SBS</a>
           </li>
           ${agencja.tmLink ? `<li>Otwórz <a class="ext-link" href="${esc(agencja.tmLink)}" target="_blank" rel="noopener noreferrer">profil tej agencji &rarr;</a>, kliknij zakładkę</li>`
             : `<li>Otwórz profil agencji na Transfermarkcie i kliknij zakładkę</li>`}
         </ol>
         <details style="margin-top:6px;">
           <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Kod do wklejenia ręcznie</summary>
-          <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;margin-top:6px;">${esc(TM_AGENCY_STAFF_BOOKMARKLET)}</textarea>
+          <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;margin-top:6px;">${esc(zakladkaHref(TM_AGENCY_STAFF_BOOKMARKLET))}</textarea>
         </details>
       </details>
 
@@ -12698,7 +12769,7 @@ function openAgencySquadModal(agencyId){
         <summary style="cursor:pointer;font-weight:700;color:var(--gold-dark);">1. Ustaw zakładkę (raz)</summary>
         <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
           <li>Przeciągnij na pasek zakładek:<br>
-            <a href="${esc(TM_AGENCY_SQUAD_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">📥 Zawodnicy agencji do SBS</a>
+            <a href="${esc(zakladkaHref(TM_AGENCY_SQUAD_BOOKMARKLET))}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">📥 Zawodnicy agencji do SBS</a>
           </li>
           ${agencja.tmLink ? `<li>Otwórz <a class="ext-link" href="${esc(agencja.tmLink)}" target="_blank" rel="noopener noreferrer">profil tej agencji &rarr;</a></li>`
             : `<li>Otwórz profil tej agencji na Transfermarkcie <span class="note">(nie mam zapisanego adresu — dopisz go w „Edytuj agencję", to pojawi się tu odnośnik)</span></li>`}
@@ -12707,7 +12778,7 @@ function openAgencySquadModal(agencyId){
         </ol>
         <details style="margin-top:6px;">
           <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Kod do wklejenia ręcznie</summary>
-          <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;margin-top:6px;">${esc(TM_AGENCY_SQUAD_BOOKMARKLET)}</textarea>
+          <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;margin-top:6px;">${esc(zakladkaHref(TM_AGENCY_SQUAD_BOOKMARKLET))}</textarea>
         </details>
       </details>
 
@@ -12906,7 +12977,7 @@ function openAgenciesImportModal(){
         <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
           <li>Włącz pasek zakładek: <strong>Ctrl+Shift+B</strong></li>
           <li>Przeciągnij ten przycisk na pasek zakładek:<br>
-            <a href="${esc(TM_AGENCIES_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">📋 Agencje do SBS</a>
+            <a href="${esc(zakladkaHref(TM_AGENCIES_BOOKMARKLET))}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">📋 Agencje do SBS</a>
           </li>
           <li>Na Transfermarkcie: <strong>Zapoznaj się → Agencje</strong>, wybierz kraj, kliknij <strong>Pokaż wybór</strong></li>
           <li>Kliknij zakładkę. Przejdź na kolejną stronę (2, 3, …) i klikaj na każdej — bufor się sumuje,
@@ -12915,7 +12986,7 @@ function openAgenciesImportModal(){
         </ol>
         <details style="margin-top:6px;">
           <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Przeciąganie nie działa? Kod do wklejenia ręcznie</summary>
-          <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;margin-top:6px;">${esc(TM_AGENCIES_BOOKMARKLET)}</textarea>
+          <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;margin-top:6px;">${esc(zakladkaHref(TM_AGENCIES_BOOKMARKLET))}</textarea>
         </details>
       </details>
 
@@ -13133,14 +13204,14 @@ function openAgentImportModal(){
         <ol style="font-size:12.5px;line-height:1.9;padding-left:18px;">
           <li>Włącz pasek zakładek: <strong>Ctrl+Shift+B</strong></li>
           <li>Przeciągnij ten przycisk na pasek zakładek:<br>
-            <a href="${esc(TM_AGENT_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">🕵 Menedżer do SBS</a>
+            <a href="${esc(zakladkaHref(TM_AGENT_BOOKMARKLET))}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;margin:8px 0;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">🕵 Menedżer do SBS</a>
           </li>
           <li>Wejdź na <strong>profil zawodnika</strong> na Transfermarkcie i kliknij zakładkę</li>
           <li>Powtórz dla kolejnych — bufor się sumuje. <strong>Shift+klik</strong> czyści zebrane.</li>
         </ol>
         <details style="margin-top:6px;">
           <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Przeciąganie nie działa? Kod do wklejenia ręcznie</summary>
-          <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;margin-top:6px;">${esc(TM_AGENT_BOOKMARKLET)}</textarea>
+          <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;margin-top:6px;">${esc(zakladkaHref(TM_AGENT_BOOKMARKLET))}</textarea>
         </details>
       </details>
 
@@ -14934,12 +15005,12 @@ function openTransferHistoryModal(playerId){
         — ginie wtedy podział na kolumny i nie da się odróżnić klubu opuszczanego od docelowego. Dlatego użyj zakładki,
         która czyta tabelę wprost ze strony:</p>
         <p style="margin:8px 0;">
-          <a href="${esc(TM_TRANSFERS_BOOKMARKLET)}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">↔ Transfery do SBS</a>
+          <a href="${esc(zakladkaHref(TM_TRANSFERS_BOOKMARKLET))}" onclick="event.preventDefault();alert('To nie jest przycisk do klikania.\n\nPRZECIĄGNIJ go myszą na pasek zakładek przeglądarki (Ctrl+Shift+B, jeśli paska nie widać),\na potem kliknij go TAM, będąc na stronie źródłowej.\n\nJeśli przeciąganie nie działa — rozwiń „Kod do wklejenia ręcznie" pod spodem.');return false;" style="display:inline-block;padding:8px 16px;background:var(--gold);color:var(--heading);border-radius:6px;font-weight:800;text-decoration:none;cursor:grab;">↔ Transfery do SBS</a>
           <span class="note" style="display:block;font-size:11px;margin-top:4px;">Przeciągnij na pasek zakładek (Ctrl+Shift+B), wejdź na profil zawodnika, kliknij — i wklej poniżej.</span>
         </p>
         <details style="margin-bottom:6px;">
           <summary style="cursor:pointer;font-size:12px;color:var(--gold-dark);">Kod do wklejenia ręcznie</summary>
-          <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;margin-top:6px;">${esc(TM_TRANSFERS_BOOKMARKLET)}</textarea>
+          <textarea readonly rows="4" style="font-size:10.5px;font-family:monospace;width:100%;margin-top:6px;">${esc(zakladkaHref(TM_TRANSFERS_BOOKMARKLET))}</textarea>
         </details>
         <textarea id="th-paste" rows="6" placeholder="26/27&#9;1 lip 2026&#9;Podhale Nowy Targ&#9;Cracovia&#9;100 tys. €&#9;free transfer" style="font-size:11.5px;font-family:monospace;"></textarea>
         <div class="modal-actions" style="justify-content:flex-start;margin-top:8px;">

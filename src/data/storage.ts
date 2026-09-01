@@ -128,8 +128,11 @@ export const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }>
     // poziomMeczu / warunki / notatkaMeczu: ocena SAMEGO SPOTKANIA, nie zawodnika. Przy jednej
     // obserwacji na mecz to ona jest kontekstem dla wszystkich ocen indywidualnych — poziom rywalizacji
     // i pogoda zmieniają wagę tego, co zawodnik pokazał.
+    // rozgrywki / kategoria: w jakich rozgrywkach grano i czy to seniorzy, czy młodzież. Bez tego
+    // lista obserwacji nie odróżnia meczu III ligi od spotkania A1, choć to dwie zupełnie różne
+    // oceny tego samego zawodnika.
     fields: ["startLocation", "distanceKm", "obsType", "skladMeczu", "googleEventId",
-             "poziomMeczu", "warunki", "notatkaMeczu"],
+             "poziomMeczu", "warunki", "notatkaMeczu", "rozgrywki", "kategoria"],
   },
   sbs_reports: {
     // sbs_reports nie ma kolumny custom_fields — chowamy w istniejącej `phases` (jsonb).
@@ -142,7 +145,11 @@ export const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }>
     //   bo brak zawodnika sam w sobie znaczy też „zawodnik skasowany z kartoteki".
     // fromObservationId: z której obserwacji raport powstał — pozwala ponowny zapis tej samej
     //   obserwacji potraktować jako aktualizację zamiast dokładać drugi raport o tym samym.
-    fields: ["match", "kind", "fromObservationId"],
+    // obsType: „Live" / „Online" / „Video". Kolumna obs_type figuruje w supabase/schema.sql, ale
+    //   w bazach założonych wcześniej NIE ISTNIEJE — schemat zakłada tabele przez „create table
+    //   if not exists", co nigdy nie dopisuje kolumn do tabeli już istniejącej. Skutek: każdy
+    //   raport z telefonu odbijał się od bazy z „Could not find the 'obs_type' column".
+    fields: ["match", "kind", "fromObservationId", "obsType"],
   },
 };
 

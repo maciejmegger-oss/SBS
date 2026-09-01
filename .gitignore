@@ -4,3 +4,13 @@ dist
 .env.local
 *.local
 .claude/settings.local.json
+
+# Plik roboczy Vite — powstaje przy starcie serwera deweloperskiego i znika sam.
+vite.config.ts.timestamp-*.mjs
+
+# Powiązanie katalogu z projektem w Vercelu (zawiera identyfikatory konta).
+.vercel
+
+# Kopie zapasowe kartoteki i podglądy napraw — bywają wielomegabajtowe i są robocze.
+kopie/
+scripts/.podglad-naprawy.json

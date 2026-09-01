@@ -42,7 +42,10 @@ type QueueJobPayload =
   | { kind: "observation"; row: Record<string, unknown> }
   | { kind: "report"; row: Record<string, unknown> }
   | { kind: "playerStatus"; playerId: string; status: string }
-  | { kind: "liveEvents"; observationId: string; events: LiveEvent[] };
+  | { kind: "liveEvents"; observationId: string; events: LiveEvent[] }
+  // Skasowanie obserwacji. Jedyne zadanie, które coś z bazy ZABIERA — dlatego powstaje wyłącznie
+  // na wyraźne polecenie scouta (przycisk „Usuń" z pytaniem potwierdzającym), nigdy ubocznie.
+  | { kind: "usunObserwacje"; observationId: string };
 
 // Zadanie w kolejce ma dodatkowo własny identyfikator, bo kolejka żyje w localStorage: przy każdym
 // odczycie powstają NOWE obiekty i wykonanego zadania nie da się rozpoznać po tożsamości obiektu.
@@ -51,6 +54,9 @@ type QueueJob = QueueJobPayload & { id: string };
 const LS = {
   cache: "sbs-m:cache",          // kopia bazy do pracy offline
   queue: "sbs-m:queue",          // zadania czekające na sieć
+  zablokowane: "sbs-m:zablokowane", // zadania ODRZUCONE przez bazę — patrz flushQueue
+  bladWysylki: "sbs-m:blad-wysylki", // czemu kolejka stanęła — patrz flushQueue
+  brakKolumn: "sbs-m:brak-kolumn",  // kolumny, których ta baza nie ma — patrz zapamietajBrakKolumny
   live: "sbs-m:live",            // stan trwającej obserwacji (zdarzenia, zegar)
   archiwum: "sbs-m:zdarzenia",   // zdarzenia zakończonych meczów, wg obserwacji
   scout: "sbs-m:scout",          // ostatnio wybrany scout
@@ -92,9 +98,13 @@ export interface Cache {
   matches: (Match & { competition?: string })[];
   scouts: string[];
   fetchedAt: string | null;
+  // Co się NIE pobrało przy ostatnim odświeżeniu, w ludzkich słowach. Bez tego pusta lista
+  // wygląda identycznie w dwóch zupełnie różnych sytuacjach: „w bazie faktycznie nic nie ma"
+  // i „baza odmówiła dostępu". Scout na trybunie musi wiedzieć, na którą z nich patrzy.
+  problemy?: string[];
 }
 
-const EMPTY_CACHE: Cache = { players: [], clubs: [], observations: [], reports: [], matches: [], scouts: [], fetchedAt: null };
+const EMPTY_CACHE: Cache = { players: [], clubs: [], observations: [], reports: [], matches: [], scouts: [], fetchedAt: null, problemy: [] };
 
 export const getCache = (): Cache => readLS<Cache>(LS.cache, EMPTY_CACHE);
 
@@ -126,34 +136,87 @@ const objFromRow = (row: Record<string, unknown>): Record<string, unknown> => {
 // wyciągnąć na wierzch, przy zapisie — schować z powrotem, inaczej rodzaj obserwacji i punkt
 // startowy znikałyby po każdej edycji z telefonu.
 //
-// Listę bierzemy WPROST z warstwy aplikacji na komputerze, zamiast trzymać tu jej odpowiednik.
-// Własna kopia już raz się rozjechała: doszły tam `skladMeczu` i `googleEventId`, o których ten
-// plik nie wiedział — a pole spoza listy nie trafia do `__ext`, tylko leci jako osobna kolumna,
-// której w tabeli nie ma. Zapis obserwacji z telefonu kończyłby się wtedy błędem i zawieszał
-// kolejkę wysyłki, a przy okazji gubił powiązanie z wydarzeniem w Kalendarzu Google.
-const OBS_EXT_FIELDS = EXT_CONFIG.sbs_observations.fields;
+// Listę bierzemy WPROST z warstwy aplikacji na komputerze (EXT_CONFIG), zamiast trzymać tu jej
+// odpowiednik. Własna kopia już raz się rozjechała: doszły tam `skladMeczu` i `googleEventId`,
+// o których ten plik nie wiedział — a pole spoza listy nie trafia do `__ext`, tylko leci jako
+// osobna kolumna, której w tabeli nie ma. Zapis kończy się wtedy odmową bazy.
 
-const liftObsExt = (o: Record<string, unknown>) => {
-  const host = o.ratings as Record<string, unknown> | undefined;
+// CZEGO W TEJ BAZIE NIE MA — NAUKA Z ODMOWY.
+//
+// Schemat zakłada tabele przez „create table if not exists", a to NIGDY nie dopisuje kolumn do
+// tabeli, która już istnieje. Kolumna dodana do schematu później nie powstaje więc w bazie
+// założonej wcześniej — mimo że w supabase/schema.sql stoi jak wół. Jeden taki brak wywala CAŁY
+// zapis, a naprawa polegała dotąd na: rozpoznaj po komunikacie, dopisz pole do listy wyjątków
+// w kodzie, wdróż, poproś scouta o ponowienie. Raz na kolumnę, przy czym każda runda to godzina
+// i mecz obejrzany na darmo.
+//
+// PostgREST podaje nazwę brakującej kolumny wprost w odmowie. Panel ją czyta, zapamiętuje
+// i od tej chwili wysyła to pole tak samo jak pozostałe pola bez kolumn — schowane w jsonb.
+// Zapamiętane w telefonie, bo to cecha KONKRETNEJ bazy, a nie wersji aplikacji.
+const WZOR_BRAKU_KOLUMNY = /could not find the '([a-z0-9_]+)' column of '([a-z0-9_]+)'/i;
+
+const brakujaceKolumny = (): Record<string, string[]> => readLS<Record<string, string[]>>(LS.brakKolumn, {});
+
+// Zwraca true, gdy dowiedzieliśmy się czegoś NOWEGO — tylko wtedy warto ponawiać. Bez tego
+// warunku ta sama odmowa wracałaby w kółko i kolejka kręciłaby się w miejscu.
+function zapamietajBrakKolumny(komunikat: string): boolean {
+  const m = WZOR_BRAKU_KOLUMNY.exec(komunikat || "");
+  if (!m) return false;
+  const [, kolumna, tabela] = m;
+  const mapa = brakujaceKolumny();
+  const lista = mapa[tabela] || [];
+  if (lista.includes(kolumna)) return false;
+  mapa[tabela] = [...lista, kolumna];
+  writeLS(LS.brakKolumn, mapa);
+  return true;
+}
+
+// Pola do schowania w jsonb: stałe z EXT_CONFIG plus te, o których brak baza sama powiedziała.
+function polaBezKolumn(table: string): string[] {
+  const cfg = EXT_CONFIG[table];
+  if (!cfg) return [];
+  // Ani klucza głównego, ani samej kolumny-gospodarza nie wolno schować w niej samej — a baza
+  // potrafi zgłosić brak czegokolwiek, także w odpowiedzi na zupełnie inną usterkę.
+  const zakazane = new Set([cfg.hostField, "id"]);
+  const nauczone = (brakujaceKolumny()[table] || []).map(snakeToCamel).filter((f) => !zakazane.has(f));
+  return [...new Set([...cfg.fields, ...nauczone])];
+}
+
+// PAKOWANIE I ROZPAKOWYWANIE DLA DOWOLNEJ TABELI, nie tylko dla obserwacji.
+//
+// Wcześniej te dwie funkcje obsługiwały WYŁĄCZNIE obserwacje, a raporty szły do bazy surowe.
+// Skutek był dokładnie taki, jak przy każdym polu bez kolumny: baza odrzucała KAŻDY raport
+// z telefonu komunikatem „Could not find the 'from_observation_id' column of 'sbs_reports'".
+// Obserwacje zapisywały się poprawnie, więc na komputerze widać było mecze bez treści — a to,
+// po co scout jedzie na mecz, czyli oceny zawodników, zostawało w telefonie.
+//
+// Stąd jedna para funkcji sterowana wprost przez EXT_CONFIG. Dołożenie pola do dowolnej tabeli
+// nie wymaga już niczego tutaj i nie da się o tym zapomnieć dla jednej z nich.
+const packExt = (table: string, o: Record<string, unknown>): Record<string, unknown> => {
+  const cfg = EXT_CONFIG[table];
+  const clone = { ...o };
+  if (!cfg) return clone;
+  const ext: Record<string, unknown> = {};
+  for (const f of polaBezKolumn(table)) {
+    if (f in clone && clone[f] !== undefined) ext[f] = clone[f];
+    delete clone[f];
+  }
+  const host: Record<string, unknown> = { ...((clone[cfg.hostField] as Record<string, unknown>) || {}) };
+  if (Object.keys(ext).length) host.__ext = ext; else delete host.__ext;
+  clone[cfg.hostField] = host;
+  return clone;
+};
+
+const liftExt = (table: string, o: Record<string, unknown>) => {
+  const cfg = EXT_CONFIG[table];
+  if (!cfg) return o;
+  const host = o[cfg.hostField] as Record<string, unknown> | undefined;
   if (host && host.__ext) {
     const ext = host.__ext as Record<string, unknown>;
     for (const k in ext) if (o[k] === undefined || o[k] === null) o[k] = ext[k];
     delete host.__ext;
   }
   return o;
-};
-
-const packObsExt = (o: Record<string, unknown>): Record<string, unknown> => {
-  const clone = { ...o };
-  const ext: Record<string, unknown> = {};
-  for (const f of OBS_EXT_FIELDS) {
-    if (f in clone && clone[f] !== undefined) ext[f] = clone[f];
-    delete clone[f];
-  }
-  const ratings: Record<string, unknown> = { ...((clone.ratings as Record<string, unknown>) || {}) };
-  if (Object.keys(ext).length) ratings.__ext = ext;
-  clone.ratings = ratings;
-  return clone;
 };
 
 const rowFromObj = (obj: Record<string, unknown>): Record<string, unknown> => {
@@ -181,43 +244,143 @@ const page = async (table: string, columns = "*"): Promise<Record<string, unknow
   return all;
 };
 
+// Jeden wiersz z sbs_kv. Brak wiersza to `null` BEZ błędu — to normalny stan (czegoś jeszcze nie
+// zapisano); błąd bazy leci wyjątkiem, żeby dało się te dwie rzeczy od siebie odróżnić.
+async function czytajKv(key: string): Promise<string | null> {
+  const { data, error } = await sb.from("sbs_kv").select("value").eq("key", key).maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? (data as { value: string }).value : null;
+}
+
+// Wynik jednego pobrania. Świadomie JEDEN kształt zamiast unii rozróżnianej polem `ok`:
+// projekt kompiluje się z wyłączonym `strict`, a bez `strictNullChecks` TypeScript nie zawęża
+// typu po takim polu i każde odwołanie do `blad` byłoby błędem kompilacji.
+// Puste `blad` = pobranie się udało; `dane === null` przy pustym `blad` = w bazie nic nie ma.
+interface Wynik<T> {
+  dane: T | null;
+  blad: string;
+}
+
+const sprobuj = async <T>(fn: () => Promise<T>): Promise<Wynik<T>> => {
+  try {
+    return { dane: await fn(), blad: "" };
+  } catch (e) {
+    return { dane: null, blad: (e as Error).message || "nieznany błąd" };
+  }
+};
+
+// PRACA CZEKAJĄCA W KOLEJCE MUSI PRZEŻYĆ ODŚWIEŻENIE.
+//
+// Kopia bazy powstaje z tego, co odda serwer. Obserwacja zaplanowana na telefonie bez zasięgu
+// jeszcze tam nie dotarła — więc odświeżenie zastępowało ją listą, w której jej nie ma, i plan
+// znikał scoutowi z ekranu. Dokładnie stąd brały się DUBLE: obserwacja „przepadała", scout
+// planował ją drugi raz, a potem kolejka wysyłała obie i w bazie były dwie tego samego meczu.
+//
+// Dlatego po złożeniu kopii nakładamy na nią wszystko, co wciąż czeka na wysyłkę. Wersja lokalna
+// jest z definicji nowsza od serwerowej — to ona dopiero ma tam pojechać.
+function nalozKolejke(c: Cache): void {
+  // ODSTAWIONE TEŻ, nie tylko czekające. Zadanie odrzucone przez bazę wypada z kolejki, więc bez
+  // tego obserwacja nie byłaby ani na serwerze, ani w kolejce — i znikałaby scoutowi z listy przy
+  // pierwszym odświeżeniu. Czyli dokładnie ta praca, o której panel mówi „nic nie przepadło".
+  for (const j of [...getQueue(), ...zablokowaneZadania().map((z) => z.job)]) {
+    if (j.kind === "observation") {
+      const obs = liftExt("sbs_observations", objFromRow(j.row)) as unknown as Observation;
+      const i = c.observations.findIndex((o) => o.id === obs.id);
+      if (i >= 0) c.observations[i] = obs; else c.observations.push(obs);
+    } else if (j.kind === "report") {
+      const rep = objFromRow(j.row) as unknown as Report;
+      const i = c.reports.findIndex((r) => r.id === rep.id);
+      if (i >= 0) c.reports[i] = rep; else c.reports.push(rep);
+    } else if (j.kind === "usunObserwacje") {
+      // Kasowanie też jeszcze nie dotarło do bazy — skasowana obserwacja nie może wrócić na listę.
+      c.observations = c.observations.filter((o) => o.id !== j.observationId);
+    }
+  }
+}
+
 // Pobranie kopii bazy. Wołane po zalogowaniu i z przycisku „Odśwież" — świadomie, a nie przy
 // każdym wejściu do widoku, żeby nie zjadać transferu na stadionie.
+//
+// KAŻDE ŹRÓDŁO OSOBNO. Wcześniej sześć zapytań szło jednym `Promise.all` bez zabezpieczenia:
+// wystarczyło, że JEDNO z nich odmówiło (reguły dostępu, uśpiona baza), a całe odświeżenie kończyło
+// się wyjątkiem i w telefonie zostawała stara kopia — bez słowa wyjaśnienia. Terminarz miał jeszcze
+// gorzej: jego błąd był łykany po cichu i panel pisał „terminarz jest pusty, pobierz go na
+// komputerze", choć na komputerze był komplet meczów. Teraz to, co się pobrało, wchodzi do kopii;
+// to, co się nie pobrało, zostaje z poprzedniego razu i trafia na listę problemów.
 export async function refreshCache(): Promise<Cache> {
-  const [players, clubs, observations, reports, kv, kvMecze] = await Promise.all([
-    page("sbs_players"),
-    page("sbs_clubs"),
-    page("sbs_observations"),
-    page("sbs_reports"),
-    sb.from("sbs_kv").select("value").eq("key", "scouting:settings").maybeSingle(),
-    sb.from("sbs_kv").select("value").eq("key", "scouting:matches").maybeSingle(),
+  const poprzednia = getCache();
+  const problemy: string[] = [];
+
+  const [players, clubs, observations, reports, ustawienia, terminarz] = await Promise.all([
+    sprobuj(() => page("sbs_players")),
+    sprobuj(() => page("sbs_clubs")),
+    sprobuj(() => page("sbs_observations")),
+    sprobuj(() => page("sbs_reports")),
+    sprobuj(() => czytajKv("scouting:settings")),
+    sprobuj(() => czytajKv("scouting:matches")),
   ]);
 
-  let scouts: string[] = [];
-  try {
-    const settings = kv.data ? JSON.parse((kv.data as { value: string }).value) : null;
-    if (settings && Array.isArray(settings.scouts)) scouts = settings.scouts;
-  } catch {
-    /* ustawienia w nieoczekiwanym kształcie — lista scoutów zostaje pusta, da się ją wpisać ręcznie */
+  const zTabeli = <T>(w: Wynik<Record<string, unknown>[]>, nazwa: string, stare: T[], mapuj: (r: Record<string, unknown>) => unknown): T[] => {
+    if (w.blad) { problemy.push(nazwa + ": " + w.blad); return stare; }
+    return (w.dane || []).map(mapuj) as T[];
+  };
+
+  let scouts = poprzednia.scouts || [];
+  if (ustawienia.blad) problemy.push("ustawienia: " + ustawienia.blad);
+  else if (ustawienia.dane) {
+    try {
+      const s = JSON.parse(ustawienia.dane);
+      if (s && Array.isArray(s.scouts)) scouts = s.scouts;
+    } catch {
+      problemy.push("ustawienia: zapis w nieoczekiwanym kształcie");
+    }
   }
 
-  let matches: (Match & { competition?: string })[] = [];
-  try {
-    const surowe = kvMecze.data ? JSON.parse((kvMecze.data as { value: string }).value) : null;
-    if (Array.isArray(surowe)) matches = surowe;
-  } catch {
-    /* terminarz w nieoczekiwanym kształcie — lista zostaje pusta, mecz da się wpisać ręcznie */
+  // Terminarz leży w sbs_kv pod „scouting:matches" — tam, gdzie zapisuje go aplikacja na komputerze
+  // (patrz komentarz przy COLLECTION_TABLES w src/data/storage.ts). Brak wiersza znaczy naprawdę
+  // „nikt jeszcze nie pobrał terminarza"; błąd odczytu znaczy coś zupełnie innego i mówimy o tym wprost.
+  let matches = poprzednia.matches || [];
+  if (terminarz.blad) problemy.push("terminarz: " + terminarz.blad);
+  else if (terminarz.dane === null || terminarz.dane === undefined) matches = [];
+  else {
+    try {
+      const surowe = JSON.parse(terminarz.dane);
+      if (Array.isArray(surowe)) matches = surowe;
+      else problemy.push("terminarz: zapis w nieoczekiwanym kształcie");
+    } catch {
+      problemy.push("terminarz: zapis w nieoczekiwanym kształcie");
+    }
   }
 
   const cache: Cache = {
-    players: players.map(objFromRow) as unknown as Player[],
-    clubs: clubs.map(objFromRow) as unknown as Club[],
-    observations: observations.map((r) => liftObsExt(objFromRow(r))) as unknown as Observation[],
-    reports: reports.map(objFromRow) as unknown as Report[],
+    players: zTabeli<Player>(players, "zawodnicy", poprzednia.players, objFromRow),
+    clubs: zTabeli<Club>(clubs, "kluby", poprzednia.clubs, objFromRow),
+    observations: zTabeli<Observation>(observations, "obserwacje", poprzednia.observations, (r) => liftExt("sbs_observations", objFromRow(r))),
+    reports: zTabeli<Report>(reports, "raporty", poprzednia.reports, (r) => liftExt("sbs_reports", objFromRow(r))),
     matches,
     scouts,
     fetchedAt: new Date().toISOString(),
+    problemy,
   };
+  // PUSTKA BEZ BŁĘDU TO TEŻ OBJAW.
+  //
+  // Reguły dostępu w Supabase nie odmawiają — one FILTRUJĄ. Konto bez zgody administratora
+  // (albo bez wiersza w sbs_konta, jeśli powstało przed wprowadzeniem zgód) dostaje na każde
+  // pytanie poprawną odpowiedź: zero wierszy. Dla panelu wygląda to identycznie jak świeża,
+  // pusta baza — i właśnie stąd bierze się „nie wgrało meczów z komputera", choć na komputerze
+  // jest komplet. Nazywamy to wprost, bo sam scout nie ma jak tego odróżnić.
+  const nicNieDoszlo =
+    !problemy.length &&
+    !cache.players.length && !cache.clubs.length &&
+    !cache.observations.length && !cache.reports.length && !cache.matches.length;
+  if (nicNieDoszlo) {
+    problemy.push(
+      "baza oddała zero rekordów — zwykle znaczy to, że konto nie ma jeszcze zgody administratora " +
+      "SBS albo zalogowano się na inne konto niż na komputerze",
+    );
+  }
+
+  nalozKolejke(cache);
   writeLS(LS.cache, cache);
   return cache;
 }
@@ -251,6 +414,7 @@ function enqueue(job: QueueJobPayload) {
     if (a.kind === "report" && b.kind === "report") return a.row.id === b.row.id;
     if (a.kind === "playerStatus" && b.kind === "playerStatus") return a.playerId === b.playerId;
     if (a.kind === "liveEvents" && b.kind === "liveEvents") return a.observationId === b.observationId;
+    if (a.kind === "usunObserwacje" && b.kind === "usunObserwacje") return a.observationId === b.observationId;
     return false;
   };
   setQueue([...q.filter((j) => !sameTarget(j, pelne)), pelne]);
@@ -296,23 +460,99 @@ async function pushLiveEvents(observationId: string, events: LiveEvent[]): Promi
   if (error) throw new Error(error.message);
 }
 
+// ODRZUCENIE PRZEZ BAZĘ TO CO INNEGO NIŻ BRAK ZASIĘGU.
+//
+// Brak zasięgu mija — wystarczy poczekać i ponowić. Odrzucenie „nie ma takiej kolumny" albo
+// „narusza klucz obcy" nie minie NIGDY: ten sam wiersz wysłany za godzinę zostanie odrzucony
+// tak samo. Rozróżnienie jest tu po to, żeby jedno takie zadanie nie zatrzymało wszystkich
+// pozostałych na zawsze (patrz flushQueue).
+class BladBazy extends Error {}
+
+// Świadomie wąska lista: wpisujemy tu WYŁĄCZNIE błędy, o których wiadomo, że ponowienie ich nie
+// naprawi. Wszystko inne — przeciążenie serwera, wygasły token, zerwane połączenie — zostaje
+// „przejściowe", czyli kolejka poczeka i spróbuje jeszcze raz. Lepiej czekać na coś, co się
+// naprawi, niż odstawić na bok pracę, która by przeszła.
+const ODRZUCENIE_TRWALE = [
+  /column .* does not exist/i,          // 42703 — pole bez kolumny w tabeli
+  /could not find the .* column/i,      // PGRST204 — to samo, widziane przez PostgREST
+  /violates foreign key constraint/i,   // 23503 — odwołanie do nieistniejącego rekordu
+  /violates not-null constraint/i,      // 23502 — brak wymaganej wartości
+  /invalid input syntax/i,              // 22P02 — wartość w złym formacie
+  /violates row-level security|permission denied/i,  // 42501 — konto bez prawa zapisu
+];
+
+const czyTrwale = (komunikat: string) => ODRZUCENIE_TRWALE.some((w) => w.test(komunikat));
+
+const zglos = (error: { message: string } | null) => {
+  if (!error) return;
+  throw czyTrwale(error.message) ? new BladBazy(error.message) : new Error(error.message);
+};
+
+export interface ZablokowaneZadanie {
+  job: QueueJob;
+  blad: string;
+  kiedy: string;
+}
+
+export const zablokowaneZadania = (): ZablokowaneZadanie[] =>
+  readLS<ZablokowaneZadanie[]>(LS.zablokowane, []);
+
+const setZablokowane = (z: ZablokowaneZadanie[]) => writeLS(LS.zablokowane, z);
+
+export const liczbaZablokowanych = () => zablokowaneZadania().length;
+
+// Ponowna próba dla odstawionych. Wracają na KONIEC kolejki, żeby nie zablokowały od nowa tego,
+// co czeka i przeszłoby bez przeszkód.
+export function ponowZablokowane(): number {
+  const z = zablokowaneZadania();
+  if (!z.length) return 0;
+  // TREŚĆ ODMOWY MUSI PRZEŻYĆ PONOWIENIE.
+  //
+  // Dotąd znikała razem z odstawionymi zadaniami: dotknięcie „spróbuj jeszcze raz" kasowało
+  // jedyne miejsce, w którym baza powiedziała, CZEMU odmówiła. Gdy próba kończyła się tak samo,
+  // nie było już czego pokazać ani czym się podeprzeć przy zgłoszeniu — zostawało samo „10
+  // w kolejce". Zapisujemy ją więc jako ostatni powód wstrzymania, dopóki wysyłka nie przejdzie.
+  const powod = z[0]?.blad;
+  if (powod) zapiszBladWysylki(`ostatnia odmowa bazy — ${powod}`);
+  setQueue([...getQueue(), ...z.map((x) => odswiezKsztalt(x.job))]);
+  setZablokowane([]);
+  void flushQueue();
+  return z.length;
+}
+
+// PONOWIENIE MUSI WYSŁAĆ WIERSZ ZBUDOWANY OD NOWA, nie ten sprzed odmowy.
+//
+// Zadanie zapamiętuje gotowy wiersz — taki, jaki poszedł do bazy. Jeśli baza odrzuciła go
+// z powodu pola bez kolumny, to odesłanie tego samego wiersza skończy się identyczną odmową,
+// choćby usterkę dawno naprawiono. Przycisk „spróbuj jeszcze raz" wyglądałby na zepsuty, a w
+// istocie sumiennie powtarzałby błąd.
+//
+// Dlatego rozpakowujemy wiersz z powrotem do postaci obiektu i składamy go BIEŻĄCYMI regułami.
+// Pole, które kiedyś poleciało jako osobna kolumna, trafia teraz tam, gdzie jego miejsce.
+function odswiezKsztalt(job: QueueJob): QueueJob {
+  if (job.kind !== "observation" && job.kind !== "report") return job;
+  const tabela = job.kind === "observation" ? "sbs_observations" : "sbs_reports";
+  return { ...job, row: rowFromObj(packExt(tabela, liftExt(tabela, objFromRow(job.row)))) };
+}
+
 async function runJob(job: QueueJob): Promise<void> {
   if (job.kind === "observation") {
     const { error } = await sb.from("sbs_observations").upsert(job.row, { onConflict: "id" });
-    if (error) throw new Error(error.message);
-    return;
+    return zglos(error);
   }
   if (job.kind === "report") {
     const { error } = await sb.from("sbs_reports").upsert(job.row, { onConflict: "id" });
-    if (error) throw new Error(error.message);
-    return;
+    return zglos(error);
+  }
+  if (job.kind === "usunObserwacje") {
+    const { error } = await sb.from("sbs_observations").delete().eq("id", job.observationId);
+    return zglos(error);
   }
   if (job.kind === "playerStatus") {
     // Świadomie update, nie upsert: telefon zmienia JEDNO pole istniejącego zawodnika i nie może
     // nadpisać reszty jego profilu wersją z lokalnej kopii, która bywa nieaktualna.
     const { error } = await sb.from("sbs_players").update({ status: job.status }).eq("id", job.playerId);
-    if (error) throw new Error(error.message);
-    return;
+    return zglos(error);
   }
   await pushLiveEvents(job.observationId, job.events);
 }
@@ -327,24 +567,94 @@ let flushing = false;
 // (obserwacja, raport, status zawodnika) — a wysyłka pierwszego z nich trwa na tyle długo, że
 // pozostałe dwa trafiają do kolejki już w trakcie. Odłożenie migawki pomniejszonej o wykonane
 // zadanie kasowałoby je bezgłośnie: raport i status nigdy nie docierały do bazy.
+// JEDNO ODRZUCONE ZADANIE NIE MOŻE ZATRZYMAĆ CAŁEJ KOLEJKI.
+//
+// Dotąd pierwsze niepowodzenie przerywało wysyłkę — słusznie przy braku zasięgu, katastrofalnie
+// przy wierszu, którego baza nie przyjmie NIGDY. Jeden taki wiersz na początku kolejki blokował
+// wszystko, co za nim: scout widział „W kolejce · 24", pracy z całego weekendu nie było na
+// komputerze, a jedyny ślad przyczyny szedł do konsoli przeglądarki, do której na telefonie
+// nikt nie zagląda.
+//
+// Teraz: brak zasięgu i inne przejściowe kłopoty nadal wstrzymują wysyłkę (nie ma sensu dobijać
+// się resztą), ale odrzucenie trwałe ODSTAWIAMY NA BOK i idziemy dalej. Nic nie ginie — odstawione
+// zadania czekają razem z treścią błędu, panel je pokazuje, a przycisk wraca je do kolejki.
+// Czemu kolejka stanęła. Zapisane, a nie tylko wypisane w konsoli: kolejka, ktora stoi bez podania
+// powodu, jest nie do odróżnienia od kolejki, ktora o sobie zapomniala — a na telefonie nikt do
+// konsoli nie zajrzy. Ten sam blad popelnilem juz raz przy odrzuceniach trwalych.
+export const ostatniBladWysylki = (): string => {
+  try { return localStorage.getItem(LS.bladWysylki) || ""; } catch { return ""; }
+};
+const zapiszBladWysylki = (tekst: string) => {
+  try {
+    if (tekst) localStorage.setItem(LS.bladWysylki, tekst);
+    else localStorage.removeItem(LS.bladWysylki);
+  } catch { /* tryb prywatny — trudno, zostaje konsola */ }
+};
+
+// ZADANIE DOŁOŻONE W TRAKCIE WYSYŁKI NIE MOŻE CZEKAĆ DO NASTĘPNEJ OKAZJI.
+//
+// Wysyłka odmawia startu, gdy inna już trwa — i słusznie, bo dwie naraz deptałyby sobie po
+// kolejce. Ale samo „odmawiam" gubiło pracę dołożoną sekundę za późno: jeśli pętla akurat
+// kończyła ostatni obrót, świeży zapis zostawał w kolejce do NASTĘPNEGO dotknięcia ekranu.
+// Widać to było jako raport, który dociera do SBS dopiero przy kolejnej czynności, zamiast od razu.
+//
+// Zamiast rezygnować, odnotowujemy prośbę i po zamknięciu bieżącego przebiegu ruszamy jeszcze raz.
+let ponowFlush = false;
+
 export async function flushQueue(): Promise<number> {
-  if (flushing) return queueLength();
+  if (flushing) { ponowFlush = true; return queueLength(); }
   if (!navigator.onLine) return queueLength();
   flushing = true;
   try {
-    for (;;) {
-      const q = getQueue();
-      if (!q.length) return 0;
-      try {
-        await runJob(q[0]);
-      } catch (e) {
-        console.warn("Wysyłka wstrzymana:", (e as Error).message);
-        return getQueue().length;
-      }
-      setQueue(getQueue().filter((j) => j.id !== q[0].id));
-    }
+    return await przeslijKolejke();
   } finally {
     flushing = false;
+    if (ponowFlush) { ponowFlush = false; void flushQueue(); }
+  }
+}
+
+async function przeslijKolejke(): Promise<number> {
+  {
+    for (;;) {
+      const q = getQueue();
+      if (!q.length) {
+        // PUSTA KOLEJKA NIE ZNACZY „WSZYSTKO POSZŁO".
+        //
+        // Opróżnić się mogła również dlatego, że każdy zapis został ODSTAWIONY jako odrzucony —
+        // a wtedy skasowanie powodu gasi jedyne zdanie mówiące, czemu baza odmówiła, dokładnie
+        // w chwili, gdy jest najbardziej potrzebne. Powód wolno wyczyścić dopiero wtedy, gdy nic
+        // nie czeka ani w kolejce, ani wśród odstawionych.
+        if (!liczbaZablokowanych()) zapiszBladWysylki("");
+        return 0;
+      }
+      const zadanie = q[0];
+      try {
+        await runJob(zadanie);
+      } catch (e) {
+        if (!(e instanceof BladBazy)) {
+          console.warn("Wysyłka wstrzymana:", (e as Error).message);
+          zapiszBladWysylki(`${zadanie.kind}: ${(e as Error).message || "nieznany błąd"}`);
+          return getQueue().length;
+        }
+        // ODMOWA, Z KTÓREJ DA SIĘ CZEGOŚ NAUCZYĆ, nie kończy sprawy.
+        //
+        // „Nie ma takiej kolumny" to jedyna odmowa, którą panel potrafi naprawić sam: wystarczy
+        // wysłać to pole schowane w jsonb. Uczymy się więc i próbujemy JESZCZE RAZ, od razu,
+        // zamiast odstawiać zapis i czekać, aż ktoś zauważy czerwoną kartę. Nauka dotyczy nowej
+        // kolumny (patrz zapamietajBrakKolumny), więc każda daje najwyżej jedną dodatkową próbę
+        // i kolejka nie ma jak się zapętlić.
+        if (zapamietajBrakKolumny((e as Error).message)) {
+          console.warn("Baza nie ma tej kolumny — chowam pole i próbuję jeszcze raz:", (e as Error).message);
+          setQueue([odswiezKsztalt(zadanie), ...getQueue().filter((j) => j.id !== zadanie.id)]);
+          continue;
+        }
+        console.warn("Baza odrzuciła zadanie — odstawiam i idę dalej:", (e as Error).message);
+        setZablokowane([...zablokowaneZadania(), {
+          job: zadanie, blad: (e as Error).message, kiedy: new Date().toISOString(),
+        }]);
+      }
+      setQueue(getQueue().filter((j) => j.id !== zadanie.id));
+    }
   }
 }
 
@@ -357,7 +667,33 @@ export function saveObservation(obs: Observation): void {
     const i = c.observations.findIndex((o) => o.id === obs.id);
     if (i >= 0) c.observations[i] = obs; else c.observations.push(obs);
   });
-  enqueue({ kind: "observation", row: rowFromObj(packObsExt(obs as unknown as Record<string, unknown>)) });
+  enqueue({ kind: "observation", row: rowFromObj(packExt("sbs_observations", obs as unknown as Record<string, unknown>)) });
+  void flushQueue();
+}
+
+// USUNIĘCIE OBSERWACJI.
+//
+// Jedyna operacja panelu, która coś z bazy zabiera. Dlatego wołana wyłącznie z przycisku
+// potwierdzonego pytaniem — nigdy jako skutek uboczny czegoś innego.
+//
+// Zaległe zapisy TEJ obserwacji wyrzucamy z kolejki przed dołożeniem kasowania. Bez tego telefon
+// bez zasięgu wysyłałby najpierw upsert, a potem delete — dwa przejścia po sieci po to, żeby
+// skończyć w tym samym miejscu. Oś zdarzeń w bazie znika sama (klucz obcy z `on delete cascade`).
+export function deleteObservation(id: string): void {
+  patchCache((c) => {
+    c.observations = c.observations.filter((o) => o.id !== id);
+  });
+  const bezZaleglych = getQueue().filter(
+    (j) => !((j.kind === "observation" && j.row.id === id) || (j.kind === "liveEvents" && j.observationId === id)),
+  );
+  setQueue(bezZaleglych);
+  enqueue({ kind: "usunObserwacje", observationId: id });
+
+  // Sprzątamy też kopię zdarzeń w telefonie — inaczej oś skasowanego meczu zostawałaby w pamięci
+  // urządzenia bez niczego, co by ją pokazywało.
+  const archiwum = archiwumZdarzen();
+  if (archiwum[id]) { delete archiwum[id]; writeLS(LS.archiwum, archiwum); }
+
   void flushQueue();
 }
 
@@ -366,7 +702,7 @@ export function saveReport(rep: Report): void {
     const i = c.reports.findIndex((r) => r.id === rep.id);
     if (i >= 0) c.reports[i] = rep; else c.reports.push(rep);
   });
-  enqueue({ kind: "report", row: rowFromObj(rep as unknown as Record<string, unknown>) });
+  enqueue({ kind: "report", row: rowFromObj(packExt("sbs_reports", rep as unknown as Record<string, unknown>)) });
   void flushQueue();
 }
 

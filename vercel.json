@@ -56,7 +56,16 @@
       ]
     },
     {
-      "source": "/zakladka-lnp.js",
+      "source": "/wersja.json",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    },
+    {
+      "source": "/zakladka-lnp-v2.js",
       "headers": [
         {
           "key": "Access-Control-Allow-Origin",

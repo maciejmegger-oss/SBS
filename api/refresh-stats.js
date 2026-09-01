@@ -133,7 +133,7 @@ export default async function handler(req, res) {
     wgNazwiska.get(k).push(g);
   });
 
-  const doZapisu = [], niejednoznaczni = [], nieznalezieni = [];
+  const doZapisu = [], niejednoznaczni = [], nieznalezieni = [], pominietiPuste = [];
   zawodnicyApi.forEach((z) => {
     // Próbujemy pełnego zapisu, a gdy nie trafi — skróconego. Dodatkowo samo nazwisko, bo
     // dostawca bywa niekonsekwentny w imionach (drugie imię, wersja oryginalna kontra polska).
@@ -160,6 +160,19 @@ export default async function handler(req, res) {
     }
     if (wybor.length !== 1) { niejednoznaczni.push(z.nazwa); return; }
     const g = wybor[0];
+
+    // DOSTAWCA BYWA DZIURAWY, A MY NIE MOŻEMY PRZEZ TO KASOWAĆ DOROBKU.
+    //
+    // Zdarza się, że w odpowiedzi brakuje liczby występów, choć minuty są na miejscu — wychodzi
+    // wtedy „0 meczów / 405 minut", co jest wewnętrznie sprzeczne i po zapisie wyglądałoby jak
+    // zawodnik, który nie zagrał ani razu. Zdarza się też, że zawodnika nie ma w danej kolejce
+    // wcale i wszystko wraca zerami. Oba przypadki znaczą „nie wiem", nie „zero".
+    if (z.mecze === 0 && z.minuty > 0) z.mecze = g.matches || 0;
+    if (z.mecze === 0 && z.minuty === 0 && z.gole === 0
+      && ((g.matches || 0) > 0 || (g.minutes || 0) > 0)) {
+      pominietiPuste.push(`${g.last_name} ${g.first_name} (mamy ${g.matches || 0} m / ${g.minutes || 0} min, dostawca przysłał puste)`);
+      return;
+    }
     // Zapisujemy tylko realne zmiany — inaczej co przebieg przepisywalibyśmy 500 rekordów bez potrzeby.
     //
     // Kartki i asysty MUSZĄ być w tym porównaniu. Wcześniej patrzyliśmy wyłącznie na mecze, minuty
@@ -239,6 +252,7 @@ export default async function handler(req, res) {
     zapisani,
     niejednoznacznych: niejednoznaczni.length,
     spozaBazy: nieznalezieni.length,
+    pominietiPusteDane: pominietiPuste.length,
     przykladyZmian: doZapisu.slice(0, 15).map((p) => ({
       kto: p.kto,
       bylo: `${p.przed.mecze ?? "—"} m / ${p.przed.minuty ?? "—"} min / ${p.przed.gole ?? "—"} g`,
@@ -246,5 +260,6 @@ export default async function handler(req, res) {
     })),
     spozaBazyPrzyklady: nieznalezieni.slice(0, 20),
     niejednoznaczniPrzyklady: niejednoznaczni.slice(0, 10),
+    pominietiPustePrzyklady: pominietiPuste.slice(0, 10),
   });
 }

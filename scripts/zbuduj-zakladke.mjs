@@ -1,45 +1,32 @@
-// PLIK, KTÓRY ZAKŁADKA POBIERA Z SBS PRZY KAŻDYM KLIKNIĘCIU.
+// JEDEN ZBIERACZ, NIE DWA.
 //
-// Zakładka w pasku przeglądarki nie aktualizuje się sama — dotąd każda poprawka wymagała
-// przeciągnięcia jej tam od nowa, a bez tego klikało się kod sprzed poprawek. Teraz w pasku
-// siedzi tylko ładowacz, a właściwy zbieracz leży tutaj i jest budowany razem z aplikacją.
-// Dzięki temu jedno wdrożenie wystarczy, żeby zakładka zaczęła działać po nowemu.
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+// Do dziś istniały dwie jego kopie: szablon `LNP_ZBIERACZ` w src/main.ts (z niego powstawał
+// public/zakladka-lnp.js) oraz osobny plik public/zakladka-lnp-v2.js, który pobiera ładowacz
+// wciągnięty na pasek. Poprawki trafiały do drugiego, a pierwszy zostawał w tyle — urósł do tego
+// stopnia, że miał 368 linii wobec 743 i żadnej z dzisiejszych napraw.
+//
+// Najgorsze było to, że numer wersji brał się z osobnej stałej: stara kopia meldowała się jako
+// aktualna. Kto trafił na nią (ładowacz sięga po nią, gdy ŁNP zablokuje uruchomienie pobranego
+// kodu), widział błąd sprzed poprawek i nowy numer wersji naraz — czyli nie miał jak się
+// zorientować, co właściwie uruchomił.
+//
+// Dlatego źródłem jest teraz WYŁĄCZNIE public/zakladka-lnp-v2.js. Ten skrypt tylko powiela go
+// pod starym adresem, żeby zakładki wciągnięte kiedyś na pasek nadal działały.
+import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const katalog = dirname(fileURLToPath(import.meta.url));
-const zrodlo = resolve(katalog, "..", "src", "main.ts");
+const zrodlo = resolve(katalog, "..", "public", "zakladka-lnp-v2.js");
 const cel = resolve(katalog, "..", "public", "zakladka-lnp.js");
 
-const z = readFileSync(zrodlo, "utf8");
+const kod = readFileSync(zrodlo, "utf8");
 
-// Wycinamy treść szablonu (backticki) — tak samo jak robią to testy.
-function wytnij(nazwa) {
-  const i = z.indexOf("const " + nazwa + " = `");
-  if (i < 0) throw new Error("Nie znalazłem " + nazwa + " w src/main.ts");
-  const od = z.indexOf("`", i) + 1;
-  let j = od;
-  while (j < z.length) {
-    if (z[j] === "\\") { j += 2; continue; }
-    if (z[j] === "`") break;
-    j++;
-  }
-  return z.slice(od, j);
-}
-
-const wersja = (z.match(/const ZAKLADKA_WERSJA = '([^']+)'/) || [])[1];
-if (!wersja) throw new Error("Nie znalazłem ZAKLADKA_WERSJA w src/main.ts");
-
-const ZDARZENIA = new Function("return `" + wytnij("LNP_ZDARZENIA") + "`;")();
-// Adresu SBS tu nie znamy (aplikacja stoi pod różnymi domenami), więc zostaje pusty —
-// ładowacz i tak podaje go przez window.__SBS_ADRES, zanim uruchomi ten kod.
-const ZBIERACZ = new Function("LNP_ZDARZENIA", "SBS_ADRES_JS", "ZAKLADKA_WERSJA",
-  "return `" + wytnij("LNP_ZBIERACZ") + "`;")(ZDARZENIA, '""', wersja);
+const wersja = (kod.match(/var SBS_ZBIERACZ\s*=\s*"([^"]+)"/) || [])[1];
+if (!wersja) throw new Error("Nie znalazłem SBS_ZBIERACZ w zakladka-lnp-v2.js");
 
 // Sprawdzamy to, co i tak sprawdzi przeglądarka — lepiej wywalić build niż wysłać zepsuty plik.
-new Function(ZBIERACZ);
+new Function(kod);
 
-mkdirSync(dirname(cel), { recursive: true });
-writeFileSync(cel, "(function(){\n" + ZBIERACZ + "\n})();\n", "utf8");
-console.log("zakladka-lnp.js zbudowana — wersja " + wersja + ", " + ZBIERACZ.length + " znaków");
+writeFileSync(cel, kod, "utf8");
+console.log(`zakladka-lnp.js = kopia zakladka-lnp-v2.js — wersja ${wersja}, ${kod.length} znaków`);

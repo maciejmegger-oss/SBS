@@ -7,6 +7,72 @@
    Dlatego żaden kolor nie jest wpisany w regułę na sztywno — wszystkie idą przez zmienne,
    a przełącznik w pasku górnym podmienia ich zestaw (data-theme na <html>). */
 
+/* ---------- krój marki ----------
+   BARLOW CONDENSED, HOSTOWANY U NAS.
+   Panel wołał ten krój w zmiennej --display, ale nigdzie go nie wczytywał: aplikacja na komputerze
+   i strona publiczna pobierają go z Google Fonts, mobile.html nie robił tego wcale. Na iPhonie
+   żaden krój z listy zapasowej nie istnieje (Barlow Condensed, Oswald i Arial Narrow — wszystkie
+   nieobecne), więc nagłówki, zakładki i przyciski schodziły do systemowego San Francisco. Panel
+   wyglądał obco wobec własnej marki, i to na jedynym ekranie, który ktokolwiek ogląda na trybunie.
+
+   Krój leży U NAS, nie u Google, i to nie z upodobania: panel ma się otworzyć na stadionie bez
+   zasięgu. Plik z naszego adresu wpada do pamięci offline razem z resztą aplikacji (patrz
+   public/sw.js), plik z obcego serwera — nie, bo obsługa offline przepuszcza obce adresy wprost
+   do sieci. Przy okazji odpada zapytanie do trzeciej strony przy każdym uruchomieniu.
+
+   Zakres znaków obcięty do latin i latin-ext. Polskie ogonki (ĄĆĘŁŃÓŚŹŻ) siedzą w latin-ext;
+   wietnamski, który Google dokłada domyślnie, to połowa wagi na darmo. Razem 72 kB na trzy grubości.
+   font-display:swap — napis pojawia się natychmiast krojem zastępczym i podmienia się po wczytaniu,
+   więc brak sieci nigdy nie znaczy pustego ekranu. */
+@font-face{
+  font-family:'Barlow Condensed';
+  font-style:normal;
+  font-weight:500;
+  font-display:swap;
+  src:url('/fonts/barlow-condensed-500-latin.woff2') format('woff2');
+  unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face{
+  font-family:'Barlow Condensed';
+  font-style:normal;
+  font-weight:500;
+  font-display:swap;
+  src:url('/fonts/barlow-condensed-500-latin-ext.woff2') format('woff2');
+  unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face{
+  font-family:'Barlow Condensed';
+  font-style:normal;
+  font-weight:600;
+  font-display:swap;
+  src:url('/fonts/barlow-condensed-600-latin.woff2') format('woff2');
+  unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face{
+  font-family:'Barlow Condensed';
+  font-style:normal;
+  font-weight:600;
+  font-display:swap;
+  src:url('/fonts/barlow-condensed-600-latin-ext.woff2') format('woff2');
+  unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face{
+  font-family:'Barlow Condensed';
+  font-style:normal;
+  font-weight:700;
+  font-display:swap;
+  src:url('/fonts/barlow-condensed-700-latin.woff2') format('woff2');
+  unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face{
+  font-family:'Barlow Condensed';
+  font-style:normal;
+  font-weight:700;
+  font-display:swap;
+  src:url('/fonts/barlow-condensed-700-latin-ext.woff2') format('woff2');
+  unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
 :root{
   /* Barwy marki — wspólne dla obu motywów, wprost z aplikacji na komputerze (src/style.css). */
   --gold:#C69B3C;
@@ -44,6 +110,10 @@
   --toast:#0B1A15;
   --splash:#16302A;
   --shadow:0 18px 40px rgba(0,0,0,.45);
+  /* Herb na ekranie logowania. W ciemnym motywie odznaka ma niemal ten sam kolor, co tło —
+     czarny cień pod nią jest niewidoczny, więc oddziela ją POŚWIATA i jasny obrys, nie cień. */
+  --herb-cien:0 2px 6px rgba(0,0,0,.55), 0 16px 38px rgba(0,0,0,.45), 0 0 0 1px rgba(226,240,232,.11);
+  --herb-poswiata:rgba(198,155,60,.42);   /* ciemny motyw: poswiata odcina odznake od tla */
 }
 
 /* Jasny — pod pełne słońce. Nie jest odwróceniem ciemnego: tło to kredowa biel z aplikacji na
@@ -72,6 +142,11 @@
   --toast:#16302A;
   --splash:#16302A;   /* ekran powitalny zostaje ciemny w obu motywach — patrz .splash */
   --shadow:0 10px 26px rgba(20,26,23,.14);
+  /* Na kredowej bieli odznaka odcina się sama — tu pracuje cień, schodkowy: bliski i twardy przy
+     krawędzi, daleki i miękki pod spodem. Tak leży przedmiot uniesiony nad blatem. */
+  --herb-cien:0 2px 4px rgba(11,26,21,.18), 0 10px 22px rgba(11,26,21,.16), 0 26px 50px rgba(11,26,21,.13);
+  --herb-poswiata:rgba(198,155,60,.16);   /* jasny motyw: ledwie muśnięcie — na kredowej bieli
+                                             mocniejsza poświata robi się żółtą plamą, nie światłem */
 }
 
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
@@ -94,7 +169,27 @@ button{background:none; border:none; cursor:pointer;}
   padding:calc(env(safe-area-inset-top) + 10px) 14px 8px;
   border-bottom:1px solid var(--border);
 }
+/* Herb jest przyciskiem odświeżania. Dotknięcie logo to najbardziej naturalny odruch przy
+   „pobierz na nowo", a w panelu obsługiwanym jedną ręką na trybunie skraca to drogę z trzech
+   dotknięć (Ustawienia → Odśwież → powrót) do jednego, bez opuszczania bieżącego ekranu.
+   Pole dotyku ma 40 px, choć sam herb 28 — palec nie trafia w 28 px na zimnie. */
+.mark-btn{
+  width:40px; height:40px; margin:-6px; border-radius:10px; flex-shrink:0;
+  display:flex; align-items:center; justify-content:center; padding:0;
+  background:none; border:none; -webkit-tap-highlight-color:transparent;
+}
+.mark-btn:active{background:var(--surface-2);}
 .topbar .mark{width:28px; height:28px; border-radius:8px; flex-shrink:0; display:block;}
+
+/* Obrót mówi, że coś się dzieje. Bez tego dotknięcie herbu wyglądało na nieskuteczne —
+   przy dobrym zasięgu pobranie trwa ułamek sekundy i nic nie zdąży się zmienić na ekranie. */
+.mark-btn[aria-busy="true"] .mark{animation:herb-obrot 1s linear infinite;}
+@keyframes herb-obrot{ to{transform:rotate(360deg);} }
+/* Oszczędny ruch — patrz zastosujRuch() w src/mobile/main.ts. Arkusz NIE pyta tu systemu wprost:
+   rozstrzygnięcie (podpowiedź systemu kontra własny wybór scouta) zapada raz, w jednym miejscu,
+   i przychodzi tu gotowe jako data-ruch na <html>. */
+:root[data-ruch="oszczedne"] .mark-btn[aria-busy="true"] .mark,
+:root[data-ruch="system-oszczedne"] .mark-btn[aria-busy="true"] .mark{animation:none; opacity:.45;}
 /* Nazwa ustępuje pierwsza. Pasek mieści cztery rzeczy (herb, nazwa, stan wysyłki, motyw), a na
    telefonie o szerokości 320 px brakuje na nie miejsca — bez tego stan wysyłki wchodził na
    przycisk motywu i przejmował dotknięcia, przez co motywu nie dawało się przełączyć. */
@@ -104,6 +199,16 @@ button{background:none; border:none; cursor:pointer;}
   margin-right:auto; white-space:nowrap;
   min-width:0; overflow:hidden; text-overflow:ellipsis;
 }
+/* Pasek „jest nowsza wersja". Stoi pod paskiem górnym, nad treścią — widoczny, ale nie zasłania
+   niczego, w co się dotyka w trakcie meczu. Znika dopiero po przeładowaniu. */
+.nowa-wersja{
+  display:block; width:100%; text-align:left;
+  padding:10px 14px; border:none; border-bottom:1px solid var(--border);
+  background:var(--accent-bg); color:var(--accent-fg);
+  font-family:var(--display); font-size:13px; font-weight:650; letter-spacing:.01em;
+}
+.nowa-wersja:active{opacity:.75;}
+
 .theme-btn{
   width:38px; height:38px; border-radius:10px; border:1px solid var(--border);
   display:flex; align-items:center; justify-content:center; color:var(--text-2); flex-shrink:0;
@@ -258,6 +363,10 @@ textarea{resize:vertical; min-height:84px;}
 }
 .tab svg{width:20px; height:20px;}
 .tab[aria-selected="true"]{color:var(--accent-fg);}
+/* Wylogowanie jest w pasku, ale nie jest zakładką — nigdzie nie prowadzi, tylko zamyka pracę.
+   Przygaszamy je, żeby wzrok szukający „gdzie jestem" omijał je w biegu. */
+.tab-wyloguj{color:var(--text-2); opacity:.72;}
+.tab-wyloguj:active{opacity:1;}
 
 /* ---------- komunikat ---------- */
 .toast{
@@ -274,8 +383,139 @@ textarea{resize:vertical; min-height:84px;}
   padding:24px; max-width:420px; margin:0 auto;
 }
 .login-brand{display:flex; flex-direction:column; align-items:center; gap:14px; margin-bottom:26px;}
+
+/* HERB NA EKRANIE LOGOWANIA — bryła zawieszona w przestrzeni, nie obrazek.
+   ================================================================================
+   Ekran logowania jest pierwszym, co scout widzi po dotknięciu ikony, i przez chwilę jedynym.
+   Jednorazowy wjazd nie wystarczał: kończył się, zanim ktokolwiek zdążył podnieść wzrok, i
+   zostawał płaski obrazek nad formularzem. Herb ma więc ŻYĆ przez cały czas — powoli obracać się
+   w dwóch osiach, mieć obiegającą go obręcz, która przechodzi ZA nim, i przesuwający się po licu
+   refleks światła.
+   Ruch jest celowo wolny (9–15 s na cykl). Pod spodem wpisuje się hasło; obiekt ma robić wrażenie
+   ciężaru i głębi, a nie przyciągać wzrok co sekundę.
+   Wymiary trzymamy w jednym miejscu (--herb), bo scena, obrazek, obręcz i poświata muszą się zgadzać. */
+.login-stage{
+  --herb:104px;
+  width:var(--herb); height:var(--herb); position:relative;
+  /* PERSPEKTYWA + PRESERVE-3D w jednym miejscu: bez tego drugiego obręcz byłaby płaską elipsą
+     narysowaną NA herbie. Dopiero wspólna przestrzeń 3D sprawia, że jej dalsza połowa chowa się
+     za odznaką — i to jest cała różnica między „kółkiem ładowania" a obiektem w przestrzeni.
+     UWAGA przy zmianach: opacity<1, filter i will-change na tych warstwach SPŁASZCZAJĄ scenę
+     i obręcz natychmiast przestaje wchodzić za herb. */
+  perspective:620px;
+  transform-style:preserve-3d;
+}
+
+/* Poświata pod spodem — daje odznace grunt i oddziela ją od tła formularza.
+   ŻADNEGO color-mix() w całej tej scenie. Funkcja jest wprawdzie obsługiwana od Safari 16.2, ale
+   gdy przeglądarka jej nie zna, NIE POMIJA samego koloru — odrzuca całą deklarację. Przy ramce
+   obręczy znaczyłoby to, że nie ma jej wcale, i to bez śladu w konsoli: efekt zniknąłby na
+   telefonie, a na komputerze wyglądał dobrze. Barwy są tu więc wpisane wprost. */
+.login-halo{
+  position:absolute; inset:-36%; border-radius:50%; pointer-events:none;
+  background:radial-gradient(circle, var(--herb-poswiata) 0%, transparent 66%);
+  transform:translateZ(-60px);
+  animation:herb-poswiata 7s ease-in-out infinite;
+}
+
+.login-logo{                                  /* wjazd — gra RAZ, przy pojawieniu się ekranu */
+  width:100%; height:100%; transform-style:preserve-3d;
+  animation:logo-in 1.15s cubic-bezier(.22,.9,.28,1) both;
+}
+
+/* PEŁNY OBRÓT ODZNAKI.
+   Delikatne kołysanie było nie do zauważenia — na zrzucie ekranu wyglądało jak nieruchomy obrazek,
+   bo w każdej pojedynczej klatce nim było. Odznaka obraca się więc teraz o pełne 360° i zatrzymuje
+   na dłuższą chwilę, zanim ruszy znowu: ruch jest bezsporny, a rytm spokojny — pod spodem wpisuje
+   się hasło. */
+.login-badge{
+  position:relative; width:100%; height:100%; transform-style:preserve-3d;
+  animation:herb-obrot-pelny 13s cubic-bezier(.5,0,.5,1) 1.15s infinite;
+}
+
+/* Lico odznaki. Druga ściana (tył) była tu, dopóki odznaka obracała się o pełne 360° — teraz
+   wychyla się najwyżej o 62° i tyłu nie widać nigdy, więc jej nie ma: to byłoby drugie pobranie
+   tego samego obrazka po nic. */
+.login-face{ position:absolute; inset:0; }
+
 .login-brand img{
-  width:88px; height:88px; border-radius:22px; box-shadow:var(--shadow);
+  width:100%; height:100%; border-radius:24px; display:block;
+  box-shadow:var(--herb-cien);
+}
+
+/* Warstwa lica odznaki: fazowana krawędź + przesuwający się refleks.
+   FAZA (box-shadow inset) jest tu ważniejsza, niż wygląda. Odznaka jest ciemnozielona, a ciemny
+   motyw panelu ma niemal ten sam kolor — bez jasnej nitki na górnej krawędzi bryła rozpływała się
+   w tle i zostawał sam napis SRS wiszący w powietrzu. Nitka czyta się jako światło padające
+   z góry, więc przy okazji mówi, w którą stronę jest „góra" tej przestrzeni.
+   REFLEKS przechodzi raz na 8 s i przez większość cyklu go nie ma; to on daje wrażenie twardej,
+   polerowanej powierzchni. Kolory są wprost, nie przez zmienne: to światło, a nie element
+   interfejsu — zachowuje się tak samo na jasnym i ciemnym tle. */
+.login-sheen{
+  position:absolute; inset:0; border-radius:24px; pointer-events:none; overflow:hidden;
+  box-shadow:inset 0 1.5px 0 rgba(255,255,255,.20), inset 0 0 0 1px rgba(255,255,255,.075),
+             inset 0 -10px 18px -10px rgba(0,0,0,.45);
+}
+.login-sheen::after{
+  content:""; position:absolute; top:-60%; bottom:-60%; width:42%;
+  background:linear-gradient(100deg, transparent, rgba(255,255,255,.34), transparent);
+  animation:herb-refleks 8s ease-in-out 1.6s infinite;
+}
+
+/* Złota obręcz leży w płaszczyźnie boiska (rotateX), więc obieg czyta się jako ruch w głąb
+   ekranu. Dwie, przeciwbieżne i różnej wielkości — jedna wygląda jak wskaźnik postępu,
+   dwie jak układ, w którego środku coś stoi. Przezroczystość jest w KOLORZE ramki, nie w
+   opacity elementu: opacity spłaszczyłoby scenę i obręcz przestałaby wchodzić za herb. */
+.login-orbit{
+  position:absolute; inset:-22px; border-radius:50%; pointer-events:none;
+  border:3px solid rgba(198,155,60,.92);
+  border-right-color:transparent; border-left-color:transparent;
+  animation:orbita-wejscie 1.1s ease .25s both, orbita-ciagla 9s linear 1.35s infinite;
+}
+.login-orbit--druga{
+  inset:-36px;
+  border:2px solid rgba(227,192,120,.62);
+  border-top-color:transparent; border-bottom-color:transparent;
+  animation:orbita-wejscie 1.1s ease .45s both, orbita-ciagla-wstecz 14s linear 1.55s infinite;
+}
+
+/* Obrót trwa mniej więcej połowę cyklu, resztę odznaka stoi frontem. Bez tego postoju byłby to
+   kręcący się bez końca bąk; z nim — przedmiot, który raz na jakiś czas pokazuje się z każdej
+   strony i wraca do pozycji. */
+/* OBRÓT ZATRZYMANY PRZED KRAWĘDZIĄ — i to jest decyzja, nie ograniczenie.
+   Pełne 360° wyglądało świetnie w opisie i źle na ekranie: odznaka jest płaską ścianą, nie monetą,
+   więc przy 90° schodziła do pionowej kreski. Raz na cykl aplikacja wyglądała na zepsutą. Nie da
+   się tego wyprostować przechyłem — rzecz naprawdę nie ma grubości.
+   Zostaje więc wychylenie do 62° w obie strony: odznaka wyraźnie się obraca, pokazuje bok pod
+   kątem (przy 62° zostaje jeszcze połowa szerokości, czyli bryła), i ani przez chwilę nie jest
+   płaska. Postój frontem w środku cyklu daje rytm zamiast bezustannego kręcenia. */
+@keyframes herb-obrot-pelny{
+  0%   {transform:rotateY(0deg)   rotateX(9deg);}
+  22%  {transform:rotateY(62deg)  rotateX(4deg);}
+  44%  {transform:rotateY(0deg)   rotateX(9deg);}
+  66%  {transform:rotateY(-62deg) rotateX(4deg);}
+  88%,
+  100% {transform:rotateY(0deg)   rotateX(9deg);}
+}
+@keyframes herb-poswiata{
+  0%,100%{opacity:.45; transform:translateZ(-60px) scale(.9);}
+  50%    {opacity:1;   transform:translateZ(-60px) scale(1.12);}
+}
+@keyframes herb-refleks{
+  0%      {transform:translateX(-160%) rotate(14deg);}
+  22%,100%{transform:translateX(340%)  rotate(14deg);}
+}
+@keyframes orbita-wejscie{
+  from{transform:rotateX(70deg) rotateZ(0deg) scale(.55);}
+  to  {transform:rotateX(70deg) rotateZ(120deg) scale(1);}
+}
+@keyframes orbita-ciagla{
+  from{transform:rotateX(70deg) rotateZ(120deg);}
+  to  {transform:rotateX(70deg) rotateZ(480deg);}
+}
+@keyframes orbita-ciagla-wstecz{
+  from{transform:rotateX(-64deg) rotateZ(120deg);}
+  to  {transform:rotateX(-64deg) rotateZ(-240deg);}
 }
 .login h1{
   font-family:var(--display); font-size:30px; text-transform:uppercase; letter-spacing:.04em;
@@ -348,12 +588,31 @@ textarea{resize:vertical; min-height:84px;}
    bywa źle znoszony. Ale wygaszenie animacji do zera dawało nieruchomy obrazek i wrażenie, że
    aplikacja się zacięła. Zostaje więc samo rozjaśnienie — zmiana przezroczystości nie jest ruchem
    i pod tym ustawieniem uchodzi za dopuszczalną. */
-@media (prefers-reduced-motion:reduce){
-  .toast{transition:none;}
-  .splash-orbit{display:none;}
-  .splash-logo{animation:logo-lagodnie .7s ease both;}
-  .splash-word{animation:slowo-lagodnie .7s ease .25s both;}
-}
+/* Selektory pisane PŁASKO, bez zagnieżdżania CSS. Zagnieżdżanie działa dopiero od Safari 17.2,
+   a panel ma się otworzyć także na starszym telefonie — na takim cały ten blok zostałby pominięty
+   razem z wygaszeniem animacji, czyli zadziałałby dokładnie odwrotnie do zamiaru. */
+/* W TRAKCIE PRACY — wyciszane także wtedy, gdy prosi o to sam telefon. */
+:root[data-ruch="oszczedne"] .toast,
+:root[data-ruch="system-oszczedne"] .toast{transition:none;}
+
+/* EKRAN POWITALNY I LOGOWANIA gasną WYŁĄCZNIE przy jawnym wyłączeniu efektów (data-ruch
+   „oszczedne", bez przedrostka). Prośba systemu ich nie dotyczy: to jedyne dwa ekrany, na
+   których aplikacja się przedstawia, nikt na nich niczego nie rejestruje, a nieruchomy herb
+   nad formularzem wygląda jak zacięta strona, nie jak spokój. */
+:root[data-ruch="oszczedne"] .splash-orbit{display:none;}
+:root[data-ruch="oszczedne"] .splash-logo{animation:logo-lagodnie .7s ease both;}
+:root[data-ruch="oszczedne"] .splash-word{animation:slowo-lagodnie .7s ease .25s both;}
+/* Ekran logowania traktujemy tak samo jak powitalny: cały ruch znika, zostaje samo rozjaśnienie.
+   Herb nie może przy tym zostać niewidoczny — `logo-in` ma opacity:0 na starcie, więc podmieniamy
+   animację, zamiast ją po prostu wyłączać. Poświata i cień zostają: to nie ruch, tylko głębia,
+   i ona ma działać tak samo. */
+:root[data-ruch="oszczedne"] .login-orbit{display:none;}
+/* Znika sam przesuwający się refleks — FAZA na krawędzi zostaje. Bez niej odznaka rozpływa się
+   w ciemnym tle, a to nie jest kwestia ruchu, tylko czytelności. */
+:root[data-ruch="oszczedne"] .login-sheen::after{display:none;}
+:root[data-ruch="oszczedne"] .login-logo{animation:logo-lagodnie .7s ease both;}
+:root[data-ruch="oszczedne"] .login-badge{animation:none; transform:rotateY(0deg) rotateX(4deg);}
+:root[data-ruch="oszczedne"] .login-halo{animation:none; opacity:.7;}
 @keyframes logo-lagodnie{ from{opacity:0;} to{opacity:1;} }
 @keyframes slowo-lagodnie{ from{opacity:0; letter-spacing:.2em;} to{opacity:1; letter-spacing:.14em;} }
 
@@ -441,11 +700,58 @@ textarea{resize:vertical; min-height:84px;}
 
 /* Pasek „Tagujesz" — przewijany poziomo, bo wyróżnionych bywa kilkunastu, a zawijanie ich
    w wiersze zepchnęłoby kafle zdarzeń poza ekran. */
+/* PASEK WYRÓŻNIONYCH PRZYKLEJONY DO GÓRY.
+   Ekran zdarzeń ma teraz trzy piętra: kafle do tagowania, panel oceny wskazanego zawodnika
+   i oś zdarzeń. Razem znacznie więcej, niż mieści telefon — a nazwisko rozstrzyga, kogo dotyczy
+   JEDNO I DRUGIE. Bez przyklejenia trzeba by wracać na samą górę przy każdej zmianie zawodnika,
+   czyli po każdej akcji na boisku. Ujemne marginesy rozciągają tło na całą szerokość, żeby
+   przewijana treść nie prześwitywała spod paska. */
+.tagujesz-strefa{
+  /* top:-10px, a nie 0: przyklejenie liczy się od PADDING-BOXA przewijanej treści, a <main> ma
+     u góry 10 px odstępu. Przy top:0 zostawała nad paskiem dziesięciopikselowa szczelina, przez
+     którą przejeżdżała przewijana treść — widać było wjeżdżający pod spód róg przycisku.
+     Ujemne przyklejenie wsuwa tło w tę szczelinę, a własny padding oddaje zawartości jej miejsce. */
+  position:sticky; top:-10px; z-index:5;
+  margin:0 -14px; padding:10px 14px 0;
+  background:var(--bg);
+}
 .tagujesz{
   display:flex; gap:7px; overflow-x:auto; padding-bottom:6px; margin-bottom:8px;
   scrollbar-width:none;
 }
 .tagujesz::-webkit-scrollbar{display:none;}
+
+/* ---------- panel ocen wskazanego zawodnika ----------
+   Stoi ZARAZ POD NAZWISKAMI, nad kaflami. Poprzednio był pod nimi i tam po prostu nie było go
+   widać: dotknięcie nazwiska zmieniało coś siedemset pikseli niżej, poza kadrem, więc wyglądało
+   na to, że nie zrobiło nic. Złota ramka i wersaliki są tu po to, żeby zmiana była widoczna
+   kątem oka — scout patrzy na boisko, nie na telefon. */
+.ocena-blok{
+  border:1px solid var(--accent); border-radius:14px; overflow:hidden;
+  background:var(--bg); margin-bottom:10px;
+}
+.ocena-naglowek{
+  display:flex; align-items:center; gap:9px; width:100%;
+  padding:11px 13px 9px; text-align:left;
+  background:var(--accent-bg);
+}
+.on-tytul{
+  font-family:var(--display); font-weight:700; font-size:12px;
+  letter-spacing:.1em; text-transform:uppercase; color:var(--accent-fg); flex-shrink:0;
+}
+.on-kto{
+  flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  font-weight:600; color:var(--text-strong);
+}
+.on-strzalka{color:var(--accent-fg); font-size:11px; flex-shrink:0;}
+.on-skrot{
+  padding:0 13px 10px; background:var(--accent-bg);
+  font-size:12.5px; line-height:1.4; color:var(--text-2);
+}
+/* Treść panelu na własnym tle — złote tło pod trzynastoma skalami zrobiłoby z ekranu planszę
+   reklamową, a te skale trzeba czytać. */
+.ocena-tresc{padding:2px 12px 8px; background:var(--bg); border-top:1px solid var(--border);}
+.ocena-tresc .section:first-child{border-top:none; margin-top:8px; padding-top:0;}
 .tagujesz .chip{flex-shrink:0; padding:10px 13px;}
 .tagujesz .chip.wybrany{background:var(--accent); border-color:var(--accent); color:var(--accent-ink);}
 
