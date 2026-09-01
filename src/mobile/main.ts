@@ -1321,18 +1321,21 @@ function biezacyObsSklad(): { obs: Observation & { skladMeczu?: Sklad }; strona:
 // pasek „Tagujesz" na ekranie zdarzeń (wybrany zawodnik). Rozstrzygamy to w JEDNYM miejscu —
 // inaczej każda obsługa dotknięcia musiałaby wiedzieć, z którego ekranu przyszła, a dwie kopie
 // tej samej logiki rozjeżdżają się przy pierwszej zmianie.
-function ocenianyTeraz(): { obs: Observation & { skladMeczu?: Sklad }; z: SkladZawodnik } | null {
+function ocenianyTeraz(): { obs: Observation & { skladMeczu?: Sklad }; strona?: SkladStrona; z: SkladZawodnik } | null {
   if (!live) return null;
   const obs = cache.observations.find((o) => o.id === live!.observationId) as (Observation & { skladMeczu?: Sklad }) | undefined;
   if (!obs) return null;
   if (liveTab === "sklady") {
-    const z = obs.skladMeczu?.[skladStrona]?.zawodnicy[ocenianyZawodnik ?? -1];
-    return z ? { obs, z } : null;
+    const strona = obs.skladMeczu?.[skladStrona];
+    const z = strona?.zawodnicy[ocenianyZawodnik ?? -1];
+    // Nazwa drużyny wchodzi w wynik, bo rozstrzyga imienników przy dopasowaniu do kartoteki.
+    return z ? { obs, strona, z } : null;
   }
   if (!live.wybranyZawodnik) return null;
-  for (const strona of STRONY) {
-    const z = (obs.skladMeczu?.[strona]?.zawodnicy || []).find((x) => kluczZawodnika(x) === live!.wybranyZawodnik);
-    if (z) return { obs, z };
+  for (const k of STRONY) {
+    const strona = obs.skladMeczu?.[k];
+    const z = (strona?.zawodnicy || []).find((x) => kluczZawodnika(x) === live!.wybranyZawodnik);
+    if (z) return { obs, strona, z };
   }
   return null;
 }
@@ -2287,6 +2290,118 @@ function savePlayerRatingsFromSquad(
   } as Observation);
 }
 
+// JEDEN ZAWODNIK ZE SKŁADU → DO SYSTEMU: raport, obserwacja i status na profilu.
+//
+// Wołane DWA RAZY, celowo. Raz NA ŻYWO, przy każdej zmianie w panelu oceny — żeby praca z trybuny
+// szła do SBS od razu, a nie czekała na gwizdek: mecz bywa przerwany, telefon potrafi paść, a
+// pół godziny wpisywania nie może wisieć na jednym dotknięciu na końcu. Drugi raz przy zapisie
+// po meczu, już z kontekstem spotkania (pogoda, poziom, charakterystyka), którego w trakcie
+// jeszcze nie ma.
+//
+// Podwójny zapis niczego nie mnoży: identyfikatory są WYLICZANE z obserwacji i zawodnika, a
+// kolejka zastępuje zadania dotyczące tego samego obiektu (patrz enqueue w db.ts). Drugi zapis
+// jest więc poprawką pierwszego, nie jego kopią.
+function wyslijZawodnikaDoSystemu(
+  obs: Observation,
+  nazwaKlubu: string | undefined,
+  z: SkladZawodnik,
+  scout: string,
+): "zapisany" | "pusty" | "nieznany" {
+  const o = obs as Observation & { poziomMeczu?: number; warunki?: string[]; notatkaMeczu?: string };
+  const oceny = z.ocena || {};
+  const maOcene = Object.values(oceny).some((n) => Number(n) > 0);
+  // Protokół 1–6 wystawiony na żywo. Puste rubryki pomijamy, a nie zerujemy: „nieocenione"
+  // i „ocenione na zero" to w raporcie dwie różne informacje.
+  const fazyZ: Record<string, number> = {};
+  REPORT_PHASES.forEach((f) => { if (Number(z.fazy?.[f.key]) > 0) fazyZ[f.key] = Number(z.fazy![f.key]); });
+  const sfgZ: Record<string, number> = {};
+  REPORT_SET_PIECES.forEach((f) => { if (Number(z.sfg?.[f.key]) > 0) sfgZ[f.key] = Number(z.sfg![f.key]); });
+  const maProtokol = Object.keys(fazyZ).length > 0 || Object.keys(sfgZ).length > 0;
+  if (!maOcene && !maProtokol && !z.wyrozniony && !z.notatka && !z.status) return "pusty";
+
+  const playerId = znajdzZawodnika(z.nazwa, nazwaKlubu);
+  if (!playerId) return "nieznany";
+
+  const dataRap = obs.date || todayISO();
+  const typObs = (obs.obsType as string) === "online" ? "Online" : (obs.obsType as string) === "video" ? "Video" : "Live";
+
+  // Ocena z trybun trafia też na SAM PROFIL zawodnika, nie tylko do raportu — po to,
+  // żeby liczyła się do jego średniej tak samo jak ocena z obserwacji indywidualnej.
+  savePlayerRatingsFromSquad(playerId, oceny, dataRap, scout, obs, z);
+
+  // Decyzja wskazana przy nazwisku ustawia status NA PROFILU. Bez tego „do transferu"
+  // wskazane na trybunie zostawałoby zdaniem w opisie raportu, a listy w SBS — Monitoring,
+  // mapa rankingowa, Scout Transfer — budują się właśnie ze statusów.
+  if (z.status) savePlayerStatus(playerId, z.status);
+
+  // KONTEKST SPOTKANIA — warunki, w jakich powstała ocena. W trakcie meczu jeszcze go nie ma
+  // (wpisuje się go po gwizdku) i to jest w porządku: raport dopisze go sobie przy zapisie
+  // końcowym, bo ten sam identyfikator wraca do tego samego rekordu.
+  const kontekstMeczu = [
+    obs.match ? `Mecz: ${obs.match}.` : "",
+    o.poziomMeczu ? `Poziom meczu: ${o.poziomMeczu}/10.` : "",
+    (o.warunki || []).length ? `Warunki: ${(o.warunki as string[]).join(", ")}.` : "",
+    o.notatkaMeczu ? `Charakterystyka meczu: ${o.notatkaMeczu}` : "",
+  ].filter(Boolean).join(" ");
+
+  // Dorobek z kafli przy nazwisku: to jedyna droga, żeby stukanie w trakcie meczu
+  // zostawiło ślad w raporcie, a nie tylko na osi zdarzeń w telefonie.
+  const zdarzeniaZ = zdarzeniaZawodnika(obs.id, kluczZawodnika(z));
+  const opis = [
+    z.wyrozniony ? "Wyróżnił się w tym meczu." : "",
+    z.status ? `Decyzja: ${z.status}.` : "",
+    z.notatka || "",
+    // Gra głową nie ma własnego pola w raporcie, a jest oceniana osobno w ataku i w obronie.
+    // Bez przepisania do opisu przepadałaby po drodze na komputer.
+    OCENA_GLOWA.filter((f) => Number(oceny[f.key]) > 0)
+      .map((f) => `${f.label}: ${oceny[f.key]}/10.`).join(" "),
+    zdarzeniaZ ? `Zdarzenia: ${zdarzeniaZ}.` : "",
+    z.noga ? `Noga: ${z.noga}.` : "",
+    z.numer ? `Nr ${z.numer}.` : "",
+  ].filter(Boolean).join(" ");
+  const zSkladu = (k: string) => Number(oceny[k]) > 0 ? `Ocena z meczu: ${oceny[k]}/10` : "";
+  saveReport({
+    id: `rep:${obs.id}:${playerId}`,
+    playerId,
+    date: dataRap, scout,
+    description: [opis, kontekstMeczu].filter(Boolean).join(" "),
+    technika: zSkladu("technika"),
+    taktyka: zSkladu("taktyka"),
+    motoryka: zSkladu("motoryka"),
+    obsType: typObs,
+    match: obs.match || "",
+    // Protokół z trybuny idzie do TYCH SAMYCH pól, które na komputerze wypełnia się ręcznie
+    // po meczu — więc raport z telefonu otwiera się tam kompletny, a nie z pustymi rubrykami.
+    phases: fazyZ, setPieces: sfgZ,
+    fromObservationId: obs.id,
+  });
+  return "zapisany";
+}
+
+// ZAPIS ZMIANY W PANELU OCENY — od razu do systemu.
+//
+// Jedno miejsce dla wszystkiego, co można przy zawodniku zmienić: ocena, protokół, noga, notatka,
+// decyzja, wyróżnienie. Zapisuje skład przy obserwacji (jak dotąd) I wysyła raport zawodnika,
+// zamiast trzymać go w telefonie do gwizdka.
+function zapiszZmianeZawodnika(dane: { obs: Observation & { skladMeczu?: Sklad }; strona?: SkladStrona; z: SkladZawodnik }): void {
+  saveObservation(dane.obs);
+  wyslijZawodnikaDoSystemu(dane.obs, dane.strona?.nazwa, dane.z, dane.obs.scout || getScout());
+}
+
+// ZAMKNIĘCIE EDYCJI — przed KAŻDĄ zmianą kontekstu panelu.
+//
+// Kropki ocen zapisują się przy dotknięciu, ale notatka żyje w polu tekstowym aż do przerysowania.
+// Odkąd panel stoi pod kaflami, przełączenie na innego zawodnika następuje BEZ zamykania panelu —
+// i wpisany tekst przepadał bez śladu. To jedyna rzecz z tego panelu, której nie da się odtworzyć
+// z pamięci pół godziny później.
+function zamknijEdycjeZawodnika(): void {
+  const dane = ocenianyTeraz();
+  const pole = $<HTMLTextAreaElement>("notatka-zawodnika");
+  if (!dane || !pole || dane.z.notatka === pole.value) return;
+  dane.z.notatka = pole.value;
+  zapiszZmianeZawodnika(dane);
+}
+
 function saveOcena() {
   if (!ocena) return;
   const obs = cache.observations.find((o) => o.id === ocena!.observationId);
@@ -2403,61 +2518,9 @@ function saveOcena() {
     STRONY.forEach((strona) => {
       const dane = sklad[strona];
       (dane?.zawodnicy || []).forEach((z) => {
-        const oceny = z.ocena || {};
-        const maOcene = Object.values(oceny).some((n) => Number(n) > 0);
-        // Protokół 1–6 wystawiony na żywo. Puste rubryki pomijamy, a nie zerujemy: „nieocenione"
-        // i „ocenione na zero" to w raporcie dwie różne informacje.
-        const fazyZ: Record<string, number> = {};
-        REPORT_PHASES.forEach((f) => { if (Number(z.fazy?.[f.key]) > 0) fazyZ[f.key] = Number(z.fazy![f.key]); });
-        const sfgZ: Record<string, number> = {};
-        REPORT_SET_PIECES.forEach((f) => { if (Number(z.sfg?.[f.key]) > 0) sfgZ[f.key] = Number(z.sfg![f.key]); });
-        const maProtokol = Object.keys(fazyZ).length > 0 || Object.keys(sfgZ).length > 0;
-        if (!maOcene && !maProtokol && !z.wyrozniony && !z.notatka && !z.status) return;
-
-        const playerId = znajdzZawodnika(z.nazwa, dane?.nazwa);
-        if (!playerId) { nierozpoznani.push(z.nazwa); return; }
-
-        // Ocena z trybun trafia też na SAM PROFIL zawodnika, nie tylko do raportu — po to,
-        // żeby liczyła się do jego średniej tak samo jak ocena z obserwacji indywidualnej.
-        savePlayerRatingsFromSquad(playerId, oceny, dataRap, scout, obs, z);
-
-        // Decyzja wskazana przy nazwisku ustawia status NA PROFILU. Bez tego „do transferu"
-        // wskazane na trybunie zostawałoby zdaniem w opisie raportu, a listy w SBS — Monitoring,
-        // mapa rankingowa, Scout Transfer — budują się właśnie ze statusów.
-        if (z.status) savePlayerStatus(playerId, z.status);
-
-        // Dorobek z kafli przy nazwisku: to jedyna droga, żeby stukanie w trakcie meczu
-        // zostawiło ślad w raporcie, a nie tylko na osi zdarzeń w telefonie.
-        const zdarzeniaZ = zdarzeniaZawodnika(obs.id, kluczZawodnika(z));
-        const opis = [
-          z.wyrozniony ? "Wyróżnił się w tym meczu." : "",
-          z.status ? `Decyzja: ${z.status}.` : "",
-          z.notatka || "",
-          // Gra głową nie ma własnego pola w raporcie, a jest oceniana osobno w ataku i w obronie.
-          // Bez przepisania do opisu przepadałaby po drodze na komputer.
-          OCENA_GLOWA.filter((f) => Number(oceny[f.key]) > 0)
-            .map((f) => `${f.label}: ${oceny[f.key]}/10.`).join(" "),
-          zdarzeniaZ ? `Zdarzenia: ${zdarzeniaZ}.` : "",
-          z.noga ? `Noga: ${z.noga}.` : "",
-          z.numer ? `Nr ${z.numer}.` : "",
-        ].filter(Boolean).join(" ");
-        const zSkladu = (k: string) => Number(oceny[k]) > 0 ? `Ocena z meczu: ${oceny[k]}/10` : "";
-        saveReport({
-          id: `rep:${obs.id}:${playerId}`,
-          playerId,
-          date: dataRap, scout,
-          description: [opis, kontekstMeczu].filter(Boolean).join(" "),
-          technika: zSkladu("technika"),
-          taktyka: zSkladu("taktyka"),
-          motoryka: zSkladu("motoryka"),
-          obsType: typObs,
-          match: obs.match || "",
-          // Protokół z trybuny idzie do TYCH SAMYCH pól, które na komputerze wypełnia się ręcznie
-          // po meczu — więc raport z telefonu otwiera się tam kompletny, a nie z pustymi rubrykami.
-          phases: fazyZ, setPieces: sfgZ,
-          fromObservationId: obs.id,
-        });
-        zapisanych++;
+        const wynik = wyslijZawodnikaDoSystemu(obs, dane?.nazwa, z, scout);
+        if (wynik === "zapisany") zapisanych++;
+        else if (wynik === "nieznany") nierozpoznani.push(z.nazwa);
       });
     });
     // ILE RAPORTÓW POWSTAŁO I KOGO POMINIĘTO — w komunikacie KOŃCOWYM, nie tutaj.
@@ -2872,6 +2935,9 @@ document.addEventListener("click", (e) => {
     case "pol": polarity = Number(v) === -1 ? -1 : 1; render(); break;
     case "taguj-kogo":
       if (!live) break;
+      // Notatka poprzedniego zawodnika zapisuje się ZANIM zmieni się wybór — patrz
+      // zamknijEdycjeZawodnika. Panel nie jest tu zamykany, więc nikt inny by jej nie zebrał.
+      zamknijEdycjeZawodnika();
       live.wybranyZawodnik = v || undefined;
       setLive(live);
       render();
@@ -2880,13 +2946,18 @@ document.addEventListener("click", (e) => {
     // Rozwinięcie i zwinięcie panelu ocen wskazanego zawodnika. Wybór zostaje na cały mecz:
     // scout pracuje seriami — albo taguje akcje kaflami, albo obchodzi wyróżnionych z ocenami.
     case "rozwin-ocene":
-      zabezpieczNotatke();
+      zamknijEdycjeZawodnika();
       ocenaRozwinieta = !ocenaRozwinieta;
       render();
       break;
     // Przejście między zakładkami zamyka panel oceny otwarty z planszy — po powrocie do Składów
     // ma być plansza, a nie zawodnik, którego oglądało się kwadrans temu.
-    case "live-tab": liveTab = v === "sklady" ? "sklady" : "zdarzenia"; ocenianyZawodnik = null; render(); break;
+    case "live-tab":
+      zamknijEdycjeZawodnika();
+      liveTab = v === "sklady" ? "sklady" : "zdarzenia";
+      ocenianyZawodnik = null;
+      render();
+      break;
 
     case "usun-zawodnika": {
       if (!live) break;
@@ -2986,9 +3057,11 @@ document.addEventListener("click", (e) => {
       break;
 
     case "zamknij-zawodnika": {
+      // Notatka żyje w polu tekstowym, więc zapis MUSI pójść przy zamykaniu panelu — kropki ocen
+      // zapisują się same przy dotknięciu, ale wpisany tekst dopiero tutaj.
       zabezpieczNotatke();
-      const dane = biezacyObsSklad();
-      if (dane) saveObservation(dane.obs);
+      const dane = ocenianyTeraz();
+      if (dane) zapiszZmianeZawodnika(dane);
       ocenianyZawodnik = null;
       render();
       break;
@@ -3005,7 +3078,7 @@ document.addEventListener("click", (e) => {
         live.wybranyZawodnik = undefined;
         setLive(live);
       }
-      saveObservation(dane.obs);
+      zapiszZmianeZawodnika(dane);
       if (navigator.vibrate) navigator.vibrate(10);
       render();
       break;
@@ -3018,7 +3091,7 @@ document.addEventListener("click", (e) => {
       const dane = ocenianyTeraz();
       if (!dane) break;
       dane.z.noga = dane.z.noga === v ? undefined : v;
-      saveObservation(dane.obs);
+      zapiszZmianeZawodnika(dane);
       render();
       break;
     }
@@ -3030,7 +3103,7 @@ document.addEventListener("click", (e) => {
       const dane = ocenianyTeraz();
       if (!dane) break;
       dane.z.status = dane.z.status === v ? undefined : v;
-      saveObservation(dane.obs);
+      zapiszZmianeZawodnika(dane);
       if (navigator.vibrate) navigator.vibrate(10);
       render();
       break;
@@ -3039,13 +3112,14 @@ document.addEventListener("click", (e) => {
     case "wyroznij": {
       if (!live) break;
       const obs = cache.observations.find((o) => o.id === live!.observationId) as (Observation & { skladMeczu?: Sklad }) | undefined;
-      const lista = obs?.skladMeczu?.[el.dataset.strona as "gospodarze" | "goscie"]?.zawodnicy;
-      const z = lista?.[Number(el.dataset.i)];
+      const strona = obs?.skladMeczu?.[el.dataset.strona as "gospodarze" | "goscie"];
+      const z = strona?.zawodnicy[Number(el.dataset.i)];
       if (!obs || !z) break;
       z.wyrozniony = !z.wyrozniony;
       // Zapis idzie od razu, a nie dopiero po meczu: telefon potrafi ubić kartę w tle, a wyróżnienia
       // to jedyna rzecz na tym ekranie, której nie da się odtworzyć z pamięci po powrocie.
-      saveObservation(obs);
+      // Razem z wyróżnieniem idzie do SBS raport tego zawodnika — samo „★" już jest informacją.
+      zapiszZmianeZawodnika({ obs, strona, z });
       if (navigator.vibrate) navigator.vibrate(10);
       render();
       break;
@@ -3116,7 +3190,7 @@ document.addEventListener("click", (e) => {
         const klucz = el.dataset.k!;
         const wartosc = Number(v);
         z[worek]![klucz] = z[worek]![klucz] === wartosc ? 0 : wartosc;
-        saveObservation(dane.obs);
+        zapiszZmianeZawodnika(dane);
         render();
         break;
       }
@@ -3233,11 +3307,22 @@ document.addEventListener("click", (e) => {
   }
 });
 
+// WYJŚCIE Z POLA NOTATKI = koniec pisania. Zapisujemy wtedy i skład, i raport zawodnika.
+//
+// Dotąd szedł tu sam skład, więc notatka docierała do SBS dopiero po gwizdku. Co gorsza,
+// zabezpieczNotatke() przepisuje ją NAJPIERW do zawodnika w pamięci — więc każde późniejsze
+// „czy coś się zmieniło?" wypadało negatywnie i raport nie miał już powodu, żeby ruszyć.
+// Stąd zapis musi nastąpić dokładnie tutaj, w jedynym miejscu, które wie, że pisanie się skończyło.
+//
+// Nasłuch jest na etapie przechwytywania (trzeci argument), bo blur się nie propaguje — a dotknięcie
+// nazwiska w pasku „Tagujesz" wywołuje blur ZANIM zadziała obsługa dotknięcia.
 document.addEventListener("blur", (e) => {
   if ((e.target as HTMLElement)?.id !== "notatka-zawodnika") return;
   zabezpieczNotatke();
-  const dane = biezacyObsSklad();
-  if (dane) saveObservation(dane.obs);
+  // ocenianyTeraz, a nie biezacyObsSklad: panel oceny stoi teraz także na ekranie zdarzeń,
+  // gdzie zawodnika wskazuje pasek wyróżnionych, a nie indeks na planszy.
+  const dane = ocenianyTeraz();
+  if (dane) zapiszZmianeZawodnika(dane);
 }, true);
 
 document.addEventListener("change", (e) => {

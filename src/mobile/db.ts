@@ -591,11 +591,30 @@ const zapiszBladWysylki = (tekst: string) => {
   } catch { /* tryb prywatny — trudno, zostaje konsola */ }
 };
 
+// ZADANIE DOŁOŻONE W TRAKCIE WYSYŁKI NIE MOŻE CZEKAĆ DO NASTĘPNEJ OKAZJI.
+//
+// Wysyłka odmawia startu, gdy inna już trwa — i słusznie, bo dwie naraz deptałyby sobie po
+// kolejce. Ale samo „odmawiam" gubiło pracę dołożoną sekundę za późno: jeśli pętla akurat
+// kończyła ostatni obrót, świeży zapis zostawał w kolejce do NASTĘPNEGO dotknięcia ekranu.
+// Widać to było jako raport, który dociera do SBS dopiero przy kolejnej czynności, zamiast od razu.
+//
+// Zamiast rezygnować, odnotowujemy prośbę i po zamknięciu bieżącego przebiegu ruszamy jeszcze raz.
+let ponowFlush = false;
+
 export async function flushQueue(): Promise<number> {
-  if (flushing) return queueLength();
+  if (flushing) { ponowFlush = true; return queueLength(); }
   if (!navigator.onLine) return queueLength();
   flushing = true;
   try {
+    return await przeslijKolejke();
+  } finally {
+    flushing = false;
+    if (ponowFlush) { ponowFlush = false; void flushQueue(); }
+  }
+}
+
+async function przeslijKolejke(): Promise<number> {
+  {
     for (;;) {
       const q = getQueue();
       if (!q.length) {
@@ -636,8 +655,6 @@ export async function flushQueue(): Promise<number> {
       }
       setQueue(getQueue().filter((j) => j.id !== zadanie.id));
     }
-  } finally {
-    flushing = false;
   }
 }
 
