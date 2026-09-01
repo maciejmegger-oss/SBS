@@ -5665,6 +5665,18 @@ function viewReports(){
   <h2 class="view-title">Raporty ${editing? '<span style="font-size:14px;color:var(--gold-dark);font-family:Inter,sans-serif;">— edycja raportu</span>':''}</h2>
   <p class="view-sub">Raport taktyczny — opis techniki, taktyki i motoryki, oceny faz gry i stałych fragmentów w skali 1-6.</p>
   <div class="reports-layout">
+
+  <section class="reports-aside">
+    <h3 class="reports-aside-title">Zapisane raporty <span class="reports-count">${allReports.length}</span></h3>
+    <p class="view-sub" style="margin:0 0 8px;">Wg kolejności utworzenia. „✎" edytuj · „⭳" PDF · „✕" usuń.</p>
+    <div class="card reports-list">${listHtml}</div>
+  </section>
+
+  <section class="reports-nowy" id="rep-formularz">
+    <h3 class="reports-aside-title">${editing? 'Edytujesz raport' : 'Nowy raport'}</h3>
+    <p class="view-sub" style="margin:0 0 8px;">${editing
+      ? 'Zmiany nadpiszą raport zaznaczony na liście wyżej.'
+      : 'Wypełnij i zapisz — raport dopisze się na górze listy.'}</p>
   <div class="card reports-form-card" style="${editing?'border:1px solid var(--gold);':''}">
     <div class="field-wrap">
       <label class="field">Zawodnik</label>
@@ -5742,11 +5754,8 @@ function viewReports(){
     </div>
   </div>
 
-  <aside class="reports-aside">
-    <h3 class="reports-aside-title">Raporty <span class="reports-count">${allReports.length}</span></h3>
-    <p class="view-sub" style="margin:0 0 8px;">Wg kolejności utworzenia. „✎" edytuj · „⭳" PDF · „✕" usuń.</p>
-    <div class="card reports-list">${listHtml}</div>
-  </aside>
+  </section>
+
   </div>`;
 }
 
@@ -8274,7 +8283,10 @@ function attachHandlers(){
     reportObsTypeValue = r.obsType || '';
     currentView = 'reports'; viewingPlayerId = null;
     render();
-    const card = document.querySelector('.main .card'); if(card) card.scrollIntoView({behavior:'smooth', block:'start'});
+    // Formularz stoi teraz POD listą, więc bez zjechania do niego kliknięcie „✎" wyglądałoby,
+    // jakby nic się nie stało — lista zostawałaby na ekranie bez zmian.
+    const cel = document.getElementById('rep-formularz') || document.querySelector('.main .card');
+    if(cel) cel.scrollIntoView({behavior:'smooth', block:'start'});
   });
   main.querySelectorAll('[data-action="cancel-edit-report"]').forEach(b=>b.onclick=()=>{
     editingReportId = null; reportPerspektywaValue = ''; reportStatusValue = ''; reportObsTypeValue = ''; render();
