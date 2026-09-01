@@ -1781,6 +1781,11 @@ function opisZablokowanych(lista: ReturnType<typeof zablokowaneZadania>): string
   return lista3.join(", ") + (reszta > 0 ? ` i ${reszta} inne` : "");
 }
 
+// Czy panel stoi pod adresem ROBOCZYM, wydanym dla gałęzi w trakcie prac. Serwer wstawia w taki
+// adres człon „-git-" i to jest jedyna różnica widoczna z wnętrza aplikacji — pod każdym innym
+// względem zachowuje się identycznie jak docelowy.
+const adresRoboczy = (): boolean => /-git-/.test(location.host);
+
 function viewBaza(): string {
   const n = queueLength();
   const ostatnia = cache.fetchedAt
@@ -1823,8 +1828,19 @@ function viewBaza(): string {
            samą wersję sprzed miesięcy, mimo poprawnych wdrożeń i pełnego zasięgu — i nie ma z niej
            żadnego sygnału, że tak jest. -->
       <div class="row" style="margin-top:6px;"><span class="sub">Adres</span>
-        <strong style="font-family:var(--data); font-size:12.5px; color:var(--text-2); min-width:0;
-                       overflow:hidden; text-overflow:ellipsis;">${esc(location.host)}</strong></div>
+        <strong style="font-family:var(--data); font-size:12.5px; min-width:0; overflow:hidden; text-overflow:ellipsis;
+                       color:${adresRoboczy() ? "var(--bad-fg)" : "var(--text-2)"};">${esc(location.host)}</strong></div>
+      ${/* ADRES ROBOCZY WYGLĄDA IDENTYCZNIE JAK DOCELOWY — I TO JEST PUŁAPKA.
+            Serwer wydaje osobny adres dla każdej gałęzi roboczej. Panel działa pod nim tak samo,
+            loguje się do tej samej bazy i pokazuje te same dane, więc z ekranu nie da się poznać,
+            że to nie jest miejsce, do którego trafiają kolejne wersje. Ikona zapisana kiedyś na
+            taki adres pokazuje w kółko starą aplikację, a każda wdrożona poprawka wygląda jak
+            poprawka, która nie zadziałała. Kosztowało to pół dnia, zanim wyszło na jaw. */""}
+      ${adresRoboczy() ? `
+        <p class="hint" style="margin-top:6px; color:var(--bad-fg);">
+          To jest adres <strong>roboczy</strong>, nie docelowy — nowe wersje panelu mogą tu nie docierać.
+          Właściwy adres to <strong>scoutbasesystem.vercel.app/m</strong>. Zanim się przeniesiesz, wyślij
+          wszystko z kolejki: każdy adres ma własną pamięć i to, co tu czeka, tam nie przejdzie.</p>` : ""}
       <!-- Wynik ostatniego pytania o wersję. Bez tego wiersza „nie ma paska o nowszej wersji"
            znaczy naraz dwie rzeczy: że nowszej nie ma i że nie udało się o nią zapytać. -->
       <div class="row" style="margin-top:6px;"><span class="sub">Sprawdzenie wersji</span>
