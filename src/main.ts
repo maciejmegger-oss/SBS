@@ -4791,7 +4791,7 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
   }
 
   async function zapiszWewnetrznie(){
-    let dopisanych = 0, nowych = 0, meczow = 0, rocznikow = 0, powtorzonych = 0;
+    let dopisanych = 0, nowych = 0, meczow = 0, rocznikow = 0, powtorzonych = 0, wKadrzeBezGry = 0;
     const powtorzoneMecze = new Set();
     const dzis = new Date().toISOString().slice(0,10);
     wynik.forEach(protokol=>{
@@ -4826,7 +4826,7 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
         }
         if(w.mlodziezowiec && !p.mlodziezowiec) p.mlodziezowiec = true;
         if(w.position && !p.position) p.position = w.position;
-        if(!w.zagral) return;
+
         // TO SAMO SPOTKANIE LICZYMY RAZ — I POZNAJEMY JE PO MECZU, NIE PO KLUCZU Z TEKSTU.
         //
         // Klucz wyliczany z treści wklejki zawodził: przy powtórnym zebraniu tej samej kolejki
@@ -4836,6 +4836,30 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
         // jednoznacznie i nie da się jej podrobić inną wklejką tego samego meczu.
         const rywal = (protokol.druzyny.find(d=>d !== s.nazwa) || '');
         const uSiebie = protokol.druzyny[0] === s.nazwa;
+
+        // OBECNOŚĆ W KADRZE BEZ MINUT TO TEŻ INFORMACJA — I TO NAJWCZEŚNIEJSZA, JAKĄ MAMY.
+        //
+        // Szesnastolatek, który po raz pierwszy usiadł na ławce pierwszej drużyny, jest ciekawszy
+        // niż ten, który od trzech lat gra w IV lidze. Dotąd kończyliśmy tu pracę nad wierszem
+        // i po takim zawodniku nie zostawał żaden ślad: kartoteka owszem powstawała, ale bez
+        // najmniejszej wzmianki, że w ogóle był w protokole. Nie dało się więc odróżnić chłopaka
+        // z ławki Lecha od nazwiska wklejonego ręcznie z listy — a to jest różnica między sygnałem
+        // a szumem. Zapisujemy zerowy występ; meczów ani minut oczywiście nie doliczamy.
+        if(!w.zagral){
+          const bylJuz = (p.przebieg || []).some(x=>
+            importNorm(x.rywal || '') === importNorm(rywal) && !!x.dom === uSiebie);
+          if(!bylJuz){
+            p.przebieg = [...(p.przebieg || []), {
+              mecz: protokol.klucz, data: '', kolejka: null, rywal, dom: uSiebie, wynik: '',
+              minuty: 0, odMinuty: null, doMinuty: null, podstawowy: false,
+              zolte: 0, czerwone: 0, wKadrze: true }];
+            p.przebiegSezon = klub && klub.season ? klub.season : '';
+            p.statsSource = 'protokół ŁNP';
+            wKadrzeBezGry++;
+          }
+          return;
+        }
+
         const juzRozliczony = (p.rozliczoneMecze||[]).includes(protokol.klucz)
           || (p.przebieg||[]).some(x=> importNorm(x.rywal||'') === importNorm(rywal) && !!x.dom === uSiebie);
         if(juzRozliczony){ powtorzonych++; powtorzoneMecze.add(`${s.nazwa} — ${rywal}`); return; }
@@ -7626,10 +7650,29 @@ function radarMlodziezowiec(p){
   return (rocznik && rocznik >= ROCZNIK_MLODZIEZOWCA) || p.mlodziezowiec === true;
 }
 
+// OBECNOŚĆ W KADRZE LICZY SIĘ TAK SAMO JAK MINUTY — I JEST WCZEŚNIEJSZYM SYGNAŁEM.
+//
+// Pierwotnie radar wymagał rozegranych minut, przez co wycinał dokładnie to, po co powstał:
+// szesnastolatka, który po raz pierwszy usiadł na ławce pierwszej drużyny. Zerowy występ zapisany
+// w przebiegu jest tu równie ważny — a często ważniejszy, bo pojawia się miesiące wcześniej.
+//
+// Warunek „ma zapisany przebieg" nie jest ozdobnikiem: 1394 kartoteki bez minut, które powstały
+// przed tą zmianą, nie mają żadnego śladu po tym, skąd się wzięły. Nie da się ich odróżnić od
+// nazwisk wklejonych ręcznie z listy, więc nie wpuszczamy ich na radar — lepiej pokazać mniej niż
+// zasypać go szumem. Od tej zmiany każdy protokół zapisuje obecność w kadrze i problem znika sam.
 function radarKandydaci(){
   return DB.players
-    .map(p=>({ p, liga: clubLeague(p.clubId), minuty: Number(p.minutes || 0) }))
-    .filter(x=>x.minuty > 0 && radarMlodziezowiec(x.p) && radarPoziom(x.liga))
+    .map(p=>{
+      const przebieg = p.przebieg || [];
+      const minuty = Number(p.minutes || 0);
+      return {
+        p, minuty, liga: clubLeague(p.clubId),
+        wystapien: przebieg.length,
+        // Zagrał choćby minutę, czy jak dotąd tylko bywał w kadrze?
+        tylkoKadra: minuty === 0 && przebieg.length > 0,
+      };
+    })
+    .filter(x=>(x.minuty > 0 || x.wystapien > 0) && radarMlodziezowiec(x.p) && radarPoziom(x.liga))
     .map(x=>({ ...x, poziom: radarPoziom(x.liga) }));
 }
 
@@ -7669,6 +7712,11 @@ function viewRadarMlodziezy(){
       Przejrzanych do tej pory: <strong>${Object.keys(radarPrzejrzane).length}</strong>.</div></div>`;
   }
 
+  // Najpierw ci, którzy dopiero usiedli na ławce — to najwcześniejszy sygnał, więc nie może
+  // utonąć pod nazwiskami z setkami minut.
+  nowi.sort((a,b)=> (b.tylkoKadra ? 1 : 0) - (a.tylkoKadra ? 1 : 0)
+    || kolejnosc(a.poziom) - kolejnosc(b.poziom) || b.minuty - a.minuty);
+
   const wiersze = nowi.map(x=>{
     const p = x.p;
     const klub = DB.clubs.find(c=>c.id === p.clubId);
@@ -7678,7 +7726,10 @@ function viewRadarMlodziezy(){
       <td>${p.birthYear ? esc(String(p.birthYear)) : '<span class="meta">—</span>'}</td>
       <td>${esc(klub ? klub.name : '—')}</td>
       <td>${esc(p.position || '—')}</td>
-      <td style="text-align:right;"><strong>${x.minuty}</strong></td>
+      <td>${x.tylkoKadra
+        ? '<span class="badge" style="background:var(--card-warm);color:var(--gold-dark);">⏳ w kadrze, bez minut</span>'
+        : '<span class="meta">zagrał</span>'}</td>
+      <td style="text-align:right;">${x.tylkoKadra ? '<span class="meta">0</span>' : `<strong>${x.minuty}</strong>`}</td>
       <td style="text-align:right;">${p.matches != null ? p.matches : '—'}</td>
     </tr>`;
   }).join('');
@@ -7691,7 +7742,7 @@ function viewRadarMlodziezy(){
   </div>
   <div class="card" style="padding:0;overflow:auto;">
     <table>
-      <thead><tr><th>Poziom</th><th>Zawodnik</th><th>Rocznik</th><th>Klub</th><th>Pozycja</th><th style="text-align:right;">Minuty</th><th style="text-align:right;">Mecze</th></tr></thead>
+      <thead><tr><th>Poziom</th><th>Zawodnik</th><th>Rocznik</th><th>Klub</th><th>Pozycja</th><th>Status</th><th style="text-align:right;">Minuty</th><th style="text-align:right;">Mecze</th></tr></thead>
       <tbody>${wiersze}</tbody>
     </table>
   </div>
