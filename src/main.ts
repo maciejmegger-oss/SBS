@@ -4423,7 +4423,7 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
   document.body.appendChild(overlay);
   let wynik = null, komunikat = '', pracuje = false, zapisanychMeczow = 0, dopisujBrak = true;
   // Roczniki z bloku „### ROCZNIKI" — klucz to znormalizowane imię i nazwisko, wartość to rok.
-  let rocznikiZWklejki: Record<string,string> = {};
+  let rocznikiZWklejki: Record<string,{rok?:string, pozycja?:string}> = {};
   const kluczRocznika = (s)=> String(s||'').split(/\s+/).map(importNorm).filter(Boolean).sort().join(' ');
 
   // Ile meczów tego klubu jest już rozliczonych — liczymy z znaczników przy zawodnikach.
@@ -4778,9 +4778,16 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
     const blokR = tekst.match(/^###\s*ROCZNIKI\s*$([\s\S]*)/m);
     if(blokR){
       blokR[1].split('\n').forEach(l=>{
-        const [kto, rok] = l.split('|');
+        // Układ: klucz|rocznik|pozycja. Starsze zakładki przysyłają klucz|rocznik — wtedy
+        // pozycji po prostu nie ma i nic się nie psuje.
+        const [kto, rok, pozycja] = l.split('|');
         const k = kluczRocznika(kto);
-        if(k && /^(19|20)\d{2}$/.test(String(rok||'').trim())) rocznikiZWklejki[k] = rok.trim();
+        if(!k) return;
+        const wpis: any = {};
+        if(/^(19|20)\d{2}$/.test(String(rok||'').trim())) wpis.rok = rok.trim();
+        const poz = pozycjaZLnp(pozycja);
+        if(poz) wpis.pozycja = poz;
+        if(wpis.rok || wpis.pozycja) rocznikiZWklejki[k] = wpis;
       });
     }
     const bezRocznikow = tekst.replace(/^###\s*ROCZNIKI\s*$[\s\S]*/m, '');
@@ -4857,7 +4864,7 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
   }
 
   async function zapiszWewnetrznie(){
-    let dopisanych = 0, nowych = 0, meczow = 0, rocznikow = 0, powtorzonych = 0, wKadrzeBezGry = 0;
+    let dopisanych = 0, nowych = 0, meczow = 0, rocznikow = 0, powtorzonych = 0, wKadrzeBezGry = 0, pozycji = 0;
     const powtorzoneMecze = new Set();
     const dzis = new Date().toISOString().slice(0,10);
     wynik.forEach(protokol=>{
@@ -4886,12 +4893,19 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
         // ROCZNIK Z PROFILU ŁNP. Protokół meczu roczników nie podaje — zakładka dobiera je
         // ze stron zawodników i dokleja osobnym blokiem. Wpisujemy tylko w puste pole: dane
         // z Transfermarktu czy z ręki są pewniejsze i nie wolno ich nadpisać.
+        const zProfiluLnp = rocznikiZWklejki[kluczRocznika(w.firstName + ' ' + w.lastName)] || {};
         if(!p.birthYear && !p.birthDate){
-          const rok = rocznikiZWklejki[kluczRocznika(w.firstName + ' ' + w.lastName)];
-          if(rok){ p.birthYear = rok; rocznikow++; }
+          if(zProfiluLnp.rok){ p.birthYear = zProfiluLnp.rok; rocznikow++; }
         }
         if(w.mlodziezowiec && !p.mlodziezowiec) p.mlodziezowiec = true;
         if(w.position && !p.position) p.position = w.position;
+        // POZYCJA Z PROFILU ŁNP. Protokół wskazuje tylko bramkarza — reszta składu zostawała
+        // z kreską. Wpisujemy wyłącznie w puste pole, bo pozycja wpisana ręką albo wzięta
+        // z Transfermarktu jest dokładniejsza niż ogólne „Pomocnik".
+        if(!p.position && zProfiluLnp.pozycja){
+          p.position = zProfiluLnp.pozycja;
+          pozycji++;
+        }
 
         // TO SAMO SPOTKANIE LICZYMY RAZ — I POZNAJEMY JE PO MECZU, NIE PO KLUCZU Z TEKSTU.
         //
@@ -4967,11 +4981,20 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
       ? `${powtorzonych} ${powtorzonych===1?'wpis pominięty':'wpisów pominiętych'} — te spotkania są już rozliczone `
         + `(${[...powtorzoneMecze].slice(0,3).join('; ')}${powtorzoneMecze.size>3?` i ${powtorzoneMecze.size-3} więcej`:''}).`
       : '';
-    komunikat = dopisanych || nowych || rocznikow
+    // Nazwy pozycji, których nie umiem przetłumaczyć, pokazujemy WPROST. Inaczej cicho zostawałaby
+    // pusta rubryka i nie dałoby się zgadnąć, czy ŁNP ich nie podaje, czy tylko nasza tabela ich
+    // nie zna — a to druga rzecz, którą naprawia się w minutę.
+    const oPozycjach = POZYCJE_NIEROZPOZNANE.size
+      ? ` Nie umiem przypisać pozycji: ${[...POZYCJE_NIEROZPOZNANE].slice(0,6).join(', ')}`
+        + `${POZYCJE_NIEROZPOZNANE.size>6?` i ${POZYCJE_NIEROZPOZNANE.size-6} innych`:''} — pokaż mi ten komunikat, dopiszę je.`
+      : '';
+    komunikat = dopisanych || nowych || rocznikow || pozycji
       ? `Zapisano ${meczow} ${meczow===1?'mecz':'meczów'}: ${dopisanych} wpisów dorobku`
         + `${nowych?`, w tym ${nowych} nowych zawodników w kartotece`:''}`
-        + `${rocznikow?`; uzupełniłem ${rocznikow} roczników`:''}.`
+        + `${rocznikow?`; uzupełniłem ${rocznikow} roczników`:''}`
+        + `${pozycji?`; ${pozycji} pozycji z profili ŁNP`:''}.`
         + (oPowtorkach ? ' ' + oPowtorkach + ' Nic się nie podwoiło.' : '')
+        + oPozycjach
       : `Nic nowego nie zapisałem — wszystkie ${meczow} ${meczow===1?'mecz z tej wklejki jest':'meczów z tej wklejki jest'} `
         + `już rozliczonych. ${oPowtorkach} Dorobek został nietknięty.`
       + (zapamietane.length ? ` Zapamiętałem też adres ŁNP dla ${zapamietane.join(' i ')} — następnym razem otworzy się jednym kliknięciem.` : ' Wklej kolejne protokoły.');
@@ -11772,6 +11795,39 @@ function zapamietajAdresGrupy(zrodlo, protokoly){
   return nowe;
 }
 
+// NAZWY POZYCJI Z ŁNP NA SŁOWNIK SBS.
+//
+// ŁNP pisze pozycje po swojemu, a mapa pozycji rozpoznaje osiem nazw ogólnych (POSITION_NUMBERS).
+// Tłumaczymy WYŁĄCZNIE to, co jednoznaczne. Samo „Obrońca" nie mówi, czy to stoper, czy boczny —
+// wpisanie którejkolwiek z tych nazw byłoby zgadywaniem, a mapa postawiłaby zawodnika nie tam,
+// gdzie gra. Lepiej zostawić puste pole niż wpisać nieprawdę, więc nierozpoznane nazwy trafiają
+// do zestawienia po imporcie i dopisujemy je tutaj, gdy zobaczymy, co naprawdę przysyła ŁNP.
+const POZYCJE_NIEROZPOZNANE = new Set<string>();
+function pozycjaZLnp(surowa){
+  const t = String(surowa || '').toLowerCase()
+    .replace(/[ąàáâ]/g,'a').replace(/[ćç]/g,'c').replace(/[ęèéê]/g,'e').replace(/ł/g,'l')
+    .replace(/ń/g,'n').replace(/[óòôö]/g,'o').replace(/[śş]/g,'s').replace(/[źż]/g,'z')
+    .replace(/\s+/g,' ').trim();
+  if(!t) return '';
+  if(/bramkarz|golkiper/.test(t)) return 'Bramkarz';
+  // „Stoper" bywa podawany bez słowa „obrońca" — i wtedy nie ma w nim nic niejednoznacznego.
+  if(/^stoper|\bstoper\b/.test(t) && !/obronca/.test(t)) return 'Obrońca środkowy';
+  if(/obronca|defensor/.test(t)){
+    if(/srodkow|stoper|centraln/.test(t)) return 'Obrońca środkowy';
+    if(/boczn|prawy|lewy|skrzydlow|wahadl/.test(t)) return 'Obrońca boczny';
+    POZYCJE_NIEROZPOZNANE.add(String(surowa).trim()); return '';
+  }
+  if(/pomocnik|rozgrywajac/.test(t)){
+    if(/defensywn|cofniet|szosc/.test(t)) return 'Pomocnik defensywny';
+    if(/ofensywn|atakujac|dziesiat/.test(t)) return 'Pomocnik ofensywny';
+    if(/srodkow|centraln/.test(t)) return 'Pomocnik środkowy';
+    return 'Pomocnik środkowy';
+  }
+  if(/skrzydlow/.test(t)) return 'Skrzydłowy';
+  if(/napastnik|snajper|srodkowy napastnik/.test(t)) return 'Napastnik';
+  POZYCJE_NIEROZPOZNANE.add(String(surowa).trim());
+  return '';
+}
 function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
   const zdarzenia = zdarzeniaZProtokolu(rawText);
   const druzyny = nazwyDruzynZProtokolu(rawText);
@@ -12269,7 +12325,7 @@ function sprawdzZakladke(nazwa, kod){
 
 // Wersja zakładki. Widnieje w każdym jej komunikacie i w oknie SBS, żeby dało się jednym
 // spojrzeniem stwierdzić, czy w pasku siedzi kod sprzed poprawek.
-const ZAKLADKA_WERSJA = 'v47 z 31.08.2026';
+const ZAKLADKA_WERSJA = 'v48 z 03.09.2026';
 const SBS_ADRES_JS = JSON.stringify(location.origin);
 // ZAKŁADKA W PASKU NIE AKTUALIZUJE SIĘ SAMA — I TO BYŁ PRAWDZIWY PROBLEM.
 //

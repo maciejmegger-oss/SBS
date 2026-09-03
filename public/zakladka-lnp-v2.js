@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v47 z 31.08.2026";
+var SBS_ZBIERACZ="v48 z 03.09.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -1321,6 +1321,23 @@ function zbierzProfile(doc){
  }catch(e){}
 }
 
+// POZYCJA Z PROFILU ZAWODNIKA.
+//
+// Protokol mowi tylko, kto stal w bramce — reszta skladu jest bez pozycji, wiec kartoteka IV ligi
+// zostawala z kreska w tej rubryce. Profil na LNP podaje pozycje wprost, a skoro i tak go
+// otwieramy po rocznik, zabranie drugiej informacji nic nie kosztuje.
+//
+// Nazwy zostawiamy TAKIE, JAKIE SA NA LNP. Tlumaczeniem na slownik SBS zajmuje sie aplikacja —
+// tam latwiej to poprawic niz w zakladce, ktora u kazdego siedzi na pasku we wlasnej kopii.
+function pozycjaZTekstu(t){
+ var s=String(t||'').replace(/\s+/g,' ');
+ var m=s.match(/pozycj\w*\s*:?\s*([A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż][A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż \-]{2,30})/i);
+ if(m) return m[1].replace(/\s+(data|urodz|wzrost|waga|klub|nr|numer).*$/i,'').trim();
+ // Bywa, ze slowa "Pozycja" nie ma, a sama nazwa stoi pod nazwiskiem.
+ m=s.match(/\b(Bramkarz|Obro[nń]ca|Pomocnik|Napastnik|Skrzyd[lł]owy)\b[a-ząćęłńóśźż ]{0,16}/i);
+ return m?m[0].trim():'';
+}
+
 function rocznikZTekstu(t){
  var s=String(t||'');
  // Rok STOI PIERWSZY w zapisie ISO (1990-05-02) i ostatni w polskim (14.03.2007). Sprawdzamy
@@ -1361,10 +1378,12 @@ function pobierzRoczniki(gotowe){
    prob++;
    var txt='';
    try{txt=(f.contentDocument&&f.contentDocument.body)?f.contentDocument.body.innerText:'';}catch(e){txt='';}
-   var r=rocznikZTekstu(txt);
-   if(r||prob>14){
+   var r=rocznikZTekstu(txt), poz=pozycjaZTekstu(txt);
+   if(r||poz||prob>14){
     clearInterval(t);
-    if(r){ roczniki[k]=r; zdobyte++; }
+    // Pamiec przegladarki trzyma teraz "rocznik|pozycja". Starsze wpisy sa samym rocznikiem —
+    // czytamy jedno i drugie, zeby wczesniejsze zbierania nie poszly do kosza.
+    if(r||poz){ roczniki[k]=(r||'')+'|'+(poz||''); zdobyte++; }
     f.remove(); n++; setTimeout(nastepnyProfil,120);
    }
   },500);
@@ -1374,7 +1393,13 @@ function pobierzRoczniki(gotowe){
 
 function blokRocznikow(){
  var linie=[];
- for(var k in roczniki){ if(roczniki[k]) linie.push(k+'|'+roczniki[k]); }
+ for(var k in roczniki){
+  var v=String(roczniki[k]||'');
+  if(!v) continue;
+  // Wpis to "rocznik|pozycja", ale starsza pamiec ma sam rocznik. Doklejamy pusta pozycje,
+  // zeby SBS zawsze dostawal ten sam uklad: klucz|rocznik|pozycja.
+  linie.push(k+'|'+(v.indexOf('|')>=0?v:(v+'|')));
+ }
  return linie.length?('\n\n### ROCZNIKI\n'+linie.join('\n')):'';
 }
 
