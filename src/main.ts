@@ -54,7 +54,7 @@ let dashboardGroupSelected = null; // wybrana grupa (np. "III liga, gr. II") po 
 
 const DEFAULT_SETTINGS = {
   regions: ["Dolnośląski ZPN","Kujawsko-Pomorski ZPN","Lubelski ZPN","Lubuski ZPN","Łódzki ZPN","Małopolski ZPN","Mazowiecki ZPN","Opolski ZPN","Podkarpacki ZPN","Podlaski ZPN","Pomorski ZPN","Śląski ZPN","Świętokrzyski ZPN","Warmińsko-Mazurski ZPN","Wielkopolski ZPN","Zachodniopomorski ZPN"],
-  leagues: ["Ekstraklasa","I liga","II liga","III liga, gr. I","III liga, gr. II","III liga, gr. III","III liga, gr. IV","IV liga (pomorska)","IV liga (zachodniopomorska)","IV liga (dolnośląska)","IV liga (śląska)","IV liga (wielkopolska)","IV liga (kujawsko-pomorska)","IV liga (łódzka)","Klasa okręgowa","CLJ U19","CLJ U17 (zachodnia)","CLJ U17 (wschodnia)","Liga makroregionalna U16","Rocznik 2011","Rocznik 2012","Rocznik 2013","Rocznik 2014"],
+  leagues: ["Ekstraklasa","I liga","II liga","III liga, gr. I","III liga, gr. II","III liga, gr. III","III liga, gr. IV","IV liga (pomorska)","IV liga (zachodniopomorska)","IV liga (dolnośląska)","IV liga (śląska)","IV liga (wielkopolska)","IV liga (kujawsko-pomorska)","IV liga (łódzka)","Klasa okręgowa","CLJ U19","CLJ U17 gr. I","CLJ U17 gr. II","Liga makroregionalna U16","Rocznik 2011","Rocznik 2012","Rocznik 2013","Rocznik 2014"],
   positions: ["Bramkarz","Obrońca prawy","Obrońca lewy","Obrońca środkowy","Obrońca środkowy prawy","Obrońca środkowy centralny","Obrońca środkowy lewy","Obrońca boczny","Wahadłowy prawy","Wahadłowy lewy","Pomocnik defensywny","Pomocnik środkowy","Pomocnik ofensywny","Skrzydłowy","Skrzydłowy prawy","Skrzydłowy lewy","Napastnik"],
   statuses: ["Do Obserwacji","Na Testy","Do transferu","Z polecenia","Rekomendowany","Odrzucony"],
   recommendations: ["Kontynuować obserwację","Zaprosić na testy","(Do transferu)","Odrzucić","Zbyt wcześnie ocenić"],
@@ -2080,10 +2080,33 @@ async function loadAllInner(){
     if(!L.includes('I liga')) L.unshift('I liga');
     if(!L.includes('Ekstraklasa')) L.unshift('Ekstraklasa');   // najwyższy poziom — na początek listy
     if(!L.includes('CLJ U19')) L.push('CLJ U19');
-    const variants = ['CLJ U17 (zachodnia)','CLJ U17 (wschodnia)'].filter(v=>!L.includes(v));
-    const plain = L.indexOf('CLJ U17');
-    if(plain >= 0) L.splice(plain, 1, ...variants);
-    else variants.forEach(v=>L.push(v));
+    // CLJ U17 dzieli się na dwie grupy, a ŁNP nazywa je „gr. I" i „gr. II". U nas nosiły dawniej
+    // nazwy „(wschodnia)" i „(zachodnia)" — kluby przeniesiono do pisowni z ŁNP, ale te dwie
+    // pozycje zostały w ustawieniach i rysowały puste zakładki. Nazwy muszą się zgadzać z ŁNP
+    // co do znaku, bo po nich dopasowujemy rozgrywki przy zbieraniu protokołów.
+    const CLJ_U17_STARE: Record<string,string> = {
+      'CLJ U17 (wschodnia)': 'CLJ U17 gr. I',
+      'CLJ U17 (zachodnia)': 'CLJ U17 gr. II',
+    };
+    const CLJ_U17_NOWE = ['CLJ U17 gr. I','CLJ U17 gr. II'];
+    // Gdyby jakiś klub wciąż siedział pod starą nazwą, przenosimy go, ZANIM zabierzemy zakładkę —
+    // inaczej zniknąłby z widoku razem z nią.
+    let cljPrzeniesionych = 0;
+    DB.clubs.forEach((c:any)=>{
+      const nowa = CLJ_U17_STARE[String(c.league || '')];
+      if(nowa){ c.league = nowa; cljPrzeniesionych++; }
+    });
+    if(cljPrzeniesionych){
+      try{ await saveClubs(); }catch(e){ console.error('CLJ U17 — przeniesienie klubów do grup z ŁNP:', e); }
+    }
+    const gdzieStare = L.findIndex((l:any)=>CLJ_U17_STARE[l] || l === 'CLJ U17');
+    const bezStarych = L.filter((l:any)=>!CLJ_U17_STARE[l] && l !== 'CLJ U17');
+    const brakujace = CLJ_U17_NOWE.filter(n=>!bezStarych.includes(n));
+    bezStarych.splice(gdzieStare >= 0 ? gdzieStare : bezStarych.length, 0, ...brakujace);
+    if(bezStarych.length !== L.length || bezStarych.some((l:any,i:number)=>l !== L[i])){
+      L.length = 0; L.push(...bezStarych);
+      try{ await saveSettings(); }catch(e){ console.error('CLJ U17 — zapis listy lig:', e); }
+    }
     // Usuń "Liga wojewódzka U15" z listy (na życzenie) także w istniejącej bazie.
     const woj = L.indexOf('Liga wojewódzka U15');
     if(woj >= 0) L.splice(woj, 1);
@@ -4142,7 +4165,7 @@ function viewClubs(){
     const groups = allGroups.filter(g=>!yearGroups.includes(g));
     const groupPill = (g, i)=>{
       const val = g==='Wszystkie grupy' ? '' : g;
-      // Skracaj etykietę tylko dla III/IV ligi; kategorie juniorskie (np. "CLJ U17 (zachodnia)") zostają w całości.
+      // Skracaj etykietę tylko dla III/IV ligi; kategorie juniorskie (np. "CLJ U17 gr. II") zostają w całości.
       let label = g;
       if(g.startsWith('III liga, ')) label = g.replace('III liga, ','');
       else if(g.startsWith('IV liga (')) label = g.replace(/^IV liga \(|\)$/g,'');
@@ -6103,7 +6126,7 @@ function podsumowanieMinut(przebieg){
 
 // Granica rocznika młodzieżowca — w jednym miejscu, bo wisi i w odznace, i w podpowiedziach,
 // i w filtrach. Rozjechane kopie tej liczby pokazywałyby dwie różne prawdy w jednym oknie.
-// Poziom rozgrywek z nazwy grupy w kartotece („IV liga (opolska)" → „IV liga", „CLJ U17 (zachodnia)"
+// Poziom rozgrywek z nazwy grupy w kartotece („IV liga (opolska)" → „IV liga", „CLJ U17 gr. II"
 // → „CLJ U17"). Służy do odcinania klubów z innych rozgrywek przy dopasowaniu nazwy — ta sama nazwa
 // klubu występuje przecież w pierwszej drużynie i w juniorach.
 function poziomGrupy(nazwaGrupy){
