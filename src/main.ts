@@ -6853,6 +6853,25 @@ const POZYCJA_NA_NUMER = [
   { wzor: /napastnik/i, numer: 9 },
 ];
 
+// ZNACZNIK ZESPOŁU W NAZWIE KLUBU.
+//
+// Klub to nie jedna drużyna: „Arka Gdynia" gra w I lidze, „Arka II Gdynia" w IV, „Arka Gdynia U17"
+// i „U19" w CLJ. Cztery kadry i cztery poziomy rozgrywek, a nazwy różnią się jednym członem.
+// Dopasowanie po zawieraniu tego członu nie widzi, więc bez tej funkcji zawodnik z młodzieżówki
+// i jego imiennik z pierwszego zespołu są nie do rozróżnienia. Odpowiednik funkcji o tej samej
+// nazwie w panelu mobilnym (src/mobile/main.ts) — wspólny moduł to dług, który tu spłacamy osobno.
+const ZNACZNIKI_ZESPOLU_PC = [
+  { wzor: /\bu\s*-?\s*(\d{1,2})\b/i, nazwa: (m)=> 'u' + m[1] },
+  { wzor: /\bjuniorz?y?\b|\bjun\b/i, nazwa: ()=> 'junior' },
+  { wzor: /\biii\b|\b3\b/, nazwa: ()=> 'iii' },
+  { wzor: /\bii\b|\b2\b|rezerw/i, nazwa: ()=> 'ii' },
+];
+function znacznikZespoluPc(nazwa){
+  const n = String(nazwa || '');
+  for(const z of ZNACZNIKI_ZESPOLU_PC){ const m = z.wzor.exec(n); if(m) return z.nazwa(m); }
+  return '';
+}
+
 function numerZPozycji(opis){
   const t = String(opis||'').trim();
   if(!t) return 0;
@@ -6884,6 +6903,15 @@ function wyroznieniZMeczow(liga, system){
             return n && (n===k || (n.length>=5 && k.length>=5 && (n.includes(k)||k.includes(n))));
           });
           if(wKlubie.length === 1) kand = wKlubie;
+          else if(wKlubie.length > 1){
+            // TEN SAM KLUB, RÓŻNE ZESPOŁY. „Arka Gdynia" (I liga), „Arka II Gdynia" (IV liga)
+            // i „Arka Gdynia U17" (CLJ) pasują do siebie przez zawieranie, więc imiennik z
+            // pierwszej drużyny i z młodzieżówki wyglądają tu identycznie. Rozstrzyga znacznik
+            // zespołu wyciągnięty z nazwy — bez niego zostawaliśmy z dwoma kandydatami i niczym.
+            const zn = znacznikZespoluPc(dane.nazwa);
+            const wZespole = wKlubie.filter(p=> znacznikZespoluPc(clubName(p.clubId)) === zn);
+            if(wZespole.length === 1) kand = wZespole;
+          }
         }
         // Niejednoznaczność zostawiamy bez rozstrzygnięcia — lepiej nie pokazać nikogo,
         // niż postawić na mapie niewłaściwego zawodnika.

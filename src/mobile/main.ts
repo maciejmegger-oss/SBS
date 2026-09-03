@@ -1001,14 +1001,56 @@ function druzynyZMeczu(match?: string): [string, string] {
 
 // Klub z bazy odpowiadający nazwie drużyny z pola „Mecz". Nazwy bywają zapisane skrótowo
 // („Chojniczanka" kontra „Chojniczanka Chojnice"), więc po dokładnym trafieniu próbujemy zawierania.
+// ZESPOŁY TEGO SAMEGO KLUBU TO RÓŻNE DRUŻYNY.
+//
+// „Arka Gdynia" gra w I lidze, „Arka II Gdynia" w IV, „Arka Gdynia U17" w CLJ U17, „Arka U19"
+// w CLJ U19. Cztery drużyny, cztery kadry, cztery poziomy rozgrywek — a nazwy różnią się jednym
+// członem, który dopasowanie „po zawieraniu" po prostu połykało: „arka gdynia sa u17" zawiera
+// w sobie „arka gdynia", więc skład U17 dostawał kadrę pierwszego zespołu. Dotyczy to każdego
+// klubu z rezerwami i młodzieżą w CLJ, czyli wszystkich, których się realnie obserwuje.
+//
+// Wyciągamy więc z nazwy ZNACZNIK ZESPOŁU i wymagamy zgodności. Pierwszy zespół nie ma znacznika
+// i to też jest informacja: „Arka Gdynia" nie może dopasować się do „Arka Gdynia U17".
+const ZNACZNIKI_ZESPOLU: { wzor: RegExp; nazwa: (m: RegExpExecArray) => string }[] = [
+  { wzor: /\bu\s*-?\s*(\d{1,2})\b/i, nazwa: (m) => "u" + m[1] },   // U17, U-19, U 15
+  { wzor: /\bjuniorz?y?\b|\bjun\b/i, nazwa: () => "junior" },
+  { wzor: /\biii\b|\b3\b/, nazwa: () => "iii" },
+  { wzor: /\bii\b|\b2\b|rezerw/i, nazwa: () => "ii" },             // Arka II, Lech 2, rezerwy
+];
+
+export function znacznikZespolu(nazwa: string): string {
+  const n = String(nazwa || "");
+  for (const z of ZNACZNIKI_ZESPOLU) {
+    const m = z.wzor.exec(n);
+    if (m) return z.nazwa(m);
+  }
+  return "";
+}
+
+// Formy prawne w nazwie („SA", „S.A.", „sp. z o.o.") niosą zero informacji o drużynie, a psują
+// porównanie: terminarz podaje „Arka Gdynia SA U17", kartoteka „Arka Gdynia U17".
+const normKlub = (s: string) => String(s || "").toLowerCase()
+  .replace(/\bs\s*\.?\s*a\s*\.?\b/g, " ")
+  .replace(/\bsp\s*\.?\s*z\s*o\s*\.?\s*o\s*\.?\b/g, " ")
+  .replace(/\bs\s*\.?\s*k\s*\.?\s*a\s*\.?\b/g, " ")
+  .replace(/[.,]/g, " ")
+  .replace(/\s+/g, " ")
+  .trim();
+
 function klubZNazwy(nazwa: string) {
-  const n = nazwa.toLowerCase().trim();
+  const n = normKlub(nazwa);
   if (!n) return null;
-  return cache.clubs.find((c) => (c.name || "").toLowerCase().trim() === n)
-    || cache.clubs.find((c) => {
-      const k = (c.name || "").toLowerCase().trim();
-      return k && (k.includes(n) || n.includes(k));
-    })
+  const zn = znacznikZespolu(nazwa);
+  const zgodnyZespol = (c: { name?: string }) => znacznikZespolu(c.name || "") === zn;
+  const zawiera = (a: string, b: string) => !!a && !!b && (a.includes(b) || b.includes(a));
+
+  return cache.clubs.find((c) => normKlub(c.name || "") === n)
+    // Zawieranie WYŁĄCZNIE w obrębie tego samego zespołu — inaczej U17 ląduje przy pierwszej drużynie.
+    || cache.clubs.find((c) => zgodnyZespol(c) && zawiera(normKlub(c.name || ""), n))
+    // Ostatnia deska: klub bez rozbicia na zespoły. Gdy w kartotece jest samo „Arka Gdynia”,
+    // a obserwujemy U17, lepiej podać tę kadrę niż nie podać żadnej — scout i tak widzi, kogo
+    // dopisuje. Wchodzi to dopiero wtedy, gdy właściwego zespołu naprawdę nie ma w bazie.
+    || cache.clubs.find((c) => zawiera(normKlub(c.name || ""), n))
     || null;
 }
 
@@ -2260,12 +2302,21 @@ function znajdzZawodnika(nazwa: string, nazwaKlubu?: string): string | null {
   // Imiennicy: rozstrzyga klub, po której stronie składu zawodnik wystąpił.
   if (nazwaKlubu) {
     const k = normImie(nazwaKlubu);
+    const znSzukany = znacznikZespolu(nazwaKlubu);
     const wKlubie = kandydaci.filter((p) => {
       const c = cache.clubs.find((x) => x.id === p.clubId);
       const n = normImie(c?.name || "");
       return n && (n === k || (n.length >= 5 && k.length >= 5 && (n.includes(k) || k.includes(n))));
     });
     if (wKlubie.length === 1) return wKlubie[0].id;
+    // Ten sam klub, różne zespoły: „Arka Gdynia" i „Arka Gdynia U17" pasują do siebie przez
+    // zawieranie, więc imiennik z pierwszej drużyny i z młodzieży wyglądają identycznie.
+    // Rozstrzyga znacznik zespołu — bez niego zostawalibyśmy z dwoma kandydatami i niczym.
+    const wZespole = wKlubie.filter((p) => {
+      const c = cache.clubs.find((x) => x.id === p.clubId);
+      return znacznikZespolu(c?.name || "") === znSzukany;
+    });
+    if (wZespole.length === 1) return wZespole[0].id;
   }
   // Dalej niejednoznacznie — świadomie NIE zgadujemy. Lepiej pominąć i powiedzieć o tym,
   // niż dopisać ocenę niewłaściwej osobie.
