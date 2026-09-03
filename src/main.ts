@@ -2069,8 +2069,36 @@ async function loadAllInner(){
     if(anyPlayerChanged){ try{ await savePlayers(); }catch(e){ console.error('Status players migration save error', e); } }
     await quietFlagSet('scouting:status_migration_v1');
   }
+  // NUMERACJA STOPERÓW WG NARODOWEGO MODELU GRY: 4 = lewy, 5 = prawy.
+  //
+  // Mieliśmy odwrotnie, więc kto stał w polu nr 4, był prawym stoperem. Po zmianie numer 4 znaczy
+  // lewego — gdybyśmy tylko przestawili etykiety, cała mapa zaczęłaby kłamać: prawi stoperzy
+  // staliby pod numerem lewego. Dlatego zamieniamy miejscami ZAWARTOŚĆ pól 4 i 5, razem z listami
+  // ręcznie wykluczonych, żeby zawodnik został tam, gdzie naprawdę gra.
+  //
+  // Migracja jest jednorazowa (flaga) — drugie przejście cofnęłoby zamianę.
+  const numeracjaNmg = await czytaj('scouting:numeracja_nmg_v1');
+  if(wolnoUzupelniac && !numeracjaNmg){
+    const zamienione = {};
+    let ile = 0;
+    Object.keys(positionMapAssignments).forEach(k=>{
+      // Klucz: „liga|||system|||numer" albo „liga|||system|||numer|||wykluczeni" — numer zawsze trzeci.
+      const czesci = k.split('|||');
+      if(czesci.length < 3){ zamienione[k] = positionMapAssignments[k]; return; }
+      if(czesci[2] === '4'){ czesci[2] = '5'; ile++; }
+      else if(czesci[2] === '5'){ czesci[2] = '4'; ile++; }
+      zamienione[czesci.join('|||')] = positionMapAssignments[k];
+    });
+    positionMapAssignments = zamienione;
+    if(ile){
+      try{ await savePositionMapAssignments(); }
+      catch(e){ console.error('Numeracja NMG — zapis mapy pozycji:', e); }
+      console.log(`Numeracja NMG: przestawiłem ${ile} pól stoperów (4 ↔ 5).`);
+    }
+    await quietFlagSet('scouting:numeracja_nmg_v1');
+  }
   // Zapewnienia ustawień PO migracjach (żeby migracja statusów ich nie nadpisała): status "Z polecenia"
-  // oraz rozbicie CLJ U17 na grupę zachodnią/wschodnią. Idempotentne, bez wymuszania zapisu.
+  // oraz nazwy grup CLJ U17 zgodne z ŁNP. Idempotentne, bez wymuszania zapisu.
   if(Array.isArray(DB.settings.statuses) && !DB.settings.statuses.includes('Z polecenia')){
     const idx = DB.settings.statuses.indexOf('Odrzucony');
     if(idx >= 0) DB.settings.statuses.splice(idx, 0, 'Z polecenia'); else DB.settings.statuses.push('Z polecenia');
@@ -3868,6 +3896,7 @@ function viewPlayerDetail(id){
         <tr><td style="color:var(--ink-soft);">Noga</td><td>${esc(p.foot||"—")}</td></tr>
         <tr><td style="color:var(--ink-soft);">Wzrost</td><td>${p.height? p.height+" cm":"—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">System gry</td><td>${p.formation? `<strong>${esc(p.formation)}</strong>`:"—"}</td></tr>
+        <tr><td style="color:var(--ink-soft);">Pozycja wg NMG</td><td>${opisPozycjiNmg(p) ? `<strong>${esc(opisPozycjiNmg(p))}</strong>` : "—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">Mecze / minuty / gole / asysty</td><td>${(p.matches!=null||p.minutes!=null||p.goals!=null||p.assists!=null) ? `${p.matches!=null?p.matches:'—'} mecze &middot; ${p.minutes!=null?p.minutes:'—'} min &middot; ${p.goals!=null?p.goals:'—'} goli &middot; ${p.assists!=null?p.assists:'—'} asyst` : "—"}${p.statsUpdatedAt?`<div class="note" style="font-size:11px;margin-top:2px;">Mecze i bramki z ${esc(p.statsSource||'90minut.pl')}${p.statsSeason?' (sezon '+esc(p.statsSeason)+')':''}, odświeżone ${esc(String(p.statsUpdatedAt).slice(0,10))}. Minuty i asysty wpisujesz ręcznie.</div>`:''}</td></tr>
         <tr><td style="color:var(--ink-soft);">Kadra wojewódzka</td><td>${p.kadraWojewodzka? '<strong style="color:var(--good);">Tak</strong>' : 'Nie'}</td></tr>
         <tr><td style="color:var(--ink-soft);">Reprezentacja</td><td>${p.reprezentacja? `<strong style="color:var(--good);">Tak</strong>${p.powolania!=null?` &middot; ${p.powolania} ${p.powolania===1?'powołanie':'powołań'}`:''}` : 'Nie'}</td></tr>
@@ -7167,8 +7196,10 @@ const POSITION_NUMBERS = [
   {number:1,  label:'Bramkarz',            posName:'Bramkarz',            rankOffset:0},
   {number:3,  label:'Lewy obrońca',        posName:'Obrońca boczny',      rankOffset:0},
   {number:2,  label:'Prawy obrońca',       posName:'Obrońca boczny',      rankOffset:6},
-  {number:5,  label:'Stoper (lewy)',       posName:'Obrońca środkowy',    rankOffset:0},
-  {number:4,  label:'Stoper (prawy)',      posName:'Obrońca środkowy',    rankOffset:6},
+  // Numeracja wg Narodowego Modelu Gry: 4 to stoper LEWY, 5 to stoper PRAWY. Do 09.2026 mieliśmy
+  // to odwrotnie, przez co numer na profilu nie zgadzał się z tym, czym posługuje się sztab.
+  {number:4,  label:'Stoper (lewy)',       posName:'Obrońca środkowy',    rankOffset:0},
+  {number:5,  label:'Stoper (prawy)',      posName:'Obrońca środkowy',    rankOffset:6},
   {number:6,  label:'Defensywny pomocnik', posName:'Pomocnik defensywny', rankOffset:0},
   {number:8,  label:'Środkowy pomocnik',   posName:'Pomocnik środkowy',   rankOffset:0},
   {number:10, label:'Ofensywny pomocnik',  posName:'Pomocnik ofensywny',  rankOffset:0},
@@ -7176,22 +7207,30 @@ const POSITION_NUMBERS = [
   {number:7,  label:'Prawe skrzydło',      posName:'Skrzydłowy',          rankOffset:6},
   {number:9,  label:'Napastnik',           posName:'Napastnik',           rankOffset:0},
 ];
+// Opis pozycji z profilu, np. „5 · Stoper (prawy)". Pusty, gdy skaut nie wskazał numeru —
+// wtedy mapa dobiera pole po ogólnej pozycji, jak dotąd.
+function opisPozycjiNmg(p){
+  const numer = Number(p && p.pozycjaNmg) || 0;
+  if(!numer) return '';
+  const def = POSITION_NUMBERS.find(x=>x.number === numer);
+  return def ? `${def.number} · ${def.label}` : String(numer);
+}
 // Współrzędne (procent szerokości/wysokości boiska) dla każdej z 11 pozycji — osobny układ dla każdego
 // systemu gry, żeby pola realnie odzwierciedlały kształt taktyczny formacji. Bazowy układ (dla "" i
 // 1-4-3-3) odwzorowuje dokładnie przesłany wzór klubowej planszy. Te same 11 numerów/etykiet/pozycji
 // (POSITION_NUMBERS) obowiązują zawsze — zmieniają się tylko ich współrzędne na boisku.
 const FORMATION_COORDS = {
-  '':          {11:{x:22,y:13}, 9:{x:50,y:10}, 7:{x:78,y:13}, 8:{x:37,y:33}, 10:{x:63,y:33}, 6:{x:50,y:53}, 3:{x:18,y:66}, 2:{x:82,y:66}, 5:{x:37,y:79}, 4:{x:63,y:79}, 1:{x:50,y:93}},
-  '1-4-3-3':   {11:{x:22,y:13}, 9:{x:50,y:10}, 7:{x:78,y:13}, 8:{x:37,y:33}, 10:{x:63,y:33}, 6:{x:50,y:53}, 3:{x:18,y:66}, 2:{x:82,y:66}, 5:{x:37,y:79}, 4:{x:63,y:79}, 1:{x:50,y:93}},
-  '1-4-4-2':   {9:{x:39,y:10}, 10:{x:61,y:10}, 11:{x:18,y:33}, 7:{x:82,y:33}, 6:{x:61,y:51}, 8:{x:39,y:51}, 3:{x:18,y:66}, 2:{x:82,y:66}, 5:{x:37,y:79}, 4:{x:63,y:79}, 1:{x:50,y:93}},
-  // 1-3-4-3: naprawione — 3 obrońców (5,6,4) + 4 pomocników (wahadłowi 3/2 + środkowi 8/10), zgodnie z nazwą systemu.
-  '1-3-4-3':   {11:{x:22,y:13}, 9:{x:50,y:10}, 7:{x:78,y:13}, 3:{x:16,y:38}, 8:{x:39,y:38}, 10:{x:61,y:38}, 2:{x:84,y:38}, 5:{x:31,y:72}, 6:{x:50,y:72}, 4:{x:69,y:72}, 1:{x:50,y:93}},
-  // 1-3-5-2: naprawione — 3 obrońców (5,6,4) + 5 pomocników (wahadłowi 3/2 + szerocy 11/7 + środkowy 8).
-  '1-3-5-2':   {9:{x:39,y:10}, 10:{x:61,y:10}, 11:{x:20,y:36}, 8:{x:50,y:36}, 7:{x:80,y:36}, 3:{x:15,y:54}, 2:{x:85,y:54}, 5:{x:31,y:74}, 6:{x:50,y:74}, 4:{x:69,y:74}, 1:{x:50,y:93}},
-  '1-4-5-1':   {9:{x:50,y:10}, 11:{x:20,y:29}, 7:{x:80,y:29}, 8:{x:32,y:46}, 6:{x:50,y:46}, 10:{x:68,y:46}, 3:{x:18,y:66}, 2:{x:82,y:66}, 5:{x:37,y:79}, 4:{x:63,y:79}, 1:{x:50,y:93}},
-  // 1-5-4-1: naprawione — 5 obrońców (3,5,6,4,2, w tym wahadłowi na skrajach) + 4 pomocników (11,8,10,7).
-  '1-5-4-1':   {9:{x:50,y:10}, 11:{x:22,y:36}, 8:{x:41,y:36}, 10:{x:59,y:36}, 7:{x:78,y:36}, 3:{x:14,y:70}, 5:{x:32,y:70}, 6:{x:50,y:70}, 4:{x:68,y:70}, 2:{x:86,y:70}, 1:{x:50,y:93}},
-  '1-4-2-3-1': {9:{x:50,y:10}, 11:{x:20,y:29}, 10:{x:50,y:29}, 7:{x:80,y:29}, 6:{x:38,y:49}, 8:{x:62,y:49}, 3:{x:18,y:66}, 2:{x:82,y:66}, 5:{x:37,y:79}, 4:{x:63,y:79}, 1:{x:50,y:93}},
+  '':          {11:{x:22,y:13}, 9:{x:50,y:10}, 7:{x:78,y:13}, 8:{x:37,y:33}, 10:{x:63,y:33}, 6:{x:50,y:53}, 3:{x:18,y:66}, 2:{x:82,y:66}, 4:{x:37,y:79}, 5:{x:63,y:79}, 1:{x:50,y:93}},
+  '1-4-3-3':   {11:{x:22,y:13}, 9:{x:50,y:10}, 7:{x:78,y:13}, 8:{x:37,y:33}, 10:{x:63,y:33}, 6:{x:50,y:53}, 3:{x:18,y:66}, 2:{x:82,y:66}, 4:{x:37,y:79}, 5:{x:63,y:79}, 1:{x:50,y:93}},
+  '1-4-4-2':   {9:{x:39,y:10}, 10:{x:61,y:10}, 11:{x:18,y:33}, 7:{x:82,y:33}, 6:{x:61,y:51}, 8:{x:39,y:51}, 3:{x:18,y:66}, 2:{x:82,y:66}, 4:{x:37,y:79}, 5:{x:63,y:79}, 1:{x:50,y:93}},
+  // 1-3-4-3: 3 obrońców (4,6,5) + 4 pomocników (wahadłowi 3/2 + środkowi 8/10), zgodnie z nazwą systemu.
+  '1-3-4-3':   {11:{x:22,y:13}, 9:{x:50,y:10}, 7:{x:78,y:13}, 3:{x:16,y:38}, 8:{x:39,y:38}, 10:{x:61,y:38}, 2:{x:84,y:38}, 4:{x:31,y:72}, 6:{x:50,y:72}, 5:{x:69,y:72}, 1:{x:50,y:93}},
+  // 1-3-5-2: 3 obrońców (4,6,5) + 5 pomocników (wahadłowi 3/2 + szerocy 11/7 + środkowy 8).
+  '1-3-5-2':   {9:{x:39,y:10}, 10:{x:61,y:10}, 11:{x:20,y:36}, 8:{x:50,y:36}, 7:{x:80,y:36}, 3:{x:15,y:54}, 2:{x:85,y:54}, 4:{x:31,y:74}, 6:{x:50,y:74}, 5:{x:69,y:74}, 1:{x:50,y:93}},
+  '1-4-5-1':   {9:{x:50,y:10}, 11:{x:20,y:29}, 7:{x:80,y:29}, 8:{x:32,y:46}, 6:{x:50,y:46}, 10:{x:68,y:46}, 3:{x:18,y:66}, 2:{x:82,y:66}, 4:{x:37,y:79}, 5:{x:63,y:79}, 1:{x:50,y:93}},
+  // 1-5-4-1: 5 obrońców (3,4,6,5,2, w tym wahadłowi na skrajach) + 4 pomocników (11,8,10,7).
+  '1-5-4-1':   {9:{x:50,y:10}, 11:{x:22,y:36}, 8:{x:41,y:36}, 10:{x:59,y:36}, 7:{x:78,y:36}, 3:{x:14,y:70}, 4:{x:32,y:70}, 6:{x:50,y:70}, 5:{x:68,y:70}, 2:{x:86,y:70}, 1:{x:50,y:93}},
+  '1-4-2-3-1': {9:{x:50,y:10}, 11:{x:20,y:29}, 10:{x:50,y:29}, 7:{x:80,y:29}, 6:{x:38,y:49}, 8:{x:62,y:49}, 3:{x:18,y:66}, 2:{x:82,y:66}, 4:{x:37,y:79}, 5:{x:63,y:79}, 1:{x:50,y:93}},
 };
 function positionMapKey(league, formation, number){ return league+'|||'+(formation||'wszystkie')+'|||'+number; }
 // Automatyczna podpowiedź: najlepiej ocenieni zawodnicy danej ligi na tej pozycji (wg pola "Pozycja" w profilu),
@@ -7215,13 +7254,20 @@ function buildAutoPositionCandidates(league, formation, number){
   const statusRank = {'Do transferu':0, 'Na Testy':1};
   // Młodzieżowiec bez statusu ląduje za prowadzonymi, ale przed resztą — i wyżej, im więcej zagrał.
   const rangaZawodnika = (p)=> statusRank[p.status] !== undefined ? statusRank[p.status] : (p.monitored ? 2 : 3);
+  // WSKAZANY NUMER WG NMG BIJE POZYCJĘ OGÓLNĄ.
+  //
+  // Pole „Pozycja" mówi tylko „Obrońca środkowy", więc ten sam zawodnik pasował i do lewego,
+  // i do prawego stopera — i mapa stawiała go w obu polach naraz. Kto ma na profilu numer wg
+  // Narodowego Modelu Gry, trafia wyłącznie do tego jednego pola; reszta działa jak dotąd.
+  const numerZawodnika = (p)=> Number(p.pozycjaNmg) || 0;
   const candidates = DB.players
     // System gry: po wybraniu konkretnego układu zawodnik pojawia się WYŁĄCZNIE w tym, który ma
     // zapisany w profilu. Wcześniej ci bez wpisanego systemu wchodzili do każdego układu naraz,
     // przez co ten sam zawodnik widniał we wszystkich systemach i mapa przestawała cokolwiek
     // rozróżniać. Kto nie ma systemu w profilu, jest widoczny pod „Wszystkie systemy".
-    .filter(p => clubLeague(p.clubId)===league && p.position===posDef.posName && (!formation || p.formation===formation)
-      && kwalifikujeSie(p))
+    .filter(p => clubLeague(p.clubId)===league && (!formation || p.formation===formation)
+      && kwalifikujeSie(p)
+      && (numerZawodnika(p) ? numerZawodnika(p)===number : p.position===posDef.posName))
     .map(p => ({p, a: playerAvg(p.id)}))
     // NIE wymagamy obserwacji — zawodnik z samą decyzją statusu (z raportu) też trafia na mapę.
     .sort((a,b) => {
@@ -7229,8 +7275,13 @@ function buildAutoPositionCandidates(league, formation, number){
       if(s !== 0) return s;
       return ((b.a&&b.a.overall!=null)? b.a.overall : -1) - ((a.a&&a.a.overall!=null)? a.a.overall : -1);     // potem wg średniej oceny (z raportów)
     });
+  // Wskazani numerem wchodzą pierwsi i BEZ przesunięcia — rankOffset rozdziela pulę między
+  // sparowane pola (lewy/prawy), a to ma sens tylko przy zgadywaniu z pozycji ogólnej. Gdyby
+  // objął też wskazanych, zawodnik z jawnie wpisanym numerem mógłby wypaść poza szóstkę.
+  const wskazani = candidates.filter(x=>numerZawodnika(x.p) === number);
+  const zPozycjiOgolnej = candidates.filter(x=>!numerZawodnika(x.p));
   const offset = posDef.rankOffset || 0;
-  return candidates.slice(offset, offset+6).map(x=>x.p.id);
+  return [...wskazani, ...zPozycjiOgolnej.slice(offset, offset+6)].slice(0, 6).map(x=>x.p.id);
 }
 async function reorderPositionMapPlayer(league, formation, number, playerId, targetIndex){
   const key = positionMapKey(league, formation, number);
@@ -7953,13 +8004,23 @@ function openPlayerModal(id, presetClubId, prefillData){
       <div class="field-wrap"><label class="field">Status</label><select id="pm-status"><option value="" ${p&&!p.status?'selected':''}>— brak —</option>${DB.settings.statuses.map(x=>`<option ${p&&p.status===x?'selected':''}>${esc(x)}</option>`).join('')}</select></div>
       <div class="field-wrap"><label class="field">Narodowość</label><input id="pm-nationality" value="${p&&p.nationality?esc(p.nationality):''}" placeholder="np. Polska"></div>
     </div>
-    <div class="field-wrap">
-      <label class="field">System gry (formacja)</label>
-      <select id="pm-formation">
-        <option value="">— nie określono —</option>
-        ${FORMATIONS.map(f=>`<option ${p&&p.formation===f?'selected':''}>${esc(f)}</option>`).join('')}
-      </select>
+    <div class="grid grid-2">
+      <div class="field-wrap">
+        <label class="field">System gry (formacja)</label>
+        <select id="pm-formation">
+          <option value="">— nie określono —</option>
+          ${FORMATIONS.map(f=>`<option ${p&&p.formation===f?'selected':''}>${esc(f)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field-wrap">
+        <label class="field">Pozycja wg NMG</label>
+        <select id="pm-pozycja-nmg">
+          <option value="">— z pozycji ogólnej —</option>
+          ${[...POSITION_NUMBERS].sort((a,b)=>a.number-b.number).map(pn=>`<option value="${pn.number}" ${p&&Number(p.pozycjaNmg)===pn.number?'selected':''}>${pn.number} &middot; ${esc(pn.label)}</option>`).join('')}
+        </select>
+      </div>
     </div>
+    <p class="note" style="margin-top:-6px;margin-bottom:6px;">Numer wg Narodowego Modelu Gry stawia zawodnika na mapie w JEDNYM polu. Bez niego mapa zgaduje z pola „Pozycja”, a wtedy np. środkowy obrońca pasuje i do lewego, i do prawego stopera.</p>
     <div class="grid grid-4">
       <div class="field-wrap"><label class="field">Mecze (sezon)</label><input type="number" min="0" id="pm-matches" value="${p&&p.matches!=null?p.matches:''}"></div>
       <div class="field-wrap"><label class="field">Minuty (sezon)</label><input type="number" min="0" id="pm-minutes" value="${p&&p.minutes!=null?p.minutes:''}"></div>
@@ -16426,6 +16487,7 @@ async function generatePlayerPDF(playerId){
     <div class="meta-item"><div class="lbl">Wzrost</div><div class="val">${p.height?p.height+" cm":"—"}</div></div>
     <div class="meta-item"><div class="lbl">Noga</div><div class="val">${esc(p.foot||"—")}</div></div>
     <div class="meta-item"><div class="lbl">System gry</div><div class="val">${esc(p.formation||"—")}</div></div>
+    <div class="meta-item"><div class="lbl">Pozycja wg NMG</div><div class="val">${esc(opisPozycjiNmg(p)||"—")}</div></div>
     <div class="meta-item"><div class="lbl">Status</div><div class="val">${esc(p.status||"—")}</div></div>
     <div class="meta-item"><div class="lbl">Kontrakt</div><div class="val">${p.hasContract? ('Tak'+(p.contractUntil?' — do '+esc(p.contractUntil):'')) : 'Nie'}</div></div>
     <div class="meta-item"><div class="lbl">Mecze / gole / asysty</div><div class="val">${p.matches!=null?p.matches:"—"} / ${p.goals!=null?p.goals:"—"} / ${p.assists!=null?p.assists:"—"}</div></div>
@@ -17084,6 +17146,7 @@ function wireLastModal(){
       agentCheckedAt,
       birthDate, birthYear: birthDate? String(new Date(birthDate).getFullYear()) : '',
       position: document.getElementById('pm-position').value,
+      pozycjaNmg: Number(document.getElementById('pm-pozycja-nmg').value) || null,
       foot: document.getElementById('pm-foot').value,
       height: Number(document.getElementById('pm-height').value)||null,
       nationality: document.getElementById('pm-nationality').value.trim(),
