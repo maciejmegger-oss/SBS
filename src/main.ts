@@ -2280,6 +2280,26 @@ async function saveClubCrests(){
 }
 async function saveObservations(){ return robustStorageSet('scouting:observations', JSON.stringify(DB.observations)); }
 async function saveReports(){ return robustStorageSet('scouting:reports', JSON.stringify(DB.reports)); }
+
+// POTWIERDZENIE, KTÓRE NIE ZATRZYMUJE PRACY.
+//
+// Świadomie NIE alert(): okno dialogowe trzeba kliknąć, a przeglądarka potrafi je zablokować po
+// kilku z rzędu („nie pokazuj więcej okien") — tak padło kiedyś wylogowanie. Pasek sam znika po
+// paru sekundach i nie stoi na drodze powrotowi do listy.
+//
+// role="status" sprawia, że czytnik ekranu przeczyta komunikat, nie przerywając tego, co robi.
+function pokazPotwierdzenie(tekst, rodzaj = 'ok'){
+  document.querySelectorAll('.sbs-toast').forEach(t=>t.remove());
+  const el = document.createElement('div');
+  el.className = 'sbs-toast' + (rodzaj === 'blad' ? ' sbs-toast-blad' : '');
+  el.setAttribute('role', 'status');
+  el.textContent = tekst;
+  document.body.appendChild(el);
+  // Błąd zostaje dłużej: to komunikat, po którym trzeba coś zrobić, a nie zwykłe „gotowe".
+  const ileMs = rodzaj === 'blad' ? 9000 : 4000;
+  setTimeout(()=>{ el.classList.add('sbs-toast-znika'); setTimeout(()=>el.remove(), 400); }, ileMs);
+  el.onclick = ()=> el.remove();
+}
 async function saveTalents(){ return robustStorageSet('scouting:talents', JSON.stringify(DB.talents)); }
 async function saveContacts(){ return robustStorageSet('scouting:contacts', JSON.stringify(DB.contacts)); }
 async function saveMatches(){ return robustStorageSet('scouting:matches', JSON.stringify(DB.matches)); }
@@ -7788,7 +7808,7 @@ function viewTransferCommittee(){
         </select>
       </td>
       <td><input class="committee-notes-input" data-id="${p.id}" value="${esc(p.committeeNotes||'')}" placeholder="Notatka komitetu"></td>
-      <td><button class="link-btn" data-action="open-committee-reports" data-id="${p.id}">📄 Raporty (${(p.committeeReports||[]).length})</button></td>
+      <td><button class="link-btn" data-action="open-committee-reports" data-id="${p.id}">📄 Raporty (${liczbaRaportowKomitetu(p)})</button></td>
       <td><button class="gold" data-action="analyze-player" data-id="${p.id}" style="padding:5px 12px;font-size:12px;white-space:nowrap;">🔍 Analizuj</button></td>
     </tr>`;
   }).join('');
@@ -9734,20 +9754,42 @@ function attachHandlers(){
     } else {
       DB.reports.push(rep);
     }
-    await saveReports();
+    const zapisano = await saveReports();
+    // NIEUDANY ZAPIS NIE MOŻE WYGLĄDAĆ JAK UDANY. Przy odmowie zapisu cofamy raport z pamięci
+    // i zostawiamy wypełniony formularz — inaczej scout wróciłby do listy z komunikatem
+    // „zapisano", a po odświeżeniu strony raportu by nie było. Godzina pracy na trybunie.
+    if(zapisano === false){
+      if(!wasEditing) DB.reports = DB.reports.filter(r=>r.id !== rep.id);
+      pokazPotwierdzenie('Nie udało się zapisać raportu — sprawdź baner u góry strony. Formularz zostaje wypełniony, spróbuj jeszcze raz.', 'blad');
+      return;
+    }
     // Przypisanie statusu z decyzji na dole raportu (jeśli wybrano). Pierwsze cztery => Monitoring,
     // "Do transferu"/"Na Testy" => mapa pozycji w Rankingu. Zapisujemy zawodnika osobno.
     if(reportStatusValue){
       const pl = DB.players.find(x=>x.id===playerId);
       if(pl){ pl.status = reportStatusValue; await savePlayers(); }
     }
+    const status = reportStatusValue;
     reportPerspektywaValue = '';
     reportStatusValue = '';
     reportObsTypeValue = '';
     editingReportId = null;
     if(scout && !DB.settings.scouts.includes(scout)){ DB.settings.scouts.push(scout); await saveSettings(); }
-    currentView = wasEditing ? 'reports' : 'dashboard';
+    // PO ZAPISIE WRACAMY DO LISTY RAPORTÓW, TAKŻE PRZY NOWYM.
+    //
+    // Nowy raport odsyłał dotąd na Dashboard — scout kończył pracę nad zawodnikiem i lądował
+    // na ekranie, który o niej nic nie mówi. Trzeba było samemu wejść w Raporty, żeby zobaczyć,
+    // czy raport w ogóle powstał.
+    currentView = 'reports';
     render();
+    const zawodnik = DB.players.find(x=>x.id===playerId);
+    const kto = zawodnik ? `${zawodnik.firstName || ''} ${zawodnik.lastName || ''}`.trim() : '';
+    pokazPotwierdzenie((wasEditing ? 'Zmiany zapisane' : 'Raport zapisany')
+      + (kto ? ` — ${kto}` : '')
+      + (status ? `. Status: ${status}` : '') + '.');
+    // Lista bywa przewinięta w miejscu, w którym zostawiłeś ją przed pisaniem raportu — a nowy
+    // wpis ląduje na samej górze. Bez tego wyglądałby na niezapisany.
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   });
 
   // filters
@@ -9939,6 +9981,18 @@ function openPlayerTabsModal(playerId){
   draw();
 }
 
+// RAPORTY SKAUTA LICZĄ SIĘ TAK SAMO JAK DOŁĄCZONE PLIKI.
+//
+// Licznik pokazywał wyłącznie `committeeReports`, czyli PDF-y wgrane ręcznie do komitetu.
+// Raporty pisane w zakładce Raporty nie liczyły się wcale — więc przy zawodniku ze średnią 5.1,
+// która przecież BIERZE SIĘ z raportów, stało „Raporty (0)". Komitet wyglądał na pusty w chwili,
+// gdy praca skautów była zrobiona.
+function raportyZawodnika(p){
+  return DB.reports.filter(r=>r.playerId === (p && p.id));
+}
+function liczbaRaportowKomitetu(p){
+  return raportyZawodnika(p).length + ((p && p.committeeReports) || []).length;
+}
 function openCommitteeReportsModal(playerId){
   const already = document.querySelector('.modal-overlay[data-committee-for]');
   if(already) already.remove();
@@ -9961,7 +10015,21 @@ function openCommitteeReportsModal(playerId){
     overlay.innerHTML = `
     <div class="modal">
       <h3>Komitet Transferowy — ${esc(p.firstName)} ${esc(p.lastName)}</h3>
-      <label class="field" style="display:block;margin-bottom:6px;">Raporty PDF (dowolna liczba)</label>
+      ${(()=>{
+        const swoje = raportyZawodnika(p).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+        if(!swoje.length) return `<p class="note" style="margin:0 0 14px;">Brak raportów skautingowych w aplikacji — poniżej możesz dołączyć plik PDF z zewnątrz.</p>`;
+        return `<label class="field" style="display:block;margin-bottom:6px;">Raporty skautów w aplikacji (${swoje.length})</label>
+        <div style="margin-bottom:16px;max-height:200px;overflow:auto;">
+          ${swoje.map(r=>`<div class="obs-item" style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
+            <span><strong>${esc(r.date||'bez daty')}</strong>
+              <span class="meta">${esc(r.scout||'—')}${r.perspektywa?` · perspektywa ${esc(r.perspektywa)}`:''}${r.obsType?` · ${esc(r.obsType)}`:''}</span>
+              ${r.description?`<div class="meta" style="margin-top:2px;">${esc(String(r.description).slice(0,150))}${String(r.description).length>150?'…':''}</div>`:''}
+            </span>
+            <button class="secondary komitet-otworz-raport" data-id="${esc(r.id)}" style="flex-shrink:0;font-size:11.5px;">✎ Otwórz</button>
+          </div>`).join('')}
+        </div>`;
+      })()}
+      <label class="field" style="display:block;margin-bottom:6px;">Dołączone pliki PDF (dowolna liczba)</label>
       <div style="margin-bottom:16px;max-height:220px;overflow:auto;">
         ${p.committeeReports.length ? p.committeeReports.map((a,i)=>`
           <div class="obs-item">
@@ -9993,6 +10061,22 @@ function openCommitteeReportsModal(playerId){
 
   function wire(){
     overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=closeAndRefresh);
+    // Otwarcie raportu zamyka okno komitetu — inaczej formularz raportu wyrenderowałby się
+    // POD nim i wyglądałoby to, jakby przycisk nic nie robił.
+    overlay.querySelectorAll('.komitet-otworz-raport').forEach(b=>b.onclick=()=>{
+      const r = DB.reports.find(x=>x.id === b.dataset.id);
+      if(!r) return;
+      overlay.remove();
+      // Te trzy pola żyją poza formularzem (przyciski, nie <input>), więc bez ich ustawienia
+      // otwarty raport pokazałby puste „perspektywę" i „obserwację" — a po zapisie by je stracił.
+      editingReportId = r.id;
+      reportPerspektywaValue = r.perspektywa || '';
+      reportStatusValue = '';
+      reportObsTypeValue = r.obsType || '';
+      currentView = 'reports'; viewingPlayerId = null;
+      render();
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    });
     const fileInput = overlay.querySelector('#committee-report-file');
     const status = overlay.querySelector('#committee-report-status');
     if(fileInput) fileInput.onchange = async ()=>{
