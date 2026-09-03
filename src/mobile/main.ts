@@ -362,9 +362,11 @@ function dataZDniem(iso: string): string {
 // Znacznik rozgrywek na karcie. Kategoria jest wyróżniona kolorem, bo to ona rozstrzyga, jak
 // czytać ocenę — nazwa rozgrywek stoi obok jako uszczegółowienie, nie zamiast niej.
 function ligaChip(o: Observation & { rozgrywki?: string; kategoria?: string }): string {
-  const kat = o.kategoria || kategoriaZRozgrywek(o.rozgrywki || "");
+  const kat = o.kategoria || kategoriaZRozgrywek(o.rozgrywki || "", o.match || "");
   if (!o.rozgrywki && !kat) return "";
-  const barwa = kat === "mlodziez" ? "var(--accent-fg)" : "var(--good-fg)";
+  // Nierozpoznana kategoria dostaje barwę NEUTRALNĄ, a nie seniorską. Dotąd „nie wiem" wyglądało
+  // dokładnie tak samo jak „seniorzy" — czyli aplikacja twierdziła coś, czego nie ustaliła.
+  const barwa = kat === "mlodziez" ? "var(--accent-fg)" : kat === "seniorzy" ? "var(--good-fg)" : "var(--text-2)";
   const opis = [ETYKIETA_KATEGORII[kat] || "", o.rozgrywki || ""].filter(Boolean).join(" · ");
   return `<span style="color:${barwa}; font-weight:650;">${esc(opis)}</span> · `;
 }
@@ -496,14 +498,27 @@ const SENIORZY_WZORCE = [
   /ekstraklasa|ekstraliga|betclic/i,
   /\b(I|II|III|IV|V)\s*liga\b/i,
   /\b[1-5]\s*liga\b/i,
+  // Numer ligi bywa zapisany SŁOWNIE — tak podaje go część terminarzy („Pierwsza liga").
+  // Bez tego takie rozgrywki nie pasowały do niczego i kończyły się kategorią pustą.
+  /\b(pierwsza|druga|trzecia|czwarta|piąta|piata)\s+liga\b/i,
   /klasa\s+[ABC]\b|\b[ABC]\s+klasa|okręgow|okregow/i,
   /puchar\s+polski/i,
 ];
 
-export function kategoriaZRozgrywek(nazwa: string): "seniorzy" | "mlodziez" | "" {
+// NAZWY DRUŻYN TEŻ MÓWIĄ, KTO GRA.
+//
+// Rozpoznanie czytało wyłącznie nazwę rozgrywek — i przy „Arka Gdynia SA U17 – ŁKS Łódź S.A. U17"
+// w rozgrywkach „Pierwsza liga" wychodziły z tego seniorzy, mimo że U17 stoi w nazwie OBU drużyn.
+// Rocznik przy nazwie klubu jest informacją równie dobrą jak nazwa rozgrywek, a często lepszą:
+// ligi młodzieżowe bywają nazywane tak samo jak seniorskie, bo są ligami tego samego szczebla.
+//
+// Drużyny sprawdzamy TYLKO pod kątem młodzieży. Brak „U17" przy nazwie nie znaczy, że to seniorzy —
+// większość klubów seniorskich nie dopisuje sobie nic — więc w drugą stronę ten sygnał nie działa.
+export function kategoriaZRozgrywek(nazwa: string, nazwaMeczu = ""): "seniorzy" | "mlodziez" | "" {
   const n = (nazwa || "").trim();
-  if (!n) return "";
-  if (MLODZIEZ_WZORCE.some((w) => w.test(n))) return "mlodziez";
+  const m = (nazwaMeczu || "").trim();
+  if (!n && !m) return "";
+  if (MLODZIEZ_WZORCE.some((w) => w.test(n) || w.test(m))) return "mlodziez";
   if (SENIORZY_WZORCE.some((w) => w.test(n))) return "seniorzy";
   return "";
 }
