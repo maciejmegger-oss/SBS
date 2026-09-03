@@ -3978,6 +3978,24 @@ function viewPlayerDetail(id){
     <p class="note" style="margin-top:8px;margin-bottom:0;">Generuje i pobiera gotowy plik PDF — chwilę to potrwa, w zależności od urządzenia.</p>
   </div>
   <div class="card">
+    ${(()=>{
+      // RAPORTY NA PROFILU. Średnia ocen była tu od zawsze, ale nie dało się dojść, z czego wyszła:
+      // profil nie pokazywał ani ilu raportów dotyczy, ani kto je pisał. Przy zawodniku ze średnią
+      // 5.1 z jednego raportu to różnica między „sprawdzony" a „ktoś go raz widział".
+      const swoje = DB.reports.filter(r=>r.playerId===p.id)
+        .slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+      return `<h4 style="margin-top:0;color:var(--heading);">Raporty skautingowe (${swoje.length})</h4>
+      ${swoje.length ? swoje.map(r=>`<div class="obs-item" style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">
+          <span><strong>${esc(r.date||'bez daty')}</strong>
+            <span class="meta">${esc(r.scout||'—')}${r.perspektywa?` &middot; perspektywa ${esc(r.perspektywa)}`:''}${r.obsType?` &middot; ${esc(r.obsType)}`:''}</span>
+            ${r.description?`<div class="meta" style="margin-top:2px;">${esc(String(r.description).slice(0,180))}${String(r.description).length>180?'…':''}</div>`:''}
+          </span>
+          <button class="secondary" data-action="edit-report" data-id="${esc(r.id)}" style="flex-shrink:0;font-size:11.5px;" title="Otwórz raport">✎ Otwórz</button>
+        </div>`).join('')
+        : '<div class="empty">Brak raportów. Napisz pierwszy w zakładce Raporty — to z nich liczy się średnia i wskaźnik analizy.</div>'}`;
+    })()}
+  </div>
+  <div class="card">
     <h4 style="margin-top:0;color:var(--heading);">Historia obserwacji (${obs.length})</h4>
     ${obs.length? obs.map(o=>{
       // Oceny liczbowe przy obserwacji to już tylko dane historyczne (okno "Statystyka" usunięte).
@@ -7887,6 +7905,151 @@ function analyzePlayer(p){
   return {a, overall, score, strengths, weaknesses, trend, age, devNote, nData, confidence, errorMargin, reco, recoTone, obs, reports};
 }
 
+// DRUGA OPINIA — niezależny głos obok raportów skautów.
+//
+// Wysyłamy komplet: kartotekę, przebieg sezonu i PEŁNE treści raportów. Bez treści raportów model
+// mógłby tylko powtórzyć wskaźnik, a chodzi o coś odwrotnego — o wskazanie, czego w tych raportach
+// nie ma. Odpowiedź zapisujemy przy zawodniku, żeby weszła do PDF-a i nie trzeba jej było
+// generować drugi raz przed posiedzeniem komitetu.
+async function pobierzOpinieAI(playerId, przycisk, miejsce){
+  const p = DB.players.find(x=>x.id===playerId);
+  if(!p || !miejsce) return;
+  const napis = przycisk ? przycisk.textContent : '';
+  if(przycisk){ przycisk.disabled = true; przycisk.textContent = 'Analizuję…'; }
+  miejsce.innerHTML = `<div class="note">Czytam raporty i sprawdzam publiczne źródła piłkarskie. To potrwa kilkanaście sekund.</div>`;
+
+  const an = analyzePlayer(p);
+  const raporty = DB.reports.filter(r=>r.playerId===playerId).map(r=>({
+    data: r.date || '', scout: r.scout || '', perspektywa: r.perspektywa || '', obserwacja: r.obsType || '',
+    technika: r.technika || '', taktyka: r.taktyka || '', motoryka: r.motoryka || '',
+    mentalnosc: r.mentalnoscOpis || '', potencjal: r.potencjalOpis || '',
+    opis: r.description || '', fazyGry: r.phases || {}, staleFragmenty: r.setPieces || {},
+  }));
+  const przebieg = (p.przebieg || []).map(x=>({
+    rywal: x.rywal || '', dom: !!x.dom, minuty: x.minuty || 0,
+    podstawowy: !!x.podstawowy, wKadrze: !!x.wKadrze, zolte: x.zolte || 0, czerwone: x.czerwone || 0,
+  }));
+
+  try{
+    const odp = await fetch('/api/opinia-ai', {
+      method: 'POST', headers: {'content-type':'application/json'},
+      body: JSON.stringify({
+        zawodnik: {
+          imie: p.firstName || '', nazwisko: p.lastName || '',
+          rocznik: p.birthYear || '', dataUrodzenia: p.birthDate || '',
+          klub: clubName(p.clubId) || '', liga: clubLeague(p.clubId) || '',
+          pozycja: p.position || '', pozycjaNmg: opisPozycjiNmg(p) || '',
+          noga: p.foot || '', wzrost: p.height || '', narodowosc: p.nationality || '',
+          mecze: p.matches, minuty: p.minutes, gole: p.goals, asysty: p.assists,
+          linkTransfermarkt: p.tmLink || '', przebiegSezonu: przebieg,
+        },
+        raporty,
+        analiza: { wskaznik: an.score, srednia: an.overall, trend: an.trend,
+          pewnosc: an.confidence, granicaBledu: an.errorMargin,
+          rekomendacjaSystemu: an.reco, obserwacji: an.a ? an.a.count : 0, raportow: an.reports.length },
+      }),
+    });
+    const dane = await odp.json().catch(()=>({}));
+    if(!odp.ok){
+      // Brak klucza to nie awaria, tylko nieskonfigurowana funkcja — i trzeba to powiedzieć wprost,
+      // razem z tym, co zrobić, zamiast zostawiać czerwony komunikat bez wyjścia.
+      miejsce.innerHTML = `<div class="obs-item" style="border-left:3px solid var(--clay-dark);">
+        <strong>${esc(dane.error || 'Nie udało się pobrać opinii.')}</strong>
+        ${dane.jakNaprawic ? `<div class="note" style="margin-top:4px;">${esc(dane.jakNaprawic)}</div>` : ''}
+      </div>`;
+      return;
+    }
+    (p as any).opiniaAI = { tekst: dane.tekst, data: new Date().toISOString(), model: dane.model || '' };
+    await savePlayerOne(p);
+    miejsce.innerHTML = `<label class="field">Druga opinia (AI)</label>
+      <div style="white-space:pre-wrap;font-size:12.5px;line-height:1.6;border:1px solid var(--border);
+                  border-radius:8px;padding:10px 12px;background:var(--card-warm);max-height:320px;overflow:auto;">${esc(dane.tekst)}</div>
+      <p class="note" style="margin-top:6px;">Opinia powstała z danych w systemie i publicznych źródeł piłkarskich.
+        Nie obejmuje mediów społecznościowych ani życia prywatnego. Nie zastępuje obserwacji na żywo —
+        traktuj ją jak głos w dyskusji, nie jak rozstrzygnięcie. Wejdzie też do PDF-a analizy.</p>`;
+  }catch(e){
+    console.error(e);
+    miejsce.innerHTML = `<div class="note" style="color:var(--clay-dark);">Nie udało się połączyć z usługą opinii.</div>`;
+  }finally{
+    if(przycisk){ przycisk.disabled = false; przycisk.textContent = napis; }
+  }
+}
+
+// PDF CAŁEJ ANALIZY — to, co widać w oknie, plus rozpiska raportów, na których się opiera.
+//
+// Sam wskaźnik bez podstawy jest bezużyteczny na posiedzeniu komitetu: pierwsze pytanie brzmi
+// „z czego to wyszło". Dlatego do pliku idą też oceny faz gry i lista raportów z datami i skautami.
+async function generateAnalysisPDF(playerId){
+  const p = DB.players.find(x=>x.id===playerId);
+  if(!p) return;
+  const an = analyzePlayer(p);
+  const raporty = DB.reports.filter(r=>r.playerId===playerId)
+    .slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+  const opinia = (p as any).opiniaAI;
+  const wiersz = (etykieta, wartosc)=>
+    `<tr><td style="color:#5B6560;padding:3px 10px 3px 0;white-space:nowrap;">${esc(etykieta)}</td><td style="padding:3px 0;"><strong>${esc(String(wartosc))}</strong></td></tr>`;
+  const lista = (tab)=> tab.length
+    ? `<ul style="margin:4px 0;padding-left:18px;">${tab.map(s=>`<li>${esc(s.etykieta||RATING_LABELS[s.k]||s.k)} (${fmt1(s.v)})</li>`).join('')}</ul>`
+    : '<div style="color:#5B6560;">Brak danych</div>';
+
+  const html = `<!doctype html><html lang="pl"><head><meta charset="utf-8"><title>Analiza</title><style>
+    body{font:13px/1.55 Arial,Helvetica,sans-serif;color:#1b2420;background:#fff;margin:0;padding:26px 30px;width:794px;box-sizing:border-box;}
+    h1{font-size:20px;margin:0 0 2px;color:#16302a;} h2{font-size:14px;margin:18px 0 6px;color:#16302a;
+      border-bottom:1px solid #e3decd;padding-bottom:3px;}
+    .pod{color:#5B6560;font-size:11.5px;margin:0 0 14px;}
+    .wskaznik{display:flex;align-items:center;gap:18px;border:1px solid #e3decd;border-radius:8px;padding:12px 16px;background:#FBF8F0;}
+    .liczba{font-size:38px;font-weight:800;line-height:1;color:#8C6C21;}
+    table{border-collapse:collapse;} td{vertical-align:top;}
+    .dwie{display:flex;gap:26px;} .dwie>div{flex:1;}
+    .rap{border-bottom:1px solid #efeade;padding:6px 0;}
+    .stopka{margin-top:22px;border-top:1px solid #e3decd;padding-top:8px;color:#8a857a;font-size:10.5px;}
+  </style></head><body>
+  <h1>Analiza zawodnika — ${esc(p.firstName||'')} ${esc(p.lastName||'')}</h1>
+  <p class="pod">${esc(clubName(p.clubId)||'—')} &middot; ${esc(p.position||'—')}${p.birthYear?` &middot; rocznik ${esc(String(p.birthYear))}`:''}
+    &middot; ${esc(clubLeague(p.clubId)||'')}</p>
+
+  <div class="wskaznik">
+    <div style="text-align:center;"><div class="liczba">${an.score!=null?an.score:'—'}</div>
+      <div style="font-size:10.5px;color:#5B6560;">Wskaźnik /100</div></div>
+    <div><div style="font-weight:800;font-size:14px;color:#8C6C21;">${esc(an.reco)}</div>
+      <div style="font-size:11.5px;color:#5B6560;margin-top:4px;">Śr. ocena z raportów:
+        <strong>${an.overall!=null?fmt1(an.overall):'—'}/6</strong> &middot;
+        Pewność: <strong>${esc(an.confidence)}</strong> (granica błędu: ${esc(an.errorMargin)})</div></div>
+  </div>
+
+  <h2>Podstawa oceny</h2>
+  <table>
+    ${wiersz('Obserwacji', an.a ? an.a.count : 0)}
+    ${wiersz('Raportów', an.reports.length)}
+    ${wiersz('Trend', an.trend==null ? 'brak — za mało obserwacji' : (an.trend>0.15?`poprawa (+${fmt1(an.trend)})`:an.trend<-0.15?`spadek (${fmt1(an.trend)})`:'stabilnie'))}
+    ${wiersz('Potencjał rozwoju', an.devNote)}
+  </table>
+  ${an.nData<3?'<p style="color:#8C3A2E;font-size:11.5px;margin-top:8px;">Mała próba — decyzji nie należy opierać wyłącznie na tym dokumencie.</p>':''}
+
+  <h2>Mocne strony i braki</h2>
+  <div class="dwie">
+    <div><strong>Mocne strony</strong>${lista(an.strengths)}</div>
+    <div><strong>Do poprawy</strong>${lista(an.weaknesses)}</div>
+  </div>
+
+  <h2>Raporty, na których opiera się analiza (${raporty.length})</h2>
+  ${raporty.length ? raporty.map(r=>`<div class="rap"><strong>${esc(r.date||'bez daty')}</strong>
+      <span style="color:#5B6560;">${esc(r.scout||'—')}${r.perspektywa?` &middot; perspektywa ${esc(r.perspektywa)}`:''}${r.obsType?` &middot; ${esc(r.obsType)}`:''}</span>
+      ${r.description?`<div style="margin-top:2px;">${esc(r.description)}</div>`:''}</div>`).join('')
+    : '<div style="color:#5B6560;">Brak raportów — analiza opiera się wyłącznie na danych z kartoteki.</div>'}
+
+  ${opinia && opinia.tekst ? `<h2>Druga opinia (AI) — ${esc(String(opinia.data||'').slice(0,10))}</h2>
+    <div style="white-space:pre-wrap;">${esc(opinia.tekst)}</div>
+    <p style="color:#8a857a;font-size:10.5px;margin-top:6px;">Opinia wygenerowana automatycznie na podstawie danych z systemu i publicznych źródeł piłkarskich. Nie zastępuje obserwacji na żywo.</p>` : ''}
+
+  <div class="stopka">Scout Base System &middot; ${new Date().toLocaleString('pl-PL')} &middot;
+    Dokument roboczy komitetu transferowego. Zawiera dane osobowe — nie rozpowszechniaj poza klubem.</div>
+  </body></html>`;
+
+  const nazwa = ((p.firstName||'')+'_'+(p.lastName||'')).trim().replace(/\s+/g,'_').replace(/[^\w\-]/g,'') || 'zawodnik';
+  await htmlNaPdf(html, 'analiza_' + nazwa + '.pdf');
+}
+
 function openPlayerAnalysisModal(playerId){
   const existing = document.querySelector('.modal-overlay[data-analysis-for]');
   if(existing) existing.remove();
@@ -7921,8 +8084,22 @@ function openPlayerAnalysisModal(playerId){
     </div>
     <div style="margin-top:10px;"><label class="field">Potencjał rozwoju</label><div style="font-size:13px;">${esc(an.devNote)}</div></div>
     <div class="note" style="margin-top:10px;">Podstawa: ${an.a?an.a.count:0} obserwacji, ${an.reports.length} raportów.${an.nData<3?' ⚠️ Mała próba — oprzyj decyzję też na obserwacji na żywo.':''}</div>
-    <div class="modal-actions"><button class="secondary" data-action="close-analysis">Zamknij</button></div>
+    <div id="opinia-ai-miejsce" style="margin-top:14px;"></div>
+    <div class="modal-actions" style="gap:8px;flex-wrap:wrap;">
+      <button class="secondary" data-action="opinia-ai">🧠 Druga opinia (AI)</button>
+      <button class="secondary" data-action="analiza-pdf">⭳ Pobierz analizę (PDF)</button>
+      <button class="secondary" data-action="close-analysis">Zamknij</button>
+    </div>
   </div>`;
+  overlay.querySelector('[data-action="analiza-pdf"]').onclick = async(e)=>{
+    const b = e.currentTarget as HTMLButtonElement;
+    const napis = b.textContent; b.disabled = true; b.textContent = 'Składam PDF…';
+    try{ await generateAnalysisPDF(playerId); }
+    catch(err){ console.error(err); pokazPotwierdzenie('Nie udało się złożyć PDF-a analizy.', 'blad'); }
+    finally{ b.disabled = false; b.textContent = napis; }
+  };
+  overlay.querySelector('[data-action="opinia-ai"]').onclick = (e)=>
+    pobierzOpinieAI(playerId, e.currentTarget, overlay.querySelector('#opinia-ai-miejsce'));
   overlay.querySelector('[data-action="close-analysis"]').onclick = ()=>overlay.remove();
   overlay.addEventListener('click', e=>{ if(e.target===overlay) overlay.remove(); });
   document.body.appendChild(overlay);
@@ -17024,9 +17201,20 @@ async function generatePlayerPDF(playerId){
   <div class="report-footer">Raport wygenerowany automatycznie przez Scout Base System &middot; ${new Date().toLocaleString('pl-PL')}</div>
   </body></html>`;
 
-  // Generowanie prawdziwego pliku PDF: renderujemy raport w ukrytej ramce (iframe) - żeby style
-  // (w tym print-owe) zastosowały się poprawnie i niezależnie od reszty strony - następnie html2canvas
-  // przechwytuje to jako obraz, a jsPDF składa z niego gotowy, wielostronicowy plik PDF do pobrania.
+  const safeName = ((p.firstName||'')+'_'+(p.lastName||'')).trim().replace(/\s+/g,'_').replace(/[^\w\-]/g,'') || 'zawodnik';
+  await htmlNaPdf(html, 'raport_' + safeName + '.pdf');
+}
+
+// SKŁADANIE PDF-a Z GOTOWEGO HTML — wspólne dla raportu zawodnika i dla analizy.
+//
+// Wydzielone, bo cała trudność siedzi nie w treści, tylko w łamaniu stron: html2canvas oddaje
+// obraz o kilka procent wyższy niż rachunek z CSS, więc miejsca cięcia trzeba dosuwać do pustych
+// rzędów pikseli, żeby nie przecinać nagłówków i wierszy tabel w pół. Druga kopia tej logiki
+// rozjechałaby się z pierwszą przy pierwszej poprawce.
+async function htmlNaPdf(html, nazwaPliku){
+  // Renderujemy w ukrytej ramce (iframe) — żeby style (w tym print-owe) zastosowały się poprawnie
+  // i niezależnie od reszty strony. Potem html2canvas przechwytuje to jako obraz, a jsPDF składa
+  // z niego gotowy, wielostronicowy plik do pobrania.
   const iframe = document.createElement('iframe');
   iframe.style.position = 'fixed';
   iframe.style.left = '-99999px';
@@ -17244,8 +17432,7 @@ async function generatePlayerPDF(playerId){
       y = ciecie;
     }
 
-    const safeName = ((p.firstName||'')+'_'+(p.lastName||'')).trim().replace(/\s+/g,'_').replace(/[^\w\-]/g,'') || 'zawodnik';
-    pdf.save('raport_' + safeName + '.pdf');
+    pdf.save(nazwaPliku);
   } finally {
     document.body.removeChild(iframe);
   }

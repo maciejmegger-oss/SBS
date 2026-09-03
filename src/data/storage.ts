@@ -121,6 +121,10 @@ export const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }>
       // środkowy", więc na mapie zawodnik pasował do lewego i prawego stopera naraz. Numer
       // rozstrzyga, w którym polu ma stać.
       "pozycjaNmg",
+      // Druga opinia wygenerowana przez AI: treść, data i model. Trzymamy ją przy zawodniku, bo
+      // wchodzi do PDF-a analizy i na posiedzeniu komitetu musi być ta sama, którą już czytano —
+      // generowana od nowa brzmiałaby inaczej przy tych samych danych.
+      "opiniaAI",
     ],
   },
   sbs_observations: {
