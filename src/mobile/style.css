@@ -700,11 +700,58 @@ textarea{resize:vertical; min-height:84px;}
 
 /* Pasek „Tagujesz" — przewijany poziomo, bo wyróżnionych bywa kilkunastu, a zawijanie ich
    w wiersze zepchnęłoby kafle zdarzeń poza ekran. */
+/* PASEK WYRÓŻNIONYCH PRZYKLEJONY DO GÓRY.
+   Ekran zdarzeń ma teraz trzy piętra: kafle do tagowania, panel oceny wskazanego zawodnika
+   i oś zdarzeń. Razem znacznie więcej, niż mieści telefon — a nazwisko rozstrzyga, kogo dotyczy
+   JEDNO I DRUGIE. Bez przyklejenia trzeba by wracać na samą górę przy każdej zmianie zawodnika,
+   czyli po każdej akcji na boisku. Ujemne marginesy rozciągają tło na całą szerokość, żeby
+   przewijana treść nie prześwitywała spod paska. */
+.tagujesz-strefa{
+  /* top:-10px, a nie 0: przyklejenie liczy się od PADDING-BOXA przewijanej treści, a <main> ma
+     u góry 10 px odstępu. Przy top:0 zostawała nad paskiem dziesięciopikselowa szczelina, przez
+     którą przejeżdżała przewijana treść — widać było wjeżdżający pod spód róg przycisku.
+     Ujemne przyklejenie wsuwa tło w tę szczelinę, a własny padding oddaje zawartości jej miejsce. */
+  position:sticky; top:-10px; z-index:5;
+  margin:0 -14px; padding:10px 14px 0;
+  background:var(--bg);
+}
 .tagujesz{
   display:flex; gap:7px; overflow-x:auto; padding-bottom:6px; margin-bottom:8px;
   scrollbar-width:none;
 }
 .tagujesz::-webkit-scrollbar{display:none;}
+
+/* ---------- panel ocen wskazanego zawodnika ----------
+   Stoi ZARAZ POD NAZWISKAMI, nad kaflami. Poprzednio był pod nimi i tam po prostu nie było go
+   widać: dotknięcie nazwiska zmieniało coś siedemset pikseli niżej, poza kadrem, więc wyglądało
+   na to, że nie zrobiło nic. Złota ramka i wersaliki są tu po to, żeby zmiana była widoczna
+   kątem oka — scout patrzy na boisko, nie na telefon. */
+.ocena-blok{
+  border:1px solid var(--accent); border-radius:14px; overflow:hidden;
+  background:var(--bg); margin-bottom:10px;
+}
+.ocena-naglowek{
+  display:flex; align-items:center; gap:9px; width:100%;
+  padding:11px 13px 9px; text-align:left;
+  background:var(--accent-bg);
+}
+.on-tytul{
+  font-family:var(--display); font-weight:700; font-size:12px;
+  letter-spacing:.1em; text-transform:uppercase; color:var(--accent-fg); flex-shrink:0;
+}
+.on-kto{
+  flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  font-weight:600; color:var(--text-strong);
+}
+.on-strzalka{color:var(--accent-fg); font-size:11px; flex-shrink:0;}
+.on-skrot{
+  padding:0 13px 10px; background:var(--accent-bg);
+  font-size:12.5px; line-height:1.4; color:var(--text-2);
+}
+/* Treść panelu na własnym tle — złote tło pod trzynastoma skalami zrobiłoby z ekranu planszę
+   reklamową, a te skale trzeba czytać. */
+.ocena-tresc{padding:2px 12px 8px; background:var(--bg); border-top:1px solid var(--border);}
+.ocena-tresc .section:first-child{border-top:none; margin-top:8px; padding-top:0;}
 .tagujesz .chip{flex-shrink:0; padding:10px 13px;}
 .tagujesz .chip.wybrany{background:var(--accent); border-color:var(--accent); color:var(--accent-ink);}
 

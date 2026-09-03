@@ -3612,7 +3612,7 @@ function viewDashboard(){
                         : esc(o.match || 'Obserwacja meczu'));
         return `<div class="obs-item">
           <strong>${naglowek}</strong>${pl || o.playerId ? ` — <span class="avg-chip">${fmt1(avg)}</span>` : ''}
-          <div class="meta">${esc(o.date)}${pl || o.playerId ? ' &middot; ' + esc(o.match) : ''} &middot; scout: ${esc(o.scout)}</div>
+          <div class="meta">${esc(o.date)}${pl || o.playerId ? ' &middot; ' + esc(o.match) : ''}${ligaTag(o)} &middot; scout: ${esc(o.scout)}</div>
         </div>`;
       }).join('') : `<div class="empty">Brak obserwacji — dodaj pierwszą w zakładce „Plan Obserwacji”.</div>`}
     </div>
@@ -5754,7 +5754,7 @@ function obsMonthListHtml(){
           <button class="link-btn" data-action="delete-obs" data-id="${o.id}" style="font-size:11px;color:var(--clay-dark);">Usuń</button>
         </span>
       </div>
-      <div class="meta">${pl ? esc(o.match||'brak danych meczu') : '<em>obserwacja całego meczu</em>'}${o.location?' &middot; 📍 '+esc(o.location):''} &middot; scout: ${esc(o.scout)}</div>
+      <div class="meta">${pl ? esc(o.match||'brak danych meczu') : '<em>obserwacja całego meczu</em>'}${ligaTag(o)}${o.location?' &middot; 📍 '+esc(o.location):''} &middot; scout: ${esc(o.scout)}</div>
     </div>`;
   }).join('');
 }
@@ -5898,6 +5898,57 @@ function openObsPodgladModal(obsId){
   draw();
 }
 
+// ROZGRYWKI I KATEGORIA NA LIŚCIE OBSERWACJI.
+//
+// Panel mobilny zapisuje przy obserwacji nazwę rozgrywek („III liga, grupa 2", „A1") i to, czy
+// grali seniorzy, czy młodzież. Do bazy szło to od początku, ale komputer nie pokazywał tego
+// nigdzie — więc scout, który na trybunie odnotował, że ogląda A1, na komputerze widział mecz
+// nie do odróżnienia od spotkania seniorów. Ta sama ocena znaczy w obu wypadkach co innego.
+//
+// Rozpoznanie z nazwy jest awaryjne: obserwacje sprzed wprowadzenia tych pól nie mają zapisanej
+// kategorii, a nazwę rozgrywek często mają. Wzorce są te same, co w src/mobile/main.ts —
+// świadomie powtórzone, bo aplikacje nie dzielą jeszcze wspólnego modułu dziedzinowego.
+const MLODZIEZ_WZORCE_PC = [/\b[ABCD][12]\b/i, /\bU-?\d{1,2}\b/i, /juniorz?k?[aiy]?\b|juniorsk/i,
+  /młodzik|mlodzik|młodzicz|mlodzicz/i, /trampkarz|orlik|żak\b|zak\b/i, /\bCLJ\b/i, /młodzieżow|mlodziezow/i];
+const SENIORZY_WZORCE_PC = [/ekstraklasa|ekstraliga|betclic/i, /\b(I|II|III|IV|V)\s*liga\b/i,
+  /\b[1-5]\s*liga\b/i,
+  // Numer ligi zapisany SŁOWNIE — tak podaje go część terminarzy („Pierwsza liga").
+  /\b(pierwsza|druga|trzecia|czwarta|piąta|piata)\s+liga\b/i,
+  /klasa\s+[ABC]\b|\b[ABC]\s+klasa|okręgow|okregow/i, /puchar\s+polski/i];
+
+// NAZWY DRUŻYN TEŻ MÓWIĄ, KTO GRA.
+//
+// Rozpoznanie czytało wyłącznie nazwę rozgrywek — i przy „Arka Gdynia SA U17 – ŁKS Łódź S.A. U17"
+// w rozgrywkach „Pierwsza liga" wychodziły z tego seniorzy, mimo że U17 stoi przy OBU drużynach.
+// Rocznik przy nazwie klubu jest sygnałem równie dobrym jak nazwa rozgrywek, a często lepszym:
+// ligi młodzieżowe bywają nazywane tak samo jak seniorskie, bo są ligami tego samego szczebla.
+//
+// Drużyny sprawdzamy TYLKO pod kątem młodzieży: brak „U17" przy nazwie nie znaczy, że to seniorzy,
+// bo kluby seniorskie nie dopisują sobie nic. W drugą stronę ten sygnał nie działa.
+function kategoriaObserwacji(o){
+  if(o && o.kategoria) return o.kategoria;
+  const n = String((o && o.rozgrywki) || '').trim();
+  const m = String((o && o.match) || '').trim();
+  if(!n && !m) return '';
+  if(MLODZIEZ_WZORCE_PC.some(w=>w.test(n) || w.test(m))) return 'mlodziez';
+  if(SENIORZY_WZORCE_PC.some(w=>w.test(n))) return 'seniorzy';
+  return '';
+}
+
+// Znacznik na karcie. Kategoria barwą, bo to ona rozstrzyga, jak czytać ocenę; nazwa rozgrywek
+// obok, jako uszczegółowienie.
+function ligaTag(o){
+  const kat = kategoriaObserwacji(o);
+  const nazwa = (o && o.rozgrywki) || '';
+  if(!kat && !nazwa) return '';
+  const etykieta = kat === 'mlodziez' ? 'Młodzież' : kat === 'seniorzy' ? 'Seniorzy' : '';
+  // Nierozpoznana kategoria dostaje barwę NEUTRALNĄ, a nie seniorską — dotąd „nie wiem" wyglądało
+  // dokładnie tak samo jak „seniorzy", czyli aplikacja twierdziła coś, czego nie ustaliła.
+  const barwa = kat === 'mlodziez' ? 'var(--gold-dark, #8C6C21)' : kat === 'seniorzy' ? 'var(--green-dark, #2F6B41)' : 'var(--muted, #5B6560)';
+  const tekst = [etykieta, nazwa].filter(Boolean).join(' · ');
+  return ` &middot; <span style="color:${barwa};font-weight:600;">${esc(tekst)}</span>`;
+}
+
 function obsCalendarHtml(){
   const y = obsCalendarDate.getFullYear(), m = obsCalendarDate.getMonth();
   const firstOfMonth = new Date(y, m, 1);
@@ -5968,7 +6019,7 @@ function obsCalendarHtml(){
       ].filter(Boolean).join(' &middot; ');
       return `<div class="obs-item" style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
         <span>${pl ? `<strong>${esc(pl.firstName+' '+pl.lastName)}</strong> — ${esc(o.match||'brak danych meczu')}`
-          : `<strong>${esc(o.match || 'Obserwacja meczu')}</strong>`} <span class="meta">(${esc(o.scout)})</span>
+          : `<strong>${esc(o.match || 'Obserwacja meczu')}</strong>`} <span class="meta">${ligaTag(o)} (${esc(o.scout)})</span>
           ${szczegoly ? `<div class="meta" style="margin-top:2px;">${szczegoly}</div>` : ''}
           ${!czas && !gdzie ? `<div class="meta" style="margin-top:2px;">bez godziny i miejsca — uzupełnij przez ✎</div>` : ''}
         </span>
@@ -6416,6 +6467,18 @@ function viewReports(){
   <h2 class="view-title">Raporty ${editing? '<span style="font-size:14px;color:var(--gold-dark);font-family:Inter,sans-serif;">— edycja raportu</span>':''}</h2>
   <p class="view-sub">Raport taktyczny — opis techniki, taktyki i motoryki, oceny faz gry i stałych fragmentów w skali 1-6.</p>
   <div class="reports-layout">
+
+  <section class="reports-aside">
+    <h3 class="reports-aside-title">Zapisane raporty <span class="reports-count">${allReports.length}</span></h3>
+    <p class="view-sub" style="margin:0 0 8px;">Wg kolejności utworzenia. „✎" edytuj · „⭳" PDF · „✕" usuń.</p>
+    <div class="card reports-list">${listHtml}</div>
+  </section>
+
+  <section class="reports-nowy" id="rep-formularz">
+    <h3 class="reports-aside-title">${editing? 'Edytujesz raport' : 'Nowy raport'}</h3>
+    <p class="view-sub" style="margin:0 0 8px;">${editing
+      ? 'Zmiany nadpiszą raport zaznaczony na liście wyżej.'
+      : 'Wypełnij i zapisz — raport dopisze się na górze listy.'}</p>
   <div class="card reports-form-card" style="${editing?'border:1px solid var(--gold);':''}">
     <div class="field-wrap">
       <label class="field">Zawodnik</label>
@@ -6493,11 +6556,8 @@ function viewReports(){
     </div>
   </div>
 
-  <aside class="reports-aside">
-    <h3 class="reports-aside-title">Raporty <span class="reports-count">${allReports.length}</span></h3>
-    <p class="view-sub" style="margin:0 0 8px;">Wg kolejności utworzenia. „✎" edytuj · „⭳" PDF · „✕" usuń.</p>
-    <div class="card reports-list">${listHtml}</div>
-  </aside>
+  </section>
+
   </div>`;
 }
 
@@ -7367,6 +7427,59 @@ const kluczWykluczonych = (key) => key + '|||wykluczeni';
 // Liczy się to przy każdym wejściu na mapę, a nie w chwili zapisu z telefonu. Dzięki temu działa
 // także dla meczów obejrzanych WCZEŚNIEJ, bez powtarzania pracy — a jedna implementacja obsługuje
 // obie drogi zamiast dwóch, które musiałyby się zgadzać.
+// POZYCJA Z KARTOTEKI NA NUMER NA PLANSZY.
+//
+// Na planszy pozycje są ponumerowane 1–11 i numer znaczy to samo w każdym systemie (zmieniają się
+// tylko współrzędne). Kartoteka opisuje pozycję słowem — to jest przełożenie jednego na drugie.
+//
+// Potrzebne, bo wyróżnienie zawodnika na trybunie i postawienie go na planszy to dwie różne
+// czynności. Scout w trakcie meczu robi zwykle pierwszą: gwiazdka przy nazwisku zajmuje sekundę,
+// obsadzanie planszy — nie. Bez tego przełożenia taki zawodnik nie trafiał na mapę NIGDY, choć
+// jego pozycja jest znana z kartoteki.
+// Tablica OBIEKTÓW, nie par. Przy parach TypeScript widzi obie pozycje jako „wzorzec albo
+// liczba" i nie pozwala wywołać na nich niczego konkretnego; nazwane pola rozstrzygają to same.
+const POZYCJA_NA_NUMER = [
+  { wzor: /^bramkarz/i, numer: 1 },
+  { wzor: /wahadłowy prawy|wahadlowy prawy/i, numer: 2 },
+  { wzor: /wahadłowy lewy|wahadlowy lewy/i, numer: 3 },
+  { wzor: /obrońca środkowy lewy|obronca srodkowy lewy/i, numer: 5 },
+  { wzor: /obrońca środkowy|obronca srodkowy/i, numer: 4 },
+  { wzor: /obrońca prawy|obronca prawy|obrońca boczny|obronca boczny/i, numer: 2 },
+  { wzor: /obrońca lewy|obronca lewy/i, numer: 3 },
+  { wzor: /pomocnik defensywny/i, numer: 6 },
+  { wzor: /pomocnik ofensywny/i, numer: 10 },
+  { wzor: /pomocnik/i, numer: 8 },
+  { wzor: /skrzydłowy lewy|skrzydlowy lewy/i, numer: 11 },
+  { wzor: /skrzydłowy/i, numer: 7 },
+  { wzor: /napastnik/i, numer: 9 },
+];
+
+// ZNACZNIK ZESPOŁU W NAZWIE KLUBU.
+//
+// Klub to nie jedna drużyna: „Arka Gdynia" gra w I lidze, „Arka II Gdynia" w IV, „Arka Gdynia U17"
+// i „U19" w CLJ. Cztery kadry i cztery poziomy rozgrywek, a nazwy różnią się jednym członem.
+// Dopasowanie po zawieraniu tego członu nie widzi, więc bez tej funkcji zawodnik z młodzieżówki
+// i jego imiennik z pierwszego zespołu są nie do rozróżnienia. Odpowiednik funkcji o tej samej
+// nazwie w panelu mobilnym (src/mobile/main.ts) — wspólny moduł to dług, który tu spłacamy osobno.
+const ZNACZNIKI_ZESPOLU_PC = [
+  { wzor: /\bu\s*-?\s*(\d{1,2})\b/i, nazwa: (m)=> 'u' + m[1] },
+  { wzor: /\bjuniorz?y?\b|\bjun\b/i, nazwa: ()=> 'junior' },
+  { wzor: /\biii\b|\b3\b/, nazwa: ()=> 'iii' },
+  { wzor: /\bii\b|\b2\b|rezerw/i, nazwa: ()=> 'ii' },
+];
+function znacznikZespoluPc(nazwa){
+  const n = String(nazwa || '');
+  for(const z of ZNACZNIKI_ZESPOLU_PC){ const m = z.wzor.exec(n); if(m) return z.nazwa(m); }
+  return '';
+}
+
+function numerZPozycji(opis){
+  const t = String(opis||'').trim();
+  if(!t) return 0;
+  for(const p of POZYCJA_NA_NUMER) if(p.wzor.test(t)) return p.numer;
+  return 0;   // pozycja nieznana — lepiej nie stawiać nikogo, niż postawić byle gdzie
+}
+
 function wyroznieniZMeczow(liga, system){
   if(!system) return {};       // „Wszystkie systemy" — bez przypisań do konkretnych pozycji
   const wg = {};               // numer pozycji -> [playerId]
@@ -7379,7 +7492,6 @@ function wyroznieniZMeczow(liga, system){
       const dane = sklad[strona];
       if(!dane || dane.formacja !== system) return;
       (dane.zawodnicy||[]).forEach(z=>{
-        if(!z.pozycja) return;
         const oceniony = z.ocena && Object.values(z.ocena).some(n=>Number(n)>0);
         if(!oceniony && !z.wyrozniony && !z.notatka) return;
         // Dopasowanie po ZBIORZE słów — protokoły podają raz „Jan Kowalski", raz „Kowalski Jan".
@@ -7392,12 +7504,26 @@ function wyroznieniZMeczow(liga, system){
             return n && (n===k || (n.length>=5 && k.length>=5 && (n.includes(k)||k.includes(n))));
           });
           if(wKlubie.length === 1) kand = wKlubie;
+          else if(wKlubie.length > 1){
+            // TEN SAM KLUB, RÓŻNE ZESPOŁY. „Arka Gdynia" (I liga), „Arka II Gdynia" (IV liga)
+            // i „Arka Gdynia U17" (CLJ) pasują do siebie przez zawieranie, więc imiennik z
+            // pierwszej drużyny i z młodzieżówki wyglądają tu identycznie. Rozstrzyga znacznik
+            // zespołu wyciągnięty z nazwy — bez niego zostawaliśmy z dwoma kandydatami i niczym.
+            const zn = znacznikZespoluPc(dane.nazwa);
+            const wZespole = wKlubie.filter(p=> znacznikZespoluPc(clubName(p.clubId)) === zn);
+            if(wZespole.length === 1) kand = wZespole;
+          }
         }
         // Niejednoznaczność zostawiamy bez rozstrzygnięcia — lepiej nie pokazać nikogo,
         // niż postawić na mapie niewłaściwego zawodnika.
         if(kand.length !== 1) return;
         if(clubLeague(kand[0].clubId) !== liga) return;
-        (wg[z.pozycja] = wg[z.pozycja] || []).push(kand[0].id);
+        // Pozycja WSKAZANA na planszy w telefonie jest ważniejsza niż ta z kartoteki: scout
+        // widział, gdzie ten zawodnik naprawdę grał w tym meczu, a kartoteka opisuje jego pozycję
+        // ogólnie i bywa nieaktualna. Kartoteka wchodzi dopiero wtedy, gdy planszy nie obsadzono.
+        const numer = z.pozycja || numerZPozycji(kand[0].position);
+        if(!numer) return;
+        (wg[numer] = wg[numer] || []).push(kand[0].id);
       });
     });
   });
@@ -9375,7 +9501,10 @@ function attachHandlers(){
     reportObsTypeValue = r.obsType || '';
     currentView = 'reports'; viewingPlayerId = null;
     render();
-    const card = document.querySelector('.main .card'); if(card) card.scrollIntoView({behavior:'smooth', block:'start'});
+    // Formularz stoi teraz POD listą, więc bez zjechania do niego kliknięcie „✎" wyglądałoby,
+    // jakby nic się nie stało — lista zostawałaby na ekranie bez zmian.
+    const cel = document.getElementById('rep-formularz') || document.querySelector('.main .card');
+    if(cel) cel.scrollIntoView({behavior:'smooth', block:'start'});
   });
   main.querySelectorAll('[data-action="cancel-edit-report"]').forEach(b=>b.onclick=()=>{
     editingReportId = null; reportPerspektywaValue = ''; reportStatusValue = ''; reportObsTypeValue = ''; render();

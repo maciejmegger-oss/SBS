@@ -462,14 +462,16 @@ tr.player-row.prow-okazja td:first-child{box-shadow:inset 4px 0 0 var(--gold);}
 @media(max-width:700px){ .report-metric-grid{grid-template-columns:repeat(2,1fr);} }
 
 /* Zakładka Raporty — formularz po lewej, boczna lista „Raporty" po prawej. */
-.reports-layout{display:grid;grid-template-columns:1fr 1fr;gap:26px;align-items:start;}
+/* Lista raportów stoi NAD formularzem i obie części zajmują całą szerokość: najpierw widać,
+   co już jest, a dopiero pod spodem pisze się nowy. */
+.reports-layout{display:flex;flex-direction:column;gap:26px;}
 .reports-form-card{max-width:none;}
 /* Bez ujemnego marginesu: podciąganie panelu w górę wsuwało go pod nagłówek strony i przy dłuższym
    podtytule napisy nachodziły na siebie. Obie kolumny zaczynają się teraz na tej samej wysokości. */
-.reports-aside{position:sticky;top:12px;}
+.reports-aside{position:static;}
 .reports-aside-title{margin:0 0 2px;color:var(--heading);font-family:'Barlow Condensed',sans-serif;font-size:24px;display:flex;align-items:center;gap:8px;}
 .reports-count{background:var(--pitch);color:var(--gold);font-size:12px;font-weight:800;font-family:Inter,sans-serif;border-radius:20px;padding:1px 9px;}
-.reports-list{max-height:70vh;overflow:auto;padding:6px 10px;}
+.reports-list{max-height:min(44vh,420px);overflow:auto;padding:6px 10px;}
 .report-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:11px;align-items:center;padding:11px 4px;border-bottom:1px solid var(--chalk-dim);}
 .report-row:last-child{border-bottom:none;}
 .report-row.editing{background:var(--card-warm);border-radius:8px;padding-left:6px;padding-right:6px;}
@@ -483,7 +485,7 @@ tr.player-row.prow-okazja td:first-child{box-shadow:inset 4px 0 0 var(--gold);}
 .report-row-actions button{padding:3px 7px;font-size:11px;line-height:1;}
 .danger-btn{background:var(--card);border:1px solid var(--border-strong);color:var(--clay-dark);border-radius:7px;cursor:pointer;}
 .danger-btn:hover{background:var(--clay-dark);color:var(--card);border-color:var(--clay-dark);}
-@media(max-width:1000px){ .reports-layout{grid-template-columns:1fr;} .reports-aside{position:static;margin-top:0;} .reports-list{max-height:none;} }
+@media(max-width:1000px){ .reports-list{max-height:min(50vh,380px);} }
 
 /* Zakładka Talent — formularze i lista w RÓWNYCH połowach strony (w odróżnieniu od Raportów,
    gdzie boczna lista jest węższa) i większe, czytelniejsze wiersze listy talentów. */
