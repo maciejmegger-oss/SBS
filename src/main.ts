@@ -47,6 +47,9 @@ let rankingFormationFilter = ''; // '' = wszystkie systemy; inaczej jedna z wart
 let positionMapAssignments = {}; // { "league|||number": [playerId, ...] up to 6 }
 // Radar mlodziezy: kogo juz przejrzalismy. { playerId: 'YYYY-MM-DD' } — data pierwszego przejrzenia.
 let radarPrzejrzane = {};
+// System gry zespołu: { idKlubu: '1-4-3-3' }. Zawodnik bez własnego systemu w profilu jest
+// liczony w układzie swojego klubu — inaczej wypadał z mapy pozycji, choć wiadomo, jak gra.
+let systemyKlubow = {};
 let editingClubId = null;
 let clubBrowse = {top:"", group:""};
 let dashboardLeagueSelected = null;
@@ -1828,7 +1831,7 @@ async function loadAllInner(){
     }
   };
 
-  const [p, c, o, rp, tl, ct, mt, ag, agt, pmaRow, radarRow, s,
+  const [p, c, o, rp, tl, ct, mt, ag, agt, pmaRow, radarRow, systemyRow, s,
     seedFlag, enrichFlag, enrichAviaFlag, enrichGornikFlag, enrichAviaV2Flag, recoMigrationFlag, statusMigrationFlag] = await Promise.all([
     czytaj('scouting:players'),
     czytaj('scouting:clubs'),
@@ -1841,6 +1844,10 @@ async function loadAllInner(){
     czytaj('scouting:agents'),
     czytaj('scouting:position_map_assignments'),
     czytaj('scouting:radar_przejrzane'),
+    // System gry zespołu. Tabela sbs_clubs nie ma na to kolumny ani pola jsonb, w którym dałoby
+    // się je schować — a dokładanie kolumny wymagałoby migracji bazy. Idzie więc tą samą drogą
+    // co mapa pozycji: jeden wiersz JSON w sbs_kv, { idKlubu: '1-4-3-3' }.
+    czytaj('scouting:systemy_klubow'),
     // Ustawienia to jedyny wiersz, który zapis NADPISUJE w całości (logotypy lig, lista scoutów).
     // Nieudany odczyt musi być więc widoczny, inaczej pierwszy zapis ustawień skasowałby logotypy.
     czytaj('scouting:settings'),
@@ -1869,6 +1876,7 @@ async function loadAllInner(){
   try{ DB.agents = agt ? JSON.parse(agt.value) : []; }catch(e){ DB.agents = []; }
   try{ positionMapAssignments = pmaRow ? JSON.parse(pmaRow.value) : {}; }catch(e){ positionMapAssignments = {}; }
   try{ radarPrzejrzane = radarRow ? JSON.parse(radarRow.value) : {}; }catch(e){ radarPrzejrzane = {}; }
+  try{ systemyKlubow = systemyRow ? JSON.parse(systemyRow.value) : {}; }catch(e){ systemyKlubow = {}; }
   try{
     const loaded = s ? JSON.parse(s.value) : {};
     DB.settings = Object.assign(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), loaded);
@@ -2389,6 +2397,12 @@ async function refreshStatsInBackground(){
 async function saveSettings(){ return robustStorageSet('scouting:settings', JSON.stringify(DB.settings)); }
 async function savePositionMapAssignments(){ return robustStorageSet('scouting:position_map_assignments', JSON.stringify(positionMapAssignments)); }
 async function saveRadarPrzejrzane(){ return robustStorageSet('scouting:radar_przejrzane', JSON.stringify(radarPrzejrzane)); }
+async function saveSystemyKlubow(){ return robustStorageSet('scouting:systemy_klubow', JSON.stringify(systemyKlubow)); }
+// System, w którym liczymy zawodnika: własny wpis z profilu, a gdy go nie ma — układ jego klubu.
+function systemZawodnika(p){
+  if(!p) return '';
+  return String(p.formation || '') || String(systemyKlubow[p.clubId] || '');
+}
 
 // JAWNE, punktowe usunięcie jednego rekordu z bazy. Zapisy (save*) NIGDY nie kasują — kasujemy tylko
 // tutaj, gdy użytkownik świadomie kliknie "usuń". Ponawiamy do 3 razy; przy porażce pokazujemy baner
@@ -2921,7 +2935,7 @@ const NAV_ITEMS = [
 const SAVE_FN_BY_KEY = {
   'scouting:players': ()=>savePlayers(), 'scouting:clubs': ()=>saveClubs(), 'scouting:observations': ()=>saveObservations(),
   'scouting:reports': ()=>saveReports(), 'scouting:talents': ()=>saveTalents(), 'scouting:contacts': ()=>saveContacts(),
-  'scouting:settings': ()=>saveSettings(), 'scouting:position_map_assignments': ()=>savePositionMapAssignments(), 'scouting:radar_przejrzane': ()=>saveRadarPrzejrzane(),
+  'scouting:settings': ()=>saveSettings(), 'scouting:position_map_assignments': ()=>savePositionMapAssignments(), 'scouting:radar_przejrzane': ()=>saveRadarPrzejrzane(), 'scouting:systemy_klubow': ()=>saveSystemyKlubow(),
   'scouting:agencies': ()=>saveAgencies(), 'scouting:agents': ()=>saveAgents(),
   'scouting:agency_logos': ()=>saveAgencyLogos(),
 };
@@ -3895,7 +3909,7 @@ function viewPlayerDetail(id){
         <tr><td style="color:var(--ink-soft);">Narodowość</td><td>${p.nationality? nationalityFlag(p.nationality)+' '+esc(p.nationality) : "—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">Noga</td><td>${esc(p.foot||"—")}</td></tr>
         <tr><td style="color:var(--ink-soft);">Wzrost</td><td>${p.height? p.height+" cm":"—"}</td></tr>
-        <tr><td style="color:var(--ink-soft);">System gry</td><td>${p.formation? `<strong>${esc(p.formation)}</strong>`:"—"}</td></tr>
+        <tr><td style="color:var(--ink-soft);">System gry</td><td>${systemZawodnika(p)? `<strong>${esc(systemZawodnika(p))}</strong>${p.formation?'':' <span style="color:var(--ink-soft);font-size:12px;">(z klubu)</span>'}`:"—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">Pozycja wg NMG</td><td>${opisPozycjiNmg(p) ? `<strong>${esc(opisPozycjiNmg(p))}</strong>` : "—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">Mecze / minuty / gole / asysty</td><td>${(p.matches!=null||p.minutes!=null||p.goals!=null||p.assists!=null) ? `${p.matches!=null?p.matches:'—'} mecze &middot; ${p.minutes!=null?p.minutes:'—'} min &middot; ${p.goals!=null?p.goals:'—'} goli &middot; ${p.assists!=null?p.assists:'—'} asyst` : "—"}${p.statsUpdatedAt?`<div class="note" style="font-size:11px;margin-top:2px;">Mecze i bramki z ${esc(p.statsSource||'90minut.pl')}${p.statsSeason?' (sezon '+esc(p.statsSeason)+')':''}, odświeżone ${esc(String(p.statsUpdatedAt).slice(0,10))}. Minuty i asysty wpisujesz ręcznie.</div>`:''}</td></tr>
         <tr><td style="color:var(--ink-soft);">Kadra wojewódzka</td><td>${p.kadraWojewodzka? '<strong style="color:var(--good);">Tak</strong>' : 'Nie'}</td></tr>
@@ -7265,7 +7279,7 @@ function buildAutoPositionCandidates(league, formation, number){
     // zapisany w profilu. Wcześniej ci bez wpisanego systemu wchodzili do każdego układu naraz,
     // przez co ten sam zawodnik widniał we wszystkich systemach i mapa przestawała cokolwiek
     // rozróżniać. Kto nie ma systemu w profilu, jest widoczny pod „Wszystkie systemy".
-    .filter(p => clubLeague(p.clubId)===league && (!formation || p.formation===formation)
+    .filter(p => clubLeague(p.clubId)===league && (!formation || systemZawodnika(p)===formation)
       && kwalifikujeSie(p)
       && (numerZawodnika(p) ? numerZawodnika(p)===number : p.position===posDef.posName))
     .map(p => ({p, a: playerAvg(p.id)}))
@@ -7282,6 +7296,29 @@ function buildAutoPositionCandidates(league, formation, number){
   const zPozycjiOgolnej = candidates.filter(x=>!numerZawodnika(x.p));
   const offset = posDef.rankOffset || 0;
   return [...wskazani, ...zPozycjiOgolnej.slice(offset, offset+6)].slice(0, 6).map(x=>x.p.id);
+}
+// Przeniesienie zawodnika myszą z jednego pola boiska na drugie.
+//
+// Nie dopisujemy go do listy wykluczonych pola źródłowego, choć usuwanie ręczne tak robi. Tam
+// wykluczenie jest konieczne, bo automat wstawiłby zawodnika z powrotem. Tu wraca on na mapę
+// pod innym numerem, a reguła „jeden zawodnik — jedno pole" (gdzieJuzStoi) sama pilnuje, żeby
+// automat nie dołożył go do starego pola. Wykluczenie zamknęłoby mu drogę powrotną na stałe —
+// a przeciąganie ma być odwracalne jednym ruchem.
+async function przeniesNaInnaPozycje(league, formation, zNumeru, naNumer, playerId){
+  if(!playerId || zNumeru === naNumer) return { ok:false, powod:'to-samo-pole' };
+  const kluczZ = positionMapKey(league, formation, zNumeru);
+  const kluczNa = positionMapKey(league, formation, naNumer);
+  const zrodlo = (positionMapAssignments[kluczZ] || []).slice();
+  const cel = (positionMapAssignments[kluczNa] || []).slice();
+  if(cel.includes(playerId)) return { ok:false, powod:'juz-tam' };
+  if(cel.length >= 6) return { ok:false, powod:'komplet' };
+  const i = zrodlo.indexOf(playerId);
+  if(i >= 0) zrodlo.splice(i, 1);
+  cel.push(playerId);
+  positionMapAssignments[kluczZ] = zrodlo;
+  positionMapAssignments[kluczNa] = cel;
+  await savePositionMapAssignments();
+  return { ok:true };
 }
 async function reorderPositionMapPlayer(league, formation, number, playerId, targetIndex){
   const key = positionMapKey(league, formation, number);
@@ -7405,7 +7442,7 @@ function viewRankingNumbersMode(){
           if(zMeczu.includes(id)) return true;
           if(wykluczeni.includes(id)) return false;
           const pl = DB.players.find(p=>p.id===id);
-          return !pl || pl.formation === rankingFormationFilter;
+          return !pl || systemZawodnika(pl) === rankingFormationFilter;
         });
         if(przefiltrowane.length !== cur.length){
           positionMapAssignments[key] = przefiltrowane;
@@ -7430,7 +7467,7 @@ function viewRankingNumbersMode(){
   // Ilu zawodników wypada z widoku TYLKO dlatego, że nie mają wpisanego systemu gry. Bez tej
   // informacji znikaliby po cichu i wyglądałoby to na zgubione dane.
   const bezSystemu = rankingFormationFilter
-    ? DB.players.filter(p => clubLeague(p.clubId)===rankingLeague && !p.formation
+    ? DB.players.filter(p => clubLeague(p.clubId)===rankingLeague && !systemZawodnika(p)
         && (p.status==='Do transferu' || p.status==='Na Testy' || !!p.monitored)
         && POSITION_NUMBERS.some(pd => pd.posName === p.position)).length
     : 0;
@@ -7447,7 +7484,7 @@ function viewRankingNumbersMode(){
       if(!pl) return '';
       // Kolor wg statusu: „Do transferu" = złoto; „Na Testy" i pozostałe = bez koloru (neutralnie).
       const statusCls = pl.status==='Do transferu' ? ' pmr-transfer' : '';
-      return `<span class="pos-marker-row${statusCls}" title="${esc(pl.status||'')}">${crestImg(clubCrest(pl.clubId),'xs',clubName(pl.clubId))}<span class="pmr-name">${esc(pl.lastName || pl.firstName || '—')}</span>${pl.birthYear?`<span class="pmr-year">${esc(pl.birthYear)}</span>`:''}</span>`;
+      return `<span class="pos-marker-row${statusCls}" draggable="true" data-id="${esc(pl.id)}" data-zrodlo="${posDef.number}" title="${esc(pl.status||'')} — przeciągnij na inną pozycję">${crestImg(clubCrest(pl.clubId),'xs',clubName(pl.clubId))}<span class="pmr-name">${esc(pl.lastName || pl.firstName || '—')}</span>${pl.birthYear?`<span class="pmr-year">${esc(pl.birthYear)}</span>`:''}</span>`;
     }).join('');
     return `
     <div class="pos-marker" style="left:${coord.x}%;top:${coord.y}%;" data-action="position-slot-click" data-number="${posDef.number}" title="${esc(posDef.label)} — kliknij, aby zarządzać (do 6 zawodników)">
@@ -7479,7 +7516,7 @@ function viewRankingNumbersMode(){
     </div>
   </div>
   </div>
-  <p class="note" style="margin-top:10px;">Kliknij dowolną pozycję na boisku, aby dodać, usunąć lub przeciągnięciem zmienić kolejność zawodników (do 6 na pozycję, dwa pierwsze miejsca = priorytetowi).
+  <p class="note" style="margin-top:10px;"><strong>Złap nazwisko myszą i przeciągnij na inne pole</strong>, żeby zmienić zawodnikowi pozycję — pole docelowe podświetli się na złoto. Kliknij pozycję, aby dodać, usunąć lub zmienić kolejność (do 6 na pozycję, dwa pierwsze miejsca = priorytetowi).
   ${rankingFormationFilter? ` Układ pól odzwierciedla kształt systemu ${esc(rankingFormationFilter)}.` : ''}
   ${!anyRealCandidatesFound? ' Mapa jest pusta, bo w tej lidze nikt nie jest ani w Monitoringu, ani ze statusem „Do transferu" / „Na Testy" — to oni wypełniają mapę. Dodaj kogoś do Monitoringu albo nadaj status w profilu zawodnika.' : ''}
   ${bezSystemu? ` <strong>Poza tym systemem:</strong> ${bezSystemu} zawodnik(ów) tej ligi ma status kwalifikujący, ale w profilu nie ma wpisanego systemu gry — zobaczysz ich pod „Wszystkie systemy" albo po uzupełnieniu systemu w profilu.` : ''}</p>`;
@@ -8268,6 +8305,14 @@ function openClubModal(id){
       <div class="field-wrap"><label class="field">Sezon</label><input id="cm-season" value="${c?esc(c.season||''):''}" placeholder="np. 2025/2026"></div>
       <div class="field-wrap"><label class="field">Miasto</label><input id="cm-city" value="${c?esc(c.city||''):''}"></div>
     </div>
+    <div class="field-wrap">
+      <label class="field">System gry zespołu</label>
+      <select id="cm-formation">
+        <option value="">— nie określono —</option>
+        ${FORMATIONS.map(f=>`<option ${c&&systemyKlubow[c.id]===f?'selected':''}>${esc(f)}</option>`).join('')}
+      </select>
+      <p class="note" style="margin-top:4px;">Zawodnicy tego klubu, którzy nie mają własnego systemu w profilu, będą liczeni w tym układzie — na mapie pozycji i w rankingu. Wpis w profilu zawodnika ma pierwszeństwo.</p>
+    </div>
     <div class="grid grid-2">
       <div class="field-wrap">
         <label class="field">Herb klubu — wgraj plik (PNG / JPG / PDF)</label>
@@ -8599,6 +8644,44 @@ function attachHandlers(){
   }
   main.querySelectorAll('[data-action="position-slot-click"]').forEach(b=>b.onclick=()=>{
     openPositionSlotModal(rankingLeague, rankingFormationFilter, Number(b.dataset.number));
+  });
+  // PRZECIĄGANIE ZAWODNIKA MIĘDZY POLAMI BOISKA.
+  //
+  // Nazwisko jest wewnątrz pola, które ma własny onclick otwierający okno pozycji. Bez zdjęcia
+  // tego kliknięcia po upuszczeniu okno otwierałoby się przy każdym przeciągnięciu — dlatego
+  // pilnujemy znacznika `przeciaganieTrwa`.
+  let przeciaganieTrwa = false;
+  main.querySelectorAll('.pos-marker-row[draggable="true"]').forEach(row=>{
+    row.addEventListener('dragstart', (e)=>{
+      przeciaganieTrwa = true;
+      row.classList.add('pmr-w-locie');
+      // Dane wędrują w dataTransfer, a nie w zmiennej, żeby upuszczenie poza mapą po prostu nic nie robiło.
+      e.dataTransfer.setData('text/plain', JSON.stringify({ id: row.dataset.id, zNumeru: Number(row.dataset.zrodlo) }));
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    row.addEventListener('dragend', ()=>{
+      row.classList.remove('pmr-w-locie');
+      setTimeout(()=>{ przeciaganieTrwa = false; }, 0);
+    });
+  });
+  main.querySelectorAll('.pos-marker').forEach(pole=>{
+    const naNumer = Number(pole.dataset.number);
+    pole.addEventListener('dragover', (e)=>{ e.preventDefault(); e.dataTransfer.dropEffect = 'move'; pole.classList.add('pos-marker-cel'); });
+    pole.addEventListener('dragleave', ()=>pole.classList.remove('pos-marker-cel'));
+    pole.addEventListener('drop', async(e)=>{
+      e.preventDefault(); e.stopPropagation();
+      pole.classList.remove('pos-marker-cel');
+      let dane; try{ dane = JSON.parse(e.dataTransfer.getData('text/plain') || '{}'); }catch(err){ return; }
+      if(!dane.id) return;
+      const wynik = await przeniesNaInnaPozycje(rankingLeague, rankingFormationFilter, dane.zNumeru, naNumer, dane.id);
+      if(!wynik.ok){
+        if(wynik.powod === 'komplet') alert('Na tej pozycji jest już sześciu zawodników. Zrób miejsce, otwierając pole i usuwając kogoś.');
+        else if(wynik.powod === 'juz-tam') alert('Ten zawodnik już stoi na tej pozycji.');
+        return;
+      }
+      render();
+    });
+    pole.addEventListener('click', (e)=>{ if(przeciaganieTrwa){ e.preventDefault(); e.stopPropagation(); } }, true);
   });
   main.querySelectorAll('[data-action="delete-player"]').forEach(b=>b.onclick=async()=>{
     if(confirm('Usunąć tego zawodnika i jego obserwacje?')){
@@ -16486,7 +16569,7 @@ async function generatePlayerPDF(playerId){
     <div class="meta-item"><div class="lbl">Rocznik</div><div class="val">${rocznikHtml(p)}</div></div>
     <div class="meta-item"><div class="lbl">Wzrost</div><div class="val">${p.height?p.height+" cm":"—"}</div></div>
     <div class="meta-item"><div class="lbl">Noga</div><div class="val">${esc(p.foot||"—")}</div></div>
-    <div class="meta-item"><div class="lbl">System gry</div><div class="val">${esc(p.formation||"—")}</div></div>
+    <div class="meta-item"><div class="lbl">System gry</div><div class="val">${esc(systemZawodnika(p)||"—")}${systemZawodnika(p)&&!p.formation?' <span style="font-size:11px;color:var(--ink-soft);">(z klubu)</span>':''}</div></div>
     <div class="meta-item"><div class="lbl">Pozycja wg NMG</div><div class="val">${esc(opisPozycjiNmg(p)||"—")}</div></div>
     <div class="meta-item"><div class="lbl">Status</div><div class="val">${esc(p.status||"—")}</div></div>
     <div class="meta-item"><div class="lbl">Kontrakt</div><div class="val">${p.hasContract? ('Tak'+(p.contractUntil?' — do '+esc(p.contractUntil):'')) : 'Nie'}</div></div>
@@ -17275,6 +17358,11 @@ function wireLastModal(){
       DB.clubs.push(data);
     }
     await saveClubs();
+    // System gry idzie osobnym wierszem w sbs_kv — sbs_clubs nie ma na niego kolumny.
+    const systemKlubu = document.getElementById('cm-formation').value;
+    if(systemKlubu) systemyKlubow[savedClubId] = systemKlubu;
+    else delete systemyKlubow[savedClubId];
+    await saveSystemyKlubow();
     if(isUploadedImage){
       DB.clubCrests[savedClubId] = crestValue;
       await saveClubCrests();

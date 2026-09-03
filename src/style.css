@@ -315,6 +315,14 @@ tr:hover td{background:var(--card-soft);}
 .pos-marker-row.pmr-transfer{background:linear-gradient(180deg,#E8C766 0%,#C69B3C 100%);box-shadow:inset 0 0 0 1px rgba(255,255,255,.35);}
 .pos-marker-row.pmr-transfer .pmr-name{color:#2A1F05;font-weight:800;}
 .pos-marker-row.pmr-transfer .pmr-year{color:#5A4410;}
+/* Przeciąganie zawodnika między pozycjami. Kursor „łapki" na nazwisku mówi, że wiersz da się
+   złapać — bez tego przeciąganie jest funkcją, o której nikt się nie dowie. Pole docelowe
+   podświetla się na złoto dopiero, gdy coś nad nim wisi. */
+.pos-marker-row[draggable="true"]{cursor:grab;}
+.pos-marker-row[draggable="true"]:active{cursor:grabbing;}
+.pos-marker-row.pmr-w-locie{opacity:.4;}
+.pos-marker.pos-marker-cel .pos-marker-tag{border-color:#E8C766;box-shadow:0 0 0 2px rgba(232,199,102,.55),0 6px 18px rgba(0,0,0,.55);}
+.pos-marker.pos-marker-cel .pos-marker-dot{box-shadow:0 0 0 3px rgba(232,199,102,.6);}
 /* Młodzieżowiec bez menedżera — żółte podświetlenie wiersza na liście zawodników.
    Bije regułę tr:hover, bo inaczej najechanie myszą kasowałoby oznaczenie akurat w chwili,
    gdy użytkownik na ten wiersz patrzy. Złoty pasek przy krawędzi działa dla osób, które
