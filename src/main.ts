@@ -4488,8 +4488,9 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
               <strong>${esc(s.nazwa)}</strong> — ${esc(s.blad)}
               ${doWyboru ? `<div style="margin-top:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
                 <span class="note" style="margin:0;">To ten klub u nas:</span>
-                <select data-przypisz="${esc(s.nazwa)}" style="font-size:12px;max-width:260px;">
+                <select data-przypisz="${esc(s.nazwa)}" data-poziom="${esc(s.poziom||'')}" style="font-size:12px;max-width:260px;">
                   <option value="">— wybierz —</option>
+                  ${s.mozeZalozyc ? `<option value="__nowy__">➕ Załóż klub „${esc(s.nazwa)}"${s.poziom?` w: ${esc(s.poziom)}`:''}</option>` : ''}
                   ${DB.clubs.slice().sort((a,b)=>a.name.localeCompare(b.name,'pl'))
                     .map(c=>`<option value="${esc(c.id)}">${esc(c.name)}${c.league?` · ${esc(c.league)}`:''}</option>`).join('')}
                 </select>
@@ -4606,14 +4607,38 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
     });
     overlay.querySelectorAll('[data-x="zapisz"]').forEach(b=>b.onclick=()=>{ void zapisz(); });
     // Przypisanie nazwy z ŁNP do klubu w kartotece — zapamiętane raz, działa od następnego razu.
-    overlay.querySelectorAll('[data-przypisz]').forEach(sel=>sel.onchange = ()=>{
+    overlay.querySelectorAll('[data-przypisz]').forEach(sel=>sel.onchange = async()=>{
       const nazwaLnp = sel.getAttribute('data-przypisz');
-      const klubId = sel.value;
+      let klubId = sel.value;
       if(!klubId) return;
+      // ZAŁOŻENIE KLUBU NA MIEJSCU. Nazwa idzie z protokołu znak w znak — to ona musi zgadzać się
+      // z ŁNP, bo po niej rozpoznajemy kolejne protokoły. Sezon i region bierzemy od klubu, który
+      // już w tej lidze stoi, żeby nowy nie odstawał od reszty grupy.
+      if(klubId === '__nowy__'){
+        const poziom = sel.getAttribute('data-poziom') || '';
+        if(!poziom){
+          alert('Nie wiem, do której ligi wpisać ten klub. Otwórz import z poziomu grupy rozgrywek albo załóż klub w zakładce Kluby.');
+          sel.value = ''; return;
+        }
+        const sasiad = DB.clubs.find(c=>String(c.league||'') === poziom);
+        const nowy: any = { id: uid('K'), name: nazwaLnp, league: poziom,
+          region: sasiad ? (sasiad.region||'') : '', season: sasiad ? (sasiad.season||'') : '',
+          city: '', crestUrl: '', juniorCategories: '', profileLnp: '', profileTm: '' };
+        DB.clubs.push(nowy);
+        if(Array.isArray(DB.settings.leagues) && !DB.settings.leagues.includes(poziom)) DB.settings.leagues.push(poziom);
+        const ok = await saveClubs();
+        if(ok === false){
+          DB.clubs = DB.clubs.filter(c=>c.id !== nowy.id);
+          alert('Nie udało się zapisać klubu — sprawdź baner u góry strony. Nic nie zmieniłem.');
+          sel.value = ''; return;
+        }
+        klubId = nowy.id;
+      }
       const klub = DB.clubs.find(c=>c.id === klubId);
       DB.settings.aliasyKlubow = { ...(DB.settings.aliasyKlubow||{}), [importNorm(nazwaLnp)]: klubId };
       void saveSettings();
-      komunikat = `Zapamiętałem: „${nazwaLnp}" na Łączy nas piłka to ${klub ? klub.name : 'wybrany klub'}. Rozpoznaję protokoły jeszcze raz.`;
+      komunikat = `Zapamiętałem: „${nazwaLnp}" na Łączy nas piłka to ${klub ? klub.name : 'wybrany klub'}`
+        + `${klub && klub.league ? ` (${klub.league})` : ''}. Rozpoznaję protokoły jeszcze raz.`;
       rozpoznaj();
     });
     const chk = overlay.querySelector('#pm-dopisuj');
@@ -12084,7 +12109,11 @@ function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
       const bliskie = [...new Set(DB.clubs
         .filter(c=>rozbijNazweKlubu(c.name).rdzen.some(x=>rdzen.includes(x)))
         .map(c=>c.name))].slice(0,3);
-      strony.push({nazwa, dane, blad: bliskie.length
+      // Klub, którego naprawdę nie ma, można założyć na miejscu — z nazwą DOKŁADNIE taką, jak
+      // w protokole. Odsyłanie do zakładki Kluby kończyło się przepisywaniem nazwy z pamięci,
+      // a wtedy pisownia rozjeżdżała się z ŁNP i następny protokół znowu jej nie rozpoznawał.
+      strony.push({nazwa, dane, mozeZalozyc: true, poziom: podpowiedzGrupa || poziomRozliczenia || '',
+        blad: bliskie.length
         ? `nie ma takiego klubu w bazie — najbliżej: ${bliskie.join(', ')}`
         : 'nie ma takiego klubu w bazie'});
       return;
