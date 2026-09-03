@@ -7828,12 +7828,25 @@ function viewRadarMlodziezy(){
   nowi.sort((a,b)=> (b.tylkoKadra ? 1 : 0) - (a.tylkoKadra ? 1 : 0)
     || kolejnosc(a.poziom) - kolejnosc(b.poziom) || b.minuty - a.minuty);
 
+  // NAJBARDZIEJ OGRANI RZUCAJĄ SIĘ W OCZY.
+  //
+  // Minuta młodzieżowca to decyzja trenera, więc liczba minut jest tu najtwardszym sygnałem, jaki
+  // mamy. Próg 270 minut to trzy pełne mecze — poniżej trudno mówić o ogranym zawodniku, a ten sam
+  // próg rozstrzyga o wejściu na mapę pozycji, więc podświetlenie i mapa mówią to samo.
+  // Dodatkowo trzy najwyższe wyniki dostają strzałkę: przy 61 nazwiskach samo złoto nie wystarcza,
+  // żeby od razu było widać czołówkę.
+  const PROG_OGRANEGO = 270;
+  const czolowka = new Set(nowi.filter(x=>x.minuty > 0).slice()
+    .sort((a,b)=> b.minuty - a.minuty).slice(0, 3).map(x=>x.p.id));
+
   const wiersze = nowi.map(x=>{
     const p = x.p;
     const klub = DB.clubs.find(c=>c.id === p.clubId);
-    return `<tr data-action="view-player" data-id="${p.id}" style="cursor:pointer;">
+    const ograny = x.minuty >= PROG_OGRANEGO;
+    const wCzolowce = czolowka.has(p.id);
+    return `<tr data-action="view-player" data-id="${p.id}" style="cursor:pointer;" class="${ograny?'radar-ograny':''}"${ograny?` title="${x.minuty} minut — ponad trzy pełne mecze"`:''}>
       <td><span class="badge new">${esc(x.poziom)}</span></td>
-      <td><strong>${esc((p.firstName||'') + ' ' + (p.lastName||''))}</strong></td>
+      <td><strong>${esc((p.firstName||'') + ' ' + (p.lastName||''))}</strong>${wCzolowce?' <span class="radar-strzalka" title="najwięcej minut na tej liście">▲</span>':''}</td>
       <td>${p.birthYear ? esc(String(p.birthYear)) : '<span class="meta">—</span>'}</td>
       <td>${esc(klub ? klub.name : '—')}</td>
       <td>${esc(p.position || '—')}</td>
@@ -7844,6 +7857,7 @@ function viewRadarMlodziezy(){
       <td style="text-align:right;">${p.matches != null ? p.matches : '—'}</td>
     </tr>`;
   }).join('');
+  const ogranych = nowi.filter(x=>x.minuty >= PROG_OGRANEGO).length;
 
   return `${naglowek}
   <div class="toolbar" style="margin-bottom:10px;">
@@ -7858,7 +7872,8 @@ function viewRadarMlodziezy(){
     </table>
   </div>
   <p class="note" style="margin-top:8px;">Kliknij wiersz, aby otworzyć profil. „Oznacz jako przejrzanych"
-    czyści listę — zawodnicy zostają w bazie, znikają tylko z radaru.</p>`;
+    czyści listę — zawodnicy zostają w bazie, znikają tylko z radaru.
+    ${ogranych ? `<strong>Złotem</strong> zaznaczonych ${ogranych} zawodnik(ów) z co najmniej ${PROG_OGRANEGO} minutami — to trzy pełne mecze, ten sam próg, który wpuszcza na mapę pozycji. Znak ▲ mają trzej z największą liczbą minut.` : ''}</p>`;
 }
 
 const MONITORING_STATUSES = ['Do Obserwacji','Na Testy','Do transferu','Z polecenia'];
