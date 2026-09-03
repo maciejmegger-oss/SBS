@@ -17069,11 +17069,46 @@ async function generatePlayerPDF(playerId){
 
   ${latestReport?`<div class="section" style="padding-top:0;">
     <div class="section-title">Raport taktyczny${latestReport.date?' — '+esc(latestReport.date):''}${latestReport.perspektywa?' &middot; perspektywa '+esc(latestReport.perspektywa):''}</div>
-    ${latestReport.description?`<div class="notes-box" style="margin-bottom:10px;">${esc(latestReport.description)}</div>`:''}
+    <div class="meta-item" style="margin-bottom:8px;"><div class="lbl">Sporządził / rodzaj obserwacji</div>
+      <div class="val">${esc(latestReport.scout||'—')}${latestReport.obsType?` &middot; ${esc(latestReport.obsType)}`:''}</div></div>
+    ${(()=>{
+      // OPISY TECHNIKI, TAKTYKI, MOTORYKI, MENTALNOŚCI I POTENCJAŁU TO TREŚĆ PRACY SKAUTA.
+      //
+      // Do PDF-a szedł wcześniej wyłącznie „opis raportu" i oceny liczbowe — czyli dokument
+      // pokazywał wynik, a nie rozumowanie. Pięć pól, które skaut wypełnia najdłużej, nie
+      // trafiało nigdzie: ani do PDF-a, ani na profil. Czytający dostawał cyfry bez uzasadnienia.
+      const bloki = [
+        ['Technika', latestReport.technika], ['Taktyka', latestReport.taktyka],
+        ['Motoryka', latestReport.motoryka], ['Mentalność', latestReport.mentalnoscOpis],
+        ['Potencjał', latestReport.potencjalOpis],
+      ].filter(([, t])=>String(t||'').trim());
+      if(!bloki.length) return '';
+      return `<div style="margin-bottom:10px;">${bloki.map(([etykieta, tresc])=>
+        `<div style="margin-bottom:7px;"><div class="lbl" style="margin-bottom:2px;">${esc(etykieta)}</div>
+         <div class="notes-box" style="margin:0;">${esc(String(tresc).trim())}</div></div>`).join('')}</div>`;
+    })()}
+    ${latestReport.description?`<div class="lbl" style="margin-bottom:2px;">Opis raportu</div><div class="notes-box" style="margin-bottom:10px;">${esc(latestReport.description)}</div>`:''}
     ${(latestReport.phases&&Object.keys(latestReport.phases).length)?`<div class="metric-section-label">Fazy gry (1-6)</div><div class="attr5-grid metric4">${REPORT_PHASES.map(f=>`<div class="attr5-col"><div class="attr5-head"><span>${esc(f.label)}</span></div><div class="metric-num-body">${latestReport.phases[f.key]!=null?latestReport.phases[f.key]:'—'}</div></div>`).join('')}</div>`:''}
     ${(latestReport.setPieces&&Object.keys(latestReport.setPieces).length)?`<div class="metric-section-label">Stałe fragmenty (1-6)</div><div class="attr5-grid metric4">${REPORT_SET_PIECES.map(f=>`<div class="attr5-col"><div class="attr5-head"><span>${esc(f.label)}</span></div><div class="metric-num-body">${latestReport.setPieces[f.key]!=null?latestReport.setPieces[f.key]:'—'}</div></div>`).join('')}</div>`:''}
     ${latestReport.setPieceComment?`<div class="notes-box" style="margin-top:10px;">${esc(latestReport.setPieceComment)}</div>`:''}
   </div>`:''}
+
+  ${(()=>{
+    // POZOSTAŁE RAPORTY. Sekcja wyżej pokazuje najnowszy w całości; wcześniejsze wypisujemy
+    // skrótem, bo to one pokazują, czy ocena zawodnika rosła, czy stała w miejscu — a właśnie
+    // po to komitet czyta ten dokument. Bez nich PDF twierdził, że praca to jeden raport.
+    const wszystkie = playerReports(p.id).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+    const starsze = wszystkie.filter(r=>!latestReport || r.id !== latestReport.id);
+    if(!starsze.length) return '';
+    return `<div class="section" style="padding-top:0;">
+      <div class="section-title">Wcześniejsze raporty (${starsze.length})</div>
+      ${starsze.map(r=>`<div style="padding:5px 0;border-bottom:1px solid var(--border,#e3decd);">
+        <strong>${esc(r.date||'bez daty')}</strong>
+        <span style="color:#5B6560;">${esc(r.scout||'—')}${r.perspektywa?` &middot; perspektywa ${esc(r.perspektywa)}`:''}${r.obsType?` &middot; ${esc(r.obsType)}`:''}</span>
+        ${r.description?`<div style="margin-top:2px;">${esc(r.description)}</div>`:''}
+      </div>`).join('')}
+    </div>`;
+  })()}
 
   ${p.notes?`<div class="section" style="padding-top:0;">
     <div class="section-title">Notatki scouta</div>
@@ -17111,7 +17146,13 @@ async function generatePlayerPDF(playerId){
           <td>${esc(o.recommendation||'—')}</td></tr>`;
       }).join('')}
     </table>`;
-    })():`<p class="empty-note">Brak zarejestrowanych obserwacji.</p>`}
+    })():`<p class="empty-note">Brak wpisów w Planie Obserwacji.${
+      // „Brak obserwacji" pod raportem czytało się jak „nikt tego zawodnika nie oglądał" — a wyżej
+      // w tym samym dokumencie stoi raport z meczu. To dwie różne rzeczy: tu są zaplanowane wyjazdy
+      // z Planu Obserwacji, wyżej praca skautów. Bez tego zdania dokument sam sobie przeczył.
+      playerReports(p.id).length
+        ? ` Ocena opiera się na ${playerReports(p.id).length} ${playerReports(p.id).length===1?'raporcie skautingowym':'raportach skautingowych'} powyżej.`
+        : ''}</p>`}
   </div>
 
   ${(a && a.metryki && a.metryki.length >= 3) ? `<div class="section" style="padding-top:0;">
