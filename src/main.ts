@@ -5436,13 +5436,26 @@ function obsMonthListHtml(){
 const MLODZIEZ_WZORCE_PC = [/\b[ABCD][12]\b/i, /\bU-?\d{1,2}\b/i, /juniorz?k?[aiy]?\b|juniorsk/i,
   /młodzik|mlodzik|młodzicz|mlodzicz/i, /trampkarz|orlik|żak\b|zak\b/i, /\bCLJ\b/i, /młodzieżow|mlodziezow/i];
 const SENIORZY_WZORCE_PC = [/ekstraklasa|ekstraliga|betclic/i, /\b(I|II|III|IV|V)\s*liga\b/i,
-  /\b[1-5]\s*liga\b/i, /klasa\s+[ABC]\b|\b[ABC]\s+klasa|okręgow|okregow/i, /puchar\s+polski/i];
+  /\b[1-5]\s*liga\b/i,
+  // Numer ligi zapisany SŁOWNIE — tak podaje go część terminarzy („Pierwsza liga").
+  /\b(pierwsza|druga|trzecia|czwarta|piąta|piata)\s+liga\b/i,
+  /klasa\s+[ABC]\b|\b[ABC]\s+klasa|okręgow|okregow/i, /puchar\s+polski/i];
 
+// NAZWY DRUŻYN TEŻ MÓWIĄ, KTO GRA.
+//
+// Rozpoznanie czytało wyłącznie nazwę rozgrywek — i przy „Arka Gdynia SA U17 – ŁKS Łódź S.A. U17"
+// w rozgrywkach „Pierwsza liga" wychodziły z tego seniorzy, mimo że U17 stoi przy OBU drużynach.
+// Rocznik przy nazwie klubu jest sygnałem równie dobrym jak nazwa rozgrywek, a często lepszym:
+// ligi młodzieżowe bywają nazywane tak samo jak seniorskie, bo są ligami tego samego szczebla.
+//
+// Drużyny sprawdzamy TYLKO pod kątem młodzieży: brak „U17" przy nazwie nie znaczy, że to seniorzy,
+// bo kluby seniorskie nie dopisują sobie nic. W drugą stronę ten sygnał nie działa.
 function kategoriaObserwacji(o){
   if(o && o.kategoria) return o.kategoria;
   const n = String((o && o.rozgrywki) || '').trim();
-  if(!n) return '';
-  if(MLODZIEZ_WZORCE_PC.some(w=>w.test(n))) return 'mlodziez';
+  const m = String((o && o.match) || '').trim();
+  if(!n && !m) return '';
+  if(MLODZIEZ_WZORCE_PC.some(w=>w.test(n) || w.test(m))) return 'mlodziez';
   if(SENIORZY_WZORCE_PC.some(w=>w.test(n))) return 'seniorzy';
   return '';
 }
@@ -5454,7 +5467,9 @@ function ligaTag(o){
   const nazwa = (o && o.rozgrywki) || '';
   if(!kat && !nazwa) return '';
   const etykieta = kat === 'mlodziez' ? 'Młodzież' : kat === 'seniorzy' ? 'Seniorzy' : '';
-  const barwa = kat === 'mlodziez' ? 'var(--gold-dark, #8C6C21)' : 'var(--green-dark, #2F6B41)';
+  // Nierozpoznana kategoria dostaje barwę NEUTRALNĄ, a nie seniorską — dotąd „nie wiem" wyglądało
+  // dokładnie tak samo jak „seniorzy", czyli aplikacja twierdziła coś, czego nie ustaliła.
+  const barwa = kat === 'mlodziez' ? 'var(--gold-dark, #8C6C21)' : kat === 'seniorzy' ? 'var(--green-dark, #2F6B41)' : 'var(--muted, #5B6560)';
   const tekst = [etykieta, nazwa].filter(Boolean).join(' · ');
   return ` &middot; <span style="color:${barwa};font-weight:600;">${esc(tekst)}</span>`;
 }
