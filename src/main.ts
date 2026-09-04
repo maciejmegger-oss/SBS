@@ -76,6 +76,20 @@ function topLevelOf(league){
   if(league==="Klasa okręgowa") return "Klasa okręgowa";
   return "Kategorie juniorskie";
 }
+// CZY KLUB GRA W TYCH ROZGRYWKACH — z tolerancją na poziom zamiast konkretnej grupy.
+//
+// Kluby mają w kartotece pełną nazwę grupy („IV liga (dolnośląska)", „III liga, gr. III"),
+// a przeglądać można też po samym poziomie („IV liga"). Porównanie znak w znak dawało wtedy
+// ZERO trafień: okno protokołów pokazywało „(1)" zamiast osiemnastu klubów i licznik rozliczonych
+// meczów stał na zerze mimo trzydziestu dziewięciu właśnie zapisanych. Gorzej — po tej samej
+// regule działała podpowiedź grupy przy dopasowaniu klubu, więc „Pogoń" przestawała być
+// rozstrzygana przez rozgrywki, w których akurat pracujesz.
+function wTychRozgrywkach(liga, wskazanie){
+  const l = String(liga || '');
+  const w = String(wskazanie || '');
+  if(!w) return false;
+  return l === w || l.startsWith(w + ',') || l.startsWith(w + ' (') || l.startsWith(w + ' gr.');
+}
 function groupsForTop(top){
   const settings = DB.settings as any;
   if(top==="III liga") return settings.leagues.filter((l:any)=>l.startsWith("III liga, gr."));
@@ -4599,7 +4613,7 @@ let zapisProtokolowTrwa = false;
 function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
   const klub = DB.clubs.find(c=>c.id===clubId);
   const grupa = klub ? klub.league : (clubBrowse.group || clubBrowse.top || '');
-  const klubyGrupy = DB.clubs.filter(c=>c.league === grupa);
+  const klubyGrupy = DB.clubs.filter(c=>wTychRozgrywkach(c.league, grupa));
   const naglowekOkna = klub ? klub.name : (grupa || 'wybrana grupa');
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -4652,7 +4666,21 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
         const rozliczona = (s)=> !s.blad && s.wiersze
           && s.wiersze.filter(w=>w.zagral).length > 0
           && s.wiersze.filter(w=>w.zagral).every(w=>w.juzPoliczony);
+        // JEDEN BRAKUJĄCY KLUB — JEDNO PYTANIE.
+        //
+        // Klub gra w kolejce raz, ale w zebranej paczce występuje tyle razy, ile meczów go dotyczy
+        // (własny plus rewanże rywali). Bez tego „IGNERHOME MKS POLONIA ŚWIDNICA — nie ma takiego
+        // klubu" powtarzało się trzy razy z trzema osobnymi listami wyboru, a odpowiedź na pierwszą
+        // i tak rozstrzygała wszystkie, bo zapamiętujemy ją pod nazwą z ŁNP.
         const nowe = strony.filter(s=>!rozliczona(s));
+        const widzianeBledy = new Set();
+        const doPokazania = nowe.filter(s=>{
+          if(!s.blad) return true;
+          const k = importNorm(s.nazwa || '');
+          if(widzianeBledy.has(k)) return false;
+          widzianeBledy.add(k);
+          return true;
+        });
         const stare = strony.filter(rozliczona);
         return `<div style="max-height:280px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px;font-size:12.5px;">
         ${stare.length ? `<p class="note" style="margin:0 0 6px;padding:4px 6px;background:var(--chalk-dim);border-radius:6px;">
@@ -4660,7 +4688,7 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
         </p>` : ''}
         ${!nowe.length ? `<p class="note" style="margin:0;">Nic nowego w tej wklejce — wszystkie te mecze są już w systemie.</p>` : ''}
         ${nowe.length>2 ? `<p class="note" style="margin:0 0 6px;">Do zapisania: <strong>${Math.ceil(nowe.length/2)}</strong> ${Math.ceil(nowe.length/2)===1?'mecz':'meczów'}</p>` : ''}
-        ${nowe.map(s=>{
+        ${doPokazania.map(s=>{
           if(s.blad){
             // NAZWY NA ŁNP I NA 90MINUT BYWAJĄ ZUPEŁNIE INNE. „Pogoń Barlinek" u jednych to
             // „CRS Barlinek" u drugich, a że wspólne jest samo miasto, żadne dopasowanie po
@@ -12488,7 +12516,10 @@ function dopasujKlubDoNazwy(nazwa, podpowiedzGrupa, poziom){
   // pasuje do Barlinka, Lęborka i Szczecina naraz — bez tego dorobek trafiałby do klubu
   // z drugiego końca Polski albo nie trafiał nigdzie.
   if(podpowiedzGrupa){
-    const wlasciwaGrupa = pasujace.filter(c=>c.league === podpowiedzGrupa);
+    // Wskazaniem bywa sam poziom („IV liga"), gdy przeglądasz kluby bez wybranej grupy. Porównanie
+    // znak w znak dawało wtedy zero trafień i ta podpowiedź po cichu przestawała działać —
+    // a to ona rozstrzyga „Pogoń" między Barlinkiem, Lęborkiem i Szczecinem.
+    const wlasciwaGrupa = pasujace.filter(c=>wTychRozgrywkach(c.league, podpowiedzGrupa));
     if(wlasciwaGrupa.length === 1) return wlasciwaGrupa[0];
   }
 
@@ -12715,10 +12746,29 @@ function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
       }
       // Powiedz, do czego nazwa była najbliżej — inaczej „nie ma takiego klubu" nie mówi,
       // czy klubu brakuje w bazie, czy tylko nazwa jest zapisana inaczej.
+      // MIASTO WAŻY WIĘCEJ NIŻ NAZWA WŁASNA.
+      //
+      // „IGNERHOME MKS POLONIA ŚWIDNICA" dostawała jako najbliższe Polonię Chodzież, Polonię Nysę
+      // i Polonię Lidzbark Warmiński — trzy kluby z trzech innych końców Polski, bo wspólne było
+      // samo słowo „Polonia". Podpowiedź ma pomagać wskazać właściwy klub, a taka wręcz zachęcała
+      // do pomyłki. Miasto stoi w nazwie na końcu i to ono rozstrzyga, o który klub chodzi;
+      // nazwa własna („Polonia", „Pogoń", „Sparta") powtarza się w całym kraju.
       const rdzen = rozbijNazweKlubu(nazwa).rdzen;
+      const miastoZ = (czlony)=> czlony.length ? czlony[czlony.length-1] : '';
+      const naszeMiasto = miastoZ(rdzen);
       const bliskie = [...new Set(DB.clubs
-        .filter(c=>rozbijNazweKlubu(c.name).rdzen.some(x=>rdzen.includes(x)))
-        .map(c=>c.name))].slice(0,3);
+        .map(c=>{
+          const jego = rozbijNazweKlubu(c.name).rdzen;
+          const wspolne = jego.filter(x=>rdzen.includes(x)).length;
+          if(!wspolne) return null;
+          // Zgodne miasto liczy się jak pięć wspólnych członów — inaczej trzy „Polonie" z obcych
+          // miast wypychały z listy klub z właściwego.
+          const toMiasto = naszeMiasto && jego.includes(naszeMiasto);
+          return { nazwa: c.name, waga: wspolne + (toMiasto ? 5 : 0) };
+        })
+        .filter(Boolean)
+        .sort((a,b)=> b.waga - a.waga)
+        .map(x=>x.nazwa))].slice(0,3);
       // Klub, którego naprawdę nie ma, można założyć na miejscu — z nazwą DOKŁADNIE taką, jak
       // w protokole. Odsyłanie do zakładki Kluby kończyło się przepisywaniem nazwy z pamięci,
       // a wtedy pisownia rozjeżdżała się z ŁNP i następny protokół znowu jej nie rozpoznawał.
