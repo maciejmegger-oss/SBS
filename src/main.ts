@@ -4379,8 +4379,24 @@ function viewClubs(){
         yearGroups.map(g=>pill(g, clubBrowse.group===g, 'browse-group', {val:g})).join(' ') + `</div>` : '');
   }
 
+  // ILE KOLEJEK MAMY WGRANYCH — klub po klubie.
+  //
+  // Bez tego nie da się zobaczyć, gdzie statystyki się zatrzymały. Kartoteka wygląda tak samo przy
+  // klubie rozliczonym do szóstej kolejki i przy takim, który stanął na trzeciej — a to właśnie
+  // różnica między aktualnym obrazem ligi a nieaktualnym. Odniesieniem jest najwyższa liczba
+  // meczów w grupie: skoro któryś klub ma sześć, to kolejka jest szósta.
+  const dorobekKlubow = new Map(list.map(c=>[c.id, meczeKlubu(c.id)]));
+  const najwiecejMeczow = Math.max(0, ...[...dorobekKlubow.values()].map(x=>x.meczow));
+
   const rows = list.map(c=>{
     const count = DB.players.filter(p=>p.clubId===c.id).length;
+    const d = dorobekKlubow.get(c.id) || { meczow: 0, punkty: null };
+    const braki = najwiecejMeczow - d.meczow;
+    const komorkaMeczow = najwiecejMeczow === 0
+      ? '<span class="meta">—</span>'
+      : `<span title="${d.meczow} z ${najwiecejMeczow} kolejek rozliczonych w tej grupie${braki>0?` — brakuje ${braki}`:''}"
+              style="${braki>0?'color:var(--clay-dark);font-weight:700;':'font-weight:600;'}">${d.meczow}/${najwiecejMeczow}</span>`
+        + (braki>0 ? ' <span title="Statystyki tego klubu są nieaktualne">⚠️</span>' : '');
     return `<tr style="cursor:pointer;" data-action="view-club" data-id="${c.id}">
       <td onclick="event.stopPropagation()">
         <label for="quick-crest-${c.id}" style="cursor:pointer;display:inline-flex;" title="Kliknij, aby wgrać/zmienić herb">${crestImg(clubCrest(c.id), null, c.name)}</label>
@@ -4390,6 +4406,8 @@ function viewClubs(){
       <td>${esc(c.region)}</td>
       <td>${esc(c.league)}${c.season?` <span class="note">(${esc(c.season)})</span>`:''}</td>
       <td>${esc(c.city||"—")}</td>
+      <td style="text-align:center;">${komorkaMeczow}</td>
+      <td style="text-align:center;">${d.punkty==null?'<span class="meta">—</span>':`<strong>${d.punkty}</strong>`}</td>
       <td>${count}</td>
       <td onclick="event.stopPropagation()"><button class="link-btn" data-action="edit-club" data-id="${c.id}">Edytuj</button>
           <button class="link-btn" data-action="delete-club" data-id="${c.id}" style="color:var(--clay-dark);">Usuń</button></td>
@@ -4398,7 +4416,14 @@ function viewClubs(){
 
   return `
   <h2 class="view-title">Kluby</h2>
-  <p class="view-sub">Przeglądaj wg ligi i grupy — jak w strukturze PZPN / mPZPN. Kliknij klub, aby zobaczyć skład na obecny sezon.</p>
+  <p class="view-sub">Przeglądaj wg ligi i grupy — jak w strukturze PZPN / mPZPN. Kliknij klub, aby zobaczyć skład na obecny sezon.
+  ${najwiecejMeczow > 0 ? (()=>{
+    const wTyle = list.filter(c=>(dorobekKlubow.get(c.id)||{meczow:0}).meczow < najwiecejMeczow);
+    return `<br><strong>Rozliczonych kolejek w tej grupie: ${najwiecejMeczow}.</strong> `
+      + (wTyle.length
+        ? `<span style="color:var(--clay-dark);">${wTyle.length} ${wTyle.length===1?'klub ma mniej meczów':'klubów ma mniej meczów'} — tam statystyki są nieaktualne.</span>`
+        : 'Wszystkie kluby mają komplet.');
+  })() : ''}</p>
   <div class="filters" style="margin-bottom:0;">${topRow}</div>
   ${groupRow}
   <div class="toolbar" style="margin-top:14px;">
@@ -4446,8 +4471,8 @@ function viewClubs(){
   </div>
   <div class="card" style="padding:0;overflow:auto;">
     <table>
-      <thead><tr><th>Herb</th><th>Klub</th><th>ZPN / Region</th><th>Liga (aktualna)</th><th>Miasto</th><th>Zawodnicy w bazie</th><th></th></tr></thead>
-      <tbody>${rows || `<tr><td colspan="7"><div class="empty">Brak klubów w tym widoku.</div></td></tr>`}</tbody>
+      <thead><tr><th>Herb</th><th>Klub</th><th>ZPN / Region</th><th>Liga (aktualna)</th><th>Miasto</th><th style="text-align:center;" title="Ile kolejek mamy rozliczonych — na tle klubu z największą liczbą meczów w tej grupie">Mecze</th><th style="text-align:center;" title="Punkty policzone z wyników zapisanych przy meczach. Kreska, gdy protokoły nie niosły wyniku.">Pkt</th><th>Zawodnicy w bazie</th><th></th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="9"><div class="empty">Brak klubów w tym widoku.</div></td></tr>`}</tbody>
     </table>
   </div>`;
 }
@@ -8168,6 +8193,38 @@ async function generateAnalysisPDF(playerId){
 
   const nazwa = ((p.firstName||'')+'_'+(p.lastName||'')).trim().replace(/\s+/g,'_').replace(/[^\w\-]/g,'') || 'zawodnik';
   await htmlNaPdf(html, 'analiza_' + nazwa + '.pdf');
+}
+
+// ILE MECZÓW KLUBU MAMY W BAZIE — i ile z tego punktów.
+//
+// Klub nie ma własnej listy meczów; jedyny ślad spotkania to wpisy w przebiegu jego zawodników.
+// Jeden mecz zostawia ich kilkunastu, więc liczymy SPOTKANIA, nie wpisy: parę (rywal, u siebie),
+// tak samo jak import protokołów, bo w sezonie każda para gra ze sobą dokładnie dwa razy.
+//
+// PUNKTY LICZYMY TYLKO Z ZAPISANEGO WYNIKU. Protokoły z ŁNP często go nie niosą — wtedy oddajemy
+// null i widok pokazuje kreskę. Zgadywanie punktów z samej liczby meczów dałoby tabelę, która
+// wygląda wiarygodnie i kłamie.
+function meczeKlubu(clubId){
+  const spotkania = new Map();     // "rywal|D" -> wynik (albo '')
+  DB.players.forEach(p=>{
+    if(p.clubId !== clubId) return;
+    (p.przebieg || []).forEach(x=>{
+      const k = importNorm(String(x.rywal||'')) + '|' + (x.dom ? 'D' : 'W');
+      if(!k.startsWith('|') && (!spotkania.has(k) || !spotkania.get(k))) spotkania.set(k, String(x.wynik||''));
+    });
+  });
+  let punkty = null;
+  spotkania.forEach((wynik, k)=>{
+    // Wynik zapisujemy z perspektywy meczu („2:1"), więc u gościa strony trzeba odwrócić.
+    const m = String(wynik).match(/(\d+)\s*[:\-]\s*(\d+)/);
+    if(!m) return;
+    const uSiebie = k.endsWith('|D');
+    const nasze = Number(uSiebie ? m[1] : m[2]);
+    const ich = Number(uSiebie ? m[2] : m[1]);
+    if(!Number.isFinite(nasze) || !Number.isFinite(ich)) return;
+    punkty = (punkty || 0) + (nasze > ich ? 3 : nasze === ich ? 1 : 0);
+  });
+  return { meczow: spotkania.size, punkty };
 }
 
 // WYSZUKIWANIE DUPLIKATÓW.
