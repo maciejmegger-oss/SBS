@@ -84,5 +84,46 @@ sprawdz('Polonia z obcego miasta nie wypycha właściwej', dla.indexOf('Polonia 
   sprawdz('to Polonie z innych miast', d.every(n => /Polonia/.test(n)), d.join(', '));
 }
 
+// 4. Dopasowanie klubu: miasto rozstrzyga, gdy nazwa własna powtarza się w kraju,
+//    a sponsor i skrót klubowy się zmieniły.
+{
+  console.log('\n4. Dopasowanie klubu z protokołu');
+  const dodatkowe = [
+    wytnij('tenSamCzlon', /const tenSamCzlon = \(x, y\)=>\{[\s\S]*?\n\};/),
+    wytnij('odciskKlubu', /const odciskKlubu = \(nazwa\)=>\{[\s\S]*?\};/),
+    wytnij('wTychRozgrywkach', /function wTychRozgrywkach\(liga, wskazanie\)\{[\s\S]*?\n\}/),
+    wytnij('dopasujKlubDoNazwy', /function dopasujKlubDoNazwy\(nazwa, podpowiedzGrupa, poziom\)\{[\s\S]*?\n\}/),
+  ];
+  const zbuduj = (kluby)=> new Function(`
+    const DB = { clubs: ${JSON.stringify(kluby)}, settings: { aliasyKlubow: {} } };
+    const wielkoscKartoteki = ()=> 0;
+    ${czesci.join('\n')}
+    ${dodatkowe.join('\n')}
+    return dopasujKlubDoNazwy;`)();
+
+  const kluby = [
+    { id: 'c1', name: 'Polonia Chodzież', league: 'IV liga (wielkopolska)' },
+    { id: 'c2', name: 'Polonia Nysa', league: 'III liga, gr. III' },
+    { id: 'c3', name: 'Polonia Świdnica', league: 'IV liga (dolnośląska)' },
+    { id: 'c4', name: 'Górnik Polkowice', league: 'III liga, gr. III' },
+  ];
+  const dopasuj = zbuduj(kluby);
+
+  const a = dopasuj('IGNERHOME MKS POLONIA ŚWIDNICA', '', '');
+  sprawdz('sponsor i skrót nie przeszkadzają — trafia w Świdnicę', a && a.id === 'c3', a ? a.name : 'brak');
+
+  const b = dopasuj('KGHM GÓRNIK POLKOWICE', '', '');
+  sprawdz('inny sponsor, ten sam klub', b && b.id === 'c4', b ? b.name : 'brak');
+
+  const c = dopasuj('LKS POLONIA CHODZIEŻ', '', '');
+  sprawdz('zmieniony skrót klubowy nie myli miast', c && c.id === 'c1', c ? c.name : 'brak');
+
+  const d = dopasuj('POLONIA', '', '');
+  sprawdz('sama nazwa własna bez miasta — odmawiamy zamiast zgadywać', !d, d ? d.name : 'brak');
+
+  const e = dopasuj('POLONIA ŚWIDNICA', '', 'IV liga');
+  sprawdz('poziom wskazany szerokim wskazaniem też działa', e && e.id === 'c3', e ? e.name : 'brak');
+}
+
 console.log(bledy ? `\n${bledy} BŁĘDÓW` : '\nWszystko przeszło.');
 process.exit(bledy ? 1 : 0);

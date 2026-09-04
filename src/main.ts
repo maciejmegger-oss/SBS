@@ -12523,6 +12523,29 @@ function dopasujKlubDoNazwy(nazwa, podpowiedzGrupa, poziom){
     if(wlasciwaGrupa.length === 1) return wlasciwaGrupa[0];
   }
 
+  // MIASTO ROZSTRZYGA, GDY RESZTA NAZWY SIĘ ZMIENIŁA.
+  //
+  // Sponsor dochodzi i znika co sezon („IGNERHOME MKS Polonia Świdnica"), skróty klubowe się
+  // wymieniają (KS → MKS → LKS), a nazwa własna powtarza się w całym kraju: Polonii, Pogoni
+  // i Spart są dziesiątki. Jedynym członem, który zostaje ten sam przez lata, jest miasto —
+  // i to ono ma rozstrzygać, kiedy kandydatów jest kilku.
+  //
+  // Stoi PRZED regułą „największa kartoteka", bo tamta wybiera klub po tym, ile ma zawodników.
+  // Przy dwóch klubach o tej samej nazwie własnej z różnych miast to rzut monetą — a rzut monetą
+  // wysyła dorobek na drugi koniec Polski.
+  const miastoZNazwy = (czlony)=> czlony.length ? czlony[czlony.length-1] : '';
+  const naszeMiasto = miastoZNazwy(a.rdzen);
+  if(naszeMiasto && naszeMiasto.length >= 4){
+    const zTegoMiasta = pasujace.filter(c=>{
+      const jego = rozbijNazweKlubu(c.name).rdzen;
+      return jego.some(x=>tenSamCzlon(x, naszeMiasto));
+    });
+    if(zTegoMiasta.length === 1) return zTegoMiasta[0];
+    // Kilka kartotek z tego samego miasta to zwykle duplikaty jednego klubu — dalszą decyzję
+    // podejmujemy już TYLKO wśród nich, zamiast wracać do kandydatów z obcych miast.
+    if(zTegoMiasta.length > 1) pasujace = zTegoMiasta;
+  }
+
   // TEN SAM KLUB WPISANY KILKA RAZY to nie jest niejednoznaczność, tylko duplikat w bazie —
   // a takich jest sporo, dopóki nie przejdzie „Scal duplikaty". Odmowa dopisania czegokolwiek
   // zostawiała wtedy cały klub bez statystyk. Wybieramy kartotekę, w której jest już najwięcej
