@@ -3831,6 +3831,18 @@ function viewPlayers(){
     <button class="secondary" data-action="back-rocznik">← Wróć do roczników</button>
     <button class="danger" data-action="delete-rocznik" data-year="${viewingRocznikGroup.match(/\d{4}/)[0]}" title="Usuń wszystkich zawodników z tego rocznika">🗑️ Usuń cały rocznik</button>
   </div>` : ''}
+  ${(()=>{
+    // BANER O DUPLIKATACH. Podwójne kartoteki nie rzucają się w oczy: każda z osobna wygląda
+    // poprawnie, a widać je dopiero w zestawieniu, gdzie stoją obok siebie — w Komitecie albo
+    // w Monitoringu. Do tego czasu raporty idą do jednej karty, a statystyki do drugiej.
+    const pary = znajdzDuplikaty();
+    if(!pary.length) return '';
+    return `<div class="card" style="border-left:3px solid var(--gold);margin-bottom:12px;">
+      <strong>Prawdopodobne duplikaty: ${pary.length}</strong>
+      <div class="note" style="margin-top:2px;">Ten sam zawodnik w dwóch kartotekach — raporty i statystyki rozchodzą się między nie.</div>
+      <button class="secondary" data-action="pokaz-duplikaty" style="margin-top:8px;">⇄ Pokaż i scal</button>
+    </div>`;
+  })()}
   <div class="toolbar">
     <div class="filters">
       <select id="f-region"><option value="">Wszystkie regiony</option>${DB.settings.regions.map(r=>`<option ${playerFilters.region===r?'selected':''}>${esc(r)}</option>`).join('')}</select>
@@ -8158,6 +8170,84 @@ async function generateAnalysisPDF(playerId){
   await htmlNaPdf(html, 'analiza_' + nazwa + '.pdf');
 }
 
+// WYSZUKIWANIE DUPLIKATÓW.
+//
+// Kryterium jest CELOWO wąskie: ten sam klub i to samo nazwisko po odrzuceniu znaków
+// diakrytycznych. Szersze dopasowanie (podobne nazwiska, różne kluby) dawałoby listę, na której
+// trzeba by weryfikować każdą parę z osobna — a scalenia nie da się cofnąć, więc fałszywy trop
+// kosztuje więcej niż przeoczony. Zawodnicy o tym samym nazwisku w jednym klubie zdarzają się
+// (bracia), dlatego to PROPOZYCJA do przejrzenia, nie automat.
+//
+// Karta „bogatsza" (więcej raportów, meczów, wypełnionych pól) idzie jako główna — to ona ma
+// zostać, a druga ma się w niej rozpłynąć.
+function znajdzDuplikaty(){
+  const klucz = (p)=> String(p.clubId||'') + '|' + importNorm(String(p.lastName||''));
+  const wgKlucza = new Map();
+  DB.players.forEach(p=>{
+    if(!p.clubId || !String(p.lastName||'').trim()) return;
+    const k = klucz(p);
+    if(!wgKlucza.has(k)) wgKlucza.set(k, []);
+    wgKlucza.get(k).push(p);
+  });
+  const bogactwo = (p)=> DB.reports.filter(r=>r.playerId===p.id).length * 10
+    + DB.observations.filter(o=>o.playerId===p.id).length * 5
+    + (p.przebieg||[]).length
+    + ['birthYear','position','height','foot','nationality','tmLink','photo'].filter(f=>String(p[f]||'').trim()).length;
+  const pary = [];
+  wgKlucza.forEach(grupa=>{
+    if(grupa.length < 2) return;
+    const wgBogactwa = grupa.slice().sort((a,b)=> bogactwo(b) - bogactwo(a));
+    const glowna = wgBogactwa[0];
+    wgBogactwa.slice(1).forEach(dup=> pary.push({ glowna, duplikat: dup }));
+  });
+  return pary;
+}
+
+function openDuplikatyModal(){
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  const rysuj = ()=>{
+    const pary = znajdzDuplikaty();
+    overlay.innerHTML = `
+    <div class="modal" style="max-width:720px;">
+      <h3>Prawdopodobne duplikaty (${pary.length})</h3>
+      <p class="note" style="margin-top:-6px;">Ten sam klub i to samo nazwisko. <strong>Sprawdź każdą parę</strong> —
+        w jednym klubie potrafią grać bracia. Scalenia nie da się cofnąć.</p>
+      ${pary.length ? `<div style="max-height:360px;overflow:auto;">${pary.map((para,i)=>{
+        const rap = (p)=> DB.reports.filter(r=>r.playerId===p.id).length;
+        const opis = (p)=> `${esc(p.lastName||'')} ${esc(p.firstName||'')}`
+          + `<span class="meta"> · ${p.birthYear?esc(String(p.birthYear)):'brak rocznika'}`
+          + ` · ${rap(p)} rap. · ${(p.przebieg||[]).length} meczów</span>`;
+        return `<div class="obs-item">
+          <div><strong>Zostaje:</strong> ${opis(para.glowna)}</div>
+          <div style="margin-top:2px;"><strong>Wchłonięty:</strong> ${opis(para.duplikat)}</div>
+          <div class="note" style="margin-top:2px;">${esc(clubName(para.glowna.clubId)||'')}</div>
+          <button class="secondary dup-scal" data-i="${i}" style="margin-top:6px;font-size:12px;">⇄ Scal tę parę</button>
+        </div>`;
+      }).join('')}</div>` : '<div class="empty">Nie widzę duplikatów w kartotece.</div>'}
+      <div class="modal-actions"><button class="secondary dup-zamknij">Zamknij</button></div>
+    </div>`;
+    overlay.querySelector('.dup-zamknij').addEventListener('click', ()=>{ overlay.remove(); render(); });
+    overlay.querySelectorAll('.dup-scal').forEach(b=>b.addEventListener('click', async()=>{
+      const para = pary[Number((b as HTMLElement).dataset.i)];
+      if(!para) return;
+      (b as HTMLButtonElement).disabled = true; b.textContent = 'Scalam…';
+      const w = scalKartoteki(para.glowna, para.duplikat);
+      DB.players = DB.players.filter(p=>p.id !== para.duplikat.id);
+      const ok = await savePlayers() !== false && await saveReports() !== false && await saveObservations() !== false;
+      if(!ok){ pokazPotwierdzenie('Zapis się nie powiódł — odśwież stronę (F5).', 'blad'); rysuj(); return; }
+      if(w.polMapy) await savePositionMapAssignments();
+      await saveRadarPrzejrzane();
+      await deletePlayerRecord(para.duplikat.id);
+      pokazPotwierdzenie(`Scalone: ${esc(para.glowna.lastName||'')} — przeniesiono ${w.raportow} raportów, ${w.meczow} meczów.`);
+      rysuj();
+    }));
+  };
+  rysuj();
+  overlay.addEventListener('click', e=>{ if(e.target===overlay){ overlay.remove(); render(); } });
+  document.body.appendChild(overlay);
+}
+
 // Okno scalania: wybierasz duplikat, widzisz CO się stanie, dopiero potem zatwierdzasz.
 // Podgląd przed zapisem jest tu obowiązkowy — scalenia nie da się cofnąć jednym kliknięciem.
 function openScalanieModal(playerId){
@@ -10103,6 +10193,7 @@ function attachHandlers(){
     };
   }
   main.querySelectorAll('[data-action="scal-zawodnikow"]').forEach(b=>b.onclick=()=>openScalanieModal(b.dataset.id));
+  main.querySelectorAll('[data-action="pokaz-duplikaty"]').forEach(b=>b.onclick=()=>openDuplikatyModal());
   main.querySelectorAll('[data-action="save-report"]').forEach(b=>b.onclick=async()=>{
     const playerId = document.getElementById('rep-player').value;
     if(!playerId){ alert('Wybierz zawodnika.'); return; }
