@@ -2525,10 +2525,25 @@ function playerAvg(playerId){
   if(!obs.length && overall===null && !avgs && !metryki.length) return null;
   const last = obs.length ? obs[obs.length-1]
     : {date: reps.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||'')).map(r=>r.date).pop() || ''};
-  return {avgs, overall, metryki, count: obs.length, reportCount: ratedReports, last};
+  // `count` to WPISY Z PLANU OBSERWACJI, a `raportow` — raporty skautingowe. Rozróżnienie jest
+  // konieczne, bo listy pokazywały „Obs. 0" obok średniej 5.1 i daty ostatniej obserwacji, które
+  // BIORĄ SIĘ z raportów. Wyglądało to jak błąd systemu, a była to jedna kolumna licząca co innego
+  // niż dwie sąsiednie.
+  return {avgs, overall, metryki, count: obs.length, raportow: reps.length, reportCount: ratedReports, last};
 }
 // "śr. ocena" w listach: kreska, dopóki nie ma żadnego raportu z ocenami.
 function fmtAvg(a){ return a && a.overall!=null ? fmt1(a.overall) : "—"; }
+// Ile razy zawodnik był oglądany — wpisy z Planu Obserwacji ORAZ raporty skautingowe.
+// Sama liczba obserwacji kłamała: przy zawodniku z jednym raportem stało „0", choć obok widniała
+// średnia z tego raportu i data jego powstania. Pokazujemy obie liczby, gdy się różnią.
+function komorkaObsRap(a){
+  const obs = a ? a.count : 0;
+  const rap = a ? (a.raportow || 0) : 0;
+  if(!obs && !rap) return '0';
+  if(!obs) return `<span title="${rap} ${rap===1?'raport skautingowy':'raportów skautingowych'}, brak wpisów w Planie Obserwacji">${rap} <span class="meta" style="font-size:11px;">rap.</span></span>`;
+  if(!rap) return `<span title="${obs} ${obs===1?'wpis':'wpisów'} w Planie Obserwacji">${obs}</span>`;
+  return `<span title="${obs} z Planu Obserwacji, ${rap} ${rap===1?'raport':'raportów'}">${obs} <span class="meta" style="font-size:11px;">+ ${rap} rap.</span></span>`;
+}
 // Kartki w listach: żółte/czerwone jako kolorowe znaczniki. Kreska, gdy obu brak — zero pokazujemy
 // tylko wtedy, gdy druga wartość jest uzupełniona (żeby "0/1" było czytelne).
 function cardsCell(p){
@@ -3706,7 +3721,7 @@ function viewPlayers(){
       <td style="text-align:right;">${p.matches!=null?p.matches:'—'}</td>
       <td style="text-align:right;">${p.minutes!=null?p.minutes:'—'}</td>
       <td style="text-align:right;">${p.goals!=null?p.goals:'—'}</td>
-      <td style="text-align:right;">${a? a.count : 0}</td>
+      <td style="text-align:right;">${komorkaObsRap(a)}</td>
       <td style="white-space:nowrap;">
         <button class="link-btn" data-action="add-to-monitoring" data-id="${p.id}" title="${p.monitored?'W Monitoringu — kliknij, aby usunąć':'Dodaj do Monitoringu'}" style="color:${p.monitored?'var(--good)':'var(--gold-dark)'};">${p.monitored?'✓ Monitoring':'+ Monitoring'}</button>
         <button class="link-btn" data-action="delete-player" data-id="${p.id}" title="Usuń zawodnika" style="margin-left:8px;color:var(--clay-dark);">Usuń</button>
@@ -3758,7 +3773,7 @@ function viewPlayers(){
   <p class="note" style="margin:0 0 6px;font-size:11.5px;">Tabela jest szeroka — przewiń ją w bok pod spodem albo przytrzymaj <strong>Shift</strong> i kręć kółkiem myszy. Kolumna akcji zostaje widoczna.</p>
   <div class="card table-scroll" style="padding:0;overflow:auto;">
     <table class="players-table">
-      <thead><tr><th style="width:24px;"><input type="checkbox" class="header-checkbox"></th><th style="width:34px;text-align:right;" title="Liczba porządkowa">Lp.</th><th>Zawodnik</th><th>Rocznik</th><th>Pozycja</th><th>Klub / region / liga</th><th>Status</th><th style="text-align:center;" title="Czy zawodnik ma menedżera — kliknij, aby przełączyć Tak/Nie">Agent</th><th style="text-align:right;" title="Rozegrane mecze w sezonie">Mecze</th><th style="text-align:right;" title="Rozegrane minuty w sezonie">Minuty</th><th style="text-align:right;" title="Gole w sezonie">Gole</th><th style="text-align:right;" title="Liczba obserwacji">Obs.</th><th></th></tr></thead>
+      <thead><tr><th style="width:24px;"><input type="checkbox" class="header-checkbox"></th><th style="width:34px;text-align:right;" title="Liczba porządkowa">Lp.</th><th>Zawodnik</th><th>Rocznik</th><th>Pozycja</th><th>Klub / region / liga</th><th>Status</th><th style="text-align:center;" title="Czy zawodnik ma menedżera — kliknij, aby przełączyć Tak/Nie">Agent</th><th style="text-align:right;" title="Rozegrane mecze w sezonie">Mecze</th><th style="text-align:right;" title="Rozegrane minuty w sezonie">Minuty</th><th style="text-align:right;" title="Gole w sezonie">Gole</th><th style="text-align:right;" title="Wpisy w Planie Obserwacji oraz raporty skautingowe">Obs. / rap.</th><th></th></tr></thead>
       <tbody>${rows || `<tr><td colspan="13"><div class="empty">Brak zawodników spełniających filtry.</div></td></tr>`}</tbody>
     </table>
   </div>`;
@@ -8287,7 +8302,7 @@ function viewMonitoring(){
       <td>${rocznikHtml(p)}</td>
       <td>${esc(clubName(p.clubId))}</td>
       <td>${esc(clubRegion(p.clubId))}</td>
-      <td>${a? a.count : 0}</td>
+      <td>${komorkaObsRap(a)}</td>
       <td>${fmtAvg(a)}</td>
       <td>${a? a.last.date : "—"}</td>
       <td>${ds!==null? ds+" dni" : "—"}</td>
@@ -8313,7 +8328,7 @@ function viewMonitoring(){
   </div>
   <div class="card" style="padding:0;overflow:auto;">
     <table>
-      <thead><tr><th>Zawodnik</th><th>Rocznik</th><th>Klub</th><th>Region</th><th>Obs.</th><th>Śr. ocena</th><th>Ostatnia obs.</th><th>Dni temu</th><th>Agent</th><th>Priorytet</th><th></th></tr></thead>
+      <thead><tr><th>Zawodnik</th><th>Rocznik</th><th>Klub</th><th>Region</th><th title="Wpisy w Planie Obserwacji oraz raporty skautingowe">Obs. / rap.</th><th>Śr. ocena</th><th>Ostatnia obs.</th><th>Dni temu</th><th>Agent</th><th>Priorytet</th><th></th></tr></thead>
       <tbody>${trs || `<tr><td colspan="11"><div class="empty">Brak ręcznie dodanych zawodników — ci z masowych importów składów tu się nie pokazują. Dodaj zawodnika przez "Zawodnicy → Dodaj zawodnika", aby pojawił się na tej liście.</div></td></tr>`}</tbody>
     </table>
   </div>
