@@ -2446,6 +2446,83 @@ async function robustStorageDelete(key, id){
   return false;
 }
 async function deletePlayerRecord(id){ return robustStorageDelete('scouting:players', id); }
+
+// SCALANIE DWÓCH KARTOTEK TEGO SAMEGO ZAWODNIKA.
+//
+// Duplikaty powstają same: raz nazwisko przychodzi z protokołu ŁNP („Marcinho Marcinho"), raz
+// z profilu agencji na Transfermarkcie („Manoel Oliveira da Silva Marcinho"). Dopóki są osobno,
+// raporty idą do jednej karty, statystyki do drugiej, a mapa pozycji i Komitet pokazują połowę
+// prawdy — przy czym każda z nich z osobna wygląda poprawnie.
+//
+// CO ZOSTAJE, A CO PRZECHODZI: zostaje karta wskazana jako główna. Z drugiej przechodzi
+// WSZYSTKO, czego główna nie ma — pola tekstowe tylko w puste miejsca, bo dane wpisane ręką są
+// pewniejsze niż zaciągnięte automatem. Liczb NIE SUMUJEMY: ten sam mecz bywa policzony w obu
+// kartotekach, więc dodawanie zrobiłoby z siedmiu meczów czternaście. Bierzemy wyższą wartość.
+//
+// Funkcja NIE zapisuje — oddaje opis zmian, żeby dało się go pokazać przed zatwierdzeniem
+// i przetestować bez bazy.
+function scalKartoteki(glowna, duplikat){
+  const raportow = DB.reports.filter(r=>r.playerId === duplikat.id).length;
+  const obserwacji = DB.observations.filter(o=>o.playerId === duplikat.id).length;
+
+  DB.reports.forEach(r=>{ if(r.playerId === duplikat.id) r.playerId = glowna.id; });
+  DB.observations.forEach(o=>{ if(o.playerId === duplikat.id) o.playerId = glowna.id; });
+
+  // Przebieg sezonu: mecz rozpoznajemy po parze (rywal, u siebie) — tak samo jak import protokołów,
+  // bo w sezonie każda para gra ze sobą dokładnie dwa razy.
+  const kluczMeczu = (x)=> importNorm(String(x.rywal||'')) + '|' + (x.dom ? 'D' : 'W');
+  const mam = new Set((glowna.przebieg || []).map(kluczMeczu));
+  let meczow = 0;
+  (duplikat.przebieg || []).forEach(x=>{
+    if(mam.has(kluczMeczu(x))) return;
+    glowna.przebieg = [...(glowna.przebieg || []), x];
+    mam.add(kluczMeczu(x));
+    meczow++;
+  });
+
+  const TEKSTOWE = ['firstName','lastName','birthDate','birthYear','position','pozycjaNmg','foot',
+    'height','nationality','clubId','status','scout','videoLink','lnpLink','tmLink','formation',
+    'agencyName','notes','opisKoncowy','contractUntil','photo','instagramLink','facebookLink'];
+  const uzupelnione = [];
+  TEKSTOWE.forEach(pole=>{
+    const puste = glowna[pole] === undefined || glowna[pole] === null || String(glowna[pole]).trim() === '';
+    if(puste && duplikat[pole] !== undefined && String(duplikat[pole] ?? '').trim() !== ''){
+      glowna[pole] = duplikat[pole];
+      uzupelnione.push(pole);
+    }
+  });
+
+  // Dorobek: wyższa wartość, nigdy suma.
+  ['matches','minutes','goals','assists','yellowCards','redCards'].forEach(pole=>{
+    const a = Number(glowna[pole] ?? 0), b = Number(duplikat[pole] ?? 0);
+    if(Number.isFinite(b) && b > a) glowna[pole] = duplikat[pole];
+  });
+  ['monitored','mlodziezowiec','hasAgent','kadraWojewodzka','reprezentacja','hasContract'].forEach(pole=>{
+    if(duplikat[pole] === true) glowna[pole] = true;
+  });
+  ['wyroznienia','committeeReports','attachments','transferHistory','powolania'].forEach(pole=>{
+    const a = Array.isArray(glowna[pole]) ? glowna[pole] : [];
+    const b = Array.isArray(duplikat[pole]) ? duplikat[pole] : [];
+    if(b.length) glowna[pole] = [...a, ...b];
+  });
+  if(!glowna.opiniaAI && duplikat.opiniaAI) glowna.opiniaAI = duplikat.opiniaAI;
+
+  // Mapa pozycji trzyma identyfikatory — bez podmiany zawodnik zniknąłby z boiska razem z kartą.
+  let polMapy = 0;
+  Object.keys(positionMapAssignments).forEach(k=>{
+    const lista = positionMapAssignments[k];
+    if(!Array.isArray(lista) || lista.indexOf(duplikat.id) < 0) return;
+    const bezDuplikatu = lista.map(id=> id === duplikat.id ? glowna.id : id);
+    positionMapAssignments[k] = [...new Set(bezDuplikatu)];
+    polMapy++;
+  });
+  if(radarPrzejrzane[duplikat.id]){
+    if(!radarPrzejrzane[glowna.id]) radarPrzejrzane[glowna.id] = radarPrzejrzane[duplikat.id];
+    delete radarPrzejrzane[duplikat.id];
+  }
+
+  return { raportow, obserwacji, meczow, uzupelnione, polMapy };
+}
 async function deleteClubRecord(id){ return robustStorageDelete('scouting:clubs', id); }
 async function deleteObservationRecord(id){ return robustStorageDelete('scouting:observations', id); }
 async function deleteReportRecord(id){ return robustStorageDelete('scouting:reports', id); }
@@ -3926,6 +4003,7 @@ function viewPlayerDetail(id){
       ${has90minutLink(p) ? `<button class="secondary" data-action="refresh-stats" data-id="${p.id}" title="Pobierz mecze i bramki z 90minut.pl">🔄 Odśwież statystyki</button>` : ''}
       ${/transfermarkt\./i.test(String(p.profileTm||'')) ? `<button class="gold" data-action="tm-odswiez" data-id="${p.id}" title="Pobiera z Transfermarktu wzrost, nogę, pozycję, narodowość, agenta, datę końca umowy, wartość rynkową i zdjęcie">⟳ Aktualizuj dane</button>` : ''}
       <button class="gold" data-action="paste-stats" data-id="${p.id}">📊 Wklej statystyki</button>
+      <button class="secondary" data-action="scal-zawodnikow" data-id="${p.id}" title="Ten sam zawodnik ma dwie kartoteki? Wchłoń duplikat do tej karty">⇄ Scal duplikat</button>
       <button class="danger" data-action="delete-player" data-id="${p.id}">Usuń</button>
     </div>
   </div>
@@ -8065,6 +8143,98 @@ async function generateAnalysisPDF(playerId){
   await htmlNaPdf(html, 'analiza_' + nazwa + '.pdf');
 }
 
+// Okno scalania: wybierasz duplikat, widzisz CO się stanie, dopiero potem zatwierdzasz.
+// Podgląd przed zapisem jest tu obowiązkowy — scalenia nie da się cofnąć jednym kliknięciem.
+function openScalanieModal(playerId){
+  const glowna = DB.players.find(x=>x.id===playerId);
+  if(!glowna) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+
+  // Najbardziej prawdopodobne duplikaty na górze: ten sam klub, potem podobne nazwisko.
+  const rdzen = (s)=> importNorm(String(s||''));
+  const nazwiskoGlownej = rdzen(glowna.lastName) + ' ' + rdzen(glowna.firstName);
+  const kandydaci = DB.players.filter(p=>p.id !== glowna.id).map(p=>{
+    const tenKlub = p.clubId && p.clubId === glowna.clubId;
+    const nazwa = rdzen(p.lastName) + ' ' + rdzen(p.firstName);
+    const wspolne = nazwa.split(' ').filter(w=>w.length>2 && nazwiskoGlownej.includes(w)).length;
+    return { p, waga: (tenKlub?10:0) + wspolne*3 };
+  }).sort((a,b)=> b.waga - a.waga || String(a.p.lastName||'').localeCompare(String(b.p.lastName||''),'pl'));
+
+  overlay.innerHTML = `
+  <div class="modal" style="max-width:620px;">
+    <h3>Scal kartoteki — ${esc(glowna.firstName||'')} ${esc(glowna.lastName||'')}</h3>
+    <p class="note" style="margin-top:-6px;">Zostaje ta kartoteka. Z wybranej poniżej przejdą do niej raporty,
+      obserwacje, mecze i wszystkie pola, których tutaj brakuje — a ona sama zostanie usunięta.
+      <strong>Tego nie da się cofnąć.</strong></p>
+    <div class="field-wrap">
+      <label class="field">Duplikat do wchłonięcia</label>
+      <select id="scal-kogo">
+        <option value="">— wybierz —</option>
+        ${kandydaci.slice(0,300).map(({p})=>`<option value="${esc(p.id)}">${esc(p.lastName||'')} ${esc(p.firstName||'')}${p.birthYear?` · ${esc(String(p.birthYear))}`:''} · ${esc(clubName(p.clubId)||'bez klubu')}</option>`).join('')}
+      </select>
+    </div>
+    <div id="scal-podglad" style="margin-top:10px;"></div>
+    <div class="modal-actions">
+      <button class="secondary" id="scal-anuluj">Anuluj</button>
+      <button class="gold" id="scal-wykonaj" disabled>Scal kartoteki</button>
+    </div>
+  </div>`;
+
+  const wybor = overlay.querySelector('#scal-kogo') as HTMLSelectElement;
+  const podglad = overlay.querySelector('#scal-podglad');
+  const przycisk = overlay.querySelector('#scal-wykonaj') as HTMLButtonElement;
+
+  wybor.onchange = ()=>{
+    const dup = DB.players.find(x=>x.id===wybor.value);
+    przycisk.disabled = !dup;
+    if(!dup){ podglad.innerHTML = ''; return; }
+    const raportow = DB.reports.filter(r=>r.playerId===dup.id).length;
+    const obserwacji = DB.observations.filter(o=>o.playerId===dup.id).length;
+    const meczow = (dup.przebieg || []).length;
+    podglad.innerHTML = `<div class="obs-item">
+      <strong>Do „${esc(glowna.lastName||'')} ${esc(glowna.firstName||'')}" przejdzie:</strong>
+      <div class="note" style="margin-top:4px;line-height:1.8;">
+        ${raportow} ${raportow===1?'raport':'raportów'} &middot;
+        ${obserwacji} ${obserwacji===1?'obserwacja':'obserwacji'} &middot;
+        ${meczow} ${meczow===1?'mecz w przebiegu':'meczów w przebiegu'} (bez powtórzeń)<br>
+        Puste pola zostaną uzupełnione z duplikatu. Liczby dorobku nie sumują się — bierzemy wyższą,
+        żeby ten sam mecz nie policzył się dwa razy.<br>
+        <strong>Kartoteka „${esc(dup.lastName||'')} ${esc(dup.firstName||'')}" zostanie usunięta.</strong>
+      </div>
+    </div>`;
+  };
+  overlay.querySelector('#scal-anuluj').addEventListener('click', ()=>overlay.remove());
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) overlay.remove(); });
+
+  przycisk.onclick = async()=>{
+    const dup = DB.players.find(x=>x.id===wybor.value);
+    if(!dup) return;
+    przycisk.disabled = true; przycisk.textContent = 'Scalam…';
+    const wynik = scalKartoteki(glowna, dup);
+    DB.players = DB.players.filter(p=>p.id !== dup.id);
+    // Kolejność zapisu ma znaczenie: najpierw przepisane odsyłacze, na końcu skasowanie karty.
+    // Odwrotnie — gdyby coś padło w połowie — raporty zostałyby przy nieistniejącym zawodniku.
+    const ok = await savePlayers() !== false
+      && await saveReports() !== false
+      && await saveObservations() !== false;
+    if(!ok){
+      pokazPotwierdzenie('Zapis się nie powiódł — odśwież stronę (F5) i sprawdź stan przed powtórzeniem.', 'blad');
+      przycisk.disabled = false; przycisk.textContent = 'Scal kartoteki';
+      return;
+    }
+    if(wynik.polMapy) await savePositionMapAssignments();
+    await saveRadarPrzejrzane();
+    await deletePlayerRecord(dup.id);
+    overlay.remove();
+    render();
+    pokazPotwierdzenie(`Scalone. Przeniesiono: ${wynik.raportow} raportów, ${wynik.obserwacji} obserwacji, `
+      + `${wynik.meczow} meczów${wynik.uzupelnione.length?`, uzupełniono ${wynik.uzupelnione.length} pól`:''}.`);
+  };
+
+  document.body.appendChild(overlay);
+}
+
 function openPlayerAnalysisModal(playerId){
   const existing = document.querySelector('.modal-overlay[data-analysis-for]');
   if(existing) existing.remove();
@@ -9917,6 +10087,7 @@ function attachHandlers(){
         (unmatched.length ? `\n\nNie dopasowano (${unmatched.length}) — wgraj je klikając w herb klubu:\n${unmatched.join('\n')}` : ''));
     };
   }
+  main.querySelectorAll('[data-action="scal-zawodnikow"]').forEach(b=>b.onclick=()=>openScalanieModal(b.dataset.id));
   main.querySelectorAll('[data-action="save-report"]').forEach(b=>b.onclick=async()=>{
     const playerId = document.getElementById('rep-player').value;
     if(!playerId){ alert('Wybierz zawodnika.'); return; }
