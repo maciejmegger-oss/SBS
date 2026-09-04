@@ -93,6 +93,29 @@ function scena({ glowna, duplikat, reports = [], observations = [], mapa = {}, r
   sprawdz('po duplikacie nie ma śladu', !s.radarPrzejrzane.B);
 }
 
+// 4b. Notatki pisane ręką skauta — obie muszą przetrwać.
+{
+  const s = scena({
+    glowna: { id: 'A', lastName: 'Marcinho', firstName: 'Marcinho', notes: 'Widziany z Sandecją, mocny w kontakcie.' },
+    duplikat: { id: 'B', lastName: 'Marcinho', firstName: 'Manoel', notes: 'Agent podaje gotowość do zmiany klubu.' },
+  });
+  console.log('\n4b. Notatki skauta');
+  console.log('   ' + String(s.glowna.notes).replace(/\n/g, ' ⏎ '));
+  sprawdz('notatka z głównej została', s.glowna.notes.includes('mocny w kontakcie'));
+  sprawdz('notatka z duplikatu NIE przepadła', s.glowna.notes.includes('gotowość do zmiany klubu'));
+  sprawdz('widać, skąd pochodzi doklejona', s.glowna.notes.includes('z połączonej kartoteki'));
+}
+
+// 4c. Gdy główna nie ma notatki — bierzemy samą treść, bez dopisku o pochodzeniu.
+{
+  const s = scena({
+    glowna: { id: 'A', lastName: 'X', firstName: 'Y' },
+    duplikat: { id: 'B', lastName: 'X', firstName: 'Y', notes: 'Jedyna notatka.' },
+  });
+  console.log('\n4c. Notatka tylko w duplikacie');
+  sprawdz('przeszła bez dopisku', s.glowna.notes === 'Jedyna notatka.', s.glowna.notes);
+}
+
 // 4. Listy (wyróżnienia, załączniki) łączą się, a nie nadpisują.
 {
   const s = scena({

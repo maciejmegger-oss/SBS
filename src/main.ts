@@ -2480,9 +2480,24 @@ function scalKartoteki(glowna, duplikat){
     meczow++;
   });
 
+  // TEKST PISANY RĘKĄ SKAUTA DOKLEJAMY, A NIE WYBIERAMY.
+  //
+  // Przy pozostałych polach zasada „uzupełniaj tylko puste" jest bezpieczna: wzrost albo noga mają
+  // jedną poprawną wartość. Notatka i opis końcowy to zdania, które ktoś napisał — jeśli obie karty
+  // mają swoje, wybranie jednej znaczy skasowanie czyjejś pracy. Doklejamy więc obie, z podpisem
+  // skąd pochodzi druga, żeby po scaleniu dało się to rozdzielić.
+  let doklejone = 0;
+  ['notes','opisKoncowy'].forEach(pole=>{
+    const a = String(glowna[pole] || '').trim();
+    const b = String(duplikat[pole] || '').trim();
+    if(!b || a === b) return;
+    glowna[pole] = a ? `${a}\n\n— z połączonej kartoteki „${duplikat.lastName||''} ${duplikat.firstName||''}":\n${b}` : b;
+    doklejone++;
+  });
+
   const TEKSTOWE = ['firstName','lastName','birthDate','birthYear','position','pozycjaNmg','foot',
     'height','nationality','clubId','status','scout','videoLink','lnpLink','tmLink','formation',
-    'agencyName','notes','opisKoncowy','contractUntil','photo','instagramLink','facebookLink'];
+    'agencyName','contractUntil','photo','instagramLink','facebookLink'];
   const uzupelnione = [];
   TEKSTOWE.forEach(pole=>{
     const puste = glowna[pole] === undefined || glowna[pole] === null || String(glowna[pole]).trim() === '';
@@ -2521,7 +2536,7 @@ function scalKartoteki(glowna, duplikat){
     delete radarPrzejrzane[duplikat.id];
   }
 
-  return { raportow, obserwacji, meczow, uzupelnione, polMapy };
+  return { raportow, obserwacji, meczow, uzupelnione, polMapy, doklejone };
 }
 async function deleteClubRecord(id){ return robustStorageDelete('scouting:clubs', id); }
 async function deleteObservationRecord(id){ return robustStorageDelete('scouting:observations', id); }
