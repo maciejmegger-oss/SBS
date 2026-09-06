@@ -179,15 +179,55 @@ button{background:none; border:none; cursor:pointer;}
   background:none; border:none; -webkit-tap-highlight-color:transparent;
 }
 .mark-btn:active{background:var(--surface-2);}
+/* Kadr błysku. Herb jest obrazkiem, a obrazek nie ma warstw — pasek światła musi więc mieć
+   własną otoczkę, przyciętą dokładnie do herbu (te same 28 px i to samo zaokrąglenie).
+   Bez przycięcia światło wychodziłoby poza logo na pasek górny i czytało się jak poświata
+   pod spodem, a nie jak odblask NA herbie. */
+.mark-blysk{
+  position:relative; display:block; width:28px; height:28px;
+  border-radius:8px; overflow:hidden; flex-shrink:0;
+}
 .topbar .mark{width:28px; height:28px; border-radius:8px; flex-shrink:0; display:block;}
 
-/* Obrót mówi, że coś się dzieje. Bez tego dotknięcie herbu wyglądało na nieskuteczne —
-   przy dobrym zasięgu pobranie trwa ułamek sekundy i nic nie zdąży się zmienić na ekranie. */
-.mark-btn[aria-busy="true"] .mark{animation:herb-obrot 1s linear infinite;}
-@keyframes herb-obrot{ to{transform:rotate(360deg);} }
+/* Coś się dzieje — ale bez obracania herbu. Obrót brał logo z literami SBS i stawiał je na
+   głowie: znak firmowy przez pół cyklu był do góry nogami, co przy okrągłych znacznikach
+   uchodzi, a przy kwadratowym z napisem wygląda po prostu na zepsute. Zamiast tego po herbie
+   przebiega pasek światła, jak odblask po szkle. Ruch niesie tę samą informację („pracuję"),
+   nie ruszając samego znaku. */
+/* Samo przesuwające się światło na znaczku o boku 28 px jest zbyt ciche. Herb ma tu jedno
+   zadanie — potwierdzić, że dotknięcie zadziałało, przy rzucie oka na zimnej trybunie — więc
+   razem z przebiegiem światła cały herb na moment się rozjaśnia. Szczyt (30% cyklu) wypada
+   dokładnie wtedy, gdy pasek przechodzi przez środek: dwa efekty czyta się jako jeden błysk,
+   a nie jako dwie animacje obok siebie. */
+.mark-btn[aria-busy="true"] .mark-blysk{animation:herb-rozjasnienie 1.15s ease-in-out infinite;}
+@keyframes herb-rozjasnienie{
+  0%,100% {filter:brightness(1);}
+  30%     {filter:brightness(1.28);}
+  60%     {filter:brightness(1);}
+}
+.mark-btn[aria-busy="true"] .mark-blysk::after{
+  content:""; position:absolute; inset:-30% -60%;
+  background:linear-gradient(100deg,
+    transparent 38%, rgba(255,255,255,.16) 45%,
+    rgba(255,255,255,.82) 50%,
+    rgba(255,255,255,.16) 55%, transparent 62%);
+  animation:herb-blysk 1.15s ease-in-out infinite;
+}
+/* Przerwa po przebiegu (60%→100% pasek stoi już za kadrem) zamienia ciągłą wędrówkę światła
+   w powtarzalny BŁYSK. Bez niej pasek sunąłby bez końca i wyglądałby jak ładowanie paskiem,
+   a nie jak odbicie. */
+@keyframes herb-blysk{
+  0%       {transform:translateX(-95%);}
+  60%,100% {transform:translateX(95%);}
+}
 /* Oszczędny ruch — patrz zastosujRuch() w src/mobile/main.ts. Arkusz NIE pyta tu systemu wprost:
    rozstrzygnięcie (podpowiedź systemu kontra własny wybór scouta) zapada raz, w jednym miejscu,
-   i przychodzi tu gotowe jako data-ruch na <html>. */
+   i przychodzi tu gotowe jako data-ruch na <html>. Zostaje samo przygaszenie: stan „pobieram"
+   nadal widać, tylko bez wędrującego światła. */
+:root[data-ruch="oszczedne"] .mark-btn[aria-busy="true"] .mark-blysk::after,
+:root[data-ruch="system-oszczedne"] .mark-btn[aria-busy="true"] .mark-blysk::after{animation:none; content:none;}
+:root[data-ruch="oszczedne"] .mark-btn[aria-busy="true"] .mark-blysk,
+:root[data-ruch="system-oszczedne"] .mark-btn[aria-busy="true"] .mark-blysk{animation:none; filter:none;}
 :root[data-ruch="oszczedne"] .mark-btn[aria-busy="true"] .mark,
 :root[data-ruch="system-oszczedne"] .mark-btn[aria-busy="true"] .mark{animation:none; opacity:.45;}
 /* Nazwa ustępuje pierwsza. Pasek mieści cztery rzeczy (herb, nazwa, stan wysyłki, motyw), a na
