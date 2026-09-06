@@ -362,7 +362,19 @@ function dataZDniem(iso: string): string {
 // Znacznik rozgrywek na karcie. Kategoria jest wyróżniona kolorem, bo to ona rozstrzyga, jak
 // czytać ocenę — nazwa rozgrywek stoi obok jako uszczegółowienie, nie zamiast niej.
 function ligaChip(o: Observation & { rozgrywki?: string; kategoria?: string }): string {
-  const kat = o.kategoria || kategoriaZRozgrywek(o.rozgrywki || "", o.match || "");
+  // ROCZNIK W NAZWIE DRUŻYN WYGRYWA NAWET Z KATEGORIĄ ZAPISANĄ PRZY OBSERWACJI.
+  //
+  // Kolejność była odwrotna i to sprawiło, że poprawka rozpoznawania nie zmieniła niczego na
+  // ekranie: mecze zaplanowane WCZEŚNIEJ mają w bazie zapisane „seniorzy" — z automatycznej
+  // podpowiedzi sprzed poprawki, nie z decyzji scouta. Zapisana wartość przesłaniała rozpoznanie,
+  // więc „Arka Gdynia SA U17 – ŁKS Łódź S.A. U17" nadal świeciło jako spotkanie seniorów.
+  //
+  // „U17" przy obu klubach nie jest sprawą oceny, tylko faktem — i jako fakt ma pierwszeństwo
+  // przed podpowiedzią, która mogła powstać źle. Naprawia to plany już zapisane, bez ruszania
+  // czegokolwiek w bazie. W drugą stronę to nie działa: brak rocznika nie czyni z meczu seniorów,
+  // więc wskazanie „młodzież" przy nazwach bez U-czegoś zostaje nietknięte.
+  const zNazwyDruzyn = MLODZIEZ_WZORCE.some((w) => w.test(o.match || "")) ? "mlodziez" : "";
+  const kat = zNazwyDruzyn || o.kategoria || kategoriaZRozgrywek(o.rozgrywki || "", o.match || "");
   if (!o.rozgrywki && !kat) return "";
   // Nierozpoznana kategoria dostaje barwę NEUTRALNĄ, a nie seniorską. Dotąd „nie wiem" wyglądało
   // dokładnie tak samo jak „seniorzy" — czyli aplikacja twierdziła coś, czego nie ustaliła.
@@ -2635,7 +2647,10 @@ function zapamietajPlan() {
 // Ręcznego wyboru scouta NIE ruszamy — patrz kategoriaRecznie.
 function ustawRozgrywki(nazwa: string) {
   planRozgrywki = nazwa || "";
-  if (!kategoriaRecznie) planKategoria = kategoriaZRozgrywek(planRozgrywki);
+  // Nazwa meczu wchodzi do rozpoznania razem z rozgrywkami: rocznik przy klubie („Arka Gdynia
+  // SA U17") mówi o kategorii więcej niż nazwa ligi, bo ligi młodzieżowe bywają nazywane tak
+  // samo jak seniorskie.
+  if (!kategoriaRecznie) planKategoria = kategoriaZRozgrywek(planRozgrywki, planMecz);
 }
 
 // ODŚWIEŻENIE KOPII BAZY — jedna droga dla przycisku w ustawieniach i dla przycisku w terminarzu.
@@ -2847,7 +2862,7 @@ document.addEventListener("click", (e) => {
     // przestaje ją nadpisywać. Ponowne dotknięcie tej samej odznacza ją i wraca do podpowiedzi.
     case "kategoria":
       zapamietajPlan();
-      if (planKategoria === v) { planKategoria = kategoriaZRozgrywek(planRozgrywki); kategoriaRecznie = false; }
+      if (planKategoria === v) { planKategoria = kategoriaZRozgrywek(planRozgrywki, planMecz); kategoriaRecznie = false; }
       else { planKategoria = v || ""; kategoriaRecznie = true; }
       render();
       break;
@@ -3458,7 +3473,7 @@ document.addEventListener("input", (e) => {
   if (t.id === "n-liga") {
     planRozgrywki = t.value;
     if (kategoriaRecznie) return;
-    planKategoria = kategoriaZRozgrywek(planRozgrywki);
+    planKategoria = kategoriaZRozgrywek(planRozgrywki, planMecz);
     $("n-kategoria")?.querySelectorAll<HTMLElement>("[data-act='kategoria']").forEach((b) => {
       b.setAttribute("aria-pressed", String(b.dataset.v === planKategoria));
     });
