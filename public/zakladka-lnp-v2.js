@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v48 z 03.09.2026";
+var SBS_ZBIERACZ="v49 z 06.09.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -742,6 +742,18 @@ function wierszeRozegraneW(d){
 function zbierzZeStronyDruzyny(gotowe){
  var adres=location.href;
  var nr=0, nieudane=0, dodanych=0;
+ // KADRE BIERZEMY NA POCZATKU, ZANIM ZACZNIE SIE DLUGIE ZBIERANIE MECZOW.
+ //
+ // To jedna ramka i kilka sekund, a daje komplet zgloszonych zawodnikow — takze tych, ktorzy
+ // nie zagrali ani minuty i w zadnym protokole sie nie pojawia.
+ linia.textContent='SBS '+SBS_ZBIERACZ+': czytam liste zawodnikow klubu...';
+ zbierzKadreDruzyny(location.origin+location.pathname, function(k){
+  var ile=zapamietajKadre(k);
+  linia.textContent = ile
+   ? 'SBS '+SBS_ZBIERACZ+': kadra '+(k.klub||'klubu')+' - '+ile+' zawodnikow. Zbieram mecze...'
+   : 'SBS '+SBS_ZBIERACZ+': listy zawodnikow nie odczytalem - zbieram same mecze';
+  setTimeout(dalej, 400);
+ });
  function dalej(){
   if(zaDlugo()){ gotowe(dodanych); return; }
   linia.textContent='SBS '+SBS_ZBIERACZ+': mecz '+(nr+1)+' (zebranych '+dodanych+')'+(nieudane?' - podejscie '+(nieudane+1):'');
@@ -763,7 +775,6 @@ function zbierzZeStronyDruzyny(gotowe){
    setTimeout(dalej, 250);
   });
  }
- dalej();
 }
 
 
@@ -817,6 +828,14 @@ function zbierzGrupePrzezDruzyny(gotowe){
   zrobione[id]=true;
   var adres=location.origin+'/rozgrywki/druzyna/'+id+'?tab=tab-mecz';
   var nr=0, nieudane=0;
+  // Kadra tego klubu — jedna ramka przed meczami. Przy calej grupie daje komplet zgloszonych
+  // zawodnikow wszystkich zespolow, a nie tylko tych, ktorzy zdazyli wejsc do protokolu.
+  linia.textContent='SBS '+SBS_ZBIERACZ+': klub '+Object.keys(zrobione).length
+   +' z '+(Object.keys(zrobione).length+doZrobienia.length)+' - czytam liste zawodnikow...';
+  zbierzKadreDruzyny(location.origin+'/rozgrywki/druzyna/'+id, function(k){
+   zapamietajKadre(k);
+   setTimeout(wiersz, 300);
+  });
   function wiersz(){
    if(zaDlugo()){ gotowe(dodanych); return; }
    linia.textContent='SBS '+SBS_ZBIERACZ+': klub '+Object.keys(zrobione).length+' z '+(Object.keys(zrobione).length+doZrobienia.length)
@@ -841,7 +860,6 @@ function zbierzGrupePrzezDruzyny(gotowe){
     setTimeout(wiersz, 200);
    });
   }
-  wiersz();
  }
 
  // IDENTYFIKATORY DRUZYN CZYTAMY Z OTWARTEJ STRONY, NIE Z RAMKI.
@@ -1403,6 +1421,170 @@ function blokRocznikow(){
  return linie.length?('\n\n### ROCZNIKI\n'+linie.join('\n')):'';
 }
 
+// ---------------------------------------------------------------------------
+// KADRA ZE STRONY KLUBU — zakladka „Zawodnicy"
+//
+// Protokol wymienia tylko tych, ktorzy w danym meczu byli w kadrze meczowej. Zawodnik, ktory
+// jeszcze ani razu nie wszedl do protokolu, nie istnieje dla nas w ogole — a to czesto wlasnie
+// mlodszy rocznik, ktory dopiero czeka na debiut i jest najciekawszy do obserwacji.
+//
+// Strona klubu na LNP ma osobna zakladke „Zawodnicy" z PELNA lista zgloszonych. Bierzemy ja
+// w ukrytej ramce, tak samo jak protokoly: klikniecie zakladki w oknie glownym wyprowadziloby
+// zbieracz ze strony. Adresy profili z tej listy trafiaja do tej samej puli co adresy
+// z protokolow, wiec roczniki i pozycje dobiora sie automatycznie.
+var kadry = [];
+
+// Nazwisko, a nie naglowek tabeli ani nazwa klubu. Wiersz listy wyglada tak: lewa rubryka
+// z numerem (albo kreska, gdy numeru nie zgloszono) i imie z nazwiskiem obok.
+function wygladaNaOsobe(t){
+ var s=String(t||'').replace(/\s+/g,' ').trim();
+ s=s.replace(/^[-–—•]\s*/,'').replace(/^\d{1,2}\s+/,'').trim();
+ if(s.length<5||s.length>60) return '';
+ if(/\d/.test(s)) return '';
+ var czesci=s.split(' ');
+ if(czesci.length<2||czesci.length>4) return '';
+ // Kazdy czlon zaczyna sie WIELKA litera, a dalej ida male. To odsiewa naglowki („Zawodnicy"),
+ // nazwy klubow pisane wersalikami („POLONIA WARSZAWA S.A.") i zdania z tresci strony.
+ var wzor=/^[A-ZĄĆĘŁŃÓŚŹŻ][a-ząćęłńóśźż'’.]*(-[A-ZĄĆĘŁŃÓŚŹŻ][a-ząćęłńóśźż'’.]*)*$/;
+ for(var i=0;i<czesci.length;i++){ if(!wzor.test(czesci[i])) return ''; }
+ return s;
+}
+
+// Ta sama logika co przy zakladce z meczami, ale dla dowolnego dokumentu i dowolnej nazwy.
+// W ramce nie ma po co sprawdzac, dokad prowadzi odnosnik: przejscie zostaje w ramce.
+function kandydaciZakladki(d, nazwy){
+ var kand=[].slice.call(d.querySelectorAll('[role="tab"],button,a,li,span,div'));
+ var out=[];
+ for(var i=0;i<kand.length;i++){
+  var el=kand[i];
+  if(el.children.length>1) continue;
+  var t=(el.textContent||'').replace(/\s+/g,' ').trim();
+  if(!nazwy.test(t)) continue;
+  if(el.tagName==='TH'||el.tagName==='TD') continue;
+  try{ if(el.closest('table')||el.closest('footer,header')) continue; }catch(e){}
+  var waga=(el.getAttribute&&el.getAttribute('role')==='tab')?0:((el.tagName==='BUTTON'||el.tagName==='A')?1:2);
+  try{ if(el.closest('[class*="tab"],[class*="Tab"],[class*="nav"],[class*="Nav"]')) waga=waga-1; }catch(e){}
+  out.push({el:el,waga:waga});
+ }
+ out.sort(function(a,b){return a.waga-b.waga;});
+ var lista=[];
+ for(var j=0;j<out.length;j++) lista.push(out[j].el);
+ return lista;
+}
+
+// Nazwa klubu z naglowka strony. Po niej SBS dopasowuje kadre do kartoteki, wiec musi byc
+// dokladnie ta, ktora LNP pokazuje w tabeli grupy.
+function nazwaKlubuZDokumentu(d){
+ var pomin=/^(statystyki|mecze|zawodnicy|tabela|rozgrywki|terminarz|wyniki|sklad)$/i;
+ var kand=[].slice.call(d.querySelectorAll('h1,h2,h3'));
+ for(var i=0;i<kand.length;i++){
+  var t=(kand[i].textContent||'').replace(/\s+/g,' ').trim();
+  if(t.length>2&&t.length<80&&!pomin.test(t)) return t;
+ }
+ var tt=String(d.title||'').split(/\s[-–|]\s/)[0].replace(/\s+/g,' ').trim();
+ return (tt.length>2&&tt.length<80&&!pomin.test(tt))?tt:'';
+}
+
+function kadraZDokumentu(d){
+ var out=[], widziane={};
+ function dodaj(tekst, profil){
+  var nazwa=wygladaNaOsobe(tekst);
+  if(!nazwa) return;
+  var k=kluczOsoby(nazwa);
+  if(!k||k.indexOf(' ')<0||widziane[k]) return;
+  widziane[k]=true;
+  out.push({nazwa:nazwa,profil:profil||''});
+ }
+ // Droga pewna: kazdy wiersz listy jest odnosnikiem do profilu. Dostajemy przy okazji adresy,
+ // z ktorych potem dobieraja sie roczniki i pozycje.
+ var linki=d.querySelectorAll('a[href*="/zawodnik/"]');
+ if(linki.length>=5){
+  for(var i=0;i<linki.length;i++){
+   var t=(linki[i].textContent||'').replace(/\s+/g,' ').trim();
+   if(!wygladaNaOsobe(t)){
+    var w=null; try{ w=linki[i].closest('tr,li,div'); }catch(e){}
+    t=w?(w.textContent||''):'';
+   }
+   dodaj(t, linki[i].href);
+  }
+  if(out.length>=5) return out;
+  out=[]; widziane={};
+ }
+ // Droga zapasowa: same nazwiska z wierszy, bez adresow profili.
+ var liscie=[].slice.call(d.querySelectorAll('td,li,span,div,p,a'));
+ for(var j=0;j<liscie.length;j++){
+  var el=liscie[j];
+  if(el.children.length) continue;
+  try{ if(el.closest('header,footer,nav')) continue; }catch(e){}
+  dodaj(el.textContent, '');
+ }
+ return out;
+}
+
+function zapamietajKadre(wynik){
+ if(!wynik||!wynik.klub||!wynik.osoby||wynik.osoby.length<5) return 0;
+ for(var i=0;i<kadry.length;i++){
+  if(kluczOsoby(kadry[i].klub)===kluczOsoby(wynik.klub)){ kadry[i]=wynik; return wynik.osoby.length; }
+ }
+ kadry.push(wynik);
+ // Adresy profili ida do tej samej puli co te z protokolow — roczniki dobiora sie same.
+ wynik.osoby.forEach(function(o){
+  if(!o.profil) return;
+  var k=kluczOsoby(o.nazwa);
+  if(k&&k.indexOf(' ')>0&&!profileZawodnikow[k]) profileZawodnikow[k]=o.profil;
+ });
+ return wynik.osoby.length;
+}
+
+// Jedna ramka na klub: wczytaj strone, kliknij „Zawodnicy", odczytaj liste.
+function zbierzKadreDruzyny(adres, gotowe){
+ var f=document.createElement('iframe');
+ f.style.cssText='position:fixed;left:-9999px;top:0;width:1500px;height:2400px';
+ f.src=adres;
+ document.body.appendChild(f);
+ var n=0, klikniete=false, poKliknieciu=0, klub='';
+ function zakoncz(wynik){ try{f.remove();}catch(e){} gotowe(wynik); }
+ var t=setInterval(function(){
+  n++;
+  var d=null; try{ d=f.contentDocument; }catch(e){ d=null; }
+  var txt=(d&&d.body)?(d.body.innerText||''):'';
+  if(/Ups! Piłka za boiskiem/.test(txt)){ clearInterval(t); zakoncz(null); return; }
+  if(!klikniete){
+   // Krotki limit: przy calej grupie te ramki mnoza sie przez czternascie klubow, a LNP i tak
+   // odsyla 404 co drugie wejscie. Lepiej odpuscic kadre jednego klubu po dziesieciu sekundach
+   // niz dolozyc kilka minut do zbierania protokolow, ktore sa wazniejsze.
+   if(n>25){ clearInterval(t); zakoncz(null); return; }
+   if(!/Zawodnicy/i.test(txt)) return;
+   klub=nazwaKlubuZDokumentu(d)||klub;
+   var z=kandydaciZakladki(d,/^zawodnicy$/i);
+   if(!z.length) return;
+   try{ z[0].click(); }catch(e){}
+   klikniete=true; poKliknieciu=0;
+   return;
+  }
+  poKliknieciu++;
+  // Trzy takty zwloki: zaraz po klikniecu Angular pokazuje jeszcze poprzednia zakladke,
+  // a na niej sa „Najlepsi strzelcy" — kilka nazwisk, ktore udawalyby cala kadre.
+  if(poKliknieciu<3) return;
+  var osoby=kadraZDokumentu(d);
+  if(osoby.length>=8||poKliknieciu>20){
+   clearInterval(t);
+   if(!klub) klub=nazwaKlubuZDokumentu(d);
+   zakoncz(osoby.length>=5?{klub:klub,osoby:osoby}:null);
+  }
+ },400);
+}
+
+function blokKadr(){
+ var out=[];
+ kadry.forEach(function(k){
+  if(!k||!k.klub||!k.osoby||!k.osoby.length) return;
+  out.push('### KADRA: '+k.klub);
+  k.osoby.forEach(function(o){ out.push(o.nazwa); });
+ });
+ return out.length?('\n\n'+out.join('\n')):'';
+}
+
 function koniec(){
  if(koniec.pokazano) return;               // panel pokazujemy raz — strażnik czasu może wejść w trakcie
  // DRUGA TURA DLA TYCH, KTORE PRZEPADLY.
@@ -1441,7 +1623,9 @@ function koniec(){
   return;
  }
  try{localStorage.setItem(KLUCZ,JSON.stringify(zebrane));}catch(e){}
- var tresc=zebrane.join('\n\n')+blokRocznikow();
+ // Kolejnosc blokow ma znaczenie: SBS czyta „### ROCZNIKI" jako wszystko do konca tekstu,
+ // wiec kadry musza stac przed nim.
+ var tresc=zebrane.join('\n\n')+blokKadr()+blokRocznikow();
 
  // OSTATNI KROK MUSI ZACZAC SIE OD KLIKNIECIA.
  //
@@ -1468,6 +1652,10 @@ function koniec(){
         + '<div style="margin-top:4px;font-size:12px;opacity:.85">Co widzialem na stronie: odnosnikow do meczow ' + ostatnioLinkow
         + ', wierszy z wynikiem ' + ostatnioWierszy + ', nierozegranych ' + pominietych + ' (krokow szukania ' + ostatnioKrokow + ').</div>')
   + '<div style="margin-top:4px">W buforze razem: ' + zebrane.length + '</div>'
+  + (kadry.length
+     ? '<div style="color:#9BD8A6">Kadry klubow: ' + kadry.length
+       + ' (' + kadry.reduce(function(s,k){ return s + k.osoby.length; }, 0) + ' zawodnikow)</div>'
+     : '')
   + (pominietych ? '<div>Pominiete (nierozegrane): ' + pominietych + '</div>' : '')
   + (nieudanych ? '<div style="color:#F0A0A0">Nie udalo sie odczytac: ' + nieudanych + ' (LNP odsylalo 404)</div>' : '')
   + (PRZERWANO_CZASEM ? '<div style="color:#F0C674">Przerwane recznie — ponizej to, co zdazylem zebrac.</div>' : '')
@@ -1477,7 +1665,7 @@ function koniec(){
   + '<b>Zapisz protokoly</b>.</div>';
  box.appendChild(opis);
  var przycisk=document.createElement('button');
- przycisk.textContent='Wyslij do SBS ('+zebrane.length+')';
+ przycisk.textContent='Wyslij do SBS ('+zebrane.length+(kadry.length?' + '+kadry.length+' kadr':'')+')';
  przycisk.style.cssText='display:block;width:100%;padding:10px 14px;margin-bottom:6px;border:0;border-radius:6px;background:#C9A227;color:#16302A;font:600 14px sans-serif;cursor:pointer';
  box.appendChild(przycisk);
  // CZYSZCZENIE MUSI BYC PRZYCISKIEM, NIE SKROTEM KLAWISZOWYM.
@@ -1542,7 +1730,13 @@ function koniec(){
 
 // Wysylka odpalana KLIKNIECIEM — stad wolno jej otwierac okno i pisac do schowka.
 function wyslij(tresc, zostawPanel){
- var usunPanel=function(){ if(!zostawPanel && box.parentNode) usunPanel(); };
+ // PANEL ZNIKAL PRZEZ NIESKONCZONE WYWOLANIE SAMEGO SIEBIE.
+ //
+ // Ta funkcja wolala usunPanel() zamiast box.remove(). Kazde jej uzycie konczylo sie
+ // przepelnieniem stosu, a wyjatek leciał ze srodka obslugi zdarzenia — przez co alert
+ // z potwierdzeniem „wyslalem N protokolow" nigdy sie nie pokazywal. Wygladalo to tak, jakby
+ // wysylka nie doszla do skutku, choc dane byly juz w aplikacji.
+ var usunPanel=function(){ if(!zostawPanel && box.parentNode) box.remove(); };
  var udalo=false;
  var p=document.createElement('textarea');p.value=tresc;document.body.appendChild(p);p.select();
  try{udalo=document.execCommand('copy');}catch(e){udalo=false;}

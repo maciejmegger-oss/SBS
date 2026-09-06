@@ -30,6 +30,12 @@ let currentScout = "";
 let customTabNames = [];
 
 let DB: Database = { players: [], clubs: [], observations: [], reports: [], talents: [], contacts: [], matches: [], agencies: [], agents: [], agencyLogos: {}, clubCrests: {}, settings: null };
+// PODGLĄD DANYCH TYLKO NA MASZYNIE DEWELOPERSKIEJ.
+//
+// Testy sprawdzające, czy coś naprawdę weszło do kartoteki, nie miały jak tam zajrzeć: musiały
+// zgadywać z komunikatów na ekranie albo z zapisów lecących do bazy. Vite wycina ten blok
+// z wersji wysyłanej na serwer, więc w działającej aplikacji tego okna nie ma.
+if(import.meta.env && import.meta.env.DEV){ try{ (window as any).__SBS_DB = () => DB; }catch(e){} }
 let currentView = "dashboard";
 let editingPlayerId = null;
 let editingReportId = null;
@@ -60,7 +66,7 @@ let dashboardGroupSelected = null; // wybrana grupa (np. "III liga, gr. II") po 
 const DEFAULT_SETTINGS = {
   regions: ["Dolnośląski ZPN","Kujawsko-Pomorski ZPN","Lubelski ZPN","Lubuski ZPN","Łódzki ZPN","Małopolski ZPN","Mazowiecki ZPN","Opolski ZPN","Podkarpacki ZPN","Podlaski ZPN","Pomorski ZPN","Śląski ZPN","Świętokrzyski ZPN","Warmińsko-Mazurski ZPN","Wielkopolski ZPN","Zachodniopomorski ZPN"],
   leagues: ["Ekstraklasa","I liga","II liga","III liga, gr. I","III liga, gr. II","III liga, gr. III","III liga, gr. IV","IV liga (pomorska)","IV liga (zachodniopomorska)","IV liga (dolnośląska)","IV liga (śląska)","IV liga (wielkopolska)","IV liga (kujawsko-pomorska)","IV liga (łódzka)","Klasa okręgowa","CLJ U19","CLJ U17 gr. I","CLJ U17 gr. II","CLJ U15 gr. A","CLJ U15 gr. B","CLJ U15 gr. C","CLJ U15 gr. D","Liga makroregionalna U16","Rocznik 2011","Rocznik 2012","Rocznik 2013","Rocznik 2014"],
-  positions: ["Bramkarz","Obrońca prawy","Obrońca lewy","Obrońca środkowy","Obrońca środkowy prawy","Obrońca środkowy centralny","Obrońca środkowy lewy","Obrońca boczny","Wahadłowy prawy","Wahadłowy lewy","Pomocnik defensywny","Pomocnik środkowy","Pomocnik ofensywny","Skrzydłowy","Skrzydłowy prawy","Skrzydłowy lewy","Napastnik"],
+  positions: ["Bramkarz","Obrońca","Obrońca prawy","Obrońca lewy","Obrońca środkowy","Obrońca środkowy prawy","Obrońca środkowy centralny","Obrońca środkowy lewy","Obrońca boczny","Wahadłowy prawy","Wahadłowy lewy","Pomocnik defensywny","Pomocnik środkowy","Pomocnik ofensywny","Skrzydłowy","Skrzydłowy prawy","Skrzydłowy lewy","Napastnik"],
   statuses: ["Do Obserwacji","Na Testy","Do transferu","Z polecenia","Rekomendowany","Odrzucony"],
   recommendations: ["Kontynuować obserwację","Zaprosić na testy","(Do transferu)","Odrzucić","Zbyt wcześnie ocenić"],
   scouts: [],
@@ -2292,6 +2298,16 @@ async function loadAllInner(){
   if(Array.isArray(DB.settings.positions) && !DB.settings.positions.includes('Skrzydłowy prawy')){
     DB.settings.positions = ["Bramkarz","Obrońca prawy","Obrońca lewy","Obrońca środkowy","Obrońca środkowy prawy","Obrońca środkowy centralny","Obrońca środkowy lewy","Obrońca boczny","Wahadłowy prawy","Wahadłowy lewy","Pomocnik defensywny","Pomocnik środkowy","Pomocnik ofensywny","Skrzydłowy","Skrzydłowy prawy","Skrzydłowy lewy","Napastnik"];
   }
+  // OGÓLNY „OBROŃCA" TO TEŻ POZYCJA — i to ta, którą ŁNP podaje najczęściej.
+  //
+  // Profile na „Łączy nas piłka" piszą po prostu „Obrońca", bez strony i bez środka. Słownik SBS
+  // miał wyłącznie warianty doprecyzowane, więc taka pozycja przepadała: zawodnik dopisany
+  // z protokołu zostawał z kreską, a okno meldowało „nie umiem przypisać pozycji: Obrońca".
+  // Zgadywanie, czy to stoper czy boczny, byłoby gorsze niż zapisanie tego, co naprawdę wiemy.
+  if(Array.isArray(DB.settings.positions) && !DB.settings.positions.includes('Obrońca')){
+    const gdzie = DB.settings.positions.indexOf('Obrońca prawy');
+    DB.settings.positions.splice(gdzie >= 0 ? gdzie : DB.settings.positions.length, 0, 'Obrońca');
+  }
   if(quietFlagFailCount > 0){
     console.log('Uwaga (niegroźne): ' + quietFlagFailCount + ' znaczników "już to zrobione" w tle nie zapisało się — te operacje mogą się powtórzyć przy następnym otwarciu, ale to nie dotyczy Twoich danych.');
   }
@@ -4482,30 +4498,58 @@ function viewClubs(){
   if(clubBrowse.top) list = list.filter(c=>topLevelOf(c.league)===clubBrowse.top);
   if(clubBrowse.group) list = list.filter(c=>c.league===clubBrowse.group);
 
-  const topRow = ['Wszystkie', ...TOP_LEVELS].map(t=>{
+  // PRZYCISKI ROZGRYWEK UŁOŻONE W RODZINY — TAK JAK NA ŁNP.
+  //
+  // Dotąd wszystkie leciały jednym ciągiem. Przy siedmiu poziomach seniorskich i dziewięciu
+  // kategoriach juniorskich (doszły cztery grupy CLJ U-15) był to pas kilkunastu jednakowych
+  // pigułek, w którym nic nie było widać: „CLJ U15 gr. C" stało obok „Klasy okręgowej" i obok
+  // „Rocznika 2013", choć to trzy zupełnie różne rzeczy. ŁNP układa to inaczej — rozgrywki są
+  // pogrupowane pod nagłówkami („Centralna Liga Juniorów", „Polskie Mistrzostwa Młodzieży")
+  // i dopiero wtedy da się je czytać wzrokiem.
+  const sekcjaPigulek = (naglowek, pigulki, odstep)=> pigulki.length
+    ? `<div style="margin-top:${odstep}px;">`
+      + (naglowek ? `<div class="note" style="margin:0 0 5px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;opacity:.75;">${esc(naglowek)}</div>` : '')
+      + `<div class="filters" style="margin-bottom:0;">${pigulki.join(' ')}</div></div>`
+    : '';
+
+  const pigulkaPoziomu = (t)=>{
     const val = t==='Wszystkie' ? '' : t;
     return pill(t, clubBrowse.top===val, 'browse-top', {val});
-  }).join(' ');
+  };
+  const SENIORSKIE = TOP_LEVELS.filter(t=>t!=='Kategorie juniorskie');
+  const MLODZIEZOWE = TOP_LEVELS.filter(t=>t==='Kategorie juniorskie');
+  const topRow = sekcjaPigulek('', [pigulkaPoziomu('Wszystkie')], 0)
+    + sekcjaPigulek('Rozgrywki seniorskie', SENIORSKIE.map(pigulkaPoziomu), 10)
+    + sekcjaPigulek('Rozgrywki młodzieżowe', MLODZIEZOWE.map(pigulkaPoziomu), 10);
 
   let groupRow = '';
   if(clubBrowse.top==='III liga' || clubBrowse.top==='IV liga' || clubBrowse.top==='Kategorie juniorskie'){
     const allGroups = groupsForTop(clubBrowse.top);
-    // Kategorie juniorskie: roczniki (Rocznik 2011-2014) w OSOBNYM rzędzie pod ligami juniorskimi.
-    const yearGroups = allGroups.filter(g=>/^Rocznik \d{4}$/.test(g));
-    const groups = allGroups.filter(g=>!yearGroups.includes(g));
-    const groupPill = (g, i)=>{
+    // Skracaj etykietę tylko dla III/IV ligi; kategorie juniorskie (np. "CLJ U17 gr. II") zostają w całości.
+    const groupPill = (g, nr)=>{
       const val = g==='Wszystkie grupy' ? '' : g;
-      // Skracaj etykietę tylko dla III/IV ligi; kategorie juniorskie (np. "CLJ U17 gr. II") zostają w całości.
       let label = g;
       if(g.startsWith('III liga, ')) label = g.replace('III liga, ','');
       else if(g.startsWith('IV liga (')) label = g.replace(/^IV liga \(|\)$/g,'');
-      if(i > 0) label = i + '. ' + label;   // liczba porządkowa przy każdej grupie (poza "Wszystkie grupy")
+      if(nr) label = nr + '. ' + label;   // liczba porządkowa przy każdej grupie (poza "Wszystkie grupy")
       return pill(label, clubBrowse.group===val, 'browse-group', {val});
     };
-    groupRow = `<div class="filters" style="margin-top:8px;">` +
-      ['Wszystkie grupy', ...groups].map(groupPill).join(' ') + `</div>` +
-      (yearGroups.length ? `<div class="filters" style="margin-top:8px;">` +
-        yearGroups.map(g=>pill(g, clubBrowse.group===g, 'browse-group', {val:g})).join(' ') + `</div>` : '');
+    const wszystkie = groupPill('Wszystkie grupy', 0);
+
+    if(clubBrowse.top==='Kategorie juniorskie'){
+      // Podział rodzinami, dokładnie jak w spisie rozgrywek na ŁNP.
+      const clj = allGroups.filter(g=>/^CLJ\b/.test(g));
+      const roczniki = allGroups.filter(g=>/^Rocznik \d{4}$/.test(g));
+      const pozostale = allGroups.filter(g=>!clj.includes(g) && !roczniki.includes(g));
+      let nr = 0;
+      groupRow = sekcjaPigulek('', [wszystkie], 10)
+        + sekcjaPigulek('Centralna Liga Juniorów', clj.map(g=>groupPill(g, ++nr)), 10)
+        + sekcjaPigulek('Pozostałe rozgrywki', pozostale.map(g=>groupPill(g, ++nr)), 10)
+        + sekcjaPigulek('Roczniki', roczniki.map(g=>groupPill(g, 0)), 10);
+    } else {
+      let nr = 0;
+      groupRow = sekcjaPigulek('Grupy', [wszystkie, ...allGroups.map(g=>groupPill(g, ++nr))], 10);
+    }
   }
 
   // ILE KOLEJEK MAMY WGRANYCH — klub po klubie.
@@ -4553,7 +4597,7 @@ function viewClubs(){
         ? `<span style="color:var(--clay-dark);">${wTyle.length} ${wTyle.length===1?'klub ma mniej meczów':'klubów ma mniej meczów'} — tam statystyki są nieaktualne.</span>`
         : 'Wszystkie kluby mają komplet.');
   })() : ''}</p>
-  <div class="filters" style="margin-bottom:0;">${topRow}</div>
+  ${topRow}
   ${groupRow}
   <div class="toolbar" style="margin-top:14px;">
     <div class="note">${list.length} ${list.length===1?'klub':'klubów'} w widoku${
@@ -4734,6 +4778,10 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
   overlay.className = 'modal-overlay';
   document.body.appendChild(overlay);
   let wynik = null, komunikat = '', pracuje = false, zapisanychMeczow = 0, dopisujBrak = true;
+  // Podsumowanie kadr musi PRZEZYC zapis protokolow. Kadry wchodza do bazy juz przy rozpoznaniu,
+  // ale komunikat o nich zastepowalo potem „Zapisano N meczow…" — informacja o dwudziestu
+  // dopisanych zawodnikach migala przez ulamek sekundy i znikala.
+  let komunikatKadrOstatni = '';
   // Roczniki z bloku „### ROCZNIKI" — klucz to znormalizowane imię i nazwisko, wartość to rok.
   let rocznikiZWklejki: Record<string,{rok?:string, pozycja?:string}> = {};
   const kluczRocznika = (s)=> String(s||'').split(/\s+/).map(importNorm).filter(Boolean).sort().join(' ');
@@ -5125,6 +5173,33 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
       }
     }
 
+    // KADRY ZE STRON KLUBÓW — blok „### KADRA: nazwa klubu" i pod nim same nazwiska.
+    //
+    // Protokół wymienia wyłącznie kadrę MECZOWĄ. Zawodnik, który jeszcze ani razu nie znalazł się
+    // w osiemnastce, nie istniał dla nas w ogóle — a to najczęściej właśnie młodszy rocznik, który
+    // dopiero czeka na debiut, czyli dokładnie ten, którego chcemy zobaczyć najwcześniej.
+    // Zakładka czyta więc osobną zakładkę „Zawodnicy" na stronie klubu i przysyła pełną listę
+    // zgłoszonych. Wycinamy ją tutaj, żeby nie trafiła do żadnego protokołu; zapisujemy dopiero
+    // niżej, bo najpierw muszą być odczytane roczniki.
+    const kadryZWklejki: { nazwa: string, osoby: string[] }[] = [];
+    if(/^###\s*KADRA:/m.test(tekst)){
+      const zostaje: string[] = [];
+      let biezaca: { nazwa: string, osoby: string[] } | null = null;
+      tekst.split('\n').forEach(l=>{
+        const naglowek = l.match(/^###\s*KADRA:\s*(.+?)\s*$/);
+        if(naglowek){ biezaca = { nazwa: naglowek[1].trim(), osoby: [] }; kadryZWklejki.push(biezaca); return; }
+        if(biezaca){
+          // Każdy inny znacznik „###" kończy listę — dalej idzie już co innego.
+          if(/^###\s/.test(l)){ biezaca = null; zostaje.push(l); return; }
+          const osoba = l.trim();
+          if(osoba) biezaca.osoby.push(osoba);
+          return;
+        }
+        zostaje.push(l);
+      });
+      tekst = zostaje.join('\n').trim();
+    }
+
     rocznikiZWklejki = {};
     const blokR = tekst.match(/^###\s*ROCZNIKI\s*$([\s\S]*)/m);
     if(blokR){
@@ -5141,7 +5216,71 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
         if(wpis.rok || wpis.pozycja) rocznikiZWklejki[k] = wpis;
       });
     }
+    // ZAPIS KADR. Dopiero teraz, bo roczniki i pozycje z profili ŁNP są już odczytane i nowy
+    // zawodnik może powstać od razu kompletny, zamiast czekać na kolejne wklejenie.
+    let komunikatKadr = '';
+    komunikatKadrOstatni = '';
+    if(kadryZWklejki.length){
+      const nierozpoznaneKluby: string[] = [];
+      const opisyKlubow: string[] = [];
+      let nowychZKadry = 0, jużByłoWKartotece = 0, uzupelnionych = 0;
+      const dzisKadra = new Date().toISOString().slice(0,10);
+      kadryZWklejki.forEach(k=>{
+        // Ta sama droga co przy herbach: nazwa z ŁNP, grupa z otwartego okna, poziom z grupy.
+        const klubKadry = dopasujKlubDoNazwy(k.nazwa, grupa, poziomGrupy(grupa));
+        if(!klubKadry){ nierozpoznaneKluby.push(k.nazwa); return; }
+        let doTegoKlubu = 0;
+        k.osoby.forEach(pelnaNazwa=>{
+          const czlony = pelnaNazwa.split(/\s+/).filter(Boolean);
+          if(czlony.length < 2) return;
+          // Imię jest jedno, nazwisko może być dwuczłonowe („Wróblewski-Reykowski" bywa też
+          // pisane osobno) — resztę wiersza traktujemy więc jako nazwisko.
+          const imie = czlony[0];
+          const nazwisko = czlony.slice(1).join(' ');
+          const zProfilu = rocznikiZWklejki[kluczRocznika(pelnaNazwa)] || {};
+          const istnieje = DB.players.find(x=> x.clubId === klubKadry.id
+            && importNorm((x.firstName||'')+(x.lastName||'')) === importNorm(imie+nazwisko));
+          if(istnieje){
+            jużByłoWKartotece++;
+            // Kartoteki nie nadpisujemy — wpisujemy tylko w puste pola. Dane z Transfermarktu
+            // albo wpisane ręką są dokładniejsze niż ogólniki z ŁNP.
+            let zmieniony = false;
+            if(!istnieje.birthYear && !istnieje.birthDate && zProfilu.rok){ istnieje.birthYear = zProfilu.rok; zmieniony = true; }
+            if(!istnieje.position && zProfilu.pozycja){ istnieje.position = zProfilu.pozycja; zmieniony = true; }
+            if(zmieniony) uzupelnionych++;
+            return;
+          }
+          DB.players.push({ id: uid('Z'), firstName: imie, lastName: nazwisko,
+            birthDate:'', birthYear: zProfilu.rok || '', nationality:'', position: zProfilu.pozycja || '',
+            foot:'', height:null, status:'', clubId: klubKadry.id, scout: currentScout || '',
+            videoLink:'', lnpLink:'', tmLink:'', hasAgent:false, agencyName:'', formation:'',
+            customFields:{}, mlodziezowiec:false,
+            notes:'Dopisany z listy zawodników klubu (Łączy nas piłka).', dateAdded: dzisKadra } as any);
+          nowychZKadry++; doTegoKlubu++;
+        });
+        opisyKlubow.push(`${klubKadry.name} +${doTegoKlubu}`);
+      });
+      if(nowychZKadry || uzupelnionych) void savePlayers();
+      komunikatKadr = `Kadry z ŁNP (${kadryZWklejki.length}): dopisałem ${nowychZKadry} zawodników, `
+        + `w kartotece już było ${jużByłoWKartotece}`
+        + (uzupelnionych ? `, uzupełniłem rocznik lub pozycję u ${uzupelnionych}` : '')
+        + (opisyKlubow.length ? `. ${opisyKlubow.join(', ')}` : '')
+        + (nierozpoznaneKluby.length ? `. Nie rozpoznałem klubu: ${nierozpoznaneKluby.join(', ')}` : '')
+        + '. ';
+      komunikatKadrOstatni = komunikatKadr;
+    }
+
     const bezRocznikow = tekst.replace(/^###\s*ROCZNIKI\s*$[\s\S]*/m, '');
+
+    // SAME KADRY TO TEŻ UDANE WKLEJENIE. Zakładka uruchomiona na stronie klubu przysyła listę
+    // zawodników nawet wtedy, gdy żaden protokół nie wszedł. Bez tego wyjścia trafiłaby na
+    // rozbiór protokołu, ten zwróciłby błąd i cała zapisana już kadra zostałaby zgłoszona
+    // jako „nie rozpoznałem protokołu".
+    if(!bezRocznikow.trim()){
+      komunikat = komunikatHerbow + komunikatKadr
+        + (komunikatKadr ? '' : 'W tej wklejce nie ma ani protokołów, ani kadr.');
+      wynik = null; rysuj(); return;
+    }
 
     // Zakładka do ŁNP zbiera protokoły całej kolejki i skleja je znacznikiem „### PROTOKOL:".
     // Dzieki temu jedno wklejenie rozlicza dziewięć meczów zamiast jednego.
@@ -5154,8 +5293,8 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
     // i w Szczecinie; bez wskazania grupy dorobek mógłby trafić do klubu z drugiego końca Polski.
     const wyniki = (czesci.length ? czesci : [tekst]).map((t,i)=>przetworzProtokolLnp(t, adresy[i] || '', grupa));
     const dobre = wyniki.filter(w=>!w.blad);
-    if(!dobre.length){ komunikat = komunikatHerbow + (wyniki[0].blad || 'Nie rozpoznałem protokołu.'); wynik = null; rysuj(); return; }
-    komunikat = komunikatHerbow + (wyniki.length > dobre.length
+    if(!dobre.length){ komunikat = komunikatHerbow + komunikatKadr + (wyniki[0].blad || 'Nie rozpoznałem protokołu.'); wynik = null; rysuj(); return; }
+    komunikat = komunikatHerbow + komunikatKadr + (wyniki.length > dobre.length
       ? `Rozpoznałem ${dobre.length} z ${wyniki.length} protokołów — reszty nie umiem odczytać.` : '');
 
     // CZY TA WKLEJKA W OGÓLE DOTYCZY TEGO KLUBU?
@@ -5339,7 +5478,7 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
       ? ` Nie umiem przypisać pozycji: ${[...POZYCJE_NIEROZPOZNANE].slice(0,6).join(', ')}`
         + `${POZYCJE_NIEROZPOZNANE.size>6?` i ${POZYCJE_NIEROZPOZNANE.size-6} innych`:''} — pokaż mi ten komunikat, dopiszę je.`
       : '';
-    komunikat = dopisanych || nowych || rocznikow || pozycji
+    komunikat = komunikatKadrOstatni + (dopisanych || nowych || rocznikow || pozycji
       ? `Zapisano ${meczow} ${meczow===1?'mecz':'meczów'}: ${dopisanych} wpisów dorobku`
         + `${nowych?`, w tym ${nowych} nowych zawodników w kartotece`:''}`
         + `${rocznikow?`; uzupełniłem ${rocznikow} roczników`:''}`
@@ -5348,7 +5487,7 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
         + oPozycjach
       : `Nic nowego nie zapisałem — wszystkie ${meczow} ${meczow===1?'mecz z tej wklejki jest':'meczów z tej wklejki jest'} `
         + `już rozliczonych. ${oPowtorkach} Dorobek został nietknięty.`
-      + (zapamietane.length ? ` Zapamiętałem też adres ŁNP dla ${zapamietane.join(' i ')} — następnym razem otworzy się jednym kliknięciem.` : ' Wklej kolejne protokoły.');
+      + (zapamietane.length ? ` Zapamiętałem też adres ŁNP dla ${zapamietane.join(' i ')} — następnym razem otworzy się jednym kliknięciem.` : ' Wklej kolejne protokoły.'));
     wynik = null;
     rysuj();
   }
@@ -12987,7 +13126,9 @@ function pozycjaZLnp(surowa){
   if(/obronca|defensor/.test(t)){
     if(/srodkow|stoper|centraln/.test(t)) return 'Obrońca środkowy';
     if(/boczn|prawy|lewy|skrzydlow|wahadl/.test(t)) return 'Obrońca boczny';
-    POZYCJE_NIEROZPOZNANE.add(String(surowa).trim()); return '';
+    // Samo „Obrońca" — tak pisze LNP. Nie zgadujemy, czy to stoper czy boczny: zapisujemy to,
+    // co wiemy, a doprecyzuje to skaut po obejrzeniu meczu.
+    return 'Obrońca';
   }
   if(/pomocnik|rozgrywajac/.test(t)){
     if(/defensywn|cofniet|szosc/.test(t)) return 'Pomocnik defensywny';
@@ -13520,7 +13661,7 @@ function sprawdzZakladke(nazwa, kod){
 
 // Wersja zakładki. Widnieje w każdym jej komunikacie i w oknie SBS, żeby dało się jednym
 // spojrzeniem stwierdzić, czy w pasku siedzi kod sprzed poprawek.
-const ZAKLADKA_WERSJA = 'v48 z 03.09.2026';
+const ZAKLADKA_WERSJA = 'v49 z 06.09.2026';
 const SBS_ADRES_JS = JSON.stringify(location.origin);
 // ZAKŁADKA W PASKU NIE AKTUALIZUJE SIĘ SAMA — I TO BYŁ PRAWDZIWY PROBLEM.
 //
