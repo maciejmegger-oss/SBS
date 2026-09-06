@@ -39,6 +39,8 @@ let promotingTalentId = null; // gdy ustawione, zapis nowego zawodnika usuwa te�
 let talentPasteText = '';   // treść wklejona w Talent -> "Wklej tekst" (zachowana między re-renderami)
 let talentPasteParsed = null; // wynik rozpoznania (null = jeszcze nie kliknięto "Rozpoznaj")
 let monitoringSearchQuery = ''; // wyszukiwarka słów w zakładce Monitoring
+let skanerLiga = '';            // która kategoria juniorska jest przeglądana skanerem
+let skanerMinMinut = 180;       // próg minut — poniżej dwóch meczów tempo goli to przypadek
 let viewingPlayerId = null;
 let viewingClubId = null;
 let viewingRocznikGroup = null;
@@ -52,7 +54,7 @@ let dashboardGroupSelected = null; // wybrana grupa (np. "III liga, gr. II") po 
 
 const DEFAULT_SETTINGS = {
   regions: ["Dolnośląski ZPN","Kujawsko-Pomorski ZPN","Lubelski ZPN","Lubuski ZPN","Łódzki ZPN","Małopolski ZPN","Mazowiecki ZPN","Opolski ZPN","Podkarpacki ZPN","Podlaski ZPN","Pomorski ZPN","Śląski ZPN","Świętokrzyski ZPN","Warmińsko-Mazurski ZPN","Wielkopolski ZPN","Zachodniopomorski ZPN"],
-  leagues: ["Ekstraklasa","I liga","II liga","III liga, gr. I","III liga, gr. II","III liga, gr. III","III liga, gr. IV","IV liga (pomorska)","IV liga (zachodniopomorska)","IV liga (dolnośląska)","IV liga (śląska)","IV liga (wielkopolska)","IV liga (kujawsko-pomorska)","IV liga (łódzka)","Klasa okręgowa","CLJ U19","CLJ U17 (zachodnia)","CLJ U17 (wschodnia)","Liga makroregionalna U16","Rocznik 2011","Rocznik 2012","Rocznik 2013","Rocznik 2014"],
+  leagues: ["Ekstraklasa","I liga","II liga","III liga, gr. I","III liga, gr. II","III liga, gr. III","III liga, gr. IV","IV liga (pomorska)","IV liga (zachodniopomorska)","IV liga (dolnośląska)","IV liga (śląska)","IV liga (wielkopolska)","IV liga (kujawsko-pomorska)","IV liga (łódzka)","Klasa okręgowa","CLJ U19","CLJ U17 (zachodnia)","CLJ U17 (wschodnia)","CLJ U15 (gr. A)","CLJ U15 (gr. B)","CLJ U15 (gr. C)","CLJ U15 (gr. D)","Liga makroregionalna U16","Rocznik 2011","Rocznik 2012","Rocznik 2013","Rocznik 2014"],
   positions: ["Bramkarz","Obrońca prawy","Obrońca lewy","Obrońca środkowy","Obrońca środkowy prawy","Obrońca środkowy centralny","Obrońca środkowy lewy","Obrońca boczny","Wahadłowy prawy","Wahadłowy lewy","Pomocnik defensywny","Pomocnik środkowy","Pomocnik ofensywny","Skrzydłowy","Skrzydłowy prawy","Skrzydłowy lewy","Napastnik"],
   statuses: ["Do Obserwacji","Na Testy","Do transferu","Z polecenia","Rekomendowany","Odrzucony"],
   recommendations: ["Kontynuować obserwację","Zaprosić na testy","(Do transferu)","Odrzucić","Zbyt wcześnie ocenić"],
@@ -70,6 +72,15 @@ function topLevelOf(league){
   if(league==="Ekstraklasa") return "Ekstraklasa";
   if(league==="Klasa okręgowa") return "Klasa okręgowa";
   return "Kategorie juniorskie";
+}
+// KTÓRE POZIOMY CHODZĄ PO PROTOKOŁY DO „ŁĄCZY NAS PIŁKA".
+//
+// 90minut nie prowadzi rozgrywek juniorskich ani IV ligi w formie, którą da się odczytać z serwera
+// (dla CLJ nie ma tam nawet tabeli). Te poziomy rozliczają się protokołami zbieranymi zakładką na
+// ŁNP. Warunek stał dotąd w siedmiu miejscach przepisany z palca — przy dokładaniu CLJ U15 trzeba
+// było trafić we wszystkie siedem, więc jest jeden.
+function czyZrodloLnp(top){
+  return top === 'IV liga' || top === 'Klasa okręgowa' || top === 'Kategorie juniorskie';
 }
 function groupsForTop(top){
   const settings = DB.settings as any;
@@ -2080,6 +2091,13 @@ async function loadAllInner(){
     // Usuń "Liga wojewódzka U15" z listy (na życzenie) także w istniejącej bazie.
     const woj = L.indexOf('Liga wojewódzka U15');
     if(woj >= 0) L.splice(woj, 1);
+    // CENTRALNA LIGA JUNIORÓW U15 — cztery grupy, ruszyły we wrześniu 2026. Wstawiamy je PRZY
+    // pozostałych kategoriach CLJ, żeby nie wylądowały za rocznikami na końcu listy.
+    ['CLJ U15 (gr. A)','CLJ U15 (gr. B)','CLJ U15 (gr. C)','CLJ U15 (gr. D)'].forEach(grupa=>{
+      if(L.includes(grupa)) return;
+      const ostatniaClj = L.map(l=>/^CLJ /.test(l)).lastIndexOf(true);
+      L.splice(ostatniaClj >= 0 ? ostatniaClj+1 : L.length, 0, grupa);
+    });
   }
   // Kategorie juniorskie wg ROCZNIKA (2011-2014) — osobne "grupy" pod Kategoriami juniorskimi,
   // do zakładania klubów/drużyn rocznikowych i wgrywania ich zawodników. Idempotentnie dla
@@ -4061,7 +4079,7 @@ function viewClubs(){
   ${groupRow}
   <div class="toolbar" style="margin-top:14px;">
     <div class="note">${list.length} ${list.length===1?'klub':'klubów'} w widoku${
-      (clubBrowse.top === 'IV liga' || clubBrowse.top === 'Klasa okręgowa')
+      czyZrodloLnp(clubBrowse.top)
         // Sprawdzone na produkcji: ŁNP oddaje serwerom atrapę strony (plik z kodem aplikacji ma
         // dwieście znaków zamiast megabajtów), więc odświeżanie z serwera tej ligi nie rozliczy.
         // Zamiast zapraszać w ślepy zaułek, mówimy od razu, która droga działa.
@@ -4069,9 +4087,9 @@ function viewClubs(){
           + ' „📋 Protokoły z ŁNP" i <strong>Ctrl+V</strong>. Jedno wklejenie rozlicza całą grupę.'
         : ''}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
-      ${clubBrowse.top && clubBrowse.top !== 'IV liga' && clubBrowse.top !== 'Klasa okręgowa'
+      ${clubBrowse.top && !czyZrodloLnp(clubBrowse.top)
         ? `<button class="secondary" data-action="league-stats" data-league="${esc(clubBrowse.top)}" title="Wklej statystyki wszystkich klubów tej ligi w jednym oknie">⏱ Statystyki ligi</button>` : ''}
-      ${clubBrowse.group && (clubBrowse.top === 'IV liga' || clubBrowse.top === 'Klasa okręgowa')
+      ${clubBrowse.group && czyZrodloLnp(clubBrowse.top)
         // LINK DO GRUPY W ŁNP. Adresy rozgrywek na „Łączy nas piłka" to same numery — z samego
         // adresu nie da się poznać, które to województwo. Dlatego link przypisuje człowiek, mając
         // wybraną grupę na ekranie. Potem jedno kliknięcie otwiera właściwą kolejkę i można na niej
@@ -4087,7 +4105,7 @@ function viewClubs(){
         // wieczór. Przycisk przechodzi wszystkie kluby z widoku po kolei. IV liga stała tu dotąd
         // z boku, bo jej protokołów nie dawało się czytać z serwera; teraz idzie tą samą drogą.
         ? `<button class="gold" data-action="stats-90minut-grupa" title="${
-            clubBrowse.top === 'IV liga' || clubBrowse.top === 'Klasa okręgowa'
+            czyZrodloLnp(clubBrowse.top)
               ? 'Wczytaj protokoły zebrane zakładką z ŁNP — jedno wklejenie rozlicza wszystkie kluby grupy'
               : 'Pobierz i zapisz statystyki wszystkich klubów widocznych na liście — po kolei, jeden po drugim'
           }">⏱ Odśwież statystyki — cały widok (${list.length})</button>`
@@ -4627,7 +4645,7 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
         p.rozliczoneMecze = [...(p.rozliczoneMecze || []), protokol.klucz];
         // Minuty mecz po meczu — to z nich powstaje wykres dostępności w profilu i w PDF.
         const przebieg = (p.przebieg || []).filter(x=>x.mecz !== protokol.klucz);
-        przebieg.push({ mecz: protokol.klucz, data: '', kolejka: null, rywal,
+        przebieg.push({ mecz: protokol.klucz, data: '', kolejka: null, rywal, gole: w.gole || 0,
           dom: uSiebie, wynik: '', minuty: w.minutyGry,
           odMinuty: w.rezerwa ? (w.wszedl ?? null) : 0, doMinuty: w.rezerwa ? null : (w.zszedl ?? null),
           podstawowy: !w.rezerwa, zolte: w.zolte || 0, czerwone: w.czerwone || 0 });
@@ -4680,7 +4698,7 @@ function openImportKlubowModal(){
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   document.body.appendChild(overlay);
-  const poziomy = ['IV liga','III liga','II liga','I liga','Ekstraklasa','CLJ U19','CLJ U17'];
+  const poziomy = ['IV liga','III liga','II liga','I liga','Ekstraklasa','CLJ U19','CLJ U17','CLJ U15'];
   let poziom = (clubBrowse.top && poziomy.includes(clubBrowse.top)) ? clubBrowse.top : 'IV liga';
   let stan = 'wybor';        // wybor | pobieram | podglad | zakladam
   let wynik = null, komunikat = '';
@@ -4813,7 +4831,7 @@ function openGrupaStatsModal(){
     overlay.innerHTML = `
     <div class="modal" style="max-width:720px;">
       <h3>⏱ Odśwież statystyki — ${esc(clubBrowse.group || clubBrowse.top || 'wszystkie kluby')}</h3>
-      <p class="note" style="margin:-6px 0 6px;">Źródło: ${clubBrowse.top === 'IV liga' || clubBrowse.top === 'Klasa okręgowa'
+      <p class="note" style="margin:-6px 0 6px;">Źródło: ${czyZrodloLnp(clubBrowse.top)
         ? '<strong>Łączy nas piłka</strong> (protokoły PZPN)' : '<strong>90minut.pl</strong>'}.</p>
       <p class="note" style="margin-bottom:10px;">Przechodzę kluby po kolei: pobieram protokoły meczów, liczę dorobek zawodników i od razu zapisuję. Klub bez rozegranych meczów albo bez trafienia w nazwę pomijam i wypisuję niżej — nic przez to nie przerywa całego przebiegu.</p>
       <label style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px;cursor:pointer;font-size:13px;">
@@ -5151,7 +5169,7 @@ function viewClubDetail(id){
     </div>
     <div style="display:flex;gap:8px;">
       <button class="gold" data-action="import-squad" data-id="${c.id}">📋 Import składu</button>
-      ${topLevelOf(c.league) === 'IV liga' || topLevelOf(c.league) === 'Klasa okręgowa'
+      ${czyZrodloLnp(topLevelOf(c.league))
         ? // IV ligi 90minut nie prowadzi — odnośnik przy wyniku przenosi na stronę „Łączy nas piłka",
           // a ta buduje się dopiero w przeglądarce. Dlatego dotąd jedyną drogą było wklejanie strony
           // meczu. Teraz serwer zagląda w dane, które ŁNP przywozi razem ze stroną (wpisane w skrypt),
@@ -7209,6 +7227,133 @@ function openPlayerAnalysisModal(playerId){
 }
 
 const MONITORING_STATUSES = ['Do Obserwacji','Na Testy','Do transferu','Z polecenia'];
+// SKANER KATEGORII — FUNDAMENT MONITOROWANIA MŁODZIEŻY.
+//
+// Monitoring pokazuje tych, których ktoś już wskazał. W CLJ U15 to za mało: cztery grupy to blisko
+// siedemdziesiąt drużyn i ponad tysiąc nazwisk, których nikt nie obejrzy z trybun. Kandydatów musi
+// więc wskazywać sama tabela — z protokołów, które i tak wpadają po każdej kolejce.
+//
+// CZEGO NIE ROBIMY: nie sortujemy po samych golach. W tym wieku surowa liczba goli mówi głównie o
+// tym, ile ktoś grał i w jak mocnym zespole. Napastnik lidera z ośmioma golami w 900 minutach jest
+// mniej ciekawy niż chłopak z sześcioma w 300 minutach w drużynie z dołu tabeli.
+//
+// Liczymy więc trzy rzeczy, każdą widoczną w tabeli, żeby dało się sprawdzić, skąd wzięło się
+// miejsce na liście:
+//
+//   GOLE NA 90 MINUT — tempo, nie suma. Zrównuje rezerwowego z podstawowym zawodnikiem.
+//   PEWNOŚĆ Z MINUT  — tłumik małej próby. Dwa gole w 60 minutach to jeszcze nic nie znaczy, więc
+//                      wskaźnik rośnie dopiero z liczbą przegranych minut (pełna waga od 450, czyli
+//                      pięciu meczów). Bez tego pierwsze miejsca zajmowaliby przypadkowi ludzie.
+//   UDZIAŁ W BRAMKACH — ile procent bramek zespołu strzelił. Oddziela tego, kto NIESIE drużynę, od
+//                      tego, kto korzysta z mocnej drużyny. To jest ta kolumna, która wyciąga
+//                      zawodnika ze słabego klubu.
+//
+// Rocznika ŁNP nie publikuje, a w U15 to informacja decydująca (młodszy rocznik przy tym samym
+// dorobku jest wart znacznie więcej). Dlatego brak rocznika jest w tabeli WIDOCZNY jako zadanie do
+// odhaczenia, a nie po cichu pomijany.
+const SKANER_PELNA_WAGA_MINUT = 450;   // pięć pełnych meczów
+const SKANER_MALA_PROBA = 180;          // poniżej dwóch meczów każdy wskaźnik to przypadek
+
+function skanerKategorii(liga, minMinut){
+  const kluby = DB.clubs.filter(c=>c.league === liga);
+  if(!kluby.length) return {kluby: [], wiersze: [], zawodnikow: 0};
+  const idyKlubow = new Set(kluby.map(c=>c.id));
+  const wszyscy = DB.players.filter(p=>idyKlubow.has(p.clubId));
+
+  // Bramki zespołu liczymy z tego, co mamy — z dorobku jego zawodników. To nie jest wynik z tabeli
+  // ligowej, tylko suma z wczytanych protokołów, i dlatego udział pokazujemy dopiero, gdy zespół
+  // ma z czego liczyć (inaczej jeden gol w klubie bez protokołów dawałby 100%).
+  const goleKlubu = {};
+  wszyscy.forEach(p=>{ goleKlubu[p.clubId] = (goleKlubu[p.clubId]||0) + (Number(p.goals)||0); });
+
+  const wiersze = wszyscy.map(p=>{
+    const minuty = Number(p.minutes)||0;
+    const gole = Number(p.goals)||0;
+    const mecze = Number(p.matches)||0;
+    const na90 = minuty > 0 ? gole * 90 / minuty : 0;
+    const pewnosc = Math.min(1, minuty / SKANER_PELNA_WAGA_MINUT);
+    const sumaKlubu = goleKlubu[p.clubId] || 0;
+    const udzial = sumaKlubu >= 5 ? gole / sumaKlubu : null;
+    // Udział wchodzi jako dodatek, nie jako druga oś rankingu — inaczej jedyny strzelec drużyny
+    // z jednym golem przeskoczyłby zawodnika z sześcioma.
+    const wskaznik = na90 * pewnosc * (1 + (udzial != null ? udzial : 0));
+    return {p, mecze, minuty, gole, na90, udzial, pewnosc, wskaznik,
+      malaProba: minuty > 0 && minuty < SKANER_MALA_PROBA,
+      brakRocznika: !rocznikZawodnika(p)};
+  }).filter(w=> w.gole > 0 && w.minuty >= minMinut);
+
+  wiersze.sort((a,b)=> b.wskaznik - a.wskaznik
+    || b.gole - a.gole
+    || (a.p.lastName||'').localeCompare(b.p.lastName||'','pl'));
+  return {kluby, wiersze, zawodnikow: wszyscy.length};
+}
+
+function panelSkanera(){
+  const juniorskie = (DB.settings.leagues||[]).filter(l=>topLevelOf(l)==='Kategorie juniorskie');
+  if(!juniorskie.length) return '';
+  if(!skanerLiga || !juniorskie.includes(skanerLiga)){
+    skanerLiga = juniorskie.find(l=>/^CLJ U15/.test(l)) || juniorskie[0];
+  }
+  const {kluby, wiersze, zawodnikow} = skanerKategorii(skanerLiga, skanerMinMinut);
+  const opcje = juniorskie.map(l=>`<option value="${esc(l)}" ${l===skanerLiga?'selected':''}>${esc(l)}</option>`).join('');
+  const progi = [0, 180, 360, 540].map(m=>
+    `<option value="${m}" ${m===skanerMinMinut?'selected':''}>${m===0?'bez progu':'od '+m+' minut'}</option>`).join('');
+
+  const trs = wiersze.slice(0, 40).map((w,i)=>{
+    const wMonitoringu = w.p.monitored;
+    return `<tr>
+      <td style="text-align:right;color:var(--ink-soft);">${i+1}</td>
+      <td><strong>${esc(w.p.lastName)}</strong> ${esc(w.p.firstName)}${
+        w.brakRocznika ? ' <span title="Rocznika brak — w U15 to informacja decydująca. Uzupełnij w kartotece." style="color:var(--gold-dark);">❓</span>' : ''}</td>
+      <td>${rocznikHtml(w.p)}</td>
+      <td>${esc(clubName(w.p.clubId))}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;">${w.mecze}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;">${w.minuty}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;"><strong>${w.gole}</strong></td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;"><strong style="color:var(--heading);">${w.na90.toFixed(2)}</strong>${
+        w.malaProba ? ' <span title="Mniej niż dwa pełne mecze — na ocenę tempa za wcześnie" style="color:var(--gold-dark);">⚠</span>' : ''}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;">${
+        w.udzial == null ? '<span class="meta">—</span>'
+        : `${Math.round(w.udzial*100)}%${w.udzial >= 0.4 ? ' <span title="Strzela ponad 40% bramek zespołu — niesie drużynę" style="color:var(--gold);">★</span>' : ''}`}</td>
+      <td style="white-space:nowrap;">
+        <button class="link-btn" data-action="view-player" data-id="${esc(w.p.id)}">Zobacz</button>
+        <button class="link-btn" data-action="add-to-monitoring" data-id="${esc(w.p.id)}" style="margin-left:8px;color:${wMonitoringu?'var(--good)':'var(--gold-dark)'};">${wMonitoringu?'✓ W monitoringu':'+ Monitoring'}</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  return `
+  <div class="card" style="margin-bottom:18px;">
+    <h3 style="font-family:'Barlow Condensed',sans-serif;font-size:22px;margin:0 0 2px;color:var(--heading);">Skaner kategorii</h3>
+    <p class="view-sub" style="margin:0 0 10px;">Kandydaci wyliczeni z protokołów — zanim ktokolwiek pojedzie na mecz.
+      Kolejność ustala <strong>tempo goli</strong>, nie ich suma, a udział w bramkach zespołu wyciąga zawodników ze słabszych drużyn.</p>
+    <div class="toolbar" style="margin-bottom:10px;gap:8px;">
+      <select id="skaner-liga" style="max-width:230px;">${opcje}</select>
+      <select id="skaner-minuty" style="max-width:160px;">${progi}</select>
+      <span class="note">${kluby.length} ${kluby.length===1?'klub':'klubów'} &middot; ${zawodnikow} w kartotece &middot; ${wiersze.length} ze strzelonym golem</span>
+    </div>
+    ${!kluby.length
+      ? `<div class="empty">W tej grupie nie ma jeszcze żadnego klubu. Załóż je w zakładce Kluby, a potem wczytaj protokoły z ŁNP.</div>`
+      : !wiersze.length
+        ? `<div class="empty">Kluby są, ale nikt nie ma jeszcze wczytanych bramek. Wejdź w Kluby → ta grupa → „⏱ Odśwież statystyki" i zbierz protokoły zakładką z ŁNP.</div>`
+        : `<div style="overflow:auto;">
+      <table>
+        <thead><tr>
+          <th style="text-align:right;">#</th><th>Zawodnik</th><th>Rocznik</th><th>Klub</th>
+          <th style="text-align:right;" title="Rozegrane mecze">M</th>
+          <th style="text-align:right;" title="Rozegrane minuty">Min</th>
+          <th style="text-align:right;" title="Gole w sezonie">Gole</th>
+          <th style="text-align:right;" title="Gole na 90 minut — tempo, nie suma">G/90</th>
+          <th style="text-align:right;" title="Ile procent bramek zespołu strzelił">% zesp.</th>
+          <th></th>
+        </tr></thead>
+        <tbody>${trs}</tbody>
+      </table>
+      ${wiersze.length > 40 ? `<p class="note" style="margin:8px 0 0;">Pokazane 40 z ${wiersze.length} — zawęź progiem minut.</p>` : ''}
+    </div>`}
+  </div>`;
+}
+
 function viewMonitoring(){
   // Pokazuj zawodników dodanych ręcznie ORAZ tych z decyzją statusu z raportu (pierwsze cztery opcje).
   let base = DB.players.filter(p => (p.monitored || p.source==='manual' || MONITORING_STATUSES.includes(p.status)) && !p.watchlistRemoved);
@@ -7268,7 +7413,10 @@ function viewMonitoring(){
   }).join('');
   return `
   <h2 class="view-title">Monitoring / Watchlist</h2>
-  <p class="view-sub">Automatyczne zestawienie — kto wymaga ponownej obserwacji, kto jest top talentem. Pokazuje tylko zawodników dodanych ręcznie przez Ciebie (nie masowe importy składów).</p>
+  <p class="view-sub">Najpierw skaner — kogo wskazują liczby. Niżej Twoja lista: kto wymaga ponownej obserwacji, kto jest top talentem.</p>
+  ${panelSkanera()}
+  <h3 style="font-family:'Barlow Condensed',sans-serif;font-size:22px;margin:0 0 2px;color:var(--heading);">Twoja lista</h3>
+  <p class="view-sub" style="margin:0 0 10px;">Zawodnicy dodani ręcznie i ci z decyzją statusu z raportu — masowe importy składów tu nie wchodzą.</p>
   <div class="toolbar" style="margin-bottom:10px;">
     <input id="monitoring-search" placeholder="Szukaj po nazwisku, klubie, regionie, pozycji…" value="${esc(monitoringSearchQuery)}" style="max-width:360px;">
   </div>
@@ -8215,6 +8363,10 @@ function attachHandlers(){
   if(contactSearchInput) contactSearchInput.oninput = ()=>{ contactSearchQuery = contactSearchInput.value; render(); };
   const monitoringSearchInput = main.querySelector('#monitoring-search');
   if(monitoringSearchInput) monitoringSearchInput.oninput = ()=>{ monitoringSearchQuery = monitoringSearchInput.value; render(); };
+  const skanerL = document.getElementById('skaner-liga');
+  if(skanerL) skanerL.onchange = ()=>{ skanerLiga = (skanerL as any).value; render(); };
+  const skanerM = document.getElementById('skaner-minuty');
+  if(skanerM) skanerM.onchange = ()=>{ skanerMinMinut = Number((skanerM as any).value)||0; render(); };
   main.querySelectorAll('.contact-inline-input').forEach(inp=>inp.onchange = async ()=>{
     await updateContactField(inp.dataset.id, inp.dataset.field, inp.value.trim());
     // Po zmianie nazwy klubu przebuduj listę, żeby wiersz od razu trafił na właściwe miejsce (alfabet).
@@ -8396,7 +8548,7 @@ function attachHandlers(){
     // protokołów zebranych zakładką — jedno wklejenie rozlicza wszystkie kluby grupy naraz,
     // z minutami, golami i kartkami ze wszystkich rozegranych kolejek.
     const poziom = clubBrowse.top;
-    if(poziom === 'IV liga' || poziom === 'Klasa okręgowa'){
+    if(czyZrodloLnp(poziom)){
       // JEDNO KLIKNIĘCIE ROBI TYLE, ILE MOŻE. Przeglądarka nie pozwala nam sięgnąć do cudzej
       // strony z poziomu SBS — to zabezpieczenie, którego nie da się (i nie należy) obchodzić.
       // Otwieramy więc od razu właściwą stronę ŁNP i zostawiamy człowiekowi JEDEN ruch: kliknięcie
