@@ -7990,7 +7990,11 @@ const POZYCJA_NA_NUMER = [
   { wzor: /^bramkarz/i, numer: 1 },
   { wzor: /wahadłowy prawy|wahadlowy prawy/i, numer: 2 },
   { wzor: /wahadłowy lewy|wahadlowy lewy/i, numer: 3 },
-  { wzor: /obrońca środkowy lewy|obronca srodkowy lewy/i, numer: 5 },
+  // Numeracja wg Narodowego Modelu Gry: 4 to stoper LEWY, 5 to PRAWY. Ta lista powstała, gdy było
+  // odwrotnie, i zmiana numeracji jej nie objęła — „obrońca środkowy lewy" z kartoteki lądował
+  // przez to na prawej stronie mapy, a niewskazany bok trafiał na lewą.
+  { wzor: /obrońca środkowy prawy|obronca srodkowy prawy/i, numer: 5 },
+  { wzor: /obrońca środkowy lewy|obronca srodkowy lewy/i, numer: 4 },
   { wzor: /obrońca środkowy|obronca srodkowy/i, numer: 4 },
   { wzor: /obrońca prawy|obronca prawy|obrońca boczny|obronca boczny/i, numer: 2 },
   { wzor: /obrońca lewy|obronca lewy/i, numer: 3 },
