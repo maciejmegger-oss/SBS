@@ -6779,6 +6779,16 @@ function podsumowanieMinut(przebieg){
 // klubu występuje przecież w pierwszej drużynie i w juniorach.
 function poziomGrupy(nazwaGrupy){
   const t = String(nazwaGrupy || '');
+  // ROCZNIK CZYTAMY Z NAZWY, NIE ZGADUJEMY GO.
+  //
+  // Do 09.2026 znaliśmy tylko U17 i U19, a każda inna grupa CLJ wpadała pod „CLJ U19". Po dodaniu
+  // czterech grup CLJ U15 dawało to sprzeczność wprost na ekranie: filtr żądał ligi zaczynającej
+  // się od „CLJ U19", odrzucał wszystkie kluby U15 i wypisywał „ZKS Olimpia Elbląg gra w CLJ U15
+  // gr. A, a zbierasz do CLJ U15 gr. A" — bo komunikat pokazywał grupę, a filtr porównywał poziom.
+  // Każdy kolejny rocznik (U14, U16) zadziała teraz bez ruszania kodu.
+  if(/makroregionaln/i.test(t)) return 'Liga makroregionalna U16';
+  const rocznikCLJ = t.match(/u\s*-?\s*(\d{2})/i);
+  if(rocznikCLJ && /\bclj\b|centralna\s+liga\s+junior/i.test(t)) return 'CLJ U' + rocznikCLJ[1];
   if(/u\s*-?\s*17/i.test(t)) return 'CLJ U17';
   if(/u\s*-?\s*19/i.test(t) || /\bclj\b/i.test(t)) return 'CLJ U19';
   const m = t.match(/^(IV|III|II|I)\s+liga/i);
@@ -13309,6 +13319,13 @@ function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
     // gra w Ekstraklasie, a zbierasz do Ekstraklasy". Ten sam powód każe wymagać „CLJ" jako całego
     // słowa: bez tego dowolne „clj" wewnątrz nazwiska zmieniałoby rozgrywki.
     [/(?:centralna\s+liga\s+junior\w*|\bclj\b)[^\n]{0,40}u\s*-?\s*17/i, 'CLJ U17'],
+    // Roczniki dołożone po uruchomieniu CLJ U15 (cztery grupy) i ligi makroregionalnej U16.
+    // Bez nich każdy protokół tych rozgrywek dostawał poziom „CLJ U19" z reguły ogólnej niżej,
+    // filtr żądał ligi zaczynającej się od „CLJ U19" i odrzucał WSZYSTKIE kluby U15 — kolejka
+    // rozpoznawała się bez zarzutu i nie zapisywała ani jednego zawodnika.
+    [/(?:centralna\s+liga\s+junior\w*|\bclj\b)[^\n]{0,40}u\s*-?\s*16/i, 'CLJ U16'],
+    [/(?:centralna\s+liga\s+junior\w*|\bclj\b)[^\n]{0,40}u\s*-?\s*15/i, 'CLJ U15'],
+    [/liga\s+makroregionaln\w*/i, 'Liga makroregionalna U16'],
     [/centralna\s+liga\s+junior|\bclj\b/i, 'CLJ U19'],
     // Ekstraklasy tu dotąd nie było w ogóle — jej protokoły szły bez poziomu, więc o docelowym
     // klubie decydowała otwarta grupa. Przy grupie juniorskiej albo rocznikowej odcinało to
@@ -13386,9 +13403,14 @@ function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
       // że w buforze została kolejka z zupełnie innych rozgrywek.
       const bezPoziomu = dopasujKlubDoNazwy(nazwa, '', '');
       if(bezPoziomu && poziomRozliczenia){
+        // KOMUNIKAT MUSI POKAZYWAĆ TO, CO PORÓWNAŁ FILTR. Dotąd pisał nazwę GRUPY, a odrzucał po
+        // POZIOMIE — i gdy rozpoznanie poziomu zawodziło, wychodziło zdanie zaprzeczające sobie:
+        // „gra w CLJ U15 gr. A, a zbierasz do CLJ U15 gr. A". Prawdziwą przyczyną było „CLJ U19"
+        // wyliczone z nazwy grupy, którego w tym zdaniu nie było widać.
         strony.push({nazwa, dane, blad:
-          `„${bezPoziomu.name}" gra w rozgrywkach ${bezPoziomu.league}, a zbierasz do ${podpowiedzGrupa || poziomRozliczenia}. `
-          + 'Ten protokół jest z innych rozgrywek — najpewniej został w buforze zakładki. '
+          `„${bezPoziomu.name}" gra w rozgrywkach ${bezPoziomu.league}, a ten protokół rozliczam `
+          + `na poziomie ${poziomRozliczenia}${podpowiedzGrupa ? ` (grupa: ${podpowiedzGrupa})` : ''}. `
+          + 'Protokół jest z innych rozgrywek — najpewniej został w buforze zakładki. '
           + 'Na ŁNP kliknij zakładkę i „Wyczysc zebrane", potem zbierz właściwą grupę.'});
         return;
       }
