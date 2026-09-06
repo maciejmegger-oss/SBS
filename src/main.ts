@@ -4488,15 +4488,21 @@ function leagueLogoImg(topLevel, size){
   const initials = (topLevel.match(/[A-ZĄĆĘŁŃÓŚŹŻ0-9]/g)||[]).join('').slice(0,3) || topLevel.slice(0,2).toUpperCase();
   return `<span style="width:${size}px;height:${size}px;display:inline-flex;align-items:center;justify-content:center;background:var(--pitch);color:var(--gold);border-radius:9px;font-weight:800;font-size:${Math.round(size*0.34)}px;">${esc(initials)}</span>`;
 }
-function viewClubs(){
-  if(viewingClubId) return viewClubDetail(viewingClubId);
-
+// Kluby widoczne w bieżącym widoku — wydzielone, bo obsługa przycisków działa już po
+// przerysowaniu, poza zasięgiem zmiennych z viewClubs, a musi widzieć DOKŁADNIE tę samą listę.
+function widoczneKluby(){
   // Alfabetycznie, po polsku — kolejność importu nie niesie żadnej informacji, a przy 18 klubach
   // w grupie szukanie wzrokiem konkretnej nazwy w przypadkowej kolejności jest mozolne.
   // localeCompare z 'pl' ustawia Ł po L, a nie na końcu alfabetu, jak zrobiłoby zwykłe porównanie.
   let list = DB.clubs.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'','pl'));
   if(clubBrowse.top) list = list.filter(c=>topLevelOf(c.league)===clubBrowse.top);
   if(clubBrowse.group) list = list.filter(c=>c.league===clubBrowse.group);
+  return list;
+}
+
+function viewClubs(){
+  if(viewingClubId) return viewClubDetail(viewingClubId);
+  const list = widoczneKluby();
 
   // PRZYCISKI ROZGRYWEK UŁOŻONE W RODZINY — TAK JAK NA ŁNP.
   //
@@ -4639,6 +4645,7 @@ function viewClubs(){
           }">⏱ Odśwież statystyki — cały widok (${list.length})</button>`
         : ''}
       <button class="secondary" data-action="merge-duplicates" title="Znajdź kluby wpisane dwa razy pod różnymi nazwami i połącz je w jeden">🧹 Scal duplikaty</button>
+      ${list.some(c=>!clubCrest(c.id)) ? `<button class="secondary" data-action="herby-z-pierwszych" title="Skopiuj herby z kartotek seniorskich tych samych klubów">🛡️ Herby z pierwszych drużyn (${list.filter(c=>!clubCrest(c.id)).length})</button>` : ''}
       <button class="gold" data-action="add-club">+ Nowy klub</button>
     </div>
   </div>
@@ -8018,7 +8025,11 @@ const POZYCJA_NA_NUMER = [
   { wzor: /^bramkarz/i, numer: 1 },
   { wzor: /wahadłowy prawy|wahadlowy prawy/i, numer: 2 },
   { wzor: /wahadłowy lewy|wahadlowy lewy/i, numer: 3 },
-  { wzor: /obrońca środkowy lewy|obronca srodkowy lewy/i, numer: 5 },
+  // Numeracja wg Narodowego Modelu Gry: 4 to stoper LEWY, 5 to PRAWY. Ta lista powstała, gdy było
+  // odwrotnie, i zmiana numeracji jej nie objęła — „obrońca środkowy lewy" z kartoteki lądował
+  // przez to na prawej stronie mapy, a niewskazany bok trafiał na lewą.
+  { wzor: /obrońca środkowy prawy|obronca srodkowy prawy/i, numer: 5 },
+  { wzor: /obrońca środkowy lewy|obronca srodkowy lewy/i, numer: 4 },
   { wzor: /obrońca środkowy|obronca srodkowy/i, numer: 4 },
   { wzor: /obrońca prawy|obronca prawy|obrońca boczny|obronca boczny/i, numer: 2 },
   { wzor: /obrońca lewy|obronca lewy/i, numer: 3 },
@@ -8595,6 +8606,49 @@ function meczeKlubu(clubId){
   return { meczow: spotkania.size, punkty };
 }
 
+// HERBY DRUŻYN MŁODZIEŻOWYCH BIERZEMY OD PIERWSZEJ DRUŻYNY.
+//
+// Klub ma jeden herb, a nie osobny na każdą kategorię wiekową. „CHROBRY GŁOGÓW S.A." z CLJ U15 to
+// ten sam Chrobry, którego herb wisi już przy karcie z I ligi — wgrywanie go drugi raz ręcznie,
+// przy czternastu klubach razy siedem grup, jest pracą bez treści.
+//
+// DOPASOWUJEMY PO MIEŚCIE I RDZENIU NAZWY, tą samą regułą co protokoły: sponsor i skróty się
+// zmieniają, miasto zostaje. Bierzemy WYŁĄCZNIE z rozgrywek seniorskich — drużyna U15 nie może
+// pożyczyć herbu od U17 tego samego klubu, bo wtedy jeden brak rozmnożyłby się na całą strukturę.
+const POZIOMY_SENIORSKIE = ['Ekstraklasa','I liga','II liga','III liga','IV liga','Klasa okręgowa'];
+function seniorskiKlub(c){
+  const l = String(c.league || '');
+  return POZIOMY_SENIORSKIE.some(p=>wTychRozgrywkach(l, p));
+}
+function znajdzHerbPierwszejDruzyny(klub){
+  // NIE ZAKŁADAMY, ŻE MIASTO STOI OSTATNIE. Większość klubów CLJ to spółki i nazwa kończy się
+  // na „S.A.", „SA", „SSA" albo „SI" — a kropki rozbijają to na osobne człony („s", „a"), więc
+  // ostatnim członem bywa pojedyncza litera. Zamiast zgadywać, który człon jest miastem, żądamy
+  // DWÓCH wspólnych członów, z czego przynajmniej jeden dłuższy: nazwa własna plus miasto.
+  // Samo miasto łączyłoby Wisłę z Cracovią, a sama nazwa własna — Polonię Świdnica z Polonią Nysą.
+  const znaczace = (rdzen)=> rdzen.filter(x=>x.length >= 3);
+  const a = znaczace(rozbijNazweKlubu(klub.name).rdzen);
+  if(a.length < 2) return null;
+  const kandydaci = DB.clubs.filter(c=>{
+    if(c.id === klub.id || !seniorskiKlub(c)) return false;
+    if(!clubCrest(c.id)) return false;
+    const b = znaczace(rozbijNazweKlubu(c.name).rdzen);
+    if(b.length < 2) return false;
+    const wspolne = a.filter(x=>b.some(y=>tenSamCzlon(x,y)));
+    return wspolne.length >= 2 && wspolne.some(x=>x.length >= 5);
+  });
+  if(!kandydaci.length) return null;
+  // Pierwsza drużyna przed rezerwami, wyższy poziom przed niższym — herb ten sam, ale pierwsza
+  // drużyna ma go najczęściej w najlepszej jakości.
+  const rangaPoziomu = (c)=> POZIOMY_SENIORSKIE.findIndex(p=>wTychRozgrywkach(String(c.league||''), p));
+  kandydaci.sort((x,y)=>{
+    const nx = rozbijNazweKlubu(x.name).numer ? 1 : 0;
+    const ny = rozbijNazweKlubu(y.name).numer ? 1 : 0;
+    return nx - ny || rangaPoziomu(x) - rangaPoziomu(y);
+  });
+  return kandydaci[0];
+}
+
 // WYSZUKIWANIE DUPLIKATÓW.
 //
 // Kryterium jest CELOWO wąskie: ten sam klub i to samo nazwisko po odrzuceniu znaków
@@ -8626,6 +8680,56 @@ function znajdzDuplikaty(){
     wgBogactwa.slice(1).forEach(dup=> pary.push({ glowna, duplikat: dup }));
   });
   return pary;
+}
+
+function openHerbyZPierwszychModal(kluby){
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  const bezHerbu = kluby.filter(c=>!clubCrest(c.id));
+  const dopasowane = bezHerbu.map(c=>({ klub: c, zrodlo: znajdzHerbPierwszejDruzyny(c) })).filter(x=>x.zrodlo);
+  const bezDopasowania = bezHerbu.filter(c=>!dopasowane.some(x=>x.klub.id===c.id));
+
+  overlay.innerHTML = `
+  <div class="modal" style="max-width:640px;">
+    <h3>Herby z pierwszych drużyn</h3>
+    <p class="note" style="margin-top:-6px;">Klub ma jeden herb na wszystkie kategorie wiekowe. Szukam go w kartotekach
+      seniorskich po mieście i rdzeniu nazwy — sponsor i skróty się zmieniają, miasto zostaje.</p>
+    ${!bezHerbu.length ? '<div class="empty">Wszystkie kluby w tym widoku mają już herb.</div>' : `
+      ${dopasowane.length ? `<label class="field">Do uzupełnienia (${dopasowane.length})</label>
+      <div style="max-height:300px;overflow:auto;margin-bottom:10px;">
+        ${dopasowane.map(x=>`<div class="obs-item" style="display:flex;align-items:center;gap:10px;">
+          ${crestImg(clubCrest(x.zrodlo.id), null, x.zrodlo.name)}
+          <span><strong>${esc(x.klub.name)}</strong>
+            <div class="note">herb od: ${esc(x.zrodlo.name)} &middot; ${esc(x.zrodlo.league||'')}</div></span>
+        </div>`).join('')}
+      </div>` : '<div class="empty">Nie znalazłem pierwszych drużyn dla klubów bez herbu w tym widoku.</div>'}
+      ${bezDopasowania.length ? `<p class="note">Bez dopasowania (${bezDopasowania.length}): ${
+        esc(bezDopasowania.slice(0,8).map(c=>c.name).join(', '))}${bezDopasowania.length>8?` i ${bezDopasowania.length-8} więcej`:''}.
+        Tym trzeba wgrać herb ręcznie — kliknij pole herbu przy klubie.</p>` : ''}
+    `}
+    <div class="modal-actions">
+      <button class="secondary herby-anuluj">Zamknij</button>
+      ${dopasowane.length ? `<button class="gold herby-wykonaj">Uzupełnij ${dopasowane.length} ${dopasowane.length===1?'herb':'herbów'}</button>` : ''}
+    </div>
+  </div>`;
+
+  overlay.querySelector('.herby-anuluj').addEventListener('click', ()=>overlay.remove());
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) overlay.remove(); });
+  const wykonaj = overlay.querySelector('.herby-wykonaj');
+  if(wykonaj) (wykonaj as HTMLButtonElement).onclick = async()=>{
+    (wykonaj as HTMLButtonElement).disabled = true; wykonaj.textContent = 'Zapisuję…';
+    // Herb kopiujemy do TABELI HERBÓW, nie do pola crestUrl — pole trzyma adres zewnętrzny,
+    // a my przenosimy obrazek, który już jest w bazie.
+    dopasowane.forEach(x=>{ DB.clubCrests[x.klub.id] = clubCrest(x.zrodlo.id); });
+    const ok = await saveClubCrests();
+    overlay.remove();
+    render();
+    pokazPotwierdzenie(ok === false
+      ? 'Nie udało się zapisać herbów — sprawdź baner u góry strony.'
+      : `Uzupełniono ${dopasowane.length} ${dopasowane.length===1?'herb':'herbów'} z pierwszych drużyn.`,
+      ok === false ? 'blad' : 'ok');
+  };
+  document.body.appendChild(overlay);
 }
 
 function openDuplikatyModal(){
@@ -10753,6 +10857,7 @@ function attachHandlers(){
   }
   main.querySelectorAll('[data-action="scal-zawodnikow"]').forEach(b=>b.onclick=()=>openScalanieModal(b.dataset.id));
   main.querySelectorAll('[data-action="pokaz-duplikaty"]').forEach(b=>b.onclick=()=>openDuplikatyModal());
+  main.querySelectorAll('[data-action="herby-z-pierwszych"]').forEach(b=>b.onclick=()=>openHerbyZPierwszychModal(widoczneKluby()));
   main.querySelectorAll('[data-action="save-report"]').forEach(b=>b.onclick=async()=>{
     const playerId = document.getElementById('rep-player').value;
     if(!playerId){ alert('Wybierz zawodnika.'); return; }
