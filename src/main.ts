@@ -345,6 +345,73 @@ const SEED_CLUBS_IV_WIELKOPOLSKA = [
     profileLnp:`http://www.90minut.pl/skarb.php?id_klub=${c.klubId}&id_sezon=109`
   }, {name:c.name, city:c.city}));
 
+// CENTRALNA LIGA JUNIORÓW U15 — cztery grupy sezonu 2026/2027, przepisane z oficjalnych tabel
+// w aplikacji PZPN. Nazwy zostawiamy DOKŁADNIE takie, jak podaje związek („S.A.", „SA", „U.K.S."),
+// bo to po nich protokoły z ŁNP trafiają do właściwego klubu; skracanie ich na ładniejsze
+// zerwałoby dopasowanie.
+const SEED_CLUBS_CLJ_U15 = [
+  // grupa A — Mazowsze, Łódzkie, Podlasie, Warmia
+  {name:"POLONIA WARSZAWA S.A.", region:"Mazowiecki ZPN", city:"Warszawa", league:"CLJ U15 gr. A"},
+  {name:"Legia Warszawa S.A.", region:"Mazowiecki ZPN", city:"Warszawa", league:"CLJ U15 gr. A"},
+  {name:"Widzew Łódź SA", region:"Łódzki ZPN", city:"Łódź", league:"CLJ U15 gr. A"},
+  {name:"Escola Varsovia", region:"Mazowiecki ZPN", city:"Warszawa", league:"CLJ U15 gr. A"},
+  {name:"UKS TORPEDO MOKOTÓW", region:"Mazowiecki ZPN", city:"Warszawa", league:"CLJ U15 gr. A"},
+  {name:"RADOMIAK S.A.", region:"Mazowiecki ZPN", city:"Radom", league:"CLJ U15 gr. A"},
+  {name:"Jagiellonia Białystok SSA", region:"Podlaski ZPN", city:"Białystok", league:"CLJ U15 gr. A"},
+  {name:"S.S.M. WISŁA PŁOCK", region:"Mazowiecki ZPN", city:"Płock", league:"CLJ U15 gr. A"},
+  {name:"MKS Znicz Pruszków", region:"Mazowiecki ZPN", city:"Pruszków", league:"CLJ U15 gr. A"},
+  {name:"MUKS STAL NIEWIADÓW", region:"Łódzki ZPN", city:"Niewiadów", league:"CLJ U15 gr. A"},
+  {name:"ZKS Olimpia Elbląg", region:"Warmińsko-Mazurski ZPN", city:"Elbląg", league:"CLJ U15 gr. A"},
+  {name:"AP TALENT BIAŁYSTOK", region:"Podlaski ZPN", city:"Białystok", league:"CLJ U15 gr. A"},
+  {name:"ŁKS Łódź S.A.", region:"Łódzki ZPN", city:"Łódź", league:"CLJ U15 gr. A"},
+  {name:"UKS VARSOVIA", region:"Mazowiecki ZPN", city:"Warszawa", league:"CLJ U15 gr. A"},
+  // grupa B — Pomorze, Wielkopolska, Zachodniopomorskie, Kujawy
+  {name:"Lechia Gdańsk AP", region:"Pomorski ZPN", city:"Gdańsk", league:"CLJ U15 gr. B"},
+  {name:"FASE Szczecin", region:"Zachodniopomorski ZPN", city:"Szczecin", league:"CLJ U15 gr. B"},
+  {name:"MIESZKO Gniezno", region:"Wielkopolski ZPN", city:"Gniezno", league:"CLJ U15 gr. B"},
+  {name:"KKS LECH Poznań", region:"Wielkopolski ZPN", city:"Poznań", league:"CLJ U15 gr. B"},
+  {name:"Akademia Piłkarska Chemik Bydgoszcz", region:"Kujawsko-Pomorski ZPN", city:"Bydgoszcz", league:"CLJ U15 gr. B"},
+  {name:"Polonia 1912 Leszno", region:"Wielkopolski ZPN", city:"Leszno", league:"CLJ U15 gr. B"},
+  {name:"WARTA POZNAŃ SA", region:"Wielkopolski ZPN", city:"Poznań", league:"CLJ U15 gr. B"},
+  {name:"ARKONIA Szczecin", region:"Zachodniopomorski ZPN", city:"Szczecin", league:"CLJ U15 gr. B"},
+  {name:"Pogoń Szczecin", region:"Zachodniopomorski ZPN", city:"Szczecin", league:"CLJ U15 gr. B"},
+  {name:"Arka Gdynia SI", region:"Pomorski ZPN", city:"Gdynia", league:"CLJ U15 gr. B"},
+  {name:"Jaguar Gdańsk AP", region:"Pomorski ZPN", city:"Gdańsk", league:"CLJ U15 gr. B"},
+  {name:"Salos Szczecin", region:"Zachodniopomorski ZPN", city:"Szczecin", league:"CLJ U15 gr. B"},
+  {name:"APR Lampart Poznań", region:"Wielkopolski ZPN", city:"Poznań", league:"CLJ U15 gr. B"},
+  {name:"FOOTBALL ARENA Szczecin", region:"Zachodniopomorski ZPN", city:"Szczecin", league:"CLJ U15 gr. B"},
+  // grupa C — Śląsk, Dolny Śląsk, Opolskie, Lubuskie
+  {name:"GÓRNIK ZABRZE S.A.", region:"Śląski ZPN", city:"Zabrze", league:"CLJ U15 gr. C"},
+  {name:"ŚLĄSK WROCŁAW", region:"Dolnośląski ZPN", city:"Wrocław", league:"CLJ U15 gr. C"},
+  {name:"GKS GIEKSA KATOWICE S.A.", region:"Śląski ZPN", city:"Katowice", league:"CLJ U15 gr. C"},
+  {name:"FC Wrocław Academy U.K.S.", region:"Dolnośląski ZPN", city:"Wrocław", league:"CLJ U15 gr. C"},
+  {name:"CHROBRY GŁOGÓW S.A.", region:"Dolnośląski ZPN", city:"Głogów", league:"CLJ U15 gr. C"},
+  {name:"ZAGŁĘBIE LUBIN", region:"Dolnośląski ZPN", city:"Lubin", league:"CLJ U15 gr. C"},
+  {name:"GKS PIAST GLIWICE S.A.", region:"Śląski ZPN", city:"Gliwice", league:"CLJ U15 gr. C"},
+  {name:"MIEDŹ LEGNICA", region:"Dolnośląski ZPN", city:"Legnica", league:"CLJ U15 gr. C"},
+  {name:"RKS RAKÓW CZĘSTOCHOWA S.A.", region:"Śląski ZPN", city:"Częstochowa", league:"CLJ U15 gr. C"},
+  {name:"OKS ODRA OPOLE", region:"Opolski ZPN", city:"Opole", league:"CLJ U15 gr. C"},
+  {name:"STILON GORZÓW WLKP.", region:"Lubuski ZPN", city:"Gorzów Wielkopolski", league:"CLJ U15 gr. C"},
+  {name:"BTS REKORD BIELSKO-BIAŁA", region:"Śląski ZPN", city:"Bielsko-Biała", league:"CLJ U15 gr. C"},
+  {name:"LECHIA ZIELONA GÓRA", region:"Lubuski ZPN", city:"Zielona Góra", league:"CLJ U15 gr. C"},
+  {name:"MKS KLUCZBORK", region:"Opolski ZPN", city:"Kluczbork", league:"CLJ U15 gr. C"},
+  // grupa D — Małopolska, Podkarpacie, Świętokrzyskie, Lubelskie
+  {name:"Resovia Rzeszów S.A.", region:"Podkarpacki ZPN", city:"Rzeszów", league:"CLJ U15 gr. D"},
+  {name:"Wisła Kraków", region:"Małopolski ZPN", city:"Kraków", league:"CLJ U15 gr. D"},
+  {name:"Beniaminek PROFBUD Krosno", region:"Podkarpacki ZPN", city:"Krosno", league:"CLJ U15 gr. D"},
+  {name:"Górnik Łęczna S.A.", region:"Lubelski ZPN", city:"Łęczna", league:"CLJ U15 gr. D"},
+  {name:"Garbarnia Kraków", region:"Małopolski ZPN", city:"Kraków", league:"CLJ U15 gr. D"},
+  {name:"KORONA S.A. Kielce", region:"Świętokrzyski ZPN", city:"Kielce", league:"CLJ U15 gr. D"},
+  {name:"Akademia Mistrzów Cracovia Kraków", region:"Małopolski ZPN", city:"Kraków", league:"CLJ U15 gr. D"},
+  {name:"KS Cracovia SA Kraków", region:"Małopolski ZPN", city:"Kraków", league:"CLJ U15 gr. D"},
+  {name:"MKS Limanovia w Limanowej", region:"Małopolski ZPN", city:"Limanowa", league:"CLJ U15 gr. D"},
+  {name:"DAP Dębica", region:"Podkarpacki ZPN", city:"Dębica", league:"CLJ U15 gr. D"},
+  {name:"LKS ORLĘTA Kielce", region:"Świętokrzyski ZPN", city:"Kielce", league:"CLJ U15 gr. D"},
+  {name:"Stal Rzeszów S.A.", region:"Podkarpacki ZPN", city:"Rzeszów", league:"CLJ U15 gr. D"},
+  {name:"FA Sandecja Nowy Sącz", region:"Małopolski ZPN", city:"Nowy Sącz", league:"CLJ U15 gr. D"},
+  {name:"KKP KORONA Kielce", region:"Świętokrzyski ZPN", city:"Kielce", league:"CLJ U15 gr. D"},
+].map(c=>Object.assign({season:"2026/2027", crestUrl:"", juniorCategories:"", profileLnp:"", profileTm:""}, c));
+
 const SEED_CLUBS_IV_LODZKA = [
   {name:"Boruta Zgierz", city:"Zgierz"},
   {name:"Zjednoczeni Stryków", city:"Stryków"},
@@ -1987,6 +2054,40 @@ async function loadAllInner(){
     });
     if(dodano) await saveClubs();
     await quietFlagSet('scouting:seed_iv_lodzka_v1');
+  }
+
+  // CLJ U15 — cztery grupy sezonu 2026/2027, z oficjalnych tabel PZPN.
+  //
+  // HERBY BIERZEMY Z TEGO, CO JUŻ JEST. Większość tych klubów prowadzi także pierwszą drużynę,
+  // której herb dawno wisi w kartotece — Legia, Lech, Górnik Zabrze, Pogoń, Widzew. Wgrywanie ich
+  // po raz drugi ręcznie, plik po pliku, to pięćdziesiąt sześć zbędnych ruchów, więc przepisujemy
+  // adres herbu od klubu o tym samym rdzeniu nazwy. Dopasowanie idzie tą samą drogą, co przy
+  // protokołach (dopasujKlubDoNazwy), więc „GÓRNIK ZABRZE S.A." trafia na „Górnik Zabrze".
+  //
+  // Numer zespołu w rdzeniu musi się zgadzać, więc herb Arki NIE trafi z „Arka II Gdynia" —
+  // i bardzo dobrze, bo to inna drużyna tego samego klubu.
+  const u15Zasiane = await czytaj('scouting:seed_clj_u15_v1');
+  if(wolnoUzupelniac && !u15Zasiane){
+    let dodano = 0, zHerbem = 0;
+    SEED_CLUBS_CLJ_U15.forEach(seed=>{
+      const jest = DB.clubs.some(c2=> c2.name === seed.name && c2.league === seed.league);
+      if(jest) return;
+      const nowy = Object.assign({}, seed, {id: uid('K')});
+      // Herb szukamy WŚRÓD KLUBÓW SPRZED dopisania tej grupy, żeby jeden klub U15 nie kopiował
+      // pustego herbu od drugiego klubu U15 dopisanego przed chwilą.
+      const zrodlo = dopasujKlubDoNazwy(seed.name, '', '');
+      if(zrodlo && zrodlo.crestUrl && zrodlo.league !== seed.league){
+        nowy.crestUrl = zrodlo.crestUrl;
+        zHerbem++;
+      }
+      DB.clubs.push(nowy);
+      dodano++;
+    });
+    if(dodano){
+      await saveClubs();
+      console.info(`CLJ U15: dopisano ${dodano} klubów, w tym ${zHerbem} z herbem przepisanym z kartoteki.`);
+    }
+    await quietFlagSet('scouting:seed_clj_u15_v1');
   }
 
   // WERYFIKACJA LIG WEDŁUG OFICJALNYCH TABEL 90MINUT (sezon 2026/2027).
