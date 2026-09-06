@@ -59,12 +59,19 @@ console.log('\n2. Nazwy z ŁNP na słownik SBS');
 });
 
 // 3. Czego NIE wolno zgadywać.
-console.log('\n3. Niejednoznaczne zostają puste');
-sprawdz('samo „Obrońca" nie daje pozycji', pozycjaZLnp.pozycjaZLnp('Obrońca') === '',
+//
+// Samo „Obrońca" ZAPISUJEMY tak, jak podaje ŁNP — to osobna pozycja w słowniku. Nie zgadujemy
+// przy tym, czy to stoper, czy boczny: mapa pozycji zna tylko te dwa i zawodnik z ogólnym
+// „Obrońca" na nią nie wejdzie, dopóki skaut nie doprecyzuje po obejrzeniu meczu.
+console.log('\n3. Ogólne zapisujemy, nieznanego nie zgadujemy');
+sprawdz('samo „Obrońca" zostaje „Obrońca"', pozycjaZLnp.pozycjaZLnp('Obrońca') === 'Obrońca',
   `wyszło: ${pozycjaZLnp.pozycjaZLnp('Obrońca')}`);
-sprawdz('trafia na listę do dopisania', pozycjaZLnp.POZYCJE_NIEROZPOZNANE.has('Obrońca'));
+sprawdz('nie trafia na listę nierozpoznanych', !pozycjaZLnp.POZYCJE_NIEROZPOZNANE.has('Obrońca'));
+sprawdz('„Obrońca" jest w słowniku pozycji SBS',
+  /positions: \[[^\]]*"Obrońca"/.test(fs.readFileSync("src/main.ts", "utf8")), 'brak w DEFAULTS.positions');
 sprawdz('pusta wartość niczego nie zgłasza', pozycjaZLnp.pozycjaZLnp('') === '');
 sprawdz('nieznane słowo nie daje pozycji', pozycjaZLnp.pozycjaZLnp('Libero') === '');
+sprawdz('nieznane trafia na listę do dopisania', pozycjaZLnp.POZYCJE_NIEROZPOZNANE.has('Libero'));
 
 // 4. Rozbiór bloku ### ROCZNIKI — stary i nowy układ obok siebie.
 console.log('\n4. Blok ### ROCZNIKI');
@@ -81,12 +88,12 @@ const rozbierz = (linie)=>{
   });
   return wynik;
 };
-const r = rozbierz(['jan kowalski|2007|Bramkarz', 'adam nowak|2008', 'piotr zyla||Napastnik', 'ktos||Obrońca']);
+const r = rozbierz(['jan kowalski|2007|Bramkarz', 'adam nowak|2008', 'piotr zyla||Napastnik', 'ktos||Libero']);
 console.log('   ' + JSON.stringify(r));
 sprawdz('nowy układ: rocznik i pozycja', r['jan kowalski'].rok === '2007' && r['jan kowalski'].pozycja === 'Bramkarz');
 sprawdz('stary układ (sam rocznik) dalej działa', r['adam nowak'].rok === '2008' && !r['adam nowak'].pozycja);
 sprawdz('sama pozycja bez rocznika też wchodzi', !r['piotr zyla'].rok && r['piotr zyla'].pozycja === 'Napastnik');
-sprawdz('niejednoznaczna pozycja bez rocznika — wpisu nie ma', !r['ktos']);
+sprawdz('nierozpoznana pozycja bez rocznika — wpisu nie ma', !r['ktos']);
 
 console.log(bledy ? `\n${bledy} BŁĘDÓW` : '\nWszystko przeszło.');
 process.exit(bledy ? 1 : 0);
