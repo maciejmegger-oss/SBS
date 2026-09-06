@@ -6954,9 +6954,34 @@ function rocznikZawodnika(p){
 // Komórka „Rocznik" na listach. Gdy roku nie znamy, a protokół oznaczył zawodnika jako
 // młodzieżowca, mówimy tyle, ile z tego wynika — „2006 lub młodszy" — i podpisujemy to jako
 // wniosek z przepisu, a nie jako odczytaną datę. Kreska w tym miejscu nie mówiła nic.
+// Najmłodszy dopuszczalny rocznik w rozgrywkach klubu — dla kategorii z wiekiem w nazwie (U15,
+// U17, U19). Sezon 2026/2027 startuje w 2026, a kategoria U15 obejmuje kończących 15 lat w roku
+// jego zakończenia, czyli rocznik 2012. Zwracamy pusty ciąg, gdy rozgrywki nie mają rocznika —
+// wtedy nie ma z czego liczyć i zostaje ogólne oznaczenie młodzieżowca.
+function limitRocznikaKategorii(p){
+  if(!p || !p.clubId) return '';
+  const klub = DB.clubs.find(c=>c.id === p.clubId);
+  if(!klub) return '';
+  const wiek = String(klub.league || '').match(/u\s*-?\s*(\d{2})/i);
+  if(!wiek) return '';
+  // „2026/2027" albo „2026" — bierzemy rok rozpoczęcia sezonu.
+  const sezon = String(klub.season || '').match(/(20\d{2})/);
+  const rokStartu = sezon ? Number(sezon[1]) : new Date().getFullYear();
+  return String(rokStartu + 1 - Number(wiek[1]));
+}
 function rocznikHtml(p){
   const rok = rocznikZawodnika(p);
   if(rok) return `${esc(rok)}${odznakaMlodszego(p)}${isYouthPlayer(p)?youthBadge(p):''}`;
+  // GÓRNA GRANICA WIEKU BIERZE SIĘ Z ROZGRYWEK, GDY SĄ ROCZNIKOWE.
+  //
+  // Przy zawodniku CLJ U15 stało „≤ 2006" — formalnie prawda (bo młodzieżowiec), ale bez treści:
+  // ci chłopcy są z rocznika 2012, a nie 2006. Regulaminowy limit kategorii jest znacznie bliższy
+  // prawdy niż ogólny próg młodzieżowca, więc gdy klub gra w rozgrywkach z rocznikiem w nazwie,
+  // liczymy limit z sezonu: U15 w sezonie 2026/2027 to rocznik 2012 i młodsi.
+  const limitZKategorii = limitRocznikaKategorii(p);
+  if(limitZKategorii){
+    return `<span class="meta" style="white-space:nowrap;" title="Wyliczone z kategorii rozgrywek, a nie odczytane z daty urodzenia. „Łączy nas piłka” nie podaje rocznika w protokole — dokładny wpiszesz w kartotece albo dobierze go zakładka z profilu zawodnika.">≤&nbsp;${limitZKategorii}</span>${youthBadge(p)}`;
+  }
   if(p && p.mlodziezowiec){
     return `<span class="meta" style="white-space:nowrap;" title="Wniosek z oznaczenia (M) w protokole PZPN, a nie odczytana data urodzenia. Dokładnego rocznika „Łączy nas piłka” nie publikuje — uzupełnij go w kartotece zawodnika.">≤&nbsp;${ROCZNIK_MLODZIEZOWCA}</span>${youthBadge(p)}`;
   }
