@@ -58,6 +58,9 @@ let radarPrzejrzane = {};
 // System gry zespołu: { idKlubu: '1-4-3-3' }. Zawodnik bez własnego systemu w profilu jest
 // liczony w układzie swojego klubu — inaczej wypadał z mapy pozycji, choć wiadomo, jak gra.
 let systemyKlubow = {};
+// Tabele ligowe pobrane z 90minut: { 'III liga, gr. II': { pobrano, kolejek, wiersze:[...] } }.
+// Jedyne pewne zrodlo tego, ile kolejek naprawde rozegrano.
+let tabeleLig = {};
 let editingClubId = null;
 let clubBrowse = {top:"", group:""};
 let dashboardLeagueSelected = null;
@@ -1923,7 +1926,7 @@ async function loadAllInner(){
     }
   };
 
-  const [p, c, o, rp, tl, ct, mt, ag, agt, pmaRow, radarRow, systemyRow, s,
+  const [p, c, o, rp, tl, ct, mt, ag, agt, pmaRow, radarRow, systemyRow, tabeleRow, s,
     seedFlag, enrichFlag, enrichAviaFlag, enrichGornikFlag, enrichAviaV2Flag, recoMigrationFlag, statusMigrationFlag] = await Promise.all([
     czytaj('scouting:players'),
     czytaj('scouting:clubs'),
@@ -1940,6 +1943,7 @@ async function loadAllInner(){
     // się je schować — a dokładanie kolumny wymagałoby migracji bazy. Idzie więc tą samą drogą
     // co mapa pozycji: jeden wiersz JSON w sbs_kv, { idKlubu: '1-4-3-3' }.
     czytaj('scouting:systemy_klubow'),
+    czytaj('scouting:tabele_lig'),
     // Ustawienia to jedyny wiersz, który zapis NADPISUJE w całości (logotypy lig, lista scoutów).
     // Nieudany odczyt musi być więc widoczny, inaczej pierwszy zapis ustawień skasowałby logotypy.
     czytaj('scouting:settings'),
@@ -1969,6 +1973,7 @@ async function loadAllInner(){
   try{ positionMapAssignments = pmaRow ? JSON.parse(pmaRow.value) : {}; }catch(e){ positionMapAssignments = {}; }
   try{ radarPrzejrzane = radarRow ? JSON.parse(radarRow.value) : {}; }catch(e){ radarPrzejrzane = {}; }
   try{ systemyKlubow = systemyRow ? JSON.parse(systemyRow.value) : {}; }catch(e){ systemyKlubow = {}; }
+  try{ tabeleLig = tabeleRow ? JSON.parse(tabeleRow.value) : {}; }catch(e){ tabeleLig = {}; }
   try{
     const loaded = s ? JSON.parse(s.value) : {};
     DB.settings = Object.assign(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), loaded);
@@ -2561,6 +2566,50 @@ async function saveSettings(){ return robustStorageSet('scouting:settings', JSON
 async function savePositionMapAssignments(){ return robustStorageSet('scouting:position_map_assignments', JSON.stringify(positionMapAssignments)); }
 async function saveRadarPrzejrzane(){ return robustStorageSet('scouting:radar_przejrzane', JSON.stringify(radarPrzejrzane)); }
 async function saveSystemyKlubow(){ return robustStorageSet('scouting:systemy_klubow', JSON.stringify(systemyKlubow)); }
+async function saveTabeleLig(){ return robustStorageSet('scouting:tabele_lig', JSON.stringify(tabeleLig)); }
+
+// POBRANIE TABEL LIGOWYCH Z 90MINUT.
+//
+// Tabela jest jedynym pewnym źródłem odpowiedzi na pytanie „ile kolejek rozegrano". Nasze liczby
+// biorą się z kartotek i zawsze są niepełne: odświeżanie z 90minut oddaje sumy sezonowe, a nie
+// przebieg mecz po meczu, więc rozpisanych spotkań jest mniej niż rozegranych. Bez tabeli nie
+// dało się odróżnić „nie zebraliśmy" od „jeszcze nie grali".
+//
+// GRUPĘ ROZPOZNAJEMY PO KLUBACH, NIE PO NAZWIE. 90minut pisze „Betclic III liga 2026/2027,
+// grupa: II", my „III liga, gr. II" — dopasowywanie tych napisów do siebie byłoby zgadywaniem
+// przy każdej zmianie sponsora tytularnego. Kluby są niepodrabialne: tabela należy do tej grupy,
+// z której rozpoznaje najwięcej nazw.
+async function pobierzTabeleLig(zakresWszystko){
+  const odp = await fetch('/api/tabele-lig' + (zakresWszystko ? '?zakres=all' : ''));
+  const dane = await odp.json().catch(()=>({}));
+  if(!odp.ok) throw new Error(dane.error || `Nie udało się pobrać tabel (HTTP ${odp.status}).`);
+
+  const grupy = [...new Set(DB.clubs.map(c=>String(c.league||'')).filter(Boolean))];
+  const klubyGrupyWg = new Map(grupy.map(g=>[g, new Set(
+    DB.clubs.filter(c=>String(c.league||'') === g).map(c=>importNorm(c.name)))]));
+
+  let przypisanych = 0;
+  const nieprzypisane = [];
+  (dane.tabele || []).forEach(t=>{
+    const nazwy = (t.wiersze || []).map(w=>importNorm(w.nazwa));
+    let najlepsza = '', ile = 0;
+    klubyGrupyWg.forEach((zbior, grupa)=>{
+      const wspolne = nazwy.filter(n=>zbior.has(n)).length;
+      if(wspolne > ile){ ile = wspolne; najlepsza = grupa; }
+    });
+    // Połowa składu musi się zgadzać. Niżej to już nie jest rozpoznanie, tylko przypadek —
+    // a przypisanie tabeli do złej grupy jest gorsze niż jej brak.
+    if(najlepsza && ile >= Math.ceil((t.wiersze || []).length / 2)){
+      tabeleLig[najlepsza] = { pobrano: dane.pobrano, zrodlo: t.nazwaZrodla, adres: t.adres,
+        kolejek: t.kolejek, wiersze: t.wiersze, rozpoznanych: ile };
+      przypisanych++;
+    } else {
+      nieprzypisane.push(`${t.nazwaZrodla} (rozpoznanych klubów: ${ile})`);
+    }
+  });
+  await saveTabeleLig();
+  return { przypisanych, nieprzypisane, pobranych: (dane.tabele || []).length, bledy: dane.bledy || [] };
+}
 // System, w którym liczymy zawodnika: własny wpis z profilu, a gdy go nie ma — układ jego klubu.
 function systemZawodnika(p){
   if(!p) return '';
@@ -3205,7 +3254,7 @@ const NAV_ITEMS = [
 const SAVE_FN_BY_KEY = {
   'scouting:players': ()=>savePlayers(), 'scouting:clubs': ()=>saveClubs(), 'scouting:observations': ()=>saveObservations(),
   'scouting:reports': ()=>saveReports(), 'scouting:talents': ()=>saveTalents(), 'scouting:contacts': ()=>saveContacts(),
-  'scouting:settings': ()=>saveSettings(), 'scouting:position_map_assignments': ()=>savePositionMapAssignments(), 'scouting:radar_przejrzane': ()=>saveRadarPrzejrzane(), 'scouting:systemy_klubow': ()=>saveSystemyKlubow(),
+  'scouting:settings': ()=>saveSettings(), 'scouting:position_map_assignments': ()=>savePositionMapAssignments(), 'scouting:radar_przejrzane': ()=>saveRadarPrzejrzane(), 'scouting:systemy_klubow': ()=>saveSystemyKlubow(), 'scouting:tabele_lig': ()=>saveTabeleLig(),
   'scouting:agencies': ()=>saveAgencies(), 'scouting:agents': ()=>saveAgents(),
   'scouting:agency_logos': ()=>saveAgencyLogos(),
 };
@@ -4574,11 +4623,17 @@ function viewClubs(){
     const count = DB.players.filter(p=>p.clubId===c.id).length;
     const d = dorobekKlubow.get(c.id) || { meczow: 0, punkty: null };
     const braki = najwiecejMeczow - d.meczow;
+    // Podpowiedź rozdziela dwie różne rzeczy: ile kolejek klub rozegrał wg naszych danych i ile
+    // z nich mamy ROZPISANYCH mecz po meczu. Po odświeżeniu z 90minut pierwsza liczba jest pełna,
+    // a druga zostaje w tyle — bo tamta droga oddaje sumy sezonowe, nie przebieg.
+    const brakujeRozpisanych = Math.max(0, d.meczow - (d.rozpisanych || 0));
     const komorkaMeczow = najwiecejMeczow === 0
       ? '<span class="meta">—</span>'
-      : `<span title="${d.meczow} z ${najwiecejMeczow} kolejek rozliczonych w tej grupie${braki>0?` — brakuje ${braki}`:''}"
+      : `<span title="${d.meczow} z ${najwiecejMeczow} kolejek w tej grupie${braki>0?` — brakuje ${braki}`:''}.`
+        + `${brakujeRozpisanych?` Rozpisanych mecz po meczu: ${d.rozpisanych||0} — reszta to sumy sezonowe z 90minut, bez składów i minut.`:''}"
               style="${braki>0?'color:var(--clay-dark);font-weight:700;':'font-weight:600;'}">${d.meczow}/${najwiecejMeczow}</span>`
-        + (braki>0 ? ' <span title="Statystyki tego klubu są nieaktualne">⚠️</span>' : '');
+        + (braki>0 ? ' <span title="Statystyki tego klubu są nieaktualne">⚠️</span>' : '')
+        + (!braki && brakujeRozpisanych ? ' <span class="meta" title="Mamy sumy sezonowe, ale nie wszystkie mecze rozpisane">◐</span>' : '');
     return `<tr style="cursor:pointer;" data-action="view-club" data-id="${c.id}">
       <td onclick="event.stopPropagation()">
         <label for="quick-crest-${c.id}" style="cursor:pointer;display:inline-flex;" title="Kliknij, aby wgrać/zmienić herb">${crestImg(clubCrest(c.id), null, c.name)}</label>
@@ -4599,6 +4654,82 @@ function viewClubs(){
   return `
   <h2 class="view-title">Kluby</h2>
   <p class="view-sub">Przeglądaj wg ligi i grupy — jak w strukturze PZPN / mPZPN. Kliknij klub, aby zobaczyć skład na obecny sezon.
+  ${(()=>{
+    // MINI TABELA GRUPY — stan po ostatniej wgranej kolejce.
+    //
+    // Po to, żeby dało się porównać z tabelą na 90minut bez wychodzenia z aplikacji i od razu
+    // zobaczyć, czy zbieranie jest kompletne. Punkty liczymy WYŁĄCZNIE z wyników zapisanych przy
+    // meczach: gdy protokół ich nie niósł, w kolumnie stoi kreska, a nie zero. Zero znaczyłoby
+    // „przegrali wszystko", a tabela, która wygląda wiarygodnie i kłamie, jest gorsza niż jej brak.
+    if(!clubBrowse.group || list.length < 3) return '';
+    const oficjalna = tabeleLig[clubBrowse.group];
+
+    // GDY MAMY TABELĘ Z 90MINUT — ONA JEST UKŁADEM, a nasze liczby stoją obok jako kontrola.
+    // Odwrotnie być nie może: nasze dane zawsze są niepełne, więc układanie po nich tabeli
+    // pokazywałoby lidera, który po prostu został lepiej zebrany.
+    if(oficjalna && Array.isArray(oficjalna.wiersze) && oficjalna.wiersze.length){
+      const nasze = new Map(list.map(c=>[importNorm(c.name), dorobekKlubow.get(c.id) || {meczow:0}]));
+      const braki = oficjalna.wiersze.filter(w=>{
+        const n = nasze.get(importNorm(w.nazwa));
+        return !n || n.meczow < Number(w.mecze || 0);
+      }).length;
+      return `<details class="card" style="margin-bottom:12px;" open>
+        <summary style="cursor:pointer;font-weight:700;color:var(--heading);">
+          📊 Tabela — ${esc(clubBrowse.group)}
+          <span class="note" style="font-weight:400;">po ${oficjalna.kolejek} kolejkach &middot; z 90minut, pobrana ${esc(String(oficjalna.pobrano||'').slice(0,10))}</span>
+        </summary>
+        <p class="note" style="margin:8px 0;">Układ i punkty pochodzą z 90minut. Kolumna <strong>„u nas"</strong> mówi,
+          ile meczów tego klubu mamy w SBS — ${braki ? `<strong style="color:var(--clay-dark);">${braki} ${braki===1?'klub jest niekompletny':'klubów jest niekompletnych'}</strong>.` : 'wszystkie są kompletne.'}</p>
+        <table style="font-size:12.5px;">
+          <thead><tr><th style="width:28px;text-align:right;">Lp.</th><th>Klub</th>
+            <th style="text-align:center;">M.</th><th style="text-align:center;">Pkt</th>
+            <th style="text-align:center;">Z-R-P</th><th style="text-align:center;">Bramki</th>
+            <th style="text-align:center;" title="Ile meczów tego klubu mamy w kartotekach SBS">u nas</th></tr></thead>
+          <tbody>${oficjalna.wiersze.map(w=>{
+            const n = nasze.get(importNorm(w.nazwa));
+            const mamy = n ? n.meczow : null;
+            const brak = mamy == null || mamy < Number(w.mecze || 0);
+            return `<tr>
+              <td style="text-align:right;color:var(--ink-soft);">${w.miejsce}.</td>
+              <td>${esc(w.nazwa)}${mamy==null?' <span class="meta" title="Tego klubu nie ma w kartotece SBS">(brak w SBS)</span>':''}</td>
+              <td style="text-align:center;">${w.mecze}</td>
+              <td style="text-align:center;"><strong>${w.punkty}</strong></td>
+              <td style="text-align:center;color:var(--ink-soft);">${w.zwyciestwa}-${w.remisy}-${w.porazki}</td>
+              <td style="text-align:center;color:var(--ink-soft);">${esc(w.bramki||'—')}</td>
+              <td style="text-align:center;${brak?'color:var(--clay-dark);font-weight:700;':''}">${mamy==null?'—':mamy}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+      </details>`;
+    }
+
+    // Bez pobranej tabeli zostaje zestawienie z naszych danych — lepsze niż nic, ale mówimy wprost,
+    // że to nie jest tabela ligowa, tylko obraz tego, co zebraliśmy.
+    const tabela = list.map(c=>({ c, d: dorobekKlubow.get(c.id) || { meczow:0, punkty:null } }))
+      .filter(x=>x.d.meczow > 0)
+      .sort((a,b)=> (b.d.punkty ?? -1) - (a.d.punkty ?? -1) || b.d.meczow - a.d.meczow
+        || String(a.c.name||'').localeCompare(String(b.c.name||''),'pl'));
+    if(!tabela.length) return '';
+    const zPunktami = tabela.filter(x=>x.d.punkty != null).length;
+    return `<details class="card" style="margin-bottom:12px;">
+      <summary style="cursor:pointer;font-weight:700;color:var(--heading);">
+        📊 Zestawienie z danych SBS — ${esc(clubBrowse.group)} <span class="note" style="font-weight:400;">(to NIE jest tabela ligowa)</span>
+      </summary>
+      <p class="note" style="margin:8px 0;">Liczone z kartotek, więc niepełne. Kliknij <strong>„⭳ Tabele z 90minut"</strong>,
+        żeby zobaczyć prawdziwy układ i porównanie.
+        ${zPunktami < tabela.length ? `Punkty ma ${zPunktami} z ${tabela.length} klubów — reszta nie ma zapisanych wyników przy meczach.` : ''}</p>
+      <table style="font-size:12.5px;">
+        <thead><tr><th style="width:28px;text-align:right;">Lp.</th><th>Klub</th>
+          <th style="text-align:center;">M.</th><th style="text-align:center;">Pkt</th></tr></thead>
+        <tbody>${tabela.map((x,i)=>`<tr>
+          <td style="text-align:right;color:var(--ink-soft);">${i+1}.</td>
+          <td>${esc(x.c.name)}</td>
+          <td style="text-align:center;">${x.d.meczow}</td>
+          <td style="text-align:center;">${x.d.punkty == null ? '<span class="meta">—</span>' : `<strong>${x.d.punkty}</strong>`}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </details>`;
+  })()}
   ${najwiecejMeczow > 0 ? (()=>{
     const wTyle = list.filter(c=>(dorobekKlubow.get(c.id)||{meczow:0}).meczow < najwiecejMeczow);
     return `<br><strong>Rozliczonych kolejek w tej grupie: ${najwiecejMeczow}.</strong> `
@@ -4647,6 +4778,7 @@ function viewClubs(){
               : 'Pobierz i zapisz statystyki wszystkich klubów widocznych na liście — po kolei, jeden po drugim'
           }">⏱ Odśwież statystyki — cały widok (${list.length})</button>`
         : ''}
+      <button class="secondary" data-action="pobierz-tabele" title="Pobiera z 90minut tabele Ekstraklasy, I, II i III ligi — układ, punkty i liczbę rozegranych kolejek">⭳ Tabele z 90minut</button>
       <button class="secondary" data-action="merge-duplicates" title="Znajdź kluby wpisane dwa razy pod różnymi nazwami i połącz je w jeden">🧹 Scal duplikaty</button>
       ${list.some(c=>!clubCrest(c.id)) ? `<button class="secondary" data-action="herby-z-pierwszych" title="Skopiuj herby z kartotek seniorskich tych samych klubów">🛡️ Herby z pierwszych drużyn (${list.filter(c=>!clubCrest(c.id)).length})</button>` : ''}
       <button class="gold" data-action="add-club">+ Nowy klub</button>
@@ -8643,14 +8775,27 @@ async function generateAnalysisPDF(playerId){
 // null i widok pokazuje kreskę. Zgadywanie punktów z samej liczby meczów dałoby tabelę, która
 // wygląda wiarygodnie i kłamie.
 function meczeKlubu(clubId){
+  const klub = DB.clubs.find(c=>c.id === clubId);
+  const sezonKlubu = String((klub && klub.season) || '').trim();
+  const nasi = DB.players.filter(p=>p.clubId === clubId);
   const spotkania = new Map();     // "rywal|D" -> wynik (albo '')
-  DB.players.forEach(p=>{
-    if(p.clubId !== clubId) return;
+  nasi.forEach(p=>{
+    // TYLKO BIEŻĄCY SEZON. Przebieg zapisany dla poprzedniego nic nie mówi o tym, ile kolejek
+    // mamy rozliczonych teraz — a zliczany razem zawyżał odniesienie dla całej grupy i kazał
+    // klubom z kompletem danych wyglądać na zaległe. Kartoteka bez wpisanego sezonu liczy się
+    // jako bieżąca: tak powstają wpisy z protokołów ŁNP, które sezonu nie niosą.
+    const sezonZawodnika = String(p.przebiegSezon || '').trim();
+    if(sezonKlubu && sezonZawodnika && sezonZawodnika !== sezonKlubu) return;
     (p.przebieg || []).forEach(x=>{
       const k = importNorm(String(x.rywal||'')) + '|' + (x.dom ? 'D' : 'W');
       if(!k.startsWith('|') && (!spotkania.has(k) || !spotkania.get(k))) spotkania.set(k, String(x.wynik||''));
     });
   });
+  // SUMY SEZONOWE Z 90MINUT NIE NIOSĄ PRZEBIEGU (api/_90minut.js: „przebiegu mecz po meczu tą drogą
+  // nie dostaniemy"). Po odświeżeniu statystyk zawodnik ma więc poprawne „7 meczów", ale rozpisanych
+  // spotkań jest mniej — i kolumna pokazywała 4/6 tam, gdzie 90minut pokazuje 7. Liczbą rozegranych
+  // kolejek jest to, co WIĘKSZE: najwyższy dorobek w kartotekach albo liczba rozpisanych spotkań.
+  const zSum = Math.max(0, ...nasi.map(p=>Number(p.matches) || 0));
   let punkty = null;
   spotkania.forEach((wynik, k)=>{
     // Wynik zapisujemy z perspektywy meczu („2:1"), więc u gościa strony trzeba odwrócić.
@@ -8662,7 +8807,7 @@ function meczeKlubu(clubId){
     if(!Number.isFinite(nasze) || !Number.isFinite(ich)) return;
     punkty = (punkty || 0) + (nasze > ich ? 3 : nasze === ich ? 1 : 0);
   });
-  return { meczow: spotkania.size, punkty };
+  return { meczow: Math.max(spotkania.size, zSum), rozpisanych: spotkania.size, punkty };
 }
 
 // HERBY DRUŻYN MŁODZIEŻOWYCH BIERZEMY OD PIERWSZEJ DRUŻYNY.
@@ -10917,6 +11062,20 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="scal-zawodnikow"]').forEach(b=>b.onclick=()=>openScalanieModal(b.dataset.id));
   main.querySelectorAll('[data-action="pokaz-duplikaty"]').forEach(b=>b.onclick=()=>openDuplikatyModal());
   main.querySelectorAll('[data-action="herby-z-pierwszych"]').forEach(b=>b.onclick=()=>openHerbyZPierwszychModal(widoczneKluby()));
+  main.querySelectorAll('[data-action="pobierz-tabele"]').forEach(b=>b.onclick=async()=>{
+    const napis = b.textContent;
+    (b as HTMLButtonElement).disabled = true; b.textContent = 'Pobieram…';
+    try{
+      const w = await pobierzTabeleLig(false);
+      render();
+      pokazPotwierdzenie(`Pobrano ${w.pobranych} tabel, przypisano ${w.przypisanych} do grup w SBS.`
+        + (w.nieprzypisane.length ? ` Bez przypisania: ${w.nieprzypisane.join('; ')}.` : ''),
+        w.przypisanych ? 'ok' : 'blad');
+    }catch(e){
+      pokazPotwierdzenie(String((e && (e as Error).message) || e), 'blad');
+      (b as HTMLButtonElement).disabled = false; b.textContent = napis;
+    }
+  });
   main.querySelectorAll('[data-action="save-report"]').forEach(b=>b.onclick=async()=>{
     const playerId = document.getElementById('rep-player').value;
     if(!playerId){ alert('Wybierz zawodnika.'); return; }
