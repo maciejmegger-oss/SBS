@@ -2164,7 +2164,7 @@ function render() {
     <div class="topbar">
       <button class="mark-btn" data-act="refresh" aria-busy="${odswiezanie}"
               aria-label="Odśwież dane z SBS" title="Odśwież dane z SBS">
-        <img class="mark" src="${LOGO}" alt="">
+        <span class="mark-blysk"><img class="mark" src="${LOGO}" alt=""></span>
       </button>
       <h1>SBS Scout Live</h1>
       ${syncPill()}
