@@ -362,7 +362,19 @@ function dataZDniem(iso: string): string {
 // Znacznik rozgrywek na karcie. Kategoria jest wyróżniona kolorem, bo to ona rozstrzyga, jak
 // czytać ocenę — nazwa rozgrywek stoi obok jako uszczegółowienie, nie zamiast niej.
 function ligaChip(o: Observation & { rozgrywki?: string; kategoria?: string }): string {
-  const kat = o.kategoria || kategoriaZRozgrywek(o.rozgrywki || "", o.match || "");
+  // ROCZNIK W NAZWIE DRUŻYN WYGRYWA NAWET Z KATEGORIĄ ZAPISANĄ PRZY OBSERWACJI.
+  //
+  // Kolejność była odwrotna i to sprawiło, że poprawka rozpoznawania nie zmieniła niczego na
+  // ekranie: mecze zaplanowane WCZEŚNIEJ mają w bazie zapisane „seniorzy" — z automatycznej
+  // podpowiedzi sprzed poprawki, nie z decyzji scouta. Zapisana wartość przesłaniała rozpoznanie,
+  // więc „Arka Gdynia SA U17 – ŁKS Łódź S.A. U17" nadal świeciło jako spotkanie seniorów.
+  //
+  // „U17" przy obu klubach nie jest sprawą oceny, tylko faktem — i jako fakt ma pierwszeństwo
+  // przed podpowiedzią, która mogła powstać źle. Naprawia to plany już zapisane, bez ruszania
+  // czegokolwiek w bazie. W drugą stronę to nie działa: brak rocznika nie czyni z meczu seniorów,
+  // więc wskazanie „młodzież" przy nazwach bez U-czegoś zostaje nietknięte.
+  const zNazwyDruzyn = MLODZIEZ_WZORCE.some((w) => w.test(o.match || "")) ? "mlodziez" : "";
+  const kat = zNazwyDruzyn || o.kategoria || kategoriaZRozgrywek(o.rozgrywki || "", o.match || "");
   if (!o.rozgrywki && !kat) return "";
   // Nierozpoznana kategoria dostaje barwę NEUTRALNĄ, a nie seniorską. Dotąd „nie wiem" wyglądało
   // dokładnie tak samo jak „seniorzy" — czyli aplikacja twierdziła coś, czego nie ustaliła.
@@ -951,21 +963,21 @@ const POZYCJE: Record<number, string> = {
   1: "BR", 2: "PO", 3: "LO", 4: "ŚO", 5: "ŚO", 6: "DP", 7: "PS", 8: "ŚP", 9: "NAP", 10: "OP", 11: "LS",
 };
 const POZYCJE_PELNE: Record<number, string> = {
-  1: "Bramkarz", 2: "Prawy obrońca", 3: "Lewy obrońca", 4: "Stoper (prawy)", 5: "Stoper (lewy)",
-  6: "Defensywny pomocnik", 7: "Prawy skrzydłowy", 8: "Środkowy pomocnik", 9: "Napastnik",
-  10: "Ofensywny pomocnik", 11: "Lewy skrzydłowy",
+  1: "Bramkarz", 2: "Prawy obrońca", 3: "Lewy obrońca", 4: "Stoper (lewy)", 5: "Stoper (prawy)",
+  6: "Defensywny pomocnik", 7: "Prawe skrzydło", 8: "Środkowy pomocnik", 9: "Napastnik",
+  10: "Ofensywny pomocnik", 11: "Lewe skrzydło",
 };
 
 type Punkt = { x: number; y: number };
 const FORMACJA_WSPOLRZEDNE: Record<string, Record<number, Punkt>> = {
-  "": { 11:{x:22,y:13}, 9:{x:50,y:10}, 7:{x:78,y:13}, 8:{x:37,y:33}, 10:{x:63,y:33}, 6:{x:50,y:53}, 3:{x:18,y:66}, 2:{x:82,y:66}, 5:{x:37,y:79}, 4:{x:63,y:79}, 1:{x:50,y:93} },
-  "1-4-3-3": { 11:{x:22,y:13}, 9:{x:50,y:10}, 7:{x:78,y:13}, 8:{x:37,y:33}, 10:{x:63,y:33}, 6:{x:50,y:53}, 3:{x:18,y:66}, 2:{x:82,y:66}, 5:{x:37,y:79}, 4:{x:63,y:79}, 1:{x:50,y:93} },
-  "1-4-4-2": { 9:{x:39,y:10}, 10:{x:61,y:10}, 11:{x:18,y:33}, 7:{x:82,y:33}, 6:{x:61,y:51}, 8:{x:39,y:51}, 3:{x:18,y:66}, 2:{x:82,y:66}, 5:{x:37,y:79}, 4:{x:63,y:79}, 1:{x:50,y:93} },
-  "1-3-4-3": { 11:{x:22,y:13}, 9:{x:50,y:10}, 7:{x:78,y:13}, 3:{x:16,y:38}, 8:{x:39,y:38}, 10:{x:61,y:38}, 2:{x:84,y:38}, 5:{x:31,y:72}, 6:{x:50,y:72}, 4:{x:69,y:72}, 1:{x:50,y:93} },
-  "1-3-5-2": { 9:{x:39,y:10}, 10:{x:61,y:10}, 11:{x:20,y:36}, 8:{x:50,y:36}, 7:{x:80,y:36}, 3:{x:15,y:54}, 2:{x:85,y:54}, 5:{x:31,y:74}, 6:{x:50,y:74}, 4:{x:69,y:74}, 1:{x:50,y:93} },
-  "1-4-5-1": { 9:{x:50,y:10}, 11:{x:20,y:29}, 7:{x:80,y:29}, 8:{x:32,y:46}, 6:{x:50,y:46}, 10:{x:68,y:46}, 3:{x:18,y:66}, 2:{x:82,y:66}, 5:{x:37,y:79}, 4:{x:63,y:79}, 1:{x:50,y:93} },
-  "1-5-4-1": { 9:{x:50,y:10}, 11:{x:22,y:36}, 8:{x:41,y:36}, 10:{x:59,y:36}, 7:{x:78,y:36}, 3:{x:14,y:70}, 5:{x:32,y:70}, 6:{x:50,y:70}, 4:{x:68,y:70}, 2:{x:86,y:70}, 1:{x:50,y:93} },
-  "1-4-2-3-1": { 9:{x:50,y:10}, 11:{x:20,y:29}, 10:{x:50,y:29}, 7:{x:80,y:29}, 6:{x:38,y:49}, 8:{x:62,y:49}, 3:{x:18,y:66}, 2:{x:82,y:66}, 5:{x:37,y:79}, 4:{x:63,y:79}, 1:{x:50,y:93} },
+  "": { 11:{x:22,y:13}, 9:{x:50,y:10}, 7:{x:78,y:13}, 8:{x:37,y:33}, 10:{x:63,y:33}, 6:{x:50,y:53}, 3:{x:18,y:66}, 2:{x:82,y:66}, 4:{x:37,y:79}, 5:{x:63,y:79}, 1:{x:50,y:93} },
+  "1-4-3-3": { 11:{x:22,y:13}, 9:{x:50,y:10}, 7:{x:78,y:13}, 8:{x:37,y:33}, 10:{x:63,y:33}, 6:{x:50,y:53}, 3:{x:18,y:66}, 2:{x:82,y:66}, 4:{x:37,y:79}, 5:{x:63,y:79}, 1:{x:50,y:93} },
+  "1-4-4-2": { 9:{x:39,y:10}, 10:{x:61,y:10}, 11:{x:18,y:33}, 7:{x:82,y:33}, 6:{x:61,y:51}, 8:{x:39,y:51}, 3:{x:18,y:66}, 2:{x:82,y:66}, 4:{x:37,y:79}, 5:{x:63,y:79}, 1:{x:50,y:93} },
+  "1-3-4-3": { 11:{x:22,y:13}, 9:{x:50,y:10}, 7:{x:78,y:13}, 3:{x:16,y:38}, 8:{x:39,y:38}, 10:{x:61,y:38}, 2:{x:84,y:38}, 4:{x:31,y:72}, 6:{x:50,y:72}, 5:{x:69,y:72}, 1:{x:50,y:93} },
+  "1-3-5-2": { 9:{x:39,y:10}, 10:{x:61,y:10}, 11:{x:20,y:36}, 8:{x:50,y:36}, 7:{x:80,y:36}, 3:{x:15,y:54}, 2:{x:85,y:54}, 4:{x:31,y:74}, 6:{x:50,y:74}, 5:{x:69,y:74}, 1:{x:50,y:93} },
+  "1-4-5-1": { 9:{x:50,y:10}, 11:{x:20,y:29}, 7:{x:80,y:29}, 8:{x:32,y:46}, 6:{x:50,y:46}, 10:{x:68,y:46}, 3:{x:18,y:66}, 2:{x:82,y:66}, 4:{x:37,y:79}, 5:{x:63,y:79}, 1:{x:50,y:93} },
+  "1-5-4-1": { 9:{x:50,y:10}, 11:{x:22,y:36}, 8:{x:41,y:36}, 10:{x:59,y:36}, 7:{x:78,y:36}, 3:{x:14,y:70}, 4:{x:32,y:70}, 6:{x:50,y:70}, 5:{x:68,y:70}, 2:{x:86,y:70}, 1:{x:50,y:93} },
+  "1-4-2-3-1": { 9:{x:50,y:10}, 11:{x:20,y:29}, 10:{x:50,y:29}, 7:{x:80,y:29}, 6:{x:38,y:49}, 8:{x:62,y:49}, 3:{x:18,y:66}, 2:{x:82,y:66}, 4:{x:37,y:79}, 5:{x:63,y:79}, 1:{x:50,y:93} },
 };
 
 // Skala szybkiej oceny na mapie — trzy z pięciu atrybutów SBS. Mentalność i potencjał zostają
@@ -2635,7 +2647,10 @@ function zapamietajPlan() {
 // Ręcznego wyboru scouta NIE ruszamy — patrz kategoriaRecznie.
 function ustawRozgrywki(nazwa: string) {
   planRozgrywki = nazwa || "";
-  if (!kategoriaRecznie) planKategoria = kategoriaZRozgrywek(planRozgrywki);
+  // Nazwa meczu wchodzi do rozpoznania razem z rozgrywkami: rocznik przy klubie („Arka Gdynia
+  // SA U17") mówi o kategorii więcej niż nazwa ligi, bo ligi młodzieżowe bywają nazywane tak
+  // samo jak seniorskie.
+  if (!kategoriaRecznie) planKategoria = kategoriaZRozgrywek(planRozgrywki, planMecz);
 }
 
 // ODŚWIEŻENIE KOPII BAZY — jedna droga dla przycisku w ustawieniach i dla przycisku w terminarzu.
@@ -2847,7 +2862,7 @@ document.addEventListener("click", (e) => {
     // przestaje ją nadpisywać. Ponowne dotknięcie tej samej odznacza ją i wraca do podpowiedzi.
     case "kategoria":
       zapamietajPlan();
-      if (planKategoria === v) { planKategoria = kategoriaZRozgrywek(planRozgrywki); kategoriaRecznie = false; }
+      if (planKategoria === v) { planKategoria = kategoriaZRozgrywek(planRozgrywki, planMecz); kategoriaRecznie = false; }
       else { planKategoria = v || ""; kategoriaRecznie = true; }
       render();
       break;
@@ -3458,7 +3473,7 @@ document.addEventListener("input", (e) => {
   if (t.id === "n-liga") {
     planRozgrywki = t.value;
     if (kategoriaRecznie) return;
-    planKategoria = kategoriaZRozgrywek(planRozgrywki);
+    planKategoria = kategoriaZRozgrywek(planRozgrywki, planMecz);
     $("n-kategoria")?.querySelectorAll<HTMLElement>("[data-act='kategoria']").forEach((b) => {
       b.setAttribute("aria-pressed", String(b.dataset.v === planKategoria));
     });
