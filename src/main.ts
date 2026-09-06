@@ -6162,9 +6162,17 @@ const SENIORZY_WZORCE_PC = [/ekstraklasa|ekstraliga|betclic/i, /\b(I|II|III|IV|V
 // Drużyny sprawdzamy TYLKO pod kątem młodzieży: brak „U17" przy nazwie nie znaczy, że to seniorzy,
 // bo kluby seniorskie nie dopisują sobie nic. W drugą stronę ten sygnał nie działa.
 function kategoriaObserwacji(o){
-  if(o && o.kategoria) return o.kategoria;
   const n = String((o && o.rozgrywki) || '').trim();
   const m = String((o && o.match) || '').trim();
+  // ROCZNIK W NAZWIE DRUŻYN WYGRYWA NAWET Z KATEGORIĄ ZAPISANĄ PRZY OBSERWACJI.
+  //
+  // Mecze zaplanowane wcześniej mają w bazie zapisane „seniorzy" — z automatycznej podpowiedzi
+  // sprzed poprawki, nie z decyzji skauta. Gdyby zapisana wartość szła pierwsza, poprawka
+  // rozpoznawania nie zmieniłaby niczego na ekranie. „U17" przy obu klubach nie jest sprawą
+  // oceny, tylko faktem, więc ma pierwszeństwo przed podpowiedzią, która mogła powstać źle.
+  // W drugą stronę to nie działa: brak rocznika nie czyni z meczu spotkania seniorów.
+  if(m && MLODZIEZ_WZORCE_PC.some(w=>w.test(m))) return 'mlodziez';
+  if(o && o.kategoria) return o.kategoria;
   if(!n && !m) return '';
   if(MLODZIEZ_WZORCE_PC.some(w=>w.test(n) || w.test(m))) return 'mlodziez';
   if(SENIORZY_WZORCE_PC.some(w=>w.test(n))) return 'seniorzy';
