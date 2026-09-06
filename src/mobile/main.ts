@@ -362,9 +362,23 @@ function dataZDniem(iso: string): string {
 // Znacznik rozgrywek na karcie. Kategoria jest wyróżniona kolorem, bo to ona rozstrzyga, jak
 // czytać ocenę — nazwa rozgrywek stoi obok jako uszczegółowienie, nie zamiast niej.
 function ligaChip(o: Observation & { rozgrywki?: string; kategoria?: string }): string {
-  const kat = o.kategoria || kategoriaZRozgrywek(o.rozgrywki || "");
+  // ROCZNIK W NAZWIE DRUŻYN WYGRYWA NAWET Z KATEGORIĄ ZAPISANĄ PRZY OBSERWACJI.
+  //
+  // Kolejność była odwrotna i to sprawiło, że poprawka rozpoznawania nie zmieniła niczego na
+  // ekranie: mecze zaplanowane WCZEŚNIEJ mają w bazie zapisane „seniorzy" — z automatycznej
+  // podpowiedzi sprzed poprawki, nie z decyzji scouta. Zapisana wartość przesłaniała rozpoznanie,
+  // więc „Arka Gdynia SA U17 – ŁKS Łódź S.A. U17" nadal świeciło jako spotkanie seniorów.
+  //
+  // „U17" przy obu klubach nie jest sprawą oceny, tylko faktem — i jako fakt ma pierwszeństwo
+  // przed podpowiedzią, która mogła powstać źle. Naprawia to plany już zapisane, bez ruszania
+  // czegokolwiek w bazie. W drugą stronę to nie działa: brak rocznika nie czyni z meczu seniorów,
+  // więc wskazanie „młodzież" przy nazwach bez U-czegoś zostaje nietknięte.
+  const zNazwyDruzyn = MLODZIEZ_WZORCE.some((w) => w.test(o.match || "")) ? "mlodziez" : "";
+  const kat = zNazwyDruzyn || o.kategoria || kategoriaZRozgrywek(o.rozgrywki || "", o.match || "");
   if (!o.rozgrywki && !kat) return "";
-  const barwa = kat === "mlodziez" ? "var(--accent-fg)" : "var(--good-fg)";
+  // Nierozpoznana kategoria dostaje barwę NEUTRALNĄ, a nie seniorską. Dotąd „nie wiem" wyglądało
+  // dokładnie tak samo jak „seniorzy" — czyli aplikacja twierdziła coś, czego nie ustaliła.
+  const barwa = kat === "mlodziez" ? "var(--accent-fg)" : kat === "seniorzy" ? "var(--good-fg)" : "var(--text-2)";
   const opis = [ETYKIETA_KATEGORII[kat] || "", o.rozgrywki || ""].filter(Boolean).join(" · ");
   return `<span style="color:${barwa}; font-weight:650;">${esc(opis)}</span> · `;
 }
@@ -496,14 +510,27 @@ const SENIORZY_WZORCE = [
   /ekstraklasa|ekstraliga|betclic/i,
   /\b(I|II|III|IV|V)\s*liga\b/i,
   /\b[1-5]\s*liga\b/i,
+  // Numer ligi bywa zapisany SŁOWNIE — tak podaje go część terminarzy („Pierwsza liga").
+  // Bez tego takie rozgrywki nie pasowały do niczego i kończyły się kategorią pustą.
+  /\b(pierwsza|druga|trzecia|czwarta|piąta|piata)\s+liga\b/i,
   /klasa\s+[ABC]\b|\b[ABC]\s+klasa|okręgow|okregow/i,
   /puchar\s+polski/i,
 ];
 
-export function kategoriaZRozgrywek(nazwa: string): "seniorzy" | "mlodziez" | "" {
+// NAZWY DRUŻYN TEŻ MÓWIĄ, KTO GRA.
+//
+// Rozpoznanie czytało wyłącznie nazwę rozgrywek — i przy „Arka Gdynia SA U17 – ŁKS Łódź S.A. U17"
+// w rozgrywkach „Pierwsza liga" wychodziły z tego seniorzy, mimo że U17 stoi w nazwie OBU drużyn.
+// Rocznik przy nazwie klubu jest informacją równie dobrą jak nazwa rozgrywek, a często lepszą:
+// ligi młodzieżowe bywają nazywane tak samo jak seniorskie, bo są ligami tego samego szczebla.
+//
+// Drużyny sprawdzamy TYLKO pod kątem młodzieży. Brak „U17" przy nazwie nie znaczy, że to seniorzy —
+// większość klubów seniorskich nie dopisuje sobie nic — więc w drugą stronę ten sygnał nie działa.
+export function kategoriaZRozgrywek(nazwa: string, nazwaMeczu = ""): "seniorzy" | "mlodziez" | "" {
   const n = (nazwa || "").trim();
-  if (!n) return "";
-  if (MLODZIEZ_WZORCE.some((w) => w.test(n))) return "mlodziez";
+  const m = (nazwaMeczu || "").trim();
+  if (!n && !m) return "";
+  if (MLODZIEZ_WZORCE.some((w) => w.test(n) || w.test(m))) return "mlodziez";
   if (SENIORZY_WZORCE.some((w) => w.test(n))) return "seniorzy";
   return "";
 }
@@ -986,14 +1013,56 @@ function druzynyZMeczu(match?: string): [string, string] {
 
 // Klub z bazy odpowiadający nazwie drużyny z pola „Mecz". Nazwy bywają zapisane skrótowo
 // („Chojniczanka" kontra „Chojniczanka Chojnice"), więc po dokładnym trafieniu próbujemy zawierania.
+// ZESPOŁY TEGO SAMEGO KLUBU TO RÓŻNE DRUŻYNY.
+//
+// „Arka Gdynia" gra w I lidze, „Arka II Gdynia" w IV, „Arka Gdynia U17" w CLJ U17, „Arka U19"
+// w CLJ U19. Cztery drużyny, cztery kadry, cztery poziomy rozgrywek — a nazwy różnią się jednym
+// członem, który dopasowanie „po zawieraniu" po prostu połykało: „arka gdynia sa u17" zawiera
+// w sobie „arka gdynia", więc skład U17 dostawał kadrę pierwszego zespołu. Dotyczy to każdego
+// klubu z rezerwami i młodzieżą w CLJ, czyli wszystkich, których się realnie obserwuje.
+//
+// Wyciągamy więc z nazwy ZNACZNIK ZESPOŁU i wymagamy zgodności. Pierwszy zespół nie ma znacznika
+// i to też jest informacja: „Arka Gdynia" nie może dopasować się do „Arka Gdynia U17".
+const ZNACZNIKI_ZESPOLU: { wzor: RegExp; nazwa: (m: RegExpExecArray) => string }[] = [
+  { wzor: /\bu\s*-?\s*(\d{1,2})\b/i, nazwa: (m) => "u" + m[1] },   // U17, U-19, U 15
+  { wzor: /\bjuniorz?y?\b|\bjun\b/i, nazwa: () => "junior" },
+  { wzor: /\biii\b|\b3\b/, nazwa: () => "iii" },
+  { wzor: /\bii\b|\b2\b|rezerw/i, nazwa: () => "ii" },             // Arka II, Lech 2, rezerwy
+];
+
+export function znacznikZespolu(nazwa: string): string {
+  const n = String(nazwa || "");
+  for (const z of ZNACZNIKI_ZESPOLU) {
+    const m = z.wzor.exec(n);
+    if (m) return z.nazwa(m);
+  }
+  return "";
+}
+
+// Formy prawne w nazwie („SA", „S.A.", „sp. z o.o.") niosą zero informacji o drużynie, a psują
+// porównanie: terminarz podaje „Arka Gdynia SA U17", kartoteka „Arka Gdynia U17".
+const normKlub = (s: string) => String(s || "").toLowerCase()
+  .replace(/\bs\s*\.?\s*a\s*\.?\b/g, " ")
+  .replace(/\bsp\s*\.?\s*z\s*o\s*\.?\s*o\s*\.?\b/g, " ")
+  .replace(/\bs\s*\.?\s*k\s*\.?\s*a\s*\.?\b/g, " ")
+  .replace(/[.,]/g, " ")
+  .replace(/\s+/g, " ")
+  .trim();
+
 function klubZNazwy(nazwa: string) {
-  const n = nazwa.toLowerCase().trim();
+  const n = normKlub(nazwa);
   if (!n) return null;
-  return cache.clubs.find((c) => (c.name || "").toLowerCase().trim() === n)
-    || cache.clubs.find((c) => {
-      const k = (c.name || "").toLowerCase().trim();
-      return k && (k.includes(n) || n.includes(k));
-    })
+  const zn = znacznikZespolu(nazwa);
+  const zgodnyZespol = (c: { name?: string }) => znacznikZespolu(c.name || "") === zn;
+  const zawiera = (a: string, b: string) => !!a && !!b && (a.includes(b) || b.includes(a));
+
+  return cache.clubs.find((c) => normKlub(c.name || "") === n)
+    // Zawieranie WYŁĄCZNIE w obrębie tego samego zespołu — inaczej U17 ląduje przy pierwszej drużynie.
+    || cache.clubs.find((c) => zgodnyZespol(c) && zawiera(normKlub(c.name || ""), n))
+    // Ostatnia deska: klub bez rozbicia na zespoły. Gdy w kartotece jest samo „Arka Gdynia”,
+    // a obserwujemy U17, lepiej podać tę kadrę niż nie podać żadnej — scout i tak widzi, kogo
+    // dopisuje. Wchodzi to dopiero wtedy, gdy właściwego zespołu naprawdę nie ma w bazie.
+    || cache.clubs.find((c) => zawiera(normKlub(c.name || ""), n))
     || null;
 }
 
@@ -2245,12 +2314,21 @@ function znajdzZawodnika(nazwa: string, nazwaKlubu?: string): string | null {
   // Imiennicy: rozstrzyga klub, po której stronie składu zawodnik wystąpił.
   if (nazwaKlubu) {
     const k = normImie(nazwaKlubu);
+    const znSzukany = znacznikZespolu(nazwaKlubu);
     const wKlubie = kandydaci.filter((p) => {
       const c = cache.clubs.find((x) => x.id === p.clubId);
       const n = normImie(c?.name || "");
       return n && (n === k || (n.length >= 5 && k.length >= 5 && (n.includes(k) || k.includes(n))));
     });
     if (wKlubie.length === 1) return wKlubie[0].id;
+    // Ten sam klub, różne zespoły: „Arka Gdynia" i „Arka Gdynia U17" pasują do siebie przez
+    // zawieranie, więc imiennik z pierwszej drużyny i z młodzieży wyglądają identycznie.
+    // Rozstrzyga znacznik zespołu — bez niego zostawalibyśmy z dwoma kandydatami i niczym.
+    const wZespole = wKlubie.filter((p) => {
+      const c = cache.clubs.find((x) => x.id === p.clubId);
+      return znacznikZespolu(c?.name || "") === znSzukany;
+    });
+    if (wZespole.length === 1) return wZespole[0].id;
   }
   // Dalej niejednoznacznie — świadomie NIE zgadujemy. Lepiej pominąć i powiedzieć o tym,
   // niż dopisać ocenę niewłaściwej osobie.
@@ -2569,7 +2647,10 @@ function zapamietajPlan() {
 // Ręcznego wyboru scouta NIE ruszamy — patrz kategoriaRecznie.
 function ustawRozgrywki(nazwa: string) {
   planRozgrywki = nazwa || "";
-  if (!kategoriaRecznie) planKategoria = kategoriaZRozgrywek(planRozgrywki);
+  // Nazwa meczu wchodzi do rozpoznania razem z rozgrywkami: rocznik przy klubie („Arka Gdynia
+  // SA U17") mówi o kategorii więcej niż nazwa ligi, bo ligi młodzieżowe bywają nazywane tak
+  // samo jak seniorskie.
+  if (!kategoriaRecznie) planKategoria = kategoriaZRozgrywek(planRozgrywki, planMecz);
 }
 
 // ODŚWIEŻENIE KOPII BAZY — jedna droga dla przycisku w ustawieniach i dla przycisku w terminarzu.
@@ -2781,7 +2862,7 @@ document.addEventListener("click", (e) => {
     // przestaje ją nadpisywać. Ponowne dotknięcie tej samej odznacza ją i wraca do podpowiedzi.
     case "kategoria":
       zapamietajPlan();
-      if (planKategoria === v) { planKategoria = kategoriaZRozgrywek(planRozgrywki); kategoriaRecznie = false; }
+      if (planKategoria === v) { planKategoria = kategoriaZRozgrywek(planRozgrywki, planMecz); kategoriaRecznie = false; }
       else { planKategoria = v || ""; kategoriaRecznie = true; }
       render();
       break;
@@ -3392,7 +3473,7 @@ document.addEventListener("input", (e) => {
   if (t.id === "n-liga") {
     planRozgrywki = t.value;
     if (kategoriaRecznie) return;
-    planKategoria = kategoriaZRozgrywek(planRozgrywki);
+    planKategoria = kategoriaZRozgrywek(planRozgrywki, planMecz);
     $("n-kategoria")?.querySelectorAll<HTMLElement>("[data-act='kategoria']").forEach((b) => {
       b.setAttribute("aria-pressed", String(b.dataset.v === planKategoria));
     });

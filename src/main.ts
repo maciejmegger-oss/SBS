@@ -47,6 +47,11 @@ let viewingRocznikGroup = null;
 let rankingLeague = null;
 let rankingFormationFilter = ''; // '' = wszystkie systemy; inaczej jedna z wartości FORMATIONS
 let positionMapAssignments = {}; // { "league|||number": [playerId, ...] up to 6 }
+// Radar mlodziezy: kogo juz przejrzalismy. { playerId: 'YYYY-MM-DD' } — data pierwszego przejrzenia.
+let radarPrzejrzane = {};
+// System gry zespołu: { idKlubu: '1-4-3-3' }. Zawodnik bez własnego systemu w profilu jest
+// liczony w układzie swojego klubu — inaczej wypadał z mapy pozycji, choć wiadomo, jak gra.
+let systemyKlubow = {};
 let editingClubId = null;
 let clubBrowse = {top:"", group:""};
 let dashboardLeagueSelected = null;
@@ -54,7 +59,7 @@ let dashboardGroupSelected = null; // wybrana grupa (np. "III liga, gr. II") po 
 
 const DEFAULT_SETTINGS = {
   regions: ["Dolnośląski ZPN","Kujawsko-Pomorski ZPN","Lubelski ZPN","Lubuski ZPN","Łódzki ZPN","Małopolski ZPN","Mazowiecki ZPN","Opolski ZPN","Podkarpacki ZPN","Podlaski ZPN","Pomorski ZPN","Śląski ZPN","Świętokrzyski ZPN","Warmińsko-Mazurski ZPN","Wielkopolski ZPN","Zachodniopomorski ZPN"],
-  leagues: ["Ekstraklasa","I liga","II liga","III liga, gr. I","III liga, gr. II","III liga, gr. III","III liga, gr. IV","IV liga (pomorska)","IV liga (zachodniopomorska)","IV liga (dolnośląska)","IV liga (śląska)","IV liga (wielkopolska)","IV liga (kujawsko-pomorska)","IV liga (łódzka)","Klasa okręgowa","CLJ U19","CLJ U17 (zachodnia)","CLJ U17 (wschodnia)","CLJ U15 (gr. A)","CLJ U15 (gr. B)","CLJ U15 (gr. C)","CLJ U15 (gr. D)","Liga makroregionalna U16","Rocznik 2011","Rocznik 2012","Rocznik 2013","Rocznik 2014"],
+  leagues: ["Ekstraklasa","I liga","II liga","III liga, gr. I","III liga, gr. II","III liga, gr. III","III liga, gr. IV","IV liga (pomorska)","IV liga (zachodniopomorska)","IV liga (dolnośląska)","IV liga (śląska)","IV liga (wielkopolska)","IV liga (kujawsko-pomorska)","IV liga (łódzka)","Klasa okręgowa","CLJ U19","CLJ U17 gr. I","CLJ U17 gr. II","CLJ U15 gr. A","CLJ U15 gr. B","CLJ U15 gr. C","CLJ U15 gr. D","Liga makroregionalna U16","Rocznik 2011","Rocznik 2012","Rocznik 2013","Rocznik 2014"],
   positions: ["Bramkarz","Obrońca prawy","Obrońca lewy","Obrońca środkowy","Obrońca środkowy prawy","Obrońca środkowy centralny","Obrońca środkowy lewy","Obrońca boczny","Wahadłowy prawy","Wahadłowy lewy","Pomocnik defensywny","Pomocnik środkowy","Pomocnik ofensywny","Skrzydłowy","Skrzydłowy prawy","Skrzydłowy lewy","Napastnik"],
   statuses: ["Do Obserwacji","Na Testy","Do transferu","Z polecenia","Rekomendowany","Odrzucony"],
   recommendations: ["Kontynuować obserwację","Zaprosić na testy","(Do transferu)","Odrzucić","Zbyt wcześnie ocenić"],
@@ -73,14 +78,19 @@ function topLevelOf(league){
   if(league==="Klasa okręgowa") return "Klasa okręgowa";
   return "Kategorie juniorskie";
 }
-// KTÓRE POZIOMY CHODZĄ PO PROTOKOŁY DO „ŁĄCZY NAS PIŁKA".
+// CZY KLUB GRA W TYCH ROZGRYWKACH — z tolerancją na poziom zamiast konkretnej grupy.
 //
-// 90minut nie prowadzi rozgrywek juniorskich ani IV ligi w formie, którą da się odczytać z serwera
-// (dla CLJ nie ma tam nawet tabeli). Te poziomy rozliczają się protokołami zbieranymi zakładką na
-// ŁNP. Warunek stał dotąd w siedmiu miejscach przepisany z palca — przy dokładaniu CLJ U15 trzeba
-// było trafić we wszystkie siedem, więc jest jeden.
-function czyZrodloLnp(top){
-  return top === 'IV liga' || top === 'Klasa okręgowa' || top === 'Kategorie juniorskie';
+// Kluby mają w kartotece pełną nazwę grupy („IV liga (dolnośląska)", „III liga, gr. III"),
+// a przeglądać można też po samym poziomie („IV liga"). Porównanie znak w znak dawało wtedy
+// ZERO trafień: okno protokołów pokazywało „(1)" zamiast osiemnastu klubów i licznik rozliczonych
+// meczów stał na zerze mimo trzydziestu dziewięciu właśnie zapisanych. Gorzej — po tej samej
+// regule działała podpowiedź grupy przy dopasowaniu klubu, więc „Pogoń" przestawała być
+// rozstrzygana przez rozgrywki, w których akurat pracujesz.
+function wTychRozgrywkach(liga, wskazanie){
+  const l = String(liga || '');
+  const w = String(wskazanie || '');
+  if(!w) return false;
+  return l === w || l.startsWith(w + ',') || l.startsWith(w + ' (') || l.startsWith(w + ' gr.');
 }
 function groupsForTop(top){
   const settings = DB.settings as any;
@@ -1837,7 +1847,7 @@ async function loadAllInner(){
     }
   };
 
-  const [p, c, o, rp, tl, ct, mt, ag, agt, pmaRow, s,
+  const [p, c, o, rp, tl, ct, mt, ag, agt, pmaRow, radarRow, systemyRow, s,
     seedFlag, enrichFlag, enrichAviaFlag, enrichGornikFlag, enrichAviaV2Flag, recoMigrationFlag, statusMigrationFlag] = await Promise.all([
     czytaj('scouting:players'),
     czytaj('scouting:clubs'),
@@ -1849,6 +1859,11 @@ async function loadAllInner(){
     czytaj('scouting:agencies'),
     czytaj('scouting:agents'),
     czytaj('scouting:position_map_assignments'),
+    czytaj('scouting:radar_przejrzane'),
+    // System gry zespołu. Tabela sbs_clubs nie ma na to kolumny ani pola jsonb, w którym dałoby
+    // się je schować — a dokładanie kolumny wymagałoby migracji bazy. Idzie więc tą samą drogą
+    // co mapa pozycji: jeden wiersz JSON w sbs_kv, { idKlubu: '1-4-3-3' }.
+    czytaj('scouting:systemy_klubow'),
     // Ustawienia to jedyny wiersz, który zapis NADPISUJE w całości (logotypy lig, lista scoutów).
     // Nieudany odczyt musi być więc widoczny, inaczej pierwszy zapis ustawień skasowałby logotypy.
     czytaj('scouting:settings'),
@@ -1876,11 +1891,16 @@ async function loadAllInner(){
   try{ DB.agencies = ag ? JSON.parse(ag.value) : []; }catch(e){ DB.agencies = []; }
   try{ DB.agents = agt ? JSON.parse(agt.value) : []; }catch(e){ DB.agents = []; }
   try{ positionMapAssignments = pmaRow ? JSON.parse(pmaRow.value) : {}; }catch(e){ positionMapAssignments = {}; }
+  try{ radarPrzejrzane = radarRow ? JSON.parse(radarRow.value) : {}; }catch(e){ radarPrzejrzane = {}; }
+  try{ systemyKlubow = systemyRow ? JSON.parse(systemyRow.value) : {}; }catch(e){ systemyKlubow = {}; }
   try{
     const loaded = s ? JSON.parse(s.value) : {};
     DB.settings = Object.assign(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), loaded);
   }catch(e){ DB.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS)); }
-  if(DB.settings.scouts && DB.settings.scouts.length){ currentScout = DB.settings.scouts[0]; }
+  if(DB.settings.scouts && DB.settings.scouts.length){
+    let zapamietany=''; try{ zapamietany=localStorage.getItem('sbs-scout')||''; }catch(e){}
+    currentScout = DB.settings.scouts.includes(zapamietany) ? zapamietany : DB.settings.scouts[0];
+  }
   // Wczesny render — użytkownik widzi bazę natychmiast po równoległym odczycie; migracje/seed/wzbogacanie
   // (poniżej) na istniejącej instalacji są prawie natychmiastowe i i tak wywołają końcowe render().
   try{ render(); }catch(e){ console.error('Wczesny render() nie powiódł się (niekrytyczny):', e); }
@@ -2073,8 +2093,36 @@ async function loadAllInner(){
     if(anyPlayerChanged){ try{ await savePlayers(); }catch(e){ console.error('Status players migration save error', e); } }
     await quietFlagSet('scouting:status_migration_v1');
   }
+  // NUMERACJA STOPERÓW WG NARODOWEGO MODELU GRY: 4 = lewy, 5 = prawy.
+  //
+  // Mieliśmy odwrotnie, więc kto stał w polu nr 4, był prawym stoperem. Po zmianie numer 4 znaczy
+  // lewego — gdybyśmy tylko przestawili etykiety, cała mapa zaczęłaby kłamać: prawi stoperzy
+  // staliby pod numerem lewego. Dlatego zamieniamy miejscami ZAWARTOŚĆ pól 4 i 5, razem z listami
+  // ręcznie wykluczonych, żeby zawodnik został tam, gdzie naprawdę gra.
+  //
+  // Migracja jest jednorazowa (flaga) — drugie przejście cofnęłoby zamianę.
+  const numeracjaNmg = await czytaj('scouting:numeracja_nmg_v1');
+  if(wolnoUzupelniac && !numeracjaNmg){
+    const zamienione = {};
+    let ile = 0;
+    Object.keys(positionMapAssignments).forEach(k=>{
+      // Klucz: „liga|||system|||numer" albo „liga|||system|||numer|||wykluczeni" — numer zawsze trzeci.
+      const czesci = k.split('|||');
+      if(czesci.length < 3){ zamienione[k] = positionMapAssignments[k]; return; }
+      if(czesci[2] === '4'){ czesci[2] = '5'; ile++; }
+      else if(czesci[2] === '5'){ czesci[2] = '4'; ile++; }
+      zamienione[czesci.join('|||')] = positionMapAssignments[k];
+    });
+    positionMapAssignments = zamienione;
+    if(ile){
+      try{ await savePositionMapAssignments(); }
+      catch(e){ console.error('Numeracja NMG — zapis mapy pozycji:', e); }
+      console.log(`Numeracja NMG: przestawiłem ${ile} pól stoperów (4 ↔ 5).`);
+    }
+    await quietFlagSet('scouting:numeracja_nmg_v1');
+  }
   // Zapewnienia ustawień PO migracjach (żeby migracja statusów ich nie nadpisała): status "Z polecenia"
-  // oraz rozbicie CLJ U17 na grupę zachodnią/wschodnią. Idempotentne, bez wymuszania zapisu.
+  // oraz nazwy grup CLJ U17 zgodne z ŁNP. Idempotentne, bez wymuszania zapisu.
   if(Array.isArray(DB.settings.statuses) && !DB.settings.statuses.includes('Z polecenia')){
     const idx = DB.settings.statuses.indexOf('Odrzucony');
     if(idx >= 0) DB.settings.statuses.splice(idx, 0, 'Z polecenia'); else DB.settings.statuses.push('Z polecenia');
@@ -2084,16 +2132,39 @@ async function loadAllInner(){
     if(!L.includes('I liga')) L.unshift('I liga');
     if(!L.includes('Ekstraklasa')) L.unshift('Ekstraklasa');   // najwyższy poziom — na początek listy
     if(!L.includes('CLJ U19')) L.push('CLJ U19');
-    const variants = ['CLJ U17 (zachodnia)','CLJ U17 (wschodnia)'].filter(v=>!L.includes(v));
-    const plain = L.indexOf('CLJ U17');
-    if(plain >= 0) L.splice(plain, 1, ...variants);
-    else variants.forEach(v=>L.push(v));
+    // CLJ U17 dzieli się na dwie grupy, a ŁNP nazywa je „gr. I" i „gr. II". U nas nosiły dawniej
+    // nazwy „(wschodnia)" i „(zachodnia)" — kluby przeniesiono do pisowni z ŁNP, ale te dwie
+    // pozycje zostały w ustawieniach i rysowały puste zakładki. Nazwy muszą się zgadzać z ŁNP
+    // co do znaku, bo po nich dopasowujemy rozgrywki przy zbieraniu protokołów.
+    const CLJ_U17_STARE: Record<string,string> = {
+      'CLJ U17 (wschodnia)': 'CLJ U17 gr. I',
+      'CLJ U17 (zachodnia)': 'CLJ U17 gr. II',
+    };
+    const CLJ_U17_NOWE = ['CLJ U17 gr. I','CLJ U17 gr. II'];
+    // Gdyby jakiś klub wciąż siedział pod starą nazwą, przenosimy go, ZANIM zabierzemy zakładkę —
+    // inaczej zniknąłby z widoku razem z nią.
+    let cljPrzeniesionych = 0;
+    DB.clubs.forEach((c:any)=>{
+      const nowa = CLJ_U17_STARE[String(c.league || '')];
+      if(nowa){ c.league = nowa; cljPrzeniesionych++; }
+    });
+    if(cljPrzeniesionych){
+      try{ await saveClubs(); }catch(e){ console.error('CLJ U17 — przeniesienie klubów do grup z ŁNP:', e); }
+    }
+    const gdzieStare = L.findIndex((l:any)=>CLJ_U17_STARE[l] || l === 'CLJ U17');
+    const bezStarych = L.filter((l:any)=>!CLJ_U17_STARE[l] && l !== 'CLJ U17');
+    const brakujace = CLJ_U17_NOWE.filter(n=>!bezStarych.includes(n));
+    bezStarych.splice(gdzieStare >= 0 ? gdzieStare : bezStarych.length, 0, ...brakujace);
+    if(bezStarych.length !== L.length || bezStarych.some((l:any,i:number)=>l !== L[i])){
+      L.length = 0; L.push(...bezStarych);
+      try{ await saveSettings(); }catch(e){ console.error('CLJ U17 — zapis listy lig:', e); }
+    }
     // Usuń "Liga wojewódzka U15" z listy (na życzenie) także w istniejącej bazie.
     const woj = L.indexOf('Liga wojewódzka U15');
     if(woj >= 0) L.splice(woj, 1);
     // CENTRALNA LIGA JUNIORÓW U15 — cztery grupy, ruszyły we wrześniu 2026. Wstawiamy je PRZY
     // pozostałych kategoriach CLJ, żeby nie wylądowały za rocznikami na końcu listy.
-    ['CLJ U15 (gr. A)','CLJ U15 (gr. B)','CLJ U15 (gr. C)','CLJ U15 (gr. D)'].forEach(grupa=>{
+    ['CLJ U15 gr. A','CLJ U15 gr. B','CLJ U15 gr. C','CLJ U15 gr. D'].forEach(grupa=>{
       if(L.includes(grupa)) return;
       const ostatniaClj = L.map(l=>/^CLJ /.test(l)).lastIndexOf(true);
       L.splice(ostatniaClj >= 0 ? ostatniaClj+1 : L.length, 0, grupa);
@@ -2123,7 +2194,10 @@ async function loadAllInner(){
   if(quietFlagFailCount > 0){
     console.log('Uwaga (niegroźne): ' + quietFlagFailCount + ' znaczników "już to zrobione" w tle nie zapisało się — te operacje mogą się powtórzyć przy następnym otwarciu, ale to nie dotyczy Twoich danych.');
   }
-  if(DB.settings.scouts.length){ currentScout = DB.settings.scouts[0]; }
+  if(DB.settings.scouts.length){
+    let zapamietany=''; try{ zapamietany=localStorage.getItem('sbs-scout')||''; }catch(e){}
+    currentScout = DB.settings.scouts.includes(zapamietany) ? zapamietany : DB.settings.scouts[0];
+  }
   render();
 }
 // loadAllInner() ma dziesiątki sekwencyjnych kroków (import składów, wzbogacanie danych, migracje) i nie
@@ -2159,6 +2233,11 @@ async function loadAll(){
   // Kartoteka jest już w pamięci — jeśli zakładka z ŁNP zdążyła przysłać protokoły, teraz je otwieramy.
   bazaGotowaDlaLnp = true;
   odbierzZalegleProtokoly();
+  // Młodzieżowcy, którym dorobek przekroczył próg, wchodzą do Monitoringu sami. Poza wyścigiem
+  // z limitem czasu i bez przerywania startu — to praca w tle, a nie warunek pokazania bazy.
+  dopiszMlodziezowcowDoMonitoringu()
+    .then(ile=>{ if(ile) render(); })
+    .catch(e=>console.warn('Dopisywanie młodzieżowców do Monitoringu nie powiodło się:', e));
   // Odświeżanie statystyk celowo POZA wyścigiem z limitem czasu — to praca w tle, która nie może
   // opóźnić pokazania bazy. Błędy tu nie mogą przewrócić startu aplikacji.
   refreshStatsInBackground().catch(e=>console.warn('Odświeżanie statystyk w tle nie powiodło się:', e));
@@ -2224,6 +2303,26 @@ async function saveClubCrests(){
 }
 async function saveObservations(){ return robustStorageSet('scouting:observations', JSON.stringify(DB.observations)); }
 async function saveReports(){ return robustStorageSet('scouting:reports', JSON.stringify(DB.reports)); }
+
+// POTWIERDZENIE, KTÓRE NIE ZATRZYMUJE PRACY.
+//
+// Świadomie NIE alert(): okno dialogowe trzeba kliknąć, a przeglądarka potrafi je zablokować po
+// kilku z rzędu („nie pokazuj więcej okien") — tak padło kiedyś wylogowanie. Pasek sam znika po
+// paru sekundach i nie stoi na drodze powrotowi do listy.
+//
+// role="status" sprawia, że czytnik ekranu przeczyta komunikat, nie przerywając tego, co robi.
+function pokazPotwierdzenie(tekst, rodzaj = 'ok'){
+  document.querySelectorAll('.sbs-toast').forEach(t=>t.remove());
+  const el = document.createElement('div');
+  el.className = 'sbs-toast' + (rodzaj === 'blad' ? ' sbs-toast-blad' : '');
+  el.setAttribute('role', 'status');
+  el.textContent = tekst;
+  document.body.appendChild(el);
+  // Błąd zostaje dłużej: to komunikat, po którym trzeba coś zrobić, a nie zwykłe „gotowe".
+  const ileMs = rodzaj === 'blad' ? 9000 : 4000;
+  setTimeout(()=>{ el.classList.add('sbs-toast-znika'); setTimeout(()=>el.remove(), 400); }, ileMs);
+  el.onclick = ()=> el.remove();
+}
 async function saveTalents(){ return robustStorageSet('scouting:talents', JSON.stringify(DB.talents)); }
 async function saveContacts(){ return robustStorageSet('scouting:contacts', JSON.stringify(DB.contacts)); }
 async function saveMatches(){ return robustStorageSet('scouting:matches', JSON.stringify(DB.matches)); }
@@ -2340,6 +2439,13 @@ async function refreshStatsInBackground(){
 }
 async function saveSettings(){ return robustStorageSet('scouting:settings', JSON.stringify(DB.settings)); }
 async function savePositionMapAssignments(){ return robustStorageSet('scouting:position_map_assignments', JSON.stringify(positionMapAssignments)); }
+async function saveRadarPrzejrzane(){ return robustStorageSet('scouting:radar_przejrzane', JSON.stringify(radarPrzejrzane)); }
+async function saveSystemyKlubow(){ return robustStorageSet('scouting:systemy_klubow', JSON.stringify(systemyKlubow)); }
+// System, w którym liczymy zawodnika: własny wpis z profilu, a gdy go nie ma — układ jego klubu.
+function systemZawodnika(p){
+  if(!p) return '';
+  return String(p.formation || '') || String(systemyKlubow[p.clubId] || '');
+}
 
 // JAWNE, punktowe usunięcie jednego rekordu z bazy. Zapisy (save*) NIGDY nie kasują — kasujemy tylko
 // tutaj, gdy użytkownik świadomie kliknie "usuń". Ponawiamy do 3 razy; przy porażce pokazujemy baner
@@ -2363,6 +2469,98 @@ async function robustStorageDelete(key, id){
   return false;
 }
 async function deletePlayerRecord(id){ return robustStorageDelete('scouting:players', id); }
+
+// SCALANIE DWÓCH KARTOTEK TEGO SAMEGO ZAWODNIKA.
+//
+// Duplikaty powstają same: raz nazwisko przychodzi z protokołu ŁNP („Marcinho Marcinho"), raz
+// z profilu agencji na Transfermarkcie („Manoel Oliveira da Silva Marcinho"). Dopóki są osobno,
+// raporty idą do jednej karty, statystyki do drugiej, a mapa pozycji i Komitet pokazują połowę
+// prawdy — przy czym każda z nich z osobna wygląda poprawnie.
+//
+// CO ZOSTAJE, A CO PRZECHODZI: zostaje karta wskazana jako główna. Z drugiej przechodzi
+// WSZYSTKO, czego główna nie ma — pola tekstowe tylko w puste miejsca, bo dane wpisane ręką są
+// pewniejsze niż zaciągnięte automatem. Liczb NIE SUMUJEMY: ten sam mecz bywa policzony w obu
+// kartotekach, więc dodawanie zrobiłoby z siedmiu meczów czternaście. Bierzemy wyższą wartość.
+//
+// Funkcja NIE zapisuje — oddaje opis zmian, żeby dało się go pokazać przed zatwierdzeniem
+// i przetestować bez bazy.
+function scalKartoteki(glowna, duplikat){
+  const raportow = DB.reports.filter(r=>r.playerId === duplikat.id).length;
+  const obserwacji = DB.observations.filter(o=>o.playerId === duplikat.id).length;
+
+  DB.reports.forEach(r=>{ if(r.playerId === duplikat.id) r.playerId = glowna.id; });
+  DB.observations.forEach(o=>{ if(o.playerId === duplikat.id) o.playerId = glowna.id; });
+
+  // Przebieg sezonu: mecz rozpoznajemy po parze (rywal, u siebie) — tak samo jak import protokołów,
+  // bo w sezonie każda para gra ze sobą dokładnie dwa razy.
+  const kluczMeczu = (x)=> importNorm(String(x.rywal||'')) + '|' + (x.dom ? 'D' : 'W');
+  const mam = new Set((glowna.przebieg || []).map(kluczMeczu));
+  let meczow = 0;
+  (duplikat.przebieg || []).forEach(x=>{
+    if(mam.has(kluczMeczu(x))) return;
+    glowna.przebieg = [...(glowna.przebieg || []), x];
+    mam.add(kluczMeczu(x));
+    meczow++;
+  });
+
+  // TEKST PISANY RĘKĄ SKAUTA DOKLEJAMY, A NIE WYBIERAMY.
+  //
+  // Przy pozostałych polach zasada „uzupełniaj tylko puste" jest bezpieczna: wzrost albo noga mają
+  // jedną poprawną wartość. Notatka i opis końcowy to zdania, które ktoś napisał — jeśli obie karty
+  // mają swoje, wybranie jednej znaczy skasowanie czyjejś pracy. Doklejamy więc obie, z podpisem
+  // skąd pochodzi druga, żeby po scaleniu dało się to rozdzielić.
+  let doklejone = 0;
+  ['notes','opisKoncowy'].forEach(pole=>{
+    const a = String(glowna[pole] || '').trim();
+    const b = String(duplikat[pole] || '').trim();
+    if(!b || a === b) return;
+    glowna[pole] = a ? `${a}\n\n— z połączonej kartoteki „${duplikat.lastName||''} ${duplikat.firstName||''}":\n${b}` : b;
+    doklejone++;
+  });
+
+  const TEKSTOWE = ['firstName','lastName','birthDate','birthYear','position','pozycjaNmg','foot',
+    'height','nationality','clubId','status','scout','videoLink','lnpLink','tmLink','formation',
+    'agencyName','contractUntil','photo','instagramLink','facebookLink'];
+  const uzupelnione = [];
+  TEKSTOWE.forEach(pole=>{
+    const puste = glowna[pole] === undefined || glowna[pole] === null || String(glowna[pole]).trim() === '';
+    if(puste && duplikat[pole] !== undefined && String(duplikat[pole] ?? '').trim() !== ''){
+      glowna[pole] = duplikat[pole];
+      uzupelnione.push(pole);
+    }
+  });
+
+  // Dorobek: wyższa wartość, nigdy suma.
+  ['matches','minutes','goals','assists','yellowCards','redCards'].forEach(pole=>{
+    const a = Number(glowna[pole] ?? 0), b = Number(duplikat[pole] ?? 0);
+    if(Number.isFinite(b) && b > a) glowna[pole] = duplikat[pole];
+  });
+  ['monitored','mlodziezowiec','hasAgent','kadraWojewodzka','reprezentacja','hasContract'].forEach(pole=>{
+    if(duplikat[pole] === true) glowna[pole] = true;
+  });
+  ['wyroznienia','committeeReports','attachments','transferHistory','powolania'].forEach(pole=>{
+    const a = Array.isArray(glowna[pole]) ? glowna[pole] : [];
+    const b = Array.isArray(duplikat[pole]) ? duplikat[pole] : [];
+    if(b.length) glowna[pole] = [...a, ...b];
+  });
+  if(!glowna.opiniaAI && duplikat.opiniaAI) glowna.opiniaAI = duplikat.opiniaAI;
+
+  // Mapa pozycji trzyma identyfikatory — bez podmiany zawodnik zniknąłby z boiska razem z kartą.
+  let polMapy = 0;
+  Object.keys(positionMapAssignments).forEach(k=>{
+    const lista = positionMapAssignments[k];
+    if(!Array.isArray(lista) || lista.indexOf(duplikat.id) < 0) return;
+    const bezDuplikatu = lista.map(id=> id === duplikat.id ? glowna.id : id);
+    positionMapAssignments[k] = [...new Set(bezDuplikatu)];
+    polMapy++;
+  });
+  if(radarPrzejrzane[duplikat.id]){
+    if(!radarPrzejrzane[glowna.id]) radarPrzejrzane[glowna.id] = radarPrzejrzane[duplikat.id];
+    delete radarPrzejrzane[duplikat.id];
+  }
+
+  return { raportow, obserwacji, meczow, uzupelnione, polMapy, doklejone };
+}
 async function deleteClubRecord(id){ return robustStorageDelete('scouting:clubs', id); }
 async function deleteObservationRecord(id){ return robustStorageDelete('scouting:observations', id); }
 async function deleteReportRecord(id){ return robustStorageDelete('scouting:reports', id); }
@@ -2442,10 +2640,25 @@ function playerAvg(playerId){
   if(!obs.length && overall===null && !avgs && !metryki.length) return null;
   const last = obs.length ? obs[obs.length-1]
     : {date: reps.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||'')).map(r=>r.date).pop() || ''};
-  return {avgs, overall, metryki, count: obs.length, reportCount: ratedReports, last};
+  // `count` to WPISY Z PLANU OBSERWACJI, a `raportow` — raporty skautingowe. Rozróżnienie jest
+  // konieczne, bo listy pokazywały „Obs. 0" obok średniej 5.1 i daty ostatniej obserwacji, które
+  // BIORĄ SIĘ z raportów. Wyglądało to jak błąd systemu, a była to jedna kolumna licząca co innego
+  // niż dwie sąsiednie.
+  return {avgs, overall, metryki, count: obs.length, raportow: reps.length, reportCount: ratedReports, last};
 }
 // "śr. ocena" w listach: kreska, dopóki nie ma żadnego raportu z ocenami.
 function fmtAvg(a){ return a && a.overall!=null ? fmt1(a.overall) : "—"; }
+// Ile razy zawodnik był oglądany — wpisy z Planu Obserwacji ORAZ raporty skautingowe.
+// Sama liczba obserwacji kłamała: przy zawodniku z jednym raportem stało „0", choć obok widniała
+// średnia z tego raportu i data jego powstania. Pokazujemy obie liczby, gdy się różnią.
+function komorkaObsRap(a){
+  const obs = a ? a.count : 0;
+  const rap = a ? (a.raportow || 0) : 0;
+  if(!obs && !rap) return '0';
+  if(!obs) return `<span title="${rap} ${rap===1?'raport skautingowy':'raportów skautingowych'}, brak wpisów w Planie Obserwacji">${rap} <span class="meta" style="font-size:11px;">rap.</span></span>`;
+  if(!rap) return `<span title="${obs} ${obs===1?'wpis':'wpisów'} w Planie Obserwacji">${obs}</span>`;
+  return `<span title="${obs} z Planu Obserwacji, ${rap} ${rap===1?'raport':'raportów'}">${obs} <span class="meta" style="font-size:11px;">+ ${rap} rap.</span></span>`;
+}
 // Kartki w listach: żółte/czerwone jako kolorowe znaczniki. Kreska, gdy obu brak — zero pokazujemy
 // tylko wtedy, gdy druga wartość jest uzupełniona (żeby "0/1" było czytelne).
 function cardsCell(p){
@@ -2861,6 +3074,7 @@ const NAV_ITEMS = [
   {id:"newobs", label:"Plan Obserwacji"},
   {id:"reports", label:"Raporty"},
   {id:"monitoring", label:"Monitoring"},
+  {id:"radar", label:"Radar młodzieży"},
   {id:"ranking", label:"Ranking"},
   {id:"talent", label:"Talent"},
   {id:"committee", label:"Scout Transfer"},
@@ -2871,7 +3085,7 @@ const NAV_ITEMS = [
 const SAVE_FN_BY_KEY = {
   'scouting:players': ()=>savePlayers(), 'scouting:clubs': ()=>saveClubs(), 'scouting:observations': ()=>saveObservations(),
   'scouting:reports': ()=>saveReports(), 'scouting:talents': ()=>saveTalents(), 'scouting:contacts': ()=>saveContacts(),
-  'scouting:settings': ()=>saveSettings(), 'scouting:position_map_assignments': ()=>savePositionMapAssignments(),
+  'scouting:settings': ()=>saveSettings(), 'scouting:position_map_assignments': ()=>savePositionMapAssignments(), 'scouting:radar_przejrzane': ()=>saveRadarPrzejrzane(), 'scouting:systemy_klubow': ()=>saveSystemyKlubow(),
   'scouting:agencies': ()=>saveAgencies(), 'scouting:agents': ()=>saveAgents(),
   'scouting:agency_logos': ()=>saveAgencyLogos(),
 };
@@ -2999,6 +3213,7 @@ function render(){
   else if(currentView==="observedlist") main.innerHTML = viewObservedList();
   else if(currentView==="monitoring") main.innerHTML = viewMonitoring();
   else if(currentView==="committee") main.innerHTML = viewTransferCommittee();
+  else if(currentView==="radar") main.innerHTML = viewRadarMlodziezy();
   else if(currentView==="ranking") main.innerHTML = viewRanking();
   else if(currentView==="reports") main.innerHTML = viewReports();
   else if(currentView==="talent") main.innerHTML = viewTalent();
@@ -3491,7 +3706,13 @@ function viewDashboard(){
 
   return `
   <h2 class="view-title">Dashboard</h2>
-  <p class="view-sub">Zalogowany scout: <strong>${esc(currentScout || 'Nieznany')}</strong></p>
+  <p class="view-sub" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">Scout:
+    <select id="kto-jestem" style="font:inherit;padding:2px 8px;border-radius:6px;border:1px solid var(--border-strong);background:var(--card);width:auto;max-width:260px;">
+      ${DB.settings.scouts.length
+        ? DB.settings.scouts.map(s=>`<option ${s===currentScout?'selected':''}>${esc(s)}</option>`).join('')
+        : '<option value="">— dodaj scoutów w Ustawieniach —</option>'}
+    </select>
+    <span class="note" style="margin-left:6px;">tym nazwiskiem podpisują się Twoje nowe obserwacje i raporty</span></p>
   <div class="grid grid-5" style="margin-bottom:18px;">
     <div class="stat" data-action="goto-clubs" style="cursor:pointer;" title="Wszystkie kluby w systemie (wszystkie ligi) — kliknij, aby przejść"><div class="num">${totalClubs}</div><div class="lbl">Kluby</div></div>
     <div class="stat"><div class="num">${totalPlayers}</div><div class="lbl">Zawodnicy</div></div>
@@ -3615,7 +3836,7 @@ function viewPlayers(){
       <td style="text-align:right;">${p.matches!=null?p.matches:'—'}</td>
       <td style="text-align:right;">${p.minutes!=null?p.minutes:'—'}</td>
       <td style="text-align:right;">${p.goals!=null?p.goals:'—'}</td>
-      <td style="text-align:right;">${a? a.count : 0}</td>
+      <td style="text-align:right;">${komorkaObsRap(a)}</td>
       <td style="white-space:nowrap;">
         <button class="link-btn" data-action="add-to-monitoring" data-id="${p.id}" title="${p.monitored?'W Monitoringu — kliknij, aby usunąć':'Dodaj do Monitoringu'}" style="color:${p.monitored?'var(--good)':'var(--gold-dark)'};">${p.monitored?'✓ Monitoring':'+ Monitoring'}</button>
         <button class="link-btn" data-action="delete-player" data-id="${p.id}" title="Usuń zawodnika" style="margin-left:8px;color:var(--clay-dark);">Usuń</button>
@@ -3633,6 +3854,18 @@ function viewPlayers(){
     <button class="secondary" data-action="back-rocznik">← Wróć do roczników</button>
     <button class="danger" data-action="delete-rocznik" data-year="${viewingRocznikGroup.match(/\d{4}/)[0]}" title="Usuń wszystkich zawodników z tego rocznika">🗑️ Usuń cały rocznik</button>
   </div>` : ''}
+  ${(()=>{
+    // BANER O DUPLIKATACH. Podwójne kartoteki nie rzucają się w oczy: każda z osobna wygląda
+    // poprawnie, a widać je dopiero w zestawieniu, gdzie stoją obok siebie — w Komitecie albo
+    // w Monitoringu. Do tego czasu raporty idą do jednej karty, a statystyki do drugiej.
+    const pary = znajdzDuplikaty();
+    if(!pary.length) return '';
+    return `<div class="card" style="border-left:3px solid var(--gold);margin-bottom:12px;">
+      <strong>Prawdopodobne duplikaty: ${pary.length}</strong>
+      <div class="note" style="margin-top:2px;">Ten sam zawodnik w dwóch kartotekach — raporty i statystyki rozchodzą się między nie.</div>
+      <button class="secondary" data-action="pokaz-duplikaty" style="margin-top:8px;">⇄ Pokaż i scal</button>
+    </div>`;
+  })()}
   <div class="toolbar">
     <div class="filters">
       <select id="f-region"><option value="">Wszystkie regiony</option>${DB.settings.regions.map(r=>`<option ${playerFilters.region===r?'selected':''}>${esc(r)}</option>`).join('')}</select>
@@ -3667,7 +3900,7 @@ function viewPlayers(){
   <p class="note" style="margin:0 0 6px;font-size:11.5px;">Tabela jest szeroka — przewiń ją w bok pod spodem albo przytrzymaj <strong>Shift</strong> i kręć kółkiem myszy. Kolumna akcji zostaje widoczna.</p>
   <div class="card table-scroll" style="padding:0;overflow:auto;">
     <table class="players-table">
-      <thead><tr><th style="width:24px;"><input type="checkbox" class="header-checkbox"></th><th style="width:34px;text-align:right;" title="Liczba porządkowa">Lp.</th><th>Zawodnik</th><th>Rocznik</th><th>Pozycja</th><th>Klub / region / liga</th><th>Status</th><th style="text-align:center;" title="Czy zawodnik ma menedżera — kliknij, aby przełączyć Tak/Nie">Agent</th><th style="text-align:right;" title="Rozegrane mecze w sezonie">Mecze</th><th style="text-align:right;" title="Rozegrane minuty w sezonie">Minuty</th><th style="text-align:right;" title="Gole w sezonie">Gole</th><th style="text-align:right;" title="Liczba obserwacji">Obs.</th><th></th></tr></thead>
+      <thead><tr><th style="width:24px;"><input type="checkbox" class="header-checkbox"></th><th style="width:34px;text-align:right;" title="Liczba porządkowa">Lp.</th><th>Zawodnik</th><th>Rocznik</th><th>Pozycja</th><th>Klub / region / liga</th><th>Status</th><th style="text-align:center;" title="Czy zawodnik ma menedżera — kliknij, aby przełączyć Tak/Nie">Agent</th><th style="text-align:right;" title="Rozegrane mecze w sezonie">Mecze</th><th style="text-align:right;" title="Rozegrane minuty w sezonie">Minuty</th><th style="text-align:right;" title="Gole w sezonie">Gole</th><th style="text-align:right;" title="Wpisy w Planie Obserwacji oraz raporty skautingowe">Obs. / rap.</th><th></th></tr></thead>
       <tbody>${rows || `<tr><td colspan="13"><div class="empty">Brak zawodników spełniających filtry.</div></td></tr>`}</tbody>
     </table>
   </div>`;
@@ -3695,6 +3928,98 @@ async function toggleHasAgent(id){
   p.agentSource = 'ręcznie';
   await savePlayers();
   render();
+}
+
+// MECZE, W KTÓRYCH SKAUT GO WYRÓŻNIŁ.
+//
+// Sam licznik („wyróżniony 3 razy") nie mówi nic o formie: trzy razy w jednym tygodniu to co
+// innego niż trzy razy przez pół roku. Wypisujemy więc spotkania, od najnowszego.
+function wyroznieniaHtml(p){
+  const lista = (p.wyroznienia || []).slice()
+    .sort((a,b)=> String(b.data||'').localeCompare(String(a.data||'')));
+  if(!lista.length) return '';
+  return `
+  <div class="card">
+    <h4 style="margin-top:0;color:var(--heading);">⭐ Wyróżniony w meczach (${lista.length})</h4>
+    ${lista.map(w=>`<div class="obs-item">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <strong>${esc(w.data||'—')} &middot; ${esc(w.mecz||'—')}</strong>
+      </div>
+      <div class="meta">${w.klub?esc(w.klub)+' &middot; ':''}zaznaczył: ${esc(w.scout||'—')}</div>
+    </div>`).join('')}
+  </div>`;
+}
+
+// UZUPEŁNIENIE PROFILU Z TRANSFERMARKTU — po adresie, bez przepisywania.
+//
+// Wzrost, noga, agent, koniec umowy, wartość rynkowa i zdjęcie nie pojawiają się w polskich
+// protokołach; przepisywało się je ręcznie z otwartej obok karty. Przy kilkuset zawodnikach to
+// godziny pracy nad czymś, co stoi gotowe pod adresem, który i tak mamy w kartotece.
+//
+// NIE NADPISUJEMY TEGO, CO JUŻ WPISAŁEŚ. Uzupełniamy wyłącznie puste pola — poza zdjęciem
+// i wartością rynkową, które są odzwierciedleniem stanu na TM i mają się odświeżać. Statystyk
+// nie ruszamy w ogóle: te liczymy z protokołów związkowych, a nie z Transfermarktu.
+async function odswiezZTransfermarktu(playerId, przycisk){
+  const p = DB.players.find(x=>x.id===playerId);
+  if(!p) return;
+  const adres = String(p.profileTm||'').trim();
+  if(!adres){ alert('Ten zawodnik nie ma zapisanego adresu profilu na Transfermarkcie.'); return; }
+
+  const napis = przycisk ? przycisk.textContent : '';
+  if(przycisk){ przycisk.disabled = true; przycisk.textContent = 'Pobieram…'; }
+  try{
+    const odp = await fetch('/api/transfermarkt?url=' + encodeURIComponent(adres));
+    const d = await odp.json();
+    if(!odp.ok || d.error){
+      alert('Nie udało się pobrać profilu: ' + (d.error || ('kod ' + odp.status))
+        + (d.podpowiedz ? '\n\n' + d.podpowiedz : ''));
+      return;
+    }
+
+    const zmiany = [];
+    const ustawGdyPuste = (pole, wartosc, etykieta)=>{
+      if(wartosc == null || wartosc === '') return;
+      if(p[pole] != null && String(p[pole]).trim() !== '') return;
+      p[pole] = wartosc;
+      zmiany.push(`${etykieta}: ${wartosc}`);
+    };
+    ustawGdyPuste('height', d.wzrostCm, 'wzrost');
+    ustawGdyPuste('foot', d.noga, 'noga');
+    ustawGdyPuste('position', d.pozycja, 'pozycja');
+    ustawGdyPuste('nationality', d.narodowosc, 'narodowość');
+    ustawGdyPuste('birthDate', d.dataUrodzenia, 'data urodzenia');
+    if(d.dataUrodzenia && !p.birthYear) p.birthYear = String(d.dataUrodzenia).slice(0,4);
+    if(d.menadzer && !String(p.agencyName||'').trim()){
+      p.hasAgent = true; p.agencyName = d.menadzer;
+      zmiany.push('agent: ' + d.menadzer);
+    }
+    if(d.umowaDo && !String(p.contractUntil||'').trim()){
+      p.hasContract = true; p.contractUntil = d.umowaDo;
+      zmiany.push('umowa do: ' + d.umowaDo);
+    }
+    // Wartość rynkowa i zdjęcie ODŚWIEŻAMY zawsze — jedno i drugie zmienia się na TM, a kartoteka
+    // ma pokazywać stan bieżący, nie ten sprzed roku.
+    if(d.wartoscRynkowa){
+      const notatka = `Transfermarkt — narodowość: ${d.narodowosc || '—'}, wartość rynkowa: ${d.wartoscRynkowa}.`;
+      if(p.notes !== notatka){ p.notes = notatka; zmiany.push('wartość rynkowa: ' + d.wartoscRynkowa); }
+    }
+    if(d.zdjecie && p.photoUrl !== d.zdjecie){
+      p.photoUrl = d.zdjecie;
+      zmiany.push('zdjęcie');
+    }
+
+    const ok = await savePlayerOne(p);
+    if(!ok){ alert('Pobrałem dane, ale nie udało się ich zapisać. Sprawdź baner u góry strony.'); return; }
+    render();
+    alert(zmiany.length
+      ? `Uzupełniłem z Transfermarktu:\n\n${zmiany.join('\n')}\n\nPola, które już były wypełnione, zostawiłem bez zmian.`
+      : 'Profil był już kompletny — nic nie wymagało uzupełnienia.');
+  }catch(e){
+    console.error('Transfermarkt:', e);
+    alert('Nie udało się pobrać profilu: ' + ((e && e.message) || e));
+  }finally{
+    if(przycisk){ przycisk.disabled = false; przycisk.textContent = napis; }
+  }
 }
 
 function viewPlayerDetail(id){
@@ -3726,7 +4051,9 @@ function viewPlayerDetail(id){
     <div style="display:flex;gap:8px;">
       <button class="secondary" data-action="edit-player" data-id="${p.id}">Edytuj</button>
       ${has90minutLink(p) ? `<button class="secondary" data-action="refresh-stats" data-id="${p.id}" title="Pobierz mecze i bramki z 90minut.pl">🔄 Odśwież statystyki</button>` : ''}
+      ${/transfermarkt\./i.test(String(p.profileTm||'')) ? `<button class="gold" data-action="tm-odswiez" data-id="${p.id}" title="Pobiera z Transfermarktu wzrost, nogę, pozycję, narodowość, agenta, datę końca umowy, wartość rynkową i zdjęcie">⟳ Aktualizuj dane</button>` : ''}
       <button class="gold" data-action="paste-stats" data-id="${p.id}">📊 Wklej statystyki</button>
+      <button class="secondary" data-action="scal-zawodnikow" data-id="${p.id}" title="Ten sam zawodnik ma dwie kartoteki? Wchłoń duplikat do tej karty">⇄ Scal duplikat</button>
       <button class="danger" data-action="delete-player" data-id="${p.id}">Usuń</button>
     </div>
   </div>
@@ -3745,7 +4072,8 @@ function viewPlayerDetail(id){
         <tr><td style="color:var(--ink-soft);">Narodowość</td><td>${p.nationality? nationalityFlag(p.nationality)+' '+esc(p.nationality) : "—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">Noga</td><td>${esc(p.foot||"—")}</td></tr>
         <tr><td style="color:var(--ink-soft);">Wzrost</td><td>${p.height? p.height+" cm":"—"}</td></tr>
-        <tr><td style="color:var(--ink-soft);">System gry</td><td>${p.formation? `<strong>${esc(p.formation)}</strong>`:"—"}</td></tr>
+        <tr><td style="color:var(--ink-soft);">System gry</td><td>${systemZawodnika(p)? `<strong>${esc(systemZawodnika(p))}</strong>${p.formation?'':' <span style="color:var(--ink-soft);font-size:12px;">(z klubu)</span>'}`:"—"}</td></tr>
+        <tr><td style="color:var(--ink-soft);">Pozycja wg NMG</td><td>${opisPozycjiNmg(p) ? `<strong>${esc(opisPozycjiNmg(p))}</strong>` : "—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">Mecze / minuty / gole / asysty</td><td>${(p.matches!=null||p.minutes!=null||p.goals!=null||p.assists!=null) ? `${p.matches!=null?p.matches:'—'} mecze &middot; ${p.minutes!=null?p.minutes:'—'} min &middot; ${p.goals!=null?p.goals:'—'} goli &middot; ${p.assists!=null?p.assists:'—'} asyst` : "—"}${p.statsUpdatedAt?`<div class="note" style="font-size:11px;margin-top:2px;">Mecze i bramki z ${esc(p.statsSource||'90minut.pl')}${p.statsSeason?' (sezon '+esc(p.statsSeason)+')':''}, odświeżone ${esc(String(p.statsUpdatedAt).slice(0,10))}. Minuty i asysty wpisujesz ręcznie.</div>`:''}</td></tr>
         <tr><td style="color:var(--ink-soft);">Kadra wojewódzka</td><td>${p.kadraWojewodzka? '<strong style="color:var(--good);">Tak</strong>' : 'Nie'}</td></tr>
         <tr><td style="color:var(--ink-soft);">Reprezentacja</td><td>${p.reprezentacja? `<strong style="color:var(--good);">Tak</strong>${p.powolania!=null?` &middot; ${p.powolania} ${p.powolania===1?'powołanie':'powołań'}`:''}` : 'Nie'}</td></tr>
@@ -3793,6 +4121,24 @@ function viewPlayerDetail(id){
     <p class="note" style="margin-top:8px;margin-bottom:0;">Generuje i pobiera gotowy plik PDF — chwilę to potrwa, w zależności od urządzenia.</p>
   </div>
   <div class="card">
+    ${(()=>{
+      // RAPORTY NA PROFILU. Średnia ocen była tu od zawsze, ale nie dało się dojść, z czego wyszła:
+      // profil nie pokazywał ani ilu raportów dotyczy, ani kto je pisał. Przy zawodniku ze średnią
+      // 5.1 z jednego raportu to różnica między „sprawdzony" a „ktoś go raz widział".
+      const swoje = DB.reports.filter(r=>r.playerId===p.id)
+        .slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+      return `<h4 style="margin-top:0;color:var(--heading);">Raporty skautingowe (${swoje.length})</h4>
+      ${swoje.length ? swoje.map(r=>`<div class="obs-item" style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">
+          <span><strong>${esc(r.date||'bez daty')}</strong>
+            <span class="meta">${esc(r.scout||'—')}${r.perspektywa?` &middot; perspektywa ${esc(r.perspektywa)}`:''}${r.obsType?` &middot; ${esc(r.obsType)}`:''}</span>
+            ${r.description?`<div class="meta" style="margin-top:2px;">${esc(String(r.description).slice(0,180))}${String(r.description).length>180?'…':''}</div>`:''}
+          </span>
+          <button class="secondary" data-action="edit-report" data-id="${esc(r.id)}" style="flex-shrink:0;font-size:11.5px;" title="Otwórz raport">✎ Otwórz</button>
+        </div>`).join('')
+        : '<div class="empty">Brak raportów. Napisz pierwszy w zakładce Raporty — to z nich liczy się średnia i wskaźnik analizy.</div>'}`;
+    })()}
+  </div>
+  <div class="card">
     <h4 style="margin-top:0;color:var(--heading);">Historia obserwacji (${obs.length})</h4>
     ${obs.length? obs.map(o=>{
       // Oceny liczbowe przy obserwacji to już tylko dane historyczne (okno "Statystyka" usunięte).
@@ -3809,6 +4155,7 @@ function viewPlayerDetail(id){
       </div>`;
     }).join('') : `<div class="empty">Brak obserwacji dla tego zawodnika.</div>`}
   </div>
+  ${wyroznieniaHtml(p)}
   <div class="card">
     <h4 style="margin-top:0;color:var(--heading);">⚡ Szybkie statystyki sezonu${
       p.statsSeason ? ` <span class="note" style="font-weight:400;">— ${esc(p.statsSeason)}</span>` : ''}</h4>
@@ -4042,7 +4389,7 @@ function viewClubs(){
     const groups = allGroups.filter(g=>!yearGroups.includes(g));
     const groupPill = (g, i)=>{
       const val = g==='Wszystkie grupy' ? '' : g;
-      // Skracaj etykietę tylko dla III/IV ligi; kategorie juniorskie (np. "CLJ U17 (zachodnia)") zostają w całości.
+      // Skracaj etykietę tylko dla III/IV ligi; kategorie juniorskie (np. "CLJ U17 gr. II") zostają w całości.
       let label = g;
       if(g.startsWith('III liga, ')) label = g.replace('III liga, ','');
       else if(g.startsWith('IV liga (')) label = g.replace(/^IV liga \(|\)$/g,'');
@@ -4055,8 +4402,24 @@ function viewClubs(){
         yearGroups.map(g=>pill(g, clubBrowse.group===g, 'browse-group', {val:g})).join(' ') + `</div>` : '');
   }
 
+  // ILE KOLEJEK MAMY WGRANYCH — klub po klubie.
+  //
+  // Bez tego nie da się zobaczyć, gdzie statystyki się zatrzymały. Kartoteka wygląda tak samo przy
+  // klubie rozliczonym do szóstej kolejki i przy takim, który stanął na trzeciej — a to właśnie
+  // różnica między aktualnym obrazem ligi a nieaktualnym. Odniesieniem jest najwyższa liczba
+  // meczów w grupie: skoro któryś klub ma sześć, to kolejka jest szósta.
+  const dorobekKlubow = new Map(list.map(c=>[c.id, meczeKlubu(c.id)]));
+  const najwiecejMeczow = Math.max(0, ...[...dorobekKlubow.values()].map(x=>x.meczow));
+
   const rows = list.map(c=>{
     const count = DB.players.filter(p=>p.clubId===c.id).length;
+    const d = dorobekKlubow.get(c.id) || { meczow: 0, punkty: null };
+    const braki = najwiecejMeczow - d.meczow;
+    const komorkaMeczow = najwiecejMeczow === 0
+      ? '<span class="meta">—</span>'
+      : `<span title="${d.meczow} z ${najwiecejMeczow} kolejek rozliczonych w tej grupie${braki>0?` — brakuje ${braki}`:''}"
+              style="${braki>0?'color:var(--clay-dark);font-weight:700;':'font-weight:600;'}">${d.meczow}/${najwiecejMeczow}</span>`
+        + (braki>0 ? ' <span title="Statystyki tego klubu są nieaktualne">⚠️</span>' : '');
     return `<tr style="cursor:pointer;" data-action="view-club" data-id="${c.id}">
       <td onclick="event.stopPropagation()">
         <label for="quick-crest-${c.id}" style="cursor:pointer;display:inline-flex;" title="Kliknij, aby wgrać/zmienić herb">${crestImg(clubCrest(c.id), null, c.name)}</label>
@@ -4066,6 +4429,8 @@ function viewClubs(){
       <td>${esc(c.region)}</td>
       <td>${esc(c.league)}${c.season?` <span class="note">(${esc(c.season)})</span>`:''}</td>
       <td>${esc(c.city||"—")}</td>
+      <td style="text-align:center;">${komorkaMeczow}</td>
+      <td style="text-align:center;">${d.punkty==null?'<span class="meta">—</span>':`<strong>${d.punkty}</strong>`}</td>
       <td>${count}</td>
       <td onclick="event.stopPropagation()"><button class="link-btn" data-action="edit-club" data-id="${c.id}">Edytuj</button>
           <button class="link-btn" data-action="delete-club" data-id="${c.id}" style="color:var(--clay-dark);">Usuń</button></td>
@@ -4074,12 +4439,19 @@ function viewClubs(){
 
   return `
   <h2 class="view-title">Kluby</h2>
-  <p class="view-sub">Przeglądaj wg ligi i grupy — jak w strukturze PZPN / mPZPN. Kliknij klub, aby zobaczyć skład na obecny sezon.</p>
+  <p class="view-sub">Przeglądaj wg ligi i grupy — jak w strukturze PZPN / mPZPN. Kliknij klub, aby zobaczyć skład na obecny sezon.
+  ${najwiecejMeczow > 0 ? (()=>{
+    const wTyle = list.filter(c=>(dorobekKlubow.get(c.id)||{meczow:0}).meczow < najwiecejMeczow);
+    return `<br><strong>Rozliczonych kolejek w tej grupie: ${najwiecejMeczow}.</strong> `
+      + (wTyle.length
+        ? `<span style="color:var(--clay-dark);">${wTyle.length} ${wTyle.length===1?'klub ma mniej meczów':'klubów ma mniej meczów'} — tam statystyki są nieaktualne.</span>`
+        : 'Wszystkie kluby mają komplet.');
+  })() : ''}</p>
   <div class="filters" style="margin-bottom:0;">${topRow}</div>
   ${groupRow}
   <div class="toolbar" style="margin-top:14px;">
     <div class="note">${list.length} ${list.length===1?'klub':'klubów'} w widoku${
-      czyZrodloLnp(clubBrowse.top)
+      bezProtokolowNa90minut(clubBrowse.top)
         // Sprawdzone na produkcji: ŁNP oddaje serwerom atrapę strony (plik z kodem aplikacji ma
         // dwieście znaków zamiast megabajtów), więc odświeżanie z serwera tej ligi nie rozliczy.
         // Zamiast zapraszać w ślepy zaułek, mówimy od razu, która droga działa.
@@ -4087,9 +4459,9 @@ function viewClubs(){
           + ' „📋 Protokoły z ŁNP" i <strong>Ctrl+V</strong>. Jedno wklejenie rozlicza całą grupę.'
         : ''}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
-      ${clubBrowse.top && !czyZrodloLnp(clubBrowse.top)
+      ${clubBrowse.top && !bezProtokolowNa90minut(clubBrowse.top)
         ? `<button class="secondary" data-action="league-stats" data-league="${esc(clubBrowse.top)}" title="Wklej statystyki wszystkich klubów tej ligi w jednym oknie">⏱ Statystyki ligi</button>` : ''}
-      ${clubBrowse.group && czyZrodloLnp(clubBrowse.top)
+      ${clubBrowse.group && bezProtokolowNa90minut(clubBrowse.top)
         // LINK DO GRUPY W ŁNP. Adresy rozgrywek na „Łączy nas piłka" to same numery — z samego
         // adresu nie da się poznać, które to województwo. Dlatego link przypisuje człowiek, mając
         // wybraną grupę na ekranie. Potem jedno kliknięcie otwiera właściwą kolejkę i można na niej
@@ -4104,8 +4476,14 @@ function viewClubs(){
         // wejść w kartotekę i osiemnaście kliknięć — przy szesnastu grupach IV ligi robota na cały
         // wieczór. Przycisk przechodzi wszystkie kluby z widoku po kolei. IV liga stała tu dotąd
         // z boku, bo jej protokołów nie dawało się czytać z serwera; teraz idzie tą samą drogą.
+        //
+        // KATEGORII JUNIORSKICH TU NIE MA i to nie jest przeoczenie. 90minut ma dla Centralnej Ligi
+        // Juniorów komplet terminarza i wyników, ale ANI JEDNEGO protokołu — sprawdzone na żywej
+        // stronie: przy 240 spotkaniach zero odnośników „mecz.php". Przycisk kończył się listą
+        // szesnastu krzyżyków i wyglądał na usterkę, choć po prostu nie ma tam czego pobrać.
+        // Jedyna droga to zakładka z ŁNP, więc pokazujemy wyłącznie ją.
         ? `<button class="gold" data-action="stats-90minut-grupa" title="${
-            czyZrodloLnp(clubBrowse.top)
+            bezProtokolowNa90minut(clubBrowse.top)
               ? 'Wczytaj protokoły zebrane zakładką z ŁNP — jedno wklejenie rozlicza wszystkie kluby grupy'
               : 'Pobierz i zapisz statystyki wszystkich klubów widocznych na liście — po kolei, jeden po drugim'
           }">⏱ Odśwież statystyki — cały widok (${list.length})</button>`
@@ -4116,8 +4494,8 @@ function viewClubs(){
   </div>
   <div class="card" style="padding:0;overflow:auto;">
     <table>
-      <thead><tr><th>Herb</th><th>Klub</th><th>ZPN / Region</th><th>Liga (aktualna)</th><th>Miasto</th><th>Zawodnicy w bazie</th><th></th></tr></thead>
-      <tbody>${rows || `<tr><td colspan="7"><div class="empty">Brak klubów w tym widoku.</div></td></tr>`}</tbody>
+      <thead><tr><th>Herb</th><th>Klub</th><th>ZPN / Region</th><th>Liga (aktualna)</th><th>Miasto</th><th style="text-align:center;" title="Ile kolejek mamy rozliczonych — na tle klubu z największą liczbą meczów w tej grupie">Mecze</th><th style="text-align:center;" title="Punkty policzone z wyników zapisanych przy meczach. Kreska, gdy protokoły nie niosły wyniku.">Pkt</th><th>Zawodnicy w bazie</th><th></th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="9"><div class="empty">Brak klubów w tym widoku.</div></td></tr>`}</tbody>
     </table>
   </div>`;
 }
@@ -4237,17 +4615,21 @@ function scalDuplikatyPoNazwie(nazwy, docelowaLiga){
 // kolejki, bo protokół niesie obie drużyny, a każdą dopasowujemy do kartoteki po nazwie. Klub
 // służy tylko za punkt wyjścia (tytuł, licznik, link do ŁNP), więc wolno go nie podawać: wtedy
 // oknem rządzi wybrana grupa i nie trzeba wchodzić w żaden klub.
+// Wspólna dla wszystkich okien z protokołami — „pracuje" jest osobne dla każdego z nich i nie
+// chroniło przed dwoma oknami zapisującymi ten sam protokół naraz.
+let zapisProtokolowTrwa = false;
+
 function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
   const klub = DB.clubs.find(c=>c.id===clubId);
   const grupa = klub ? klub.league : (clubBrowse.group || clubBrowse.top || '');
-  const klubyGrupy = DB.clubs.filter(c=>c.league === grupa);
+  const klubyGrupy = DB.clubs.filter(c=>wTychRozgrywkach(c.league, grupa));
   const naglowekOkna = klub ? klub.name : (grupa || 'wybrana grupa');
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   document.body.appendChild(overlay);
   let wynik = null, komunikat = '', pracuje = false, zapisanychMeczow = 0, dopisujBrak = true;
   // Roczniki z bloku „### ROCZNIKI" — klucz to znormalizowane imię i nazwisko, wartość to rok.
-  let rocznikiZWklejki: Record<string,string> = {};
+  let rocznikiZWklejki: Record<string,{rok?:string, pozycja?:string}> = {};
   const kluczRocznika = (s)=> String(s||'').split(/\s+/).map(importNorm).filter(Boolean).sort().join(' ');
 
   // Ile meczów tego klubu jest już rozliczonych — liczymy z znaczników przy zawodnikach.
@@ -4293,7 +4675,21 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
         const rozliczona = (s)=> !s.blad && s.wiersze
           && s.wiersze.filter(w=>w.zagral).length > 0
           && s.wiersze.filter(w=>w.zagral).every(w=>w.juzPoliczony);
+        // JEDEN BRAKUJĄCY KLUB — JEDNO PYTANIE.
+        //
+        // Klub gra w kolejce raz, ale w zebranej paczce występuje tyle razy, ile meczów go dotyczy
+        // (własny plus rewanże rywali). Bez tego „IGNERHOME MKS POLONIA ŚWIDNICA — nie ma takiego
+        // klubu" powtarzało się trzy razy z trzema osobnymi listami wyboru, a odpowiedź na pierwszą
+        // i tak rozstrzygała wszystkie, bo zapamiętujemy ją pod nazwą z ŁNP.
         const nowe = strony.filter(s=>!rozliczona(s));
+        const widzianeBledy = new Set();
+        const doPokazania = nowe.filter(s=>{
+          if(!s.blad) return true;
+          const k = importNorm(s.nazwa || '');
+          if(widzianeBledy.has(k)) return false;
+          widzianeBledy.add(k);
+          return true;
+        });
         const stare = strony.filter(rozliczona);
         return `<div style="max-height:280px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px;font-size:12.5px;">
         ${stare.length ? `<p class="note" style="margin:0 0 6px;padding:4px 6px;background:var(--chalk-dim);border-radius:6px;">
@@ -4301,7 +4697,7 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
         </p>` : ''}
         ${!nowe.length ? `<p class="note" style="margin:0;">Nic nowego w tej wklejce — wszystkie te mecze są już w systemie.</p>` : ''}
         ${nowe.length>2 ? `<p class="note" style="margin:0 0 6px;">Do zapisania: <strong>${Math.ceil(nowe.length/2)}</strong> ${Math.ceil(nowe.length/2)===1?'mecz':'meczów'}</p>` : ''}
-        ${nowe.map(s=>{
+        ${doPokazania.map(s=>{
           if(s.blad){
             // NAZWY NA ŁNP I NA 90MINUT BYWAJĄ ZUPEŁNIE INNE. „Pogoń Barlinek" u jednych to
             // „CRS Barlinek" u drugich, a że wspólne jest samo miasto, żadne dopasowanie po
@@ -4312,8 +4708,9 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
               <strong>${esc(s.nazwa)}</strong> — ${esc(s.blad)}
               ${doWyboru ? `<div style="margin-top:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
                 <span class="note" style="margin:0;">To ten klub u nas:</span>
-                <select data-przypisz="${esc(s.nazwa)}" style="font-size:12px;max-width:260px;">
+                <select data-przypisz="${esc(s.nazwa)}" data-poziom="${esc(s.poziom||'')}" style="font-size:12px;max-width:260px;">
                   <option value="">— wybierz —</option>
+                  ${s.mozeZalozyc ? `<option value="__nowy__">➕ Załóż klub „${esc(s.nazwa)}"${s.poziom?` w: ${esc(s.poziom)}`:''}</option>` : ''}
                   ${DB.clubs.slice().sort((a,b)=>a.name.localeCompare(b.name,'pl'))
                     .map(c=>`<option value="${esc(c.id)}">${esc(c.name)}${c.league?` · ${esc(c.league)}`:''}</option>`).join('')}
                 </select>
@@ -4430,14 +4827,38 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
     });
     overlay.querySelectorAll('[data-x="zapisz"]').forEach(b=>b.onclick=()=>{ void zapisz(); });
     // Przypisanie nazwy z ŁNP do klubu w kartotece — zapamiętane raz, działa od następnego razu.
-    overlay.querySelectorAll('[data-przypisz]').forEach(sel=>sel.onchange = ()=>{
+    overlay.querySelectorAll('[data-przypisz]').forEach(sel=>sel.onchange = async()=>{
       const nazwaLnp = sel.getAttribute('data-przypisz');
-      const klubId = sel.value;
+      let klubId = sel.value;
       if(!klubId) return;
+      // ZAŁOŻENIE KLUBU NA MIEJSCU. Nazwa idzie z protokołu znak w znak — to ona musi zgadzać się
+      // z ŁNP, bo po niej rozpoznajemy kolejne protokoły. Sezon i region bierzemy od klubu, który
+      // już w tej lidze stoi, żeby nowy nie odstawał od reszty grupy.
+      if(klubId === '__nowy__'){
+        const poziom = sel.getAttribute('data-poziom') || '';
+        if(!poziom){
+          alert('Nie wiem, do której ligi wpisać ten klub. Otwórz import z poziomu grupy rozgrywek albo załóż klub w zakładce Kluby.');
+          sel.value = ''; return;
+        }
+        const sasiad = DB.clubs.find(c=>String(c.league||'') === poziom);
+        const nowy: any = { id: uid('K'), name: nazwaLnp, league: poziom,
+          region: sasiad ? (sasiad.region||'') : '', season: sasiad ? (sasiad.season||'') : '',
+          city: '', crestUrl: '', juniorCategories: '', profileLnp: '', profileTm: '' };
+        DB.clubs.push(nowy);
+        if(Array.isArray(DB.settings.leagues) && !DB.settings.leagues.includes(poziom)) DB.settings.leagues.push(poziom);
+        const ok = await saveClubs();
+        if(ok === false){
+          DB.clubs = DB.clubs.filter(c=>c.id !== nowy.id);
+          alert('Nie udało się zapisać klubu — sprawdź baner u góry strony. Nic nie zmieniłem.');
+          sel.value = ''; return;
+        }
+        klubId = nowy.id;
+      }
       const klub = DB.clubs.find(c=>c.id === klubId);
       DB.settings.aliasyKlubow = { ...(DB.settings.aliasyKlubow||{}), [importNorm(nazwaLnp)]: klubId };
       void saveSettings();
-      komunikat = `Zapamiętałem: „${nazwaLnp}" na Łączy nas piłka to ${klub ? klub.name : 'wybrany klub'}. Rozpoznaję protokoły jeszcze raz.`;
+      komunikat = `Zapamiętałem: „${nazwaLnp}" na Łączy nas piłka to ${klub ? klub.name : 'wybrany klub'}`
+        + `${klub && klub.league ? ` (${klub.league})` : ''}. Rozpoznaję protokoły jeszcze raz.`;
       rozpoznaj();
     });
     const chk = overlay.querySelector('#pm-dopisuj');
@@ -4449,11 +4870,19 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
 
   // Protokoły przysłane wprost ze strony ŁNP (zakładka) — wpadają tu bez udziału schowka
   // i od razu idą do rozpoznania, tak jakby ktoś je wkleił.
+  // ZAPISUJEMY SAMI, BEZ PYTANIA O ZGODĘ.
+  //
+  // Przy wklejaniu ręcznym „Zapisz protokoły" ma sens — można się pomylić co do zawartości
+  // schowka. Tu pomyłka jest niemożliwa: treść przyszła prosto z zakładki, z konkretnych
+  // protokołów ŁNP, a mecz policzony wcześniej i tak zostaje odrzucony. Dodatkowe kliknięcie
+  // było tylko przeszkodą — po zebraniu całej grupy statystyki potrafiły zostać w oknie
+  // nierozliczone, bo nikt go już nie oglądał.
   if(tekstZZewnatrz && String(tekstZZewnatrz).trim()){
     rysuj();
     const pole = overlay.querySelector('#pm-tekst') as any;
     if(pole) pole.value = tekstZZewnatrz;
     rozpoznaj();
+    if(wynik && wynik.length) void zapisz();
     return;
   }
 
@@ -4477,10 +4906,18 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
     const pole = overlay.querySelector('#pm-tekst') as any;
     if(pole) pole.value = tekst;
     rozpoznaj();
+    // WKLEJONE PROTOKOŁY TEŻ ZAPISUJEMY SAME.
+    //
+    // Rozpoznanie bez zapisu wygląda jak zapis: okno wypisuje składy, minuty i nazwiska, więc
+    // widok jest ten sam, a w bazie nie ma nic. Kto zebrał kolejkę i wkleił ją tutaj, odchodził
+    // przekonany, że statystyki są wgrane — i wracał do klubu z połową meczów. Zapisujemy więc
+    // od razu; mecz policzony wcześniej i tak zostaje odrzucony, więc nadmiarowe wklejenie
+    // niczego nie psuje. „Zapisz protokoły" zostaje na wypadek ponowienia po błędzie.
+    if(wynik && wynik.length) void zapisz();
   });
 
   function rozpoznaj(){
-    const tekst = (overlay.querySelector('#pm-tekst') as any).value.trim();
+    let tekst = (overlay.querySelector('#pm-tekst') as any).value.trim();
     if(!tekst){ komunikat = 'Najpierw wklej stronę meczu.'; rysuj(); return; }
 
     // WKLEJONY ADRES TO NIE POMYŁKA DO ZGANIENIA, TYLKO GOTOWA ODPOWIEDŹ NA PYTANIE, KTÓRE
@@ -4518,13 +4955,84 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
     // żeby nie trafił do żadnego z nich.
     // Klucz niezależny od kolejności słów: ŁNP pisze raz „Jan Kowalski", raz „Kowalski Jan",
     // a w kartotece imię i nazwisko są w osobnych polach. Sortowanie słów godzi wszystkie trzy.
+    // HERBY Z TABELI GRUPY — osobny blok, bo to nie protokół i nie liczy żadnych minut.
+    //
+    // Herbów nie da się pobrać z serwera: ŁNP oddaje mu pustą skorupę Angulara. W otwartej
+    // tabeli są jednak wprost przy każdym klubie, więc zakładka je stamtąd odczytuje i przysyła
+    // tą samą drogą co protokoły. Zapisujemy sam adres obrazka — nie kopiujemy grafiki do bazy.
+    // Blok wycinamy z tekstu i pracujemy dalej — w jednej przesyłce przychodzą i herby,
+    // i protokoły całej grupy. Wcześniej samo natrafienie na herby kończyło rozpoznanie
+    // i wszystkie mecze przepadały bez śladu.
+    let komunikatHerbow = '';
+    {
+      const linie = tekst.split('\n');
+      const poczatek = linie.findIndex(l=>/^###\s*KLUBY\s*$/.test(l.trim()));
+      if(poczatek >= 0){
+        let koniec = poczatek + 1;
+        while(koniec < linie.length && !/^###\s/.test(linie[koniec])) koniec++;
+        const nierozpoznane: string[] = [];
+        const przemianowane: string[] = [];
+        const bezHerbu: string[] = [];
+        let ustawionych = 0, juzBylo = 0, zmienionych = 0;
+        linie.slice(poczatek + 1, koniec).map(l=>l.trim()).filter(Boolean).forEach(l=>{
+          const ciecie = l.lastIndexOf('|');
+          if(ciecie < 1) return;
+          const nazwa = l.slice(0, ciecie).trim();
+          const adres = l.slice(ciecie + 1).trim();
+          if(!/^https?:\/\//i.test(adres)) return;
+          // Poziom bierzemy z OTWARTEJ GRUPY, a nie na sztywno z IV ligi — herby i nazwy zbiera
+          // się tak samo w CLJ, a wpisany na stałe poziom odciąłby tam wszystkie kluby.
+          const klub = dopasujKlubDoNazwy(nazwa, grupa, poziomGrupy(grupa));
+          if(!klub){ nierozpoznane.push(nazwa); return; }
+          // NAZWA Z ŁNP JEST TĄ WŁAŚCIWĄ — to z niej lecą protokoły.
+          //
+          // Każda różnica („LKS Kadłub (k. Strzelec Opolskich)" wobec „LZS Adamietz Kadłub")
+          // wraca przy kolejnym zbieraniu jako błąd do ręcznego wskazania. Skoro tabela grupy
+          // i tak jest pod ręką, przepisujemy nazwę raz i problem znika na stałe. Różnicę samej
+          // wielkości liter zostawiamy — to nie pomyłka, tylko zapis tabeli.
+          if(importNorm(klub.name) !== importNorm(nazwa)){
+            przemianowane.push(`${klub.name} → ${czytelnaNazwa(nazwa)}`);
+            klub.name = czytelnaNazwa(nazwa);
+            zmienionych++;
+          }
+          // ZAŚLEPKA ŁNP TO NIE HERB — ALE NAZWĘ Z TEGO WIERSZA I TAK JUŻ WZIĘLIŚMY.
+          //
+          // Gdy związek nie wgrał godła, ŁNP podstawia własną szarą tarczę
+          // („assets/icons/crest_default…"). Zapisana w kartotece wygląda jak herb, który się
+          // wgrał, więc brak prawdziwego godła przestaje być widoczny — a to jedyny sygnał, że
+          // trzeba go dobrać skądinąd. Sprawdzamy to jednak DOPIERO TERAZ: wcześniej ten warunek
+          // stał wyżej i przerywał pracę nad wierszem, więc klub bez herbu nie dostawał też
+          // poprawionej nazwy — a nazwa jest tu ważniejsza, bo od niej zależy wczytanie statystyk.
+          if(/crest_default|crest-default|placeholder/i.test(adres)){ bezHerbu.push(klub.name); return; }
+          if(klub.crestUrl === adres){ juzBylo++; return; }
+          klub.crestUrl = adres;
+          ustawionych++;
+        });
+        if(ustawionych || zmienionych) void saveClubs();
+        komunikatHerbow = `Herby: zapisałem ${ustawionych}, bez zmian ${juzBylo}`
+          + (zmienionych ? `. Nazwy poprawione na wersję z ŁNP (${zmienionych}): ${przemianowane.join('; ')}` : '')
+          + (bezHerbu.length ? `. ŁNP nie ma herbu (zostawiam bez zmian): ${bezHerbu.join(', ')}` : '')
+          + (nierozpoznane.length ? `, nie rozpoznałem klubu: ${nierozpoznane.join(', ')}` : '') + '. ';
+        linie.splice(poczatek, koniec - poczatek);
+        tekst = linie.join('\n').trim();
+        if(!tekst){ komunikat = komunikatHerbow; wynik = null; rysuj(); return; }
+      }
+    }
+
     rocznikiZWklejki = {};
     const blokR = tekst.match(/^###\s*ROCZNIKI\s*$([\s\S]*)/m);
     if(blokR){
       blokR[1].split('\n').forEach(l=>{
-        const [kto, rok] = l.split('|');
+        // Układ: klucz|rocznik|pozycja. Starsze zakładki przysyłają klucz|rocznik — wtedy
+        // pozycji po prostu nie ma i nic się nie psuje.
+        const [kto, rok, pozycja] = l.split('|');
         const k = kluczRocznika(kto);
-        if(k && /^(19|20)\d{2}$/.test(String(rok||'').trim())) rocznikiZWklejki[k] = rok.trim();
+        if(!k) return;
+        const wpis: any = {};
+        if(/^(19|20)\d{2}$/.test(String(rok||'').trim())) wpis.rok = rok.trim();
+        const poz = pozycjaZLnp(pozycja);
+        if(poz) wpis.pozycja = poz;
+        if(wpis.rok || wpis.pozycja) rocznikiZWklejki[k] = wpis;
       });
     }
     const bezRocznikow = tekst.replace(/^###\s*ROCZNIKI\s*$[\s\S]*/m, '');
@@ -4540,9 +5048,9 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
     // i w Szczecinie; bez wskazania grupy dorobek mógłby trafić do klubu z drugiego końca Polski.
     const wyniki = (czesci.length ? czesci : [tekst]).map((t,i)=>przetworzProtokolLnp(t, adresy[i] || '', grupa));
     const dobre = wyniki.filter(w=>!w.blad);
-    if(!dobre.length){ komunikat = wyniki[0].blad || 'Nie rozpoznałem protokołu.'; wynik = null; rysuj(); return; }
-    komunikat = wyniki.length > dobre.length
-      ? `Rozpoznałem ${dobre.length} z ${wyniki.length} protokołów — reszty nie umiem odczytać.` : '';
+    if(!dobre.length){ komunikat = komunikatHerbow + (wyniki[0].blad || 'Nie rozpoznałem protokołu.'); wynik = null; rysuj(); return; }
+    komunikat = komunikatHerbow + (wyniki.length > dobre.length
+      ? `Rozpoznałem ${dobre.length} z ${wyniki.length} protokołów — reszty nie umiem odczytać.` : '');
 
     // CZY TA WKLEJKA W OGÓLE DOTYCZY TEGO KLUBU?
     //
@@ -4569,6 +5077,18 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
   }
 
   async function zapisz(){
+    // JEDEN ZAPIS PROTOKOŁÓW NARAZ — INACZEJ POWSTAJĄ PODWÓJNE KARTOTEKI.
+    //
+    // Zakładka potrafi wysłać protokoły dwa razy, a każda przesyłka otwierała własne okno, które
+    // od razu zapisywało. Dwa zapisy ruszały równolegle i żaden nie widział zawodników zakładanych
+    // przez drugi — bo szuka ich po nazwisku w klubie, a tamtych jeszcze nie było. Tak powstało
+    // 150 podwójnych kartotek w 22 klubach: te same nazwiska, ten sam mecz, ta sama sekunda.
+    // „pracuje" tego nie łapało, bo jest osobne dla każdego okna.
+    if(zapisProtokolowTrwa){
+      komunikat = 'Inny zapis protokołów właśnie trwa — poczekaj, aż się skończy.';
+      rysuj(); return;
+    }
+    zapisProtokolowTrwa = true;
     pracuje = true; komunikat = ''; rysuj();
     try{
       await zapiszWewnetrznie();
@@ -4583,11 +5103,13 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
         + ' — protokoły są nadal w oknie, nic nie przepadło. Wyślij mi tę treść, to poprawię.';
       console.error('SBS zapis protokołów:', e);
       rysuj();
+    }finally{
+      zapisProtokolowTrwa = false;
     }
   }
 
   async function zapiszWewnetrznie(){
-    let dopisanych = 0, nowych = 0, meczow = 0, rocznikow = 0, powtorzonych = 0;
+    let dopisanych = 0, nowych = 0, meczow = 0, rocznikow = 0, powtorzonych = 0, wKadrzeBezGry = 0, pozycji = 0;
     const powtorzoneMecze = new Set();
     const dzis = new Date().toISOString().slice(0,10);
     wynik.forEach(protokol=>{
@@ -4616,13 +5138,20 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
         // ROCZNIK Z PROFILU ŁNP. Protokół meczu roczników nie podaje — zakładka dobiera je
         // ze stron zawodników i dokleja osobnym blokiem. Wpisujemy tylko w puste pole: dane
         // z Transfermarktu czy z ręki są pewniejsze i nie wolno ich nadpisać.
+        const zProfiluLnp = rocznikiZWklejki[kluczRocznika(w.firstName + ' ' + w.lastName)] || {};
         if(!p.birthYear && !p.birthDate){
-          const rok = rocznikiZWklejki[kluczRocznika(w.firstName + ' ' + w.lastName)];
-          if(rok){ p.birthYear = rok; rocznikow++; }
+          if(zProfiluLnp.rok){ p.birthYear = zProfiluLnp.rok; rocznikow++; }
         }
         if(w.mlodziezowiec && !p.mlodziezowiec) p.mlodziezowiec = true;
         if(w.position && !p.position) p.position = w.position;
-        if(!w.zagral) return;
+        // POZYCJA Z PROFILU ŁNP. Protokół wskazuje tylko bramkarza — reszta składu zostawała
+        // z kreską. Wpisujemy wyłącznie w puste pole, bo pozycja wpisana ręką albo wzięta
+        // z Transfermarktu jest dokładniejsza niż ogólne „Pomocnik".
+        if(!p.position && zProfiluLnp.pozycja){
+          p.position = zProfiluLnp.pozycja;
+          pozycji++;
+        }
+
         // TO SAMO SPOTKANIE LICZYMY RAZ — I POZNAJEMY JE PO MECZU, NIE PO KLUCZU Z TEKSTU.
         //
         // Klucz wyliczany z treści wklejki zawodził: przy powtórnym zebraniu tej samej kolejki
@@ -4632,6 +5161,30 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
         // jednoznacznie i nie da się jej podrobić inną wklejką tego samego meczu.
         const rywal = (protokol.druzyny.find(d=>d !== s.nazwa) || '');
         const uSiebie = protokol.druzyny[0] === s.nazwa;
+
+        // OBECNOŚĆ W KADRZE BEZ MINUT TO TEŻ INFORMACJA — I TO NAJWCZEŚNIEJSZA, JAKĄ MAMY.
+        //
+        // Szesnastolatek, który po raz pierwszy usiadł na ławce pierwszej drużyny, jest ciekawszy
+        // niż ten, który od trzech lat gra w IV lidze. Dotąd kończyliśmy tu pracę nad wierszem
+        // i po takim zawodniku nie zostawał żaden ślad: kartoteka owszem powstawała, ale bez
+        // najmniejszej wzmianki, że w ogóle był w protokole. Nie dało się więc odróżnić chłopaka
+        // z ławki Lecha od nazwiska wklejonego ręcznie z listy — a to jest różnica między sygnałem
+        // a szumem. Zapisujemy zerowy występ; meczów ani minut oczywiście nie doliczamy.
+        if(!w.zagral){
+          const bylJuz = (p.przebieg || []).some(x=>
+            importNorm(x.rywal || '') === importNorm(rywal) && !!x.dom === uSiebie);
+          if(!bylJuz){
+            p.przebieg = [...(p.przebieg || []), {
+              mecz: protokol.klucz, data: '', kolejka: null, rywal, dom: uSiebie, wynik: '',
+              minuty: 0, odMinuty: null, doMinuty: null, podstawowy: false,
+              zolte: 0, czerwone: 0, wKadrze: true }];
+            p.przebiegSezon = klub && klub.season ? klub.season : '';
+            p.statsSource = 'protokół ŁNP';
+            wKadrzeBezGry++;
+          }
+          return;
+        }
+
         const juzRozliczony = (p.rozliczoneMecze||[]).includes(protokol.klucz)
           || (p.przebieg||[]).some(x=> importNorm(x.rywal||'') === importNorm(rywal) && !!x.dom === uSiebie);
         if(juzRozliczony){ powtorzonych++; powtorzoneMecze.add(`${s.nazwa} — ${rywal}`); return; }
@@ -4673,11 +5226,20 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
       ? `${powtorzonych} ${powtorzonych===1?'wpis pominięty':'wpisów pominiętych'} — te spotkania są już rozliczone `
         + `(${[...powtorzoneMecze].slice(0,3).join('; ')}${powtorzoneMecze.size>3?` i ${powtorzoneMecze.size-3} więcej`:''}).`
       : '';
-    komunikat = dopisanych || nowych || rocznikow
+    // Nazwy pozycji, których nie umiem przetłumaczyć, pokazujemy WPROST. Inaczej cicho zostawałaby
+    // pusta rubryka i nie dałoby się zgadnąć, czy ŁNP ich nie podaje, czy tylko nasza tabela ich
+    // nie zna — a to druga rzecz, którą naprawia się w minutę.
+    const oPozycjach = POZYCJE_NIEROZPOZNANE.size
+      ? ` Nie umiem przypisać pozycji: ${[...POZYCJE_NIEROZPOZNANE].slice(0,6).join(', ')}`
+        + `${POZYCJE_NIEROZPOZNANE.size>6?` i ${POZYCJE_NIEROZPOZNANE.size-6} innych`:''} — pokaż mi ten komunikat, dopiszę je.`
+      : '';
+    komunikat = dopisanych || nowych || rocznikow || pozycji
       ? `Zapisano ${meczow} ${meczow===1?'mecz':'meczów'}: ${dopisanych} wpisów dorobku`
         + `${nowych?`, w tym ${nowych} nowych zawodników w kartotece`:''}`
-        + `${rocznikow?`; uzupełniłem ${rocznikow} roczników`:''}.`
+        + `${rocznikow?`; uzupełniłem ${rocznikow} roczników`:''}`
+        + `${pozycji?`; ${pozycji} pozycji z profili ŁNP`:''}.`
         + (oPowtorkach ? ' ' + oPowtorkach + ' Nic się nie podwoiło.' : '')
+        + oPozycjach
       : `Nic nowego nie zapisałem — wszystkie ${meczow} ${meczow===1?'mecz z tej wklejki jest':'meczów z tej wklejki jest'} `
         + `już rozliczonych. ${oPowtorkach} Dorobek został nietknięty.`
       + (zapamietane.length ? ` Zapamiętałem też adres ŁNP dla ${zapamietane.join(' i ')} — następnym razem otworzy się jednym kliknięciem.` : ' Wklej kolejne protokoły.');
@@ -4831,7 +5393,7 @@ function openGrupaStatsModal(){
     overlay.innerHTML = `
     <div class="modal" style="max-width:720px;">
       <h3>⏱ Odśwież statystyki — ${esc(clubBrowse.group || clubBrowse.top || 'wszystkie kluby')}</h3>
-      <p class="note" style="margin:-6px 0 6px;">Źródło: ${czyZrodloLnp(clubBrowse.top)
+      <p class="note" style="margin:-6px 0 6px;">Źródło: ${bezProtokolowNa90minut(clubBrowse.top)
         ? '<strong>Łączy nas piłka</strong> (protokoły PZPN)' : '<strong>90minut.pl</strong>'}.</p>
       <p class="note" style="margin-bottom:10px;">Przechodzę kluby po kolei: pobieram protokoły meczów, liczę dorobek zawodników i od razu zapisuję. Klub bez rozegranych meczów albo bez trafienia w nazwę pomijam i wypisuję niżej — nic przez to nie przerywa całego przebiegu.</p>
       <label style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px;cursor:pointer;font-size:13px;">
@@ -5169,7 +5731,7 @@ function viewClubDetail(id){
     </div>
     <div style="display:flex;gap:8px;">
       <button class="gold" data-action="import-squad" data-id="${c.id}">📋 Import składu</button>
-      ${czyZrodloLnp(topLevelOf(c.league))
+      ${bezProtokolowNa90minut(topLevelOf(c.league))
         ? // IV ligi 90minut nie prowadzi — odnośnik przy wyniku przenosi na stronę „Łączy nas piłka",
           // a ta buduje się dopiero w przeglądarce. Dlatego dotąd jedyną drogą było wklejanie strony
           // meczu. Teraz serwer zagląda w dane, które ŁNP przywozi razem ze stroną (wpisane w skrypt),
@@ -5431,6 +5993,7 @@ function obsMonthListHtml(){
         <span style="display:flex;align-items:center;gap:8px;">
           <span class="obs-type-tag" style="background:${obsTypeMeta(obsTypeOf(o)).color};">${esc(obsTypeMeta(obsTypeOf(o)).label)}</span>
           <span class="meta">${esc(o.date)}${o.matchTime?' &middot; '+esc(o.matchTime):''}</span>
+          <button class="link-btn" data-action="obs-pokaz" data-id="${o.id}" style="font-size:11px;font-weight:700;" title="Cały mecz: informacje, systemy gry, składy i wyróżnieni">👁 Pokaż</button>
           <button class="link-btn" data-action="obs-sklad" data-id="${o.id}" style="font-size:11px;" title="Składy obu drużyn i zaznaczanie zawodników wyróżniających się">👥 Skład${liczbaWyroznionych(o)?' ('+liczbaWyroznionych(o)+')':''}</button>
           <button class="link-btn" data-action="edit-obs" data-id="${o.id}" style="font-size:11px;">✎ Edytuj</button>
           <button class="link-btn" data-action="delete-obs" data-id="${o.id}" style="font-size:11px;color:var(--clay-dark);">Usuń</button>
@@ -5439,6 +6002,145 @@ function obsMonthListHtml(){
       <div class="meta">${pl ? esc(o.match||'brak danych meczu') : '<em>obserwacja całego meczu</em>'}${ligaTag(o)}${o.location?' &middot; 📍 '+esc(o.location):''} &middot; scout: ${esc(o.scout)}</div>
     </div>`;
   }).join('');
+}
+
+// PODGLĄD CAŁEJ OBSERWACJI — wszystko, co o tym meczu wiadomo, w jednym miejscu.
+//
+// Dotąd te informacje leżały w trzech oknach: dane meczu w edycji planu, składy w oknie składu,
+// a wyróżnieni tylko jako pogrubione nazwiska wewnątrz tych składów. Żeby wrócić do obejrzanego
+// spotkania, trzeba było otworzyć wszystkie trzy po kolei.
+//
+// SYSTEM GRY USTAWIA SIĘ TUTAJ i to jest tu najważniejsze. Mapa pozycji w Rankingu czyta
+// wyróżnionych wyłącznie z obserwacji, w których zapisano formację drużyny — a nie było gdzie jej
+// zapisać, więc mapa nigdy nic z obserwacji nie dostawała.
+function openObsPodgladModal(obsId){
+  const obs = DB.observations.find(o=>o.id===obsId);
+  if(!obs) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+
+  const stronaHtml = (strona, tytulZapasowy)=>{
+    const dane = (obs.skladMeczu||{})[strona] || {};
+    const zawodnicy = dane.zawodnicy || [];
+    const wyr = zawodnicy.filter(z=>z.wyrozniony).length;
+    return `<div style="flex:1;min-width:250px;">
+      <h4 style="margin:0 0 4px;color:var(--heading);font-size:13px;">${esc(dane.nazwa || tytulZapasowy || '—')}
+        <span class="meta" style="font-weight:400;">(${zawodnicy.length}${wyr?`, wyróżnionych ${wyr}`:''})</span></h4>
+      <div class="field-wrap" style="margin:0 0 8px;">
+        <label class="field" style="font-size:11px;">System gry</label>
+        <select class="obs-formacja" data-strona="${strona}" style="font-size:12.5px;padding:4px 6px;">
+          <option value="">— nie określono —</option>
+          ${FORMATIONS.map(f=>`<option ${dane.formacja===f?'selected':''}>${esc(f)}</option>`).join('')}
+        </select>
+      </div>
+      ${zawodnicy.length ? zawodnicy.map(z=>`
+        <div style="display:flex;gap:7px;padding:2px 4px;border-radius:5px;font-size:12.5px;${z.wyrozniony?'background:var(--card-warm);font-weight:700;':''}">
+          <span style="color:var(--ink-soft);min-width:20px;">${z.numer!=null?esc(String(z.numer)):''}</span>
+          <span style="flex:1;">${z.wyrozniony?'⭐ ':''}${esc(z.nazwa)}</span>
+          <span class="meta" style="font-size:10.5px;white-space:nowrap;">${
+            z.podstawowy===false ? 'ław.' : (z.zszedl ? z.zszedl+"'" : '')
+          }${z.zolte?' 🟨':''}${z.czerwone?' 🟥':''}</span>
+        </div>`).join('')
+      : `<p class="note" style="font-size:11.5px;">Brak składu — wczytaj go przyciskiem „👥 Skład".</p>`}
+    </div>`;
+  };
+
+  const draw = ()=>{
+    const s = obs.skladMeczu || {};
+    const pl = DB.players.find(p=>p.id===obs.playerId);
+    // Wyróżnieni z OBU stron, razem z kartoteką — jeśli któraś powstała przy zaznaczaniu.
+    const wyrozniowani = ['gospodarze','goscie'].flatMap(strona=>
+      (((s[strona]||{}).zawodnicy)||[]).filter(z=>z.wyrozniony).map(z=>({ z, strona, klub: (s[strona]||{}).nazwa })));
+    const kluczOsoby = (t)=> String(t||'').split(/\s+/).map(importNorm).filter(Boolean).sort().join(' ');
+
+    overlay.innerHTML = `
+    <div class="modal" style="max-width:900px;">
+      <h3>👁 ${esc(obs.match || 'Obserwacja meczu')}</h3>
+      <p class="note" style="margin:-4px 0 10px;">
+        ${esc(obs.date||'')}${obs.matchTime?' &middot; '+esc(obs.matchTime):''}
+        &middot; ${esc(obsTypeMeta(obsTypeOf(obs)).label)}
+        ${obs.rozgrywki?' &middot; '+esc(obs.rozgrywki):''}${obs.kategoria?' &middot; '+esc(obs.kategoria):''}
+        &middot; scout: ${esc(obs.scout||'—')}
+        ${obs.location?` &middot; <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(obs.location)}" target="_blank" rel="noopener noreferrer">📍 ${esc(obs.location)}</a>`:''}
+      </p>
+      ${pl ? `<p class="note" style="margin-top:-6px;">Obserwowany zawodnik: <strong>${esc(pl.firstName+' '+pl.lastName)}</strong></p>` : ''}
+      ${obs.poziomMeczu||obs.warunki||obs.notatkaMeczu ? `<div class="card" style="padding:8px 10px;margin-bottom:10px;">
+        ${obs.poziomMeczu?`<div class="meta">Poziom spotkania: <strong>${esc(obs.poziomMeczu)}</strong></div>`:''}
+        ${obs.warunki?`<div class="meta">Warunki: ${esc(obs.warunki)}</div>`:''}
+        ${obs.notatkaMeczu?`<div style="font-size:12.5px;margin-top:4px;">${esc(obs.notatkaMeczu)}</div>`:''}
+      </div>`:''}
+
+      <div style="display:flex;gap:18px;flex-wrap:wrap;">
+        ${stronaHtml('gospodarze','Gospodarze')}
+        ${stronaHtml('goscie','Goście')}
+      </div>
+
+      <h4 style="margin:16px 0 4px;color:var(--heading);">⭐ Wyróżniający się (${wyrozniowani.length})</h4>
+      ${wyrozniowani.length ? `<div class="card" style="padding:0;overflow:auto;">
+        <table><thead><tr><th>Zawodnik</th><th>Klub</th><th>Pozycja</th><th></th></tr></thead>
+        <tbody>${wyrozniowani.map(({z, strona, klub}, nr)=>{
+          const szukany = kluczOsoby(z.nazwa);
+          const kand = DB.players.filter(p=>kluczOsoby(`${p.firstName||''} ${p.lastName||''}`)===szukany);
+          const p = kand.length===1 ? kand[0] : null;
+          // PRZYCISK JEST ZAWSZE — bez kartoteki zakłada ją i od razu otwiera. Zawodnicy
+          // zaznaczeni starszą wersją aplikacji nie mają kartotek, bo wtedy checkbox ich nie
+          // tworzył; „bez kartoteki" byłoby dla nich ślepym zaułkiem.
+          return `<tr>
+            <td><strong>${esc(z.nazwa)}</strong></td>
+            <td>${esc(klub||'—')}</td>
+            <td>${esc(z.pozycja || (p&&p.position) || '—')}</td>
+            <td style="text-align:right;">${p
+              ? `<button class="link-btn obs-pokaz-profil" data-id="${p.id}" style="font-size:11px;">Profil →</button>`
+              : `<button class="link-btn obs-pokaz-zaloz" data-strona="${strona}" data-nazwa="${esc(z.nazwa)}" style="font-size:11px;">+ Załóż profil</button>`}</td>
+          </tr>`;
+        }).join('')}</tbody></table>
+      </div>
+      <p class="note" style="font-size:11.5px;margin-top:6px;">Ci zawodnicy są w <strong>Monitoringu</strong>. Na <strong>mapę pozycji</strong> w Rankingu wchodzą, gdy powyżej ustawisz <strong>system gry</strong> ich drużyny, a przy nazwisku jest pozycja — pozycję wczytujesz przyciskiem „👥 Skład → Kadry z bazy SBS".</p>`
+      : `<p class="note">Nikogo jeszcze nie zaznaczyłeś. Otwórz „👥 Skład" i zaznacz tych, którzy się wyróżnili.</p>`}
+
+      <div style="display:flex;justify-content:space-between;gap:8px;margin-top:16px;">
+        <button class="secondary" data-x="sklad">👥 Otwórz składy</button>
+        <button class="secondary" data-x="zamknij">Zamknij</button>
+      </div>
+    </div>`;
+
+    overlay.querySelector('[data-x="zamknij"]').onclick = ()=>{ overlay.remove(); render(); };
+    overlay.querySelector('[data-x="sklad"]').onclick = ()=>{ overlay.remove(); openObsSkladModal(obs.id); };
+    overlay.querySelectorAll('.obs-pokaz-profil').forEach(b=>b.onclick = ()=>{
+      overlay.remove();
+      viewingPlayerId = (b as HTMLElement).dataset.id;
+      currentView = 'players';
+      render();
+    });
+    // Zakładanie kartoteki wstecz — dla zaznaczonych, zanim checkbox zaczął je tworzyć.
+    overlay.querySelectorAll('.obs-pokaz-zaloz').forEach(b=>b.onclick = async ()=>{
+      const strona = (b as HTMLElement).dataset.strona;
+      const nazwa = (b as HTMLElement).dataset.nazwa;
+      const lista = (((obs.skladMeczu||{})[strona]||{}).zawodnicy)||[];
+      const i = lista.findIndex(x=>x.nazwa === nazwa);
+      if(i < 0) return;
+      const wynik = ustawWyroznienie(obs, strona, i, true);
+      if(wynik && wynik.blad){ alert(wynik.blad); return; }
+      await saveObservations();
+      if(!wynik) return;
+      overlay.remove();
+      viewingPlayerId = wynik.id;
+      currentView = 'players';
+      render();
+    });
+    overlay.querySelectorAll('.obs-formacja').forEach(sel=>sel.onchange = async ()=>{
+      const strona = (sel as HTMLElement).dataset.strona;
+      obs.skladMeczu = obs.skladMeczu || {};
+      obs.skladMeczu[strona] = obs.skladMeczu[strona] || { nazwa:'', zawodnicy:[] };
+      obs.skladMeczu[strona].formacja = (sel as HTMLSelectElement).value;
+      await saveObservations();
+      draw();
+    });
+  };
+
+  overlay.addEventListener('click', e=>{ if(e.target===overlay){ overlay.remove(); render(); } });
+  document.body.appendChild(overlay);
+  draw();
 }
 
 // ROZGRYWKI I KATEGORIA NA LIŚCIE OBSERWACJI.
@@ -5454,13 +6156,34 @@ function obsMonthListHtml(){
 const MLODZIEZ_WZORCE_PC = [/\b[ABCD][12]\b/i, /\bU-?\d{1,2}\b/i, /juniorz?k?[aiy]?\b|juniorsk/i,
   /młodzik|mlodzik|młodzicz|mlodzicz/i, /trampkarz|orlik|żak\b|zak\b/i, /\bCLJ\b/i, /młodzieżow|mlodziezow/i];
 const SENIORZY_WZORCE_PC = [/ekstraklasa|ekstraliga|betclic/i, /\b(I|II|III|IV|V)\s*liga\b/i,
-  /\b[1-5]\s*liga\b/i, /klasa\s+[ABC]\b|\b[ABC]\s+klasa|okręgow|okregow/i, /puchar\s+polski/i];
+  /\b[1-5]\s*liga\b/i,
+  // Numer ligi zapisany SŁOWNIE — tak podaje go część terminarzy („Pierwsza liga").
+  /\b(pierwsza|druga|trzecia|czwarta|piąta|piata)\s+liga\b/i,
+  /klasa\s+[ABC]\b|\b[ABC]\s+klasa|okręgow|okregow/i, /puchar\s+polski/i];
 
+// NAZWY DRUŻYN TEŻ MÓWIĄ, KTO GRA.
+//
+// Rozpoznanie czytało wyłącznie nazwę rozgrywek — i przy „Arka Gdynia SA U17 – ŁKS Łódź S.A. U17"
+// w rozgrywkach „Pierwsza liga" wychodziły z tego seniorzy, mimo że U17 stoi przy OBU drużynach.
+// Rocznik przy nazwie klubu jest sygnałem równie dobrym jak nazwa rozgrywek, a często lepszym:
+// ligi młodzieżowe bywają nazywane tak samo jak seniorskie, bo są ligami tego samego szczebla.
+//
+// Drużyny sprawdzamy TYLKO pod kątem młodzieży: brak „U17" przy nazwie nie znaczy, że to seniorzy,
+// bo kluby seniorskie nie dopisują sobie nic. W drugą stronę ten sygnał nie działa.
 function kategoriaObserwacji(o){
-  if(o && o.kategoria) return o.kategoria;
   const n = String((o && o.rozgrywki) || '').trim();
-  if(!n) return '';
-  if(MLODZIEZ_WZORCE_PC.some(w=>w.test(n))) return 'mlodziez';
+  const m = String((o && o.match) || '').trim();
+  // ROCZNIK W NAZWIE DRUŻYN WYGRYWA NAWET Z KATEGORIĄ ZAPISANĄ PRZY OBSERWACJI.
+  //
+  // Mecze zaplanowane wcześniej mają w bazie zapisane „seniorzy" — z automatycznej podpowiedzi
+  // sprzed poprawki, nie z decyzji skauta. Gdyby zapisana wartość szła pierwsza, poprawka
+  // rozpoznawania nie zmieniłaby niczego na ekranie. „U17" przy obu klubach nie jest sprawą
+  // oceny, tylko faktem, więc ma pierwszeństwo przed podpowiedzią, która mogła powstać źle.
+  // W drugą stronę to nie działa: brak rocznika nie czyni z meczu spotkania seniorów.
+  if(m && MLODZIEZ_WZORCE_PC.some(w=>w.test(m))) return 'mlodziez';
+  if(o && o.kategoria) return o.kategoria;
+  if(!n && !m) return '';
+  if(MLODZIEZ_WZORCE_PC.some(w=>w.test(n) || w.test(m))) return 'mlodziez';
   if(SENIORZY_WZORCE_PC.some(w=>w.test(n))) return 'seniorzy';
   return '';
 }
@@ -5472,7 +6195,9 @@ function ligaTag(o){
   const nazwa = (o && o.rozgrywki) || '';
   if(!kat && !nazwa) return '';
   const etykieta = kat === 'mlodziez' ? 'Młodzież' : kat === 'seniorzy' ? 'Seniorzy' : '';
-  const barwa = kat === 'mlodziez' ? 'var(--gold-dark, #8C6C21)' : 'var(--green-dark, #2F6B41)';
+  // Nierozpoznana kategoria dostaje barwę NEUTRALNĄ, a nie seniorską — dotąd „nie wiem" wyglądało
+  // dokładnie tak samo jak „seniorzy", czyli aplikacja twierdziła coś, czego nie ustaliła.
+  const barwa = kat === 'mlodziez' ? 'var(--gold-dark, #8C6C21)' : kat === 'seniorzy' ? 'var(--green-dark, #2F6B41)' : 'var(--muted, #5B6560)';
   const tekst = [etykieta, nazwa].filter(Boolean).join(' · ');
   return ` &middot; <span style="color:${barwa};font-weight:600;">${esc(tekst)}</span>`;
 }
@@ -5531,11 +6256,26 @@ function obsCalendarHtml(){
   ${obsCalendarSelectedDay ? `
   <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px;">
     <strong style="font-size:13px;color:var(--heading);">${esc(obsCalendarSelectedDay)}</strong>
-    ${selectedObs.length ? selectedObs.map(o=>{
+    ${selectedObs.length ? selectedObs.slice().sort((a,b)=>String(a.matchTime||'').localeCompare(String(b.matchTime||''))).map(o=>{
       const pl = DB.players.find(p=>p.id===o.playerId);
-      return `<div class="obs-item" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+      // GODZINA I MIEJSCE STOJĄ PRZY MECZU, NIE W EDYCJI.
+      //
+      // Kalendarz służy do planowania wyjazdu — samo „z kim gra" nie mówi, o której wyjechać ani
+      // dokąd. Te dwie rzeczy trzeba było wyklikać w edycji każdej obserwacji z osobna. Adres jest
+      // odnośnikiem do mapy, bo i tak kończy się szukaniem dojazdu.
+      const czas = String(o.matchTime||'').trim();
+      const gdzie = String(o.location||'').trim();
+      const szczegoly = [
+        czas ? `<strong style="color:var(--heading);">${esc(czas)}</strong>` : '',
+        gdzie ? `<a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(gdzie)}"
+                    target="_blank" rel="noopener noreferrer">📍 ${esc(gdzie)}</a>` : '',
+      ].filter(Boolean).join(' &middot; ');
+      return `<div class="obs-item" style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
         <span>${pl ? `<strong>${esc(pl.firstName+' '+pl.lastName)}</strong> — ${esc(o.match||'brak danych meczu')}`
-          : `<strong>${esc(o.match || 'Obserwacja meczu')}</strong>`}<span class="meta">${ligaTag(o)} (${esc(o.scout)})</span></span>
+          : `<strong>${esc(o.match || 'Obserwacja meczu')}</strong>`} <span class="meta">${ligaTag(o)} (${esc(o.scout)})</span>
+          ${szczegoly ? `<div class="meta" style="margin-top:2px;">${szczegoly}</div>` : ''}
+          ${!czas && !gdzie ? `<div class="meta" style="margin-top:2px;">bez godziny i miejsca — uzupełnij przez ✎</div>` : ''}
+        </span>
         <span style="flex-shrink:0;white-space:nowrap;">
           <button class="link-btn" data-action="edit-obs" data-id="${o.id}" style="font-size:11px;">✎</button>
           <button class="link-btn" data-action="delete-obs" data-id="${o.id}" style="font-size:11px;color:var(--clay-dark);">✕</button>
@@ -5756,7 +6496,65 @@ function podsumowanieMinut(przebieg){
 
 // Granica rocznika młodzieżowca — w jednym miejscu, bo wisi i w odznace, i w podpowiedziach,
 // i w filtrach. Rozjechane kopie tej liczby pokazywałyby dwie różne prawdy w jednym oknie.
+// Poziom rozgrywek z nazwy grupy w kartotece („IV liga (opolska)" → „IV liga", „CLJ U17 gr. II"
+// → „CLJ U17"). Służy do odcinania klubów z innych rozgrywek przy dopasowaniu nazwy — ta sama nazwa
+// klubu występuje przecież w pierwszej drużynie i w juniorach.
+function poziomGrupy(nazwaGrupy){
+  const t = String(nazwaGrupy || '');
+  if(/u\s*-?\s*17/i.test(t)) return 'CLJ U17';
+  if(/u\s*-?\s*19/i.test(t) || /\bclj\b/i.test(t)) return 'CLJ U19';
+  const m = t.match(/^(IV|III|II|I)\s+liga/i);
+  if(m) return `${m[1].toUpperCase()} liga`;
+  if(/ekstraklasa/i.test(t)) return 'Ekstraklasa';
+  return '';
+}
+
+// ROZGRYWKI, KTÓRYCH 90MINUT NIE OBSŁUŻY — sprawdzone, nie przypuszczane.
+//
+// IV liga i klasa okręgowa: ŁNP oddaje serwerom atrapę strony, a 90minut nie ma tam protokołów.
+// Centralna Liga Juniorów: 90minut ma komplet terminarza i wyników, ale ANI JEDNEGO protokołu —
+// przy 240 spotkaniach zero odnośników „mecz.php", a strona klubu podaje samą historię rozgrywek.
+// We wszystkich trzech przypadkach jedyną drogą jest zakładka z ŁNP, więc nie pokazujemy przycisku,
+// który i tak skończy się listą krzyżyków.
+const bezProtokolowNa90minut = (top)=>
+  top === 'IV liga' || top === 'Klasa okręgowa' || top === 'Kategorie juniorskie';
+
 const ROCZNIK_MLODZIEZOWCA = 2006;
+
+// Rozgrywki, w których minuta młodzieżowca coś znaczy skautingowo. W IV lidze i niżej młodzież
+// gra masowo, więc automat zasypałby mapę setkami nazwisk — tam wybór zostaje przy skaucie.
+const LIGI_Z_MLODZIEZOWCAMI = new Set([
+  'Ekstraklasa', 'I liga', 'II liga',
+  'III liga, gr. I', 'III liga, gr. II', 'III liga, gr. III', 'III liga, gr. IV',
+]);
+
+// PRÓG, OD KTÓREGO MŁODZIEŻOWIEC WCHODZI DO MONITORINGU SAM.
+//
+// 270 minut to trzy pełne mecze. Jeden występ bywa przypadkiem — kontuzje, kartki, obowiązek
+// regulaminowy. Trzy mecze to już decyzja trenera powtórzona, czyli coś, czego nie wolno przegapić.
+const MINUTY_DO_MONITORINGU = 270;
+
+const minutyZawodnika = (p)=> Number(p && p.minutes) || 0;
+
+// Młodzieżowcy, których dorobek przekroczył próg, trafiają do Monitoringu bez pytania.
+//
+// Robimy to przy wczytaniu aplikacji, bo statystyki dochodzą nocnym odświeżeniem — gdyby wpisywać
+// ich tylko w chwili importu, zawodnik, który przekroczył próg o piątej rano, czekałby na kolejny
+// import zamiast pojawić się na liście od razu.
+async function dopiszMlodziezowcowDoMonitoringu(){
+  const nowi = DB.players.filter(p=>
+    !p.monitored && !p.watchlistRemoved
+    && LIGI_Z_MLODZIEZOWCAMI.has(clubLeague(p.clubId))
+    && isYouthPlayer(p)
+    && minutyZawodnika(p) >= MINUTY_DO_MONITORINGU);
+  if(!nowi.length) return 0;
+  nowi.forEach(p=>{ p.monitored = true; });
+  // Pojedyncze wiersze, nie cała baza — przy jedenastu tysiącach zawodników przepisanie wszystkiego
+  // na starcie aplikacji trwałoby dłużej niż samo wczytanie.
+  for(const p of nowi) await savePlayerOne(p);
+  console.info(`Monitoring: dopisałem ${nowi.length} młodzieżowców z ${MINUTY_DO_MONITORINGU}+ minutami.`);
+  return nowi.length;
+}
 
 function isYouthPlayer(p){
   // Protokół PZPN oznacza młodzieżowca wprost — i to źródło jest pewniejsze niż rocznik, bo
@@ -6748,8 +7546,10 @@ const POSITION_NUMBERS = [
   {number:1,  label:'Bramkarz',            posName:'Bramkarz',            rankOffset:0},
   {number:3,  label:'Lewy obrońca',        posName:'Obrońca boczny',      rankOffset:0},
   {number:2,  label:'Prawy obrońca',       posName:'Obrońca boczny',      rankOffset:6},
-  {number:5,  label:'Stoper (lewy)',       posName:'Obrońca środkowy',    rankOffset:0},
-  {number:4,  label:'Stoper (prawy)',      posName:'Obrońca środkowy',    rankOffset:6},
+  // Numeracja wg Narodowego Modelu Gry: 4 to stoper LEWY, 5 to stoper PRAWY. Do 09.2026 mieliśmy
+  // to odwrotnie, przez co numer na profilu nie zgadzał się z tym, czym posługuje się sztab.
+  {number:4,  label:'Stoper (lewy)',       posName:'Obrońca środkowy',    rankOffset:0},
+  {number:5,  label:'Stoper (prawy)',      posName:'Obrońca środkowy',    rankOffset:6},
   {number:6,  label:'Defensywny pomocnik', posName:'Pomocnik defensywny', rankOffset:0},
   {number:8,  label:'Środkowy pomocnik',   posName:'Pomocnik środkowy',   rankOffset:0},
   {number:10, label:'Ofensywny pomocnik',  posName:'Pomocnik ofensywny',  rankOffset:0},
@@ -6757,22 +7557,30 @@ const POSITION_NUMBERS = [
   {number:7,  label:'Prawe skrzydło',      posName:'Skrzydłowy',          rankOffset:6},
   {number:9,  label:'Napastnik',           posName:'Napastnik',           rankOffset:0},
 ];
+// Opis pozycji z profilu, np. „5 · Stoper (prawy)". Pusty, gdy skaut nie wskazał numeru —
+// wtedy mapa dobiera pole po ogólnej pozycji, jak dotąd.
+function opisPozycjiNmg(p){
+  const numer = Number(p && p.pozycjaNmg) || 0;
+  if(!numer) return '';
+  const def = POSITION_NUMBERS.find(x=>x.number === numer);
+  return def ? `${def.number} · ${def.label}` : String(numer);
+}
 // Współrzędne (procent szerokości/wysokości boiska) dla każdej z 11 pozycji — osobny układ dla każdego
 // systemu gry, żeby pola realnie odzwierciedlały kształt taktyczny formacji. Bazowy układ (dla "" i
 // 1-4-3-3) odwzorowuje dokładnie przesłany wzór klubowej planszy. Te same 11 numerów/etykiet/pozycji
 // (POSITION_NUMBERS) obowiązują zawsze — zmieniają się tylko ich współrzędne na boisku.
 const FORMATION_COORDS = {
-  '':          {11:{x:22,y:13}, 9:{x:50,y:10}, 7:{x:78,y:13}, 8:{x:37,y:33}, 10:{x:63,y:33}, 6:{x:50,y:53}, 3:{x:18,y:66}, 2:{x:82,y:66}, 5:{x:37,y:79}, 4:{x:63,y:79}, 1:{x:50,y:93}},
-  '1-4-3-3':   {11:{x:22,y:13}, 9:{x:50,y:10}, 7:{x:78,y:13}, 8:{x:37,y:33}, 10:{x:63,y:33}, 6:{x:50,y:53}, 3:{x:18,y:66}, 2:{x:82,y:66}, 5:{x:37,y:79}, 4:{x:63,y:79}, 1:{x:50,y:93}},
-  '1-4-4-2':   {9:{x:39,y:10}, 10:{x:61,y:10}, 11:{x:18,y:33}, 7:{x:82,y:33}, 6:{x:61,y:51}, 8:{x:39,y:51}, 3:{x:18,y:66}, 2:{x:82,y:66}, 5:{x:37,y:79}, 4:{x:63,y:79}, 1:{x:50,y:93}},
-  // 1-3-4-3: naprawione — 3 obrońców (5,6,4) + 4 pomocników (wahadłowi 3/2 + środkowi 8/10), zgodnie z nazwą systemu.
-  '1-3-4-3':   {11:{x:22,y:13}, 9:{x:50,y:10}, 7:{x:78,y:13}, 3:{x:16,y:38}, 8:{x:39,y:38}, 10:{x:61,y:38}, 2:{x:84,y:38}, 5:{x:31,y:72}, 6:{x:50,y:72}, 4:{x:69,y:72}, 1:{x:50,y:93}},
-  // 1-3-5-2: naprawione — 3 obrońców (5,6,4) + 5 pomocników (wahadłowi 3/2 + szerocy 11/7 + środkowy 8).
-  '1-3-5-2':   {9:{x:39,y:10}, 10:{x:61,y:10}, 11:{x:20,y:36}, 8:{x:50,y:36}, 7:{x:80,y:36}, 3:{x:15,y:54}, 2:{x:85,y:54}, 5:{x:31,y:74}, 6:{x:50,y:74}, 4:{x:69,y:74}, 1:{x:50,y:93}},
-  '1-4-5-1':   {9:{x:50,y:10}, 11:{x:20,y:29}, 7:{x:80,y:29}, 8:{x:32,y:46}, 6:{x:50,y:46}, 10:{x:68,y:46}, 3:{x:18,y:66}, 2:{x:82,y:66}, 5:{x:37,y:79}, 4:{x:63,y:79}, 1:{x:50,y:93}},
-  // 1-5-4-1: naprawione — 5 obrońców (3,5,6,4,2, w tym wahadłowi na skrajach) + 4 pomocników (11,8,10,7).
-  '1-5-4-1':   {9:{x:50,y:10}, 11:{x:22,y:36}, 8:{x:41,y:36}, 10:{x:59,y:36}, 7:{x:78,y:36}, 3:{x:14,y:70}, 5:{x:32,y:70}, 6:{x:50,y:70}, 4:{x:68,y:70}, 2:{x:86,y:70}, 1:{x:50,y:93}},
-  '1-4-2-3-1': {9:{x:50,y:10}, 11:{x:20,y:29}, 10:{x:50,y:29}, 7:{x:80,y:29}, 6:{x:38,y:49}, 8:{x:62,y:49}, 3:{x:18,y:66}, 2:{x:82,y:66}, 5:{x:37,y:79}, 4:{x:63,y:79}, 1:{x:50,y:93}},
+  '':          {11:{x:22,y:13}, 9:{x:50,y:10}, 7:{x:78,y:13}, 8:{x:37,y:33}, 10:{x:63,y:33}, 6:{x:50,y:53}, 3:{x:18,y:66}, 2:{x:82,y:66}, 4:{x:37,y:79}, 5:{x:63,y:79}, 1:{x:50,y:93}},
+  '1-4-3-3':   {11:{x:22,y:13}, 9:{x:50,y:10}, 7:{x:78,y:13}, 8:{x:37,y:33}, 10:{x:63,y:33}, 6:{x:50,y:53}, 3:{x:18,y:66}, 2:{x:82,y:66}, 4:{x:37,y:79}, 5:{x:63,y:79}, 1:{x:50,y:93}},
+  '1-4-4-2':   {9:{x:39,y:10}, 10:{x:61,y:10}, 11:{x:18,y:33}, 7:{x:82,y:33}, 6:{x:61,y:51}, 8:{x:39,y:51}, 3:{x:18,y:66}, 2:{x:82,y:66}, 4:{x:37,y:79}, 5:{x:63,y:79}, 1:{x:50,y:93}},
+  // 1-3-4-3: 3 obrońców (4,6,5) + 4 pomocników (wahadłowi 3/2 + środkowi 8/10), zgodnie z nazwą systemu.
+  '1-3-4-3':   {11:{x:22,y:13}, 9:{x:50,y:10}, 7:{x:78,y:13}, 3:{x:16,y:38}, 8:{x:39,y:38}, 10:{x:61,y:38}, 2:{x:84,y:38}, 4:{x:31,y:72}, 6:{x:50,y:72}, 5:{x:69,y:72}, 1:{x:50,y:93}},
+  // 1-3-5-2: 3 obrońców (4,6,5) + 5 pomocników (wahadłowi 3/2 + szerocy 11/7 + środkowy 8).
+  '1-3-5-2':   {9:{x:39,y:10}, 10:{x:61,y:10}, 11:{x:20,y:36}, 8:{x:50,y:36}, 7:{x:80,y:36}, 3:{x:15,y:54}, 2:{x:85,y:54}, 4:{x:31,y:74}, 6:{x:50,y:74}, 5:{x:69,y:74}, 1:{x:50,y:93}},
+  '1-4-5-1':   {9:{x:50,y:10}, 11:{x:20,y:29}, 7:{x:80,y:29}, 8:{x:32,y:46}, 6:{x:50,y:46}, 10:{x:68,y:46}, 3:{x:18,y:66}, 2:{x:82,y:66}, 4:{x:37,y:79}, 5:{x:63,y:79}, 1:{x:50,y:93}},
+  // 1-5-4-1: 5 obrońców (3,4,6,5,2, w tym wahadłowi na skrajach) + 4 pomocników (11,8,10,7).
+  '1-5-4-1':   {9:{x:50,y:10}, 11:{x:22,y:36}, 8:{x:41,y:36}, 10:{x:59,y:36}, 7:{x:78,y:36}, 3:{x:14,y:70}, 4:{x:32,y:70}, 6:{x:50,y:70}, 5:{x:68,y:70}, 2:{x:86,y:70}, 1:{x:50,y:93}},
+  '1-4-2-3-1': {9:{x:50,y:10}, 11:{x:20,y:29}, 10:{x:50,y:29}, 7:{x:80,y:29}, 6:{x:38,y:49}, 8:{x:62,y:49}, 3:{x:18,y:66}, 2:{x:82,y:66}, 4:{x:37,y:79}, 5:{x:63,y:79}, 1:{x:50,y:93}},
 };
 function positionMapKey(league, formation, number){ return league+'|||'+(formation||'wszystkie')+'|||'+number; }
 // Automatyczna podpowiedź: najlepiej ocenieni zawodnicy danej ligi na tej pozycji (wg pola "Pozycja" w profilu),
@@ -6785,16 +7593,31 @@ function buildAutoPositionCandidates(league, formation, number){
   // Na mapę wchodzi każdy, kogo AKTYWNIE prowadzisz: ze statusem decyzyjnym albo z Monitoringu.
   // Wcześniej liczyły się wyłącznie dwa statusy, przez co zawodnik „Rekomendowany" albo świeżo
   // dodany do Monitoringu nie pojawiał się nigdzie — a to on jest przedmiotem pracy skautingowej.
-  const kwalifikujeSie = (p)=> p.status==='Do transferu' || p.status==='Na Testy' || !!p.monitored;
+  // MŁODZIEŻOWIEC, KTÓRY JUŻ WSZEDŁ NA BOISKO, JEST KANDYDATEM SAM Z SIEBIE.
+  //
+  // W Ekstraklasie, I, II i III lidze minuta młodzieżowca jest decyzją trenera, a nie przypadkiem —
+  // to najtwardszy sygnał, jaki mamy, mocniejszy niż czyjaś ocena. Mapa pokazywała dotąd wyłącznie
+  // tych, których ktoś wcześniej ręcznie wziął na warsztat, więc trzeba było wiedzieć o zawodniku,
+  // zanim się go zobaczyło. Teraz wchodzą wszyscy, którzy zagrali choć minutę.
+  const kwalifikujeSie = (p)=> p.status==='Do transferu' || p.status==='Na Testy' || !!p.monitored
+    || (LIGI_Z_MLODZIEZOWCAMI.has(clubLeague(p.clubId)) && isYouthPlayer(p) && minutyZawodnika(p) > 0);
   const statusRank = {'Do transferu':0, 'Na Testy':1};
-  const rangaZawodnika = (p)=> statusRank[p.status] !== undefined ? statusRank[p.status] : 2;
+  // Młodzieżowiec bez statusu ląduje za prowadzonymi, ale przed resztą — i wyżej, im więcej zagrał.
+  const rangaZawodnika = (p)=> statusRank[p.status] !== undefined ? statusRank[p.status] : (p.monitored ? 2 : 3);
+  // WSKAZANY NUMER WG NMG BIJE POZYCJĘ OGÓLNĄ.
+  //
+  // Pole „Pozycja" mówi tylko „Obrońca środkowy", więc ten sam zawodnik pasował i do lewego,
+  // i do prawego stopera — i mapa stawiała go w obu polach naraz. Kto ma na profilu numer wg
+  // Narodowego Modelu Gry, trafia wyłącznie do tego jednego pola; reszta działa jak dotąd.
+  const numerZawodnika = (p)=> Number(p.pozycjaNmg) || 0;
   const candidates = DB.players
     // System gry: po wybraniu konkretnego układu zawodnik pojawia się WYŁĄCZNIE w tym, który ma
     // zapisany w profilu. Wcześniej ci bez wpisanego systemu wchodzili do każdego układu naraz,
     // przez co ten sam zawodnik widniał we wszystkich systemach i mapa przestawała cokolwiek
     // rozróżniać. Kto nie ma systemu w profilu, jest widoczny pod „Wszystkie systemy".
-    .filter(p => clubLeague(p.clubId)===league && p.position===posDef.posName && (!formation || p.formation===formation)
-      && kwalifikujeSie(p))
+    .filter(p => clubLeague(p.clubId)===league && (!formation || systemZawodnika(p)===formation)
+      && kwalifikujeSie(p)
+      && (numerZawodnika(p) ? numerZawodnika(p)===number : p.position===posDef.posName))
     .map(p => ({p, a: playerAvg(p.id)}))
     // NIE wymagamy obserwacji — zawodnik z samą decyzją statusu (z raportu) też trafia na mapę.
     .sort((a,b) => {
@@ -6802,8 +7625,36 @@ function buildAutoPositionCandidates(league, formation, number){
       if(s !== 0) return s;
       return ((b.a&&b.a.overall!=null)? b.a.overall : -1) - ((a.a&&a.a.overall!=null)? a.a.overall : -1);     // potem wg średniej oceny (z raportów)
     });
+  // Wskazani numerem wchodzą pierwsi i BEZ przesunięcia — rankOffset rozdziela pulę między
+  // sparowane pola (lewy/prawy), a to ma sens tylko przy zgadywaniu z pozycji ogólnej. Gdyby
+  // objął też wskazanych, zawodnik z jawnie wpisanym numerem mógłby wypaść poza szóstkę.
+  const wskazani = candidates.filter(x=>numerZawodnika(x.p) === number);
+  const zPozycjiOgolnej = candidates.filter(x=>!numerZawodnika(x.p));
   const offset = posDef.rankOffset || 0;
-  return candidates.slice(offset, offset+6).map(x=>x.p.id);
+  return [...wskazani, ...zPozycjiOgolnej.slice(offset, offset+6)].slice(0, 6).map(x=>x.p.id);
+}
+// Przeniesienie zawodnika myszą z jednego pola boiska na drugie.
+//
+// Nie dopisujemy go do listy wykluczonych pola źródłowego, choć usuwanie ręczne tak robi. Tam
+// wykluczenie jest konieczne, bo automat wstawiłby zawodnika z powrotem. Tu wraca on na mapę
+// pod innym numerem, a reguła „jeden zawodnik — jedno pole" (gdzieJuzStoi) sama pilnuje, żeby
+// automat nie dołożył go do starego pola. Wykluczenie zamknęłoby mu drogę powrotną na stałe —
+// a przeciąganie ma być odwracalne jednym ruchem.
+async function przeniesNaInnaPozycje(league, formation, zNumeru, naNumer, playerId){
+  if(!playerId || zNumeru === naNumer) return { ok:false, powod:'to-samo-pole' };
+  const kluczZ = positionMapKey(league, formation, zNumeru);
+  const kluczNa = positionMapKey(league, formation, naNumer);
+  const zrodlo = (positionMapAssignments[kluczZ] || []).slice();
+  const cel = (positionMapAssignments[kluczNa] || []).slice();
+  if(cel.includes(playerId)) return { ok:false, powod:'juz-tam' };
+  if(cel.length >= 6) return { ok:false, powod:'komplet' };
+  const i = zrodlo.indexOf(playerId);
+  if(i >= 0) zrodlo.splice(i, 1);
+  cel.push(playerId);
+  positionMapAssignments[kluczZ] = zrodlo;
+  positionMapAssignments[kluczNa] = cel;
+  await savePositionMapAssignments();
+  return { ok:true };
 }
 async function reorderPositionMapPlayer(league, formation, number, playerId, targetIndex){
   const key = positionMapKey(league, formation, number);
@@ -6856,6 +7707,25 @@ const POZYCJA_NA_NUMER = [
   { wzor: /napastnik/i, numer: 9 },
 ];
 
+// ZNACZNIK ZESPOŁU W NAZWIE KLUBU.
+//
+// Klub to nie jedna drużyna: „Arka Gdynia" gra w I lidze, „Arka II Gdynia" w IV, „Arka Gdynia U17"
+// i „U19" w CLJ. Cztery kadry i cztery poziomy rozgrywek, a nazwy różnią się jednym członem.
+// Dopasowanie po zawieraniu tego członu nie widzi, więc bez tej funkcji zawodnik z młodzieżówki
+// i jego imiennik z pierwszego zespołu są nie do rozróżnienia. Odpowiednik funkcji o tej samej
+// nazwie w panelu mobilnym (src/mobile/main.ts) — wspólny moduł to dług, który tu spłacamy osobno.
+const ZNACZNIKI_ZESPOLU_PC = [
+  { wzor: /\bu\s*-?\s*(\d{1,2})\b/i, nazwa: (m)=> 'u' + m[1] },
+  { wzor: /\bjuniorz?y?\b|\bjun\b/i, nazwa: ()=> 'junior' },
+  { wzor: /\biii\b|\b3\b/, nazwa: ()=> 'iii' },
+  { wzor: /\bii\b|\b2\b|rezerw/i, nazwa: ()=> 'ii' },
+];
+function znacznikZespoluPc(nazwa){
+  const n = String(nazwa || '');
+  for(const z of ZNACZNIKI_ZESPOLU_PC){ const m = z.wzor.exec(n); if(m) return z.nazwa(m); }
+  return '';
+}
+
 function numerZPozycji(opis){
   const t = String(opis||'').trim();
   if(!t) return 0;
@@ -6887,6 +7757,15 @@ function wyroznieniZMeczow(liga, system){
             return n && (n===k || (n.length>=5 && k.length>=5 && (n.includes(k)||k.includes(n))));
           });
           if(wKlubie.length === 1) kand = wKlubie;
+          else if(wKlubie.length > 1){
+            // TEN SAM KLUB, RÓŻNE ZESPOŁY. „Arka Gdynia" (I liga), „Arka II Gdynia" (IV liga)
+            // i „Arka Gdynia U17" (CLJ) pasują do siebie przez zawieranie, więc imiennik z
+            // pierwszej drużyny i z młodzieżówki wyglądają tu identycznie. Rozstrzyga znacznik
+            // zespołu wyciągnięty z nazwy — bez niego zostawaliśmy z dwoma kandydatami i niczym.
+            const zn = znacznikZespoluPc(dane.nazwa);
+            const wZespole = wKlubie.filter(p=> znacznikZespoluPc(clubName(p.clubId)) === zn);
+            if(wZespole.length === 1) kand = wZespole;
+          }
         }
         // Niejednoznaczność zostawiamy bez rozstrzygnięcia — lepiej nie pokazać nikogo,
         // niż postawić na mapie niewłaściwego zawodnika.
@@ -6910,6 +7789,31 @@ function viewRankingNumbersMode(){
   let anyChanged = false;
   let anyRealCandidatesFound = false;
   const zMeczow = wyroznieniZMeczow(rankingLeague, rankingFormationFilter);
+
+  // JEDEN ZAWODNIK — JEDNO POLE NA BOISKU.
+  //
+  // Przypisania na mapie są trwałe, a kolejność podpowiedzi zmienia się z każdym nowym zawodnikiem
+  // w lidze. Stoper, który przy pierwszym otwarciu mapy trafił na lewe pole, przy kolejnym mieścił
+  // się już w szóstce prawego — i zostawał w obu, bo raz zapisanego przypisania nic nie zdejmowało.
+  // Madej stał tak jednocześnie pod „5" i pod „4". Zliczamy więc, gdzie kto już jest, i pilnujemy,
+  // żeby drugi raz nie wszedł. Przypisania zrobione ręką zostają nietknięte — usuwamy wyłącznie
+  // powtórzenia, zachowując pierwsze wystąpienie.
+  const gdzieJuzStoi = new Map();
+  POSITION_NUMBERS.forEach(posDef=>{
+    const key = positionMapKey(rankingLeague, rankingFormationFilter, posDef.number);
+    const lista = positionMapAssignments[key];
+    if(!Array.isArray(lista)) return;
+    const bezPowtorzen = lista.filter(id=>{
+      if(gdzieJuzStoi.has(id)) return false;
+      gdzieJuzStoi.set(id, posDef.number);
+      return true;
+    });
+    if(bezPowtorzen.length !== lista.length){
+      positionMapAssignments[key] = bezPowtorzen;
+      anyChanged = true;
+    }
+  });
+
   POSITION_NUMBERS.forEach(posDef=>{
     const key = positionMapKey(rankingLeague, rankingFormationFilter, posDef.number);
     const wykluczeni = positionMapAssignments[kluczWykluczonych(key)] || [];
@@ -6919,7 +7823,10 @@ function viewRankingNumbersMode(){
     const auto = [...zMeczu, ...buildAutoPositionCandidates(rankingLeague, rankingFormationFilter, posDef.number)
       .filter(id=> !wykluczeni.includes(id) && !zMeczu.includes(id))];
     if(positionMapAssignments[key] === undefined){
-      positionMapAssignments[key] = auto;
+      // Pierwsze wypełnienie pola też pilnuje, żeby nikt nie wszedł tu, stojąc już gdzie indziej.
+      const bezPowtorzen = auto.filter(id=>!gdzieJuzStoi.has(id));
+      bezPowtorzen.forEach(id=>gdzieJuzStoi.set(id, posDef.number));
+      positionMapAssignments[key] = bezPowtorzen;
       anyChanged = true;
     } else {
       // Dołącz automatycznie zawodników ze statusem (Do transferu/Testy), których jeszcze nie ma na tej
@@ -6937,7 +7844,7 @@ function viewRankingNumbersMode(){
           if(zMeczu.includes(id)) return true;
           if(wykluczeni.includes(id)) return false;
           const pl = DB.players.find(p=>p.id===id);
-          return !pl || pl.formation === rankingFormationFilter;
+          return !pl || systemZawodnika(pl) === rankingFormationFilter;
         });
         if(przefiltrowane.length !== cur.length){
           positionMapAssignments[key] = przefiltrowane;
@@ -6947,8 +7854,11 @@ function viewRankingNumbersMode(){
       }
       auto.forEach(id=>{
         if(cur.includes(id) || cur.length >= 6) return;
+        // Kto stoi już na innym polu tej samej mapy, nie wchodzi na drugie.
+        if(gdzieJuzStoi.has(id) && gdzieJuzStoi.get(id) !== posDef.number) return;
         const pl = DB.players.find(p=>p.id===id);
         if(pl && pl.status==='Do transferu') cur.unshift(id); else cur.push(id);
+        gdzieJuzStoi.set(id, posDef.number);
         anyChanged = true;
       });
     }
@@ -6959,7 +7869,7 @@ function viewRankingNumbersMode(){
   // Ilu zawodników wypada z widoku TYLKO dlatego, że nie mają wpisanego systemu gry. Bez tej
   // informacji znikaliby po cichu i wyglądałoby to na zgubione dane.
   const bezSystemu = rankingFormationFilter
-    ? DB.players.filter(p => clubLeague(p.clubId)===rankingLeague && !p.formation
+    ? DB.players.filter(p => clubLeague(p.clubId)===rankingLeague && !systemZawodnika(p)
         && (p.status==='Do transferu' || p.status==='Na Testy' || !!p.monitored)
         && POSITION_NUMBERS.some(pd => pd.posName === p.position)).length
     : 0;
@@ -6976,7 +7886,7 @@ function viewRankingNumbersMode(){
       if(!pl) return '';
       // Kolor wg statusu: „Do transferu" = złoto; „Na Testy" i pozostałe = bez koloru (neutralnie).
       const statusCls = pl.status==='Do transferu' ? ' pmr-transfer' : '';
-      return `<span class="pos-marker-row${statusCls}" title="${esc(pl.status||'')}">${crestImg(clubCrest(pl.clubId),'xs',clubName(pl.clubId))}<span class="pmr-name">${esc(pl.lastName || pl.firstName || '—')}</span>${pl.birthYear?`<span class="pmr-year">${esc(pl.birthYear)}</span>`:''}</span>`;
+      return `<span class="pos-marker-row${statusCls}" draggable="true" data-id="${esc(pl.id)}" data-zrodlo="${posDef.number}" title="${esc(pl.status||'')} — przeciągnij na inną pozycję">${crestImg(clubCrest(pl.clubId),'xs',clubName(pl.clubId))}<span class="pmr-name">${esc(pl.lastName || pl.firstName || '—')}</span>${pl.birthYear?`<span class="pmr-year">${esc(pl.birthYear)}</span>`:''}</span>`;
     }).join('');
     return `
     <div class="pos-marker" style="left:${coord.x}%;top:${coord.y}%;" data-action="position-slot-click" data-number="${posDef.number}" title="${esc(posDef.label)} — kliknij, aby zarządzać (do 6 zawodników)">
@@ -7008,7 +7918,7 @@ function viewRankingNumbersMode(){
     </div>
   </div>
   </div>
-  <p class="note" style="margin-top:10px;">Kliknij dowolną pozycję na boisku, aby dodać, usunąć lub przeciągnięciem zmienić kolejność zawodników (do 6 na pozycję, dwa pierwsze miejsca = priorytetowi).
+  <p class="note" style="margin-top:10px;"><strong>Złap nazwisko myszą i przeciągnij na inne pole</strong>, żeby zmienić zawodnikowi pozycję — pole docelowe podświetli się na złoto. Kliknij pozycję, aby dodać, usunąć lub zmienić kolejność (do 6 na pozycję, dwa pierwsze miejsca = priorytetowi).
   ${rankingFormationFilter? ` Układ pól odzwierciedla kształt systemu ${esc(rankingFormationFilter)}.` : ''}
   ${!anyRealCandidatesFound? ' Mapa jest pusta, bo w tej lidze nikt nie jest ani w Monitoringu, ani ze statusem „Do transferu" / „Na Testy" — to oni wypełniają mapę. Dodaj kogoś do Monitoringu albo nadaj status w profilu zawodnika.' : ''}
   ${bezSystemu? ` <strong>Poza tym systemem:</strong> ${bezSystemu} zawodnik(ów) tej ligi ma status kwalifikujący, ale w profilu nie ma wpisanego systemu gry — zobaczysz ich pod „Wszystkie systemy" albo po uzupełnieniu systemu w profilu.` : ''}</p>`;
@@ -7106,7 +8016,7 @@ function viewTransferCommittee(){
         </select>
       </td>
       <td><input class="committee-notes-input" data-id="${p.id}" value="${esc(p.committeeNotes||'')}" placeholder="Notatka komitetu"></td>
-      <td><button class="link-btn" data-action="open-committee-reports" data-id="${p.id}">📄 Raporty (${(p.committeeReports||[]).length})</button></td>
+      <td><button class="link-btn" data-action="open-committee-reports" data-id="${p.id}">📄 Raporty (${liczbaRaportowKomitetu(p)})</button></td>
       <td><button class="gold" data-action="analyze-player" data-id="${p.id}" style="padding:5px 12px;font-size:12px;white-space:nowrap;">🔍 Analizuj</button></td>
     </tr>`;
   }).join('');
@@ -7185,6 +8095,353 @@ function analyzePlayer(p){
   return {a, overall, score, strengths, weaknesses, trend, age, devNote, nData, confidence, errorMargin, reco, recoTone, obs, reports};
 }
 
+// DRUGA OPINIA — niezależny głos obok raportów skautów.
+//
+// Wysyłamy komplet: kartotekę, przebieg sezonu i PEŁNE treści raportów. Bez treści raportów model
+// mógłby tylko powtórzyć wskaźnik, a chodzi o coś odwrotnego — o wskazanie, czego w tych raportach
+// nie ma. Odpowiedź zapisujemy przy zawodniku, żeby weszła do PDF-a i nie trzeba jej było
+// generować drugi raz przed posiedzeniem komitetu.
+async function pobierzOpinieAI(playerId, przycisk, miejsce){
+  const p = DB.players.find(x=>x.id===playerId);
+  if(!p || !miejsce) return;
+  const napis = przycisk ? przycisk.textContent : '';
+  if(przycisk){ przycisk.disabled = true; przycisk.textContent = 'Analizuję…'; }
+  miejsce.innerHTML = `<div class="note">Czytam raporty i sprawdzam publiczne źródła piłkarskie. To potrwa kilkanaście sekund.</div>`;
+
+  const an = analyzePlayer(p);
+  const raporty = DB.reports.filter(r=>r.playerId===playerId).map(r=>({
+    data: r.date || '', scout: r.scout || '', perspektywa: r.perspektywa || '', obserwacja: r.obsType || '',
+    technika: r.technika || '', taktyka: r.taktyka || '', motoryka: r.motoryka || '',
+    mentalnosc: r.mentalnoscOpis || '', potencjal: r.potencjalOpis || '',
+    opis: r.description || '', fazyGry: r.phases || {}, staleFragmenty: r.setPieces || {},
+  }));
+  const przebieg = (p.przebieg || []).map(x=>({
+    rywal: x.rywal || '', dom: !!x.dom, minuty: x.minuty || 0,
+    podstawowy: !!x.podstawowy, wKadrze: !!x.wKadrze, zolte: x.zolte || 0, czerwone: x.czerwone || 0,
+  }));
+
+  try{
+    const odp = await fetch('/api/opinia-ai', {
+      method: 'POST', headers: {'content-type':'application/json'},
+      body: JSON.stringify({
+        zawodnik: {
+          imie: p.firstName || '', nazwisko: p.lastName || '',
+          rocznik: p.birthYear || '', dataUrodzenia: p.birthDate || '',
+          klub: clubName(p.clubId) || '', liga: clubLeague(p.clubId) || '',
+          pozycja: p.position || '', pozycjaNmg: opisPozycjiNmg(p) || '',
+          noga: p.foot || '', wzrost: p.height || '', narodowosc: p.nationality || '',
+          mecze: p.matches, minuty: p.minutes, gole: p.goals, asysty: p.assists,
+          linkTransfermarkt: p.tmLink || '', przebiegSezonu: przebieg,
+        },
+        raporty,
+        analiza: { wskaznik: an.score, srednia: an.overall, trend: an.trend,
+          pewnosc: an.confidence, granicaBledu: an.errorMargin,
+          rekomendacjaSystemu: an.reco, obserwacji: an.a ? an.a.count : 0, raportow: an.reports.length },
+      }),
+    });
+    const dane = await odp.json().catch(()=>({}));
+    if(!odp.ok){
+      // Brak klucza to nie awaria, tylko nieskonfigurowana funkcja — i trzeba to powiedzieć wprost,
+      // razem z tym, co zrobić, zamiast zostawiać czerwony komunikat bez wyjścia.
+      miejsce.innerHTML = `<div class="obs-item" style="border-left:3px solid var(--clay-dark);">
+        <strong>${esc(dane.error || 'Nie udało się pobrać opinii.')}</strong>
+        ${dane.jakNaprawic ? `<div class="note" style="margin-top:4px;">${esc(dane.jakNaprawic)}</div>` : ''}
+      </div>`;
+      return;
+    }
+    (p as any).opiniaAI = { tekst: dane.tekst, data: new Date().toISOString(), model: dane.model || '' };
+    await savePlayerOne(p);
+    miejsce.innerHTML = `<label class="field">Druga opinia (AI)</label>
+      <div style="white-space:pre-wrap;font-size:12.5px;line-height:1.6;border:1px solid var(--border);
+                  border-radius:8px;padding:10px 12px;background:var(--card-warm);max-height:320px;overflow:auto;">${esc(dane.tekst)}</div>
+      <p class="note" style="margin-top:6px;">Opinia powstała z danych w systemie i publicznych źródeł piłkarskich.
+        Nie obejmuje mediów społecznościowych ani życia prywatnego. Nie zastępuje obserwacji na żywo —
+        traktuj ją jak głos w dyskusji, nie jak rozstrzygnięcie. Wejdzie też do PDF-a analizy.</p>`;
+  }catch(e){
+    console.error(e);
+    miejsce.innerHTML = `<div class="note" style="color:var(--clay-dark);">Nie udało się połączyć z usługą opinii.</div>`;
+  }finally{
+    if(przycisk){ przycisk.disabled = false; przycisk.textContent = napis; }
+  }
+}
+
+// PDF CAŁEJ ANALIZY — to, co widać w oknie, plus rozpiska raportów, na których się opiera.
+//
+// Sam wskaźnik bez podstawy jest bezużyteczny na posiedzeniu komitetu: pierwsze pytanie brzmi
+// „z czego to wyszło". Dlatego do pliku idą też oceny faz gry i lista raportów z datami i skautami.
+async function generateAnalysisPDF(playerId){
+  const p = DB.players.find(x=>x.id===playerId);
+  if(!p) return;
+  const an = analyzePlayer(p);
+  const raporty = DB.reports.filter(r=>r.playerId===playerId)
+    .slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+  const opinia = (p as any).opiniaAI;
+  const wiersz = (etykieta, wartosc)=>
+    `<tr><td style="color:#5B6560;padding:3px 10px 3px 0;white-space:nowrap;">${esc(etykieta)}</td><td style="padding:3px 0;"><strong>${esc(String(wartosc))}</strong></td></tr>`;
+  const lista = (tab)=> tab.length
+    ? `<ul style="margin:4px 0;padding-left:18px;">${tab.map(s=>`<li>${esc(s.etykieta||RATING_LABELS[s.k]||s.k)} (${fmt1(s.v)})</li>`).join('')}</ul>`
+    : '<div style="color:#5B6560;">Brak danych</div>';
+
+  const html = `<!doctype html><html lang="pl"><head><meta charset="utf-8"><title>Analiza</title><style>
+    body{font:13px/1.55 Arial,Helvetica,sans-serif;color:#1b2420;background:#fff;margin:0;padding:26px 30px;width:794px;box-sizing:border-box;}
+    h1{font-size:20px;margin:0 0 2px;color:#16302a;} h2{font-size:14px;margin:18px 0 6px;color:#16302a;
+      border-bottom:1px solid #e3decd;padding-bottom:3px;}
+    .pod{color:#5B6560;font-size:11.5px;margin:0 0 14px;}
+    .wskaznik{display:flex;align-items:center;gap:18px;border:1px solid #e3decd;border-radius:8px;padding:12px 16px;background:#FBF8F0;}
+    .liczba{font-size:38px;font-weight:800;line-height:1;color:#8C6C21;}
+    table{border-collapse:collapse;} td{vertical-align:top;}
+    .dwie{display:flex;gap:26px;} .dwie>div{flex:1;}
+    .rap{border-bottom:1px solid #efeade;padding:6px 0;}
+    .stopka{margin-top:22px;border-top:1px solid #e3decd;padding-top:8px;color:#8a857a;font-size:10.5px;}
+  </style></head><body>
+  <h1>Analiza zawodnika — ${esc(p.firstName||'')} ${esc(p.lastName||'')}</h1>
+  <p class="pod">${esc(clubName(p.clubId)||'—')} &middot; ${esc(p.position||'—')}${p.birthYear?` &middot; rocznik ${esc(String(p.birthYear))}`:''}
+    &middot; ${esc(clubLeague(p.clubId)||'')}</p>
+
+  <div class="wskaznik">
+    <div style="text-align:center;"><div class="liczba">${an.score!=null?an.score:'—'}</div>
+      <div style="font-size:10.5px;color:#5B6560;">Wskaźnik /100</div></div>
+    <div><div style="font-weight:800;font-size:14px;color:#8C6C21;">${esc(an.reco)}</div>
+      <div style="font-size:11.5px;color:#5B6560;margin-top:4px;">Śr. ocena z raportów:
+        <strong>${an.overall!=null?fmt1(an.overall):'—'}/6</strong> &middot;
+        Pewność: <strong>${esc(an.confidence)}</strong> (granica błędu: ${esc(an.errorMargin)})</div></div>
+  </div>
+
+  <h2>Podstawa oceny</h2>
+  <table>
+    ${wiersz('Obserwacji', an.a ? an.a.count : 0)}
+    ${wiersz('Raportów', an.reports.length)}
+    ${wiersz('Trend', an.trend==null ? 'brak — za mało obserwacji' : (an.trend>0.15?`poprawa (+${fmt1(an.trend)})`:an.trend<-0.15?`spadek (${fmt1(an.trend)})`:'stabilnie'))}
+    ${wiersz('Potencjał rozwoju', an.devNote)}
+  </table>
+  ${an.nData<3?'<p style="color:#8C3A2E;font-size:11.5px;margin-top:8px;">Mała próba — decyzji nie należy opierać wyłącznie na tym dokumencie.</p>':''}
+
+  <h2>Mocne strony i braki</h2>
+  <div class="dwie">
+    <div><strong>Mocne strony</strong>${lista(an.strengths)}</div>
+    <div><strong>Do poprawy</strong>${lista(an.weaknesses)}</div>
+  </div>
+
+  <h2>Raporty, na których opiera się analiza (${raporty.length})</h2>
+  ${raporty.length ? raporty.map(r=>`<div class="rap"><strong>${esc(r.date||'bez daty')}</strong>
+      <span style="color:#5B6560;">${esc(r.scout||'—')}${r.perspektywa?` &middot; perspektywa ${esc(r.perspektywa)}`:''}${r.obsType?` &middot; ${esc(r.obsType)}`:''}</span>
+      ${r.description?`<div style="margin-top:2px;">${esc(r.description)}</div>`:''}</div>`).join('')
+    : '<div style="color:#5B6560;">Brak raportów — analiza opiera się wyłącznie na danych z kartoteki.</div>'}
+
+  ${opinia && opinia.tekst ? `<h2>Druga opinia (AI) — ${esc(String(opinia.data||'').slice(0,10))}</h2>
+    <div style="white-space:pre-wrap;">${esc(opinia.tekst)}</div>
+    <p style="color:#8a857a;font-size:10.5px;margin-top:6px;">Opinia wygenerowana automatycznie na podstawie danych z systemu i publicznych źródeł piłkarskich. Nie zastępuje obserwacji na żywo.</p>` : ''}
+
+  <div class="stopka">Scout Base System &middot; ${new Date().toLocaleString('pl-PL')} &middot;
+    Dokument roboczy komitetu transferowego. Zawiera dane osobowe — nie rozpowszechniaj poza klubem.</div>
+  </body></html>`;
+
+  const nazwa = ((p.firstName||'')+'_'+(p.lastName||'')).trim().replace(/\s+/g,'_').replace(/[^\w\-]/g,'') || 'zawodnik';
+  await htmlNaPdf(html, 'analiza_' + nazwa + '.pdf');
+}
+
+// ILE MECZÓW KLUBU MAMY W BAZIE — i ile z tego punktów.
+//
+// Klub nie ma własnej listy meczów; jedyny ślad spotkania to wpisy w przebiegu jego zawodników.
+// Jeden mecz zostawia ich kilkunastu, więc liczymy SPOTKANIA, nie wpisy: parę (rywal, u siebie),
+// tak samo jak import protokołów, bo w sezonie każda para gra ze sobą dokładnie dwa razy.
+//
+// PUNKTY LICZYMY TYLKO Z ZAPISANEGO WYNIKU. Protokoły z ŁNP często go nie niosą — wtedy oddajemy
+// null i widok pokazuje kreskę. Zgadywanie punktów z samej liczby meczów dałoby tabelę, która
+// wygląda wiarygodnie i kłamie.
+function meczeKlubu(clubId){
+  const spotkania = new Map();     // "rywal|D" -> wynik (albo '')
+  DB.players.forEach(p=>{
+    if(p.clubId !== clubId) return;
+    (p.przebieg || []).forEach(x=>{
+      const k = importNorm(String(x.rywal||'')) + '|' + (x.dom ? 'D' : 'W');
+      if(!k.startsWith('|') && (!spotkania.has(k) || !spotkania.get(k))) spotkania.set(k, String(x.wynik||''));
+    });
+  });
+  let punkty = null;
+  spotkania.forEach((wynik, k)=>{
+    // Wynik zapisujemy z perspektywy meczu („2:1"), więc u gościa strony trzeba odwrócić.
+    const m = String(wynik).match(/(\d+)\s*[:\-]\s*(\d+)/);
+    if(!m) return;
+    const uSiebie = k.endsWith('|D');
+    const nasze = Number(uSiebie ? m[1] : m[2]);
+    const ich = Number(uSiebie ? m[2] : m[1]);
+    if(!Number.isFinite(nasze) || !Number.isFinite(ich)) return;
+    punkty = (punkty || 0) + (nasze > ich ? 3 : nasze === ich ? 1 : 0);
+  });
+  return { meczow: spotkania.size, punkty };
+}
+
+// WYSZUKIWANIE DUPLIKATÓW.
+//
+// Kryterium jest CELOWO wąskie: ten sam klub i to samo nazwisko po odrzuceniu znaków
+// diakrytycznych. Szersze dopasowanie (podobne nazwiska, różne kluby) dawałoby listę, na której
+// trzeba by weryfikować każdą parę z osobna — a scalenia nie da się cofnąć, więc fałszywy trop
+// kosztuje więcej niż przeoczony. Zawodnicy o tym samym nazwisku w jednym klubie zdarzają się
+// (bracia), dlatego to PROPOZYCJA do przejrzenia, nie automat.
+//
+// Karta „bogatsza" (więcej raportów, meczów, wypełnionych pól) idzie jako główna — to ona ma
+// zostać, a druga ma się w niej rozpłynąć.
+function znajdzDuplikaty(){
+  const klucz = (p)=> String(p.clubId||'') + '|' + importNorm(String(p.lastName||''));
+  const wgKlucza = new Map();
+  DB.players.forEach(p=>{
+    if(!p.clubId || !String(p.lastName||'').trim()) return;
+    const k = klucz(p);
+    if(!wgKlucza.has(k)) wgKlucza.set(k, []);
+    wgKlucza.get(k).push(p);
+  });
+  const bogactwo = (p)=> DB.reports.filter(r=>r.playerId===p.id).length * 10
+    + DB.observations.filter(o=>o.playerId===p.id).length * 5
+    + (p.przebieg||[]).length
+    + ['birthYear','position','height','foot','nationality','tmLink','photo'].filter(f=>String(p[f]||'').trim()).length;
+  const pary = [];
+  wgKlucza.forEach(grupa=>{
+    if(grupa.length < 2) return;
+    const wgBogactwa = grupa.slice().sort((a,b)=> bogactwo(b) - bogactwo(a));
+    const glowna = wgBogactwa[0];
+    wgBogactwa.slice(1).forEach(dup=> pary.push({ glowna, duplikat: dup }));
+  });
+  return pary;
+}
+
+function openDuplikatyModal(){
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  const rysuj = ()=>{
+    const pary = znajdzDuplikaty();
+    overlay.innerHTML = `
+    <div class="modal" style="max-width:720px;">
+      <h3>Prawdopodobne duplikaty (${pary.length})</h3>
+      <p class="note" style="margin-top:-6px;">Ten sam klub i to samo nazwisko. <strong>Sprawdź każdą parę</strong> —
+        w jednym klubie potrafią grać bracia. Scalenia nie da się cofnąć.</p>
+      ${pary.length ? `<div style="max-height:360px;overflow:auto;">${pary.map((para,i)=>{
+        const rap = (p)=> DB.reports.filter(r=>r.playerId===p.id).length;
+        const opis = (p)=> `${esc(p.lastName||'')} ${esc(p.firstName||'')}`
+          + `<span class="meta"> · ${p.birthYear?esc(String(p.birthYear)):'brak rocznika'}`
+          + ` · ${rap(p)} rap. · ${(p.przebieg||[]).length} meczów</span>`;
+        return `<div class="obs-item">
+          <div><strong>Zostaje:</strong> ${opis(para.glowna)}</div>
+          <div style="margin-top:2px;"><strong>Wchłonięty:</strong> ${opis(para.duplikat)}</div>
+          <div class="note" style="margin-top:2px;">${esc(clubName(para.glowna.clubId)||'')}</div>
+          <button class="secondary dup-scal" data-i="${i}" style="margin-top:6px;font-size:12px;">⇄ Scal tę parę</button>
+        </div>`;
+      }).join('')}</div>` : '<div class="empty">Nie widzę duplikatów w kartotece.</div>'}
+      <div class="modal-actions"><button class="secondary dup-zamknij">Zamknij</button></div>
+    </div>`;
+    overlay.querySelector('.dup-zamknij').addEventListener('click', ()=>{ overlay.remove(); render(); });
+    overlay.querySelectorAll('.dup-scal').forEach(b=>b.addEventListener('click', async()=>{
+      const para = pary[Number((b as HTMLElement).dataset.i)];
+      if(!para) return;
+      (b as HTMLButtonElement).disabled = true; b.textContent = 'Scalam…';
+      const w = scalKartoteki(para.glowna, para.duplikat);
+      DB.players = DB.players.filter(p=>p.id !== para.duplikat.id);
+      const ok = await savePlayers() !== false && await saveReports() !== false && await saveObservations() !== false;
+      if(!ok){ pokazPotwierdzenie('Zapis się nie powiódł — odśwież stronę (F5).', 'blad'); rysuj(); return; }
+      if(w.polMapy) await savePositionMapAssignments();
+      await saveRadarPrzejrzane();
+      await deletePlayerRecord(para.duplikat.id);
+      pokazPotwierdzenie(`Scalone: ${esc(para.glowna.lastName||'')} — przeniesiono ${w.raportow} raportów, ${w.meczow} meczów.`);
+      rysuj();
+    }));
+  };
+  rysuj();
+  overlay.addEventListener('click', e=>{ if(e.target===overlay){ overlay.remove(); render(); } });
+  document.body.appendChild(overlay);
+}
+
+// Okno scalania: wybierasz duplikat, widzisz CO się stanie, dopiero potem zatwierdzasz.
+// Podgląd przed zapisem jest tu obowiązkowy — scalenia nie da się cofnąć jednym kliknięciem.
+function openScalanieModal(playerId){
+  const glowna = DB.players.find(x=>x.id===playerId);
+  if(!glowna) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+
+  // Najbardziej prawdopodobne duplikaty na górze: ten sam klub, potem podobne nazwisko.
+  const rdzen = (s)=> importNorm(String(s||''));
+  const nazwiskoGlownej = rdzen(glowna.lastName) + ' ' + rdzen(glowna.firstName);
+  const kandydaci = DB.players.filter(p=>p.id !== glowna.id).map(p=>{
+    const tenKlub = p.clubId && p.clubId === glowna.clubId;
+    const nazwa = rdzen(p.lastName) + ' ' + rdzen(p.firstName);
+    const wspolne = nazwa.split(' ').filter(w=>w.length>2 && nazwiskoGlownej.includes(w)).length;
+    return { p, waga: (tenKlub?10:0) + wspolne*3 };
+  }).sort((a,b)=> b.waga - a.waga || String(a.p.lastName||'').localeCompare(String(b.p.lastName||''),'pl'));
+
+  overlay.innerHTML = `
+  <div class="modal" style="max-width:620px;">
+    <h3>Scal kartoteki — ${esc(glowna.firstName||'')} ${esc(glowna.lastName||'')}</h3>
+    <p class="note" style="margin-top:-6px;">Zostaje ta kartoteka. Z wybranej poniżej przejdą do niej raporty,
+      obserwacje, mecze i wszystkie pola, których tutaj brakuje — a ona sama zostanie usunięta.
+      <strong>Tego nie da się cofnąć.</strong></p>
+    <div class="field-wrap">
+      <label class="field">Duplikat do wchłonięcia</label>
+      <select id="scal-kogo">
+        <option value="">— wybierz —</option>
+        ${kandydaci.slice(0,300).map(({p})=>`<option value="${esc(p.id)}">${esc(p.lastName||'')} ${esc(p.firstName||'')}${p.birthYear?` · ${esc(String(p.birthYear))}`:''} · ${esc(clubName(p.clubId)||'bez klubu')}</option>`).join('')}
+      </select>
+    </div>
+    <div id="scal-podglad" style="margin-top:10px;"></div>
+    <div class="modal-actions">
+      <button class="secondary" id="scal-anuluj">Anuluj</button>
+      <button class="gold" id="scal-wykonaj" disabled>Scal kartoteki</button>
+    </div>
+  </div>`;
+
+  const wybor = overlay.querySelector('#scal-kogo') as HTMLSelectElement;
+  const podglad = overlay.querySelector('#scal-podglad');
+  const przycisk = overlay.querySelector('#scal-wykonaj') as HTMLButtonElement;
+
+  wybor.onchange = ()=>{
+    const dup = DB.players.find(x=>x.id===wybor.value);
+    przycisk.disabled = !dup;
+    if(!dup){ podglad.innerHTML = ''; return; }
+    const raportow = DB.reports.filter(r=>r.playerId===dup.id).length;
+    const obserwacji = DB.observations.filter(o=>o.playerId===dup.id).length;
+    const meczow = (dup.przebieg || []).length;
+    podglad.innerHTML = `<div class="obs-item">
+      <strong>Do „${esc(glowna.lastName||'')} ${esc(glowna.firstName||'')}" przejdzie:</strong>
+      <div class="note" style="margin-top:4px;line-height:1.8;">
+        ${raportow} ${raportow===1?'raport':'raportów'} &middot;
+        ${obserwacji} ${obserwacji===1?'obserwacja':'obserwacji'} &middot;
+        ${meczow} ${meczow===1?'mecz w przebiegu':'meczów w przebiegu'} (bez powtórzeń)<br>
+        Puste pola zostaną uzupełnione z duplikatu. Liczby dorobku nie sumują się — bierzemy wyższą,
+        żeby ten sam mecz nie policzył się dwa razy.<br>
+        <strong>Kartoteka „${esc(dup.lastName||'')} ${esc(dup.firstName||'')}" zostanie usunięta.</strong>
+      </div>
+    </div>`;
+  };
+  overlay.querySelector('#scal-anuluj').addEventListener('click', ()=>overlay.remove());
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) overlay.remove(); });
+
+  przycisk.onclick = async()=>{
+    const dup = DB.players.find(x=>x.id===wybor.value);
+    if(!dup) return;
+    przycisk.disabled = true; przycisk.textContent = 'Scalam…';
+    const wynik = scalKartoteki(glowna, dup);
+    DB.players = DB.players.filter(p=>p.id !== dup.id);
+    // Kolejność zapisu ma znaczenie: najpierw przepisane odsyłacze, na końcu skasowanie karty.
+    // Odwrotnie — gdyby coś padło w połowie — raporty zostałyby przy nieistniejącym zawodniku.
+    const ok = await savePlayers() !== false
+      && await saveReports() !== false
+      && await saveObservations() !== false;
+    if(!ok){
+      pokazPotwierdzenie('Zapis się nie powiódł — odśwież stronę (F5) i sprawdź stan przed powtórzeniem.', 'blad');
+      przycisk.disabled = false; przycisk.textContent = 'Scal kartoteki';
+      return;
+    }
+    if(wynik.polMapy) await savePositionMapAssignments();
+    await saveRadarPrzejrzane();
+    await deletePlayerRecord(dup.id);
+    overlay.remove();
+    render();
+    pokazPotwierdzenie(`Scalone. Przeniesiono: ${wynik.raportow} raportów, ${wynik.obserwacji} obserwacji, `
+      + `${wynik.meczow} meczów${wynik.uzupelnione.length?`, uzupełniono ${wynik.uzupelnione.length} pól`:''}.`);
+  };
+
+  document.body.appendChild(overlay);
+}
+
 function openPlayerAnalysisModal(playerId){
   const existing = document.querySelector('.modal-overlay[data-analysis-for]');
   if(existing) existing.remove();
@@ -7219,11 +8476,167 @@ function openPlayerAnalysisModal(playerId){
     </div>
     <div style="margin-top:10px;"><label class="field">Potencjał rozwoju</label><div style="font-size:13px;">${esc(an.devNote)}</div></div>
     <div class="note" style="margin-top:10px;">Podstawa: ${an.a?an.a.count:0} obserwacji, ${an.reports.length} raportów.${an.nData<3?' ⚠️ Mała próba — oprzyj decyzję też na obserwacji na żywo.':''}</div>
-    <div class="modal-actions"><button class="secondary" data-action="close-analysis">Zamknij</button></div>
+    <div id="opinia-ai-miejsce" style="margin-top:14px;"></div>
+    <div class="modal-actions" style="gap:8px;flex-wrap:wrap;">
+      <button class="secondary" data-action="opinia-ai">🧠 Druga opinia (AI)</button>
+      <button class="secondary" data-action="analiza-pdf">⭳ Pobierz analizę (PDF)</button>
+      <button class="secondary" data-action="close-analysis">Zamknij</button>
+    </div>
   </div>`;
+  overlay.querySelector('[data-action="analiza-pdf"]').onclick = async(e)=>{
+    const b = e.currentTarget as HTMLButtonElement;
+    const napis = b.textContent; b.disabled = true; b.textContent = 'Składam PDF…';
+    try{ await generateAnalysisPDF(playerId); }
+    catch(err){ console.error(err); pokazPotwierdzenie('Nie udało się złożyć PDF-a analizy.', 'blad'); }
+    finally{ b.disabled = false; b.textContent = napis; }
+  };
+  overlay.querySelector('[data-action="opinia-ai"]').onclick = (e)=>
+    pobierzOpinieAI(playerId, e.currentTarget, overlay.querySelector('#opinia-ai-miejsce'));
   overlay.querySelector('[data-action="close-analysis"]').onclick = ()=>overlay.remove();
   overlay.addEventListener('click', e=>{ if(e.target===overlay) overlay.remove(); });
   document.body.appendChild(overlay);
+}
+
+// ---------- RADAR MŁODZIEŻY ----------
+//
+// NAJWCZEŚNIEJSZY PUBLICZNY SYGNAŁ W KARIERZE ZAWODNIKA to moment, w którym jego nazwisko po raz
+// pierwszy trafia do protokołu seniorskiego. Dzieje się to miesiące przed tym, zanim ktokolwiek
+// nakręci o nim materiał wideo, i o wiele wcześniej, niż zauważy go serwis transferowy. My te
+// protokoły zbieramy co tydzień — z szesnastu grup IV ligi i z CLJ, czyli stamtąd, skąd nikt
+// inny danych nie ma. Ten widok zamienia to pokrycie w przewagę czasową.
+//
+// DLACZEGO PORÓWNANIE STANU, A NIE DATA MECZU: protokoły z ŁNP nie niosą daty spotkania (sprawdzone
+// — z 10 755 wpisów przebiegu daty mają wyłącznie te z 90minut). Wykrywanie debiutu po dacie
+// działałoby więc dla Ekstraklasy, a milczało dokładnie tam, gdzie mamy przewagę. Zamiast tego
+// zapamiętujemy, kogo już przejrzałeś, i pokazujemy różnicę — to działa niezależnie od tego, czy
+// źródło podaje datę.
+const RADAR_POZIOMY = ['Ekstraklasa','I liga','II liga','III liga','IV liga','CLJ U19','CLJ U17'];
+
+function radarPoziom(liga){
+  const l = String(liga || '');
+  return RADAR_POZIOMY.find(p => l === p || l.startsWith(p + ',') || l.startsWith(p + ' (') || l.startsWith(p + ' gr.')) || '';
+}
+
+// Kto liczy się jako młodzieżowiec: rocznik 2006 i młodszy albo znacznik „(M)" z protokołu PZPN.
+// Protokół jest tu źródłem pewniejszym niż rocznik, bo w IV lidze rocznika często nie ma skąd wziąć.
+function radarMlodziezowiec(p){
+  const rocznik = Number(p.birthYear || 0);
+  return (rocznik && rocznik >= ROCZNIK_MLODZIEZOWCA) || p.mlodziezowiec === true;
+}
+
+// OBECNOŚĆ W KADRZE LICZY SIĘ TAK SAMO JAK MINUTY — I JEST WCZEŚNIEJSZYM SYGNAŁEM.
+//
+// Pierwotnie radar wymagał rozegranych minut, przez co wycinał dokładnie to, po co powstał:
+// szesnastolatka, który po raz pierwszy usiadł na ławce pierwszej drużyny. Zerowy występ zapisany
+// w przebiegu jest tu równie ważny — a często ważniejszy, bo pojawia się miesiące wcześniej.
+//
+// Warunek „ma zapisany przebieg" nie jest ozdobnikiem: 1394 kartoteki bez minut, które powstały
+// przed tą zmianą, nie mają żadnego śladu po tym, skąd się wzięły. Nie da się ich odróżnić od
+// nazwisk wklejonych ręcznie z listy, więc nie wpuszczamy ich na radar — lepiej pokazać mniej niż
+// zasypać go szumem. Od tej zmiany każdy protokół zapisuje obecność w kadrze i problem znika sam.
+function radarKandydaci(){
+  return DB.players
+    .map(p=>{
+      const przebieg = p.przebieg || [];
+      const minuty = Number(p.minutes || 0);
+      return {
+        p, minuty, liga: clubLeague(p.clubId),
+        wystapien: przebieg.length,
+        // Zagrał choćby minutę, czy jak dotąd tylko bywał w kadrze?
+        tylkoKadra: minuty === 0 && przebieg.length > 0,
+      };
+    })
+    .filter(x=>(x.minuty > 0 || x.wystapien > 0) && radarMlodziezowiec(x.p) && radarPoziom(x.liga))
+    .map(x=>({ ...x, poziom: radarPoziom(x.liga) }));
+}
+
+function viewRadarMlodziezy(){
+  const wszyscy = radarKandydaci();
+  const nowi = wszyscy.filter(x=>!radarPrzejrzane[x.p.id]);
+  const pierwszeUruchomienie = Object.keys(radarPrzejrzane).length === 0;
+
+  const kolejnosc = (poziom)=> RADAR_POZIOMY.indexOf(poziom);
+  nowi.sort((a,b)=> kolejnosc(a.poziom) - kolejnosc(b.poziom) || b.minuty - a.minuty);
+
+  const wgPoziomu = {};
+  nowi.forEach(x=>{ wgPoziomu[x.poziom] = (wgPoziomu[x.poziom] || 0) + 1; });
+
+  const naglowek = `
+  <h2 class="view-title">Radar młodzieży</h2>
+  <p class="view-sub">Młodzieżowcy, którzy pojawili się w protokołach od Twojego ostatniego przeglądu.
+    Zbieramy protokoły z IV ligi i CLJ — czyli stamtąd, skąd nie ma ich żaden komercyjny serwis.
+    Nazwisko trafia tu <strong>zanim</strong> pojawi się gdziekolwiek indziej.</p>`;
+
+  if(pierwszeUruchomienie){
+    return `${naglowek}
+    <div class="card">
+      <h4 style="margin-top:0;color:var(--heading);">Najpierw punkt odniesienia</h4>
+      <p class="note">W bazie jest <strong>${wszyscy.length}</strong> młodzieżowców z rozegranymi minutami
+        (Ekstraklasa – IV liga oraz CLJ). Wszyscy są dla radaru „nowi", bo nigdy jeszcze nie zaznaczyłeś,
+        że ich przejrzałeś — a to nie byłaby użyteczna lista.</p>
+      <p class="note">Kliknij poniżej, żeby uznać dzisiejszy stan za punkt wyjścia. Od następnego zbierania
+        protokołów radar pokaże <strong>wyłącznie nazwiska, których wcześniej nie było</strong>.</p>
+      <button class="gold" data-action="radar-punkt-odniesienia">Ustaw dzisiejszy stan jako punkt odniesienia (${wszyscy.length})</button>
+    </div>`;
+  }
+
+  if(!nowi.length){
+    return `${naglowek}
+    <div class="card"><div class="empty">Od ostatniego przeglądu nie pojawił się nikt nowy.
+      Przejrzanych do tej pory: <strong>${Object.keys(radarPrzejrzane).length}</strong>.</div></div>`;
+  }
+
+  // Najpierw ci, którzy dopiero usiedli na ławce — to najwcześniejszy sygnał, więc nie może
+  // utonąć pod nazwiskami z setkami minut.
+  nowi.sort((a,b)=> (b.tylkoKadra ? 1 : 0) - (a.tylkoKadra ? 1 : 0)
+    || kolejnosc(a.poziom) - kolejnosc(b.poziom) || b.minuty - a.minuty);
+
+  // NAJBARDZIEJ OGRANI RZUCAJĄ SIĘ W OCZY.
+  //
+  // Minuta młodzieżowca to decyzja trenera, więc liczba minut jest tu najtwardszym sygnałem, jaki
+  // mamy. Próg 270 minut to trzy pełne mecze — poniżej trudno mówić o ogranym zawodniku, a ten sam
+  // próg rozstrzyga o wejściu na mapę pozycji, więc podświetlenie i mapa mówią to samo.
+  // Dodatkowo trzy najwyższe wyniki dostają strzałkę: przy 61 nazwiskach samo złoto nie wystarcza,
+  // żeby od razu było widać czołówkę.
+  const PROG_OGRANEGO = 270;
+  const czolowka = new Set(nowi.filter(x=>x.minuty > 0).slice()
+    .sort((a,b)=> b.minuty - a.minuty).slice(0, 3).map(x=>x.p.id));
+
+  const wiersze = nowi.map(x=>{
+    const p = x.p;
+    const klub = DB.clubs.find(c=>c.id === p.clubId);
+    const ograny = x.minuty >= PROG_OGRANEGO;
+    const wCzolowce = czolowka.has(p.id);
+    return `<tr data-action="view-player" data-id="${p.id}" style="cursor:pointer;" class="${ograny?'radar-ograny':''}"${ograny?` title="${x.minuty} minut — ponad trzy pełne mecze"`:''}>
+      <td><span class="badge new">${esc(x.poziom)}</span></td>
+      <td><strong>${esc((p.firstName||'') + ' ' + (p.lastName||''))}</strong>${wCzolowce?' <span class="radar-strzalka" title="najwięcej minut na tej liście">▲</span>':''}</td>
+      <td>${p.birthYear ? esc(String(p.birthYear)) : '<span class="meta">—</span>'}</td>
+      <td>${esc(klub ? klub.name : '—')}</td>
+      <td>${esc(p.position || '—')}</td>
+      <td>${x.tylkoKadra
+        ? '<span class="badge" style="background:var(--card-warm);color:var(--gold-dark);">⏳ w kadrze, bez minut</span>'
+        : '<span class="meta">zagrał</span>'}</td>
+      <td style="text-align:right;">${x.tylkoKadra ? '<span class="meta">0</span>' : `<strong>${x.minuty}</strong>`}</td>
+      <td style="text-align:right;">${p.matches != null ? p.matches : '—'}</td>
+    </tr>`;
+  }).join('');
+  const ogranych = nowi.filter(x=>x.minuty >= PROG_OGRANEGO).length;
+
+  return `${naglowek}
+  <div class="toolbar" style="margin-bottom:10px;">
+    <div class="note">Nowych nazwisk: <strong>${nowi.length}</strong>
+      &middot; ${Object.entries(wgPoziomu).sort((a,b)=>kolejnosc(a[0])-kolejnosc(b[0])).map(([l,n])=>`${esc(l)}: ${n}`).join(' &middot; ')}</div>
+    <button class="gold" data-action="radar-przejrzane">Oznacz wszystkich jako przejrzanych (${nowi.length})</button>
+  </div>
+  <div class="card" style="padding:0;overflow:auto;">
+    <table>
+      <thead><tr><th>Poziom</th><th>Zawodnik</th><th>Rocznik</th><th>Klub</th><th>Pozycja</th><th>Status</th><th style="text-align:right;">Minuty</th><th style="text-align:right;">Mecze</th></tr></thead>
+      <tbody>${wiersze}</tbody>
+    </table>
+  </div>
+  <p class="note" style="margin-top:8px;">Kliknij wiersz, aby otworzyć profil. „Oznacz jako przejrzanych"
+    czyści listę — zawodnicy zostają w bazie, znikają tylko z radaru.
+    ${ogranych ? `<strong>Złotem</strong> zaznaczonych ${ogranych} zawodnik(ów) z co najmniej ${PROG_OGRANEGO} minutami — to trzy pełne mecze, ten sam próg, który wpuszcza na mapę pozycji. Znak ▲ mają trzej z największą liczbą minut.` : ''}</p>`;
 }
 
 const MONITORING_STATUSES = ['Do Obserwacji','Na Testy','Do transferu','Z polecenia'];
@@ -7289,7 +8702,7 @@ function skanerKategorii(liga, minMinut){
 }
 
 function panelSkanera(){
-  const juniorskie = (DB.settings.leagues||[]).filter(l=>topLevelOf(l)==='Kategorie juniorskie');
+  const juniorskie = ((DB.settings as any).leagues||[]).filter((l:any)=>topLevelOf(l)==='Kategorie juniorskie');
   if(!juniorskie.length) return '';
   if(!skanerLiga || !juniorskie.includes(skanerLiga)){
     skanerLiga = juniorskie.find(l=>/^CLJ U15/.test(l)) || juniorskie[0];
@@ -7393,7 +8806,7 @@ function viewMonitoring(){
       <td>${rocznikHtml(p)}</td>
       <td>${esc(clubName(p.clubId))}</td>
       <td>${esc(clubRegion(p.clubId))}</td>
-      <td>${a? a.count : 0}</td>
+      <td>${komorkaObsRap(a)}</td>
       <td>${fmtAvg(a)}</td>
       <td>${a? a.last.date : "—"}</td>
       <td>${ds!==null? ds+" dni" : "—"}</td>
@@ -7422,8 +8835,37 @@ function viewMonitoring(){
   </div>
   <div class="card" style="padding:0;overflow:auto;">
     <table>
-      <thead><tr><th>Zawodnik</th><th>Rocznik</th><th>Klub</th><th>Region</th><th>Obs.</th><th>Śr. ocena</th><th>Ostatnia obs.</th><th>Dni temu</th><th>Agent</th><th>Priorytet</th><th></th></tr></thead>
+      <thead><tr><th>Zawodnik</th><th>Rocznik</th><th>Klub</th><th>Region</th><th title="Wpisy w Planie Obserwacji oraz raporty skautingowe">Obs. / rap.</th><th>Śr. ocena</th><th>Ostatnia obs.</th><th>Dni temu</th><th>Agent</th><th>Priorytet</th><th></th></tr></thead>
       <tbody>${trs || `<tr><td colspan="11"><div class="empty">Brak ręcznie dodanych zawodników — ci z masowych importów składów tu się nie pokazują. Dodaj zawodnika przez "Zawodnicy → Dodaj zawodnika", aby pojawił się na tej liście.</div></td></tr>`}</tbody>
+    </table>
+  </div>
+  ${wyroznieniZMeczowHtml()}`;
+}
+
+// WYRÓŻNIENI Z MECZÓW — kto, w jakim spotkaniu i przez kogo zaznaczony.
+//
+// Tabela wyżej pokazuje zawodnika raz, bez kontekstu. Tu liczy się okoliczność: ten sam człowiek
+// wyróżniony w trzech meczach w miesiąc to inna historia niż jedno zaznaczenie sprzed pół roku.
+// Wpisy idą od najnowszego, a nazwisko prowadzi wprost do profilu.
+function wyroznieniZMeczowHtml(){
+  const wpisy = [];
+  DB.players.forEach(p=>(p.wyroznienia||[]).forEach(w=>wpisy.push({p, w})));
+  wpisy.sort((a,b)=> String(b.w.data||'').localeCompare(String(a.w.data||'')));
+  if(!wpisy.length) return '';
+  const ile = new Set(wpisy.map(x=>x.p.id)).size;
+  return `
+  <h3 style="margin:22px 0 6px;color:var(--heading);">⭐ Wyróżnieni z meczów</h3>
+  <p class="view-sub" style="margin-top:0;">${wpisy.length} ${wpisy.length===1?'zaznaczenie':'zaznaczeń'} &middot; ${ile} ${ile===1?'zawodnik':'zawodników'} — z okien „Skład meczu". Kliknij nazwisko, żeby otworzyć profil.</p>
+  <div class="card" style="padding:0;overflow:auto;">
+    <table>
+      <thead><tr><th>Data</th><th>Zawodnik</th><th>Klub</th><th>Mecz</th><th>Zaznaczył</th></tr></thead>
+      <tbody>${wpisy.map(({p, w})=>`<tr data-action="view-player" data-id="${p.id}" style="cursor:pointer;">
+        <td>${esc(w.data||'—')}</td>
+        <td><strong>${esc((p.firstName||'')+' '+(p.lastName||''))}</strong></td>
+        <td>${esc(clubName(p.clubId)||w.klub||'—')}</td>
+        <td>${esc(w.mecz||'—')}</td>
+        <td class="meta">${esc(w.scout||'—')}</td>
+      </tr>`).join('')}</tbody>
     </table>
   </div>`;
 }
@@ -7507,13 +8949,23 @@ function openPlayerModal(id, presetClubId, prefillData){
       <div class="field-wrap"><label class="field">Status</label><select id="pm-status"><option value="" ${p&&!p.status?'selected':''}>— brak —</option>${DB.settings.statuses.map(x=>`<option ${p&&p.status===x?'selected':''}>${esc(x)}</option>`).join('')}</select></div>
       <div class="field-wrap"><label class="field">Narodowość</label><input id="pm-nationality" value="${p&&p.nationality?esc(p.nationality):''}" placeholder="np. Polska"></div>
     </div>
-    <div class="field-wrap">
-      <label class="field">System gry (formacja)</label>
-      <select id="pm-formation">
-        <option value="">— nie określono —</option>
-        ${FORMATIONS.map(f=>`<option ${p&&p.formation===f?'selected':''}>${esc(f)}</option>`).join('')}
-      </select>
+    <div class="grid grid-2">
+      <div class="field-wrap">
+        <label class="field">System gry (formacja)</label>
+        <select id="pm-formation">
+          <option value="">— nie określono —</option>
+          ${FORMATIONS.map(f=>`<option ${p&&p.formation===f?'selected':''}>${esc(f)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field-wrap">
+        <label class="field">Pozycja wg NMG</label>
+        <select id="pm-pozycja-nmg">
+          <option value="">— z pozycji ogólnej —</option>
+          ${[...POSITION_NUMBERS].sort((a,b)=>a.number-b.number).map(pn=>`<option value="${pn.number}" ${p&&Number(p.pozycjaNmg)===pn.number?'selected':''}>${pn.number} &middot; ${esc(pn.label)}</option>`).join('')}
+        </select>
+      </div>
     </div>
+    <p class="note" style="margin-top:-6px;margin-bottom:6px;">Numer wg Narodowego Modelu Gry stawia zawodnika na mapie w JEDNYM polu. Bez niego mapa zgaduje z pola „Pozycja”, a wtedy np. środkowy obrońca pasuje i do lewego, i do prawego stopera.</p>
     <div class="grid grid-4">
       <div class="field-wrap"><label class="field">Mecze (sezon)</label><input type="number" min="0" id="pm-matches" value="${p&&p.matches!=null?p.matches:''}"></div>
       <div class="field-wrap"><label class="field">Minuty (sezon)</label><input type="number" min="0" id="pm-minutes" value="${p&&p.minutes!=null?p.minutes:''}"></div>
@@ -7761,6 +9213,14 @@ function openClubModal(id){
       <div class="field-wrap"><label class="field">Sezon</label><input id="cm-season" value="${c?esc(c.season||''):''}" placeholder="np. 2025/2026"></div>
       <div class="field-wrap"><label class="field">Miasto</label><input id="cm-city" value="${c?esc(c.city||''):''}"></div>
     </div>
+    <div class="field-wrap">
+      <label class="field">System gry zespołu</label>
+      <select id="cm-formation">
+        <option value="">— nie określono —</option>
+        ${FORMATIONS.map(f=>`<option ${c&&systemyKlubow[c.id]===f?'selected':''}>${esc(f)}</option>`).join('')}
+      </select>
+      <p class="note" style="margin-top:4px;">Zawodnicy tego klubu, którzy nie mają własnego systemu w profilu, będą liczeni w tym układzie — na mapie pozycji i w rankingu. Wpis w profilu zawodnika ma pierwszeństwo.</p>
+    </div>
     <div class="grid grid-2">
       <div class="field-wrap">
         <label class="field">Herb klubu — wgraj plik (PNG / JPG / PDF)</label>
@@ -7799,6 +9259,15 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="goto-addplayer"]').forEach(b=>b.onclick=()=>{currentView='players';render();openPlayerModal(null);});
   main.querySelectorAll('[data-action="goto-monitoring"]').forEach(b=>b.onclick=()=>{currentView='monitoring';render();});
   main.querySelectorAll('[data-action="goto-clubs"]').forEach(b=>b.onclick=()=>{currentView='clubs';viewingClubId=null;render();});
+  // KTO SIEDZI PRZY TEJ PRZEGLĄDARCE. Dotąd system brał po prostu pierwszego scouta z listy
+  // w Ustawieniach — a więc każdy członek zespołu podpisywał się tym samym nazwiskiem, i to nie
+  // swoim. Wybór trzymamy w pamięci przeglądarki, bo to ustawienie osobiste, nie wspólne dla bazy.
+  const ktoJestem = main.querySelector('#kto-jestem');
+  if(ktoJestem) ktoJestem.onchange = ()=>{
+    currentScout = (ktoJestem as HTMLSelectElement).value;
+    try{ localStorage.setItem('sbs-scout', currentScout); }catch(e){ /* tryb prywatny */ }
+    render();
+  };
 
   const sponsorInput = main.querySelector('#sponsor-logo-input');
   if(sponsorInput){
@@ -7842,6 +9311,7 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="add-player"]').forEach(b=>b.onclick=()=>openPlayerModal(null));
   main.querySelectorAll('[data-action="edit-player"]').forEach(b=>b.onclick=()=>openPlayerModal(b.dataset.id));
   main.querySelectorAll('[data-action="paste-stats"]').forEach(b=>b.onclick=()=>openPasteStatsModal(b.dataset.id));
+  main.querySelectorAll('[data-action="tm-odswiez"]').forEach(b=>b.onclick=()=>odswiezZTransfermarktu(b.dataset.id, b));
   main.querySelectorAll('[data-action="refresh-stats"]').forEach(b=>b.onclick=async()=>{
     const p = DB.players.find(x=>x.id===b.dataset.id);
     if(!p) return;
@@ -8083,6 +9553,44 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="position-slot-click"]').forEach(b=>b.onclick=()=>{
     openPositionSlotModal(rankingLeague, rankingFormationFilter, Number(b.dataset.number));
   });
+  // PRZECIĄGANIE ZAWODNIKA MIĘDZY POLAMI BOISKA.
+  //
+  // Nazwisko jest wewnątrz pola, które ma własny onclick otwierający okno pozycji. Bez zdjęcia
+  // tego kliknięcia po upuszczeniu okno otwierałoby się przy każdym przeciągnięciu — dlatego
+  // pilnujemy znacznika `przeciaganieTrwa`.
+  let przeciaganieTrwa = false;
+  main.querySelectorAll('.pos-marker-row[draggable="true"]').forEach(row=>{
+    row.addEventListener('dragstart', (e)=>{
+      przeciaganieTrwa = true;
+      row.classList.add('pmr-w-locie');
+      // Dane wędrują w dataTransfer, a nie w zmiennej, żeby upuszczenie poza mapą po prostu nic nie robiło.
+      e.dataTransfer.setData('text/plain', JSON.stringify({ id: row.dataset.id, zNumeru: Number(row.dataset.zrodlo) }));
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    row.addEventListener('dragend', ()=>{
+      row.classList.remove('pmr-w-locie');
+      setTimeout(()=>{ przeciaganieTrwa = false; }, 0);
+    });
+  });
+  main.querySelectorAll('.pos-marker').forEach(pole=>{
+    const naNumer = Number(pole.dataset.number);
+    pole.addEventListener('dragover', (e)=>{ e.preventDefault(); e.dataTransfer.dropEffect = 'move'; pole.classList.add('pos-marker-cel'); });
+    pole.addEventListener('dragleave', ()=>pole.classList.remove('pos-marker-cel'));
+    pole.addEventListener('drop', async(e)=>{
+      e.preventDefault(); e.stopPropagation();
+      pole.classList.remove('pos-marker-cel');
+      let dane; try{ dane = JSON.parse(e.dataTransfer.getData('text/plain') || '{}'); }catch(err){ return; }
+      if(!dane.id) return;
+      const wynik = await przeniesNaInnaPozycje(rankingLeague, rankingFormationFilter, dane.zNumeru, naNumer, dane.id);
+      if(!wynik.ok){
+        if(wynik.powod === 'komplet') alert('Na tej pozycji jest już sześciu zawodników. Zrób miejsce, otwierając pole i usuwając kogoś.');
+        else if(wynik.powod === 'juz-tam') alert('Ten zawodnik już stoi na tej pozycji.');
+        return;
+      }
+      render();
+    });
+    pole.addEventListener('click', (e)=>{ if(przeciaganieTrwa){ e.preventDefault(); e.stopPropagation(); } }, true);
+  });
   main.querySelectorAll('[data-action="delete-player"]').forEach(b=>b.onclick=async()=>{
     if(confirm('Usunąć tego zawodnika i jego obserwacje?')){
       const id = b.dataset.id;
@@ -8274,7 +9782,13 @@ function attachHandlers(){
     if(!pl) return;
     try{
       pl.photoUrl = await processPlayerPhotoFile(file);
-      await savePlayers();
+      // JEDNO ZDJĘCIE ZAPISUJEMY JAKO JEDEN WIERSZ, NIE CAŁĄ BAZĘ.
+      //
+      // savePlayers() przepisuje wszystkich zawodników — przy dzisiejszych 11 tysiącach to
+      // kilkadziesiąt wsadów po sieci, z których wystarczy, że jeden padnie, i zapis nie udaje
+      // się w całości. Zdjęcie pokazywało się wtedy na ekranie, a po odświeżeniu znikało.
+      const ok = await savePlayerOne(pl);
+      if(!ok) alert('Zdjęcie wczytało się, ale nie udało się go zapisać w bazie. Sprawdź baner u góry strony i spróbuj ponownie.');
       render();
     }catch(e){
       alert('Nie udało się wczytać tego pliku. Spróbuj PNG/JPG lub PDF.');
@@ -8534,6 +10048,19 @@ function attachHandlers(){
     render();
   });
   main.querySelectorAll('[data-action="protokoly-grupy"]').forEach(b=>b.onclick=()=>openProtokolMeczuModal(null));
+  // Wgrywanie protokołów wprost z widoku grupy — bez wchodzenia w którykolwiek klub. Okno i tak
+  // rozlicza całą grupę naraz, więc wymaganie, żeby najpierw otworzyć czyjąś kartotekę, było
+  // zbędnym krokiem: w CLJ i IV lidze to jedyna droga na statystyki, a stała schowana o klik dalej.
+  main.querySelectorAll('[data-action="protokoly-grupy"]').forEach(b=>b.onclick=()=>openProtokolMeczuModal(null));
+  // Radar młodzieży: oznaczanie przejrzanych. Datę zapisujemy, bo to ona pozwoli później
+  // odpowiedzieć na pytanie „kiedy zobaczyliśmy go po raz pierwszy" — czyli zmierzyć wyprzedzenie.
+  main.querySelectorAll('[data-action="radar-przejrzane"], [data-action="radar-punkt-odniesienia"]').forEach(b=>b.onclick=async()=>{
+    const dzis = new Date().toISOString().slice(0,10);
+    radarKandydaci().forEach(x=>{ if(!radarPrzejrzane[x.p.id]) radarPrzejrzane[x.p.id] = dzis; });
+    const ok = await saveRadarPrzejrzane();
+    if(!ok) alert('Nie udało się zapisać. Sprawdź baner u góry strony — lista radaru została bez zmian.');
+    render();
+  });
   main.querySelectorAll('[data-action="lnp-otworz-grupe"]').forEach(b=>b.onclick=()=>{
     otworzKolejkeGrupy(clubBrowse.group);
   });
@@ -8548,7 +10075,7 @@ function attachHandlers(){
     // protokołów zebranych zakładką — jedno wklejenie rozlicza wszystkie kluby grupy naraz,
     // z minutami, golami i kartkami ze wszystkich rozegranych kolejek.
     const poziom = clubBrowse.top;
-    if(czyZrodloLnp(poziom)){
+    if(bezProtokolowNa90minut(poziom)){
       // JEDNO KLIKNIĘCIE ROBI TYLE, ILE MOŻE. Przeglądarka nie pozwala nam sięgnąć do cudzej
       // strony z poziomu SBS — to zabezpieczenie, którego nie da się (i nie należy) obchodzić.
       // Otwieramy więc od razu właściwą stronę ŁNP i zostawiamy człowiekowi JEDEN ruch: kliknięcie
@@ -8701,6 +10228,7 @@ function attachHandlers(){
     const card = document.querySelector('.main .card'); if(card) card.scrollIntoView({behavior:'smooth', block:'start'});
   });
   main.querySelectorAll('[data-action="obs-sklad"]').forEach(b=>b.onclick=()=>openObsSkladModal(b.dataset.id));
+  main.querySelectorAll('[data-action="obs-pokaz"]').forEach(b=>b.onclick=()=>openObsPodgladModal(b.dataset.id));
   main.querySelectorAll('[data-action="cancel-edit-obs"]').forEach(b=>b.onclick=()=>{ editingObsId = null; render(); });
   main.querySelectorAll('[data-action="delete-obs"]').forEach(b=>b.onclick=async()=>{
     if(!confirm('Usunąć tę obserwację?')) return;
@@ -8900,6 +10428,8 @@ function attachHandlers(){
         (unmatched.length ? `\n\nNie dopasowano (${unmatched.length}) — wgraj je klikając w herb klubu:\n${unmatched.join('\n')}` : ''));
     };
   }
+  main.querySelectorAll('[data-action="scal-zawodnikow"]').forEach(b=>b.onclick=()=>openScalanieModal(b.dataset.id));
+  main.querySelectorAll('[data-action="pokaz-duplikaty"]').forEach(b=>b.onclick=()=>openDuplikatyModal());
   main.querySelectorAll('[data-action="save-report"]').forEach(b=>b.onclick=async()=>{
     const playerId = document.getElementById('rep-player').value;
     if(!playerId){ alert('Wybierz zawodnika.'); return; }
@@ -8929,20 +10459,42 @@ function attachHandlers(){
     } else {
       DB.reports.push(rep);
     }
-    await saveReports();
+    const zapisano = await saveReports();
+    // NIEUDANY ZAPIS NIE MOŻE WYGLĄDAĆ JAK UDANY. Przy odmowie zapisu cofamy raport z pamięci
+    // i zostawiamy wypełniony formularz — inaczej scout wróciłby do listy z komunikatem
+    // „zapisano", a po odświeżeniu strony raportu by nie było. Godzina pracy na trybunie.
+    if(zapisano === false){
+      if(!wasEditing) DB.reports = DB.reports.filter(r=>r.id !== rep.id);
+      pokazPotwierdzenie('Nie udało się zapisać raportu — sprawdź baner u góry strony. Formularz zostaje wypełniony, spróbuj jeszcze raz.', 'blad');
+      return;
+    }
     // Przypisanie statusu z decyzji na dole raportu (jeśli wybrano). Pierwsze cztery => Monitoring,
     // "Do transferu"/"Na Testy" => mapa pozycji w Rankingu. Zapisujemy zawodnika osobno.
     if(reportStatusValue){
       const pl = DB.players.find(x=>x.id===playerId);
       if(pl){ pl.status = reportStatusValue; await savePlayers(); }
     }
+    const status = reportStatusValue;
     reportPerspektywaValue = '';
     reportStatusValue = '';
     reportObsTypeValue = '';
     editingReportId = null;
     if(scout && !DB.settings.scouts.includes(scout)){ DB.settings.scouts.push(scout); await saveSettings(); }
-    currentView = wasEditing ? 'reports' : 'dashboard';
+    // PO ZAPISIE WRACAMY DO LISTY RAPORTÓW, TAKŻE PRZY NOWYM.
+    //
+    // Nowy raport odsyłał dotąd na Dashboard — scout kończył pracę nad zawodnikiem i lądował
+    // na ekranie, który o niej nic nie mówi. Trzeba było samemu wejść w Raporty, żeby zobaczyć,
+    // czy raport w ogóle powstał.
+    currentView = 'reports';
     render();
+    const zawodnik = DB.players.find(x=>x.id===playerId);
+    const kto = zawodnik ? `${zawodnik.firstName || ''} ${zawodnik.lastName || ''}`.trim() : '';
+    pokazPotwierdzenie((wasEditing ? 'Zmiany zapisane' : 'Raport zapisany')
+      + (kto ? ` — ${kto}` : '')
+      + (status ? `. Status: ${status}` : '') + '.');
+    // Lista bywa przewinięta w miejscu, w którym zostawiłeś ją przed pisaniem raportu — a nowy
+    // wpis ląduje na samej górze. Bez tego wyglądałby na niezapisany.
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   });
 
   // filters
@@ -9134,6 +10686,18 @@ function openPlayerTabsModal(playerId){
   draw();
 }
 
+// RAPORTY SKAUTA LICZĄ SIĘ TAK SAMO JAK DOŁĄCZONE PLIKI.
+//
+// Licznik pokazywał wyłącznie `committeeReports`, czyli PDF-y wgrane ręcznie do komitetu.
+// Raporty pisane w zakładce Raporty nie liczyły się wcale — więc przy zawodniku ze średnią 5.1,
+// która przecież BIERZE SIĘ z raportów, stało „Raporty (0)". Komitet wyglądał na pusty w chwili,
+// gdy praca skautów była zrobiona.
+function raportyZawodnika(p){
+  return DB.reports.filter(r=>r.playerId === (p && p.id));
+}
+function liczbaRaportowKomitetu(p){
+  return raportyZawodnika(p).length + ((p && p.committeeReports) || []).length;
+}
 function openCommitteeReportsModal(playerId){
   const already = document.querySelector('.modal-overlay[data-committee-for]');
   if(already) already.remove();
@@ -9156,7 +10720,21 @@ function openCommitteeReportsModal(playerId){
     overlay.innerHTML = `
     <div class="modal">
       <h3>Komitet Transferowy — ${esc(p.firstName)} ${esc(p.lastName)}</h3>
-      <label class="field" style="display:block;margin-bottom:6px;">Raporty PDF (dowolna liczba)</label>
+      ${(()=>{
+        const swoje = raportyZawodnika(p).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+        if(!swoje.length) return `<p class="note" style="margin:0 0 14px;">Brak raportów skautingowych w aplikacji — poniżej możesz dołączyć plik PDF z zewnątrz.</p>`;
+        return `<label class="field" style="display:block;margin-bottom:6px;">Raporty skautów w aplikacji (${swoje.length})</label>
+        <div style="margin-bottom:16px;max-height:200px;overflow:auto;">
+          ${swoje.map(r=>`<div class="obs-item" style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
+            <span><strong>${esc(r.date||'bez daty')}</strong>
+              <span class="meta">${esc(r.scout||'—')}${r.perspektywa?` · perspektywa ${esc(r.perspektywa)}`:''}${r.obsType?` · ${esc(r.obsType)}`:''}</span>
+              ${r.description?`<div class="meta" style="margin-top:2px;">${esc(String(r.description).slice(0,150))}${String(r.description).length>150?'…':''}</div>`:''}
+            </span>
+            <button class="secondary komitet-otworz-raport" data-id="${esc(r.id)}" style="flex-shrink:0;font-size:11.5px;">✎ Otwórz</button>
+          </div>`).join('')}
+        </div>`;
+      })()}
+      <label class="field" style="display:block;margin-bottom:6px;">Dołączone pliki PDF (dowolna liczba)</label>
       <div style="margin-bottom:16px;max-height:220px;overflow:auto;">
         ${p.committeeReports.length ? p.committeeReports.map((a,i)=>`
           <div class="obs-item">
@@ -9188,6 +10766,22 @@ function openCommitteeReportsModal(playerId){
 
   function wire(){
     overlay.querySelectorAll('[data-action="close-modal"]').forEach(b=>b.onclick=closeAndRefresh);
+    // Otwarcie raportu zamyka okno komitetu — inaczej formularz raportu wyrenderowałby się
+    // POD nim i wyglądałoby to, jakby przycisk nic nie robił.
+    overlay.querySelectorAll('.komitet-otworz-raport').forEach(b=>b.onclick=()=>{
+      const r = DB.reports.find(x=>x.id === b.dataset.id);
+      if(!r) return;
+      overlay.remove();
+      // Te trzy pola żyją poza formularzem (przyciski, nie <input>), więc bez ich ustawienia
+      // otwarty raport pokazałby puste „perspektywę" i „obserwację" — a po zapisie by je stracił.
+      editingReportId = r.id;
+      reportPerspektywaValue = r.perspektywa || '';
+      reportStatusValue = '';
+      reportObsTypeValue = r.obsType || '';
+      currentView = 'reports'; viewingPlayerId = null;
+      render();
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    });
     const fileInput = overlay.querySelector('#committee-report-file');
     const status = overlay.querySelector('#committee-report-status');
     if(fileInput) fileInput.onchange = async ()=>{
@@ -9510,19 +11104,49 @@ function parseSquadLnp(rawText){
 // a po skopiowaniu zostaje sama liczba — nie da się odróżnić gola od kartki ani od zejścia
 // z boiska. Poprzednia wersja tego importu zgadywała i wpisywała rezerwowym odwrotność ich
 // dorobku; lepiej nie podać nic niż podać liczbę, która wygląda wiarygodnie i jest nieprawdziwa.
-function parseLnpProtokol(rawText, nazwaKlubu){
+// GDZIE ZACZYNA SIĘ SKŁAD TEJ DRUŻYNY.
+//
+// Szukały tego dwie funkcje, każda po swojemu — i to była przyczyna błędu „nie rozpoznaję
+// nagłówka". Ta niżej wymagała DOKŁADNEJ równości nazwy, więc gdy ŁNP pisze nad składem
+// „GKS Bełchatów", a w nagłówku wyniku „PGE GiEK GKS Bełchatów", cały skład przepadał. Tolerancja
+// istniała, ale w drugiej funkcji, która i tak najpierw wołała tę pierwszą i kończyła na jej
+// odmowie. Teraz obie pytają tego samego.
+//
+// „Kolejnosc" to ostatnia deska ratunku: gdy nazwa nad składem nie przypomina żadnej z nagłówka
+// (sponsor, forma prawna, zupełnie inny zapis), bierzemy po prostu pierwszy skład dla gospodarzy
+// i drugi dla gości — protokół zawsze wypisuje je w tej kolejności.
+function naglowekSkladu(linie, nazwaKlubu, kolejnosc){
+  const bezOzdob = (l)=> String(l||'').replace(/\[([^\]]*)\]\([^)]*\)/g,'$1').trim();
+  const szukany = importNorm(nazwaKlubu);
+  const maSkladPod = (i)=> /skład wyjściowy/i.test(linie[i+1]||'') || /skład wyjściowy/i.test(linie[i+2]||'');
+  const pasuje = (i)=>{
+    const a = importNorm(bezOzdob(linie[i]));
+    if(!a) return false;
+    if(a === szukany) return true;
+    if(importNorm(bezOzdob(linie[i]) + ' ' + bezOzdob(linie[i+1]||'')) === szukany) return true;
+    // Zawieranie tylko przy nazwach na tyle długich, żeby nie trafić w przypadkowy fragment.
+    return a.length >= 8 && (szukany.includes(a) || a.includes(szukany));
+  };
+  for(let i=0;i<linie.length;i++) if(pasuje(i) && maSkladPod(i)) return i;
+
+  if(typeof kolejnosc === 'number' && kolejnosc >= 0){
+    const naglowki = [];
+    for(let i=0;i<linie.length;i++) if(/skład wyjściowy/i.test(linie[i])) naglowki.push(i);
+    const trafiony = naglowki[kolejnosc];
+    if(typeof trafiony === 'number') return Math.max(0, trafiony - 1);
+  }
+  return -1;
+}
+
+function parseLnpProtokol(rawText, nazwaKlubu, kolejnosc){
   const linie = rawText.split('\n').map(l=>l.replace(/\s+/g,' ').trim());
   const start = linie.findIndex(l=>/^Składy$/i.test(l));
   if(start < 0 || !nazwaKlubu) return null;
 
   const bezOzdob = (l)=> l.replace(/\[([^\]]*)\]\([^)]*\)/g,'$1').trim();
-  const szukany = importNorm(nazwaKlubu);
 
-  // Granice sekcji naszej drużyny: od jej nazwy do „Sztab" (dalej idzie sztab i druga drużyna).
-  let od = -1;
-  for(let i=start;i<linie.length;i++){
-    if(importNorm(bezOzdob(linie[i])) === szukany && /skład wyjściowy/i.test(linie[i+1]||'')){ od = i; break; }
-  }
+  // Granice sekcji naszej drużyny: od jej nagłówka do „Sztab" (dalej idzie sztab i druga drużyna).
+  const od = naglowekSkladu(linie, nazwaKlubu, kolejnosc);
   if(od < 0) return null;
   let doIdx = linie.findIndex((l,i)=> i>od && /^Sztab$/i.test(l));
   if(doIdx < 0) doIdx = linie.length;
@@ -9532,16 +11156,27 @@ function parseLnpProtokol(rawText, nazwaKlubu){
   for(let i=od+1;i<doIdx;i++){
     const l = linie[i];
     if(/skład rezerwowy/i.test(l)){ rezerwa = true; continue; }
-    if(!/^\d{1,2}$/.test(l)) continue;                       // szukamy numeru koszulki
-    const numer = parseInt(l,10);
-    // Nazwisko to pierwsza kolejna linia, która nie jest minutą zdarzenia ani pusta.
-    let nazwa = '';
-    for(let j=i+1;j<Math.min(i+4,doIdx);j++){
-      const kandydat = bezOzdob(linie[j]);
-      if(!kandydat || /^\d{1,3}'(\s*\+\s*\d+')?$/.test(kandydat)) continue;
-      nazwa = kandydat; i = j; break;
+
+    // NUMER BYWA W OSOBNEJ LINII, A BYWA SKLEJONY Z NAZWISKIEM.
+    //
+    // ŁNP renderuje część protokołów tabelą, w której numer i nazwisko trafiają do jednej
+    // komórki („12 Jan Kowalski"). Czytaliśmy tylko postać rozbitą na dwie linie, więc takie
+    // protokoły dawały zero zawodników — a że próg wynosi pięciu, cały mecz przepadał dla obu
+    // drużyn naraz. Stąd mecze, w których nie wchodziła żadna ze stron.
+    let numer = null, nazwa = '';
+    if(/^\d{1,2}$/.test(l)){
+      numer = parseInt(l,10);
+      // Nazwisko to pierwsza kolejna linia, która nie jest minutą zdarzenia ani pusta.
+      for(let j=i+1;j<Math.min(i+4,doIdx);j++){
+        const kandydat = bezOzdob(linie[j]);
+        if(!kandydat || /^\d{1,3}'(\s*\+\s*\d+')?$/.test(kandydat)) continue;
+        nazwa = kandydat; i = j; break;
+      }
+    } else {
+      const sklejone = bezOzdob(l).match(/^(\d{1,2})\s+(\D.*)$/);
+      if(sklejone){ numer = parseInt(sklejone[1],10); nazwa = sklejone[2].trim(); }
     }
-    if(!nazwa) continue;
+    if(numer === null || !nazwa) continue;
     const mlodziezowiec = /\(M\)/.test(nazwa);
     const bramkarz = /\(B\)/.test(nazwa);
     const czyste = nazwa.replace(/\((?:M|B|C)\)/g,'').replace(/\s+/g,' ').trim();
@@ -10697,37 +12332,53 @@ function detectStatsSource(raw){
 // rezerwowym odwrotność ich dorobku.
 const DLUGOSC_MECZU = 90;
 
-function parseLnpProtokolMinuty(rawText, nazwaKlubu){
-  const zawodnicy = parseLnpProtokol(rawText, nazwaKlubu);
+// DLACZEGO SKŁAD SIĘ NIE ODCZYTAŁ — konkretnie, a nie „nie udało się".
+//
+// Pod jednym komunikatem chodziły trzy zupełnie różne rzeczy: protokół zebrany w połowie,
+// nierozpoznany nagłówek i skład, którego nie umiem odczytać mimo znalezionego nagłówka. Dwie
+// pierwsze naprawia ponowne zebranie, trzecia wymaga poprawki w kodzie — i dopóki komunikat ich
+// nie rozróżniał, można było w kółko zbierać na nowo coś, czego zbieranie nie ruszy. Ostatni
+// przypadek dokłada próbkę wierszy, żeby dało się poprawić parser bez zgadywania.
+function powodBrakuSkladu(rawText, nazwaKlubu, nrDruzyny){
+  const linie = String(rawText||'').split('\n').map(l=>l.replace(/\s+/g,' ').trim());
+  const ileSkladow = linie.filter(l=>/skład wyjściowy/i.test(l)).length;
+  if(ileSkladow === 0) return 'protokół przyszedł bez sekcji składów — zbierz tę kolejkę jeszcze raz zakładką';
+  if(ileSkladow === 1) return 'w protokole jest tylko jeden skład — zbierz tę kolejkę jeszcze raz zakładką';
+  const od = naglowekSkladu(linie, nazwaKlubu, nrDruzyny);
+  if(od < 0) return 'nie rozpoznaję nagłówka nad składem. Nad składami stoi: ' + podgladNaglowkow(rawText);
+  const blok = linie.slice(od + 1, od + 12).filter(Boolean);
+  // „Brak danych" to odpowiedź ŁNP, nie nasza usterka — tego meczu po prostu nie obsadzono
+  // składem w systemie PZPN. Mówimy to wprost, bo inaczej wygląda na błąd do naprawienia
+  // i kusi, żeby zbierać tę kolejkę w kółko.
+  if(blok.slice(0, 6).some(l=>/^Brak danych$/i.test(l))){
+    return 'ŁNP nie opublikował składu tej drużyny w tym meczu („Brak danych") — nie ma czego wczytać';
+  }
+  return `nagłówek znalazłem, ale nie odczytałem z niego zawodników. Pierwsze wiersze składu: „${blok.slice(0,6).join(' / ')}"`;
+}
+
+// Co dokładnie stoi w protokole nad sekcją „Skład wyjściowy" — dwie linie wyżej i jedna wyżej.
+// Nazwa nad składem bywa inna niż ta z tabeli wyników i to ona rozstrzyga o dopasowaniu.
+function podgladNaglowkow(rawText){
+  const linie = String(rawText||'').split('\n').map(l=>l.replace(/\s+/g,' ').trim());
+  const out = [];
+  for(let i=0;i<linie.length && out.length<2;i++){
+    if(!/skład wyjściowy/i.test(linie[i])) continue;
+    const przed = [linie[i-2], linie[i-1]].filter(Boolean).join(' / ');
+    out.push('„' + (przed || '(nic)') + '"');
+  }
+  return out.join(' oraz ') || '(nie znalazłem)';
+}
+
+function parseLnpProtokolMinuty(rawText, nazwaKlubu, kolejnosc){
+  const zawodnicy = parseLnpProtokol(rawText, nazwaKlubu, kolejnosc);
   if(!zawodnicy) return null;
 
   // Minuty zapisane przy każdym nazwisku — wyciągamy je ponownie, tym razem z przypisaniem.
   const linie = rawText.split('\n').map(l=>l.replace(/\s+/g,' ').trim());
   const bezOzdob = (l)=> l.replace(/\[([^\]]*)\]\([^)]*\)/g,'$1').trim();
   const szukany = importNorm(nazwaKlubu);
-  let od = -1;
-  // NAGŁÓWEK Z NAZWĄ DRUŻYNY BYWA ROZBITY NA DWIE LINIE. „LGKS 38 PODLESIANKA KATOWICE" nie
-  // mieści się w jednym wierszu i strona łamie go w połowie — wtedy dokładna równość nigdy nie
-  // zachodzi, cały skład wraca jako nieodczytany i klub zostaje bez jednego zawodnika. Krótsze
-  // nazwy (Przemsza Siewierz) mieściły się w linii i działały, przez co wyglądało to na kaprys.
-  //
-  // Dlatego dopuszczamy trzy postacie nagłówka: samą linię, tę linię sklejoną z następną oraz
-  // zawieranie się jednej nazwy w drugiej. Warunek „Skład wyjściowy" tuż pod spodem pilnuje,
-  // żeby nie złapać nazwy z menu albo z tabeli wyników.
-  const pasujeNaglowek = (i)=>{
-    const a = importNorm(bezOzdob(linie[i]));
-    if(!a) return false;
-    if(a === szukany) return true;
-    const sklejone = importNorm(bezOzdob(linie[i]) + ' ' + bezOzdob(linie[i+1]||''));
-    if(sklejone === szukany) return true;
-    // Zawieranie tylko przy nazwach na tyle długich, żeby nie trafić w przypadkowy fragment.
-    if(a.length >= 8 && (szukany.includes(a) || a.includes(szukany))) return true;
-    return false;
-  };
-  for(let i=0;i<linie.length;i++){
-    // Nagłówek sklejony z dwóch linii ma „Skład wyjściowy" o wiersz dalej — sprawdzamy oba.
-    if(pasujeNaglowek(i) && (/skład wyjściowy/i.test(linie[i+1]||'') || /skład wyjściowy/i.test(linie[i+2]||''))){ od = i; break; }
-  }
+  // Ten sam sposob co w parseLnpProtokol — jedna reguła zamiast dwoch rozjezdzajacych sie.
+  const od = naglowekSkladu(linie, nazwaKlubu, kolejnosc);
   if(od < 0) return null;
   let doIdx = linie.findIndex((l,i)=> i>od && /^Sztab$/i.test(l));
   if(doIdx < 0) doIdx = linie.length;
@@ -10865,8 +12516,49 @@ function zdarzeniaZProtokolu(rawText){
 // Rozbieramy więc nazwę na RDZEŃ: zdejmujemy skróty formy prawnej (KS, MKS, GKS…), rok założenia
 // („1930") i numer zespołu. Numer trzymamy OSOBNO i musi się zgadzać — „Arka II Gdynia" to inny
 // klub niż „Arka Gdynia" i pomylenie ich wpisałoby dorobek rezerw pierwszej drużynie.
-const SZUM_NAZWY_KLUBU = /^(ks|mks|gks|lks|mlks|uks|kp|ts|rks|wks|zks|mkp|oks|sks|cks|mzks|klub|sportowy|gminny|miejski|ludowy|akademia|ap|as|fc|kkp|of)$/;
+// SKRÓTY ODMIENIAJĄ SIĘ TAK SAMO JAK SŁOWA, KTÓRE ZASTĘPUJĄ.
+//
+// ŁNP skraca miasta i przymiotniki: „RKS Ursus W-wa", „MKS PODLASIE SOKOŁÓW PODL.". Dla
+// dopasowania „wwa" i „warszawa" to dwa różne słowa, więc klub zostawał bez statystyk mimo
+// poprawnie zebranego protokołu. Rozwijamy je przed porównaniem — a odmianę końcówki
+// („podlaski" wobec „podlaska") dobiera już `tenSamCzlon`.
+const SKROTY_NAZWY = {
+  wwa: 'warszawa', wawa: 'warszawa',
+  podl: 'podlaski', wlkp: 'wielkopolski', maz: 'mazowiecki', kuj: 'kujawski',
+  pom: 'pomorski', dolnosl: 'dolnoslaski', zdr: 'zdroj', gorn: 'gorniczy',
+  tryb: 'trybunalski',   // Concordia 1909 Piotrków Tryb.
+  kraj: 'krajenski',     // Łucznik Polned Strzelce Kraj.
+  // UWAGA przy dopisywaniu: tu wolno wpisywać wyłącznie skróty, których nikt nie używa jako
+  // nazwy klubu. „Mazur" (Ełk, Karczew) i „Śląsk" (Wrocław) wyglądają na skróty od „mazurski"
+  // i „śląski", ale są nazwami własnymi — zamiana rozjechałaby te kluby zamiast je połączyć.
+};
+
+// „w" to przyimek z nazw typu „MKS Limanovia w Limanowej", nie człon nazwy klubu.
+// „sp z o o" i „sa" to forma prawna spółki, doklejana na ŁNP do nazw klubów zawodowych
+// („SS HUTNIK W-WA SP. Z O.O."), a nie część nazwy, pod którą klub gra.
+const SZUM_NAZWY_KLUBU = /^(ks|mks|gks|lks|mlks|uks|kp|ts|rks|wks|zks|mkp|oks|sks|cks|mzks|ss|lzs|kks|pks|muks|mgks|tkkf|klub|sportowy|gminny|miejski|ludowy|akademia|ap|as|fc|kkp|of|w|z|o|oo|sp|sa)$/;
 const NUMER_ZESPOLU = { ii:'2', iii:'3', iv:'4', '2':'2', '3':'3', '4':'4' };
+
+// NAZWA Z TABELI ŁNP DO POSTACI NADAJĄCEJ SIĘ DO KARTOTEKI.
+//
+// Część związków wpisuje nazwy WERSALIKAMI i tabela oddaje je tak, jak stoją („LZS ADAMIETZ
+// KADŁUB"). Przepisanie tego wprost zaśmieciłoby listę klubów krzykiem, więc zapisujemy wielkimi
+// literami tylko to, co nimi jest z natury: skróty klubowe (LZS, MKS), numer zespołu (II, III)
+// i formę prawną. Nazwy pisane normalnie zostawiamy nietknięte.
+const SKROTY_WERSALIKAMI = /^(ks|mks|gks|lks|mlks|uks|kp|ts|rks|wks|zks|mkp|oks|sks|cks|mzks|ss|lzs|kks|muks|mgks|tkkf|pks|kkp|ap|as|fc|sa|ii|iii|iv|sms|zpn|pzpn)$/i;
+function czytelnaNazwa(nazwa){
+  const s = String(nazwa||'').trim();
+  if(!/[A-ZĄĆĘŁŃÓŚŹŻ]/.test(s)) return s;
+  if(s !== s.toUpperCase()) return s;          // nie same wersaliki — zapis jest już normalny
+  return s.split(/\s+/).map(w=>{
+    const goly = w.replace(/[^A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż]/g, '');
+    if(SKROTY_WERSALIKAMI.test(goly)) return w;
+    return w.charAt(0) + w.slice(1).toLowerCase();
+  }).join(' ');
+}
+
+// „W-wa" trzeba skleić ZANIM myślnik rozdzieli człony, inaczej zostaje bezużyteczne „wa".
+const rozwinSkroty = (nazwa)=> String(nazwa||'').replace(/\bw[-–—.\s]?\s?wa\b/gi, ' Warszawa ');
 
 function rozbijNazweKlubu(nazwa){
   // MYŚLNIK ROZDZIELA CZŁONY NAZWY, NIE SKLEJA ICH. „SPÓJNIA LANDEK-JASIENICA" bez tego dawała
@@ -10874,7 +12566,12 @@ function rozbijNazweKlubu(nazwa){
   // bez statystyk, choć chodzi o ten sam zespół.
   // „n/Wisłą" to skrót od „nad Wisłą" — bez tego „Wisła Dobrzyń n/Wisłą" z ŁNP nie miała nic
   // wspólnego z naszą „Wisła Dobrzyń nad Wisłą" i klub zostawał nierozpoznany.
-  const slowa = String(nazwa||'').replace(/[.,()]/g,' ').replace(/[-–—]/g,' ')
+  // DOPISEK W NAWIASIE TO OBJAŚNIENIE, NIE CZĘŚĆ NAZWY.
+  //
+  // W kartotece stoi „LKS Kadłub (k. Strzelec Opolskich)" — nawias mówi, o który Kadłub chodzi.
+  // Liczyliśmy jednak jego treść jako człony nazwy, więc krótsza nazwa z ŁNP („LZS Adamietz
+  // Kadłub") nigdy nie mogła pokryć wszystkich czterech i klub zostawał nierozpoznany.
+  const slowa = rozwinSkroty(nazwa).replace(/\([^)]*\)/g,' ').replace(/[.,()]/g,' ').replace(/[-–—]/g,' ')
     .replace(/\bn\s*\/\s*/gi, 'nad ')
     .split(/\s+/).filter(Boolean);
   let numer = '';
@@ -10885,13 +12582,36 @@ function rozbijNazweKlubu(nazwa){
     if(NUMER_ZESPOLU[czysty]){ numer = NUMER_ZESPOLU[czysty]; continue; }
     if(/^\d{4}$/.test(czysty)) continue;
     if(SZUM_NAZWY_KLUBU.test(czysty)) continue;
-    rdzen.push(czysty);
+    rdzen.push(SKROTY_NAZWY[czysty] || czysty);
   }
   return { numer, rdzen };
 }
 
 // Zwraca klub albo null. Gdy nazwa pasuje do kilku klubów naraz (samo „Gryf" pasuje i do
 // Wejherowa, i do Słupska), NIE zgadujemy — lepszy brak statystyk niż dopisane nie temu klubowi.
+// TEN SAM CZŁON NAZWY, TYLKO INACZEJ ODMIENIONY.
+//
+// Na ŁNP miasto bywa w innym przypadku: „MKS Limanovia w Limanowej" wobec naszej „Limanovia
+// Limanowa". Reguła niżej wymaga zgodności WSZYSTKICH członów krótszej nazwy, więc jedna litera
+// końcówki zostawiała całą drużynę bez statystyk, choć protokół przyszedł w komplecie.
+//
+// Zgadywania z tego nie robimy. Wspólny początek musi mieć co najmniej sześć znaków, a to za
+// dużo dla nazw naprawdę różnych: „Kleczew" i „Ostróda" dzielą zero, „Bochnia" i „Bocheński"
+// tylko cztery — te zostają do wskazania ręką. Odmiana tej samej nazwy dzieli zwykle wszystko
+// poza ostatnią literą albo dwiema.
+const tenSamCzlon = (x, y)=>{
+  if(x === y) return true;
+  if(x.length < 6 || y.length < 6) return false;
+  // Odmiana zmienia końcówkę o literę albo dwie — nie o cztery. Bez tego warunku „Legion"
+  // uchodził za odmianę „Legionovii" (sześć wspólnych znaków i koniec krótszego słowa), przez co
+  // „KS Legionovia" pasowało naraz do Legionovii Legionowo i do Legionu Pilzno. Dwa kluby to
+  // niejednoznaczność, więc nie trafiało w żaden i cała drużyna zostawała bez statystyk.
+  if(Math.abs(x.length - y.length) > 3) return false;
+  let i = 0;
+  while(i < x.length && i < y.length && x[i] === y[i]) i++;
+  return i >= 6;
+};
+
 const odciskKlubu = (nazwa)=>{ const b = rozbijNazweKlubu(nazwa); return b.numer + '|' + b.rdzen.slice().sort().join('-'); };
 const wielkoscKartoteki = (klub)=> DB.players.filter(p=>p.clubId === klub.id).length;
 
@@ -10905,12 +12625,22 @@ function dopasujKlubDoNazwy(nazwa, podpowiedzGrupa, poziom){
     if(c) return c;
   }
   const a = rozbijNazweKlubu(nazwa);
-  const dokladne = DB.clubs.filter(c=>importNorm(c.name)===n);
+  // DOKŁADNA NAZWA NIE MOŻE OMIJAĆ POZIOMU ROZGRYWEK.
+  //
+  // W CLJ kluby noszą na ŁNP nazwę bez końcówki — „Widzew Łódź", nie „Widzew Łódź U17" — czyli
+  // dokładnie taką samą jak pierwsza drużyna. Trafienie w nazwę kończyło wtedy poszukiwania na
+  // seniorach, filtr poziomu odrzucał ich jako niewłaściwe rozgrywki i drużyna juniorska nie
+  // dostawała szansy w ogóle. Gdy znamy poziom, dokładne trafienia zawężamy najpierw do niego,
+  // a gdy na tym poziomie nie ma nikogo o tej nazwie — szukamy dalej, po członach.
+  const wszystkieDokladne = DB.clubs.filter(c=>importNorm(c.name)===n);
+  const dokladne = poziom
+    ? wszystkieDokladne.filter(c=>String(c.league||'').toLowerCase().startsWith(String(poziom).toLowerCase()))
+    : wszystkieDokladne;
   let pasujace = dokladne.length ? dokladne : DB.clubs.filter(c=>{
     const b = rozbijNazweKlubu(c.name);
     if(a.numer !== b.numer) return false;
     if(!a.rdzen.length || !b.rdzen.length) return false;
-    const wspolne = a.rdzen.filter(x=>b.rdzen.includes(x));
+    const wspolne = a.rdzen.filter(x=>b.rdzen.some(y=>tenSamCzlon(x,y)));
     if(!wspolne.length) return false;
     const krotszy = Math.min(a.rdzen.length, b.rdzen.length);
     return wspolne.length === krotszy && wspolne.some(x=>x.length>=4);
@@ -10919,9 +12649,16 @@ function dopasujKlubDoNazwy(nazwa, podpowiedzGrupa, poziom){
 
   // POZIOM Z PROTOKOŁU ODCINA KLUBY Z INNYCH ROZGRYWEK. Ta sama nazwa bywa w IV lidze i wśród
   // roczników młodzieżowych — bez tego dorobek seniorów trafiał do drużyny U13.
+  // BRAK KANDYDATA NA TYM POZIOMIE TO ODMOWA, NIE POWÓD DO SIĘGNIĘCIA PO INNY.
+  //
+  // Wcześniej filtr działał tylko wtedy, gdy coś po nim zostało — a gdy nie zostało nic, brany
+  // był kandydat z dowolnych rozgrywek. Tak dorobek seniorów trafiał do drużyny rocznikowej:
+  // „Limanovia Nowy Sącz" z protokołu IV ligi wskazywała młodzieżowe „MKS LIMANOVIA", bo tylko
+  // ono dzieliło z nią człon nazwy. Protokół IV ligi ma prawo trafić wyłącznie do klubu IV ligi;
+  // jeśli takiego nie ma, pytamy listą rozwijaną zamiast zgadywać.
   if(poziom){
-    const wPoziomie = pasujace.filter(c=>String(c.league||'').toLowerCase().startsWith(String(poziom).toLowerCase()));
-    if(wPoziomie.length) pasujace = wPoziomie;
+    pasujace = pasujace.filter(c=>String(c.league||'').toLowerCase().startsWith(String(poziom).toLowerCase()));
+    if(!pasujace.length) return null;
   }
 
   if(pasujace.length === 1) return pasujace[0];
@@ -10930,8 +12667,34 @@ function dopasujKlubDoNazwy(nazwa, podpowiedzGrupa, poziom){
   // pasuje do Barlinka, Lęborka i Szczecina naraz — bez tego dorobek trafiałby do klubu
   // z drugiego końca Polski albo nie trafiał nigdzie.
   if(podpowiedzGrupa){
-    const wlasciwaGrupa = pasujace.filter(c=>c.league === podpowiedzGrupa);
+    // Wskazaniem bywa sam poziom („IV liga"), gdy przeglądasz kluby bez wybranej grupy. Porównanie
+    // znak w znak dawało wtedy zero trafień i ta podpowiedź po cichu przestawała działać —
+    // a to ona rozstrzyga „Pogoń" między Barlinkiem, Lęborkiem i Szczecinem.
+    const wlasciwaGrupa = pasujace.filter(c=>wTychRozgrywkach(c.league, podpowiedzGrupa));
     if(wlasciwaGrupa.length === 1) return wlasciwaGrupa[0];
+  }
+
+  // MIASTO ROZSTRZYGA, GDY RESZTA NAZWY SIĘ ZMIENIŁA.
+  //
+  // Sponsor dochodzi i znika co sezon („IGNERHOME MKS Polonia Świdnica"), skróty klubowe się
+  // wymieniają (KS → MKS → LKS), a nazwa własna powtarza się w całym kraju: Polonii, Pogoni
+  // i Spart są dziesiątki. Jedynym członem, który zostaje ten sam przez lata, jest miasto —
+  // i to ono ma rozstrzygać, kiedy kandydatów jest kilku.
+  //
+  // Stoi PRZED regułą „największa kartoteka", bo tamta wybiera klub po tym, ile ma zawodników.
+  // Przy dwóch klubach o tej samej nazwie własnej z różnych miast to rzut monetą — a rzut monetą
+  // wysyła dorobek na drugi koniec Polski.
+  const miastoZNazwy = (czlony)=> czlony.length ? czlony[czlony.length-1] : '';
+  const naszeMiasto = miastoZNazwy(a.rdzen);
+  if(naszeMiasto && naszeMiasto.length >= 4){
+    const zTegoMiasta = pasujace.filter(c=>{
+      const jego = rozbijNazweKlubu(c.name).rdzen;
+      return jego.some(x=>tenSamCzlon(x, naszeMiasto));
+    });
+    if(zTegoMiasta.length === 1) return zTegoMiasta[0];
+    // Kilka kartotek z tego samego miasta to zwykle duplikaty jednego klubu — dalszą decyzję
+    // podejmujemy już TYLKO wśród nich, zamiast wracać do kandydatów z obcych miast.
+    if(zTegoMiasta.length > 1) pasujace = zTegoMiasta;
   }
 
   // TEN SAM KLUB WPISANY KILKA RAZY to nie jest niejednoznaczność, tylko duplikat w bazie —
@@ -11001,6 +12764,39 @@ function zapamietajAdresGrupy(zrodlo, protokoly){
   return nowe;
 }
 
+// NAZWY POZYCJI Z ŁNP NA SŁOWNIK SBS.
+//
+// ŁNP pisze pozycje po swojemu, a mapa pozycji rozpoznaje osiem nazw ogólnych (POSITION_NUMBERS).
+// Tłumaczymy WYŁĄCZNIE to, co jednoznaczne. Samo „Obrońca" nie mówi, czy to stoper, czy boczny —
+// wpisanie którejkolwiek z tych nazw byłoby zgadywaniem, a mapa postawiłaby zawodnika nie tam,
+// gdzie gra. Lepiej zostawić puste pole niż wpisać nieprawdę, więc nierozpoznane nazwy trafiają
+// do zestawienia po imporcie i dopisujemy je tutaj, gdy zobaczymy, co naprawdę przysyła ŁNP.
+const POZYCJE_NIEROZPOZNANE = new Set<string>();
+function pozycjaZLnp(surowa){
+  const t = String(surowa || '').toLowerCase()
+    .replace(/[ąàáâ]/g,'a').replace(/[ćç]/g,'c').replace(/[ęèéê]/g,'e').replace(/ł/g,'l')
+    .replace(/ń/g,'n').replace(/[óòôö]/g,'o').replace(/[śş]/g,'s').replace(/[źż]/g,'z')
+    .replace(/\s+/g,' ').trim();
+  if(!t) return '';
+  if(/bramkarz|golkiper/.test(t)) return 'Bramkarz';
+  // „Stoper" bywa podawany bez słowa „obrońca" — i wtedy nie ma w nim nic niejednoznacznego.
+  if(/^stoper|\bstoper\b/.test(t) && !/obronca/.test(t)) return 'Obrońca środkowy';
+  if(/obronca|defensor/.test(t)){
+    if(/srodkow|stoper|centraln/.test(t)) return 'Obrońca środkowy';
+    if(/boczn|prawy|lewy|skrzydlow|wahadl/.test(t)) return 'Obrońca boczny';
+    POZYCJE_NIEROZPOZNANE.add(String(surowa).trim()); return '';
+  }
+  if(/pomocnik|rozgrywajac/.test(t)){
+    if(/defensywn|cofniet|szosc/.test(t)) return 'Pomocnik defensywny';
+    if(/ofensywn|atakujac|dziesiat/.test(t)) return 'Pomocnik ofensywny';
+    if(/srodkow|centraln/.test(t)) return 'Pomocnik środkowy';
+    return 'Pomocnik środkowy';
+  }
+  if(/skrzydlow/.test(t)) return 'Skrzydłowy';
+  if(/napastnik|snajper|srodkowy napastnik/.test(t)) return 'Napastnik';
+  POZYCJE_NIEROZPOZNANE.add(String(surowa).trim());
+  return '';
+}
 function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
   const zdarzenia = zdarzeniaZProtokolu(rawText);
   const druzyny = nazwyDruzynZProtokolu(rawText);
@@ -11029,6 +12825,21 @@ function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
   // z samymi kreskami. Protokół podaje rozgrywki wprost („2 kolejka, Czwarta liga”), więc
   // niech to on rozstrzyga.
   const POZIOMY = [
+    // CLJ SPRAWDZAMY PIERWSZE, bo w nazwie tych rozgrywek też stoi słowo „liga" („Centralna Liga
+    // Juniorów") — przy odwrotnej kolejności protokół juniorski wziąłby poziom seniorski i dorobek
+    // U17 wylądowałby w pierwszej drużynie o tej samej nazwie.
+    //
+    // „U17" MUSI STAĆ PRZY NAZWIE ROZGRYWEK, a nie gdziekolwiek w protokole. Wzorzec /u\s*-?\s*17/
+    // wystarczał, żeby zwykła minuta zejścia zapisana jako „…u 17'" ustawiła protokołowi Ekstraklasy
+    // poziom CLJ U17 — a wtedy odcinane były wszystkie kluby i wychodziło absurdalne „Zagłębie Lubin
+    // gra w Ekstraklasie, a zbierasz do Ekstraklasy". Ten sam powód każe wymagać „CLJ" jako całego
+    // słowa: bez tego dowolne „clj" wewnątrz nazwiska zmieniałoby rozgrywki.
+    [/(?:centralna\s+liga\s+junior\w*|\bclj\b)[^\n]{0,40}u\s*-?\s*17/i, 'CLJ U17'],
+    [/centralna\s+liga\s+junior|\bclj\b/i, 'CLJ U19'],
+    // Ekstraklasy tu dotąd nie było w ogóle — jej protokoły szły bez poziomu, więc o docelowym
+    // klubie decydowała otwarta grupa. Przy grupie juniorskiej albo rocznikowej odcinało to
+    // wszystkie kluby naraz.
+    [/ekstraklasa/i, 'Ekstraklasa'],
     [/czwarta\s+liga|\bIV\s+liga/i, 'IV liga'],
     [/trzecia\s+liga|\bIII\s+liga/i, 'III liga'],
     [/druga\s+liga|\bII\s+liga/i, 'II liga'],
@@ -11049,22 +12860,97 @@ function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
     }
   }
 
-  for(const nazwa of druzyny){
-    const dane = parseLnpProtokolMinuty(rawText, nazwa);
-    if(!dane){ strony.push({nazwa, blad:'nie udało się odczytać składu'}); continue; }
+  // POZIOM Z PROTOKOŁU IDZIE PIERWSZY, GRUPA DOPIERO GDY PROTOKÓŁ MILCZY.
+  //
+  // Protokół podaje rozgrywki wprost („6 kolejka, Ekstraklasa", „Centralna Liga Juniorów") i to
+  // jest fakt o TYM spotkaniu — pewniejszy niż to, którą grupę masz akurat otwartą na ekranie.
+  // Odwrotna kolejność, którą chwilowo tu miałem, odcinała kluby istniejące w bazie: wklejka
+  // z I ligi przy otwartej grupie juniorskiej dawała „nie ma takiego klubu" dla Stomilu Olsztyn
+  // i Widzewa, choć oba są w kartotece.
+  //
+  // Grupa zostaje jako rozstrzygnięcie tam, gdzie protokół nie mówi nic — a to właśnie CLJ, gdzie
+  // nazwy klubów na ŁNP nie mają końcówki („Arkonia Szczecin") i ten sam klub gra jednocześnie
+  // w rozgrywkach seniorskich. Wtedy zbierane z CLJ U19 idzie do CLJ U19, a z U17 zachodniej —
+  // do U17 zachodniej.
+  // W CLJ SAMA GRUPA WIE WIĘCEJ NIŻ PROTOKÓŁ.
+  //
+  // Na ŁNP kluby juniorskie noszą nazwę bez końcówki — „Widzew Łódź", nie „Widzew Łódź U17" —
+  // więc z samej nazwy nie da się odróżnić juniorów od pierwszej drużyny. Protokół mówi wprawdzie
+  // „Centralna Liga Juniorów", ale nie zawsze rozstrzyga, czy to U19, czy U17, i z której grupy.
+  // Kiedy więc protokół wskazuje CLJ, a Ty pracujesz w grupie CLJ, to grupa jest odpowiedzią —
+  // to z niej zebrałeś te protokoły. W pozostałych rozgrywkach rozstrzyga protokół: dzięki temu
+  // wklejka z Ekstraklasy trafia do Widzewa z Ekstraklasy nawet przy otwartej grupie juniorskiej.
+  const grupaToCLJ = /^CLJ/.test(poziomGrupy(podpowiedzGrupa) || '');
+  const protokolToCLJ = /^CLJ/.test(poziomZProtokolu || '');
+  const poziomRozliczenia = (protokolToCLJ && grupaToCLJ)
+    ? poziomGrupy(podpowiedzGrupa)
+    : (poziomZProtokolu || poziomGrupy(podpowiedzGrupa));
+
+  // Numer druzyny w naglowku wyniku (gospodarze, potem goscie) to awaryjny sposob na
+  // przypisanie skladu, gdy nazwa nad nim nie przypomina zadnej z nagliwka.
+  druzyny.forEach((nazwa, nrDruzyny)=>{
+    const dane = parseLnpProtokolMinuty(rawText, nazwa, nrDruzyny);
+    if(!dane){
+      // DWIE ZUPEŁNIE RÓŻNE PRZYCZYNY, DOTĄD POD JEDNYM KOMUNIKATEM.
+      //
+      // Albo protokół przyszedł bez sekcji składów — bo zakładka zdjęła stronę, zanim ŁNP ją
+      // doładowało — albo składy są, lecz nie rozpoznaję nad nimi nagłówka tej drużyny. Pierwsze
+      // naprawia się ponownym zebraniem, drugie muszę poprawić w kodzie. Bez tego rozróżnienia
+      // można w kółko zbierać na nowo coś, czego zbieranie nie naprawi.
+      strony.push({nazwa, blad: powodBrakuSkladu(rawText, nazwa, nrDruzyny)});
+      return;
+    }
     // Klub dopasowujemy po nazwie, z pominięciem polskich znaków i skrótów typu „KS".
-    let klub = dopasujKlubDoNazwy(nazwa, podpowiedzGrupa, poziomZProtokolu);
+    let klub = dopasujKlubDoNazwy(nazwa, podpowiedzGrupa, poziomRozliczenia);
     if(!klub){
+      // PROTOKÓŁ Z INNYCH ROZGRYWEK TO NIE „BRAK KLUBU W BAZIE".
+      //
+      // Odkąd grupa rozstrzyga o docelowej lidze, protokół seniorski wklejony przy otwartej
+      // grupie juniorskiej jest odrzucany — i słusznie, bo dorobek Ekstraklasy nie ma prawa
+      // trafić do U17. Ale komunikat mówił wtedy „nie ma takiego klubu w bazie", choć klub
+      // jest — wysyłał więc do zakładania kartoteki, której nie trzeba, zamiast powiedzieć,
+      // że w buforze została kolejka z zupełnie innych rozgrywek.
+      const bezPoziomu = dopasujKlubDoNazwy(nazwa, '', '');
+      if(bezPoziomu && poziomRozliczenia){
+        strony.push({nazwa, dane, blad:
+          `„${bezPoziomu.name}" gra w rozgrywkach ${bezPoziomu.league}, a zbierasz do ${podpowiedzGrupa || poziomRozliczenia}. `
+          + 'Ten protokół jest z innych rozgrywek — najpewniej został w buforze zakładki. '
+          + 'Na ŁNP kliknij zakładkę i „Wyczysc zebrane", potem zbierz właściwą grupę.'});
+        return;
+      }
       // Powiedz, do czego nazwa była najbliżej — inaczej „nie ma takiego klubu" nie mówi,
       // czy klubu brakuje w bazie, czy tylko nazwa jest zapisana inaczej.
+      // MIASTO WAŻY WIĘCEJ NIŻ NAZWA WŁASNA.
+      //
+      // „IGNERHOME MKS POLONIA ŚWIDNICA" dostawała jako najbliższe Polonię Chodzież, Polonię Nysę
+      // i Polonię Lidzbark Warmiński — trzy kluby z trzech innych końców Polski, bo wspólne było
+      // samo słowo „Polonia". Podpowiedź ma pomagać wskazać właściwy klub, a taka wręcz zachęcała
+      // do pomyłki. Miasto stoi w nazwie na końcu i to ono rozstrzyga, o który klub chodzi;
+      // nazwa własna („Polonia", „Pogoń", „Sparta") powtarza się w całym kraju.
       const rdzen = rozbijNazweKlubu(nazwa).rdzen;
+      const miastoZ = (czlony)=> czlony.length ? czlony[czlony.length-1] : '';
+      const naszeMiasto = miastoZ(rdzen);
       const bliskie = [...new Set(DB.clubs
-        .filter(c=>rozbijNazweKlubu(c.name).rdzen.some(x=>rdzen.includes(x)))
-        .map(c=>c.name))].slice(0,3);
-      strony.push({nazwa, dane, blad: bliskie.length
+        .map(c=>{
+          const jego = rozbijNazweKlubu(c.name).rdzen;
+          const wspolne = jego.filter(x=>rdzen.includes(x)).length;
+          if(!wspolne) return null;
+          // Zgodne miasto liczy się jak pięć wspólnych członów — inaczej trzy „Polonie" z obcych
+          // miast wypychały z listy klub z właściwego.
+          const toMiasto = naszeMiasto && jego.includes(naszeMiasto);
+          return { nazwa: c.name, waga: wspolne + (toMiasto ? 5 : 0) };
+        })
+        .filter(Boolean)
+        .sort((a,b)=> b.waga - a.waga)
+        .map(x=>x.nazwa))].slice(0,3);
+      // Klub, którego naprawdę nie ma, można założyć na miejscu — z nazwą DOKŁADNIE taką, jak
+      // w protokole. Odsyłanie do zakładki Kluby kończyło się przepisywaniem nazwy z pamięci,
+      // a wtedy pisownia rozjeżdżała się z ŁNP i następny protokół znowu jej nie rozpoznawał.
+      strony.push({nazwa, dane, mozeZalozyc: true, poziom: podpowiedzGrupa || poziomRozliczenia || '',
+        blad: bliskie.length
         ? `nie ma takiego klubu w bazie — najbliżej: ${bliskie.join(', ')}`
         : 'nie ma takiego klubu w bazie'});
-      continue;
+      return;
     }
 
     const rywalStrony = (druzyny.find(d=>d !== nazwa) || '');
@@ -11100,7 +12986,7 @@ function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
         czerwone: czerwone.length};
     });
     strony.push({nazwa, klub, dane, wiersze});
-  }
+  });
   return {klucz, druzyny, strony};
 }
 
@@ -11326,6 +13212,8 @@ function tmStatsLink(club){
 // kształcie. Cokolwiek innego przyjdzie z dowolnej innej strony, jest po prostu pomijane.
 const ZRODLO_LNP = 'https://www.laczynaspilka.pl';
 let protokolyZLnpDoOdbioru = '';
+// Treść ostatniej przesyłki z zakładki — po niej poznajemy powtórzone wysłanie tego samego.
+let ostatniaPrzesylkaZLnp = '';
 // Adres strony ŁNP, z której zakładka zebrała protokoły. Zapamiętujemy go przy zapisie, dzięki
 // czemu KAŻDA grupa zaczyna działać jak pomorska — bez wklejania linku ręcznie.
 let zrodloZLnpDoOdbioru = '';
@@ -11344,6 +13232,13 @@ function podlaczOdbiorZLnp(){
     const d = e.data;
     if(!d || d.typ !== 'sbs-protokoly' || typeof d.tresc !== 'string' || !d.tresc.trim()) return;
     try{ (e.source as any).postMessage({typ:'sbs-odebrano'}, ZRODLO_LNP); }catch(err){}
+    // TA SAMA PRZESYŁKA DRUGI RAZ TO NIE NOWE PROTOKOŁY.
+    //
+    // Zakładka ponawia wysyłkę, gdy nie doczeka się potwierdzenia. Każde powtórzenie otwierało
+    // kolejne okno, a odkąd okna zapisują same — kolejny zapis tego samego. Rozpoznajemy
+    // powtórkę po treści i po prostu ją pomijamy.
+    if(d.tresc === ostatniaPrzesylkaZLnp) return;
+    ostatniaPrzesylkaZLnp = d.tresc;
     // Wiadomość potrafi przyjść, zanim aplikacja wczyta kartotekę klubów — wtedy rozpoznanie
     // nie miałoby czego z czym dopasować. Odkładamy ją i otwieramy okno, gdy dane już są.
     protokolyZLnpDoOdbioru = d.tresc;
@@ -11422,7 +13317,7 @@ function sprawdzZakladke(nazwa, kod){
 
 // Wersja zakładki. Widnieje w każdym jej komunikacie i w oknie SBS, żeby dało się jednym
 // spojrzeniem stwierdzić, czy w pasku siedzi kod sprzed poprawek.
-const ZAKLADKA_WERSJA = 'v31 z 29.08.2026';
+const ZAKLADKA_WERSJA = 'v48 z 03.09.2026';
 const SBS_ADRES_JS = JSON.stringify(location.origin);
 // ZAKŁADKA W PASKU NIE AKTUALIZUJE SIĘ SAMA — I TO BYŁ PRAWDZIWY PROBLEM.
 //
@@ -11461,12 +13356,12 @@ try{window.__SBS_ADRES=A;}catch(e){}
 function awaryjnie(){${LNP_ZBIERACZ}}
 var ruszyl=false, budzik=null;
 function odpal(co){ if(ruszyl) return; ruszyl=true; if(budzik) clearTimeout(budzik); try{ co(); }catch(e){ alert('SBS: '+e.message); } }
-budzik=setTimeout(function(){ odpal(awaryjnie); },4000);
+budzik=setTimeout(function(){ odpal(function(){ try{window.__SBS_STARA=1;}catch(e){} awaryjnie(); }); },12000);
 try{
  fetch(A+'/zakladka-lnp-v2.js?t='+Date.now(),{cache:'no-store'})
   .then(function(r){ if(!r.ok) throw 0; return r.text(); })
   .then(function(t){ if(t.indexOf('SBS_ZBIERACZ')<0) throw 0; odpal(function(){ (new Function(t))(); }); })
-  .catch(function(){ odpal(awaryjnie); });
+  .catch(function(){ odpal(function(){ try{window.__SBS_STARA=1;}catch(e){} awaryjnie(); }); });
 }catch(e){ odpal(awaryjnie); }
 })();`;
 
@@ -12888,7 +14783,18 @@ function openAgencySquadModal(agencyId){
     rozpoznane.zawodnicy.forEach(z=>{
       const rocznik = z.wiek ? String(new Date().getFullYear() - z.wiek) : '';
       const klub = znajdzKlubPoNazwieTM(z.klub);
-      const kandydaci = matchPlayersByFullName(z.nazwa, rocznik);
+      let kandydaci = matchPlayersByFullName(z.nazwa, rocznik);
+      // KLUB ROZSTRZYGA, GDY NAZWISKO NIE WYSTARCZA.
+      //
+      // „Krystian Wachowiak" bywa w bazie dwa razy — to nie ta sama osoba, tylko dwaj zawodnicy
+      // z różnych klubów. Wklejka z Transfermarktu podaje jednak klub przy każdym nazwisku,
+      // więc pytanie „przypisz ręcznie" było zadawane mimo posiadanej odpowiedzi. Pytamy dopiero
+      // wtedy, gdy nawet klub nie rozstrzyga — bo dwie osoby o tym samym nazwisku w JEDNYM klubie
+      // to już naprawdę niejednoznaczność.
+      if(kandydaci.length > 1 && klub){
+        const wKlubie = kandydaci.filter(p=>p.clubId === klub.id);
+        if(wKlubie.length === 1) kandydaci = wKlubie;
+      }
       if(kandydaci.length === 1){ trafione.push({...z, player: kandydaci[0], klubBazy: klub}); return; }
       if(kandydaci.length > 1){ niejednoznaczne.push({...z, kandydaci}); return; }
       if(klub){ doZalozenia.push({...z, klubBazy: klub, rocznik}); return; }
@@ -13845,6 +15751,90 @@ function paraDruzynZObserwacji(tekst){
   return (gospodarz && gosc) ? {gospodarz, gosc} : null;
 }
 
+// ZAZNACZENIE „WYRÓŻNIONY" MA SKUTEK W BAZIE, A NIE TYLKO W TYM OKNIE.
+//
+// Dotąd checkbox zasilał wyłącznie mapę pozycji w Rankingu — i to jedynie wtedy, gdy zawodnik
+// miał już kartotekę o dokładnie tym nazwisku i w tej samej lidze. Kto wyłowił kogoś nowego
+// z protokołu, zaznaczał go i… nic. Nazwisko zostawało w oknie obserwacji, a przy następnym
+// meczu trzeba było je pamiętać z głowy.
+//
+// Teraz zaznaczenie robi trzy rzeczy naraz: zakłada kartotekę, jeśli jej nie ma, stawia
+// zawodnika w Monitoringu i zapisuje mecz, w którym się wyróżnił. Dzięki temu widać różnicę
+// między jednym dobrym meczem a regularną formą.
+const kluczOsobyWyr = (s)=> String(s||'').split(/\s+/).map(importNorm).filter(Boolean).sort().join(' ');
+
+function klubStronyMeczu(nazwaDruzyny){
+  if(!nazwaDruzyny) return null;
+  return dopasujKlubDoNazwy(nazwaDruzyny, '', '');
+}
+
+function znajdzZawodnikaWyr(nazwa, klub){
+  const szukany = kluczOsobyWyr(nazwa);
+  if(!szukany) return null;
+  const wKlubie = klub ? DB.players.filter(p=>p.clubId === klub.id
+    && kluczOsobyWyr(`${p.firstName||''} ${p.lastName||''}`) === szukany) : [];
+  if(wKlubie.length) return wKlubie[0];
+  // Bez klubu nie zgadujemy: to samo nazwisko potrafi wystąpić w kilku klubach naraz.
+  const wszedzie = DB.players.filter(p=>kluczOsobyWyr(`${p.firstName||''} ${p.lastName||''}`) === szukany);
+  return wszedzie.length === 1 ? wszedzie[0] : null;
+}
+
+function zalozKartoteke(z, klub){
+  const slowa = String(z.nazwa||'').trim().split(/\s+/);
+  const p = {
+    id: uid('Z'),
+    firstName: slowa[0] || '',
+    lastName: slowa.slice(1).join(' '),
+    clubId: klub.id,
+    position: z.pozycja || '',
+    birthYear: z.rocznik || '',
+    status: '',
+    dateAdded: new Date().toISOString().slice(0,10),
+    source: 'wyróżniony w meczu',
+    matches: 0, minutes: 0, goals: 0,
+    monitored: true,
+  };
+  DB.players.push(p);
+  return p;
+}
+
+function ustawWyroznienie(obs, strona, i, zaznaczony){
+  const dane = (obs.skladMeczu||{})[strona] || {};
+  const z = (dane.zawodnicy||[])[i];
+  if(!z) return null;
+  z.wyrozniony = zaznaczony;
+
+  const klub = klubStronyMeczu(dane.nazwa);
+  let p = znajdzZawodnikaWyr(z.nazwa, klub);
+
+  if(zaznaczony){
+    if(!p && klub) p = zalozKartoteke(z, klub);
+    // Bez klubu nie ma gdzie założyć kartoteki. Mówimy to wywołującemu, zamiast po cichu nic
+    // nie robić — inaczej zaznaczenie wygląda na przyjęte, a nigdzie go nie ma.
+    if(!p) return { blad: `Zaznaczyłem „${z.nazwa}", ale nie wiem, do którego klubu go przypisać `
+      + `(„${dane.nazwa||'—'}" nie pasuje jednoznacznie do żadnego w bazie), więc nie zakładam kartoteki.` };
+    p.monitored = true;
+    p.watchlistRemoved = false;
+    p.wyroznienia = (p.wyroznienia || []).filter(w=>w.obsId !== obs.id);
+    p.wyroznienia.push({
+      obsId: obs.id, data: obs.date || '', mecz: obs.match || '',
+      scout: obs.scout || '', klub: dane.nazwa || '',
+    });
+    void savePlayers();
+    return p;
+  }
+
+  // ODZNACZENIE COFA TYLKO WYRÓŻNIENIE. Kartoteki nie kasujemy i z Monitoringu nie wyrzucamy —
+  // zawodnik mógł tam trafić z zupełnie innego powodu, a pomyłkowe kliknięcie nie ma prawa
+  // wymazać czyjejś pracy. Z Monitoringu usuwa się osobnym przyciskiem.
+  if(p && (p.wyroznienia||[]).length){
+    p.wyroznienia = p.wyroznienia.filter(w=>w.obsId !== obs.id);
+    void savePlayers();
+  }
+  return p;
+}
+
+
 function openObsSkladModal(obsId){
   const obs = DB.observations.find(o=>o.id===obsId);
   if(!obs) return;
@@ -13945,15 +15935,22 @@ function openObsSkladModal(obsId){
     return `<div style="flex:1;min-width:250px;">
       <h4 style="margin:0 0 6px;color:var(--heading);font-size:13px;">${esc((dane&&dane.nazwa)||tytulZapasowy||'—')}
         <span class="meta" style="font-weight:400;">(${zawodnicy.length})</span></h4>
-      ${zawodnicy.length ? zawodnicy.map((z,i)=>`
+      ${zawodnicy.length ? zawodnicy.map((z,i)=>{
+        // Wyróżniony ma kartotekę, więc jego nazwisko prowadzi do profilu. Reszta zostaje
+        // zwykłym tekstem — klikanie w kogoś, kogo nie ma w bazie, nie miałoby dokąd prowadzić.
+        const kartoteka = z.wyrozniony ? znajdzZawodnikaWyr(z.nazwa, klubStronyMeczu((dane&&dane.nazwa))) : null;
+        return `
         <label style="display:flex;align-items:center;gap:7px;padding:3px 4px;border-radius:5px;cursor:pointer;font-size:12.5px;${z.wyrozniony?'background:var(--card-warm);font-weight:700;':''}">
           <input type="checkbox" class="obs-wyroz" data-strona="${strona}" data-i="${i}" ${z.wyrozniony?'checked':''}>
           <span style="color:var(--ink-soft);min-width:20px;">${z.numer!=null?esc(String(z.numer)):''}</span>
-          <span style="flex:1;">${esc(z.nazwa)}</span>
+          <span style="flex:1;">${kartoteka
+            ? `<a href="#" class="obs-wyroz-profil" data-id="${kartoteka.id}" title="Otwórz profil zawodnika">${esc(z.nazwa)} →</a>`
+            : esc(z.nazwa)}</span>
           <span class="meta" style="font-size:10.5px;white-space:nowrap;">${
             z.podstawowy===false ? 'ław.' : (z.zszedl ? z.zszedl+"'" : '')
           }${z.zolte?' 🟨':''}${z.czerwone?' 🟥':''}${z.pozycja?esc(z.pozycja):''}${z.rocznik?' '+esc(String(z.rocznik)):''}</span>
-        </label>`).join('')
+        </label>`;
+      }).join('')
       : `<p class="note" style="font-size:11.5px;">Brak — wczytaj skład przyciskiem powyżej.</p>`}
     </div>`;
   }
@@ -14000,9 +15997,18 @@ function openObsSkladModal(obsId){
     overlay.querySelector('[data-x="baza"]').onclick = wczytajZBazy;
     overlay.querySelector('[data-x="protokol"]').onclick = wczytajZ90minut;
     overlay.querySelectorAll('.obs-wyroz').forEach(inp=>inp.onchange = ()=>{
-      const lista = obs.skladMeczu[inp.dataset.strona].zawodnicy;
-      lista[Number(inp.dataset.i)].wyrozniony = inp.checked;
-      zapisz();
+      const wynik = ustawWyroznienie(obs, inp.dataset.strona, Number(inp.dataset.i), inp.checked);
+      if(wynik && wynik.blad) komunikat = wynik.blad;
+      else if(inp.checked && wynik) komunikat = `„${wynik.firstName} ${wynik.lastName}" — w Monitoringu, kliknij nazwisko, by otworzyć profil.`;
+      zapisz();     // zapisuje obserwację i przerysowuje okno (nazwisko staje się odnośnikiem)
+    });
+    // Przejście do profilu z okna składu — okno zamykamy, bo profil otwiera się w tle strony.
+    overlay.querySelectorAll('.obs-wyroz-profil').forEach(a=>a.onclick = (e)=>{
+      e.preventDefault();
+      overlay.remove();
+      viewingPlayerId = (a as HTMLElement).dataset.id;
+      currentView = 'players';
+      render();
     });
   }
 
@@ -15467,6 +17473,20 @@ function openPositionSlotModal(league, formation, number){
   draw('');
 }
 
+// KTO NAPRAWDĘ SPORZĄDZIŁ RAPORT.
+//
+// W nagłówku PDF stał zalogowany użytkownik, a nie autorzy raportów — więc dokument o zawodniku
+// obserwowanym przez trzech skautów podpisywał się jednym nazwiskiem, i to tego, kto akurat
+// klikał „Pobierz PDF". Gdy nikt nie ustawił scouta, wychodziło z tego „Nieznany". Podpisujemy
+// więc tym, co stoi w raportach; obserwacje dokładamy, gdy raportów jeszcze nie ma.
+function autorzyRaportu(p){
+  const zRaportow = DB.reports.filter(r=>r.playerId === p.id).map(r=>String(r.scout||'').trim());
+  const zObserwacji = DB.observations.filter(o=>o.playerId === p.id).map(o=>String(o.scout||'').trim());
+  const lista = [...new Set((zRaportow.length ? zRaportow : zObserwacji).filter(Boolean))]
+    .filter(s=>s.toLowerCase() !== 'nieznany');
+  return lista.join(', ');
+}
+
 async function generatePlayerPDF(playerId){
   const p = DB.players.find(x=>x.id===playerId);
   if(!p) return;
@@ -15595,7 +17615,7 @@ async function generatePlayerPDF(playerId){
     <div class="brand-block">
       <p class="brand-name">SCOUT BASE SYSTEM</p>
       <p class="brand-sub">Raport scoutingowy zawodnika</p>
-      <p class="brand-signature">Sporządził: ${esc(currentScout || 'Nieznany scout')}</p>
+      <p class="brand-signature">Sporządził: ${esc(autorzyRaportu(p) || currentScout || 'Nieznany scout')}</p>
     </div>
     <div class="report-date">Wygenerowano<br>${new Date().toLocaleDateString('pl-PL')}</div>
   </div>
@@ -15612,7 +17632,8 @@ async function generatePlayerPDF(playerId){
     <div class="meta-item"><div class="lbl">Rocznik</div><div class="val">${rocznikHtml(p)}</div></div>
     <div class="meta-item"><div class="lbl">Wzrost</div><div class="val">${p.height?p.height+" cm":"—"}</div></div>
     <div class="meta-item"><div class="lbl">Noga</div><div class="val">${esc(p.foot||"—")}</div></div>
-    <div class="meta-item"><div class="lbl">System gry</div><div class="val">${esc(p.formation||"—")}</div></div>
+    <div class="meta-item"><div class="lbl">System gry</div><div class="val">${esc(systemZawodnika(p)||"—")}${systemZawodnika(p)&&!p.formation?' <span style="font-size:11px;color:var(--ink-soft);">(z klubu)</span>':''}</div></div>
+    <div class="meta-item"><div class="lbl">Pozycja wg NMG</div><div class="val">${esc(opisPozycjiNmg(p)||"—")}</div></div>
     <div class="meta-item"><div class="lbl">Status</div><div class="val">${esc(p.status||"—")}</div></div>
     <div class="meta-item"><div class="lbl">Kontrakt</div><div class="val">${p.hasContract? ('Tak'+(p.contractUntil?' — do '+esc(p.contractUntil):'')) : 'Nie'}</div></div>
     <div class="meta-item"><div class="lbl">Mecze / gole / asysty</div><div class="val">${p.matches!=null?p.matches:"—"} / ${p.goals!=null?p.goals:"—"} / ${p.assists!=null?p.assists:"—"}</div></div>
@@ -15621,11 +17642,46 @@ async function generatePlayerPDF(playerId){
 
   ${latestReport?`<div class="section" style="padding-top:0;">
     <div class="section-title">Raport taktyczny${latestReport.date?' — '+esc(latestReport.date):''}${latestReport.perspektywa?' &middot; perspektywa '+esc(latestReport.perspektywa):''}</div>
-    ${latestReport.description?`<div class="notes-box" style="margin-bottom:10px;">${esc(latestReport.description)}</div>`:''}
+    <div class="meta-item" style="margin-bottom:8px;"><div class="lbl">Sporządził / rodzaj obserwacji</div>
+      <div class="val">${esc(latestReport.scout||'—')}${latestReport.obsType?` &middot; ${esc(latestReport.obsType)}`:''}</div></div>
+    ${(()=>{
+      // OPISY TECHNIKI, TAKTYKI, MOTORYKI, MENTALNOŚCI I POTENCJAŁU TO TREŚĆ PRACY SKAUTA.
+      //
+      // Do PDF-a szedł wcześniej wyłącznie „opis raportu" i oceny liczbowe — czyli dokument
+      // pokazywał wynik, a nie rozumowanie. Pięć pól, które skaut wypełnia najdłużej, nie
+      // trafiało nigdzie: ani do PDF-a, ani na profil. Czytający dostawał cyfry bez uzasadnienia.
+      const bloki = [
+        ['Technika', latestReport.technika], ['Taktyka', latestReport.taktyka],
+        ['Motoryka', latestReport.motoryka], ['Mentalność', latestReport.mentalnoscOpis],
+        ['Potencjał', latestReport.potencjalOpis],
+      ].filter(([, t])=>String(t||'').trim());
+      if(!bloki.length) return '';
+      return `<div style="margin-bottom:10px;">${bloki.map(([etykieta, tresc])=>
+        `<div style="margin-bottom:7px;"><div class="lbl" style="margin-bottom:2px;">${esc(etykieta)}</div>
+         <div class="notes-box" style="margin:0;">${esc(String(tresc).trim())}</div></div>`).join('')}</div>`;
+    })()}
+    ${latestReport.description?`<div class="lbl" style="margin-bottom:2px;">Opis raportu</div><div class="notes-box" style="margin-bottom:10px;">${esc(latestReport.description)}</div>`:''}
     ${(latestReport.phases&&Object.keys(latestReport.phases).length)?`<div class="metric-section-label">Fazy gry (1-6)</div><div class="attr5-grid metric4">${REPORT_PHASES.map(f=>`<div class="attr5-col"><div class="attr5-head"><span>${esc(f.label)}</span></div><div class="metric-num-body">${latestReport.phases[f.key]!=null?latestReport.phases[f.key]:'—'}</div></div>`).join('')}</div>`:''}
     ${(latestReport.setPieces&&Object.keys(latestReport.setPieces).length)?`<div class="metric-section-label">Stałe fragmenty (1-6)</div><div class="attr5-grid metric4">${REPORT_SET_PIECES.map(f=>`<div class="attr5-col"><div class="attr5-head"><span>${esc(f.label)}</span></div><div class="metric-num-body">${latestReport.setPieces[f.key]!=null?latestReport.setPieces[f.key]:'—'}</div></div>`).join('')}</div>`:''}
     ${latestReport.setPieceComment?`<div class="notes-box" style="margin-top:10px;">${esc(latestReport.setPieceComment)}</div>`:''}
   </div>`:''}
+
+  ${(()=>{
+    // POZOSTAŁE RAPORTY. Sekcja wyżej pokazuje najnowszy w całości; wcześniejsze wypisujemy
+    // skrótem, bo to one pokazują, czy ocena zawodnika rosła, czy stała w miejscu — a właśnie
+    // po to komitet czyta ten dokument. Bez nich PDF twierdził, że praca to jeden raport.
+    const wszystkie = playerReports(p.id).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+    const starsze = wszystkie.filter(r=>!latestReport || r.id !== latestReport.id);
+    if(!starsze.length) return '';
+    return `<div class="section" style="padding-top:0;">
+      <div class="section-title">Wcześniejsze raporty (${starsze.length})</div>
+      ${starsze.map(r=>`<div style="padding:5px 0;border-bottom:1px solid var(--border,#e3decd);">
+        <strong>${esc(r.date||'bez daty')}</strong>
+        <span style="color:#5B6560;">${esc(r.scout||'—')}${r.perspektywa?` &middot; perspektywa ${esc(r.perspektywa)}`:''}${r.obsType?` &middot; ${esc(r.obsType)}`:''}</span>
+        ${r.description?`<div style="margin-top:2px;">${esc(r.description)}</div>`:''}
+      </div>`).join('')}
+    </div>`;
+  })()}
 
   ${p.notes?`<div class="section" style="padding-top:0;">
     <div class="section-title">Notatki scouta</div>
@@ -15663,7 +17719,13 @@ async function generatePlayerPDF(playerId){
           <td>${esc(o.recommendation||'—')}</td></tr>`;
       }).join('')}
     </table>`;
-    })():`<p class="empty-note">Brak zarejestrowanych obserwacji.</p>`}
+    })():`<p class="empty-note">Brak wpisów w Planie Obserwacji.${
+      // „Brak obserwacji" pod raportem czytało się jak „nikt tego zawodnika nie oglądał" — a wyżej
+      // w tym samym dokumencie stoi raport z meczu. To dwie różne rzeczy: tu są zaplanowane wyjazdy
+      // z Planu Obserwacji, wyżej praca skautów. Bez tego zdania dokument sam sobie przeczył.
+      playerReports(p.id).length
+        ? ` Ocena opiera się na ${playerReports(p.id).length} ${playerReports(p.id).length===1?'raporcie skautingowym':'raportach skautingowych'} powyżej.`
+        : ''}</p>`}
   </div>
 
   ${(a && a.metryki && a.metryki.length >= 3) ? `<div class="section" style="padding-top:0;">
@@ -15753,9 +17815,20 @@ async function generatePlayerPDF(playerId){
   <div class="report-footer">Raport wygenerowany automatycznie przez Scout Base System &middot; ${new Date().toLocaleString('pl-PL')}</div>
   </body></html>`;
 
-  // Generowanie prawdziwego pliku PDF: renderujemy raport w ukrytej ramce (iframe) - żeby style
-  // (w tym print-owe) zastosowały się poprawnie i niezależnie od reszty strony - następnie html2canvas
-  // przechwytuje to jako obraz, a jsPDF składa z niego gotowy, wielostronicowy plik PDF do pobrania.
+  const safeName = ((p.firstName||'')+'_'+(p.lastName||'')).trim().replace(/\s+/g,'_').replace(/[^\w\-]/g,'') || 'zawodnik';
+  await htmlNaPdf(html, 'raport_' + safeName + '.pdf');
+}
+
+// SKŁADANIE PDF-a Z GOTOWEGO HTML — wspólne dla raportu zawodnika i dla analizy.
+//
+// Wydzielone, bo cała trudność siedzi nie w treści, tylko w łamaniu stron: html2canvas oddaje
+// obraz o kilka procent wyższy niż rachunek z CSS, więc miejsca cięcia trzeba dosuwać do pustych
+// rzędów pikseli, żeby nie przecinać nagłówków i wierszy tabel w pół. Druga kopia tej logiki
+// rozjechałaby się z pierwszą przy pierwszej poprawce.
+async function htmlNaPdf(html, nazwaPliku){
+  // Renderujemy w ukrytej ramce (iframe) — żeby style (w tym print-owe) zastosowały się poprawnie
+  // i niezależnie od reszty strony. Potem html2canvas przechwytuje to jako obraz, a jsPDF składa
+  // z niego gotowy, wielostronicowy plik do pobrania.
   const iframe = document.createElement('iframe');
   iframe.style.position = 'fixed';
   iframe.style.left = '-99999px';
@@ -15973,8 +18046,7 @@ async function generatePlayerPDF(playerId){
       y = ciecie;
     }
 
-    const safeName = ((p.firstName||'')+'_'+(p.lastName||'')).trim().replace(/\s+/g,'_').replace(/[^\w\-]/g,'') || 'zawodnik';
-    pdf.save('raport_' + safeName + '.pdf');
+    pdf.save(nazwaPliku);
   } finally {
     document.body.removeChild(iframe);
   }
@@ -16271,6 +18343,7 @@ function wireLastModal(){
       agentCheckedAt,
       birthDate, birthYear: birthDate? String(new Date(birthDate).getFullYear()) : '',
       position: document.getElementById('pm-position').value,
+      pozycjaNmg: Number(document.getElementById('pm-pozycja-nmg').value) || null,
       foot: document.getElementById('pm-foot').value,
       height: Number(document.getElementById('pm-height').value)||null,
       nationality: document.getElementById('pm-nationality').value.trim(),
@@ -16399,6 +18472,11 @@ function wireLastModal(){
       DB.clubs.push(data);
     }
     await saveClubs();
+    // System gry idzie osobnym wierszem w sbs_kv — sbs_clubs nie ma na niego kolumny.
+    const systemKlubu = document.getElementById('cm-formation').value;
+    if(systemKlubu) systemyKlubow[savedClubId] = systemKlubu;
+    else delete systemyKlubow[savedClubId];
+    await saveSystemyKlubow();
     if(isUploadedImage){
       DB.clubCrests[savedClubId] = crestValue;
       await saveClubCrests();
@@ -16532,10 +18610,25 @@ function renderLoginScreen(){
   }));
 }
 
+// WYLOGOWANIE NIE PYTA O ZGODĘ — I DLATEGO DZIAŁA.
+//
+// Stało tu `confirm()`, a przeglądarka po serii okienek dialogowych proponuje „nie pokazuj więcej
+// okien tej strony". Kto to zaznaczył (a przy zbieraniu protokołów okienek są dziesiątki), dostawał
+// od `confirm()` odpowiedź „nie" bez żadnego pytania — przycisk wyglądał na zepsuty, choć wykonywał
+// dokładnie to, co mu kazano. Wylogowanie niczego nie kasuje: dane są w bazie, a powrót to jedno
+// zalogowanie. Nie ma więc czego potwierdzać.
+//
+// Odświeżenie strony robimy ZAWSZE, także gdy wylogowanie w bazie się nie powiedzie — inaczej
+// przy zerwanej sieci zostawalibyśmy w systemie z przyciskiem, który nic nie robi.
 async function performLogout(){
-  if(!confirm('Wylogować się z systemu?')) return;
-  await signOut();
-  window.location.reload();
+  try{
+    await signOut();
+  }catch(e){
+    console.error('Wylogowanie:', e);
+  }finally{
+    try{ localStorage.removeItem('sbs-scout'); }catch(e){ /* tryb prywatny */ }
+    window.location.reload();
+  }
 }
 
 // ---------- EKRAN „KONTO CZEKA NA AKCEPTACJĘ" ----------
@@ -16569,10 +18662,8 @@ function renderKontoScreen(konto){
     </div>
   </div></div>`;
 
-  host.querySelectorAll('[data-action="konto-wyloguj"]').forEach(b=>b.onclick=async()=>{
-    await signOut();
-    window.location.reload();
-  });
+  // Ten sam sposób co w panelu — jedna droga wyjścia, żeby nie rozjechały się zachowaniem.
+  host.querySelectorAll('[data-action="konto-wyloguj"]').forEach(b=>b.onclick=()=>performLogout());
   host.querySelectorAll('[data-action="konto-sprawdz"]').forEach(b=>b.onclick=async()=>{
     b.disabled = true; b.textContent = 'Sprawdzam…';
     const swieze = await mojeKonto();

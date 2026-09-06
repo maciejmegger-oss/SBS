@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v31 z 29.08.2026";
+var SBS_ZBIERACZ="v48 z 03.09.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -70,6 +70,7 @@ box.style.cssText='position:fixed;right:16px;bottom:16px;z-index:2147483647;back
 var linia=document.createElement('div');
 linia.style.cssText='line-height:1.45';
 linia.textContent='SBS '+SBS_ZBIERACZ+': zaczynam...';
+try{ if(window.__SBS_STARA){ linia.innerHTML='<b style=\"color:#F0A0A0\">UWAGA: zakladka na pasku jest stara</b><br>Uzywam kopii z dnia, w ktorym ja zapisales (' + SBS_ZBIERACZ + '). Nowe przyciski beda dopiero po wymianie zakladki: w SBS otworz „Protokoly z LNP” i kliknij „Szybkie kopiowanie z LNP”.'; } }catch(e){}
 box.appendChild(linia);
 var stopka=document.createElement('div');
 stopka.style.cssText='margin-top:10px;padding-top:8px;border-top:1px solid rgba(246,243,234,.2)';
@@ -111,6 +112,82 @@ function doSchowka(tekst){
  document.body.removeChild(pole);
  return ok;
 }
+// HERBY I NAZWY KLUBOW Z TABELI GRUPY.
+//
+// Herbow nie da sie pobrac po stronie serwera: LNP oddaje mu pusta skorupe Angulara, a i tak
+// nie znalby adresow obrazkow. W otwartej tabeli sa jednak wprost — kazdy wiersz ma obrazek
+// i nazwe. Czytamy je z tego, co juz widac, niczego nie klikajac.
+//
+// Nazwe bierzemy z PIERWSZEGO liscia wiersza, ktory zawiera litery — w tabeli LNP to wlasnie
+// nazwa klubu ("CZARNI ZAGAN 1957"), bo pozycja stoi w osobnym elemencie. Odsiewamy obrazki
+// serwisu (herb PZPN, banery sponsorow), zeby nie wziac ich za herb klubu.
+function herbyZTabeli(){
+ var out=[], widziane={};
+ // ROZPOZNAJEMY HERB PO ADRESIE, NIE PO ROZMIARZE.
+ //
+ // Poprzednio odrzucalismy obrazki wieksze niz 260 punktow — a to wlasnie sa herby: w tabeli
+ // widac miniature, ale plik zrodlowy bywa duzy. Z szesnastu klubow wchodzilo wiec piec.
+ // LNP trzyma herby na swoim CDN (cdn.laczynaspilka.pl/content/static/pz/images/...), a gdy
+ // klubu nie ma — podstawia wlasna tarcze (assets/icons/crest_default). Bierzemy jedno i drugie:
+ // zaslepke tez, bo dopiero SBS ma powiedziec, ze dla tego klubu herbu brakuje.
+ [].slice.call(document.querySelectorAll('img')).forEach(function(img){
+  var src=img.currentSrc||img.getAttribute('src')||'';
+  if(!src || /^data:/.test(src)) return;
+  if(src.indexOf('//')===0) src=location.protocol+src;
+  if(!/cdn\.laczynaspilka\.pl|crest|herb|logo-klub/i.test(src)) return;
+  if(/pzpn|orlen|sponsor|banner|site-logo/i.test(src)) return;
+
+  var wiersz=img;
+  for(var i=0;i<6 && wiersz.parentElement;i++){
+   wiersz=wiersz.parentElement;
+   var t=(wiersz.textContent||'').replace(/\s+/g,' ').trim();
+   if(t.length>=4 && t.length<=220 && /[A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż]{3}/.test(t)) break;
+  }
+  var nazwa='';
+  [].slice.call(wiersz.querySelectorAll('*')).forEach(function(el){
+   if(nazwa || el.children.length) return;
+   var t=(el.textContent||'').replace(/\s+/g,' ').trim();
+   if(t.length<3 || t.length>70) return;
+   if(!/[A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż]{3}/.test(t)) return;
+   if(/^\d+\.?$/.test(t)) return;
+   nazwa=t;
+  });
+  if(!nazwa) return;
+  var klucz=nazwa.toLowerCase();
+  if(widziane[klucz]) return;
+  widziane[klucz]=1;
+  out.push(nazwa+'|'+src);
+ });
+ return out;
+}
+
+var przyciskHerby=document.createElement('button');
+przyciskHerby.textContent='Zbierz herby i nazwy klubow';
+przyciskHerby.style.cssText='display:block;width:100%;padding:7px;margin-bottom:6px;border:1px solid rgba(246,243,234,.35);border-radius:6px;background:transparent;color:#F6F3EA;font:13px sans-serif;cursor:pointer';
+// PRZYCISK MA WYSLAC, A NIE TYLKO ZEBRAC.
+//
+// Dotad zmienial tylko napis na "Mam 5 herbow — wyslij do SBS", a sam niczego nie wysylal:
+// trzeba bylo doczekac do konca zbierania protokolow i uzyc zlotego przycisku. Kto klikal
+// wylacznie herby, nie doczekal sie niczego i mial prawo sadzic, ze nie dzialaja.
+przyciskHerby.onclick=function(){
+ var lista=herbyZTabeli();
+ if(!lista.length){ przyciskHerby.textContent='Nie widze tu tabeli z herbami'; return; }
+ var wpis='### KLUBY\n'+lista.join('\n');
+ var byl=false;
+ for(var q=0;q<zebrane.length;q++){ if(zebrane[q].indexOf('### KLUBY\n')===0){ zebrane[q]=wpis; byl=true; break; } }
+ if(!byl) zebrane.push(wpis);
+ try{ localStorage.setItem(KLUCZ, JSON.stringify(zebrane)); }catch(e){}
+ przyciskHerby.textContent='Wysylam '+lista.length+' herbow...';
+ // PANEL ZOSTAJE PO WYSLANIU HERBOW.
+ //
+ // wyslij() sprzata po sobie panel, bo konczy prace nad cala kolejka. Przy samych herbach to
+ // przeszkadza: zbieranie protokolow chodzi dalej w tle, a razem z panelem znika licznik postepu
+ // i pozostale przyciski — nie ma juz czego wybrac ani czym przerwac.
+ wyslij(zebrane.join('\n\n'), true);
+ setTimeout(function(){ przyciskHerby.textContent='Wyslano '+lista.length+' herbow — mozesz zbierac dalej'; }, 600);
+};
+stopka.appendChild(przyciskHerby);
+
 var przyciskOpisu=document.createElement('button');
 przyciskOpisu.textContent='Skopiuj opis strony (dla SBS)';
 przyciskOpisu.style.cssText='display:block;width:100%;padding:7px;margin-bottom:6px;border:1px solid rgba(246,243,234,.35);border-radius:6px;background:transparent;color:#F6F3EA;font:13px sans-serif;cursor:pointer';
@@ -538,6 +615,20 @@ function dociagnijStrone(gotowe){
 //
 // Jeden mecz = jedna ramka. LNP odsyla 404 mniej wiecej co drugi raz, wiec kazdy krok ma az
 // dwanascie podejsc — bez tego gubilismy cale druzyny.
+
+// Linijka z rozgrywkami („5 kolejka, Czwarta liga") stoi w naglowku meczu, wysoko nad skladami.
+// Ucinalismy tekst 400 znakow przed „Skladu", wiec przy meczu z dlugim przebiegiem ta linijka
+// wypadala poza wycinek. SBS nie wiedzial wtedy, jakie to rozgrywki, i nie umial wybrac miedzy
+// seniorami a druzyna U17 o tej samej nazwie — „Stomil Olsztyn SA" nie trafial w zaden klub.
+function naglowekRozgrywek(txt){
+ var linie=String(txt||'').split('\n');
+ for(var i=0;i<linie.length;i++){
+  var l=linie[i].trim();
+  if(/kolejka,/i.test(l) && l.length<120) return l+'\n';
+ }
+ return '';
+}
+
 function zdejmijMeczZDruzyny(adresDruzyny, nr, gotowe){
  var f=document.createElement('iframe');
  f.style.cssText='position:fixed;left:-9999px;top:0;width:1500px;height:2400px';
@@ -574,13 +665,27 @@ function zdejmijMeczZDruzyny(adresDruzyny, nr, gotowe){
   }
 
   if(faza==='protokol'){
-   if(/Skład wyjściowy/.test(txt)){
+   // CZEKAMY NA OBA SKLADY, NIE NA PIERWSZY.
+   //
+   // Protokol renderuje sie czesciami: najpierw gospodarze, chwile pozniej goscie. Zdejmowanie go
+   // przy pierwszym "Sklad wyjsciowy" lapalo wiec czasem polowe strony i SBS meldowal potem
+   // "nie udalo sie odczytac skladu" — dla tej samej druzyny, ktora w innym meczu wchodzila
+   // w komplecie. Kazdy mecz ma dwa sklady, wiec na tyle czekamy.
+   //
+   // Po szesnastu probach (okolo szesciu sekundach) bierzemy to, co jest: lepiej oddac jedna
+   // polowe protokolu niz nie oddac nic. Druga strona i tak dojdzie od swojej druzyny.
+   var ileSkladow=(txt.match(/Skład wyjściowy/g)||[]).length;
+   if(ileSkladow>=2 || (ileSkladow>=1 && n>16)){
     clearInterval(t);
     var j=txt.search(/^\s*Składy\s*$/m);
     var adres=zlapany ? (location.origin+zlapany) : '';
-    var idsD=[].slice.call((d.documentElement.innerHTML||'').matchAll(/druzyna\/([0-9a-f-]{30,40})/gi)).map(function(m){return m[1];});
-    var jedyneD=[]; idsD.forEach(function(x){ if(jedyneD.indexOf(x)<0) jedyneD.push(x); });
-    var wynik={ nr:nr, adres:adres, druzynyZMeczu:jedyneD, tekst:txt.slice(j<0?0:Math.max(0,j-400))+zdarzenia(d) };
+    // matchAll oddaje ITERATOR, a nie cos podobnego do tablicy — [].slice.call(...) dawalo wiec
+    // zawsze pusta liste. Przez to kolejka klubow nigdy sie nie rozwijala i caly przebieg konczyl
+    // sie na dwoch startowych druzynach. Zwykle match() oddaje tablice i to dziala.
+    var jedyneD=[];
+    ((d.documentElement.innerHTML||'').match(/druzyna\/[0-9a-f-]{30,40}/gi)||[]).forEach(function(x){
+     var q=x.split('/')[1]; if(jedyneD.indexOf(q)<0) jedyneD.push(q); });
+    var wynik={ nr:nr, adres:adres, druzynyZMeczu:jedyneD, tekst:naglowekRozgrywek(txt)+txt.slice(j<0?0:Math.max(0,j-400))+zdarzenia(d) };
     f.remove(); gotowe(wynik); return;
    }
    if(n>26){ clearInterval(t); f.remove(); gotowe({blad:'protokol sie nie pokazal'}); }
@@ -589,6 +694,28 @@ function zdejmijMeczZDruzyny(adresDruzyny, nr, gotowe){
 }
 
 // Wiersze rozegranych meczow w PODANYM dokumencie (ramka albo biezaca strona).
+// ROZGRYWKI, Z KTORYCH ZBIERAMY. Ustalane raz, na stronie grupy.
+//
+// Strona klubu na LNP wymienia mecze WSZYSTKICH jego druzyn: pierwszej, rezerw i juniorow.
+// Zbieracz ruszal z Centralnej Ligi Juniorow, wchodzil na strone Lecha i zdejmowal protokol
+// z Ekstraklasy - dorobek seniorow wladowywalby sie juniorom. Nazwa rozgrywek stoi w kazdym
+// wierszu terminarza, wiec filtrujemy po niej.
+var ROZGRYWKI_GRUPY = '';
+
+// Nazwa rozgrywek z otwartej strony grupy — bierzemy najczestsza z wierszy terminarza.
+function rozpoznajRozgrywki(d){
+ var NAZWY=['Centralna Liga Juniorow','Centralna Liga Juniorów','Ekstraklasa','Pierwsza liga',
+   'Druga liga','Trzecia liga','Czwarta liga','Klasa okregowa','Klasa okręgowa'];
+ var txt=((d||document).body ? (d||document).body.innerText : '')||'';
+ var licznik={}, najlepsza='', ile=0;
+ NAZWY.forEach(function(n){
+  var trafien=(txt.match(new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi'))||[]).length;
+  if(trafien>ile){ ile=trafien; najlepsza=n; }
+  licznik[n]=trafien;
+ });
+ return ile>=2 ? najlepsza : '';
+}
+
 function wierszeRozegraneW(d){
  function maWynik(t){
   var m=t.match(/\d{1,2}\s*:\s*\d{1,2}/g); if(!m) return false;
@@ -603,6 +730,9 @@ function wierszeRozegraneW(d){
   if(/Nierozegran/i.test(t)) continue;
   if(!/Rozegrany/i.test(t)) continue;
   if(!maWynik(t)) continue;
+  // Mecz z innych rozgrywek tego samego klubu pomijamy — inaczej z Centralnej Ligi Juniorow
+  // zeszlibysmy na Ekstraklase.
+  if(ROZGRYWKI_GRUPY && t.toLowerCase().indexOf(ROZGRYWKI_GRUPY.toLowerCase())<0) continue;
   out.push(el);
  }
  return out.filter(function(a){ return !out.some(function(b){ return a!==b && a.contains(b); }); });
@@ -667,8 +797,9 @@ function druzynyZMeczu(adres, gotowe){
   var txt=(d&&d.body)?(d.body.innerText||''):'';
   if(/Skład wyjściowy/.test(txt)){
    clearInterval(t);
-   var ids=[].slice.call((d.documentElement.innerHTML||'').matchAll(/druzyna\/([0-9a-f-]{30,40})/gi)).map(function(m){return m[1];});
-   var jedyne=[]; ids.forEach(function(x){ if(jedyne.indexOf(x)<0) jedyne.push(x); });
+   var jedyne=[];
+   ((d.documentElement.innerHTML||'').match(/druzyna\/[0-9a-f-]{30,40}/gi)||[]).forEach(function(x){
+    var q=x.split('/')[1]; if(jedyne.indexOf(q)<0) jedyne.push(q); });
    f.remove(); gotowe(jedyne); return;
   }
   if(/Ups! Piłka za boiskiem/.test(txt) || n>40){ clearInterval(t); f.remove(); gotowe([]); }
@@ -834,6 +965,25 @@ function start(){
  // klubu, wiec nie trzeba juz wchodzic w kazdy klub z osobna.
  if(!probowanoKlikac && ileWierszy>=2){
   probowanoKlikac=true;
+  // Zapamietujemy rozgrywki TEJ strony, zanim ruszymy po klubach — dalej filtrujemy nimi wiersze
+  // na stronach druzyn, ktore wymieniaja mecze wszystkich zespolow klubu naraz.
+  ROZGRYWKI_GRUPY = rozpoznajRozgrywki(document);
+  if(ROZGRYWKI_GRUPY) linia.textContent='SBS '+SBS_ZBIERACZ+': rozgrywki - '+ROZGRYWKI_GRUPY;
+  // HERBY BIERZEMY OD RAZU, ZANIM RUSZYMY PO PROTOKOLY.
+  //
+  // Osobny przycisk w panelu zostaje, ale nikt nie ma obowiazku go szukac: tabela grupy jest
+  // wlasnie na ekranie i to jedyny moment, w ktorym herby sa pod reka. Zbieranie ich nic nie
+  // kosztuje - czytamy to, co juz widac, niczego nie klikajac.
+  try{
+   var herby=herbyZTabeli();
+   if(herby.length>=4){
+    var wpisH='### KLUBY\n'+herby.join('\n');
+    var bylH=false;
+    for(var qh=0;qh<zebrane.length;qh++){ if(zebrane[qh].indexOf('### KLUBY\n')===0){ zebrane[qh]=wpisH; bylH=true; break; } }
+    if(!bylH) zebrane.push(wpisH);
+    try{ localStorage.setItem(KLUCZ, JSON.stringify(zebrane)); }catch(e){}
+   }
+  }catch(e){}
   linia.textContent='SBS '+SBS_ZBIERACZ+': na ekranie '+ileWierszy+' rozegranych meczow - zbieram protokoly';
   zbierzGrupePrzezDruzyny(function(){ koniec(); });
   return;
@@ -950,7 +1100,7 @@ function wczytajMecz(url, podejscie){
     // Adresy profili zbieramy przy okazji \u2014 dokument meczu i tak jest juz wczytany.
     zbierzProfile(f.contentDocument);
     var j=txt.search(/^\s*Sk\u0142ady\s*$/m);
-    var wpis='### PROTOKOL: '+url+'\n'+txt.slice(j<0?0:Math.max(0,j-400))+zdarzenia(f.contentDocument);
+    var wpis='### PROTOKOL: '+url+'\n'+naglowekRozgrywek(txt)+txt.slice(j<0?0:Math.max(0,j-400))+zdarzenia(f.contentDocument);
     var byl=false;
     for(var q=0;q<zebrane.length;q++){if(zebrane[q].indexOf('### PROTOKOL: '+url+'\n')===0){zebrane[q]=wpis;byl=true;break;}}
     if(!byl)zebrane.push(wpis);
@@ -1171,6 +1321,23 @@ function zbierzProfile(doc){
  }catch(e){}
 }
 
+// POZYCJA Z PROFILU ZAWODNIKA.
+//
+// Protokol mowi tylko, kto stal w bramce — reszta skladu jest bez pozycji, wiec kartoteka IV ligi
+// zostawala z kreska w tej rubryce. Profil na LNP podaje pozycje wprost, a skoro i tak go
+// otwieramy po rocznik, zabranie drugiej informacji nic nie kosztuje.
+//
+// Nazwy zostawiamy TAKIE, JAKIE SA NA LNP. Tlumaczeniem na slownik SBS zajmuje sie aplikacja —
+// tam latwiej to poprawic niz w zakladce, ktora u kazdego siedzi na pasku we wlasnej kopii.
+function pozycjaZTekstu(t){
+ var s=String(t||'').replace(/\s+/g,' ');
+ var m=s.match(/pozycj\w*\s*:?\s*([A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż][A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż \-]{2,30})/i);
+ if(m) return m[1].replace(/\s+(data|urodz|wzrost|waga|klub|nr|numer).*$/i,'').trim();
+ // Bywa, ze slowa "Pozycja" nie ma, a sama nazwa stoi pod nazwiskiem.
+ m=s.match(/\b(Bramkarz|Obro[nń]ca|Pomocnik|Napastnik|Skrzyd[lł]owy)\b[a-ząćęłńóśźż ]{0,16}/i);
+ return m?m[0].trim():'';
+}
+
 function rocznikZTekstu(t){
  var s=String(t||'');
  // Rok STOI PIERWSZY w zapisie ISO (1990-05-02) i ostatni w polskim (14.03.2007). Sprawdzamy
@@ -1211,10 +1378,12 @@ function pobierzRoczniki(gotowe){
    prob++;
    var txt='';
    try{txt=(f.contentDocument&&f.contentDocument.body)?f.contentDocument.body.innerText:'';}catch(e){txt='';}
-   var r=rocznikZTekstu(txt);
-   if(r||prob>14){
+   var r=rocznikZTekstu(txt), poz=pozycjaZTekstu(txt);
+   if(r||poz||prob>14){
     clearInterval(t);
-    if(r){ roczniki[k]=r; zdobyte++; }
+    // Pamiec przegladarki trzyma teraz "rocznik|pozycja". Starsze wpisy sa samym rocznikiem —
+    // czytamy jedno i drugie, zeby wczesniejsze zbierania nie poszly do kosza.
+    if(r||poz){ roczniki[k]=(r||'')+'|'+(poz||''); zdobyte++; }
     f.remove(); n++; setTimeout(nastepnyProfil,120);
    }
   },500);
@@ -1224,7 +1393,13 @@ function pobierzRoczniki(gotowe){
 
 function blokRocznikow(){
  var linie=[];
- for(var k in roczniki){ if(roczniki[k]) linie.push(k+'|'+roczniki[k]); }
+ for(var k in roczniki){
+  var v=String(roczniki[k]||'');
+  if(!v) continue;
+  // Wpis to "rocznik|pozycja", ale starsza pamiec ma sam rocznik. Doklejamy pusta pozycje,
+  // zeby SBS zawsze dostawal ten sam uklad: klucz|rocznik|pozycja.
+  linie.push(k+'|'+(v.indexOf('|')>=0?v:(v+'|')));
+ }
  return linie.length?('\n\n### ROCZNIKI\n'+linie.join('\n')):'';
 }
 
@@ -1366,7 +1541,8 @@ function koniec(){
 }
 
 // Wysylka odpalana KLIKNIECIEM — stad wolno jej otwierac okno i pisac do schowka.
-function wyslij(tresc){
+function wyslij(tresc, zostawPanel){
+ var usunPanel=function(){ if(!zostawPanel && box.parentNode) usunPanel(); };
  var udalo=false;
  var p=document.createElement('textarea');p.value=tresc;document.body.appendChild(p);p.select();
  try{udalo=document.execCommand('copy');}catch(e){udalo=false;}
@@ -1388,7 +1564,7 @@ function wyslij(tresc){
    if(!ev.data||ev.data.typ!=='sbs-odebrano') return;
    window.removeEventListener('message',nasluch);
    window.removeEventListener('message',potwierdzenie);
-   box.remove();
+   usunPanel();
    alert('SBS '+SBS_ZBIERACZ+': wyslalem '+zebrane.length+' protokolow prosto do aplikacji (kolejek: '+kolejek+(pominietych?', pominietych nierozegranych: '+pominietych:'')+').\n\nPrzejdz do karty Scout Base System - protokoly juz tam sa, nic nie musisz wklejac.');
   };
   window.addEventListener('message',nasluch);
@@ -1396,12 +1572,12 @@ function wyslij(tresc){
   setTimeout(function(){
    window.removeEventListener('message',nasluch);
    window.removeEventListener('message',potwierdzenie);
-   if(box.parentNode) box.remove();
+   usunPanel();
    if(!wyslane) alert('SBS '+SBS_ZBIERACZ+': zebralem '+zebrane.length+' protokolow, ale aplikacja sie nie odezwala.'+(udalo?' Sa w schowku - wejdz do SBS i nacisnij Ctrl+V.':' Kliknij zakladke jeszcze raz.'));
   },20000);
   return;
  }
- box.remove();
+ usunPanel();
  if(!udalo){alert('SBS '+SBS_ZBIERACZ+': zebralem '+zebrane.length+' protokolow, ale przegladarka nie pozwolila zapisac ich do schowka.\n\nKliknij zakladke jeszcze raz - za drugim razem zwykle sie udaje.');return;}
  alert('SBS '+SBS_ZBIERACZ+': dolozylem '+(zebrane.length-bylo)+' protokolow (kolejek przejrzanych: '+kolejek+(pominietych?', pominietych nierozegranych: '+pominietych:'')+(zablokowanych?', zatrzymanych prob wyjscia ze strony: '+zablokowanych:'')+'). W schowku masz teraz '+zebrane.length+' protokolow ('+tresc.length+' znakow).\n\nW aplikacji: Kluby -> wybierz grupe -> \u201eProtokoly z LNP\u201d -> Ctrl+V.\n\nShift + klikniecie tej zakladki czysci zebrana liste.');
 }

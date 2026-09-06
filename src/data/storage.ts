@@ -113,6 +113,18 @@ export const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }>
       // Z ilu meczów policzony był dorobek przy ostatnim odświeżeniu — bez tego nie da się
       // odróżnić "źródło jest spóźnione" od "widzimy tylko część kolejek".
       "statsMeczow",
+      // Mecze, w których skaut zaznaczył zawodnika jako wyróżniającego się — data, spotkanie,
+      // kto zaznaczył. Bez tej listy zaznaczenie żyłoby tylko w oknie składu i nie dałoby się
+      // odróżnić jednego dobrego meczu od regularnej formy.
+      "wyroznienia",
+      // Numer pozycji wg Narodowego Modelu Gry (1-11). Pole „position" mówi tylko „Obrońca
+      // środkowy", więc na mapie zawodnik pasował do lewego i prawego stopera naraz. Numer
+      // rozstrzyga, w którym polu ma stać.
+      "pozycjaNmg",
+      // Druga opinia wygenerowana przez AI: treść, data i model. Trzymamy ją przy zawodniku, bo
+      // wchodzi do PDF-a analizy i na posiedzeniu komitetu musi być ta sama, którą już czytano —
+      // generowana od nowa brzmiałaby inaczej przy tych samych danych.
+      "opiniaAI",
     ],
   },
   sbs_observations: {
