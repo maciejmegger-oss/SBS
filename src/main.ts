@@ -4794,9 +4794,28 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
   const kluczRocznika = (s)=> String(s||'').split(/\s+/).map(importNorm).filter(Boolean).sort().join(' ');
 
   // Ile meczów tego klubu jest już rozliczonych — liczymy z znaczników przy zawodnikach.
-  const juzRozliczone = ()=>{
+  // ILE MECZÓW JUŻ ROZLICZYLIŚMY — I W JAKIM ZAKRESIE.
+  //
+  // Zakres bierze się z tego, skąd otwarto okno: z klubu, z przeglądanej grupy albo znikąd,
+  // gdy wejście było z Dashboardu. W tym ostatnim wypadku licznik pokazywał „0", bo nie miał
+  // czego liczyć — a stało to obok zdania „w tym oknie zapisano 20". Okno samo sobie przeczyło.
+  //
+  // Gdy grupy nie znamy, bierzemy ją Z ROZPOZNANYCH PROTOKOŁÓW: wiemy przecież, do jakich klubów
+  // trafiły, a więc i w jakich rozgrywkach jesteśmy. Dopóki nic nie wklejono — nie ma czego
+  // liczyć i wtedy nie pokazujemy tej linijki wcale, zamiast twierdzić „0".
+  const zakresLicznika = ()=>{
+    if(klub) return { kluby: [klub], opis: 'tego klubu' };
+    if(klubyGrupy.length) return { kluby: klubyGrupy, opis: 'w tej grupie' };
+    const zProtokolow = Array.isArray(wynik)
+      ? wynik.flatMap(w=>(w.strony||[]).map(s=>s.klub).filter(Boolean)) : [];
+    if(!zProtokolow.length) return null;
+    const ligi = [...new Set(zProtokolow.map(c=>String(c.league||'')).filter(Boolean))];
+    const kluby = DB.clubs.filter(c=>ligi.includes(String(c.league||'')));
+    return { kluby, opis: ligi.length === 1 ? `w rozgrywkach ${ligi[0]}` : 'w tych rozgrywkach' };
+  };
+  const juzRozliczone = (zakres)=>{
     const klucze = new Set();
-    const idy = new Set((klub ? [klub] : klubyGrupy).map(c=>c.id));
+    const idy = new Set(zakres.kluby.map(c=>c.id));
     DB.players.filter(p=>idy.has(p.clubId)).forEach(p=>(p.rozliczoneMecze||[]).forEach(k=>klucze.add(k)));
     return klucze.size;
   };
@@ -4807,7 +4826,13 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
       <h3>📋 Protokoły meczów — ${esc(naglowekOkna)}</h3>
       ${!klub && klubyGrupy.length ? `<p class="note" style="margin:-4px 0 6px;">Jedno wklejenie rozlicza <strong>wszystkie kluby tej grupy</strong> (${klubyGrupy.length}) — nie musisz wchodzić w żaden z osobna.</p>` : ''}
       <p class="note" style="margin-bottom:8px;">Zbierz mecze na <strong>Łączy nas piłka</strong> zakładką „⚡ Zbierz całą kolejkę", a tutaj naciśnij <strong style="font-size:14px;">Ctrl+V</strong> — rozpoznam od razu, nie musisz nawet klikać w pole. Odczytam skład, zmiany i minuty <strong>obu drużyn naraz</strong>, a mecz rozliczony wcześniej nie policzy się drugi raz.</p>
-      <p class="note" style="margin-top:0;">Rozliczonych meczów ${klub ? 'tego klubu' : 'w tej grupie'}: <strong>${juzRozliczone()}</strong>${zapisanychMeczow?` &middot; w tym oknie zapisano ${zapisanychMeczow}`:''}</p>
+      ${(()=>{
+        const zakres = zakresLicznika();
+        if(!zakres) return zapisanychMeczow
+          ? `<p class="note" style="margin-top:0;">W tym oknie zapisano <strong>${zapisanychMeczow}</strong> ${zapisanychMeczow===1?'mecz':'meczów'}.</p>`
+          : '';
+        return `<p class="note" style="margin-top:0;">Rozliczonych meczów ${esc(zakres.opis)}: <strong>${juzRozliczone(zakres)}</strong>${zapisanychMeczow?` &middot; w tym oknie zapisano ${zapisanychMeczow}`:''}</p>`;
+      })()}
       <label style="display:flex;gap:8px;align-items:flex-start;margin:8px 0;cursor:pointer;font-size:13px;">
         <input type="checkbox" id="pm-dopisuj" ${dopisujBrak?'checked':''} style="margin-top:3px;">
         <span>Zakładaj kartoteki zawodnikom, których nie ma w bazie — z numerem, pozycją bramkarza i znacznikiem młodzieżowca z protokołu.</span>
