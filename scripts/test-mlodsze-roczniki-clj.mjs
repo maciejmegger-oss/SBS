@@ -17,8 +17,9 @@ const wytnij = (nazwa, wzor) => {
   return m[0];
 };
 
-const POZIOMY = eval(wytnij('POZIOMY', /const POZIOMY = \[[\s\S]*?\n  \];/)
-  .replace(/^\s*const POZIOMY = /, '').replace(/;$/, ''));
+// Tabela nazywa się POZIOMY_LNP, odkąd korzysta z niej także panel mobilny.
+const POZIOMY = eval(wytnij('POZIOMY_LNP', /const POZIOMY_LNP: \[RegExp, string\]\[\] = \[[\s\S]*?\n\];/)
+  .replace(/^\s*const POZIOMY_LNP: \[RegExp, string\]\[\] = /, '').replace(/;$/, ''));
 const poziomZTekstu = (t) => { for (const [w, p] of POZIOMY) { if (w.test(t)) return p; } return ''; };
 const poziomGrupy = new Function(wytnij('poziomGrupy', /function poziomGrupy\(nazwaGrupy\)\{[\s\S]*?\n\}/)
   + '; return poziomGrupy;')();

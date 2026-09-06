@@ -8,10 +8,11 @@
 import fs from "node:fs";
 
 const zrodlo = fs.readFileSync("src/main.ts", "utf8");
-const blok = zrodlo.match(/const POZIOMY = \[[\s\S]*?\n  \];/);
-if (!blok) { console.error("Nie znalazłem tabeli POZIOMY w src/main.ts."); process.exit(1); }
+// Tabela nazywa się POZIOMY_LNP, odkąd korzysta z niej także panel mobilny.
+const blok = zrodlo.match(/const POZIOMY_LNP: \[RegExp, string\]\[\] = \[[\s\S]*?\n\];/);
+if (!blok) { console.error("Nie znalazłem tabeli POZIOMY_LNP w src/main.ts."); process.exit(1); }
 
-const POZIOMY = eval(blok[0].replace(/^\s*const POZIOMY = /, "") .replace(/;$/, ""));
+const POZIOMY = eval(blok[0].replace(/^\s*const POZIOMY_LNP: \[RegExp, string\]\[\] = /, "").replace(/;$/, ""));
 const poziom = (txt) => {
   for (const [wzor, nazwa] of POZIOMY) if (wzor.test(txt)) return nazwa;
   return "";

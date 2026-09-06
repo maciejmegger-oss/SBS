@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v49 z 06.09.2026";
+var SBS_ZBIERACZ="v50 z 06.09.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -152,6 +152,19 @@ function herbyZTabeli(){
    if(/^\d+\.?$/.test(t)) return;
    nazwa=t;
   });
+  // NAZWA BYWA WPISANA WPROST W KOMORCE, BEZ ZADNEGO OPAKOWANIA.
+  //
+  // Szukalismy jej wylacznie w elementach BEZ DZIECI. Gdy LNP wstawia nazwe prosto do komorki
+  // obok obrazka (<td><img> Lechia Gdansk AP</td>), takiego elementu nie ma — komorka ma dziecko,
+  // czyli sam obrazek. Herb przepadal wtedy bez sladu, a w SBS wychodzilo "zapisalem 0 herbow".
+  // Bierzemy wiec tekst samej komorki, ale tylko wtedy, gdy nie wyglada na caly wiersz tabeli:
+  // przy jednej liczbie w srodku (np. "Polonia 1912 Leszno") to nadal nazwa, przy kilku — to juz
+  // punkty, bilans i wygrane.
+  if(!nazwa){
+   var t=(wiersz.textContent||'').replace(/\s+/g,' ').trim().replace(/^\d{1,2}[.)]?\s+/,'');
+   var liczbowe=t.split(' ').filter(function(x){ return /^\d+([.:\-]\d+)?$/.test(x); }).length;
+   if(t.length>=3 && t.length<=70 && liczbowe<=1 && /[A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż]{3}/.test(t)) nazwa=t;
+  }
   if(!nazwa) return;
   var klucz=nazwa.toLowerCase();
   if(widziane[klucz]) return;
@@ -704,7 +717,11 @@ var ROZGRYWKI_GRUPY = '';
 
 // Nazwa rozgrywek z otwartej strony grupy — bierzemy najczestsza z wierszy terminarza.
 function rozpoznajRozgrywki(d){
- var NAZWY=['Centralna Liga Juniorow','Centralna Liga Juniorów','Ekstraklasa','Pierwsza liga',
+ // KAZDA KATEGORIA CLJ Z OSOBNA. Na stronach CLJ wiersze podpisane sa „CLJ U-15", a nie
+ // „Centralna Liga Juniorow" — bez tych nazw filtr nie mial czym odsiac meczow innych druzyn
+ // tego samego klubu (Legia gra jednoczesnie U-15 i Trampkarza).
+ var NAZWY=['CLJ U-15','CLJ U15','CLJ U-17','CLJ U17','CLJ U-19','CLJ U19',
+   'Centralna Liga Juniorow','Centralna Liga Juniorów','Ekstraklasa','Pierwsza liga',
    'Druga liga','Trzecia liga','Czwarta liga','Klasa okregowa','Klasa okręgowa'];
  var txt=((d||document).body ? (d||document).body.innerText : '')||'';
  var licznik={}, najlepsza='', ile=0;
