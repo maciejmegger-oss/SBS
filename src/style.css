@@ -43,6 +43,9 @@
   --warn-ink:#7A5A15;
   --row-okazja:#FDF0C4;
   --row-okazja-hover:#F9E7A8;
+  /* Mlodszy rocznik w swojej kategorii - zielen, zeby nie mylil sie ze zlota okazja. */
+  --row-mlodszy:#E3F1E6;
+  --row-mlodszy-hover:#D2E8D8;
 
   --radius:10px;
   font-family:'Inter',sans-serif;
@@ -91,6 +94,8 @@
   --warn-ink:#E3C273;
   --row-okazja:#3B3218;
   --row-okazja-hover:#4A3E1D;
+  --row-mlodszy:#17301F;
+  --row-mlodszy-hover:#1E3D28;
   color-scheme:dark;
 }
 
@@ -357,6 +362,22 @@ tbody tr.radar-ograny td{font-weight:600;}
 tr.player-row.prow-okazja td{background:var(--row-okazja);}
 tr.player-row.prow-okazja:hover td{background:var(--row-okazja-hover);}
 tr.player-row.prow-okazja td:first-child{box-shadow:inset 4px 0 0 var(--gold);}
+
+/* MŁODSZY ROCZNIK — cały wiersz, nie sama odznaka. Chodzi o to, żeby rzucił się w oczy przy
+   otwarciu listy, bez czytania kolumny „Rocznik" nazwisko po nazwisku. Zielony pasek przy
+   krawędzi odróżnia go od złotej „okazji", która mówi o czymś zupełnie innym. */
+tr.prow-mlodszy td{background:var(--row-mlodszy);}
+tr.prow-mlodszy:hover td{background:var(--row-mlodszy-hover);}
+tr.prow-mlodszy td:first-child{box-shadow:inset 4px 0 0 var(--good);}
+/* Gdy zawodnik jest i młodszy, i okazją — pierwszeństwo ma młodszy rocznik: to informacja
+   o zawodniku, a nie o stanie jego reprezentacji. */
+tr.player-row.prow-okazja.prow-mlodszy td{background:var(--row-mlodszy);}
+tr.player-row.prow-okazja.prow-mlodszy td:first-child{box-shadow:inset 4px 0 0 var(--good);}
+.mlodszy-badge{
+  display:inline-block;background:var(--good);color:#fff;
+  font-family:Inter,sans-serif;font-size:10.5px;font-weight:800;letter-spacing:.02em;
+  border-radius:5px;padding:1px 6px;white-space:nowrap;vertical-align:middle;
+}
 
 /* Logotypy agencji. Biel jest tu ŚWIADOMA i nie idzie przez zmienną motywu: logotypy przychodzą
    z zewnątrz i w większości są ciemną kreską na przezroczystym tle. Płytka w kolorze karty

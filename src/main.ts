@@ -3821,7 +3821,9 @@ function viewPlayers(){
     // Rocznik bywa pusty, więc wymagamy go wprost — brak rocznika to niewiedza, nie okazja,
     // i podświetlanie takiego wiersza byłoby myleniem jednego z drugim.
     const okazja = p.birthYear && isYouthPlayer(p) && !p.hasAgent;
-    return `<tr class="player-row${okazja?' prow-okazja':''}" data-action="row-open-player" data-id="${p.id}" style="cursor:pointer;" title="${okazja?'Młodzieżowiec bez menedżera — ':''}Kliknij, aby otworzyć profil">
+    const mlodszy = oIleMlodszy(p);
+    return `<tr class="player-row${okazja?' prow-okazja':''}${mlodszy?' prow-mlodszy':''}" data-action="row-open-player" data-id="${p.id}" style="cursor:pointer;" title="${
+      mlodszy?`Młodszy rocznik w swojej kategorii — gra przeciwko starszym. `:''}${okazja?'Młodzieżowiec bez menedżera — ':''}Kliknij, aby otworzyć profil">
       <td><input type="checkbox" class="player-checkbox" data-id="${p.id}"></td>
       <td style="color:var(--ink-soft);font-size:12px;text-align:right;">${idx+1}</td>
       <td>${p.nationality?`<span title="${esc(p.nationality)}">${nationalityFlag(p.nationality)}</span> `:''}<strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</td>
@@ -3849,7 +3851,10 @@ function viewPlayers(){
   <p class="view-sub">${viewingRocznikGroup ? 'Zawodnicy z tego rocznika.' : 'Kartoteka wszystkich obserwowanych zawodników.'}
     <span style="display:inline-flex;align-items:center;gap:6px;margin-left:8px;">
       <span style="display:inline-block;width:22px;height:12px;border-radius:3px;background:var(--row-okazja);box-shadow:inset 3px 0 0 var(--gold);"></span>
-      młodzieżowiec bez menedżera</span></p>
+      młodzieżowiec bez menedżera</span>
+    <span style="display:inline-flex;align-items:center;gap:6px;margin-left:12px;">
+      <span style="display:inline-block;width:22px;height:12px;border-radius:3px;background:var(--row-mlodszy);box-shadow:inset 3px 0 0 var(--good);"></span>
+      młodszy rocznik niż jego kategoria</span></p>
   ${viewingRocznikGroup ? `<div style="display:flex;gap:8px;margin-bottom:12px;">
     <button class="secondary" data-action="back-rocznik">← Wróć do roczników</button>
     <button class="danger" data-action="delete-rocznik" data-year="${viewingRocznikGroup.match(/\d{4}/)[0]}" title="Usuń wszystkich zawodników z tego rocznika">🗑️ Usuń cały rocznik</button>
@@ -5701,7 +5706,8 @@ function viewClubDetail(id){
     const a = playerAvg(p.id);
     // Wiersz otwiera profil — tak samo jak na liście Zawodników, żeby podgląd działał wszędzie
     // jednakowo, a nie tylko przez mały odnośnik „Zobacz" na końcu wiersza.
-    return `<tr class="player-row" data-action="row-open-player" data-id="${p.id}" style="cursor:pointer;" title="Kliknij, aby otworzyć profil">
+    return `<tr class="player-row${klasaMlodszego(p)}" data-action="row-open-player" data-id="${p.id}" style="cursor:pointer;" title="${
+      oIleMlodszy(p)?'Młodszy rocznik w swojej kategorii — gra przeciwko starszym. ':''}Kliknij, aby otworzyć profil">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="squad-player-check" data-id="${p.id}"></td>
       <td>${p.nationality?`<span title="${esc(p.nationality)}">${nationalityFlag(p.nationality)}</span> `:''}<strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</td>
       <td>${rocznikHtml(p)}</td>
@@ -6556,6 +6562,55 @@ async function dopiszMlodziezowcowDoMonitoringu(){
   return nowi.length;
 }
 
+// MŁODSZY ROCZNIK W SWOJEJ KATEGORII — najmocniejszy sygnał w piłce młodzieżowej.
+//
+// W CLJ U15 grają dwa roczniki naraz, tak samo w U17 i U19. Chłopak z młodszego rocznika mierzy się
+// z rok starszymi kolegami, więc ten sam dorobek znaczy u niego znacznie więcej — a na liście
+// wygląda identycznie jak u starszego. Dlatego wiersz takiego zawodnika ma się rzucać w oczy sam,
+// bez szukania i bez sortowania.
+//
+// Rocznika podstawowego NIE WPISUJEMY z palca, bo co sezon byłby nieaktualny. Wyliczamy go z nazwy
+// kategorii i sezonu klubu: kategoria U-N w sezonie A/B ma rocznik podstawowy A − N + 1.
+// Dla CLJ U15 w sezonie 2026/2027 wychodzi 2012, więc rocznik 2013 jest o rok młodszy.
+function biezacySezonPilkarski(){
+  const d = new Date();
+  // Sezon rusza latem, więc do czerwca włącznie jesteśmy jeszcze w sezonie rozpoczętym rok wcześniej.
+  const rok = d.getMonth() >= 6 ? d.getFullYear() : d.getFullYear() - 1;
+  return rok + '/' + (rok + 1);
+}
+function rocznikBazowyKategorii(liga, sezon){
+  const m = String(liga||'').match(/\bU-?(\d{2})\b/i);
+  if(!m) return null;
+  const wiek = Number(m[1]);
+  const s = String(sezon || biezacySezonPilkarski()).match(/(\d{4})/);
+  if(!s) return null;
+  return Number(s[1]) - wiek + 1;
+}
+// Ile roczników młodszy od podstawowego dla swojej kategorii. 0 = rocznik podstawowy albo nie wiadomo.
+function oIleMlodszy(p){
+  const rok = Number(rocznikZawodnika(p));
+  if(!Number.isFinite(rok)) return 0;
+  const klub = DB.clubs.find(c=>c.id === (p && p.clubId));
+  if(!klub) return 0;
+  const baza = rocznikBazowyKategorii(klub.league, klub.season);
+  if(!baza) return 0;
+  const roznica = rok - baza;
+  // Powyżej trzech roczników to prawie na pewno pomyłka w danych, nie cudowne dziecko —
+  // nie podświetlamy, żeby błąd w kartotece nie udawał odkrycia.
+  return roznica >= 1 && roznica <= 3 ? roznica : 0;
+}
+function klasaMlodszego(p){ return oIleMlodszy(p) ? ' prow-mlodszy' : ''; }
+function odznakaMlodszego(p){
+  const o = oIleMlodszy(p);
+  if(!o) return '';
+  const klub = DB.clubs.find(c=>c.id === p.clubId);
+  const baza = klub ? rocznikBazowyKategorii(klub.league, klub.season) : null;
+  const opis = `O ${o} ${o===1?'rocznik':'roczniki'} młodszy od podstawowego dla tej kategorii`
+    + (baza ? ` (${klub.league} — rocznik podstawowy ${baza})` : '')
+    + '. Gra przeciwko starszym, więc ten sam dorobek znaczy u niego więcej.';
+  return `&nbsp;<span class="mlodszy-badge" title="${esc(opis)}">&minus;${o} rocznik</span>`;
+}
+
 function isYouthPlayer(p){
   // Protokół PZPN oznacza młodzieżowca wprost — i to źródło jest pewniejsze niż rocznik, bo
   // w IV lidze rocznika nie ma skąd wziąć, a przepis o młodzieżowcu obowiązuje tam tak samo.
@@ -6592,7 +6647,7 @@ function rocznikZawodnika(p){
 // wniosek z przepisu, a nie jako odczytaną datę. Kreska w tym miejscu nie mówiła nic.
 function rocznikHtml(p){
   const rok = rocznikZawodnika(p);
-  if(rok) return `${esc(rok)}${isYouthPlayer(p)?youthBadge(p):''}`;
+  if(rok) return `${esc(rok)}${odznakaMlodszego(p)}${isYouthPlayer(p)?youthBadge(p):''}`;
   if(p && p.mlodziezowiec){
     return `<span class="meta" style="white-space:nowrap;" title="Wniosek z oznaczenia (M) w protokole PZPN, a nie odczytana data urodzenia. Dokładnego rocznika „Łączy nas piłka” nie publikuje — uzupełnij go w kartotece zawodnika.">≤&nbsp;${ROCZNIK_MLODZIEZOWCA}</span>${youthBadge(p)}`;
   }
@@ -8714,7 +8769,7 @@ function panelSkanera(){
 
   const trs = wiersze.slice(0, 40).map((w,i)=>{
     const wMonitoringu = w.p.monitored;
-    return `<tr>
+    return `<tr class="${klasaMlodszego(w.p).trim()}">
       <td style="text-align:right;color:var(--ink-soft);">${i+1}</td>
       <td><strong>${esc(w.p.lastName)}</strong> ${esc(w.p.firstName)}${
         w.brakRocznika ? ' <span title="Rocznika brak — w U15 to informacja decydująca. Uzupełnij w kartotece." style="color:var(--gold-dark);">❓</span>' : ''}</td>
@@ -8801,7 +8856,7 @@ function viewMonitoring(){
   });
   const trs = rows.map(({p,a,ds,priority})=>{
     const pillClass = priority==="Pilne"?"pill-urgent": priority==="Top talent"?"pill-top":"pill-ok";
-    return `<tr>
+    return `<tr class="${klasaMlodszego(p).trim()}">
       <td><strong>${esc(p.lastName)} ${esc(p.firstName)}</strong></td>
       <td>${rocznikHtml(p)}</td>
       <td>${esc(clubName(p.clubId))}</td>
