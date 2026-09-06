@@ -11740,8 +11740,12 @@ function openMatchScheduleModal(){
       .filter(j => j.urls.length);
 
     if(!jobs.length){
-      status.innerHTML = `<span style="color:var(--clay-dark);">Dla „${esc(selectedLeague)}" nie mam adresu terminarza
-        (IV liga dzieli się na grupy regionalne). Wgraj terminarz z pliku albo podaj adres strony ligi na 90minut.</span>`;
+      // ŚLEPY ZAUŁEK ZAMIENIONY NA JEDEN RUCH. Komunikat mówił dotąd o grupach IV ligi — przy
+      // CLJ było to zwyczajnie nieprawdą i nie dawało żadnego wyjścia. Adres terminarza wskazuje
+      // się raz, a potem pobiera się sam jak w pozostałych ligach.
+      status.innerHTML = `<span style="color:var(--clay-dark);">Nie mam jeszcze adresu terminarza dla „${esc(selectedLeague)}".</span>
+        <span style="display:block;margin-top:4px;">90minut prowadzi terminarz tych rozgrywek — wskaż jego adres raz,
+        a potem będzie się pobierał sam. Naciśnij <strong>„🔗 Adres terminarza"</strong> obok.</span>`;
       return;
     }
 
@@ -11857,8 +11861,18 @@ function openMatchScheduleModal(){
     const key = selectedLeague || '';
     if(autoTried.has(key)) return;
     const targets = selectedLeague ? [selectedLeague] : Object.keys(SCHEDULE_SOURCES);
-    const usable = targets.filter(lg => scheduleUrlsFor(lg).length);   // IV liga bez adresu odpada
-    if(!usable.length) return;
+    const usable = targets.filter(lg => scheduleUrlsFor(lg).length);   // liga bez adresu odpada
+    if(!usable.length){
+      // MILCZENIE TO NAJGORSZA ODPOWIEDŹ. Po wybraniu rozgrywek bez zapisanego adresu okno nie
+      // pokazywało nic — ani meczów, ani powodu. Mówimy więc od razu, czego brakuje i gdzie kliknąć.
+      const status = overlay.querySelector('#schedule-status');
+      if(status && selectedLeague){
+        status.innerHTML = `<span style="color:var(--clay-dark);">Nie mam jeszcze adresu terminarza dla „${esc(selectedLeague)}".</span>
+          <span style="display:block;margin-top:4px;">90minut prowadzi terminarz tych rozgrywek — wskaż jego adres raz przyciskiem
+          <strong>„🔗 Adres terminarza"</strong>, a potem będzie się pobierał sam.</span>`;
+      }
+      return;
+    }
     // Pobieramy, gdy czegoś brakuje albo gdy którykolwiek terminarz jest starszy niż doba.
     const nothingToShow = upcomingMatches().length === 0;
     if(!nothingToShow && !usable.some(scheduleIsStale)) return;
@@ -11874,9 +11888,14 @@ function openMatchScheduleModal(){
     // mecz jest już zaimportowany. Wcześniej lista powstawała z DB.matches, więc przy pustym
     // terminarzu zostawało samo "Wszystkie ligi" i nie było czego wybrać.
     const SCHEDULE_LEAGUES = ["Ekstraklasa","I liga","II liga","III liga","IV liga"];
+    // KATEGORIE JUNIORSKIE TAKŻE ZAWSZE. Rozgrywki CLJ trzeba móc wybrać, ZANIM wpadnie z nich
+    // pierwszy mecz — inaczej nie ma jak wskazać, czyj terminarz pobrać, i lista zostaje pusta
+    // na zawsze. Bierzemy je z listy lig, więc nowe grupy (jak U15) pojawiają się same.
+    const juniorskie = ((DB.settings as any).leagues||[]).filter((l:any)=>topLevelOf(l)==='Kategorie juniorskie');
+    const stale = [...SCHEDULE_LEAGUES, ...juniorskie];
     const extra = [...new Set(DB.matches.map(m=>m.league).filter(Boolean))]
-      .filter(l=> !SCHEDULE_LEAGUES.includes(l)).sort();
-    const leagues = [...SCHEDULE_LEAGUES, ...extra];
+      .filter(l=> !stale.includes(l)).sort();
+    const leagues = [...stale, ...extra];
     // Mecze porządkujemy WEDŁUG KOLEJKI, a dopiero wewnątrz niej po dacie. Przy sortowaniu samą
     // datą kolejki różnych lig przeplatały się (III liga gra kolejkę 1, gdy Ekstraklasa 2), więc
     // ten sam nagłówek „Kolejka 1" pojawiał się na liście kilka razy.
@@ -11906,6 +11925,8 @@ function openMatchScheduleModal(){
             ${leagues.map(l=>`<option value="${esc(l)}" ${selectedLeague===l?'selected':''}>${esc(l)}</option>`).join('')}
           </select>
           <button class="gold" data-action="fetch-schedule" style="white-space:nowrap;" title="${selectedLeague?'Odśwież terminarz tej ligi':'Pobierz terminarze wszystkich lig'}">⬇ ${selectedLeague?'Pobierz z 90minut':'Pobierz wszystkie ligi'}</button>
+          ${selectedLeague ? `<button class="secondary" data-action="schedule-url" style="white-space:nowrap;" title="Wskaż adres strony tych rozgrywek na 90minut — zapamiętam go na stałe">🔗 Adres terminarza${
+            scheduleUrlsFor(selectedLeague).length ? ' ✔' : ''}</button>` : ''}
         </div>
         <div id="schedule-status" class="note" style="margin-top:6px;font-size:11.5px;"></div>
       </div>
@@ -12045,6 +12066,32 @@ function openMatchScheduleModal(){
 
     const leagueFilter = overlay.querySelector('#schedule-league-filter') as HTMLSelectElement;
     if(leagueFilter) leagueFilter.onchange = ()=>{ selectedLeague = leagueFilter.value; draw(); maybeAutoFetch(); };
+
+    // ADRES TERMINARZA WSKAZANY RAZ. Numery rozgrywek na 90minut zmieniają się co sezon i z samego
+    // adresu nie da się poznać, które to rozgrywki — więc nie zgadujemy ich za człowieka. Zapisany
+    // adres trafia do ustawień, skąd czyta go scheduleUrlsFor, i od tej chwili pobiera się sam.
+    overlay.querySelectorAll('[data-action="schedule-url"]').forEach((b:any)=>b.onclick=async ()=>{
+      if(!selectedLeague) return;
+      const teraz = ((DB.settings as any).scheduleUrls||{})[selectedLeague] || '';
+      const wpisany = prompt(
+        `Adres terminarza „${selectedLeague}" na 90minut.\n\n`
+        + `Wejdź na 90minut.pl, otwórz te rozgrywki i skopiuj adres z paska przeglądarki.\n`
+        + `Wygląda tak: http://www.90minut.pl/liga/1/liga14675.html\n\n`
+        + `Puste pole usuwa zapamiętany adres.`, teraz);
+      if(wpisany === null) return;
+      const czysty = String(wpisany).trim();
+      const mapa: any = { ...((DB.settings as any).scheduleUrls||{}) };
+      if(!czysty){ delete mapa[selectedLeague]; }
+      else if(/^https?:\/\/(www\.)?90minut\.pl\//i.test(czysty)){ mapa[selectedLeague] = czysty; }
+      else { alert('To nie jest adres z 90minut.pl — nic nie zapisałem.'); return; }
+      DB.settings.scheduleUrls = mapa;
+      const ok = await saveSettings();
+      if(!ok){ alert('Nie udało się zapisać adresu — sprawdź baner u góry strony.'); return; }
+      autoTried.delete(selectedLeague);
+      draw();
+      const pobierz = overlay.querySelector('[data-action="fetch-schedule"]');
+      if(czysty && pobierz) fetchScheduleFor90minut(pobierz);
+    });
 
     // Przerysowanie okna zabiera ognisko z pola tekstowego i po każdej literze trzeba by w nie
     // klikać na nowo. Ten sam pomocnik zdał egzamin przy pozostałych polach w aplikacji.
