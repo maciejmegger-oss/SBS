@@ -4769,9 +4769,25 @@ function scalDuplikatyPoNazwie(nazwy, docelowaLiga){
 // chroniło przed dwoma oknami zapisującymi ten sam protokół naraz.
 let zapisProtokolowTrwa = false;
 
+// GRUPA ROZPOZNANA PO ADRESIE, Z KTOREGO PRZYSZLA WKLEJKA.
+//
+// Zakladka otwiera SBS w NOWEJ karcie, a tam nie ma jeszcze wybranej grupy. Bez niej herby i kadry
+// nie mają czym odsiać klubów o tej samej nazwie w różnych rozgrywkach („Legia Warszawa" gra
+// i w Ekstraklasie, i w CLJ U-15). Adres każdej grupy jest już zapamiętany przy pierwszym
+// zebraniu, więc wystarczy odczytać go z powrotem.
+function grupaZAdresuLnp(zrodlo){
+  const bez = (u)=>String(u||'').split('#')[0].replace(/\/+$/,'');
+  const cel = bez(zrodlo);
+  if(!cel) return '';
+  const mapa = (DB.settings as any).lnpGrupy || {};
+  for(const liga of Object.keys(mapa)){ if(bez(mapa[liga]) === cel) return liga; }
+  return '';
+}
+
 function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
   const klub = DB.clubs.find(c=>c.id===clubId);
-  const grupa = klub ? klub.league : (clubBrowse.group || clubBrowse.top || '');
+  const grupa = klub ? klub.league
+    : (clubBrowse.group || grupaZAdresuLnp(zrodloLnp) || clubBrowse.top || '');
   const klubyGrupy = DB.clubs.filter(c=>wTychRozgrywkach(c.league, grupa));
   const naglowekOkna = klub ? klub.name : (grupa || 'wybrana grupa');
   const overlay = document.createElement('div');
@@ -5117,6 +5133,9 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
     // Blok wycinamy z tekstu i pracujemy dalej — w jednej przesyłce przychodzą i herby,
     // i protokoły całej grupy. Wcześniej samo natrafienie na herby kończyło rozpoznanie
     // i wszystkie mecze przepadały bez śladu.
+    // Poziom rozgrywek dla herbow i kadr: najpierw otwarta grupa, a gdy jej nie ma - sama wklejka.
+    const poziomWklejki = poziomGrupy(grupa) || poziomZTekstuLnp(tekst);
+
     let komunikatHerbow = '';
     {
       const linie = tekst.split('\n');
@@ -5136,7 +5155,7 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
           if(!/^https?:\/\//i.test(adres)) return;
           // Poziom bierzemy z OTWARTEJ GRUPY, a nie na sztywno z IV ligi — herby i nazwy zbiera
           // się tak samo w CLJ, a wpisany na stałe poziom odciąłby tam wszystkie kluby.
-          const klub = dopasujKlubDoNazwy(nazwa, grupa, poziomGrupy(grupa));
+          const klub = dopasujKlubDoNazwy(nazwa, grupa, poziomWklejki);
           if(!klub){ nierozpoznane.push(nazwa); return; }
           // NAZWA Z ŁNP JEST TĄ WŁAŚCIWĄ — to z niej lecą protokoły.
           //
@@ -5227,7 +5246,7 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
       const dzisKadra = new Date().toISOString().slice(0,10);
       kadryZWklejki.forEach(k=>{
         // Ta sama droga co przy herbach: nazwa z ŁNP, grupa z otwartego okna, poziom z grupy.
-        const klubKadry = dopasujKlubDoNazwy(k.nazwa, grupa, poziomGrupy(grupa));
+        const klubKadry = dopasujKlubDoNazwy(k.nazwa, grupa, poziomWklejki);
         if(!klubKadry){ nierozpoznaneKluby.push(k.nazwa); return; }
         let doTegoKlubu = 0;
         k.osoby.forEach(pelnaNazwa=>{
@@ -6747,8 +6766,17 @@ function podsumowanieMinut(przebieg){
 // klubu występuje przecież w pierwszej drużynie i w juniorach.
 function poziomGrupy(nazwaGrupy){
   const t = String(nazwaGrupy || '');
+  // KAŻDY ROCZNIK SPRAWDZAMY Z OSOBNA, ZANIM ZADZIAŁA WORKOWE „CLJ".
+  //
+  // Warunek „albo jest w nazwie CLJ" stał przy U19 i łapał wszystko: „CLJ U15 gr. B" dostawało
+  // poziom CLJ U19. Dopasowanie klubu przepuszcza tylko te, których rozgrywki zaczynają się od
+  // podanego poziomu, więc ŻADEN klub U-15 nie mógł się dopasować — grupa wgrywała się bez
+  // protokołów, bez herbów i bez statystyk, a komunikat mówił tylko „nie rozpoznałem klubu".
+  if(/u\s*-?\s*15/i.test(t)) return 'CLJ U15';
   if(/u\s*-?\s*17/i.test(t)) return 'CLJ U17';
-  if(/u\s*-?\s*19/i.test(t) || /\bclj\b/i.test(t)) return 'CLJ U19';
+  if(/u\s*-?\s*19/i.test(t)) return 'CLJ U19';
+  // Samo „CLJ" bez rocznika — zostawiamy szeroko, żeby dopasowanie objęło wszystkie kategorie.
+  if(/\bclj\b/i.test(t)) return 'CLJ';
   const m = t.match(/^(IV|III|II|I)\s+liga/i);
   if(m) return `${m[1].toUpperCase()} liga`;
   if(/ekstraklasa/i.test(t)) return 'Ekstraklasa';
@@ -8805,7 +8833,7 @@ function openPlayerAnalysisModal(playerId){
 // działałoby więc dla Ekstraklasy, a milczało dokładnie tam, gdzie mamy przewagę. Zamiast tego
 // zapamiętujemy, kogo już przejrzałeś, i pokazujemy różnicę — to działa niezależnie od tego, czy
 // źródło podaje datę.
-const RADAR_POZIOMY = ['Ekstraklasa','I liga','II liga','III liga','IV liga','CLJ U19','CLJ U17'];
+const RADAR_POZIOMY = ['Ekstraklasa','I liga','II liga','III liga','IV liga','CLJ U19','CLJ U17','CLJ U15'];
 
 function radarPoziom(liga){
   const l = String(liga || '');
@@ -13109,10 +13137,10 @@ function zapamietajAdresGrupy(zrodlo, protokoly){
 // NAZWY POZYCJI Z ŁNP NA SŁOWNIK SBS.
 //
 // ŁNP pisze pozycje po swojemu, a mapa pozycji rozpoznaje osiem nazw ogólnych (POSITION_NUMBERS).
-// Tłumaczymy WYŁĄCZNIE to, co jednoznaczne. Samo „Obrońca" nie mówi, czy to stoper, czy boczny —
-// wpisanie którejkolwiek z tych nazw byłoby zgadywaniem, a mapa postawiłaby zawodnika nie tam,
-// gdzie gra. Lepiej zostawić puste pole niż wpisać nieprawdę, więc nierozpoznane nazwy trafiają
-// do zestawienia po imporcie i dopisujemy je tutaj, gdy zobaczymy, co naprawdę przysyła ŁNP.
+// Tłumaczymy WYŁĄCZNIE to, co jednoznaczne. Samo „Obrońca" zapisujemy jako „Obrońca" — nie
+// zgadujemy, czy to stoper, czy boczny, bo mapa postawiłaby wtedy zawodnika nie tam, gdzie gra.
+// Nazwy, których nie umiemy przełożyć na nic prawdziwego, trafiają do zestawienia po imporcie
+// i dopisujemy je tutaj, gdy zobaczymy, co naprawdę przysyła ŁNP.
 const POZYCJE_NIEROZPOZNANE = new Set<string>();
 function pozycjaZLnp(surowa){
   const t = String(surowa || '').toLowerCase()
@@ -13141,6 +13169,43 @@ function pozycjaZLnp(surowa){
   POZYCJE_NIEROZPOZNANE.add(String(surowa).trim());
   return '';
 }
+// ROZGRYWKI ROZPOZNANE Z TRESCI WKLEJKI - jedna tablica dla protokolow, herbow i kadr.
+//
+// Herby i listy zawodnikow trafialy dotad do dopasowania BEZ poziomu, gdy okno otwieralo sie
+// w swiezej karcie - a tak wlasnie robi zakladka. Klub o tej samej nazwie w innych rozgrywkach
+// wygrywal wtedy z wlasciwym: kadra CLJ U-15 ladowala w seniorskim Mieszku Gniezno. Wklejka
+// mowi jednak wprost, o jakie rozgrywki chodzi - wystarczy ja o to zapytac.
+const POZIOMY_LNP: [RegExp, string][] = [
+    // CLJ SPRAWDZAMY PIERWSZE, bo w nazwie tych rozgrywek też stoi słowo „liga" („Centralna Liga
+    // Juniorów") — przy odwrotnej kolejności protokół juniorski wziąłby poziom seniorski i dorobek
+    // U17 wylądowałby w pierwszej drużynie o tej samej nazwie.
+    //
+    // „U17" MUSI STAĆ PRZY NAZWIE ROZGRYWEK, a nie gdziekolwiek w protokole. Wzorzec /u\s*-?\s*17/
+    // wystarczał, żeby zwykła minuta zejścia zapisana jako „…u 17'" ustawiła protokołowi Ekstraklasy
+    // poziom CLJ U17 — a wtedy odcinane były wszystkie kluby i wychodziło absurdalne „Zagłębie Lubin
+    // gra w Ekstraklasie, a zbierasz do Ekstraklasy". Ten sam powód każe wymagać „CLJ" jako całego
+    // słowa: bez tego dowolne „clj" wewnątrz nazwiska zmieniałoby rozgrywki.
+    [/(?:centralna\s+liga\s+junior\w*|\bclj\b)[^\n]{0,40}u\s*-?\s*17/i, 'CLJ U17'],
+    // U-15 dopisane z tego samego powodu co U17: bez własnego wzorca protokół CLJ U-15 dostawał
+    // poziom CLJ U19 i wszystkie kluby tej kategorii były odrzucane.
+    [/(?:centralna\s+liga\s+junior\w*|\bclj\b)[^\n]{0,40}u\s*-?\s*15/i, 'CLJ U15'],
+    [/centralna\s+liga\s+junior|\bclj\b/i, 'CLJ U19'],
+    // Ekstraklasy tu dotąd nie było w ogóle — jej protokoły szły bez poziomu, więc o docelowym
+    // klubie decydowała otwarta grupa. Przy grupie juniorskiej albo rocznikowej odcinało to
+    // wszystkie kluby naraz.
+    [/ekstraklasa/i, 'Ekstraklasa'],
+    [/czwarta\s+liga|\bIV\s+liga/i, 'IV liga'],
+    [/trzecia\s+liga|\bIII\s+liga/i, 'III liga'],
+    [/druga\s+liga|\bII\s+liga/i, 'II liga'],
+    [/pierwsza\s+liga|\bI\s+liga/i, 'I liga'],
+    [/klasa\s+okręgowa/i, 'Klasa okręgowa'],
+];
+function poziomZTekstuLnp(tekst){
+  const t = String(tekst || '');
+  for(const [wzor, nazwaPoziomu] of POZIOMY_LNP){ if(wzor.test(t)) return nazwaPoziomu; }
+  return '';
+}
+
 function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
   const zdarzenia = zdarzeniaZProtokolu(rawText);
   const druzyny = nazwyDruzynZProtokolu(rawText);
@@ -13168,28 +13233,8 @@ function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
   // liczbą zawodników — i dorobek z IV ligi wylądował u młodzieży, a klub seniorski został
   // z samymi kreskami. Protokół podaje rozgrywki wprost („2 kolejka, Czwarta liga”), więc
   // niech to on rozstrzyga.
-  const POZIOMY = [
-    // CLJ SPRAWDZAMY PIERWSZE, bo w nazwie tych rozgrywek też stoi słowo „liga" („Centralna Liga
-    // Juniorów") — przy odwrotnej kolejności protokół juniorski wziąłby poziom seniorski i dorobek
-    // U17 wylądowałby w pierwszej drużynie o tej samej nazwie.
-    //
-    // „U17" MUSI STAĆ PRZY NAZWIE ROZGRYWEK, a nie gdziekolwiek w protokole. Wzorzec /u\s*-?\s*17/
-    // wystarczał, żeby zwykła minuta zejścia zapisana jako „…u 17'" ustawiła protokołowi Ekstraklasy
-    // poziom CLJ U17 — a wtedy odcinane były wszystkie kluby i wychodziło absurdalne „Zagłębie Lubin
-    // gra w Ekstraklasie, a zbierasz do Ekstraklasy". Ten sam powód każe wymagać „CLJ" jako całego
-    // słowa: bez tego dowolne „clj" wewnątrz nazwiska zmieniałoby rozgrywki.
-    [/(?:centralna\s+liga\s+junior\w*|\bclj\b)[^\n]{0,40}u\s*-?\s*17/i, 'CLJ U17'],
-    [/centralna\s+liga\s+junior|\bclj\b/i, 'CLJ U19'],
-    // Ekstraklasy tu dotąd nie było w ogóle — jej protokoły szły bez poziomu, więc o docelowym
-    // klubie decydowała otwarta grupa. Przy grupie juniorskiej albo rocznikowej odcinało to
-    // wszystkie kluby naraz.
-    [/ekstraklasa/i, 'Ekstraklasa'],
-    [/czwarta\s+liga|\bIV\s+liga/i, 'IV liga'],
-    [/trzecia\s+liga|\bIII\s+liga/i, 'III liga'],
-    [/druga\s+liga|\bII\s+liga/i, 'II liga'],
-    [/pierwsza\s+liga|\bI\s+liga/i, 'I liga'],
-    [/klasa\s+okręgowa/i, 'Klasa okręgowa'],
-  ];
+  const POZIOMY = POZIOMY_LNP;
+
   let poziomZProtokolu = '';
   for(const [wzor, nazwaPoziomu] of POZIOMY){
     if(wzor.test(rawText)){ poziomZProtokolu = nazwaPoziomu as string; break; }
@@ -13661,7 +13706,7 @@ function sprawdzZakladke(nazwa, kod){
 
 // Wersja zakładki. Widnieje w każdym jej komunikacie i w oknie SBS, żeby dało się jednym
 // spojrzeniem stwierdzić, czy w pasku siedzi kod sprzed poprawek.
-const ZAKLADKA_WERSJA = 'v49 z 06.09.2026';
+const ZAKLADKA_WERSJA = 'v50 z 06.09.2026';
 const SBS_ADRES_JS = JSON.stringify(location.origin);
 // ZAKŁADKA W PASKU NIE AKTUALIZUJE SIĘ SAMA — I TO BYŁ PRAWDZIWY PROBLEM.
 //
