@@ -8,7 +8,9 @@ const ciało = zrodlo.match(/function meczeKlubu\(clubId\)\{[\s\S]*?\n\}/);
 if (!ciało) { console.error("Nie znalazłem meczeKlubu w src/main.ts."); process.exit(1); }
 const mTabeli = zrodlo.match(/function wierszZTabeli\(klub\)\{[\s\S]*?\n\}/);
 if (!mTabeli) { console.error("Nie znalazłem wierszZTabeli w src/main.ts."); process.exit(1); }
-const zrodloTabeli = mTabeli[0];
+const mOsiagalne = zrodlo.match(/function osiagalneKolejki\(klub\)\{[\s\S]*?\n\}/);
+if (!mOsiagalne) { console.error("Nie znalazłem osiagalneKolejki w src/main.ts."); process.exit(1); }
+const zrodloTabeli = mTabeli[0] + '\n' + mOsiagalne[0];
 
 const importNorm = (s) => String(s || '').toLowerCase()
   .replace(/ł/g, 'l').normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -182,6 +184,44 @@ const licz = (players, clubId, clubs = [{ id: clubId, season: '2026/2027' }], ta
   console.log('\n13. Klub spoza tabeli');
   sprawdz('rozegrane z kartotek', w.rozegrane === 4, String(w.rozegrane));
   sprawdz('oznaczone jako NIE z tabeli', w.zTabeli === false);
+}
+
+// 14. PROTOKOŁY POJAWIAJĄ SIĘ PÓŹNIEJ NIŻ WYNIKI. 90minut wystawia wynik zaraz po meczu, a skład
+//     i minuty dopisuje ręcznie kilka dni później. Statystyki zawodników liczymy z protokołów,
+//     więc tuż po kolejce CAŁA grupa jest zaległa o jedną — i nie jest to niczyje zaniedbanie.
+//     Sprawdzone na żywo 07.09.2026: III liga gr. II miała 7 rozegranych kolejek i protokoły do 6.
+{
+  const kluby = [{ id: 'P', name: 'Polonia Środa Wielkopolska', league: 'III liga, gr. II', season: '2026/2027' }];
+  const tabele = { 'III liga, gr. II': {
+    kolejekZProtokolami: 6,
+    wiersze: [{ nazwa: 'Polonia Środa Wielkopolska', mecze: 7, punkty: 19 }],
+  } };
+  const w = licz([{ clubId: 'P', matches: 6, przebieg: [] }], 'P', kluby, tabele);
+  console.log('\n14. Kolejka rozegrana, protokołów jeszcze nie ma');
+  console.log('   ' + JSON.stringify(w));
+  sprawdz('rozegrane 7 — tabela to wie', w.rozegrane === 7, String(w.rozegrane));
+  sprawdz('wgrane 6 — tyle jest do wzięcia', w.wgrane === 6, String(w.wgrane));
+  sprawdz('osiągalne 6 — do tylu są protokoły', w.osiagalne === 6, String(w.osiagalne));
+}
+
+// 15. Gdy protokoły nadrobią, osiągalne zrównuje się z rozegranymi i brak przestaje być pozorny.
+{
+  const kluby = [{ id: 'P', name: 'Klub', league: 'III liga, gr. II', season: '2026/2027' }];
+  const tabele = { 'III liga, gr. II': {
+    kolejekZProtokolami: 7,
+    wiersze: [{ nazwa: 'Klub', mecze: 7, punkty: 10 }],
+  } };
+  const w = licz([{ clubId: 'P', matches: 6, przebieg: [] }], 'P', kluby, tabele);
+  console.log('\n15. Protokoły już są, my mamy mniej');
+  sprawdz('osiągalne 7', w.osiagalne === 7, String(w.osiagalne));
+  sprawdz('wgrane 6 — tu naprawdę brakuje', w.wgrane === 6, String(w.wgrane));
+}
+
+// 16. Bez pobranej tabeli nie wiemy nic o protokołach — i nie udajemy, że wiemy.
+{
+  const w = licz([{ clubId: 'K1', matches: 5, przebieg: [] }], 'K1');
+  console.log('\n16. Tabela niepobrana');
+  sprawdz('osiągalne = null', w.osiagalne === null, String(w.osiagalne));
 }
 
 console.log(bledy ? `\n${bledy} BŁĘDÓW` : '\nWszystko przeszło.');

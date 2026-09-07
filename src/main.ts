@@ -2601,7 +2601,8 @@ async function pobierzTabeleLig(zakresWszystko){
     // a przypisanie tabeli do złej grupy jest gorsze niż jej brak.
     if(najlepsza && ile >= Math.ceil((t.wiersze || []).length / 2)){
       tabeleLig[najlepsza] = { pobrano: dane.pobrano, zrodlo: t.nazwaZrodla, adres: t.adres,
-        kolejek: t.kolejek, wiersze: t.wiersze, rozpoznanych: ile };
+        kolejek: t.kolejek, kolejekZProtokolami: t.kolejekZProtokolami,
+        wiersze: t.wiersze, rozpoznanych: ile };
       przypisanych++;
     } else {
       nieprzypisane.push(`${t.nazwaZrodla} (rozpoznanych klubów: ${ile})`);
@@ -4622,7 +4623,11 @@ function viewClubs(){
   const rows = list.map(c=>{
     const count = DB.players.filter(p=>p.clubId===c.id).length;
     const d = dorobekKlubow.get(c.id) || { rozegrane: 0, wgrane: 0, punkty: null };
-    const braki = d.rozegrane - d.wgrane;
+    // Brakiem jest tylko to, co DA SIĘ zebrać. Kolejka bez opublikowanych protokołów nie jest
+    // niczyim zaniedbaniem i nie może świecić na czerwono przy osiemnastu klubach naraz.
+    const doWziecia = d.osiagalne != null ? Math.min(d.rozegrane, d.osiagalne) : d.rozegrane;
+    const braki = Math.max(0, doWziecia - d.wgrane);
+    const czekaNaZrodlo = Math.max(0, d.rozegrane - doWziecia);
     // Podpowiedź rozdziela dwie różne rzeczy: ile kolejek klub rozegrał wg naszych danych i ile
     // z nich mamy ROZPISANYCH mecz po meczu. Po odświeżeniu z 90minut pierwsza liczba jest pełna,
     // a druga zostaje w tyle — bo tamta droga oddaje sumy sezonowe, nie przebieg.
@@ -4634,6 +4639,7 @@ function viewClubs(){
     const podpowiedz = [
       `Rozegranych kolejek: ${d.rozegrane}${d.zTabeli ? ' (z tabeli 90minut)' : ' — oszacowane z kartotek, bo tabela nie jest pobrana'}.`,
       `Wgranych do SBS: ${d.wgrane}${braki > 0 ? ` — brakuje ${braki}` : ''}.`,
+      czekaNaZrodlo ? `Ostatnie ${czekaNaZrodlo === 1 ? 'spotkanie czeka' : czekaNaZrodlo + ' spotkania czekają'} na protokół — 90minut wystawia wynik od razu, a składy i minuty dopisuje ręcznie kilka dni później. Nic tu nie przeoczyłeś.` : '',
       brakujeRozpisanych ? `Rozpisanych mecz po meczu: ${d.rozpisanych || 0} — reszta to sumy sezonowe z 90minut, bez składów i minut.` : '',
       d.zawyzone ? `W kartotekach jest o ${d.zawyzone} więcej — 90minut sumuje zawodnikowi WSZYSTKIE rozgrywki, więc doliczają się mecze Pucharu Polski i sparingi. To nie jest błąd; w tabeli ligowej liczy się ${d.rozegrane}.` : '',
     ].filter(Boolean).join(' ');
@@ -4641,6 +4647,7 @@ function viewClubs(){
       ? '<span class="meta">—</span>'
       : `<span title="${esc(podpowiedz)}" style="${braki>0?'color:var(--clay-dark);font-weight:700;':'font-weight:600;'}">${d.rozegrane}/${d.wgrane}</span>`
         + (braki>0 ? ' <span title="Brakujące kolejki — statystyki tego klubu są nieaktualne">⚠️</span>' : '')
+        + (!braki && czekaNaZrodlo ? ' <span class="meta" title="Kolejka rozegrana, ale 90minut nie opublikował jeszcze protokołów — nie ma czego zebrać">⏳</span>' : '')
         + (!braki && brakujeRozpisanych ? ' <span class="meta" title="Mamy sumy sezonowe, ale nie wszystkie mecze rozpisane">◐</span>' : '')
         // NIE WYKRZYKNIK. Nadmiar nie jest usterką: 90minut sumuje zawodnikowi wszystkie
         // rozgrywki, więc klub grający w Pucharze Polski ZAWSZE będzie miał w kartotekach więcej
@@ -4745,16 +4752,24 @@ function viewClubs(){
     </details>`;
   })()}
   ${najwiecejMeczow > 0 ? (()=>{
+    const dorobki = [...dorobekKlubow.values()];
+    const osiagalne = dorobki.map(d=>d.osiagalne).find(x=>x != null);
+    const doWziecia = osiagalne != null ? Math.min(najwiecejMeczow, osiagalne) : najwiecejMeczow;
     const wTyle = list.filter(c=>{
-      const d = dorobekKlubow.get(c.id) || { rozegrane:0, wgrane:0 };
-      return d.wgrane < d.rozegrane;
+      const d = dorobekKlubow.get(c.id) || { wgrane:0 };
+      return d.wgrane < doWziecia;
     });
-    const zTabeli = [...dorobekKlubow.values()].some(d=>d.zTabeli);
+    const zTabeli = dorobki.some(d=>d.zTabeli);
     return `<br><strong>Rozegranych kolejek: ${najwiecejMeczow}</strong>`
       + (zTabeli ? ' <span class="note">(z tabeli 90minut)</span>. ' : ' <span class="note">— oszacowane z kartotek; kliknij „⭳ Tabele z 90minut", żeby mieć pewną liczbę</span>. ')
+      // NAJWAŻNIEJSZE ZDANIE W TYM WIDOKU, gdy źródło jest w tyle: bez niego cała grupa świeci
+      // na czerwono i wygląda, jakby zbieranie było niedokończone.
+      + (najwiecejMeczow > doWziecia
+        ? `<span class="note">Protokoły są do ${doWziecia}. kolejki — 90minut wystawia wynik od razu, a składy i minuty dopisuje ręcznie kilka dni później.
+           Statystyki z ${doWziecia + 1}. kolejki uzupełnią się same, gdy protokoły się pojawią.</span> ` : '')
       + (wTyle.length
-        ? `<span style="color:var(--clay-dark);">${wTyle.length} ${wTyle.length===1?'klub ma niekomplet':'klubów ma niekomplet'} — tam brakuje kolejek.</span>`
-        : 'Wszystkie kluby mają komplet.');
+        ? `<span style="color:var(--clay-dark);">${wTyle.length} ${wTyle.length===1?'klub ma niekomplet':'klubów ma niekomplet'} wobec dostępnych ${doWziecia} kolejek.</span>`
+        : `Wszystkie kluby mają komplet z dostępnych ${doWziecia} kolejek.`);
   })() : ''}</p>
   ${topRow}
   ${groupRow}
@@ -8812,6 +8827,14 @@ function wierszZTabeli(klub){
     });
   return wiersz || null;
 }
+// Ile kolejek da się realnie zebrać: tyle, ile ma opublikowane protokoły. Zwraca null, gdy tabeli
+// nie pobrano — wtedy nie wiemy i nie udajemy, że wiemy.
+function osiagalneKolejki(klub){
+  if(!klub) return null;
+  const tab = tabeleLig[String(klub.league || '')];
+  const n = tab ? Number(tab.kolejekZProtokolami) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
 // Sama liczba meczów — najczęściej używany fragment wiersza.
 function meczeZTabeli(klub){
   const w = wierszZTabeli(klub);
@@ -8875,6 +8898,11 @@ function meczeKlubu(clubId){
     zawyzone: zTabeli != null && mamy > zTabeli ? mamy - zTabeli : 0,
     rozpisanych: spotkania.size,
     zTabeli: zTabeli != null,
+    // DO ILU KOLEJEK DA SIĘ W OGÓLE ZEBRAĆ. 90minut wystawia wynik zaraz po meczu, a protokół
+    // (składy, minuty) dopisuje ręcznie kilka dni później. Statystyki zawodników liczymy właśnie
+    // z protokołów, więc tuż po kolejce CAŁA grupa jest zaległa o jedną — i nie ma w tym niczyjej
+    // winy. Ostrzeżenie ma świecić tylko wtedy, gdy dane SĄ do wzięcia, a my ich nie mamy.
+    osiagalne: osiagalneKolejki(klub),
     punkty: punktyOficjalne != null ? punktyOficjalne : punkty,
   };
 }
