@@ -4617,23 +4617,32 @@ function viewClubs(){
   // różnica między aktualnym obrazem ligi a nieaktualnym. Odniesieniem jest najwyższa liczba
   // meczów w grupie: skoro któryś klub ma sześć, to kolejka jest szósta.
   const dorobekKlubow = new Map(list.map(c=>[c.id, meczeKlubu(c.id)]));
-  const najwiecejMeczow = Math.max(0, ...[...dorobekKlubow.values()].map(x=>x.meczow));
+  const najwiecejMeczow = Math.max(0, ...[...dorobekKlubow.values()].map(x=>x.rozegrane));
 
   const rows = list.map(c=>{
     const count = DB.players.filter(p=>p.clubId===c.id).length;
-    const d = dorobekKlubow.get(c.id) || { meczow: 0, punkty: null };
-    const braki = najwiecejMeczow - d.meczow;
+    const d = dorobekKlubow.get(c.id) || { rozegrane: 0, wgrane: 0, punkty: null };
+    const braki = d.rozegrane - d.wgrane;
     // Podpowiedź rozdziela dwie różne rzeczy: ile kolejek klub rozegrał wg naszych danych i ile
     // z nich mamy ROZPISANYCH mecz po meczu. Po odświeżeniu z 90minut pierwsza liczba jest pełna,
     // a druga zostaje w tyle — bo tamta droga oddaje sumy sezonowe, nie przebieg.
-    const brakujeRozpisanych = Math.max(0, d.meczow - (d.rozpisanych || 0));
-    const komorkaMeczow = najwiecejMeczow === 0
+    // ROZEGRANE / WGRANE. Pierwsza liczba mówi, ile klub zagrał (z tabeli ligowej), druga — ile
+    // z tego mamy w SBS. „7/7" to komplet, „7/6" to jedna kolejka do zebrania. Wcześniej stało tu
+    // „ile mamy / ile ma najlepiej zebrany klub w grupie" — a to porównywało nas z nami samymi
+    // i przy zawyżonej kartotece Widzewa dawało całej Ekstraklasie nieosiągalną poprzeczkę.
+    const brakujeRozpisanych = Math.max(0, d.wgrane - (d.rozpisanych || 0));
+    const podpowiedz = [
+      `Rozegranych kolejek: ${d.rozegrane}${d.zTabeli ? ' (z tabeli 90minut)' : ' — oszacowane z kartotek, bo tabela nie jest pobrana'}.`,
+      `Wgranych do SBS: ${d.wgrane}${braki > 0 ? ` — brakuje ${braki}` : ''}.`,
+      brakujeRozpisanych ? `Rozpisanych mecz po meczu: ${d.rozpisanych || 0} — reszta to sumy sezonowe z 90minut, bez składów i minut.` : '',
+      d.zawyzone ? `W kartotekach jest ${d.zawyzone} więcej niż liga rozegrała — to mecze spoza tych rozgrywek albo z poprzedniego sezonu.` : '',
+    ].filter(Boolean).join(' ');
+    const komorkaMeczow = d.rozegrane === 0
       ? '<span class="meta">—</span>'
-      : `<span title="${d.meczow} z ${najwiecejMeczow} kolejek w tej grupie${braki>0?` — brakuje ${braki}`:''}.`
-        + `${brakujeRozpisanych?` Rozpisanych mecz po meczu: ${d.rozpisanych||0} — reszta to sumy sezonowe z 90minut, bez składów i minut.`:''}"
-              style="${braki>0?'color:var(--clay-dark);font-weight:700;':'font-weight:600;'}">${d.meczow}/${najwiecejMeczow}</span>`
-        + (braki>0 ? ' <span title="Statystyki tego klubu są nieaktualne">⚠️</span>' : '')
-        + (!braki && brakujeRozpisanych ? ' <span class="meta" title="Mamy sumy sezonowe, ale nie wszystkie mecze rozpisane">◐</span>' : '');
+      : `<span title="${esc(podpowiedz)}" style="${braki>0?'color:var(--clay-dark);font-weight:700;':'font-weight:600;'}">${d.rozegrane}/${d.wgrane}</span>`
+        + (braki>0 ? ' <span title="Brakujące kolejki — statystyki tego klubu są nieaktualne">⚠️</span>' : '')
+        + (!braki && brakujeRozpisanych ? ' <span class="meta" title="Mamy sumy sezonowe, ale nie wszystkie mecze rozpisane">◐</span>' : '')
+        + (d.zawyzone ? ' <span class="meta" title="W kartotekach jest więcej meczów, niż liga rozegrała">❗</span>' : '');
     return `<tr style="cursor:pointer;" data-action="view-club" data-id="${c.id}">
       <td onclick="event.stopPropagation()">
         <label for="quick-crest-${c.id}" style="cursor:pointer;display:inline-flex;" title="Kliknij, aby wgrać/zmienić herb">${crestImg(clubCrest(c.id), null, c.name)}</label>
@@ -4668,10 +4677,10 @@ function viewClubs(){
     // Odwrotnie być nie może: nasze dane zawsze są niepełne, więc układanie po nich tabeli
     // pokazywałoby lidera, który po prostu został lepiej zebrany.
     if(oficjalna && Array.isArray(oficjalna.wiersze) && oficjalna.wiersze.length){
-      const nasze = new Map(list.map(c=>[importNorm(c.name), dorobekKlubow.get(c.id) || {meczow:0}]));
+      const nasze = new Map(list.map(c=>[importNorm(c.name), dorobekKlubow.get(c.id) || {wgrane:0}]));
       const braki = oficjalna.wiersze.filter(w=>{
         const n = nasze.get(importNorm(w.nazwa));
-        return !n || n.meczow < Number(w.mecze || 0);
+        return !n || n.wgrane < Number(w.mecze || 0);
       }).length;
       return `<details class="card" style="margin-bottom:12px;" open>
         <summary style="cursor:pointer;font-weight:700;color:var(--heading);">
@@ -4687,7 +4696,7 @@ function viewClubs(){
             <th style="text-align:center;" title="Ile meczów tego klubu mamy w kartotekach SBS">u nas</th></tr></thead>
           <tbody>${oficjalna.wiersze.map(w=>{
             const n = nasze.get(importNorm(w.nazwa));
-            const mamy = n ? n.meczow : null;
+            const mamy = n ? n.wgrane : null;
             const brak = mamy == null || mamy < Number(w.mecze || 0);
             return `<tr>
               <td style="text-align:right;color:var(--ink-soft);">${w.miejsce}.</td>
@@ -4705,9 +4714,9 @@ function viewClubs(){
 
     // Bez pobranej tabeli zostaje zestawienie z naszych danych — lepsze niż nic, ale mówimy wprost,
     // że to nie jest tabela ligowa, tylko obraz tego, co zebraliśmy.
-    const tabela = list.map(c=>({ c, d: dorobekKlubow.get(c.id) || { meczow:0, punkty:null } }))
-      .filter(x=>x.d.meczow > 0)
-      .sort((a,b)=> (b.d.punkty ?? -1) - (a.d.punkty ?? -1) || b.d.meczow - a.d.meczow
+    const tabela = list.map(c=>({ c, d: dorobekKlubow.get(c.id) || { wgrane:0, punkty:null } }))
+      .filter(x=>x.d.wgrane > 0)
+      .sort((a,b)=> (b.d.punkty ?? -1) - (a.d.punkty ?? -1) || b.d.wgrane - a.d.wgrane
         || String(a.c.name||'').localeCompare(String(b.c.name||''),'pl'));
     if(!tabela.length) return '';
     const zPunktami = tabela.filter(x=>x.d.punkty != null).length;
@@ -4724,17 +4733,22 @@ function viewClubs(){
         <tbody>${tabela.map((x,i)=>`<tr>
           <td style="text-align:right;color:var(--ink-soft);">${i+1}.</td>
           <td>${esc(x.c.name)}</td>
-          <td style="text-align:center;">${x.d.meczow}</td>
+          <td style="text-align:center;">${x.d.wgrane}</td>
           <td style="text-align:center;">${x.d.punkty == null ? '<span class="meta">—</span>' : `<strong>${x.d.punkty}</strong>`}</td>
         </tr>`).join('')}</tbody>
       </table>
     </details>`;
   })()}
   ${najwiecejMeczow > 0 ? (()=>{
-    const wTyle = list.filter(c=>(dorobekKlubow.get(c.id)||{meczow:0}).meczow < najwiecejMeczow);
-    return `<br><strong>Rozliczonych kolejek w tej grupie: ${najwiecejMeczow}.</strong> `
+    const wTyle = list.filter(c=>{
+      const d = dorobekKlubow.get(c.id) || { rozegrane:0, wgrane:0 };
+      return d.wgrane < d.rozegrane;
+    });
+    const zTabeli = [...dorobekKlubow.values()].some(d=>d.zTabeli);
+    return `<br><strong>Rozegranych kolejek: ${najwiecejMeczow}</strong>`
+      + (zTabeli ? ' <span class="note">(z tabeli 90minut)</span>. ' : ' <span class="note">— oszacowane z kartotek; kliknij „⭳ Tabele z 90minut", żeby mieć pewną liczbę</span>. ')
       + (wTyle.length
-        ? `<span style="color:var(--clay-dark);">${wTyle.length} ${wTyle.length===1?'klub ma mniej meczów':'klubów ma mniej meczów'} — tam statystyki są nieaktualne.</span>`
+        ? `<span style="color:var(--clay-dark);">${wTyle.length} ${wTyle.length===1?'klub ma niekomplet':'klubów ma niekomplet'} — tam brakuje kolejek.</span>`
         : 'Wszystkie kluby mają komplet.');
   })() : ''}</p>
   ${topRow}
@@ -4786,7 +4800,7 @@ function viewClubs(){
   </div>
   <div class="card" style="padding:0;overflow:auto;">
     <table>
-      <thead><tr><th>Herb</th><th>Klub</th><th>ZPN / Region</th><th>Liga (aktualna)</th><th>Miasto</th><th style="text-align:center;" title="Ile kolejek mamy rozliczonych — na tle klubu z największą liczbą meczów w tej grupie">Mecze</th><th style="text-align:center;" title="Punkty policzone z wyników zapisanych przy meczach. Kreska, gdy protokoły nie niosły wyniku.">Pkt</th><th>Zawodnicy w bazie</th><th></th></tr></thead>
+      <thead><tr><th>Herb</th><th>Klub</th><th>ZPN / Region</th><th>Liga (aktualna)</th><th>Miasto</th><th style="text-align:center;" title="Rozegrane kolejki (z tabeli 90minut) / wgrane do SBS. „7/6" znaczy: liga zagrała siedem, mamy sześć.">Mecze</th><th style="text-align:center;" title="Punkty policzone z wyników zapisanych przy meczach. Kreska, gdy protokoły nie niosły wyniku.">Pkt</th><th>Zawodnicy w bazie</th><th></th></tr></thead>
       <tbody>${rows || `<tr><td colspan="9"><div class="empty">Brak klubów w tym widoku.</div></td></tr>`}</tbody>
     </table>
   </div>`;
@@ -8774,6 +8788,25 @@ async function generateAnalysisPDF(playerId){
 // PUNKTY LICZYMY TYLKO Z ZAPISANEGO WYNIKU. Protokoły z ŁNP często go nie niosą — wtedy oddajemy
 // null i widok pokazuje kreskę. Zgadywanie punktów z samej liczby meczów dałoby tabelę, która
 // wygląda wiarygodnie i kłamie.
+// Ile meczów klub rozegrał WEDŁUG TABELI LIGOWEJ. Zwraca null, gdy tabeli jeszcze nie pobrano
+// albo nie ma w niej tego klubu — wtedy zostaje nasze oszacowanie z kartotek.
+function meczeZTabeli(klub){
+  if(!klub) return null;
+  const tab = tabeleLig[String(klub.league || '')];
+  if(!tab || !Array.isArray(tab.wiersze)) return null;
+  const szukany = importNorm(klub.name);
+  const wiersz = tab.wiersze.find(w=>importNorm(w.nazwa) === szukany)
+    // Nazwy w tabeli bywają krótsze niż w kartotece („Widzew Łódź" kontra „Widzew Łódź SA"),
+    // więc gdy dokładne trafienie zawiedzie, sięgamy po dopasowanie po członach nazwy.
+    || tab.wiersze.find(w=>{
+      const a = rozbijNazweKlubu(w.nazwa).rdzen, b = rozbijNazweKlubu(klub.name).rdzen;
+      if(!a.length || !b.length) return false;
+      const wspolne = a.filter(x=>b.some(y=>tenSamCzlon(x,y)));
+      return wspolne.length >= Math.min(a.length, b.length) && wspolne.some(x=>x.length >= 4);
+    });
+  const n = wiersz ? Number(wiersz.mecze) : NaN;
+  return Number.isFinite(n) ? n : null;
+}
 function meczeKlubu(clubId){
   const klub = DB.clubs.find(c=>c.id === clubId);
   const sezonKlubu = String((klub && klub.season) || '').trim();
@@ -8807,7 +8840,22 @@ function meczeKlubu(clubId){
     if(!Number.isFinite(nasze) || !Number.isFinite(ich)) return;
     punkty = (punkty || 0) + (nasze > ich ? 3 : nasze === ich ? 1 : 0);
   });
-  return { meczow: Math.max(spotkania.size, zSum), rozpisanych: spotkania.size, punkty };
+  // ILE ROZEGRANO — Z TABELI LIGOWEJ, bo tylko ona to wie. Nasze liczby mówią wyłącznie, ile
+  // zdążyliśmy zebrać, i bywają ZAWYŻONE: dorobek w kartotece potrafi nieść mecze pucharowe albo
+  // resztki poprzedniego sezonu. Widzew miał tak „10" przy siedmiu rozegranych kolejkach — i to
+  // on ustawiał poprzeczkę całej Ekstraklasie.
+  const zTabeli = meczeZTabeli(klub);
+  const mamy = Math.max(spotkania.size, zSum);
+  return {
+    rozegrane: zTabeli != null ? zTabeli : mamy,
+    // Więcej niż rozegrano mieć nie można. Nadmiar znaczy, że w kartotekach siedzi coś spoza tych
+    // rozgrywek — przycinamy, zamiast pokazywać liczbę, która nie ma prawa istnieć.
+    wgrane: zTabeli != null ? Math.min(mamy, zTabeli) : mamy,
+    zawyzone: zTabeli != null && mamy > zTabeli ? mamy - zTabeli : 0,
+    rozpisanych: spotkania.size,
+    zTabeli: zTabeli != null,
+    punkty,
+  };
 }
 
 // HERBY DRUŻYN MŁODZIEŻOWYCH BIERZEMY OD PIERWSZEJ DRUŻYNY.
