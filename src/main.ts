@@ -4797,6 +4797,7 @@ function viewClubs(){
               : 'Pobierz i zapisz statystyki wszystkich klubów widocznych na liście — po kolei, jeden po drugim'
           }">⏱ Odśwież statystyki — cały widok (${list.length})</button>`
         : ''}
+      <button class="secondary" data-action="pozycje-z-tm" title="Uzupełnia puste pozycje zawodników danymi z Transfermarktu">🧭 Pozycje z Transfermarktu</button>
       <button class="secondary" data-action="pobierz-tabele" title="Pobiera z 90minut tabele Ekstraklasy, I, II i III ligi — układ, punkty i liczbę rozegranych kolejek">⭳ Tabele z 90minut</button>
       <button class="secondary" data-action="merge-duplicates" title="Znajdź kluby wpisane dwa razy pod różnymi nazwami i połącz je w jeden">🧹 Scal duplikaty</button>
       ${list.some(c=>!clubCrest(c.id)) ? `<button class="secondary" data-action="herby-z-pierwszych" title="Skopiuj herby z kartotek seniorskich tych samych klubów">🛡️ Herby z pierwszych drużyn (${list.filter(c=>!clubCrest(c.id)).length})</button>` : ''}
@@ -8954,6 +8955,84 @@ function znajdzDuplikaty(){
   return pary;
 }
 
+// UZUPEŁNIANIE POZYCJI Z TRANSFERMARKTU — dla całej grupy naraz.
+//
+// Pozycję da się przepisać ręcznie ze zrzutu składu, ale przy trzystu nazwiskach błąd odczytu jest
+// pewny, a zła pozycja stawia zawodnika na mapie nie tam, gdzie gra — czyli jest gorsza niż puste
+// pole. Transfermarkt podaje ją wprost i api/transfermarkt.js tłumaczy na nasz słownik, więc
+// bierzemy stamtąd zamiast przepisywać z obrazka.
+//
+// WYPEŁNIAMY TYLKO PUSTE POLA. To, co wpisał skaut po obejrzeniu meczu, jest dokładniejsze niż
+// ogólna pozycja z serwisu i nie wolno tego nadpisać.
+function openPozycjeZTmModal(kluby){
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  const idyKlubow = new Set(kluby.map(c=>c.id));
+  const wszyscy = DB.players.filter(p=>idyKlubow.has(p.clubId));
+  const doZrobienia = wszyscy.filter(p=>!String(p.position||'').trim() && String(p.profileTm||'').trim());
+  const bezLinku = wszyscy.filter(p=>!String(p.position||'').trim() && !String(p.profileTm||'').trim());
+  let przerwij = false;
+
+  const naglowek = `<h3>Pozycje z Transfermarktu</h3>
+    <p class="note" style="margin-top:-6px;">Uzupełniam <strong>wyłącznie puste</strong> pola pozycji —
+      to, co wpisałeś po obejrzeniu meczu, zostaje nietknięte.</p>`;
+
+  overlay.innerHTML = `<div class="modal" style="max-width:600px;">${naglowek}
+    <div class="obs-item">
+      <div>Zawodników w tym widoku: <strong>${wszyscy.length}</strong></div>
+      <div>Bez pozycji, z linkiem do Transfermarktu: <strong>${doZrobienia.length}</strong></div>
+      <div>Bez pozycji i bez linku: <strong>${bezLinku.length}</strong>
+        ${bezLinku.length ? '<span class="note"> — tych nie ruszę, bo nie ma skąd wziąć danych</span>' : ''}</div>
+    </div>
+    <p class="note">Pobieram po jednym profilu, z przerwą, żeby nie zasypać serwisu. ${doZrobienia.length} profili
+      to około ${Math.ceil(doZrobienia.length * 1.2 / 60)} min. Okno można zamknąć — przerwie pracę.</p>
+    <div id="poz-postep" style="margin-top:10px;"></div>
+    <div class="modal-actions">
+      <button class="secondary" id="poz-zamknij">Zamknij</button>
+      ${doZrobienia.length ? '<button class="gold" id="poz-start">Uzupełnij ' + doZrobienia.length + '</button>' : ''}
+    </div></div>`;
+
+  const postep = overlay.querySelector('#poz-postep');
+  overlay.querySelector('#poz-zamknij').addEventListener('click', ()=>{ przerwij = true; overlay.remove(); render(); });
+  overlay.addEventListener('click', e=>{ if(e.target===overlay){ przerwij = true; overlay.remove(); render(); } });
+
+  const start = overlay.querySelector('#poz-start');
+  if(start) (start as HTMLButtonElement).onclick = async()=>{
+    (start as HTMLButtonElement).disabled = true;
+    let uzupelnionych = 0, bezPozycji = 0, bledow = 0;
+    for(let i = 0; i < doZrobienia.length; i++){
+      if(przerwij) break;
+      const p = doZrobienia[i];
+      postep.innerHTML = `<div class="note">${i+1} z ${doZrobienia.length} &middot; ${esc(p.firstName||'')} ${esc(p.lastName||'')}
+        &middot; uzupełnionych: <strong>${uzupelnionych}</strong></div>`;
+      try{
+        const odp = await fetch('/api/transfermarkt?url=' + encodeURIComponent(String(p.profileTm)));
+        const d = await odp.json().catch(()=>({}));
+        if(!odp.ok || d.error){ bledow++; }
+        else if(d.pozycja && DB.settings.positions.includes(d.pozycja)){
+          p.position = d.pozycja;
+          // Wzrost i nogę bierzemy przy okazji, ale też tylko w puste pola — skoro i tak
+          // otworzyliśmy profil, drugi przejazd po to samo byłby marnotrawstwem.
+          if(!p.height && d.wzrostCm) p.height = d.wzrostCm;
+          if(!p.foot && d.noga) p.foot = d.noga;
+          uzupelnionych++;
+          // Zapisujemy pojedynczo: przy setce zawodników jeden nieudany zapis całej kolekcji
+          // cofnąłby całą pracę, a tak traci się najwyżej jedno nazwisko.
+          await savePlayerOne(p);
+        } else { bezPozycji++; }
+      }catch(e){ bledow++; }
+      await new Promise(r=>setTimeout(r, 900));
+    }
+    postep.innerHTML = `<div class="obs-item"><strong>${przerwij ? 'Przerwane' : 'Gotowe'}.</strong>
+      Uzupełnionych pozycji: <strong>${uzupelnionych}</strong>.
+      ${bezPozycji ? `Bez pozycji w serwisie: ${bezPozycji}. ` : ''}
+      ${bledow ? `Nieudanych pobrań: ${bledow}. ` : ''}</div>`;
+    (start as HTMLButtonElement).disabled = false;
+    start.textContent = 'Powtórz dla pozostałych';
+  };
+  document.body.appendChild(overlay);
+}
+
 function openHerbyZPierwszychModal(kluby){
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -11130,6 +11209,7 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="scal-zawodnikow"]').forEach(b=>b.onclick=()=>openScalanieModal(b.dataset.id));
   main.querySelectorAll('[data-action="pokaz-duplikaty"]').forEach(b=>b.onclick=()=>openDuplikatyModal());
   main.querySelectorAll('[data-action="herby-z-pierwszych"]').forEach(b=>b.onclick=()=>openHerbyZPierwszychModal(widoczneKluby()));
+  main.querySelectorAll('[data-action="pozycje-z-tm"]').forEach(b=>b.onclick=()=>openPozycjeZTmModal(widoczneKluby()));
   main.querySelectorAll('[data-action="pobierz-tabele"]').forEach(b=>b.onclick=async()=>{
     const napis = b.textContent;
     (b as HTMLButtonElement).disabled = true; b.textContent = 'Pobieram…';
