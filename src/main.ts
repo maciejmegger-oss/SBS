@@ -24,7 +24,17 @@ const sel_el = (sel: string) => document.querySelector(sel) as HTMLSelectElement
 const RATING_KEYS = ["technika","taktyka","motoryka","mentalnosc","potencjal"];
 const RATING_LABELS = {technika:"Technika",taktyka:"Taktyka",motoryka:"Motoryka",mentalnosc:"Mentalność",potencjal:"Potencjał"};
 const STATUS_CLASS = {"Nowy typ":"new","W obserwacji":"watching","Rekomendowany":"reco","Na testach":"trial","Podpisany":"signed","Odrzucony":"rejected","Wstrzymany":"hold","Do Obserwacji":"watching","Na Testy":"trial","Do transferu":"signed","Z polecenia":"reco"};
-const FORMATIONS = ["1-4-4-2","1-4-3-3","1-3-4-3","1-3-5-2","1-4-5-1","1-5-4-1","1-4-2-3-1"];
+// Trzy ostatnie dołożone 09.2026, bo Ekstraklasa gra nimi na co dzień, a nie dało się ich wpisać:
+// Śląsk 5-3-2, Legia 3-4-2-1, Widzew i Radomiak 4-1-4-1. Bez nich klub z takim ustawieniem musiał
+// dostać system, którym nie gra — czyli mapa pozycji stawiałaby jego zawodników nie tam, gdzie stoją.
+const FORMATIONS = ["1-4-4-2","1-4-3-3","1-3-4-3","1-3-5-2","1-4-5-1","1-5-4-1","1-4-2-3-1",
+  "1-5-3-2","1-3-4-2-1","1-4-1-4-1"];
+
+// NA EKRANIE PISZEMY BEZ BRAMKARZA: „4-3-3", nie „1-4-3-3" — tak mówi się o systemach w klubach
+// i tak podaje je Flashscore. W BAZIE zostaje zapis z jedynką, bo to on jest kluczem współrzędnych
+// (FORMATION_COORDS) i siedzi już w profilach zawodników; zmiana wartości zerwałaby te powiązania
+// i wymagała migracji, która nic by nie wniosła poza ryzykiem.
+const etykietaSystemu = (f)=> String(f || '').replace(/^1-/, '');
 
 let currentScout = "";
 let customTabNames = [];
@@ -4247,7 +4257,7 @@ function viewPlayerDetail(id){
         <tr><td style="color:var(--ink-soft);">Narodowość</td><td>${p.nationality? nationalityFlag(p.nationality)+' '+esc(p.nationality) : "—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">Noga</td><td>${esc(p.foot||"—")}</td></tr>
         <tr><td style="color:var(--ink-soft);">Wzrost</td><td>${p.height? p.height+" cm":"—"}</td></tr>
-        <tr><td style="color:var(--ink-soft);">System gry</td><td>${systemZawodnika(p)? `<strong>${esc(systemZawodnika(p))}</strong>${p.formation?'':' <span style="color:var(--ink-soft);font-size:12px;">(z klubu)</span>'}`:"—"}</td></tr>
+        <tr><td style="color:var(--ink-soft);">System gry</td><td>${systemZawodnika(p)? `<strong>${esc(etykietaSystemu(systemZawodnika(p)))}</strong>${p.formation?'':' <span style="color:var(--ink-soft);font-size:12px;">(z klubu)</span>'}`:"—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">Pozycja wg NMG</td><td>${opisPozycjiNmg(p) ? `<strong>${esc(opisPozycjiNmg(p))}</strong>` : "—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">Mecze / minuty / gole / asysty</td><td>${(p.matches!=null||p.minutes!=null||p.goals!=null||p.assists!=null) ? `${p.matches!=null?p.matches:'—'} mecze &middot; ${p.minutes!=null?p.minutes:'—'} min &middot; ${p.goals!=null?p.goals:'—'} goli &middot; ${p.assists!=null?p.assists:'—'} asyst` : "—"}${p.statsUpdatedAt?`<div class="note" style="font-size:11px;margin-top:2px;">Mecze i bramki z ${esc(p.statsSource||'90minut.pl')}${p.statsSeason?' (sezon '+esc(p.statsSeason)+')':''}, odświeżone ${esc(String(p.statsUpdatedAt).slice(0,10))}. Minuty i asysty wpisujesz ręcznie.</div>`:''}</td></tr>
         <tr><td style="color:var(--ink-soft);">Kadra wojewódzka</td><td>${p.kadraWojewodzka? '<strong style="color:var(--good);">Tak</strong>' : 'Nie'}</td></tr>
@@ -4812,6 +4822,7 @@ function viewClubs(){
               : 'Pobierz i zapisz statystyki wszystkich klubów widocznych na liście — po kolei, jeden po drugim'
           }">⏱ Odśwież statystyki — cały widok (${list.length})</button>`
         : ''}
+      <button class="secondary" data-action="systemy-gry" title="Ustaw systemy gry wszystkich klubów tej grupy naraz">📐 Systemy gry</button>
       <button class="secondary" data-action="pozycje-z-tm" title="Uzupełnia puste pozycje zawodników danymi z Transfermarktu">🧭 Pozycje z Transfermarktu</button>
       <button class="secondary" data-action="pobierz-tabele" title="Pobiera z 90minut tabele Ekstraklasy, I, II i III ligi — układ, punkty i liczbę rozegranych kolejek">⭳ Tabele z 90minut</button>
       <button class="secondary" data-action="merge-duplicates" title="Znajdź kluby wpisane dwa razy pod różnymi nazwami i połącz je w jeden">🧹 Scal duplikaty</button>
@@ -6497,7 +6508,7 @@ function openObsPodgladModal(obsId){
         <label class="field" style="font-size:11px;">System gry</label>
         <select class="obs-formacja" data-strona="${strona}" style="font-size:12.5px;padding:4px 6px;">
           <option value="">— nie określono —</option>
-          ${FORMATIONS.map(f=>`<option ${dane.formacja===f?'selected':''}>${esc(f)}</option>`).join('')}
+          ${FORMATIONS.map(f=>`<option value="${esc(f)}" ${dane.formacja===f?'selected':''}>${esc(etykietaSystemu(f))}</option>`).join('')}
         </select>
       </div>
       ${zawodnicy.length ? zawodnicy.map(z=>`
@@ -8137,6 +8148,15 @@ const FORMATION_COORDS = {
   // 1-5-4-1: 5 obrońców (3,4,6,5,2, w tym wahadłowi na skrajach) + 4 pomocników (11,8,10,7).
   '1-5-4-1':   {9:{x:50,y:10}, 11:{x:22,y:36}, 8:{x:41,y:36}, 10:{x:59,y:36}, 7:{x:78,y:36}, 3:{x:14,y:70}, 4:{x:32,y:70}, 6:{x:50,y:70}, 5:{x:68,y:70}, 2:{x:86,y:70}, 1:{x:50,y:93}},
   '1-4-2-3-1': {9:{x:50,y:10}, 11:{x:20,y:29}, 10:{x:50,y:29}, 7:{x:80,y:29}, 6:{x:38,y:49}, 8:{x:62,y:49}, 3:{x:18,y:66}, 2:{x:82,y:66}, 4:{x:37,y:79}, 5:{x:63,y:79}, 1:{x:50,y:93}},
+  // 1-5-3-2: pięciu z tyłu (wahadłowi 3/2 na skrajach, 6 jako środkowy stoper), trójka w środku
+  // pola (11, 8, 7) i dwaj napastnicy (9, 10) — tak gra m.in. Śląsk Wrocław.
+  '1-5-3-2':   {9:{x:39,y:10}, 10:{x:61,y:10}, 11:{x:22,y:40}, 8:{x:50,y:40}, 7:{x:78,y:40}, 3:{x:14,y:70}, 4:{x:32,y:70}, 6:{x:50,y:70}, 5:{x:68,y:70}, 2:{x:86,y:70}, 1:{x:50,y:93}},
+  // 1-3-4-2-1: trójka stoperów (4, 6, 5), czwórka pomocy z wahadłowymi (3, 8, 10, 2), dwaj
+  // podgrywający pod napastnikiem (11, 7) i jedynka z przodu — ustawienie Legii.
+  '1-3-4-2-1': {9:{x:50,y:10}, 11:{x:35,y:28}, 7:{x:65,y:28}, 3:{x:15,y:50}, 8:{x:39,y:50}, 10:{x:61,y:50}, 2:{x:85,y:50}, 4:{x:31,y:75}, 6:{x:50,y:75}, 5:{x:69,y:75}, 1:{x:50,y:93}},
+  // 1-4-1-4-1: czwórka obrony, jeden przed nią (6), czwórka pomocy i samotny napastnik —
+  // tak grały Widzew i Radomiak w siódmej kolejce.
+  '1-4-1-4-1': {9:{x:50,y:10}, 11:{x:20,y:32}, 8:{x:40,y:32}, 10:{x:60,y:32}, 7:{x:80,y:32}, 6:{x:50,y:53}, 3:{x:18,y:70}, 2:{x:82,y:70}, 4:{x:37,y:79}, 5:{x:63,y:79}, 1:{x:50,y:93}},
 };
 function positionMapKey(league, formation, number){ return league+'|||'+(formation||'wszystkie')+'|||'+number; }
 // Automatyczna podpowiedź: najlepiej ocenieni zawodnicy danej ligi na tej pozycji (wg pola "Pozycja" w profilu),
@@ -8491,7 +8511,7 @@ function viewRanking(){
     `<option value="${esc(l)}" ${l===rankingLeague?'selected':''}>${esc(l)}</option>`
   ).join('');
   const formationOptions = `<option value="" ${!rankingFormationFilter?'selected':''}>Wszystkie systemy</option>` +
-    FORMATIONS.filter(f => f!=='1-4-5-1' && f!=='1-5-4-1').map(f => `<option value="${esc(f)}" ${f===rankingFormationFilter?'selected':''}>${esc(f)}</option>`).join('');
+    FORMATIONS.filter(f => f!=='1-4-5-1' && f!=='1-5-4-1').map(f => `<option value="${esc(f)}" ${f===rankingFormationFilter?'selected':''}>${esc(etykietaSystemu(f))}</option>`).join('');
 
   return `
   <h2 class="view-title" style="margin-bottom:4px;">Mapa rankingowa</h2>
@@ -8992,6 +9012,86 @@ function znajdzDuplikaty(){
 //
 // WYPEŁNIAMY TYLKO PUSTE POLA. To, co wpisał skaut po obejrzeniu meczu, jest dokładniejsze niż
 // ogólna pozycja z serwisu i nie wolno tego nadpisać.
+// SYSTEMY GRY CAŁEJ LIGI W JEDNYM OKNIE.
+//
+// Systemu nie publikuje ani 90minut, ani Transfermarkt — trzeba go odczytać ze składu meczowego.
+// Ustawianie osiemnastu klubów przez osiemnaście okien edycji było pracą na kwadrans, a układy
+// zmieniają się z kolejki na kolejkę. Tu wszystko stoi obok siebie i zapisuje się jednym razem.
+//
+// PODPOWIEDZI z ostatniej kolejki są wpisane wstępnie, ale KAŻDĄ trzeba potwierdzić — odczytałem
+// je ze zrzutów Flashscore, a przy części klubów ustawienie było poza kadrem.
+const SYSTEMY_PODPOWIEDZI = {
+  'Jagiellonia Białystok': '1-4-2-3-1', 'Śląsk Wrocław': '1-5-3-2',
+  'Cracovia': '1-4-2-3-1', 'Górnik Zabrze': '1-4-3-3',
+  'Motor Lublin': '1-4-5-1', 'Legia Warszawa': '1-3-4-2-1',
+  'Korona Kielce': '1-4-2-3-1', 'Wisła Kraków': '1-4-5-1',
+  'Widzew Łódź': '1-4-1-4-1', 'Radomiak Radom': '1-4-1-4-1',
+  'Piast Gliwice': '1-4-4-2', 'GKS Katowice': '1-3-4-3',
+  // Podane przez Maćka, nie odczytane ze zrzutu.
+  'Lech Poznań': '1-4-3-3', 'Raków Częstochowa': '1-3-4-3',
+  'Pogoń Szczecin': '1-4-3-3', 'Zagłębie Lubin': '1-4-2-3-1',
+  'Wisła Płock': '1-4-3-3',
+};
+function podpowiedzSystemu(klub){
+  const n = importNorm(klub.name);
+  const trafienie = Object.keys(SYSTEMY_PODPOWIEDZI).find(k=>{
+    const a = rozbijNazweKlubu(k).rdzen, b = rozbijNazweKlubu(klub.name).rdzen;
+    if(importNorm(k) === n) return true;
+    if(!a.length || !b.length) return false;
+    const wspolne = a.filter(x=>b.some(y=>tenSamCzlon(x,y)));
+    return wspolne.length >= a.length && wspolne.some(x=>x.length >= 4);
+  });
+  return trafienie ? SYSTEMY_PODPOWIEDZI[trafienie] : '';
+}
+
+function openSystemyModal(kluby){
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  const wiersze = kluby.map(c=>({ c, teraz: String(systemyKlubow[c.id] || ''), sugestia: podpowiedzSystemu(c) }));
+  const doWpisania = wiersze.filter(x=>!x.teraz && x.sugestia).length;
+
+  overlay.innerHTML = `<div class="modal" style="max-width:620px;">
+    <h3>Systemy gry — ${esc(kluby.length ? String(kluby[0].league || '') : '')}</h3>
+    <p class="note" style="margin-top:-6px;">Systemu nie podaje ani 90minut, ani Transfermarkt — odczytuje się go ze składu meczowego.
+      Zawodnicy bez własnego systemu w profilu dziedziczą układ klubu i w nim wchodzą na mapę pozycji.</p>
+    ${doWpisania ? `<p class="note"><strong>${doWpisania}</strong> ${doWpisania===1?'klub ma podpowiedź':'klubów ma podpowiedzi'} z ostatniej kolejki — sprawdź je, zanim zapiszesz.</p>` : ''}
+    <div style="max-height:380px;overflow:auto;">
+      ${wiersze.map((x,i)=>`<div style="display:flex;gap:10px;align-items:center;padding:5px 0;border-bottom:1px solid var(--chalk-dim);">
+        <span style="flex:1;">${esc(x.c.name)}</span>
+        <select class="sys-wybor" data-i="${i}" style="width:150px;font-size:12.5px;">
+          <option value="">— brak —</option>
+          ${FORMATIONS.map(f=>`<option value="${esc(f)}" ${(x.teraz || x.sugestia)===f?'selected':''}>${esc(etykietaSystemu(f))}</option>`).join('')}
+        </select>
+        ${!x.teraz && x.sugestia ? '<span class="meta" title="Podpowiedź z ostatniej kolejki — potwierdź">?</span>' : ''}
+      </div>`).join('')}
+    </div>
+    <div class="modal-actions">
+      <button class="secondary sys-anuluj">Anuluj</button>
+      <button class="gold sys-zapisz">Zapisz systemy</button>
+    </div></div>`;
+
+  overlay.querySelector('.sys-anuluj').addEventListener('click', ()=>overlay.remove());
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) overlay.remove(); });
+  const zapisz = overlay.querySelector('.sys-zapisz') as HTMLButtonElement;
+  zapisz.onclick = async()=>{
+    zapisz.disabled = true; zapisz.textContent = 'Zapisuję…';
+    let zmian = 0;
+    overlay.querySelectorAll('.sys-wybor').forEach(sel=>{
+      const x = wiersze[Number((sel as HTMLElement).dataset.i)];
+      const wartosc = (sel as HTMLSelectElement).value;
+      if(wartosc === x.teraz) return;
+      if(wartosc) systemyKlubow[x.c.id] = wartosc; else delete systemyKlubow[x.c.id];
+      zmian++;
+    });
+    const ok = await saveSystemyKlubow();
+    overlay.remove(); render();
+    pokazPotwierdzenie(ok === false
+      ? 'Nie udało się zapisać — sprawdź baner u góry strony.'
+      : `Zapisano systemy gry: ${zmian} ${zmian===1?'zmiana':'zmian'}.`, ok === false ? 'blad' : 'ok');
+  };
+  document.body.appendChild(overlay);
+}
+
 function openPozycjeZTmModal(kluby){
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -9760,7 +9860,7 @@ function openPlayerModal(id, presetClubId, prefillData){
         <label class="field">System gry (formacja)</label>
         <select id="pm-formation">
           <option value="">— nie określono —</option>
-          ${FORMATIONS.map(f=>`<option ${p&&p.formation===f?'selected':''}>${esc(f)}</option>`).join('')}
+          ${FORMATIONS.map(f=>`<option value="${esc(f)}" ${p&&p.formation===f?'selected':''}>${esc(etykietaSystemu(f))}</option>`).join('')}
         </select>
       </div>
       <div class="field-wrap">
@@ -10023,7 +10123,7 @@ function openClubModal(id){
       <label class="field">System gry zespołu</label>
       <select id="cm-formation">
         <option value="">— nie określono —</option>
-        ${FORMATIONS.map(f=>`<option ${c&&systemyKlubow[c.id]===f?'selected':''}>${esc(f)}</option>`).join('')}
+        ${FORMATIONS.map(f=>`<option value="${esc(f)}" ${c&&systemyKlubow[c.id]===f?'selected':''}>${esc(etykietaSystemu(f))}</option>`).join('')}
       </select>
       <p class="note" style="margin-top:4px;">Zawodnicy tego klubu, którzy nie mają własnego systemu w profilu, będą liczeni w tym układzie — na mapie pozycji i w rankingu. Wpis w profilu zawodnika ma pierwszeństwo.</p>
     </div>
@@ -11238,6 +11338,7 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="pokaz-duplikaty"]').forEach(b=>b.onclick=()=>openDuplikatyModal());
   main.querySelectorAll('[data-action="herby-z-pierwszych"]').forEach(b=>b.onclick=()=>openHerbyZPierwszychModal(widoczneKluby()));
   main.querySelectorAll('[data-action="pozycje-z-tm"]').forEach(b=>b.onclick=()=>openPozycjeZTmModal(widoczneKluby()));
+  main.querySelectorAll('[data-action="systemy-gry"]').forEach(b=>b.onclick=()=>openSystemyModal(widoczneKluby()));
   main.querySelectorAll('[data-action="pobierz-tabele"]').forEach(b=>b.onclick=async()=>{
     const napis = b.textContent;
     (b as HTMLButtonElement).disabled = true; b.textContent = 'Pobieram…';
@@ -18529,7 +18630,7 @@ async function generatePlayerPDF(playerId){
     <div class="meta-item"><div class="lbl">Rocznik</div><div class="val">${rocznikHtml(p)}</div></div>
     <div class="meta-item"><div class="lbl">Wzrost</div><div class="val">${p.height?p.height+" cm":"—"}</div></div>
     <div class="meta-item"><div class="lbl">Noga</div><div class="val">${esc(p.foot||"—")}</div></div>
-    <div class="meta-item"><div class="lbl">System gry</div><div class="val">${esc(systemZawodnika(p)||"—")}${systemZawodnika(p)&&!p.formation?' <span style="font-size:11px;color:var(--ink-soft);">(z klubu)</span>':''}</div></div>
+    <div class="meta-item"><div class="lbl">System gry</div><div class="val">${esc(etykietaSystemu(systemZawodnika(p))||"—")}${systemZawodnika(p)&&!p.formation?' <span style="font-size:11px;color:var(--ink-soft);">(z klubu)</span>':''}</div></div>
     <div class="meta-item"><div class="lbl">Pozycja wg NMG</div><div class="val">${esc(opisPozycjiNmg(p)||"—")}</div></div>
     <div class="meta-item"><div class="lbl">Status</div><div class="val">${esc(p.status||"—")}</div></div>
     <div class="meta-item"><div class="lbl">Kontrakt</div><div class="val">${p.hasContract? ('Tak'+(p.contractUntil?' — do '+esc(p.contractUntil):'')) : 'Nie'}</div></div>
