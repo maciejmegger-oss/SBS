@@ -338,6 +338,22 @@ tr:hover td{background:var(--card-soft);}
   .sbs-toast{animation:none;}
   .sbs-toast-znika{transition:none;}
 }
+/* MAPA ZESPOŁU W KARCIE KLUBU — wersja kompaktowa, obok listy zawodników.
+   Boisko z Rankingu zajmuje całą szerokość i przy karcie klubu spychało listę kadry pod ekran.
+   Tu chodzi o jedno spojrzenie: gdzie jest tłok, a gdzie dziura — więc mniejsze pole, mniejsze
+   nazwiska i ciaśniejsze plakietki, ale ten sam układ i te same numery. */
+.mapa-zespolu-uklad{display:grid;grid-template-columns:minmax(260px,1fr) 1.6fr;gap:16px;align-items:start;}
+.mapa-zespolu .position-map-pitch{aspect-ratio:1/1.3;}
+.mapa-zespolu .pos-marker-tag{min-width:104px;padding:2px;border-radius:6px;}
+.mapa-zespolu .pos-marker-row{gap:4px;padding:1px 4px;}
+.mapa-zespolu .pmr-name{font-size:10.5px;font-weight:600;}
+.mapa-zespolu .pmr-year{font-size:9px;padding-left:3px;}
+.mapa-zespolu .pos-marker-dot{width:18px;height:18px;font-size:10px;line-height:18px;}
+/* Poniżej 1100 px kolumny nie mają już sensu — lista kadry ma osiem kolumn i musi dostać
+   całą szerokość, inaczej trzeba ją przewijać w bok przy każdym zawodniku. */
+@media (max-width: 1100px){
+  .mapa-zespolu-uklad{grid-template-columns:1fr;}
+}
 /* Radar młodzieży: ograny zawodnik (270+ minut, czyli trzy pełne mecze) na złotym tle.
    Bije tr:hover, bo najechanie myszą nie może kasować oznaczenia akurat w chwili, gdy
    sięgasz po wiersz. Lewy złoty pasek działa też przy wydruku na czarno-biało. */

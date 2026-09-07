@@ -6192,7 +6192,7 @@ function mapaZespoluHtml(klub, squad){
   const wsp = FORMATION_COORDS[system] || FORMATION_COORDS[''];
   const zPozycja = squad.filter(p=>String(p.position||'').trim());
   if(zPozycja.length < 5){
-    return `<div class="card">
+    return `<div class="card mapa-zespolu">
       <h4 style="margin-top:0;color:var(--heading);">Mapa zespołu</h4>
       <p class="note" style="margin:0;">Za mało zawodników z wpisaną pozycją (${zPozycja.length} z ${squad.length}),
         żeby ustawić skład. Uzupełnij pozycje — w widoku Klubów jest przycisk
@@ -6235,7 +6235,7 @@ function mapaZespoluHtml(klub, squad){
 
   const bezPozycji = squad.length - zPozycja.length;
   const puste = POSITION_NUMBERS.filter(pn=>wsp[pn.number] && !(wPolu.get(pn.number)||[]).length);
-  return `<div class="card">
+  return `<div class="card mapa-zespolu">
     <div class="toolbar" style="margin-bottom:4px;">
       <h4 style="margin:0;color:var(--heading);">Mapa zespołu</h4>
       <span class="note">${system ? `system ${esc(etykietaSystemu(system))}` : 'bez wpisanego systemu — układ domyślny'}
@@ -6320,6 +6320,7 @@ function viewClubDetail(id){
     </div>
   </div>
   ${miniTabelaKlubuHtml(c)}
+  <div class="mapa-zespolu-uklad">
   ${mapaZespoluHtml(c, squad)}
   <div class="card">
     <div class="toolbar" style="margin-bottom:8px;">
@@ -6346,6 +6347,7 @@ function viewClubDetail(id){
       <thead><tr><th style="width:24px;"><input type="checkbox" id="squad-select-all" title="Zaznacz wszystkich"></th><th>Zawodnik</th><th>Rocznik</th><th>Pozycja</th><th>Status</th><th style="text-align:right;" title="Rozegrane mecze w sezonie">Mecze</th><th style="text-align:right;" title="Rozegrane minuty w sezonie">Min</th><th style="text-align:right;" title="Gole w sezonie">Gole</th><th style="text-align:right;" title="Kartki żółte / czerwone">Kartki</th><th>Śr. ocena</th><th></th></tr></thead>
       <tbody>${squadRows || `<tr><td colspan="11"><div class="empty">Jeszcze nikogo tu nie scoutujecie — pełny skład sprawdzisz w linkach powyżej.</div></td></tr>`}</tbody>
     </table>
+  </div>
   </div>`;
 }
 
