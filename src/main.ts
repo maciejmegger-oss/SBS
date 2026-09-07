@@ -3902,6 +3902,13 @@ function viewDashboard(){
     <div class="stat"><div class="num">${totalReports}</div><div class="lbl">Raporty</div></div>
     <div class="stat"><div class="num">${forTransferCount}</div><div class="lbl">Do transferu</div></div>
   </div>
+  <!-- SZYBKI DOSTĘP WG LIG STOI NA GÓRZE, bo to nim wchodzi się do pracy: liga → klub → zawodnicy.
+       Wcześniej leżał pod mapą województw i wykresami, czyli trzeba było przewinąć pół ekranu do
+       rzeczy używanej najczęściej. Na pełną szerokość, a nie w kolumnie obok mapy — pięć lig plus
+       rząd herbów klubów nie mieści się czytelnie w połowie ekranu. -->
+  <div style="margin-bottom:18px;">
+    ${leagueQuickAccessPanel()}
+  </div>
   <div class="grid grid-2">
     <div class="card">
       <h4 style="margin-top:0;color:var(--heading);">Mapa Województw</h4>
@@ -3924,9 +3931,6 @@ function viewDashboard(){
       ${observationsDonut()}
     </div>
     ${bydgoszczDistanceWidget()}
-  </div>
-  <div style="margin-top:18px;">
-    ${leagueQuickAccessPanel()}
   </div>
   <div style="margin-top:18px;">
     <div class="card">
