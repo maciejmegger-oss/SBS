@@ -119,6 +119,10 @@ function groupsForTop(top){
   if(top==="III liga") return settings.leagues.filter((l:any)=>l.startsWith("III liga, gr."));
   if(top==="IV liga") return settings.leagues.filter((l:any)=>l.startsWith("IV liga ("));
   if(top==="Kategorie juniorskie") return settings.leagues.filter((l:any)=>topLevelOf(l)==="Kategorie juniorskie");
+  // CLJ U17 i U15 też mają grupy („CLJ U17 gr. I", „CLJ U15 gr. C"). Bez tego kliknięcie w skrót
+  // na dashboardzie wypisywało wszystkie kluby wszystkich grup naraz — czternaście plus czternaście
+  // plus tyle samo, w jednym ciągu, bez informacji, która to grupa.
+  if(/^CLJ U\d{2}$/.test(String(top||''))) return settings.leagues.filter((l:any)=>String(l).startsWith(top + ' gr.'));
   return [];
 }
 const SEED_CLUBS_III_LIGA_GR1 = [
@@ -3693,6 +3697,10 @@ const DASHBOARD_QUICK_LEAGUES = [
   {key:'II liga',      match:c=>topLevelOf(c.league)==='II liga'},
   {key:'III liga',     match:c=>topLevelOf(c.league)==='III liga'},
   {key:'CLJ U19',      match:c=>c.league==='CLJ U19'},
+  // U17 i U15 mają grupy, więc dopasowujemy po przedrostku, a nie po pełnej nazwie —
+  // „CLJ U17 gr. I" i „CLJ U17 gr. II" to ta sama kategoria na dashboardzie.
+  {key:'CLJ U17',      match:c=>String(c.league||'').startsWith('CLJ U17')},
+  {key:'CLJ U15',      match:c=>String(c.league||'').startsWith('CLJ U15')},
 ];
 function leagueQuickAccessPanel(){
   const logos = DASHBOARD_QUICK_LEAGUES.map(({key, match})=>{
@@ -6223,11 +6231,11 @@ function mapaZespoluHtml(klub, squad){
     if(!coord) return '';
     const lista = wPolu.get(pn.number) || [];
     const tresc = lista.length
-      ? lista.slice(0, 6).map(({p, pewny})=>`<span class="pos-marker-row" title="${esc(p.position||'')}${pewny?' — pozycja wskazana numerem wg NMG':' — wg pozycji ogólnej'}">
+      ? lista.slice(0, 6).map(({p, pewny})=>`<span class="pos-marker-row" draggable="true" data-zawodnik="${esc(p.id)}" title="${esc(p.position||'')}${pewny?' — pozycja wskazana numerem wg NMG':' — wg pozycji ogólnej'} · przeciągnij, aby zmienić pozycję">
           <span class="pmr-name">${esc(p.lastName || p.firstName || '—')}</span>
           ${p.birthYear?`<span class="pmr-year">${esc(String(p.birthYear))}</span>`:''}${pewny?'':'<span class="pmr-year" title="Strona boiska nieustalona">·</span>'}</span>`).join('')
       : '<span class="pos-marker-row pmr-empty">—</span>';
-    return `<div class="pos-marker" style="left:${coord.x}%;top:${coord.y}%;" title="${esc(pn.label)}">
+    return `<div class="pos-marker" data-pole="${pn.number}" style="left:${coord.x}%;top:${coord.y}%;" title="${esc(pn.label)}">
       <span class="pos-marker-dot ${pn.number===1?'gk':''}">${pn.number}</span>
       <span class="pos-marker-tag">${tresc}</span>
     </div>`;
@@ -11438,6 +11446,47 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="herby-z-pierwszych"]').forEach(b=>b.onclick=()=>openHerbyZPierwszychModal(widoczneKluby()));
   main.querySelectorAll('[data-action="pozycje-z-tm"]').forEach(b=>b.onclick=()=>openPozycjeZTmModal(widoczneKluby()));
   main.querySelectorAll('[data-action="systemy-gry"]').forEach(b=>b.onclick=()=>openSystemyModal(widoczneKluby()));
+  // PRZECIĄGNIĘCIE NA MAPIE ZESPOŁU ZAPISUJE POZYCJĘ ZAWODNIKA, a nie tylko przestawia obrazek.
+  //
+  // Mapa liczy się z kartotek, więc samo przesunięcie kafelka zniknęłoby przy najbliższym
+  // przerysowaniu. Zamiast tego wpisujemy zawodnikowi numer pola wg Narodowego Modelu Gry — to
+  // dokładnie ta informacja, której mapie brakowało, gdy dobierała stronę boiska „na oko".
+  // Zysk jest podwójny: ten sam wpis rozstrzyga też o miejscu na mapie pozycji w Rankingu.
+  const mapaZespolu = main.querySelector('.mapa-zespolu');
+  if(mapaZespolu){
+    mapaZespolu.querySelectorAll('.pos-marker-row[draggable="true"]').forEach(row=>{
+      row.addEventListener('dragstart', (e:any)=>{
+        row.classList.add('pmr-w-locie');
+        e.dataTransfer.setData('text/plain', String((row as HTMLElement).dataset.zawodnik || ''));
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      row.addEventListener('dragend', ()=>row.classList.remove('pmr-w-locie'));
+    });
+    mapaZespolu.querySelectorAll('.pos-marker[data-pole]').forEach(pole=>{
+      const numer = Number((pole as HTMLElement).dataset.pole);
+      pole.addEventListener('dragover', (e:any)=>{ e.preventDefault(); e.dataTransfer.dropEffect='move'; pole.classList.add('pos-marker-cel'); });
+      pole.addEventListener('dragleave', ()=>pole.classList.remove('pos-marker-cel'));
+      pole.addEventListener('drop', async(e:any)=>{
+        e.preventDefault(); e.stopPropagation();
+        pole.classList.remove('pos-marker-cel');
+        const id = String(e.dataTransfer.getData('text/plain') || '');
+        const p = DB.players.find(x=>x.id === id);
+        const cel = POSITION_NUMBERS.find(x=>x.number === numer);
+        if(!p || !cel) return;
+        if(Number(p.pozycjaNmg) === numer) return;
+        p.pozycjaNmg = numer;
+        // Pozycję ogólną też dociągamy do pola, na które trafił — inaczej kartoteka mówiłaby
+        // „Pomocnik defensywny", a mapa stawiałaby go na skrzydle, i nie dałoby się rozstrzygnąć,
+        // która wersja jest prawdziwa.
+        if(cel.posName && p.position !== cel.posName) p.position = cel.posName;
+        const ok = await savePlayerOne(p);
+        render();
+        pokazPotwierdzenie(ok === false
+          ? 'Nie udało się zapisać pozycji — sprawdź baner u góry strony.'
+          : `${p.lastName || p.firstName}: pozycja ${numer} · ${cel.label}.`, ok === false ? 'blad' : 'ok');
+      });
+    });
+  }
   main.querySelectorAll('[data-action="pobierz-tabele"]').forEach(b=>b.onclick=async()=>{
     const napis = b.textContent;
     (b as HTMLButtonElement).disabled = true; b.textContent = 'Pobieram…';
