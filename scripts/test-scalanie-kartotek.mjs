@@ -13,16 +13,30 @@ const sprawdz = (opis, warunek, dodatek = '') => {
   if (!warunek) bledy++;
 };
 
-// Atrapy zależności — takie same, jak w aplikacji.
-const importNorm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
+// Rozpoznawanie rywala bierzemy PRAWDZIWE z aplikacji — scalanie musi widzieć mecze tak samo
+// jak licznik, inaczej „KS Gryf Wejherowo" i „Gryf Wejherowo" przepisałyby się jako dwa spotkania.
+const wytnij = (nazwa, wzor) => {
+  const m = zrodlo.match(wzor);
+  if (!m) { console.error(`Nie znalazłem ${nazwa} w src/main.ts.`); process.exit(1); }
+  return m[0];
+};
+const nazwyKlubow = [
+  wytnij('importNorm', /const importNorm = [\s\S]*?\.replace\(\/\[\^a-z0-9\]\/g,''\);/),
+  wytnij('SZUM_NAZWY_KLUBU', /const SZUM_NAZWY_KLUBU = \/\^\([\s\S]*?\)\$\/;/),
+  wytnij('NUMER_ZESPOLU', /const NUMER_ZESPOLU = \{[\s\S]*?\};/),
+  wytnij('SKROTY_NAZWY', /const SKROTY_NAZWY = \{[\s\S]*?\};/),
+  wytnij('rozwinSkroty', /const rozwinSkroty = .*;/),
+  wytnij('rozbijNazweKlubu', /function rozbijNazweKlubu\(nazwa\)\{[\s\S]*?\n\}/),
+  wytnij('odciskKlubu', /const odciskKlubu = \(nazwa\)=>\{[\s\S]*?\};/),
+].join('\n');
 
 function scena({ glowna, duplikat, reports = [], observations = [], mapa = {}, radar = {} }) {
   const DB = { players: [glowna, duplikat], reports, observations };
   const positionMapAssignments = JSON.parse(JSON.stringify(mapa));
   const radarPrzejrzane = { ...radar };
-  const f = new Function('DB', 'positionMapAssignments', 'radarPrzejrzane', 'importNorm',
-    `${ciało[0]}; return scalKartoteki;`);
-  const wynik = f(DB, positionMapAssignments, radarPrzejrzane, importNorm)(glowna, duplikat);
+  const f = new Function('DB', 'positionMapAssignments', 'radarPrzejrzane',
+    `${nazwyKlubow}\n${ciało[0]}; return scalKartoteki;`);
+  const wynik = f(DB, positionMapAssignments, radarPrzejrzane)(glowna, duplikat);
   return { wynik, glowna, DB, positionMapAssignments, radarPrzejrzane };
 }
 

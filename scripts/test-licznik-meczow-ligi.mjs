@@ -12,9 +12,24 @@ const mOsiagalne = zrodlo.match(/function osiagalneKolejki\(klub\)\{[\s\S]*?\n\}
 if (!mOsiagalne) { console.error("Nie znalazłem osiagalneKolejki w src/main.ts."); process.exit(1); }
 const zrodloTabeli = mTabeli[0] + '\n' + mOsiagalne[0];
 
-const importNorm = (s) => String(s || '').toLowerCase()
-  .replace(/ł/g, 'l').normalize('NFD').replace(/[̀-ͯ]/g, '')
-  .replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+// Bierzemy PRAWDZIWY rozbiór nazwy i odcisk klubu z aplikacji. Atrapa dawałaby inne klucze
+// spotkań niż produkcja i test przestałby cokolwiek znaczyć — a to właśnie na tym kluczu
+// polegał błąd: „Gryf Wejherowo" i „KS Gryf Wejherowo" liczyły się jako dwa mecze.
+const wytnij = (nazwa, wzor) => {
+  const m = zrodlo.match(wzor);
+  if (!m) { console.error(`Nie znalazłem ${nazwa} w src/main.ts.`); process.exit(1); }
+  return m[0];
+};
+const nazwyKlubow = [
+  wytnij('importNorm', /const importNorm = [\s\S]*?\.replace\(\/\[\^a-z0-9\]\/g,''\);/),
+  wytnij('SZUM_NAZWY_KLUBU', /const SZUM_NAZWY_KLUBU = \/\^\([\s\S]*?\)\$\/;/),
+  wytnij('NUMER_ZESPOLU', /const NUMER_ZESPOLU = \{[\s\S]*?\};/),
+  wytnij('SKROTY_NAZWY', /const SKROTY_NAZWY = \{[\s\S]*?\};/),
+  wytnij('rozwinSkroty', /const rozwinSkroty = .*;/),
+  wytnij('rozbijNazweKlubu', /function rozbijNazweKlubu\(nazwa\)\{[\s\S]*?\n\}/),
+  wytnij('odciskKlubu', /const odciskKlubu = \(nazwa\)=>\{[\s\S]*?\};/),
+].join('\n');
+const importNorm = new Function(nazwyKlubow + '; return importNorm;')();
 
 let bledy = 0;
 const sprawdz = (opis, warunek, dodatek = '') => {
@@ -25,11 +40,9 @@ const sprawdz = (opis, warunek, dodatek = '') => {
 // meczeZTabeli sięga po tabele ligowe; w większości prób ich nie ma i wtedy zwraca null —
 // dokładnie tak, jak w aplikacji przed pierwszym pobraniem tabel.
 const licz = (players, clubId, clubs = [{ id: clubId, season: '2026/2027' }], tabele = {}) =>
-  new Function('DB', 'importNorm', 'tabeleLig', 'rozbijNazweKlubu', 'tenSamCzlon',
-    `${zrodloTabeli}\n${ciało[0]}; return meczeKlubu(${JSON.stringify(clubId)});`)(
-    { players, clubs }, importNorm, tabele,
-    (n)=>({ rdzen: String(n||'').toLowerCase().split(/\s+/).filter(Boolean) }),
-    (a,b)=>a===b);
+  new Function('DB', 'tabeleLig', 'tenSamCzlon',
+    `${nazwyKlubow}\n${zrodloTabeli}\n${ciało[0]}; return meczeKlubu(${JSON.stringify(clubId)});`)(
+    { players, clubs }, tabele, (a,b)=>a===b);
 
 // 1. Jeden mecz zostawia kilkanaście wpisów — liczymy SPOTKANIA, nie wpisy.
 {
@@ -222,6 +235,43 @@ const licz = (players, clubId, clubs = [{ id: clubId, season: '2026/2027' }], ta
   const w = licz([{ clubId: 'K1', matches: 5, przebieg: [] }], 'K1');
   console.log('\n16. Tabela niepobrana');
   sprawdz('osiągalne = null', w.osiagalne === null, String(w.osiagalne));
+}
+
+// 17. TEN SAM RYWAL ZAPISANY NA KILKA SPOSOBÓW TO JEDEN MECZ.
+//
+//     Klucz spotkania używał importNorm, który zostawia skróty klubowe — więc „Gryf Wejherowo",
+//     „KS Gryf Wejherowo" i „GRYF WEJHEROWO SA" dawały trzy klucze i jeden mecz liczył się trzy
+//     razy. Tak IV liga pomorska pokazywała 8, a Arka II nawet 11 kolejek przy sześciu rozegranych.
+{
+  const w = licz([{ clubId: 'K1', przebieg: [
+    { rywal: 'Gryf Wejherowo', dom: true, wynik: '1:0' },
+    { rywal: 'KS Gryf Wejherowo', dom: true, wynik: '1:0' },
+    { rywal: 'GRYF WEJHEROWO SA', dom: true, wynik: '1:0' },
+    { rywal: 'MKS Gryf Wejherowo', dom: true },
+  ] }], 'K1');
+  console.log('\n17. Rywal pod czterema zapisami');
+  console.log('   ' + JSON.stringify(w));
+  sprawdz('to jeden mecz, nie cztery', w.wgrane === 1, String(w.wgrane));
+  sprawdz('punkty policzone raz', w.punkty === 3, String(w.punkty));
+}
+
+// 18. Rezerwy to jednak inny klub — „II" w nazwie musi rozdzielać.
+{
+  const w = licz([{ clubId: 'K1', przebieg: [
+    { rywal: 'Arka Gdynia', dom: true, wynik: '1:0' },
+    { rywal: 'Arka II Gdynia', dom: true, wynik: '2:0' },
+  ] }], 'K1');
+  console.log('\n18. Pierwsza drużyna i rezerwy');
+  sprawdz('dwa różne mecze', w.wgrane === 2, String(w.wgrane));
+}
+
+// 19. Wpis bez rozpoznawalnej nazwy rywala nie może udawać meczu.
+{
+  const w = licz([{ clubId: 'K1', przebieg: [
+    { rywal: 'KS', dom: true }, { rywal: '', dom: true }, { rywal: 'Wisła Kraków', dom: true },
+  ] }], 'K1');
+  console.log('\n19. Rywal bez rdzenia nazwy');
+  sprawdz('liczy się tylko mecz z rozpoznanym rywalem', w.wgrane === 1, String(w.wgrane));
 }
 
 console.log(bledy ? `\n${bledy} BŁĘDÓW` : '\nWszystko przeszło.');

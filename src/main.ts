@@ -2673,7 +2673,9 @@ function scalKartoteki(glowna, duplikat){
 
   // Przebieg sezonu: mecz rozpoznajemy po parze (rywal, u siebie) — tak samo jak import protokołów,
   // bo w sezonie każda para gra ze sobą dokładnie dwa razy.
-  const kluczMeczu = (x)=> importNorm(String(x.rywal||'')) + '|' + (x.dom ? 'D' : 'W');
+  // Ten sam odcisk nazwy co w liczniku meczów — inaczej scalanie uznałoby „KS Gryf Wejherowo"
+  // i „Gryf Wejherowo" za dwa różne spotkania i przepisałoby jedno z nich drugi raz.
+  const kluczMeczu = (x)=> odciskKlubu(String(x.rywal||'')) + '|' + (x.dom ? 'D' : 'W');
   const mam = new Set((glowna.przebieg || []).map(kluczMeczu));
   let meczow = 0;
   (duplikat.przebieg || []).forEach(x=>{
@@ -8874,8 +8876,16 @@ function meczeKlubu(clubId){
     const sezonZawodnika = String(p.przebiegSezon || '').trim();
     if(sezonKlubu && sezonZawodnika && sezonZawodnika !== sezonKlubu) return;
     (p.przebieg || []).forEach(x=>{
-      const k = importNorm(String(x.rywal||'')) + '|' + (x.dom ? 'D' : 'W');
-      if(!k.startsWith('|') && (!spotkania.has(k) || !spotkania.get(k))) spotkania.set(k, String(x.wynik||''));
+      // RYWALA ROZPOZNAJEMY ODCISKIEM NAZWY, NIE SUROWYM ZAPISEM.
+      //
+      // importNorm zostawia skróty klubowe, więc „Gryf Wejherowo", „KS Gryf Wejherowo" i „GRYF
+      // WEJHEROWO SA" dawały trzy różne klucze — czyli jeden mecz liczył się trzy razy. Tak IV liga
+      // pomorska pokazywała 8 i 11 kolejek przy sześciu rozegranych. Odcisk odsiewa te same skróty,
+      // którymi posługuje się dopasowywanie klubów, więc obie ścieżki widzą rywala tak samo.
+      const rdzenRywala = rozbijNazweKlubu(String(x.rywal||'')).rdzen;
+      if(!rdzenRywala.length) return;
+      const k = odciskKlubu(String(x.rywal||'')) + '|' + (x.dom ? 'D' : 'W');
+      if(!spotkania.has(k) || !spotkania.get(k)) spotkania.set(k, String(x.wynik||''));
     });
   });
   // SUMY SEZONOWE Z 90MINUT NIE NIOSĄ PRZEBIEGU (api/_90minut.js: „przebiegu mecz po meczu tą drogą
@@ -11343,7 +11353,11 @@ function attachHandlers(){
     const napis = b.textContent;
     (b as HTMLButtonElement).disabled = true; b.textContent = 'Pobieram…';
     try{
-      const w = await pobierzTabeleLig(false);
+      // ZAKRES „WSZYSTKO": Ekstraklasa, I, II, III liga ORAZ szesnaście grup IV ligi i CLJ.
+      // Bez IV ligi kolumna „rozegrane" liczyła się tam z naszych kartotek, a te potrafią być
+      // zawyżone — i nie było z czym ich porównać. To 25 stron zamiast siedmiu, ale pobranie
+      // robi się raz na kolejkę, a brzeg trzyma wynik przez pół godziny.
+      const w = await pobierzTabeleLig(true);
       render();
       pokazPotwierdzenie(`Pobrano ${w.pobranych} tabel, przypisano ${w.przypisanych} do grup w SBS.`
         + (w.nieprzypisane.length ? ` Bez przypisania: ${w.nieprzypisane.join('; ')}.` : ''),
