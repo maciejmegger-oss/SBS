@@ -4635,14 +4635,17 @@ function viewClubs(){
       `Rozegranych kolejek: ${d.rozegrane}${d.zTabeli ? ' (z tabeli 90minut)' : ' — oszacowane z kartotek, bo tabela nie jest pobrana'}.`,
       `Wgranych do SBS: ${d.wgrane}${braki > 0 ? ` — brakuje ${braki}` : ''}.`,
       brakujeRozpisanych ? `Rozpisanych mecz po meczu: ${d.rozpisanych || 0} — reszta to sumy sezonowe z 90minut, bez składów i minut.` : '',
-      d.zawyzone ? `W kartotekach jest ${d.zawyzone} więcej niż liga rozegrała — to mecze spoza tych rozgrywek albo z poprzedniego sezonu.` : '',
+      d.zawyzone ? `W kartotekach jest o ${d.zawyzone} więcej — 90minut sumuje zawodnikowi WSZYSTKIE rozgrywki, więc doliczają się mecze Pucharu Polski i sparingi. To nie jest błąd; w tabeli ligowej liczy się ${d.rozegrane}.` : '',
     ].filter(Boolean).join(' ');
     const komorkaMeczow = d.rozegrane === 0
       ? '<span class="meta">—</span>'
       : `<span title="${esc(podpowiedz)}" style="${braki>0?'color:var(--clay-dark);font-weight:700;':'font-weight:600;'}">${d.rozegrane}/${d.wgrane}</span>`
         + (braki>0 ? ' <span title="Brakujące kolejki — statystyki tego klubu są nieaktualne">⚠️</span>' : '')
         + (!braki && brakujeRozpisanych ? ' <span class="meta" title="Mamy sumy sezonowe, ale nie wszystkie mecze rozpisane">◐</span>' : '')
-        + (d.zawyzone ? ' <span class="meta" title="W kartotekach jest więcej meczów, niż liga rozegrała">❗</span>' : '');
+        // NIE WYKRZYKNIK. Nadmiar nie jest usterką: 90minut sumuje zawodnikowi wszystkie
+        // rozgrywki, więc klub grający w Pucharze Polski ZAWSZE będzie miał w kartotekach więcej
+        // meczów niż w tabeli ligowej. Czerwony znak kazał to zgłaszać jako błąd, którego nie ma.
+        + (d.zawyzone ? ` <span class="meta" style="font-size:11px;" title="Poza ligą doliczone ${d.zawyzone} — puchar i sparingi, które 90minut sumuje razem z ligą">+${d.zawyzone}</span>` : '');
     return `<tr style="cursor:pointer;" data-action="view-club" data-id="${c.id}">
       <td onclick="event.stopPropagation()">
         <label for="quick-crest-${c.id}" style="cursor:pointer;display:inline-flex;" title="Kliknij, aby wgrać/zmienić herb">${crestImg(clubCrest(c.id), null, c.name)}</label>
@@ -4653,7 +4656,9 @@ function viewClubs(){
       <td>${esc(c.league)}${c.season?` <span class="note">(${esc(c.season)})</span>`:''}</td>
       <td>${esc(c.city||"—")}</td>
       <td style="text-align:center;">${komorkaMeczow}</td>
-      <td style="text-align:center;">${d.punkty==null?'<span class="meta">—</span>':`<strong>${d.punkty}</strong>`}</td>
+      <td style="text-align:center;" title="${d.punktyZTabeli ? 'Punkty z tabeli 90minut' + (d.bilans ? ` &middot; bilans ${d.bilans}` : '') + (d.bramki ? ` &middot; bramki ${d.bramki}` : '') : 'Policzone z wyników zapisanych przy meczach — niepełne. Pobierz tabele z 90minut, żeby mieć oficjalne.'}">${
+        d.punkty==null ? '<span class="meta">—</span>'
+        : `<strong>${d.punkty}</strong>${d.punktyZTabeli ? '' : '<span class="meta" title="Policzone z naszych danych, nie z tabeli">*</span>'}`}</td>
       <td>${count}</td>
       <td onclick="event.stopPropagation()"><button class="link-btn" data-action="edit-club" data-id="${c.id}">Edytuj</button>
           <button class="link-btn" data-action="delete-club" data-id="${c.id}" style="color:var(--clay-dark);">Usuń</button></td>
@@ -4800,7 +4805,7 @@ function viewClubs(){
   </div>
   <div class="card" style="padding:0;overflow:auto;">
     <table>
-      <thead><tr><th>Herb</th><th>Klub</th><th>ZPN / Region</th><th>Liga (aktualna)</th><th>Miasto</th><th style="text-align:center;" title="Rozegrane kolejki (z tabeli 90minut) / wgrane do SBS. „7/6" znaczy: liga zagrała siedem, mamy sześć.">Mecze</th><th style="text-align:center;" title="Punkty policzone z wyników zapisanych przy meczach. Kreska, gdy protokoły nie niosły wyniku.">Pkt</th><th>Zawodnicy w bazie</th><th></th></tr></thead>
+      <thead><tr><th>Herb</th><th>Klub</th><th>ZPN / Region</th><th>Liga (aktualna)</th><th>Miasto</th><th style="text-align:center;" title="Rozegrane kolejki (z tabeli 90minut) / wgrane do SBS. „7/6" znaczy: liga zagrała siedem, mamy sześć.">Mecze</th><th style="text-align:center;" title="Punkty z tabeli 90minut. Gwiazdka oznacza wartość policzoną z naszych danych — niepełną, bo nie każdy protokół niesie wynik.">Pkt</th><th>Zawodnicy w bazie</th><th></th></tr></thead>
       <tbody>${rows || `<tr><td colspan="9"><div class="empty">Brak klubów w tym widoku.</div></td></tr>`}</tbody>
     </table>
   </div>`;
@@ -8788,9 +8793,9 @@ async function generateAnalysisPDF(playerId){
 // PUNKTY LICZYMY TYLKO Z ZAPISANEGO WYNIKU. Protokoły z ŁNP często go nie niosą — wtedy oddajemy
 // null i widok pokazuje kreskę. Zgadywanie punktów z samej liczby meczów dałoby tabelę, która
 // wygląda wiarygodnie i kłamie.
-// Ile meczów klub rozegrał WEDŁUG TABELI LIGOWEJ. Zwraca null, gdy tabeli jeszcze nie pobrano
-// albo nie ma w niej tego klubu — wtedy zostaje nasze oszacowanie z kartotek.
-function meczeZTabeli(klub){
+// Wiersz klubu z pobranej tabeli ligowej — mecze, punkty, bilans. Zwraca null, gdy tabeli jeszcze
+// nie pobrano albo nie ma w niej tego klubu; wtedy zostaje nasze oszacowanie z kartotek.
+function wierszZTabeli(klub){
   if(!klub) return null;
   const tab = tabeleLig[String(klub.league || '')];
   if(!tab || !Array.isArray(tab.wiersze)) return null;
@@ -8804,7 +8809,12 @@ function meczeZTabeli(klub){
       const wspolne = a.filter(x=>b.some(y=>tenSamCzlon(x,y)));
       return wspolne.length >= Math.min(a.length, b.length) && wspolne.some(x=>x.length >= 4);
     });
-  const n = wiersz ? Number(wiersz.mecze) : NaN;
+  return wiersz || null;
+}
+// Sama liczba meczów — najczęściej używany fragment wiersza.
+function meczeZTabeli(klub){
+  const w = wierszZTabeli(klub);
+  const n = w ? Number(w.mecze) : NaN;
   return Number.isFinite(n) ? n : null;
 }
 function meczeKlubu(clubId){
@@ -8844,17 +8854,27 @@ function meczeKlubu(clubId){
   // zdążyliśmy zebrać, i bywają ZAWYŻONE: dorobek w kartotece potrafi nieść mecze pucharowe albo
   // resztki poprzedniego sezonu. Widzew miał tak „10" przy siedmiu rozegranych kolejkach — i to
   // on ustawiał poprzeczkę całej Ekstraklasie.
-  const zTabeli = meczeZTabeli(klub);
+  const wiersz = wierszZTabeli(klub);
+  const zTabeli = wiersz && Number.isFinite(Number(wiersz.mecze)) ? Number(wiersz.mecze) : null;
   const mamy = Math.max(spotkania.size, zSum);
+  // PUNKTY BIERZEMY Z TABELI, GDY JĄ MAMY.
+  //
+  // Nasze liczyły się z wyników zapisanych przy meczach, a tych mamy tylko część — Korona Kielce
+  // miała u nas 5 punktów przy dziewięciu w tabeli. Kolumna punktowa, która nie zgadza się z ligą,
+  // jest gorsza niż jej brak: przy takiej tabeli nie da się pracować, bo nie wiadomo, której ufać.
+  const punktyOficjalne = wiersz && Number.isFinite(Number(wiersz.punkty)) ? Number(wiersz.punkty) : null;
   return {
     rozegrane: zTabeli != null ? zTabeli : mamy,
+    punktyZTabeli: punktyOficjalne != null,
+    bilans: wiersz ? `${wiersz.zwyciestwa}-${wiersz.remisy}-${wiersz.porazki}` : '',
+    bramki: wiersz ? String(wiersz.bramki || '') : '',
     // Więcej niż rozegrano mieć nie można. Nadmiar znaczy, że w kartotekach siedzi coś spoza tych
     // rozgrywek — przycinamy, zamiast pokazywać liczbę, która nie ma prawa istnieć.
     wgrane: zTabeli != null ? Math.min(mamy, zTabeli) : mamy,
     zawyzone: zTabeli != null && mamy > zTabeli ? mamy - zTabeli : 0,
     rozpisanych: spotkania.size,
     zTabeli: zTabeli != null,
-    punkty,
+    punkty: punktyOficjalne != null ? punktyOficjalne : punkty,
   };
 }
 

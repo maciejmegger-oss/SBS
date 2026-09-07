@@ -6,8 +6,8 @@ import fs from "node:fs";
 const zrodlo = fs.readFileSync("src/main.ts", "utf8");
 const ciało = zrodlo.match(/function meczeKlubu\(clubId\)\{[\s\S]*?\n\}/);
 if (!ciało) { console.error("Nie znalazłem meczeKlubu w src/main.ts."); process.exit(1); }
-const mTabeli = zrodlo.match(/function meczeZTabeli\(klub\)\{[\s\S]*?\n\}/);
-if (!mTabeli) { console.error("Nie znalazłem meczeZTabeli w src/main.ts."); process.exit(1); }
+const mTabeli = zrodlo.match(/function wierszZTabeli\(klub\)\{[\s\S]*?\n\}/);
+if (!mTabeli) { console.error("Nie znalazłem wierszZTabeli w src/main.ts."); process.exit(1); }
 const zrodloTabeli = mTabeli[0];
 
 const importNorm = (s) => String(s || '').toLowerCase()
