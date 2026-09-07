@@ -6172,6 +6172,88 @@ function miniTabelaKlubuHtml(c){
     </table></div>`);
 }
 
+// MAPA ZESPOŁU — kadra klubu rozstawiona na boisku w jego systemie gry.
+//
+// Mapa w Rankingu pokazuje CAŁĄ ligę i tylko zawodników, których aktywnie prowadzisz. Tutaj chodzi
+// o coś innego: zobaczyć jeden zespół w komplecie i od razu wiedzieć, gdzie ma nadmiar, a gdzie
+// dziurę. Dlatego liczy się z pozycji zapisanych w kartotekach i NICZEGO NIE ZAPISUJE — pojawia
+// się sama, gdy tylko zawodnicy mają uzupełnione pozycje.
+//
+// Zawodnik ze wskazanym numerem wg NMG trafia dokładnie tam; reszta wchodzi po nazwie pozycji,
+// a przy pozycjach parzystych (lewy/prawy obrońca, oba skrzydła) rozdziela się po połowie —
+// nie mamy skąd wiedzieć, na której stronie gra, więc nie udajemy, że wiemy: pole podpisane jest
+// „wg pozycji ogólnej".
+function mapaZespoluHtml(klub, squad){
+  const system = String(systemyKlubow[klub.id] || '');
+  const wsp = FORMATION_COORDS[system] || FORMATION_COORDS[''];
+  const zPozycja = squad.filter(p=>String(p.position||'').trim());
+  if(zPozycja.length < 5){
+    return `<div class="card">
+      <h4 style="margin-top:0;color:var(--heading);">Mapa zespołu</h4>
+      <p class="note" style="margin:0;">Za mało zawodników z wpisaną pozycją (${zPozycja.length} z ${squad.length}),
+        żeby ustawić skład. Uzupełnij pozycje — w widoku Klubów jest przycisk
+        <strong>🧭 Pozycje z Transfermarktu</strong>, który robi to dla całej ligi naraz.</p>
+    </div>`;
+  }
+
+  // Rozdział zawodników na pola: najpierw ci ze wskazanym numerem, potem reszta wg nazwy pozycji.
+  const wPolu = new Map(POSITION_NUMBERS.map(pn=>[pn.number, []]));
+  const wziete = new Set();
+  zPozycja.forEach(p=>{
+    const numer = Number(p.pozycjaNmg) || 0;
+    if(numer && wPolu.has(numer)){ wPolu.get(numer).push({ p, pewny: true }); wziete.add(p.id); }
+  });
+  POSITION_NUMBERS.forEach(pn=>{
+    const pasujacy = zPozycja.filter(p=>!wziete.has(p.id) && p.position === pn.posName);
+    if(!pasujacy.length) return;
+    const pary = POSITION_NUMBERS.filter(x=>x.posName === pn.posName);
+    // Przy sparowanych polach (lewe/prawe) dzielimy pulę na pół — inaczej wszyscy boczni obrońcy
+    // staliby po jednej stronie, a druga świeciła pustką, choć klub ma tam kogo wystawić.
+    const ilePar = Math.max(1, pary.length);
+    const indeks = pary.findIndex(x=>x.number === pn.number);
+    pasujacy.forEach((p, i)=>{ if(i % ilePar === indeks) wPolu.get(pn.number).push({ p, pewny: false }); });
+  });
+
+  const znacznik = (pn)=>{
+    const coord = wsp[pn.number];
+    if(!coord) return '';
+    const lista = wPolu.get(pn.number) || [];
+    const tresc = lista.length
+      ? lista.slice(0, 6).map(({p, pewny})=>`<span class="pos-marker-row" title="${esc(p.position||'')}${pewny?' — pozycja wskazana numerem wg NMG':' — wg pozycji ogólnej'}">
+          <span class="pmr-name">${esc(p.lastName || p.firstName || '—')}</span>
+          ${p.birthYear?`<span class="pmr-year">${esc(String(p.birthYear))}</span>`:''}${pewny?'':'<span class="pmr-year" title="Strona boiska nieustalona">·</span>'}</span>`).join('')
+      : '<span class="pos-marker-row pmr-empty">—</span>';
+    return `<div class="pos-marker" style="left:${coord.x}%;top:${coord.y}%;" title="${esc(pn.label)}">
+      <span class="pos-marker-dot ${pn.number===1?'gk':''}">${pn.number}</span>
+      <span class="pos-marker-tag">${tresc}</span>
+    </div>`;
+  };
+
+  const bezPozycji = squad.length - zPozycja.length;
+  const puste = POSITION_NUMBERS.filter(pn=>wsp[pn.number] && !(wPolu.get(pn.number)||[]).length);
+  return `<div class="card">
+    <div class="toolbar" style="margin-bottom:4px;">
+      <h4 style="margin:0;color:var(--heading);">Mapa zespołu</h4>
+      <span class="note">${system ? `system ${esc(etykietaSystemu(system))}` : 'bez wpisanego systemu — układ domyślny'}
+        &middot; ${zPozycja.length} ${zPozycja.length===1?'zawodnik':'zawodników'} na boisku</span>
+    </div>
+    <div class="pitch-wrap-outer"><div class="position-map-pitch">
+      <div class="pitch-deco">
+        <div class="pitch-deco-box pitch-deco-box-top"></div><div class="pitch-deco-goal pitch-deco-goal-top"></div>
+        <div class="pitch-deco-circle"></div><div class="pitch-deco-line"></div>
+        <div class="pitch-deco-box pitch-deco-box-bottom"></div><div class="pitch-deco-goal pitch-deco-goal-bottom"></div>
+        <div class="pitch-deco-arc pitch-deco-arc-top"></div><div class="pitch-deco-arc pitch-deco-arc-bottom"></div>
+      </div>
+      <div class="position-map-content">${POSITION_NUMBERS.map(znacznik).join('')}</div>
+    </div></div>
+    <p class="note" style="margin-top:8px;">Liczone z pozycji w kartotekach — nic tu nie zapisujemy, obraz zmienia się sam wraz z danymi.
+      ${!system ? 'Ustaw <strong>System gry zespołu</strong> w edycji klubu, żeby pola stanęły w tym układzie, którym klub gra. ' : ''}
+      ${puste.length ? `<strong>Puste pola:</strong> ${puste.map(pn=>esc(pn.label)).join(', ')} — tam nie masz nikogo z taką pozycją. ` : ''}
+      ${bezPozycji ? `${bezPozycji} ${bezPozycji===1?'zawodnik nie ma':'zawodników nie ma'} wpisanej pozycji i nie wchodzi na boisko. ` : ''}
+      Kropka przy nazwisku znaczy, że stronę boiska dobrałem z pozycji ogólnej — wpisz <strong>Pozycję wg NMG</strong> w profilu, żeby ustawić ją na pewno.</p>
+  </div>`;
+}
+
 function viewClubDetail(id){
   const c = DB.clubs.find(x=>x.id===id);
   if(!c){ viewingClubId=null; return viewClubs(); }
@@ -6234,6 +6316,7 @@ function viewClubDetail(id){
     </div>
   </div>
   ${miniTabelaKlubuHtml(c)}
+  ${mapaZespoluHtml(c, squad)}
   <div class="card">
     <div class="toolbar" style="margin-bottom:8px;">
       <h4 style="margin:0;color:var(--heading);">Zawodnicy scoutowani w tym klubie (${squad.length})
