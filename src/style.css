@@ -342,7 +342,10 @@ tr:hover td{background:var(--card-soft);}
    Boisko z Rankingu zajmuje całą szerokość i przy karcie klubu spychało listę kadry pod ekran.
    Tu chodzi o jedno spojrzenie: gdzie jest tłok, a gdzie dziura — więc mniejsze pole, mniejsze
    nazwiska i ciaśniejsze plakietki, ale ten sam układ i te same numery. */
-.mapa-zespolu-uklad{display:grid;grid-template-columns:minmax(300px,1fr) 1.5fr;gap:16px;align-items:start;}
+/* MAPA POTRZEBUJE SZEROKOŚCI, INACZEJ PLAKIETKI SIĘ NAKŁADAJĄ. Przy kolumnie 250 px pole nr 3
+   (x=18%) i nr 8 (x=37%) dzieli 47 px, a plakietka ma sto — wiec nachodzą na siebie niezależnie
+   od tego, jak je kotwiczyć. Dajemy mapie twarde minimum i większy udział w podziale. */
+.mapa-zespolu-uklad{display:grid;grid-template-columns:minmax(380px,1.15fr) 1.4fr;gap:16px;align-items:start;}
 /* BEZ PERSPEKTYWY. Boisko w Rankingu jest ścięte u góry (clip-path), co daje wrażenie głębi —
    ale przy tej szerokości ścinało nazwiska przy krawędziach. Prostokąt nic tu nie traci, a nic
    się nie urywa. Wyższe proporcje dają miejsce na cztery nazwiska między liniami. */
@@ -371,10 +374,14 @@ tr:hover td{background:var(--card-soft);}
    gdzie pola stoją blisko siebie. */
 .mapa-zespolu .pos-marker:hover{z-index:30;}
 .mapa-zespolu .pos-marker:hover .pos-marker-tag{box-shadow:0 6px 20px rgba(0,0,0,.6);}
-/* Poniżej 1100 px kolumny nie mają już sensu — lista kadry ma osiem kolumn i musi dostać
-   całą szerokość, inaczej trzeba ją przewijać w bok przy każdym zawodniku. */
-@media (max-width: 1100px){
+/* Poniżej 1500 px kolumny nie mają już sensu: po odjęciu bocznego menu mapie zostawało tyle,
+   że plakietki wchodziły na siebie, a lista kadry (osiem kolumn) i tak wymagała przewijania w bok.
+   Jedna kolumna daje obu pełną szerokość — strona jest dłuższa, ale wszystko czytelne. */
+@media (max-width: 1500px){
   .mapa-zespolu-uklad{grid-template-columns:1fr;}
+  /* W jednej kolumnie boisko dostaje całą szerokość karty, więc wracamy do proporcji zbliżonych
+     do tych z Rankingu — pola rozjeżdżają się w poziomie i nic się nie styka. */
+  .mapa-zespolu .position-map-pitch{max-width:760px;aspect-ratio:1/1.24;}
 }
 /* Radar młodzieży: ograny zawodnik (270+ minut, czyli trzy pełne mecze) na złotym tle.
    Bije tr:hover, bo najechanie myszą nie może kasować oznaczenia akurat w chwili, gdy
