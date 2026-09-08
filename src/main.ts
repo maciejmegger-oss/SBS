@@ -6,6 +6,8 @@ import { VOIVODESHIP_PATHS } from "./data/voivodeships";
 // Kod zbieracza ŁNP — ten sam plik, który serwujemy pod /zakladka-lnp-v2.js.
 import LNP_ZBIERACZ from "../public/zakladka-lnp-v2.js?raw";
 import type { Database } from "./types";
+// Skala bramkarza — jedno źródło dla systemu i dla panelu, patrz src/domain/bramkarz.ts.
+import { FAZY_BRAMKARZ, opisToBramkarz, fazyToBramkarskie } from "./domain/bramkarz";
 import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
@@ -2750,7 +2752,10 @@ function playerAvg(playerId){
         zIlu: wartosci.length,
       });
     });
-    zbierz('phases', REPORT_PHASES);
+    // Obie listy naraz. Klucze faz gry i pozycji bramkarskich nie mają części wspólnej, a rubryki
+    // bez ocen i tak odpadają wyżej — więc zawodnik z historią z obu skal (bramkarz przestawiony
+    // do pola albo odwrotnie) zachowa jedno i drugie, zamiast tracić połowę dorobku.
+    zbierz('phases', [...REPORT_PHASES, ...FAZY_BRAMKARZ]);
     zbierz('setPieces', REPORT_SET_PIECES);
   }
 
@@ -4308,7 +4313,8 @@ function viewPlayerDetail(id){
   <div class="card">
     <h4 style="margin-top:0;color:var(--heading);">Raporty taktyczne (${playerReports(p.id).length})</h4>
     ${playerReports(p.id).length? playerReports(p.id).map(r=>{
-      const phaseAvg = REPORT_PHASES.reduce((a2,f)=>a2+(Number(r.phases[f.key])||0),0)/REPORT_PHASES.length;
+      const fazyR = fazyRaportu(r);
+      const phaseAvg = fazyR.reduce((a2,f)=>a2+(Number(r.phases[f.key])||0),0)/fazyR.length;
       const spAvg = REPORT_SET_PIECES.reduce((a2,f)=>a2+(Number(r.setPieces[f.key])||0),0)/REPORT_SET_PIECES.length;
       return `<div class="obs-item">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
@@ -4327,7 +4333,7 @@ function viewPlayerDetail(id){
           ${r.mentalnoscOpis?`<div><strong>Mentalność:</strong> ${esc(r.mentalnoscOpis)}</div>`:''}
           ${r.potencjalOpis?`<div><strong>Potencjał:</strong> ${esc(r.potencjalOpis)}</div>`:''}
         </div>
-        <div class="meta" style="margin-top:4px;">${REPORT_PHASES.map(f=>f.label+": "+r.phases[f.key]).join(' &middot; ')}</div>
+        <div class="meta" style="margin-top:4px;">${fazyR.map(f=>f.label+": "+r.phases[f.key]).join(' &middot; ')}</div>
         <div class="meta">${REPORT_SET_PIECES.map(f=>f.label+": "+r.setPieces[f.key]).join(' &middot; ')}</div>
         ${r.setPieceComment? `<div style="font-size:12px;margin-top:4px;font-style:italic;color:var(--ink-soft);">Stałe fragmenty: ${esc(r.setPieceComment)}</div>`:''}
       </div>`;
@@ -6645,6 +6651,38 @@ const REPORT_PHASES = [
   {key:'fazaObrony', label:'Faza obrony', krotko:'Obrona'},
   {key:'fazaPrzejsciaObronaAtak', label:'Faza przejścia z obrony do ataku', krotko:'Przejście O→A'},
 ];
+// KTÓRE POZYCJE PROTOKOŁU 1–6 POKAZAĆ PRZY TYM RAPORCIE.
+//
+// Bramkarz ma własne cztery pozycje zamiast czterech faz gry (patrz src/domain/bramkarz.ts) —
+// panel mobilny wystawia je na trybunie i przysyła w tym samym polu `phases`.
+//
+// Rozstrzyga SAMA ZAWARTOŚĆ raportu, a nie pozycja z kartoteki. To ważne w dwie strony:
+// raport wystawiony bramkarzowi zachowa bramkarskie podpisy nawet po tym, jak ktoś zmieni mu
+// pozycję w kartotece, a raporty sprzed zmiany nie zaczną nagle pokazywać cudzych nazw przy
+// swoich liczbach. Przy nowym, jeszcze pustym raporcie zawartości nie ma, więc wtedy — i tylko
+// wtedy — pyta się kartotekę.
+function fazyRaportu(r){
+  return (r && fazyToBramkarskie(r.phases)) ? FAZY_BRAMKARZ : REPORT_PHASES;
+}
+// Fazy do formularza NOWEGO raportu — tu zawartości jeszcze nie ma, więc decyduje pozycja.
+function fazyDlaZawodnika(p){
+  return opisToBramkarz(p && p.position) ? FAZY_BRAMKARZ : REPORT_PHASES;
+}
+// Wnętrze bloku protokołu 1–6 w formularzu raportu. Osobna funkcja, bo ten sam blok trzeba umieć
+// zbudować dwa razy: przy rysowaniu formularza i jeszcze raz, gdy wybór zawodnika zmieni skalę
+// z faz gry na bramkarską. `data-klucze` niesie listę rubryk, które właśnie stoją na ekranie —
+// zapis czyta ją stamtąd, zamiast drugi raz zgadywać, którą skalę pokazano.
+function blokFazHtml(lista, wartosci){
+  return `<label class="field" style="display:block;margin-bottom:8px;">${
+    lista===FAZY_BRAMKARZ ? 'Gra bramkarza' : 'Fazy gry'} (skala 1-6)</label>
+    <div data-klucze="${lista.map(f=>f.key).join(',')}">
+    ${lista.map(f=>{ const v = wartosci && wartosci[f.key]!=null ? wartosci[f.key] : 3; return `
+      <div class="slider-row">
+        <span class="lbl">${esc(f.label)}</span>
+        ${ratingPointsHtml('rep-'+f.key, v)}
+      </div>`; }).join('')}
+    </div>`;
+}
 const REPORT_SET_PIECES = [
   {key:'rzutRoznyObrona', label:'Rzut rożny — obrona', krotko:'Rożny obr.'},
   {key:'rzutRoznyAtak', label:'Rzut rożny — atak', krotko:'Rożny atak'},
@@ -6984,8 +7022,25 @@ function ratingPointsHtml(id, val){
   </span>`;
 }
 
+// Punktowe ocenianie 1-6 — ustaw wartość w ukrytym inpucie i podświetl wybrany punkt
+// (bez render → nic nie kasuje). Wydzielone, bo blok protokołu bywa stawiany od nowa po zmianie
+// zawodnika i świeże kropki też muszą reagować na dotknięcie.
+function podepnijOcenyPunktowe(root){
+  if(!root) return;
+  root.querySelectorAll('.rp-dot').forEach(btn=>btn.onclick=()=>{
+    const target = document.getElementById(btn.dataset.target);
+    if(target) target.value = btn.dataset.val;
+    btn.parentElement.querySelectorAll('.rp-dot').forEach(d=>d.classList.toggle('active', d===btn));
+  });
+}
+
+// Oceny wystawione w formularzu raportu, pamiętane przy przełączeniu skali faz na bramkarską
+// i z powrotem. Bez tego pomyłkowe wskazanie bramkarza kasowałoby wypełniony już protokół.
+let pamiecFazFormularza = {};
+
 function viewReports(){
   const editing = editingReportId ? DB.reports.find(r=>r.id===editingReportId) : null;
+  pamiecFazFormularza = Object.assign({}, editing && editing.phases);
   const playerOptions = DB.players.slice().sort((a,b)=>(a.lastName||a.firstName||'').localeCompare(b.lastName||b.firstName||'','pl'))
     .map(p=>`<option value="${p.id}" ${editing&&editing.playerId===p.id?'selected':''}>${esc(p.lastName)} ${esc(p.firstName)} — ${esc(clubName(p.clubId))}</option>`).join('');
 
@@ -7071,12 +7126,11 @@ function viewReports(){
     </div>
 
     <div style="border-top:1px solid var(--border);margin:14px 0;padding-top:10px;">
-      <label class="field" style="display:block;margin-bottom:8px;">Fazy gry (skala 1-6)</label>
-      ${REPORT_PHASES.map(f=>{ const v = editing && editing.phases && editing.phases[f.key]!=null ? editing.phases[f.key] : 3; return `
-        <div class="slider-row">
-          <span class="lbl">${esc(f.label)}</span>
-          ${ratingPointsHtml('rep-'+f.key, v)}
-        </div>`; }).join('')}
+      ${/* Przy NOWYM raporcie zawodnik nie jest jeszcze wybrany, więc zaczynamy od faz gry;
+            wskazanie bramkarza w polu wyżej podmienia ten blok na bramkarski. */''}
+      <div id="rep-fazy-blok">${blokFazHtml(
+        editing ? fazyRaportu(editing) : REPORT_PHASES,
+        editing && editing.phases)}</div>
     </div>
 
     <div style="border-top:1px solid var(--border);margin:14px 0;padding-top:10px;">
@@ -10668,12 +10722,7 @@ function attachHandlers(){
   main.querySelectorAll('.persp-btn').forEach(btn=>btn.onclick=()=>selectPerspektywa(btn.dataset.value));
   main.querySelectorAll('.status-btn').forEach(btn=>btn.onclick=()=>selectReportStatus(btn.dataset.value));
   main.querySelectorAll('.obstype-btn').forEach(btn=>btn.onclick=()=>selectObsType(btn.dataset.value));
-  // Punktowe ocenianie 1-6 — ustaw wartość w ukrytym inpucie i podświetl wybrany punkt (bez render → nic nie kasuje).
-  main.querySelectorAll('.rp-dot').forEach(btn=>btn.onclick=()=>{
-    const target = document.getElementById(btn.dataset.target);
-    if(target) target.value = btn.dataset.val;
-    btn.parentElement.querySelectorAll('.rp-dot').forEach(d=>d.classList.toggle('active', d===btn));
-  });
+  podepnijOcenyPunktowe(main);
   // Szybkie statystyki sezonu (profil zawodnika) — zapis bez otwierania pełnej edycji.
   main.querySelectorAll('[data-action="save-quick-stats"]').forEach(b=>b.onclick=async()=>{
     const pl = DB.players.find(x=>x.id===b.dataset.id);
@@ -10716,7 +10765,28 @@ function attachHandlers(){
     const ustaw = (p)=>{
       hidden.value = p ? p.id : '';
       search.value = p ? playerLabelFor(p.id) : '';
+      odswiezBlokFaz(p);
     };
+    // Wybór bramkarza podmienia protokół 1–6 na bramkarski — i odwrotnie. Przerysowujemy tylko
+    // wtedy, gdy skala faktycznie się zmienia: blok stawiany od nowa gubi wystawione oceny, bo
+    // rubryki są inne, więc przy tej samej skali byłoby to kasowanie pracy bez powodu.
+    function odswiezBlokFaz(p){
+      const blok = document.getElementById('rep-fazy-blok');
+      if(!blok) return;
+      const chce = fazyDlaZawodnika(p);
+      const teraz = blok.querySelector('[data-klucze]') as HTMLElement | null;
+      if(teraz && teraz.dataset.klucze === chce.map(f=>f.key).join(',')) return;
+      // Co już wystawiono w bieżącej skali — przepisujemy, żeby powrót do tego samego rodzaju
+      // zawodnika nie zaczynał od zera.
+      const wartosci = {};
+      if(teraz) teraz.dataset.klucze.split(',').forEach(k=>{
+        const el = document.getElementById('rep-'+k) as HTMLInputElement | null;
+        if(el) wartosci[k] = Number(el.value);
+      });
+      pamiecFazFormularza = Object.assign(pamiecFazFormularza, wartosci);
+      blok.innerHTML = blokFazHtml(chce, pamiecFazFormularza);
+      podepnijOcenyPunktowe(blok);
+    }
     function rysuj(q){
       const nq = norm(q.trim());
       // Szukamy w nazwisku, imieniu i nazwie klubu — każde słowo z osobna, więc "kowal legia" też trafi.
@@ -10850,7 +10920,11 @@ function attachHandlers(){
       phases: {}, setPieces: {},
       setPieceComment: document.getElementById('rep-setpiece-comment').value.trim()
     };
-    REPORT_PHASES.forEach(f=> rep.phases[f.key] = Number(document.getElementById('rep-'+f.key).value));
+    // Klucze bierzemy z bloku, który STOI NA EKRANIE — protokół bramkarza ma inne rubryki niż
+    // fazy gry, więc lista wpisana tu na sztywno zapisywałaby przy bramkarzu same pustki.
+    const blokFaz = document.querySelector('#rep-fazy-blok [data-klucze]') as HTMLElement | null;
+    (blokFaz ? blokFaz.dataset.klucze.split(',') : REPORT_PHASES.map(f=>f.key))
+      .forEach(k=>{ const el = document.getElementById('rep-'+k) as HTMLInputElement | null; if(el) rep.phases[k] = Number(el.value); });
     REPORT_SET_PIECES.forEach(f=> rep.setPieces[f.key] = Number(document.getElementById('rep-'+f.key).value));
     const wasEditing = !!editingReportId;
     if(wasEditing){
@@ -18110,7 +18184,7 @@ async function generatePlayerPDF(playerId){
          <div class="notes-box" style="margin:0;">${esc(String(tresc).trim())}</div></div>`).join('')}</div>`;
     })()}
     ${latestReport.description?`<div class="lbl" style="margin-bottom:2px;">Opis raportu</div><div class="notes-box" style="margin-bottom:10px;">${esc(latestReport.description)}</div>`:''}
-    ${(latestReport.phases&&Object.keys(latestReport.phases).length)?`<div class="metric-section-label">Fazy gry (1-6)</div><div class="attr5-grid metric4">${REPORT_PHASES.map(f=>`<div class="attr5-col"><div class="attr5-head"><span>${esc(f.label)}</span></div><div class="metric-num-body">${latestReport.phases[f.key]!=null?latestReport.phases[f.key]:'—'}</div></div>`).join('')}</div>`:''}
+    ${(latestReport.phases&&Object.keys(latestReport.phases).length)?`<div class="metric-section-label">${fazyToBramkarskie(latestReport.phases)?'Gra bramkarza':'Fazy gry'} (1-6)</div><div class="attr5-grid metric4">${fazyRaportu(latestReport).map(f=>`<div class="attr5-col"><div class="attr5-head"><span>${esc(f.label)}</span></div><div class="metric-num-body">${latestReport.phases[f.key]!=null?latestReport.phases[f.key]:'—'}</div></div>`).join('')}</div>`:''}
     ${(latestReport.setPieces&&Object.keys(latestReport.setPieces).length)?`<div class="metric-section-label">Stałe fragmenty (1-6)</div><div class="attr5-grid metric4">${REPORT_SET_PIECES.map(f=>`<div class="attr5-col"><div class="attr5-head"><span>${esc(f.label)}</span></div><div class="metric-num-body">${latestReport.setPieces[f.key]!=null?latestReport.setPieces[f.key]:'—'}</div></div>`).join('')}</div>`:''}
     ${latestReport.setPieceComment?`<div class="notes-box" style="margin-top:10px;">${esc(latestReport.setPieceComment)}</div>`:''}
   </div>`:''}
