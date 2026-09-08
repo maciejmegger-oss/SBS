@@ -6241,9 +6241,21 @@ function mapaZespoluHtml(klub, squad){
     pasujacy.forEach((p, i)=>{ if(i % ilePar === indeks) wPolu.get(pn.number).push({ p, pewny: false }); });
   });
 
+  // BOISKO W POZIOMIE — atak w prawo, własna bramka po lewej.
+  //
+  // W pionie ta sekcja zajmowała pół ekranu wysokości i strona ciągnęła się bez potrzeby.
+  // Układ zapisany jest pionowo (FORMATION_COORDS), więc obracamy go przy rysowaniu zamiast
+  // trzymać drugi komplet współrzędnych, który trzeba by poprawiać w dwóch miejscach.
+  //
+  // Obrót o 90°: bramkarz (y≈93) ląduje przy lewej krawędzi, napastnicy (y≈10) przy prawej.
+  // Lewe skrzydło idzie na GÓRĘ — patrząc z lotu ptaka na zespół atakujący w prawo, jego lewa
+  // strona jest u góry ekranu.
+  const wPoziomie = (coord)=>({ x: 100 - coord.y, y: coord.x });
+
   const znacznik = (pn)=>{
-    const coord = wsp[pn.number];
-    if(!coord) return '';
+    const surowe = wsp[pn.number];
+    if(!surowe) return '';
+    const coord = wPoziomie(surowe);
     const lista = wPolu.get(pn.number) || [];
     // CZTERY NAZWISKA NA POLE, RESZTA JAKO LICZNIK.
     //
@@ -6255,10 +6267,10 @@ function mapaZespoluHtml(klub, squad){
     const reszta = lista.length - pokazane.length;
     // Plakietki przy krawędziach uciekały poza boisko i nazwiska się urywały. Przy skrajnych
     // polach kotwiczymy je bokiem zamiast środkiem.
-    const brzeg = (coord.x < 24 ? ' pm-lewy' : coord.x > 76 ? ' pm-prawy' : '')
-      // Bramkarz stoi tuż nad linią końcową, więc jego plakietka wychodziła pod boisko.
-      // Przy dolnej krawędzi odwracamy kolejność: nazwiska nad kropką, nie pod nią.
-      + (coord.y > 85 ? ' pm-dol' : '');
+    // Po obrocie krawędzie są inne: bramkarz dotyka LEWEJ, napastnicy PRAWEJ, a skrzydłowi
+    // górnej i dolnej. Plakietkę kotwiczymy od tej krawędzi, przy której pole stoi.
+    const brzeg = (coord.x < 14 ? ' pm-lewy' : coord.x > 86 ? ' pm-prawy' : '')
+      + (coord.y > 78 ? ' pm-dol' : '');
     const tresc = lista.length
       ? pokazane.map(({p, pewny})=>`<span class="pos-marker-row" draggable="true" data-zawodnik="${esc(p.id)}" title="${esc((p.lastName||'') + ' ' + (p.firstName||''))} — ${esc(p.position||'')}${pewny?', pozycja wskazana numerem wg NMG':', strona boiska dobrana z pozycji ogólnej'} · przeciągnij, aby zmienić pozycję">
           <span class="pmr-name">${esc(p.lastName || p.firstName || '—')}</span>
@@ -6280,11 +6292,13 @@ function mapaZespoluHtml(klub, squad){
         &middot; ${zPozycja.length} ${zPozycja.length===1?'zawodnik':'zawodników'} na boisku</span>
     </div>
     <div class="pitch-wrap-outer"><div class="position-map-pitch">
-      <div class="pitch-deco">
-        <div class="pitch-deco-box pitch-deco-box-top"></div><div class="pitch-deco-goal pitch-deco-goal-top"></div>
-        <div class="pitch-deco-circle"></div><div class="pitch-deco-line"></div>
-        <div class="pitch-deco-box pitch-deco-box-bottom"></div><div class="pitch-deco-goal pitch-deco-goal-bottom"></div>
-        <div class="pitch-deco-arc pitch-deco-arc-top"></div><div class="pitch-deco-arc pitch-deco-arc-bottom"></div>
+      <!-- Linie rysowane pod boisko POZIOME: linia środkowa pionowo, pola karne po bokach.
+           Znaczniki z widoku pionowego (pitch-deco-box-top itd.) nie pasowałyby po obrocie. -->
+      <div class="pitch-deco boisko-poziome">
+        <div class="bp-linia-srodkowa"></div>
+        <div class="bp-kolo"></div>
+        <div class="bp-pole bp-pole-lewe"></div><div class="bp-bramka bp-bramka-lewa"></div>
+        <div class="bp-pole bp-pole-prawe"></div><div class="bp-bramka bp-bramka-prawa"></div>
       </div>
       <div class="position-map-content">${POSITION_NUMBERS.map(znacznik).join('')}</div>
     </div></div>
