@@ -2428,11 +2428,23 @@ async function robustStorageSet(key, jsonValue){
     if(attempt < 3) await new Promise(r=>setTimeout(r, 200 * attempt));
   }
   console.error('Zapis "' + key + '" nie powiódł się po 3 próbach:', lastError);
-  lastSaveFailure = {key, time: new Date().toLocaleTimeString('pl-PL')};
+  // POWÓD ZAPISUJEMY, NIE TYLKO LOGUJEMY. Dotąd szedł wyłącznie do konsoli, a użytkownik dostawał
+  // „nie udało się zapisać — sprawdź baner", stojąc w oknie, spod którego banera nie widać.
+  // Komunikat z bazy mówi wprost, co odrzuciła (brakująca kolumna, zbyt duży wsad, zerwane
+  // połączenie) — bez niego każda awaria zapisu wygląda tak samo i nie da się jej naprawić.
+  lastSaveFailure = {key, time: new Date().toLocaleTimeString('pl-PL'),
+    powod: String((lastError && (lastError as Error).message) || lastError || 'nieznany')};
   try{ renderNav(); }catch(e){ console.error('renderNav after save-failure failed (non-fatal):', e); }
   return false;
 }
 
+// Co dokladnie odrzucila baza przy ostatnim nieudanym zapisie — do pokazania W MIEJSCU bledu,
+// a nie tylko w banerze na gorze strony, ktorego spod otwartego okna nie widac.
+function powodNieudanegoZapisu(){
+  if(!lastSaveFailure) return '';
+  const p = String((lastSaveFailure as any).powod || '').trim();
+  return p ? ' Baza odrzuciła zapis: ' + p : '';
+}
 async function savePlayers(){ return robustStorageSet('scouting:players', JSON.stringify(DB.players)); }
 async function saveClubs(){ return robustStorageSet('scouting:clubs', JSON.stringify(DB.clubs)); }
 async function saveClubCrests(){
@@ -5327,7 +5339,7 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
         const ok = await saveClubs();
         if(ok === false){
           DB.clubs = DB.clubs.filter(c=>c.id !== nowy.id);
-          alert('Nie udało się zapisać klubu — sprawdź baner u góry strony. Nic nie zmieniłem.');
+          alert('Nie udało się zapisać klubu.' + powodNieudanegoZapisu() + ' Nic nie zmieniłem.');
           sel.value = ''; return;
         }
         klubId = nowy.id;
@@ -5784,7 +5796,7 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
     });
     const ok = await savePlayers();
     pracuje = false;
-    if(!ok){ komunikat = 'Nie udało się zapisać — sprawdź baner u góry strony.'; rysuj(); return; }
+    if(!ok){ komunikat = ('Nie udało się zapisać.' + powodNieudanegoZapisu()); rysuj(); return; }
     // ADRES GRUPY ZAPAMIĘTUJEMY SAMI. Dotąd każdą grupę trzeba było „nauczyć" ręcznie wklejonym
     // linkiem i działała tylko ta jedna, dla której go wpisano. Skoro protokoły właśnie przyszły
     // z konkretnej strony ŁNP, to jest właśnie ten link — a kluby z protokołu mówią, której grupy
@@ -5919,7 +5931,7 @@ function openImportKlubowModal(){
     overlay.remove();
     alert(ok
       ? `Założyłem ${ile} klubów.\n\nKażdy ma już link do swojej strony na 90minut, więc statystyki pobierzesz od razu — przyciskiem „⏱ Odśwież 90minut — cały widok" po ustawieniu filtra na grupę.`
-      : 'Nie udało się zapisać — sprawdź baner u góry strony.');
+      : ('Nie udało się zapisać.' + powodNieudanegoZapisu()));
     render();
   }
 
@@ -9351,7 +9363,7 @@ function openSystemyModal(kluby){
     const ok = await saveSystemyKlubow();
     overlay.remove(); render();
     pokazPotwierdzenie(ok === false
-      ? 'Nie udało się zapisać — sprawdź baner u góry strony.'
+      ? ('Nie udało się zapisać.' + powodNieudanegoZapisu())
       : `Zapisano systemy gry: ${zmian} ${zmian===1?'zmiana':'zmian'}.`, ok === false ? 'blad' : 'ok');
   };
   document.body.appendChild(overlay);
@@ -9469,7 +9481,7 @@ function openHerbyZPierwszychModal(kluby){
     overlay.remove();
     render();
     pokazPotwierdzenie(ok === false
-      ? 'Nie udało się zapisać herbów — sprawdź baner u góry strony.'
+      ? 'Nie udało się zapisać herbów.' + powodNieudanegoZapisu()
       : `Uzupełniono ${dopasowane.length} ${dopasowane.length===1?'herb':'herbów'} z pierwszych drużyn.`,
       ok === false ? 'blad' : 'ok');
   };
@@ -10358,7 +10370,7 @@ function openPasteClubsModal(){
       crestUrl: '', juniorCategories: '', profileLnp: '', profileTm: '',
     }));
     const ok = await saveClubs();
-    if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
+    if(!ok){ alert(('Nie udało się zapisać.' + powodNieudanegoZapisu())); return; }
     overlay.remove();
     clubBrowse = { top: topLevelOf(liga), group: liga };
     alert(`Założyłem ${nowe.length} ${nowe.length===1?'klub':'klubów'} w grupie „${liga}".\n\n` +
@@ -10507,7 +10519,7 @@ function attachHandlers(){
     try{
       const { data } = await fetchStatsFor(p);
       const ok = await savePlayers();
-      if(!ok){ alert('Pobrano statystyki, ale nie udało się ich zapisać — sprawdź baner u góry strony.'); return; }
+      if(!ok){ alert('Pobrano statystyki, ale nie udało się ich zapisać.' + powodNieudanegoZapisu()); return; }
       alert(`Sezon ${data.season}: ${data.matches} meczów, ${data.goals} bramek.\n` +
         `Źródło: ${data.source}${data.clubs && data.clubs.length ? ' — ' + data.clubs.join(', ') : ''}.\n\n` +
         'To tabela kariery — bez minut i kartek. Po minuty użyj w widoku klubu przycisku „⏱ Statystyki z 90minut".');
@@ -10578,7 +10590,7 @@ function attachHandlers(){
     if(!m) return;
     m[inp.dataset.field] = inp.value.trim();
     const ok = await saveAgents();
-    if(!ok) alert('Nie udało się zapisać — sprawdź baner u góry strony.');
+    if(!ok) alert(('Nie udało się zapisać.' + powodNieudanegoZapisu()));
   });
 
   // Zaznaczanie agencji do usunięcia hurtem. „Zaznacz wszystkie" obejmuje TYLKO to, co widać —
@@ -10619,7 +10631,7 @@ function attachHandlers(){
     DB.players.forEach(p=>{ if(zbior.has(p.agencyId)){ p.agencyId = ''; p.agentId = ''; } });
     DB.agencies = DB.agencies.filter(a=>!zbior.has(a.id));
     const ok = await saveAgents() && await saveAgencies() && await savePlayers();
-    if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony. Odśwież stronę, żeby zobaczyć rzeczywisty stan.'); return; }
+    if(!ok){ alert(('Nie udało się zapisać.' + powodNieudanegoZapisu() + ' Odśwież stronę, żeby zobaczyć rzeczywisty stan.')); return; }
     viewingAgencyId = null;
     render();
   };
@@ -10782,7 +10794,7 @@ function attachHandlers(){
     if(confirm('Usunąć tego zawodnika i jego obserwacje?')){
       const id = b.dataset.id;
       const ok = await deletePlayerRecord(id);   // usuwa też obserwacje w bazie (kaskada FK)
-      if(!ok){ alert('Nie udało się usunąć zawodnika — sprawdź baner u góry strony. Nic nie usunięto.'); return; }
+      if(!ok){ alert('Nie udało się usunąć zawodnika.' + powodNieudanegoZapisu() + ' Nic nie usunięto.'); return; }
       DB.players = DB.players.filter(p=>p.id!==id);
       DB.observations = DB.observations.filter(o=>o.playerId!==id);
       viewingPlayerId=null; render();
@@ -10955,7 +10967,7 @@ function attachHandlers(){
       if(!DB.agencyLogos) DB.agencyLogos = {};
       DB.agencyLogos[a.id] = await processCrestFile(file);
       const ok = await saveAgencyLogos();
-      if(!ok){ alert('Nie udało się zapisać logo — sprawdź baner u góry strony.'); return; }
+      if(!ok){ alert('Nie udało się zapisać logo.' + powodNieudanegoZapisu()); return; }
       render();
     }catch(e){
       alert('Nie udało się wczytać tego pliku. Spróbuj PNG/JPG lub PDF.');
@@ -10984,7 +10996,7 @@ function attachHandlers(){
   });
   main.querySelectorAll('.talent-remove-btn').forEach(b=>b.onclick=async()=>{
     const ok = await deleteTalentRecord(b.dataset.id);
-    if(!ok){ alert('Nie udało się usunąć — sprawdź baner u góry strony. Nic nie usunięto.'); return; }
+    if(!ok){ alert('Nie udało się usunąć.' + powodNieudanegoZapisu() + ' Nic nie usunięto.'); return; }
     DB.talents = DB.talents.filter(t=>t.id!==b.dataset.id);
     render();
   });
@@ -11015,7 +11027,7 @@ function attachHandlers(){
     // Kasujemy jednym zapytaniem, a nie po jednym — przy kilkudziesięciu wpisach to różnica
     // między chwilą a kilkunastoma sekundami.
     const ok = await deleteTalentRecords(ids);
-    if(!ok){ alert('Nie udało się usunąć — sprawdź baner u góry strony. Nic nie usunięto.'); return; }
+    if(!ok){ alert('Nie udało się usunąć.' + powodNieudanegoZapisu() + ' Nic nie usunięto.'); return; }
     const zbior = new Set(ids);
     DB.talents = DB.talents.filter(t=>!zbior.has(t.id));
     render();
@@ -11038,13 +11050,13 @@ function attachHandlers(){
     if(!toAdd.length){ alert('Brak zaznaczonych zawodników do dodania.'); return; }
     DB.talents.push(...toAdd);
     const ok = await saveTalents();
-    if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
+    if(!ok){ alert(('Nie udało się zapisać.' + powodNieudanegoZapisu())); return; }
     talentPasteText = ''; talentPasteParsed = null;
     render();
   });
   main.querySelectorAll('.contact-remove-btn').forEach(b=>b.onclick=async()=>{
     const ok = await deleteContactRecord(b.dataset.id);
-    if(!ok){ alert('Nie udało się usunąć — sprawdź baner u góry strony. Nic nie usunięto.'); return; }
+    if(!ok){ alert('Nie udało się usunąć.' + powodNieudanegoZapisu() + ' Nic nie usunięto.'); return; }
     DB.contacts = DB.contacts.filter(c=>c.id!==b.dataset.id);
     render();
   });
@@ -11151,7 +11163,7 @@ function attachHandlers(){
       const wg = new Map(kopia.map(p=>[p.id, p]));
       DB.players = DB.players.map(p=> wg.get(p.id) || p);
       squadResetBtn.disabled = false; squadResetBtn.textContent = orig;
-      alert('Nie udało się zapisać — sprawdź baner u góry strony. Nic nie zostało zmienione.');
+      alert(('Nie udało się zapisać.' + powodNieudanegoZapisu() + ' Nic nie zostało zmienione.'));
       return;
     }
     render();
@@ -11231,7 +11243,7 @@ function attachHandlers(){
     DB.settings.lnpGrupy = { ...(DB.settings.lnpGrupy||{}) };
     if(adres) DB.settings.lnpGrupy[grupa] = adres; else delete DB.settings.lnpGrupy[grupa];
     const ok = await saveSettings();
-    if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
+    if(!ok){ alert(('Nie udało się zapisać.' + powodNieudanegoZapisu())); return; }
     render();
   });
   main.querySelectorAll('[data-action="protokoly-grupy"]').forEach(b=>b.onclick=()=>openProtokolMeczuModal(null));
@@ -11280,7 +11292,7 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="delete-club"]').forEach(b=>b.onclick=async()=>{
     if(confirm('Usunąć ten klub?')){
       const ok = await deleteClubRecord(b.dataset.id);
-      if(!ok){ alert('Nie udało się usunąć klubu — sprawdź baner u góry strony. Nic nie usunięto.'); return; }
+      if(!ok){ alert('Nie udało się usunąć klubu.' + powodNieudanegoZapisu() + ' Nic nie usunięto.'); return; }
       DB.clubs = DB.clubs.filter(c=>c.id!==b.dataset.id);
       viewingClubId = null;
       render();
@@ -11420,7 +11432,7 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="delete-obs"]').forEach(b=>b.onclick=async()=>{
     if(!confirm('Usunąć tę obserwację?')) return;
     const ok = await deleteObservationRecord(b.dataset.id);
-    if(!ok){ alert('Nie udało się usunąć obserwacji — sprawdź baner u góry strony. Nic nie usunięto.'); return; }
+    if(!ok){ alert('Nie udało się usunąć obserwacji.' + powodNieudanegoZapisu() + ' Nic nie usunięto.'); return; }
     DB.observations = DB.observations.filter(o=>o.id!==b.dataset.id);
     if(editingObsId===b.dataset.id) editingObsId = null;
     render();
@@ -11448,7 +11460,7 @@ function attachHandlers(){
     if(!confirm('Usunąć ten raport?')) return;
     const id = b.dataset.id;
     const ok = await deleteReportRecord(id);
-    if(!ok){ alert('Nie udało się usunąć raportu — sprawdź baner u góry strony. Nic nie usunięto.'); return; }
+    if(!ok){ alert('Nie udało się usunąć raportu.' + powodNieudanegoZapisu() + ' Nic nie usunięto.'); return; }
     DB.reports = DB.reports.filter(r=>r.id!==id);
     if(editingReportId===id){ editingReportId = null; reportPerspektywaValue=''; reportStatusValue=''; reportObsTypeValue=''; }
     render();
@@ -11672,7 +11684,7 @@ function attachHandlers(){
         const ok = await savePlayerOne(p);
         render();
         pokazPotwierdzenie(ok === false
-          ? 'Nie udało się zapisać pozycji — sprawdź baner u góry strony.'
+          ? 'Nie udało się zapisać pozycji.' + powodNieudanegoZapisu()
           : `${p.lastName || p.firstName}: pozycja ${numer} · ${cel.label}.`, ok === false ? 'blad' : 'ok');
       });
     });
@@ -11734,7 +11746,7 @@ function attachHandlers(){
     // „zapisano", a po odświeżeniu strony raportu by nie było. Godzina pracy na trybunie.
     if(zapisano === false){
       if(!wasEditing) DB.reports = DB.reports.filter(r=>r.id !== rep.id);
-      pokazPotwierdzenie('Nie udało się zapisać raportu — sprawdź baner u góry strony. Formularz zostaje wypełniony, spróbuj jeszcze raz.', 'blad');
+      pokazPotwierdzenie('Nie udało się zapisać raportu.' + powodNieudanegoZapisu() + ' Formularz zostaje wypełniony, spróbuj jeszcze raz.', 'blad');
       return;
     }
     // Przypisanie statusu z decyzji na dole raportu (jeśli wybrano). Pierwsze cztery => Monitoring,
@@ -11863,7 +11875,7 @@ function attachHandlers(){
       const wyniki = await Promise.all([savePlayers(), saveClubs(), saveObservations()]);
       alert(wyniki.every(Boolean)
         ? `Wczytano kopię: ${ile}.`
-        : 'Część danych nie zapisała się do bazy — sprawdź baner u góry strony. Twoja kopia bezpieczeństwa została pobrana przed podmianą.');
+        : 'Część danych nie zapisała się do bazy.' + powodNieudanegoZapisu() + ' Twoja kopia bezpieczeństwa została pobrana przed podmianą.');
       render();
     }catch(e){
       alert('Nie udało się wczytać kopii: ' + (e.message||e));
@@ -13355,7 +13367,7 @@ function openMatchScheduleModal(){
       else { alert('To nie jest adres z 90minut.pl — nic nie zapisałem.'); return; }
       DB.settings.scheduleUrls = mapa;
       const ok = await saveSettings();
-      if(!ok){ alert('Nie udało się zapisać adresu — sprawdź baner u góry strony.'); return; }
+      if(!ok){ alert('Nie udało się zapisać adresu.' + powodNieudanegoZapisu()); return; }
       autoTried.delete(selectedLeague);
       draw();
       const pobierz = overlay.querySelector('[data-action="fetch-schedule"]');
@@ -15951,7 +15963,7 @@ function openAddPlayersToAgencyModal(agencyId){
         if(przypiszZawodnikaDoAgencji(p, agencja, 'ręcznie')) dodani++;
       });
       const ok = await savePlayers();
-      if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
+      if(!ok){ alert(('Nie udało się zapisać.' + powodNieudanegoZapisu())); return; }
       alert(`Dodano do agencji: ${dodani}` +
         (przeniesieni ? `\n(w tym przeniesionych z innej agencji: ${przeniesieni})` : '') +
         `\n\nKażdy ma teraz „Agent: Tak" na liście zawodników i tę agencję w profilu.`);
@@ -16091,7 +16103,7 @@ function openAgencyStaffModal(agencyId){
         dodani++;
       });
       const ok = await saveAgents();
-      if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
+      if(!ok){ alert(('Nie udało się zapisać.' + powodNieudanegoZapisu())); return; }
       alert(`Dodano menedżerów: ${dodani}` +
         (telZWklejki ? `\n\nTransfermarkt podaje JEDEN numer dla całej agencji (${telZWklejki}) — wpisałem go każdemu,` +
           `\nkto nie miał własnego. Numery bezpośrednie wpisz w tabeli, w kolumnie Telefon.`
@@ -16323,7 +16335,7 @@ function openAgencySquadModal(agencyId){
       if(!agencja.tmLink && rozpoznane.link){ agencja.tmLink = rozpoznane.link; zmianaAgencji = true; }
       const okAg = zmianaAgencji ? await saveAgencies() : true;
       const ok = okAg && await savePlayers();
-      if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
+      if(!ok){ alert(('Nie udało się zapisać.' + powodNieudanegoZapisu())); return; }
       alert((przypisani || zalozeni)
         ? `Przypisano do agencji: ${przypisani}` +
           (przeniesieni ? `\n(w tym przeniesionych z innej agencji: ${przeniesieni})` : '') +
@@ -16490,7 +16502,7 @@ function openAgenciesImportModal(){
         if(zmiana) uzupelnione++;
       });
       const ok = await saveAgencies();
-      if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
+      if(!ok){ alert(('Nie udało się zapisać.' + powodNieudanegoZapisu())); return; }
       // Gdy nic się nie zmieniło, mówimy to WPROST. Suchy komunikat „Nowych agencji: 0" czytało
       // się jak awarię zapisu, choć znaczył tylko tyle, że wszystko już było na miejscu.
       if(!dodane && !uzupelnione){
@@ -16722,7 +16734,7 @@ function openAgentImportModal(){
       // której nie ma jeszcze w bazie (ten sam błąd, co kiedyś przy klubach w imporcie składu).
       const okAg = agencjeDotkniete ? await saveAgencies() : true;
       const ok = okAg && await savePlayers();
-      if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
+      if(!ok){ alert(('Nie udało się zapisać.' + powodNieudanegoZapisu())); return; }
       alert(`Zapisano.\n\nZ menedżerem: ${zAgentem}` +
         (agencjeDotkniete ? `\nAgencje uzupełnione w zakładce „Menedżerowie" — wpisz tam osoby, z którymi rozmawiasz.` : '') +
         (samoSprawdzenie ? `\nSprawdzonych, ale Transfermarkt nikogo nie podaje: ${samoSprawdzenie}` +
@@ -16958,7 +16970,7 @@ function openLeagueStatsModal(league){
       alert(ok
         ? `Dopisano dorobek ${dopisanych} zawodnikom z ${klubow} klubów.`
           + (pominiete.length ? `\n\nPOMINIĘTE (suma minut się nie zgadzała): ${pominiete.join(', ')}.` : '')
-        : 'Nie udało się zapisać — sprawdź baner u góry strony.');
+        : ('Nie udało się zapisać.' + powodNieudanegoZapisu()));
       if(ok){ protokol = null; close(); }
       return;
     }
@@ -17509,7 +17521,7 @@ function open90minutStatsModal(clubId){
       const ok = await savePlayers();
       pracuje = false;
       komunikat = ok ? `Dopisano ${nowi.length} zawodników. Kliknij ponownie „Sprawdź, co się zmieni", żeby wciągnąć ich statystyki.`
-                     : 'Nie udało się zapisać — sprawdź baner u góry strony.';
+                     : ('Nie udało się zapisać.' + powodNieudanegoZapisu());
       if(ok) wynik.spozaBazy = [];
       draw();
     };
@@ -18554,7 +18566,7 @@ function openTransferHistoryModal(playerId){
       p.transferHistory.splice(idx, 1);
       if(editIdx===idx) editIdx = null; else if(editIdx!=null && editIdx>idx) editIdx--;
       const ok = await savePlayerOne(p);
-      if(!ok){ p.transferHistory = kopia; alert("Nie udało się usunąć — sprawdź baner u góry strony."); }
+      if(!ok){ p.transferHistory = kopia; alert("Nie udało się usunąć.' + powodNieudanegoZapisu() + '"); }
       draw();
     });
     overlay.querySelectorAll('[data-action="th-parse"]').forEach(b=>b.onclick=()=>{
@@ -18592,7 +18604,7 @@ function openTransferHistoryModal(playerId){
       box.querySelectorAll('[data-action="th-apply"]').forEach(bt=>bt.onclick=async()=>{
         nowe.forEach(w=> p.transferHistory.push(Object.assign({id: uid('TH')}, w)));
         const ok = await savePlayerOne(p);
-        if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
+        if(!ok){ alert(('Nie udało się zapisać.' + powodNieudanegoZapisu())); return; }
         if(ta) ta.value = '';
         draw();
       });
@@ -18611,7 +18623,7 @@ function openTransferHistoryModal(playerId){
       if(editIdx!=null){ Object.assign(p.transferHistory[editIdx], entry); editIdx = null; }
       else { p.transferHistory.push(Object.assign({id: uid('TH')}, entry)); }
       const ok = await savePlayerOne(p);
-      if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
+      if(!ok){ alert(('Nie udało się zapisać.' + powodNieudanegoZapisu())); return; }
       draw();
     });
   }
@@ -19751,7 +19763,7 @@ function wireLastModal(){
     if(istniejaca) Object.assign(istniejaca, pola);
     else DB.agencies.push(Object.assign({id: uid('AG'), dateAdded: new Date().toISOString().slice(0,10)}, pola));
     const ok = await saveAgencies();
-    if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
+    if(!ok){ alert(('Nie udało się zapisać.' + powodNieudanegoZapisu())); return; }
     ov.remove(); render();
   });
   ov.querySelectorAll('[data-action="save-agent"]').forEach(b=>b.onclick=async()=>{
@@ -19781,7 +19793,7 @@ function wireLastModal(){
       DB.agents.push(Object.assign({id: uid('MN'), dateAdded: new Date().toISOString().slice(0,10)}, pola));
     }
     const ok = await saveAgents() && await savePlayers();
-    if(!ok){ alert('Nie udało się zapisać — sprawdź baner u góry strony.'); return; }
+    if(!ok){ alert(('Nie udało się zapisać.' + powodNieudanegoZapisu())); return; }
     ov.remove(); render();
   });
   ov.querySelectorAll('[data-action="save-club"]').forEach(b=>b.onclick=async()=>{
