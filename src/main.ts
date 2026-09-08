@@ -76,6 +76,8 @@ let tabeleLig = {};
 let editingClubId = null;
 let clubBrowse = {top:"", group:""};
 let dashboardLeagueSelected = null;
+// Wybrane wojewodztwo na mapie dashboardu — pokazuje obok liste jego klubow.
+let dashboardWojewodztwo = null;
 let dashboardGroupSelected = null; // wybrana grupa (np. "III liga, gr. II") po rozwinięciu ligi z grupami
 
 const DEFAULT_SETTINGS = {
@@ -3573,6 +3575,61 @@ function polandVoivodeshipMap(){
   </svg>`;
 }
 
+// KOLEJNOŚĆ ROZGRYWEK OD NAJWYŻSZYCH DO NAJNIŻSZYCH.
+//
+// Alfabetycznie „CLJ U15" wyszłoby przed „Ekstraklasą", a „IV liga" przed „I ligą" — czyli lista
+// województwa zaczynałaby się od juniorów. Kolejność musi być podana wprost, bo nie wynika ani
+// z nazwy, ani z żadnego pola w kartotece.
+const KOLEJNOSC_POZIOMOW = ['Ekstraklasa','I liga','II liga','III liga','IV liga','Klasa okręgowa',
+  'CLJ U19','CLJ U17','CLJ U16','CLJ U15','Liga makroregionalna U16'];
+function rangaLigi(liga){
+  const l = String(liga || '');
+  const i = KOLEJNOSC_POZIOMOW.findIndex(p=>wTychRozgrywkach(l, p));
+  if(i >= 0) return i;
+  // Rozgrywki rocznikowe (2011-2014) idą na sam koniec, a wśród nich STARSZY rocznik wyżej:
+  // 2011 to piętnastolatkowie, 2014 dwunastolatkowie — im młodszy rocznik, tym niższy szczebel.
+  const rocznik = l.match(/^Rocznik\s+(\d{4})/i);
+  if(rocznik) return KOLEJNOSC_POZIOMOW.length + (Number(rocznik[1]) - 2000);
+  return KOLEJNOSC_POZIOMOW.length + 500;
+}
+
+// Lista klubów wybranego województwa — od najwyższej ligi po drużyny rocznikowe.
+function panelWojewodztwa(){
+  if(!dashboardWojewodztwo) return '';
+  const kluby = DB.clubs
+    .filter(c=>String(c.region||'').replace(' ZPN','') === dashboardWojewodztwo)
+    .sort((a,b)=> rangaLigi(a.league) - rangaLigi(b.league)
+      || String(a.league||'').localeCompare(String(b.league||''),'pl')
+      || String(a.name||'').localeCompare(String(b.name||''),'pl'));
+
+  // Nagłówek grupy stawiamy przy KAŻDEJ zmianie nazwy rozgrywek, a nie tylko poziomu — inaczej
+  // cztery grupy III ligi zlałyby się w jedną listę i nie byłoby wiadomo, kto z kim gra.
+  let ostatnia = '';
+  const wiersze = kluby.map(c=>{
+    const liga = String(c.league || 'bez rozgrywek');
+    const naglowek = liga !== ostatnia
+      ? `<div class="note" style="margin:8px 0 3px;font-weight:700;color:var(--heading);">${esc(liga)}</div>` : '';
+    ostatnia = liga;
+    const ilu = DB.players.filter(p=>p.clubId===c.id).length;
+    return naglowek + `<div class="obs-item" data-action="dash-woj-klub" data-id="${esc(c.id)}"
+        style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:4px 6px;">
+      ${crestImg(clubCrest(c.id),'xs',c.name)}
+      <span style="flex:1;">${esc(c.name)}</span>
+      <span class="meta">${ilu}</span>
+    </div>`;
+  }).join('');
+
+  return `<div class="card">
+    <div class="toolbar" style="margin-bottom:6px;">
+      <h4 style="margin:0;color:var(--heading);">${esc(dashboardWojewodztwo)}</h4>
+      <button class="link-btn" data-action="dash-woj-zamknij">✕ zamknij</button>
+    </div>
+    <p class="note" style="margin:0 0 4px;">${kluby.length} ${kluby.length===1?'klub':'klubów'} w bazie —
+      od najwyższych rozgrywek po drużyny młodzieżowe. Kliknij klub, aby otworzyć jego kartę.</p>
+    <div style="max-height:520px;overflow:auto;">${wiersze || '<div class="empty">Brak klubów z tego województwa.</div>'}</div>
+  </div>`;
+}
+
 // Wykres kołowy (donut) rozkładu obserwacji / statusów zawodników.
 function observationsDonut(){
   const totalObs = DB.observations.length;
@@ -3926,9 +3983,11 @@ function viewDashboard(){
     <div class="card">
       <h4 style="margin-top:0;color:var(--heading);">Mapa Województw</h4>
       ${polandVoivodeshipMap()}
-      <p class="note" style="text-align:center;margin-top:6px;">Liczba klubów w bazie wg województwa</p>
+      <p class="note" style="text-align:center;margin-top:6px;">Liczba klubów w bazie wg województwa — <strong>kliknij województwo</strong>, aby zobaczyć jego kluby obok.</p>
     </div>
-    <div class="card">
+    <!-- Po kliknięciu województwa jego lista zajmuje miejsce Szybkich akcji, a te schodzą niżej.
+         Mapa i lista stoją wtedy obok siebie, bez przewijania i bez otwierania osobnego okna. -->
+    ${dashboardWojewodztwo ? panelWojewodztwa() : `<div class="card">
       <h4 style="margin-top:0;color:var(--heading);">Szybkie akcje</h4>
       <div style="display:flex;flex-direction:column;gap:10px;">
         <button class="gold" data-action="goto-newobs">+ Dodaj obserwację z meczu</button>
@@ -3936,8 +3995,15 @@ function viewDashboard(){
         <button class="secondary" data-action="goto-monitoring">Zobacz listę do re-obserwacji</button>
       </div>
       <p class="note" style="margin-top:14px;">Baza jest wspólna dla całego zespołu scoutów — dane synchronizują się automatycznie.</p>
-    </div>
+    </div>`}
   </div>
+  ${dashboardWojewodztwo ? `<div class="card" style="margin-top:18px;">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button class="gold" data-action="goto-newobs">+ Dodaj obserwację z meczu</button>
+      <button class="secondary" data-action="goto-addplayer">+ Dodaj nowego zawodnika</button>
+      <button class="secondary" data-action="goto-monitoring">Zobacz listę do re-obserwacji</button>
+    </div>
+  </div>` : ''}
   <div class="grid grid-2" style="margin-top:18px;">
     <div class="card">
       <h4 style="margin-top:0;color:var(--heading);">Statystyki obserwacji</h4>
@@ -10402,6 +10468,22 @@ function attachHandlers(){
     currentView='clubs'; viewingClubId=b.dataset.id; editingPlayerId=null; viewingPlayerId=null; render();
   });
   // Szybki dostęp wg lig (dashboard): klik w logo ligi rozwija/zwija rząd herbów klubów tej ligi.
+  // Kliknięcie województwa na mapie — lista jego klubów pojawia się obok, od najwyższej ligi.
+  // Ponowne kliknięcie tego samego zamyka listę; to najkrótsza droga powrotu do Szybkich akcji.
+  main.querySelectorAll('.voiv-shape').forEach(g=>{
+    (g as HTMLElement).style.cursor = 'pointer';
+    g.addEventListener('click', ()=>{
+      const region = (g as HTMLElement).dataset.region || '';
+      dashboardWojewodztwo = (dashboardWojewodztwo === region) ? null : region;
+      render();
+    });
+  });
+  main.querySelectorAll('[data-action="dash-woj-zamknij"]').forEach(b=>b.onclick=()=>{ dashboardWojewodztwo = null; render(); });
+  main.querySelectorAll('[data-action="dash-woj-klub"]').forEach(b=>b.onclick=()=>{
+    viewingClubId = (b as HTMLElement).dataset.id;
+    currentView = 'clubs';
+    render();
+  });
   main.querySelectorAll('[data-action="dash-select-league"]').forEach(b=>b.onclick=()=>{
     dashboardLeagueSelected = (dashboardLeagueSelected===b.dataset.val) ? null : b.dataset.val;
     dashboardGroupSelected = null;
