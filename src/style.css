@@ -342,13 +342,35 @@ tr:hover td{background:var(--card-soft);}
    Boisko z Rankingu zajmuje całą szerokość i przy karcie klubu spychało listę kadry pod ekran.
    Tu chodzi o jedno spojrzenie: gdzie jest tłok, a gdzie dziura — więc mniejsze pole, mniejsze
    nazwiska i ciaśniejsze plakietki, ale ten sam układ i te same numery. */
-.mapa-zespolu-uklad{display:grid;grid-template-columns:minmax(260px,1fr) 1.6fr;gap:16px;align-items:start;}
-.mapa-zespolu .position-map-pitch{aspect-ratio:1/1.3;}
-.mapa-zespolu .pos-marker-tag{min-width:104px;padding:2px;border-radius:6px;}
-.mapa-zespolu .pos-marker-row{gap:4px;padding:1px 4px;}
-.mapa-zespolu .pmr-name{font-size:10.5px;font-weight:600;}
-.mapa-zespolu .pmr-year{font-size:9px;padding-left:3px;}
-.mapa-zespolu .pos-marker-dot{width:18px;height:18px;font-size:10px;line-height:18px;}
+.mapa-zespolu-uklad{display:grid;grid-template-columns:minmax(300px,1fr) 1.5fr;gap:16px;align-items:start;}
+/* BEZ PERSPEKTYWY. Boisko w Rankingu jest ścięte u góry (clip-path), co daje wrażenie głębi —
+   ale przy tej szerokości ścinało nazwiska przy krawędziach. Prostokąt nic tu nie traci, a nic
+   się nie urywa. Wyższe proporcje dają miejsce na cztery nazwiska między liniami. */
+.mapa-zespolu .position-map-pitch{aspect-ratio:1/1.42;clip-path:none;border-radius:10px;}
+.mapa-zespolu .pos-marker-tag{min-width:0;width:104px;padding:2px;border-radius:7px;
+  box-shadow:0 4px 12px rgba(0,0,0,.45);}
+.mapa-zespolu .pos-marker-row{gap:3px;padding:1px 5px;}
+/* Długie nazwisko przycinamy wielokropkiem zamiast rozpychać plakietkę na sąsiednie pole —
+   pełne imię i nazwisko jest w podpowiedzi i w tabeli obok. */
+.mapa-zespolu .pmr-name{font-size:10.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;max-width:64px;}
+.mapa-zespolu .pmr-year{font-size:9px;padding-left:2px;margin-left:auto;}
+.mapa-zespolu .pmr-kropka{color:#C69B3C;font-size:12px;line-height:1;padding-left:2px;}
+.mapa-zespolu .pmr-wiecej{justify-content:center;color:#9FB3A6;font-size:9.5px;font-weight:700;
+  border-top:1px solid rgba(255,255,255,.14);padding-top:2px;}
+.mapa-zespolu .pos-marker-dot{width:19px;height:19px;font-size:10.5px;line-height:19px;}
+/* Skrajne pola kotwiczymy bokiem — inaczej plakietka wychodzi poza murawę i nazwiska się urywają. */
+.mapa-zespolu .pos-marker.pm-lewy{align-items:flex-start;}
+.mapa-zespolu .pos-marker.pm-lewy .pos-marker-tag{transform:translateX(28px);}
+.mapa-zespolu .pos-marker.pm-prawy{align-items:flex-end;}
+.mapa-zespolu .pos-marker.pm-prawy .pos-marker-tag{transform:translateX(-28px);}
+/* Pole tuż nad linią końcową (bramkarz) dostaje nazwiska NAD kropką — pod nią wychodziły poza
+   murawę i pierwszy wiersz ucinała krawędź karty. */
+.mapa-zespolu .pos-marker.pm-dol{flex-direction:column-reverse;}
+/* Najechana plakietka wychodzi na wierzch, żeby dało się przeczytać ją w całości nawet tam,
+   gdzie pola stoją blisko siebie. */
+.mapa-zespolu .pos-marker:hover{z-index:30;}
+.mapa-zespolu .pos-marker:hover .pos-marker-tag{box-shadow:0 6px 20px rgba(0,0,0,.6);}
 /* Poniżej 1100 px kolumny nie mają już sensu — lista kadry ma osiem kolumn i musi dostać
    całą szerokość, inaczej trzeba ją przewijać w bok przy każdym zawodniku. */
 @media (max-width: 1100px){

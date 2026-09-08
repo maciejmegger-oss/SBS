@@ -6230,12 +6230,27 @@ function mapaZespoluHtml(klub, squad){
     const coord = wsp[pn.number];
     if(!coord) return '';
     const lista = wPolu.get(pn.number) || [];
+    // CZTERY NAZWISKA NA POLE, RESZTA JAKO LICZNIK.
+    //
+    // Przy sześciu plakietka rosła w pionie tak, że zachodziła na sąsiednie pola i mapa
+    // przestawała być mapą. Cztery nazwiska mieszczą się między liniami, a „+3" mówi, że jest
+    // ich więcej — pełną listę i tak masz w tabeli obok.
+    const WIDOCZNYCH = 4;
+    const pokazane = lista.slice(0, WIDOCZNYCH);
+    const reszta = lista.length - pokazane.length;
+    // Plakietki przy krawędziach uciekały poza boisko i nazwiska się urywały. Przy skrajnych
+    // polach kotwiczymy je bokiem zamiast środkiem.
+    const brzeg = (coord.x < 24 ? ' pm-lewy' : coord.x > 76 ? ' pm-prawy' : '')
+      // Bramkarz stoi tuż nad linią końcową, więc jego plakietka wychodziła pod boisko.
+      // Przy dolnej krawędzi odwracamy kolejność: nazwiska nad kropką, nie pod nią.
+      + (coord.y > 85 ? ' pm-dol' : '');
     const tresc = lista.length
-      ? lista.slice(0, 6).map(({p, pewny})=>`<span class="pos-marker-row" draggable="true" data-zawodnik="${esc(p.id)}" title="${esc(p.position||'')}${pewny?' — pozycja wskazana numerem wg NMG':' — wg pozycji ogólnej'} · przeciągnij, aby zmienić pozycję">
+      ? pokazane.map(({p, pewny})=>`<span class="pos-marker-row" draggable="true" data-zawodnik="${esc(p.id)}" title="${esc((p.lastName||'') + ' ' + (p.firstName||''))} — ${esc(p.position||'')}${pewny?', pozycja wskazana numerem wg NMG':', strona boiska dobrana z pozycji ogólnej'} · przeciągnij, aby zmienić pozycję">
           <span class="pmr-name">${esc(p.lastName || p.firstName || '—')}</span>
-          ${p.birthYear?`<span class="pmr-year">${esc(String(p.birthYear))}</span>`:''}${pewny?'':'<span class="pmr-year" title="Strona boiska nieustalona">·</span>'}</span>`).join('')
+          ${p.birthYear?`<span class="pmr-year">${esc(String(p.birthYear))}</span>`:''}${pewny?'':'<span class="pmr-kropka" title="Strona boiska dobrana z pozycji ogólnej">•</span>'}</span>`).join('')
+        + (reszta>0 ? `<span class="pos-marker-row pmr-wiecej" title="${esc(lista.slice(WIDOCZNYCH).map(x=>x.p.lastName||x.p.firstName||'').join(', '))}">+${reszta}</span>` : '')
       : '<span class="pos-marker-row pmr-empty">—</span>';
-    return `<div class="pos-marker" data-pole="${pn.number}" style="left:${coord.x}%;top:${coord.y}%;" title="${esc(pn.label)}">
+    return `<div class="pos-marker${brzeg}" data-pole="${pn.number}" style="left:${coord.x}%;top:${coord.y}%;" title="${esc(pn.label)} — ${lista.length} ${lista.length===1?'zawodnik':'zawodników'}">
       <span class="pos-marker-dot ${pn.number===1?'gk':''}">${pn.number}</span>
       <span class="pos-marker-tag">${tresc}</span>
     </div>`;
