@@ -16,6 +16,11 @@ import {
   type Cache, type LiveEvent, type LiveState, type Period,
 } from "./db";
 import type { Observation, Report } from "../types";
+// Skala bramkarza — jedno źródło dla panelu i dla systemu, patrz src/domain/bramkarz.ts.
+import {
+  EVENT_TAGS_BRAMKARZ, FAZY_BRAMKARZ,
+  pozycjaToBramkarz, opisToBramkarz, fazyToBramkarskie,
+} from "../domain/bramkarz";
 
 // ---------------------------------------------------------------------------
 // Stałe — CELOWO identyczne z aplikacją na komputerze (src/main.ts).
@@ -887,7 +892,7 @@ function viewLive(): string {
     </div>
 
     <div class="tags">
-      ${EVENT_TAGS.map((t) => `
+      ${kafleTeraz().map((t) => `
         <button class="tagbtn ${counts[t.key] ? "hit" : ""}" data-act="tag" data-k="${t.key}">
           <span class="cnt">${counts[t.key] || ""}</span>${esc(t.label)}
         </button>`).join("")}
@@ -982,6 +987,60 @@ const FORMACJA_WSPOLRZEDNE: Record<string, Record<number, Punkt>> = {
 
 // Skala szybkiej oceny na mapie — trzy z pięciu atrybutów SBS. Mentalność i potencjał zostają
 // w pełnej ocenie po meczu: na trybunie, przy jednym epizodzie, nie ma ich z czego wystawić.
+// CZY TEN ZAWODNIK TO BRAMKARZ — od tego zależy, jakie kafle i jaki protokół 1–6 zobaczy scout.
+//
+// Pytamy w trzech kolejnych miejscach, bo każde z osobna bywa puste akurat wtedy, gdy jest
+// potrzebne:
+//   1. mapa pozycji — najpewniejsza, ale scout układa ją dopiero wtedy, gdy ma chwilę,
+//      a tagować zaczyna od pierwszego gwizdka;
+//   2. wystawiony już protokół — jeśli w tym meczu padły oceny bramkarskie, to przesądza
+//      sprawę i nie wolno podmienić skali w trakcie, bo wystawione oceny zniknęłyby z oczu;
+//   3. kartoteka — działa od razu po wczytaniu składu, jeszcze zanim ktokolwiek dotknie mapy.
+function jestBramkarzem(z: SkladZawodnik, nazwaKlubu?: string): boolean {
+  if (pozycjaToBramkarz(z.pozycja)) return true;
+  if (fazyToBramkarskie(z.fazy)) return true;
+  // Zawodnik postawiony na mapie na innej pozycji NIE jest bramkarzem, choćby kartoteka mówiła
+  // inaczej — decyduje to, na czym stoi w tym meczu. Bramkarz grający w polu to rzadkość, ale
+  // odwrotna pomyłka jest częsta: w kartotece zostaje stara pozycja z czasów juniorskich.
+  if (z.pozycja) return false;
+  return bramkarzWKartotece(z.nazwa, nazwaKlubu);
+}
+
+// Odpowiedź kartoteki zapamiętana na czas życia kopii bazy.
+//
+// Bez tego każde dotknięcie kafla przeliczałoby wszystko od nowa: znajdzZawodnika normalizuje
+// nazwisko KAŻDEGO zawodnika w kartotece, a pytamy o to przy każdym przerysowaniu i osobno dla
+// każdego wyróżnionego na liście. Przy kilku tysiącach kartotek i kilkunastu wyróżnionych to
+// dziesiątki tysięcy operacji na tekście między dotknięciem a zapaleniem się kafla — czyli
+// dokładnie to opóźnienie, którego przy tagowaniu na żywo nie wolno mieć.
+let bramkarzePamiec = new Map<string, boolean>();
+let bramkarzeZrodlo: unknown = null;
+
+function bramkarzWKartotece(nazwa: string, nazwaKlubu?: string): boolean {
+  // Kopia bazy podmienia całą tablicę zawodników, więc jej tożsamość jest wystarczającym
+  // znacznikiem świeżości — po odświeżeniu pytamy kartotekę na nowo.
+  if (bramkarzeZrodlo !== cache.players) {
+    bramkarzeZrodlo = cache.players;
+    bramkarzePamiec = new Map();
+  }
+  const klucz = `${nazwa} ${nazwaKlubu || ""}`;
+  const znane = bramkarzePamiec.get(klucz);
+  if (znane !== undefined) return znane;
+  const id = znajdzZawodnika(nazwa, nazwaKlubu);
+  const p = id ? cache.players.find((x) => x.id === id) : null;
+  const wynik = opisToBramkarz(p?.position);
+  bramkarzePamiec.set(klucz, wynik);
+  return wynik;
+}
+
+/** Kafle do tagowania dla tego zawodnika. */
+const kafleDla = (bramkarz: boolean) =>
+  (bramkarz ? EVENT_TAGS_BRAMKARZ : EVENT_TAGS) as readonly { key: string; label: string }[];
+
+/** Pozycje protokołu 1–6 dla tego zawodnika. */
+const fazyDla = (bramkarz: boolean) =>
+  (bramkarz ? FAZY_BRAMKARZ : REPORT_PHASES) as readonly { key: string; label: string }[];
+
 const OCENA_MAPY = ["technika", "taktyka", "motoryka"];
 
 // Gra głową osobno w ataku i w obronie: to dwie różne umiejętności, a przy stałych fragmentach
@@ -1170,7 +1229,8 @@ function viewMapa(sklad: Sklad, gosp: string, gosc: string): string {
 
   // Panel oceny zajmuje cały ekran zamiast planszy — na telefonie okno nakładkowe nad boiskiem
   // zasłaniałoby to, na co scout właśnie patrzy, i trzeba by je zamykać jednym palcem w biegu.
-  if (ocenianyZawodnik !== null && lista[ocenianyZawodnik]) return viewOcenaZawodnika(lista[ocenianyZawodnik]);
+  // Nazwa drużyny idzie dalej, bo rozstrzyga imienników przy szukaniu pozycji w kartotece.
+  if (ocenianyZawodnik !== null && lista[ocenianyZawodnik]) return viewOcenaZawodnika(lista[ocenianyZawodnik], false, dane?.nazwa);
 
   const wyborStrony = `
     <div class="polarity" style="margin-bottom:10px;">
@@ -1296,10 +1356,12 @@ function zdarzeniaZawodnika(obsId: string, klucz: string): string {
 // tam i z powrotem po każdej akcji — czyli oderwanie wzroku od boiska dokładnie wtedy, gdy się
 // patrzy. Dlatego pod kaflami nie ma tu ani przycisku powrotu, ani nagłówka z nazwiskiem:
 // nazwisko stoi kilka centymetrów wyżej, w pasku „Tagujesz", podświetlone.
-function viewOcenaZawodnika(z: SkladZawodnik, podKaflami = false): string {
+function viewOcenaZawodnika(z: SkladZawodnik, podKaflami = false, nazwaKlubu?: string): string {
   const ocena = z.ocena || {};
   const fazy = z.fazy || {};
   const sfg = z.sfg || {};
+  // Bramkarz dostaje własne pozycje protokołu 1–6 zamiast czterech faz gry zawodnika z pola.
+  const bramkarz = jestBramkarzem(z, nazwaKlubu);
   const zdarzenia = live ? zdarzeniaZawodnika(live.observationId, kluczZawodnika(z)) : "";
   return `
     ${podKaflami ? "" : `
@@ -1343,8 +1405,8 @@ function viewOcenaZawodnika(z: SkladZawodnik, podKaflami = false): string {
           całego meczu. Tymczasem to są oceny zawodnika: jak zachowuje się w ataku, jak wraca,
           co robi przy rożnym. Ocenia się je patrząc, a nie z pamięci pół godziny później. */""}
     <div class="section">
-      <span class="label">Fazy gry · skala 1–6</span>
-      ${REPORT_PHASES.map((f) => skala("fazy", f.key, f.label, Number(fazy[f.key]) || 0, 6)).join("")}
+      <span class="label">${bramkarz ? "Gra bramkarza" : "Fazy gry"} · skala 1–6</span>
+      ${fazyDla(bramkarz).map((f) => skala("fazy", f.key, f.label, Number(fazy[f.key]) || 0, 6)).join("")}
     </div>
 
     <div class="section">
@@ -1408,6 +1470,17 @@ function ocenianyTeraz(): { obs: Observation & { skladMeczu?: Sklad }; strona?: 
   }
   return null;
 }
+
+/** Czy zawodnik, którego się właśnie taguje, to bramkarz. */
+function bramkarzTeraz(): boolean {
+  const dane = ocenianyTeraz();
+  return !!dane && jestBramkarzem(dane.z, dane.strona?.nazwa);
+}
+
+// Kafle pod bieżącego zawodnika. Dopóki nikt nie jest wybrany, zostają kafle zawodnika z pola:
+// zdarzenie zapisane bez nazwiska dotyczy meczu, nie bramkarza, więc bramkarska lista byłaby
+// wtedy myląca.
+const kafleTeraz = () => kafleDla(bramkarzTeraz());
 
 // Treść pól tekstowych żyje w DOM, nie w stanie — przed każdym przerysowaniem trzeba ją przepisać
 // do zawodnika, inaczej notatka przepada przy pierwszym dotknięciu kropki oceny.
@@ -1532,11 +1605,11 @@ function pasekZawodnikow(): string {
 
 // Co już wystawiono temu zawodnikowi — jedną linijką, do nagłówka zwiniętego panelu.
 // Bez tego zwinięty panel nie mówiłby nic o tym, czy ktoś jest już oceniony, czy jeszcze nie.
-function skrotOcen(z: SkladZawodnik): string {
+function skrotOcen(z: SkladZawodnik, nazwaKlubu?: string): string {
   const czesci: string[] = [];
   [...OCENA_MAPY.map((k) => ({ k, l: RATING_LABELS[k] })), ...OCENA_GLOWA.map((f) => ({ k: f.key, l: f.label }))]
     .forEach((x) => { if (Number(z.ocena?.[x.k]) > 0) czesci.push(`${x.l} ${z.ocena![x.k]}`); });
-  REPORT_PHASES.forEach((f) => { if (Number(z.fazy?.[f.key]) > 0) czesci.push(`${f.label} ${z.fazy![f.key]}`); });
+  fazyDla(jestBramkarzem(z, nazwaKlubu)).forEach((f) => { if (Number(z.fazy?.[f.key]) > 0) czesci.push(`${f.label} ${z.fazy![f.key]}`); });
   REPORT_SET_PIECES.forEach((f) => { if (Number(z.sfg?.[f.key]) > 0) czesci.push(`${f.label} ${z.sfg![f.key]}`); });
   // Decyzja na PIERWSZYM miejscu — to jedyna rzecz z tego panelu, która zmienia coś poza raportem.
   if (z.status) czesci.unshift(z.status.toUpperCase());
@@ -1557,7 +1630,7 @@ function blokOceny(): string {
   const dane = ocenianyTeraz();
   if (!dane) return "";
   const z = dane.z;
-  const skrot = skrotOcen(z);
+  const skrot = skrotOcen(z, dane.strona?.nazwa);
   return `
     <div id="panel-oceny" class="ocena-blok">
       <button class="ocena-naglowek" data-act="rozwin-ocene" aria-expanded="${ocenaRozwinieta}">
@@ -1565,8 +1638,8 @@ function blokOceny(): string {
         <span class="on-kto">${esc(kluczZawodnika(z))}</span>
         <span class="on-strzalka" aria-hidden="true">${ocenaRozwinieta ? "▲" : "▼"}</span>
       </button>
-      <div class="on-skrot">${skrot ? esc(skrot) : (ocenaRozwinieta ? "Wystaw oceny poniżej." : "Dotknij, żeby wystawić oceny — 1–10 i fazy gry 1–6.")}</div>
-      ${ocenaRozwinieta ? `<div class="ocena-tresc">${viewOcenaZawodnika(z, true)}</div>` : ""}
+      <div class="on-skrot">${skrot ? esc(skrot) : (ocenaRozwinieta ? "Wystaw oceny poniżej." : `Dotknij, żeby wystawić oceny — 1–10 i ${jestBramkarzem(z, dane.strona?.nazwa) ? "gra bramkarza" : "fazy gry"} 1–6.`)}</div>
+      ${ocenaRozwinieta ? `<div class="ocena-tresc">${viewOcenaZawodnika(z, true, dane.strona?.nazwa)}</div>` : ""}
     </div>`;
 }
 
@@ -1735,7 +1808,7 @@ function viewPodglad(): string {
           // Protokół 1–6 wystawiony na żywo. Widoczny tu, bo inaczej scout nie miałby jak
           // sprawdzić, co właściwie zapisał — a to jest ekran, na którym się to sprawdza.
           const protokol = [
-            ...REPORT_PHASES.filter((f) => Number(z.fazy?.[f.key]) > 0).map((f) => `${f.label} ${z.fazy![f.key]}/6`),
+            ...fazyDla(jestBramkarzem(z, dane?.nazwa)).filter((f) => Number(z.fazy?.[f.key]) > 0).map((f) => `${f.label} ${z.fazy![f.key]}/6`),
             ...REPORT_SET_PIECES.filter((f) => Number(z.sfg?.[f.key]) > 0).map((f) => `${f.label} ${z.sfg![f.key]}/6`),
           ].join(" · ");
           return `
@@ -2243,7 +2316,10 @@ function beginLive(obsId: string) {
 
 function addEvent(key: string) {
   if (!live) return;
-  const tag = EVENT_TAGS.find((t) => t.key === key);
+  // Szukamy w OBU listach, nie tylko w tej widocznej. Zdarzenie zapisuje samą etykietę, więc
+  // gdyby kafel bramkarski nie znalazł tu swojej nazwy, dotknięcie przepadałoby bez śladu.
+  const tag = EVENT_TAGS.find((t) => t.key === key)
+    || EVENT_TAGS_BRAMKARZ.find((t) => t.key === key);
   if (!tag) return;
   const noteEl = $<HTMLInputElement>("quick-note");
   const ev: LiveEvent = {
@@ -2391,7 +2467,7 @@ function wyslijZawodnikaDoSystemu(
   // Protokół 1–6 wystawiony na żywo. Puste rubryki pomijamy, a nie zerujemy: „nieocenione"
   // i „ocenione na zero" to w raporcie dwie różne informacje.
   const fazyZ: Record<string, number> = {};
-  REPORT_PHASES.forEach((f) => { if (Number(z.fazy?.[f.key]) > 0) fazyZ[f.key] = Number(z.fazy![f.key]); });
+  fazyDla(jestBramkarzem(z, nazwaKlubu)).forEach((f) => { if (Number(z.fazy?.[f.key]) > 0) fazyZ[f.key] = Number(z.fazy![f.key]); });
   const sfgZ: Record<string, number> = {};
   REPORT_SET_PIECES.forEach((f) => { if (Number(z.sfg?.[f.key]) > 0) sfgZ[f.key] = Number(z.sfg![f.key]); });
   const maProtokol = Object.keys(fazyZ).length > 0 || Object.keys(sfgZ).length > 0;
