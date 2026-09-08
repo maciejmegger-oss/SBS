@@ -4779,9 +4779,17 @@ function viewClubs(){
     const dorobki = [...dorobekKlubow.values()];
     const osiagalne = dorobki.map(d=>d.osiagalne).find(x=>x != null);
     const doWziecia = osiagalne != null ? Math.min(najwiecejMeczow, osiagalne) : najwiecejMeczow;
+    // KAŻDY KLUB PORÓWNUJEMY Z JEGO WŁASNĄ LICZBĄ ROZEGRANYCH MECZÓW, nie z maksimum grupy.
+    //
+    // Kluby grają różną liczbę spotkań — zaległości, przełożenia, mecze pucharowe w tygodniu.
+    // Pogoń rozegrała pięć i ma pięć, czyli komplet; porównanie z siódemką Legii robiło z niej
+    // zaległą i nagłówek meldował „10 klubów ma niekomplet" nad tabelą, w której ani jeden wiersz
+    // nie miał ostrzeżenia. Wiersze liczyły to poprawnie od początku — błąd był w podsumowaniu.
     const wTyle = list.filter(c=>{
-      const d = dorobekKlubow.get(c.id) || { wgrane:0 };
-      return d.wgrane < doWziecia;
+      const d = dorobekKlubow.get(c.id);
+      if(!d) return false;
+      const jegoDoWziecia = d.osiagalne != null ? Math.min(d.rozegrane, d.osiagalne) : d.rozegrane;
+      return d.wgrane < jegoDoWziecia;
     });
     const zTabeli = dorobki.some(d=>d.zTabeli);
     return `<br><strong>Rozegranych kolejek: ${najwiecejMeczow}</strong>`
@@ -4792,8 +4800,9 @@ function viewClubs(){
         ? `<span class="note">Protokoły są do ${doWziecia}. kolejki — 90minut wystawia wynik od razu, a składy i minuty dopisuje ręcznie kilka dni później.
            Statystyki z ${doWziecia + 1}. kolejki uzupełnią się same, gdy protokoły się pojawią.</span> ` : '')
       + (wTyle.length
-        ? `<span style="color:var(--clay-dark);">${wTyle.length} ${wTyle.length===1?'klub ma niekomplet':'klubów ma niekomplet'} wobec dostępnych ${doWziecia} kolejek.</span>`
-        : `Wszystkie kluby mają komplet z dostępnych ${doWziecia} kolejek.`);
+        ? `<span style="color:var(--clay-dark);">${wTyle.length} ${wTyle.length===1?'klub ma niekomplet':'klubów ma niekomplet'} — brakuje kolejek, które ten klub już rozegrał:
+           ${esc(wTyle.slice(0,5).map(c=>c.name).join(', '))}${wTyle.length>5?` i ${wTyle.length-5} więcej`:''}.</span>`
+        : 'Każdy klub ma tyle, ile sam rozegrał — komplet.');
   })() : ''}</p>
   ${topRow}
   ${groupRow}
