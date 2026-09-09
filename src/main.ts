@@ -4720,6 +4720,31 @@ function leagueLogoImg(topLevel, size, naCiemnym){
   const barwy = naCiemnym ? 'background:var(--gold);color:var(--pitch);' : 'background:var(--pitch);color:var(--gold);';
   return `<span style="width:${size}px;height:${size}px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;${barwy}border-radius:9px;font-weight:800;font-size:${Math.round(size*0.34)}px;letter-spacing:-.02em;">${esc(initials)}</span>`;
 }
+// ZNACZEK GRUPY ROZGRYWEK — kółko z liczbą porządkową, w barwie rodziny rozgrywek.
+//
+// Siedem pigułek „CLJ U19", „CLJ U17 gr. II", „CLJ U15 gr. A"… różni się dwoma znakami w środku
+// napisu, więc wybór właściwej wymagał przeczytania każdej po kolei. Barwa rozdziela je na trzy
+// rodziny od razu, a liczba — wyjęta z tekstu, gdzie była martwym „1. " — daje większy cel do
+// kliknięcia. Sama barwa niczego nie niesie w pojedynkę: pełna nazwa stoi obok, jak stała.
+const BARWY_RODZIN = [
+  {test:/^CLJ\s*U\s*-?19/i,                  kolor:'var(--pitch)'},
+  {test:/^CLJ\s*U\s*-?17/i,                  kolor:'var(--good)'},
+  {test:/^CLJ\s*U\s*-?16|makroregionaln/i,   kolor:'var(--clay)'},
+  {test:/^CLJ\s*U\s*-?15/i,                  kolor:'var(--gold-dark)'},
+  {test:/^III liga/i,                        kolor:'var(--pitch)'},
+  {test:/^IV liga/i,                         kolor:'var(--gold-dark)'},
+  {test:/^Rocznik/i,                         kolor:'var(--ink-soft)'},
+];
+function znaczekGrupy(nazwaGrupy, nr, aktywny){
+  const trafienie = BARWY_RODZIN.find(x=>x.test.test(String(nazwaGrupy||'')));
+  const tlo = aktywny ? 'var(--gold)' : (trafienie ? trafienie.kolor : 'var(--pitch)');
+  const tekst = aktywny ? 'var(--pitch)' : 'var(--on-pitch)';
+  return `<span aria-hidden="true" style="width:20px;height:20px;flex-shrink:0;border-radius:50%;
+    display:inline-flex;align-items:center;justify-content:center;background:${tlo};color:${tekst};
+    font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:12px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.28);">${nr}</span>`;
+}
+
 // Kluby widoczne w bieżącym widoku — wydzielone, bo obsługa przycisków działa już po
 // przerysowaniu, poza zasięgiem zmiennych z viewClubs, a musi widzieć DOKŁADNIE tę samą listę.
 function widoczneKluby(){
@@ -4773,8 +4798,12 @@ function viewClubs(){
       let label = g;
       if(g.startsWith('III liga, ')) label = g.replace('III liga, ','');
       else if(g.startsWith('IV liga (')) label = g.replace(/^IV liga \(|\)$/g,'');
-      if(nr) label = nr + '. ' + label;   // liczba porządkowa przy każdej grupie (poza "Wszystkie grupy")
-      return pill(label, clubBrowse.group===val, 'browse-group', {val});
+      // Liczba porządkowa PRZENIESIONA Z TEKSTU DO ZNACZKA. Jako „1. " była częścią napisu i
+      // niczego nie ułatwiała — teraz jest kółkiem, w które łatwiej trafić, a barwa kółka mówi
+      // o rodzinie rozgrywek, więc siedem pigułek CLJ rozpada się wzrokiem na U19 / U17 / U15
+      // bez czytania choćby jednej z nich.
+      return pill(label, clubBrowse.group===val, 'browse-group', {val},
+        nr ? znaczekGrupy(g, nr, clubBrowse.group===val) : '');
     };
     const wszystkie = groupPill('Wszystkie grupy', 0);
 
