@@ -3,6 +3,7 @@ import { storage } from "./data/storage";
 import { currentUser, signIn, signOut, requestPasswordReset, setNewPassword, isPasswordRecoveryLink,
          mojeKonto, listaKont, ustawStatusKonta, ustawRoleKonta, tokenSesji } from "./data/auth";
 import { VOIVODESHIP_PATHS } from "./data/voivodeships";
+import { SKLADY_MECZOWE } from "./data/sklady-meczowe";
 // Kod zbieracza ŁNP — ten sam plik, który serwujemy pod /zakladka-lnp-v2.js.
 import LNP_ZBIERACZ from "../public/zakladka-lnp-v2.js?raw";
 import type { Database } from "./types";
@@ -2504,7 +2505,30 @@ async function savePlayerOne(p){
     return true;
   }catch(e){
     console.error('Zapis zawodnika nie powiódł się:', e);
-    lastSaveFailure = {key:'scouting:players', time: new Date().toLocaleTimeString('pl-PL')};
+    lastSaveFailure = {key:'scouting:players', time: new Date().toLocaleTimeString('pl-PL'),
+      powod: String((e && (e as Error).message) || e || 'nieznany')};
+    try{ renderNav(); }catch(err){ /* jw. */ }
+    return false;
+  }
+}
+
+// Zapis WYŁĄCZNIE zmienionych zawodników — dla operacji dotykających kilkuset kartotek naraz.
+// savePlayers() przepisuje całą kolekcję (dziś ponad czternaście tysięcy rekordów), a savePlayerOne
+// wysyła jedno żądanie na zawodnika. Przy jednej lidze to różnica między kilkoma sekundami a minutą.
+async function savePlayersSome(lista){
+  const doZapisu = (lista || []).filter(Boolean);
+  if(!doZapisu.length) return true;
+  try{
+    await storage.saveSome('scouting:players', doZapisu);
+    if(lastSaveFailure && lastSaveFailure.key === 'scouting:players'){
+      lastSaveFailure = null;
+      try{ renderNav(); }catch(e){ /* baner to dodatek, nie może wywrócić zapisu */ }
+    }
+    return true;
+  }catch(e){
+    console.error('Zbiorczy zapis zawodników nie powiódł się:', e);
+    lastSaveFailure = {key:'scouting:players', time: new Date().toLocaleTimeString('pl-PL'),
+      powod: String((e && (e as Error).message) || e || 'nieznany')};
     try{ renderNav(); }catch(err){ /* jw. */ }
     return false;
   }
@@ -4930,6 +4954,7 @@ function viewClubs(){
           }">⏱ Odśwież statystyki — cały widok (${list.length})</button>`
         : ''}
       <button class="secondary" data-action="systemy-gry" title="Ustaw systemy gry wszystkich klubów tej grupy naraz">📐 Systemy gry</button>
+      <button class="secondary" data-action="sklady-meczowe" title="Rozstaw zawodników na mapach według ustawienia z ostatniej kolejki">👥 Pozycje ze składów</button>
       <button class="secondary" data-action="pozycje-z-tm" title="Uzupełnia puste pozycje zawodników danymi z Transfermarktu">🧭 Pozycje z Transfermarktu</button>
       <button class="secondary" data-action="pobierz-tabele" title="Pobiera z 90minut tabele Ekstraklasy, I, II i III ligi — układ, punkty i liczbę rozegranych kolejek">⭳ Tabele z 90minut</button>
       <button class="secondary" data-action="merge-duplicates" title="Znajdź kluby wpisane dwa razy pod różnymi nazwami i połącz je w jeden">🧹 Scal duplikaty</button>
@@ -9309,6 +9334,10 @@ const SYSTEMY_PODPOWIEDZI = {
   'Pogoń Szczecin': '1-4-3-3', 'Zagłębie Lubin': '1-4-2-3-1',
   'Wisła Płock': '1-4-3-3',
 };
+// Składy meczowe niosą system w komplecie ze zdjęcia ustawienia, więc nie przepisujemy go tu drugi
+// raz — inaczej dwie listy zaczęłyby się rozjeżdżać i nie byłoby wiadomo, która jest prawdziwa.
+SKLADY_MECZOWE.forEach(s=>{ SYSTEMY_PODPOWIEDZI[s.klub] = s.system; });
+
 function podpowiedzSystemu(klub){
   const n = importNorm(klub.name);
   const trafienie = Object.keys(SYSTEMY_PODPOWIEDZI).find(k=>{
@@ -9365,6 +9394,143 @@ function openSystemyModal(kluby){
     pokazPotwierdzenie(ok === false
       ? ('Nie udało się zapisać.' + powodNieudanegoZapisu())
       : `Zapisano systemy gry: ${zmian} ${zmian===1?'zmiana':'zmian'}.`, ok === false ? 'blad' : 'ok');
+  };
+  document.body.appendChild(overlay);
+}
+
+// ---- Pozycje ze składów meczowych --------------------------------------------------------
+//
+// Zapis składu (src/data/sklady-meczowe.ts) mówi, KTO gdzie stał. Tu chodzi o połączenie tego
+// z kartoteką: nazwiska w protokole są skrócone do inicjału imienia, a w bazie bywają zapisane
+// z drugim członem albo w innej pisowni.
+
+// Klub z zapisu składu odpowiadający kartotece. Porównujemy rdzenie nazw i numer zespołu, więc
+// „Bruk-Bet Termalica Nieciecza" trafia w „Termalica Nieciecza", ale „Polonia Bytom" NIE trafia
+// w „Polonia Warszawa" — wspólne „Polonia" nie wystarcza, musi się pokryć cała krótsza nazwa.
+function skladDlaKlubu(klub){
+  if(!klub || !klub.name) return null;
+  const b = rozbijNazweKlubu(klub.name);
+  return SKLADY_MECZOWE.find(s=>{
+    const a = rozbijNazweKlubu(s.klub);
+    if(a.numer !== b.numer) return false;
+    if(!a.rdzen.length || !b.rdzen.length) return false;
+    const [krotszy, dluzszy] = a.rdzen.length <= b.rdzen.length ? [a.rdzen, b.rdzen] : [b.rdzen, a.rdzen];
+    const wspolne = krotszy.filter(x=>dluzszy.some(y=>tenSamCzlon(x,y)));
+    return wspolne.length >= krotszy.length && wspolne.some(x=>x.length >= 4);
+  }) || null;
+}
+
+const nazwiskoNorm = (s)=> szukajNorm(String(s||'')).replace(/[^a-z]/g,'');
+
+// Zawodnik z kadry klubu odpowiadający wpisowi ze składu. Zwraca też POWÓD niedopasowania —
+// „nie ma takiego nazwiska" i „dwóch o tym samym nazwisku" wymagają różnych działań, więc zlanie
+// ich w jedno „nie znaleziono" kazałoby szukać po omacku.
+function zawodnikZeSkladu(kadra, wpis){
+  const cel = nazwiskoNorm(wpis.nazwisko);
+  if(!cel) return { powod: 'pusty wpis' };
+  let kandydaci = kadra.filter(p=>nazwiskoNorm(p.lastName) === cel);
+  if(!kandydaci.length && cel.length >= 5){
+    // Drugi człon nazwiska bywa dopisany po jednej stronie („Leśniak Paduch" ↔ „Leśniak").
+    kandydaci = kadra.filter(p=>{
+      const n = nazwiskoNorm(p.lastName);
+      return n.length >= 5 && (n.startsWith(cel) || cel.startsWith(n));
+    });
+  }
+  if(!kandydaci.length) return { powod: 'brak w kadrze klubu' };
+  if(kandydaci.length > 1){
+    const inicjal = nazwiskoNorm(wpis.inicjal).slice(0,1);
+    const poImieniu = kandydaci.filter(p=>nazwiskoNorm(p.firstName).slice(0,1) === inicjal);
+    if(poImieniu.length === 1) return { p: poImieniu[0] };
+    return { powod: kandydaci.length + ' zawodników o tym nazwisku — rozstrzygnij ręcznie' };
+  }
+  return { p: kandydaci[0] };
+}
+
+// Co dokładnie zrobi przycisk — policzone PRZED zapisem, żeby dało się to pokazać i odwołać.
+function planZeSkladow(kluby){
+  const pozycje = new Map(POSITION_NUMBERS.map(pn=>[pn.number, pn]));
+  const wKartotece = new Set((DB.settings.positions || []));
+  const zespoly = [];
+  kluby.forEach(c=>{
+    const sklad = skladDlaKlubu(c);
+    if(!sklad) return;
+    const kadra = DB.players.filter(p=>p.clubId === c.id);
+    const zmiany = [], bezZmian = [], nieznalezieni = [];
+    [...sklad.pierwsi, ...sklad.zmiennicy].forEach(wpis=>{
+      const traf = zawodnikZeSkladu(kadra, wpis);
+      if(!traf.p){ nieznalezieni.push({ wpis, powod: traf.powod }); return; }
+      const def = pozycje.get(wpis.nmg);
+      if(!def){ nieznalezieni.push({ wpis, powod: 'nieznane pole ' + wpis.nmg }); return; }
+      const teraz = Number(traf.p.pozycjaNmg) || 0;
+      const brakPozycji = !String(traf.p.position || '').trim();
+      if(teraz === wpis.nmg && !brakPozycji){ bezZmian.push(traf.p); return; }
+      zmiany.push({ p: traf.p, def, teraz, uzupelniPozycje: brakPozycji && wKartotece.has(def.posName) });
+    });
+    zespoly.push({ c, sklad, zmiany, bezZmian, nieznalezieni,
+      systemDoZmiany: String(systemyKlubow[c.id] || '') !== sklad.system });
+  });
+  return zespoly;
+}
+
+function openSkladyModal(kluby){
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  const zespoly = planZeSkladow(kluby);
+  const zmian = zespoly.reduce((s,z)=>s+z.zmiany.length, 0);
+  const systemow = zespoly.filter(z=>z.systemDoZmiany).length;
+  const braki = zespoly.reduce((s,z)=>s+z.nieznalezieni.length, 0);
+  const bezSkladu = kluby.filter(c=>!skladDlaKlubu(c));
+
+  const listaBrakow = zespoly.filter(z=>z.nieznalezieni.length).map(z=>
+    `<div style="padding:4px 0;border-bottom:1px solid var(--chalk-dim);">
+      <strong>${esc(z.c.name)}</strong>
+      <div class="note">${z.nieznalezieni.map(n=>esc(n.wpis.nazwisko + ' ' + n.wpis.inicjal + '. — ' + n.powod)).join('<br>')}</div>
+    </div>`).join('');
+
+  overlay.innerHTML = `<div class="modal" style="max-width:660px;">
+    <h3>Pozycje ze składów meczowych</h3>
+    <p class="note" style="margin-top:-6px;">Ustawienie z transmisji mówi, po której stronie i jak głęboko
+      zawodnik stał — czego nie podaje ani 90minut, ani Transfermarkt. Zmiennik dostaje pole zawodnika,
+      którego zmienił, tak jak zapisał to protokół.</p>
+    <div class="obs-item">
+      <div>Klubów ze składem: <strong>${zespoly.length}</strong> z ${kluby.length} w tym widoku</div>
+      <div>Zawodników do ustawienia: <strong>${zmian}</strong></div>
+      <div>Systemów gry do wpisania lub poprawienia: <strong>${systemow}</strong></div>
+      ${braki ? `<div>Nazwisk bez dopasowania: <strong>${braki}</strong></div>` : ''}
+    </div>
+    <p class="note">Numer wg NMG nadpisujemy zawsze — pochodzi z ustawienia meczowego. Pozycję ogólną
+      uzupełniamy <strong>tylko tam, gdzie jest pusta</strong>: to twoja ocena roli zawodnika i jeden
+      mecz jej nie unieważnia.${bezSkladu.length ? ` Bez składu w tej kolejce zostaje ${bezSkladu.length} ${bezSkladu.length===1?'klub':'klubów'} — tam zostaje 🧭 Pozycje z Transfermarktu.` : ''}</p>
+    ${listaBrakow ? `<details style="margin-top:8px;"><summary class="note" style="cursor:pointer;">Pokaż nazwiska bez dopasowania (${braki})</summary>
+      <div style="max-height:220px;overflow:auto;margin-top:6px;">${listaBrakow}</div></details>` : ''}
+    <div class="modal-actions">
+      <button class="secondary" id="skl-anuluj">Anuluj</button>
+      ${zmian || systemow ? `<button class="gold" id="skl-zapisz">Ustaw ${zmian} ${zmian===1?'zawodnika':'zawodników'}</button>` : ''}
+    </div></div>`;
+
+  overlay.querySelector('#skl-anuluj').addEventListener('click', ()=>overlay.remove());
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) overlay.remove(); });
+
+  const zapisz = overlay.querySelector('#skl-zapisz') as HTMLButtonElement | null;
+  if(zapisz) zapisz.onclick = async()=>{
+    zapisz.disabled = true; zapisz.textContent = 'Zapisuję…';
+    const zmienieni = [];
+    zespoly.forEach(z=>{
+      if(z.systemDoZmiany) systemyKlubow[z.c.id] = z.sklad.system;
+      z.zmiany.forEach(({p, def, uzupelniPozycje})=>{
+        p.pozycjaNmg = def.number;
+        if(uzupelniPozycje) p.position = def.posName;
+        zmienieni.push(p);
+      });
+    });
+    const okSystemy = systemow ? await saveSystemyKlubow() : true;
+    const okZawodnicy = await savePlayersSome(zmienieni);
+    overlay.remove(); render();
+    pokazPotwierdzenie(okSystemy === false || okZawodnicy === false
+      ? ('Nie udało się zapisać wszystkiego.' + powodNieudanegoZapisu())
+      : `Ustawiono ${zmienieni.length} ${zmienieni.length===1?'zawodnika':'zawodników'} na mapach`
+        + (systemow ? ` i ${systemow} ${systemow===1?'system gry':'systemów gry'}` : '') + '.',
+      okSystemy === false || okZawodnicy === false ? 'blad' : 'ok');
   };
   document.body.appendChild(overlay);
 }
@@ -11648,6 +11814,7 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="herby-z-pierwszych"]').forEach(b=>b.onclick=()=>openHerbyZPierwszychModal(widoczneKluby()));
   main.querySelectorAll('[data-action="pozycje-z-tm"]').forEach(b=>b.onclick=()=>openPozycjeZTmModal(widoczneKluby()));
   main.querySelectorAll('[data-action="systemy-gry"]').forEach(b=>b.onclick=()=>openSystemyModal(widoczneKluby()));
+  main.querySelectorAll('[data-action="sklady-meczowe"]').forEach(b=>b.onclick=()=>openSkladyModal(widoczneKluby()));
   // PRZECIĄGNIĘCIE NA MAPIE ZESPOŁU ZAPISUJE POZYCJĘ ZAWODNIKA, a nie tylko przestawia obrazek.
   //
   // Mapa liczy się z kartotek, więc samo przesunięcie kafelka zniknęłoby przy najbliższym

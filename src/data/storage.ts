@@ -274,6 +274,15 @@ async function setCollection(table: string, jsonValue: string): Promise<void> {
     }
   }
 
+  await upsertWsadami(table, items);
+}
+
+// UPSERT PACZKI REKORDÓW — wspólny dla „zapisz całą kolekcję" i „zapisz tych kilkuset".
+//
+// Wydzielone, bo zapis CAŁEJ kolekcji zawodników to dziś ponad siedemdziesiąt wsadów i kilka
+// megabajtów, a zmiana dotyczy zwykle kilkuset rekordów. Przepisywanie całej kartoteki po to,
+// żeby poprawić pozycje jednej ligi, jest tym samym, co przepisanie książki dla jednej literówki.
+async function upsertWsadami(table: string, items: Record<string, unknown>[]): Promise<void> {
   const prepared = items.map((it) => packExt(table, it));
   const rows = prepared.map(rowFromObj);
 
@@ -428,6 +437,23 @@ export const storage = {
       if (!missing) throw new Error(error.message);
       delete row[missing[1]];
     }
+  },
+
+  // ZAPIS TYLKO ZMIENIONYCH REKORDÓW.
+  //
+  // Między saveOne (jeden rekord, jedno zapytanie) a set (cała kolekcja, dziś ponad siedemdziesiąt
+  // wsadów) nie było nic pośredniego. Operacje, które ruszają kilkuset zawodników naraz — pozycje
+  // z ustawienia meczowego, protokoły całej kolejki — musiały więc wybierać między setką osobnych
+  // żądań a przepisaniem całej kartoteki. Tu idzie dokładnie tyle wierszy, ile się zmieniło.
+  //
+  // Świadomie BEZ ochrony przed wskrzeszaniem (fetchServerIds): wołający przekazuje rekordy, które
+  // ma właśnie na ekranie i celowo zmienił — tak samo jak przy saveOne.
+  async saveSome(key: string, items: Record<string, unknown>[]): Promise<boolean> {
+    const table = COLLECTION_TABLES[key];
+    if (!table) throw new Error("saveSome obsługuje tylko kolekcje tabelowe, nie " + key);
+    if (!items || !items.length) return true;
+    await upsertWsadami(table, items);
+    return true;
   },
 
   async delete(key: string, shared?: boolean): Promise<{ key: string; deleted: true; shared?: boolean }> {
