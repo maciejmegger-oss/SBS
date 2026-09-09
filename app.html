@@ -38,6 +38,14 @@
       <h1>SCOUT BASE SYSTEM</h1>
       <p>III / IV liga &middot; juniorzy</p>
     </div>
+    <!-- SZUKANIE PRZEZ CAŁĄ BAZĘ. Każdy widok miał dotąd własne pole szukania, więc żeby znaleźć
+         zawodnika, trzeba było najpierw wiedzieć, w której zakładce go szukać. To jedno pole
+         widać zawsze i prowadzi wprost do kartoteki, klubu albo menedżera. Ctrl+K je otwiera. -->
+    <div class="szukaj-globalnie">
+      <input id="szukaj-wszedzie" type="search" autocomplete="off" spellcheck="false"
+             placeholder="Szukaj wszędzie…  Ctrl+K" aria-label="Szukaj zawodnika, klubu lub menedżera">
+      <div id="szukaj-wyniki" class="szukaj-wyniki" hidden></div>
+    </div>
     <div id="nav"></div>
     <button id="theme-toggle" class="theme-toggle" type="button"></button>
     <!-- Napis i działanie ustawia renderNav() w src/main.ts: „Wyloguj się" dla zalogowanego,

@@ -2446,8 +2446,8 @@ function powodNieudanegoZapisu(){
   const p = String((lastSaveFailure as any).powod || '').trim();
   return p ? ' Baza odrzuciła zapis: ' + p : '';
 }
-async function savePlayers(){ return robustStorageSet('scouting:players', JSON.stringify(DB.players)); }
-async function saveClubs(){ return robustStorageSet('scouting:clubs', JSON.stringify(DB.clubs)); }
+async function savePlayers(){ indeksSzukania = null; return robustStorageSet('scouting:players', JSON.stringify(DB.players)); }
+async function saveClubs(){ indeksSzukania = null; return robustStorageSet('scouting:clubs', JSON.stringify(DB.clubs)); }
 async function saveClubCrests(){
   // Do tabeli herbów wchodzą WYŁĄCZNIE identyfikatory istniejących klubów: kolumna club_id ma
   // klucz obcy do sbs_clubs, więc jeden obcy klucz (np. agencji) wywraca CAŁY wsad i herby
@@ -2498,6 +2498,7 @@ async function savePlayerOne(p){
   if(!p) return false;
   try{
     await storage.saveOne('scouting:players', p);
+    indeksSzukania = null;   // zmiana nazwiska ma być widoczna w szukaniu od razu
     if(lastSaveFailure && lastSaveFailure.key === 'scouting:players'){
       lastSaveFailure = null;
       try{ renderNav(); }catch(e){ /* baner to dodatek, nie może wywrócić zapisu */ }
@@ -2520,6 +2521,7 @@ async function savePlayersSome(lista){
   if(!doZapisu.length) return true;
   try{
     await storage.saveSome('scouting:players', doZapisu);
+    indeksSzukania = null;   // jw.
     if(lastSaveFailure && lastSaveFailure.key === 'scouting:players'){
       lastSaveFailure = null;
       try{ renderNav(); }catch(e){ /* baner to dodatek, nie może wywrócić zapisu */ }
@@ -3346,7 +3348,119 @@ async function retryFailedSave(){
   renderNav();
 }
 
+// ---- SZUKANIE PRZEZ CAŁĄ BAZĘ -------------------------------------------------------------
+//
+// Każdy widok miał własne pole szukania, więc żeby znaleźć zawodnika, trzeba było NAJPIERW
+// wiedzieć, w której zakładce go szukać — a zwykle wie się odwrotnie: kogo, ale nie gdzie.
+// To pole widać zawsze i prowadzi wprost do kartoteki, klubu albo menedżera.
+//
+// Indeks trzymamy policzony, bo przy czternastu tysiącach kartotek normalizowanie nazwisk przy
+// każdym naciśnięciu klawisza byłoby odczuwalne. Przebudowuje się, gdy zmieni się liczba
+// rekordów, i jest zerowany przy każdym zapisie zawodników — inaczej zmiana nazwiska nie
+// byłaby widoczna w wynikach aż do przeładowania strony.
+let indeksSzukania = null;
+function zbudujIndeksSzukania(){
+  const sygnatura = DB.players.length + '|' + DB.clubs.length + '|' + ((DB.agencies||[]).length);
+  if(indeksSzukania && indeksSzukania.sygnatura === sygnatura) return indeksSzukania;
+  const norm = (s)=> szukajNorm(String(s||''));
+  indeksSzukania = {
+    sygnatura,
+    zawodnicy: DB.players.map(p=>({
+      id: p.id, etykieta: `${p.lastName||''} ${p.firstName||''}`.trim() || '(bez nazwiska)',
+      opis: [p.birthYear, p.position, clubName(p.clubId)].filter(Boolean).join(' · '),
+      klucz: norm(`${p.lastName||''} ${p.firstName||''} ${clubName(p.clubId)}`),
+    })),
+    kluby: DB.clubs.map(c=>({
+      id: c.id, etykieta: c.name || '(bez nazwy)',
+      opis: [c.league, (c.region||'').replace(/\s*ZPN$/,''), c.city].filter(Boolean).join(' · '),
+      klucz: norm(`${c.name||''} ${c.city||''} ${c.league||''}`),
+    })),
+    menedzerowie: (DB.agencies||[]).map(a=>({
+      id: a.id, etykieta: a.name || '(bez nazwy)',
+      opis: [a.city, a.country].filter(Boolean).join(' · '),
+      klucz: norm(`${a.name||''} ${a.city||''}`),
+    })),
+  };
+  return indeksSzukania;
+}
+
+function wynikiSzukania(fraza){
+  const q = szukajNorm(String(fraza||'')).trim();
+  if(q.length < 2) return [];
+  const idx = zbudujIndeksSzukania();
+  // Trafienie od POCZĄTKU nazwiska idzie przed trafieniem w środku wyrazu — wpisując „kow"
+  // szuka się Kowalskiego, a nie Leśniaka grającego w Kowarach.
+  const szukajW = (lista, rodzaj, limit)=> lista
+    .map(x=>({...x, rodzaj, poz: x.klucz.indexOf(q)}))
+    .filter(x=>x.poz >= 0)
+    .sort((a,b)=> a.poz - b.poz || a.etykieta.localeCompare(b.etykieta,'pl'))
+    .slice(0, limit);
+  return [
+    ...szukajW(idx.zawodnicy, 'zawodnik', 6),
+    ...szukajW(idx.kluby, 'klub', 4),
+    ...szukajW(idx.menedzerowie, 'menedzer', 2),
+  ];
+}
+
+let szukanieWybrany = -1;
+let szukanieOstatnie = [];
+function podepnijSzukanieGlobalne(){
+  const pole = document.getElementById('szukaj-wszedzie') as HTMLInputElement | null;
+  const lista = document.getElementById('szukaj-wyniki');
+  if(!pole || !lista || (pole as any).__podpiete) return;
+  (pole as any).__podpiete = true;
+
+  const ETYKIETY = {zawodnik:'Zawodnicy', klub:'Kluby', menedzer:'Menedżerowie'};
+  const zamknij = ()=>{ lista.hidden = true; lista.innerHTML = ''; szukanieWybrany = -1; szukanieOstatnie = []; };
+
+  const przejdz = (w)=>{
+    if(!w) return;
+    editingPlayerId = null; viewingRocznikGroup = null;
+    if(w.rodzaj === 'zawodnik'){ currentView = 'players'; viewingPlayerId = w.id; viewingClubId = null; }
+    else if(w.rodzaj === 'klub'){ currentView = 'clubs'; viewingClubId = w.id; viewingPlayerId = null; clubBrowse = {top:'', group:''}; }
+    else { currentView = 'agencies'; viewingAgencyId = w.id; }
+    pole.value = ''; zamknij(); render();
+  };
+
+  const rysuj = ()=>{
+    if(!szukanieOstatnie.length){
+      lista.innerHTML = pole.value.trim().length >= 2
+        ? '<div class="sw-pusto">Nic nie znalazłem. Sprawdź pisownię albo szukaj po klubie.</div>' : '';
+      lista.hidden = !lista.innerHTML;
+      return;
+    }
+    let poprzedni = '';
+    lista.innerHTML = szukanieOstatnie.map((w,i)=>{
+      const naglowek = w.rodzaj !== poprzedni ? `<div class="sw-grupa">${ETYKIETY[w.rodzaj]}</div>` : '';
+      poprzedni = w.rodzaj;
+      return naglowek + `<div class="sw-poz${i===szukanieWybrany?' sw-wybrany':''}" data-i="${i}">
+        <span><strong>${esc(w.etykieta)}</strong>${w.opis?`<span class="sw-opis">${esc(w.opis)}</span>`:''}</span>
+      </div>`;
+    }).join('');
+    lista.hidden = false;
+    lista.querySelectorAll('.sw-poz').forEach(el=>{
+      el.addEventListener('mousedown', e=>{ e.preventDefault(); przejdz(szukanieOstatnie[Number((el as HTMLElement).dataset.i)]); });
+    });
+  };
+
+  pole.addEventListener('input', ()=>{ szukanieOstatnie = wynikiSzukania(pole.value); szukanieWybrany = szukanieOstatnie.length ? 0 : -1; rysuj(); });
+  pole.addEventListener('focus', ()=>{ if(pole.value.trim().length >= 2){ szukanieOstatnie = wynikiSzukania(pole.value); rysuj(); } });
+  pole.addEventListener('blur', ()=> setTimeout(zamknij, 120));
+  pole.addEventListener('keydown', (e:any)=>{
+    if(e.key === 'Escape'){ pole.value = ''; zamknij(); pole.blur(); return; }
+    if(!szukanieOstatnie.length) return;
+    if(e.key === 'ArrowDown'){ e.preventDefault(); szukanieWybrany = (szukanieWybrany + 1) % szukanieOstatnie.length; rysuj(); }
+    else if(e.key === 'ArrowUp'){ e.preventDefault(); szukanieWybrany = (szukanieWybrany - 1 + szukanieOstatnie.length) % szukanieOstatnie.length; rysuj(); }
+    else if(e.key === 'Enter'){ e.preventDefault(); przejdz(szukanieOstatnie[Math.max(0, szukanieWybrany)]); }
+  });
+  // Ctrl+K (a na Macu ⌘K) — skrót, którego szuka się odruchowo w każdym narzędziu z wyszukiwarką.
+  document.addEventListener('keydown', (e:any)=>{
+    if((e.ctrlKey || e.metaKey) && String(e.key).toLowerCase() === 'k'){ e.preventDefault(); pole.focus(); pole.select(); }
+  });
+}
+
 function renderNav(){
+  podepnijSzukanieGlobalne();
   const brand = document.querySelector('.brand');
   if(brand){
     brand.innerHTML = `

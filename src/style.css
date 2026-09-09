@@ -121,6 +121,30 @@ body{margin:0;background:var(--chalk);color:var(--ink);}
 .brand h1{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:19px;letter-spacing:.02em;margin:0;line-height:1.15;color:var(--on-pitch);}
 .brand p{margin:4px 0 0;font-size:11px;color:#9FB3A9;text-transform:uppercase;letter-spacing:.08em;}
 .brand .subtitle{margin:4px 0 0;font-size:12px;color:#9FB3A9;text-transform:none;letter-spacing:0;}
+/* SZUKANIE PRZEZ CAŁĄ BAZĘ — stoi nad zakładkami, bo zwykle wie się KOGO się szuka, a nie
+   w której zakładce on siedzi. Pole leży na ciemnej murawie panelu, więc ma własne barwy;
+   dziedziczone z jasnego motywu byłoby białą plamą. */
+.szukaj-globalnie{position:relative;padding:0 14px 12px;}
+.szukaj-globalnie input{width:100%;box-sizing:border-box;padding:8px 10px;font-size:12.5px;
+  border-radius:8px;border:1px solid var(--line);background:var(--pitch-2);color:var(--on-pitch);}
+.szukaj-globalnie input::placeholder{color:#8CA096;}
+.szukaj-globalnie input:focus{outline:none;border-color:var(--gold);background:#12332B;}
+/* Lista wyników wisi NAD treścią strony, a nie rozpycha panelu — inaczej zakładki skakałyby
+   w dół przy każdej wpisanej literze. */
+/* Lista jest SZERSZA niż panel i wychodzi na treść strony. Ograniczona do szerokości panelu
+   (192 px) łamała „Kowalczyk Sport Management" na dwa wiersze, a to nazwy własne — łamane
+   przestają być rozpoznawalne z jednego spojrzenia. */
+.szukaj-wyniki{position:absolute;left:14px;right:auto;width:min(340px, calc(100vw - 40px));top:100%;z-index:60;max-height:330px;overflow:auto;
+  background:var(--card);border:1px solid var(--border-strong);border-radius:10px;
+  box-shadow:0 12px 30px rgba(0,0,0,.32);padding:4px;}
+.szukaj-wyniki .sw-grupa{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-soft);
+  padding:6px 8px 3px;}
+.szukaj-wyniki .sw-poz{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:7px;
+  cursor:pointer;color:var(--ink);font-size:12.5px;}
+.szukaj-wyniki .sw-poz:hover,.szukaj-wyniki .sw-poz.sw-wybrany{background:var(--card-warm);}
+.szukaj-wyniki .sw-poz .sw-opis{display:block;font-size:10.5px;color:var(--ink-soft);}
+.szukaj-wyniki .sw-pusto{padding:10px 8px;font-size:12px;color:var(--ink-soft);}
+
 .nav-item{display:flex;align-items:center;gap:10px;padding:11px 20px;font-size:14px;color:#CBD9D1;cursor:pointer;border-left:3px solid transparent;user-select:none;}
 .nav-item:hover{background:var(--pitch-2);color:var(--on-pitch);}
 .nav-item.active{background:var(--pitch-2);color:var(--on-pitch);border-left-color:var(--gold);font-weight:600;}
