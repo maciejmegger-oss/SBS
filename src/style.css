@@ -806,6 +806,26 @@ tr.player-row.prow-okazja.prow-mlodszy:hover td:first-child{
 /* Klub, region i liga w jednej kolumnie: nazwa u góry, pod nią drobnym drukiem region i liga.
    Trzy osobne kolumny zabierały ponad 200 px i przez nie tabela nie mieściła się na ekranie. */
 .players-table .club-cell{align-items:center;}
+/* KOMÓRKA ZAWODNIKA — dwa poziomy, jak wizytówka. Metryka pod nazwiskiem jest wyraźnie mniejsza
+   i szarsza, więc nie konkuruje z nim o uwagę: nazwisko czyta się pierwsze, reszta doczytuje się
+   dopiero wtedy, gdy jest potrzebna. */
+.zaw-cell{display:flex;flex-direction:column;gap:1px;line-height:1.25;}
+.zaw-cell .zaw-nazwa{white-space:nowrap;}
+.zaw-cell .zaw-meta{font-size:10.5px;color:var(--ink-soft);display:flex;align-items:center;gap:4px;flex-wrap:wrap;}
+
+/* PLAKIETKA POZYCJI. Numer wg NMG w ciemnym kwadraciku, pełna nazwa obok — cyfrę rozpoznaje się
+   bez czytania, a nazwa zostaje dla kogoś, kto numerów jeszcze nie ma w głowie. */
+.poz-chip{display:inline-flex;align-items:center;gap:6px;padding:2px 9px 2px 2px;border-radius:20px;
+  background:var(--chalk-dim);border:1px solid var(--border);font-size:11.5px;white-space:nowrap;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.6);}
+.poz-chip .poz-nr{width:19px;height:19px;flex-shrink:0;border-radius:50%;background:var(--pitch);color:var(--gold);
+  display:inline-flex;align-items:center;justify-content:center;
+  font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:12px;}
+.poz-chip .poz-txt{color:var(--heading);font-weight:600;}
+/* Bez numeru: sama pozycja ogólna, wyszarzona — plakietka ma wyglądać na NIEPEŁNĄ, bo taka jest. */
+.poz-chip.poz-chip-og{padding:2px 9px;color:var(--ink-soft);background:transparent;
+  border-style:dashed;box-shadow:none;font-weight:500;}
+
 .players-table .club-name{display:block;max-width:138px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .players-table .club-sub{display:block;font-size:10.5px;color:var(--ink-soft);max-width:138px;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}

@@ -4148,9 +4148,8 @@ function viewPlayers(){
       mlodszy?`Młodszy rocznik w swojej kategorii — gra przeciwko starszym. `:''}${okazja?'Młodzieżowiec bez menedżera — ':''}Kliknij, aby otworzyć profil">
       <td><input type="checkbox" class="player-checkbox" data-id="${p.id}"></td>
       <td style="color:var(--ink-soft);font-size:12px;text-align:right;">${idx+1}</td>
-      <td>${p.nationality?`<span title="${esc(p.nationality)}">${nationalityFlag(p.nationality)}</span> `:''}<strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</td>
-      <td>${rocznikHtml(p)}</td>
-      <td>${esc(p.position)}</td>
+      <td>${komorkaZawodnika(p)}</td>
+      <td>${chipPozycji(p)}</td>
       <td><div class="club-cell">${crestImg(clubCrest(p.clubId))}<span>
         <span class="club-name">${esc(clubName(p.clubId))}</span>
         <span class="club-sub">${esc((clubRegion(p.clubId)||'').replace(/\s*ZPN$/,''))}${clubLeague(p.clubId)?' · '+esc((clubLeague(p.clubId)||'').replace(/,\s*gr\./,' gr.')):''}</span>
@@ -4227,7 +4226,7 @@ function viewPlayers(){
   <p class="note" style="margin:0 0 6px;font-size:11.5px;">Tabela jest szeroka — przewiń ją w bok pod spodem albo przytrzymaj <strong>Shift</strong> i kręć kółkiem myszy. Kolumna akcji zostaje widoczna.</p>
   <div class="card table-scroll" style="padding:0;overflow:auto;">
     <table class="players-table">
-      <thead><tr><th style="width:24px;"><input type="checkbox" class="header-checkbox"></th><th style="width:34px;text-align:right;" title="Liczba porządkowa">Lp.</th><th>Zawodnik</th><th>Rocznik</th><th>Pozycja</th><th>Klub / region / liga</th><th>Status</th><th style="text-align:center;" title="Czy zawodnik ma menedżera — kliknij, aby przełączyć Tak/Nie">Agent</th><th style="text-align:right;" title="Rozegrane mecze w sezonie">Mecze</th><th style="text-align:right;" title="Rozegrane minuty w sezonie">Minuty</th><th style="text-align:right;" title="Gole w sezonie">Gole</th><th style="text-align:right;" title="Wpisy w Planie Obserwacji oraz raporty skautingowe">Obs. / rap.</th><th></th></tr></thead>
+      <thead><tr><th style="width:24px;"><input type="checkbox" class="header-checkbox"></th><th style="width:34px;text-align:right;" title="Liczba porządkowa">Lp.</th><th>Zawodnik</th><th>Pozycja</th><th>Klub / region / liga</th><th>Status</th><th style="text-align:center;" title="Czy zawodnik ma menedżera — kliknij, aby przełączyć Tak/Nie">Agent</th><th style="text-align:right;" title="Rozegrane mecze w sezonie">Mecze</th><th style="text-align:right;" title="Rozegrane minuty w sezonie">Minuty</th><th style="text-align:right;" title="Gole w sezonie">Gole</th><th style="text-align:right;" title="Wpisy w Planie Obserwacji oraz raporty skautingowe">Obs. / rap.</th><th></th></tr></thead>
       <tbody>${rows || `<tr><td colspan="13"><div class="empty">Brak zawodników spełniających filtry.</div></td></tr>`}</tbody>
     </table>
   </div>`;
@@ -6497,7 +6496,7 @@ function viewClubDetail(id){
       <td onclick="event.stopPropagation()"><input type="checkbox" class="squad-player-check" data-id="${p.id}"></td>
       <td>${p.nationality?`<span title="${esc(p.nationality)}">${nationalityFlag(p.nationality)}</span> `:''}<strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</td>
       <td>${rocznikHtml(p)}</td>
-      <td>${esc(p.position)}</td>
+      <td>${chipPozycji(p)}</td>
       <td>${p.status? `<span class="badge ${STATUS_CLASS[p.status]||'new'}">${esc(p.status)}</span>` : '—'}</td>
       <td style="text-align:right;">${p.matches!=null?p.matches:'—'}</td>
       <td style="text-align:right;">${p.minutes!=null?p.minutes:'—'}</td>
@@ -7496,6 +7495,39 @@ function limitRocznikaKategorii(p){
   const rokStartu = sezon ? Number(sezon[1]) : new Date().getFullYear();
   return String(rokStartu + 1 - Number(wiek[1]));
 }
+// KOMÓRKA ZAWODNIKA W DWÓCH POZIOMACH — nazwisko u góry, metryka pod spodem.
+//
+// Rocznik stał dotąd w OSOBNEJ kolumnie, a przy trzynastu kolumnach każda kolejna odsuwa
+// od siebie rzeczy, które czyta się razem: nazwisko, narodowość i rocznik to jedna informacja
+// („kto to jest"), a nie trzy. Złożone w jedną komórkę czytają się jak wizytówka i zwalniają
+// miejsce w poziomie, którego przy tej liczbie kolumn brakuje najbardziej.
+function komorkaZawodnika(p){
+  const flaga = p.nationality
+    ? `<span title="${esc(p.nationality)}">${nationalityFlag(p.nationality)}</span> ` : '';
+  return `<div class="zaw-cell">
+    <span class="zaw-nazwa"><strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</span>
+    <span class="zaw-meta">${flaga}${rocznikHtml(p)}</span>
+  </div>`;
+}
+
+// POZYCJA JAKO PLAKIETKA Z NUMEREM WG NMG.
+//
+// „Pomocnik ofensywny" to dwa słowa do przeczytania w każdym wierszu; „10" rozpoznaje się bez
+// czytania. Numer jest przy tym językiem, którym posługuje się sztab, więc plakietka mówi
+// dokładnie to, co powiedziałby trener. Pełna nazwa zostaje obok — numer sam w sobie nic nie
+// znaczy dla kogoś, kto dopiero wchodzi w NMG.
+// Bez wskazanego numeru plakietka jest wyszarzona i BEZ cyfry: zgadywanie strony boiska z samej
+// pozycji ogólnej byłoby wpisaniem czegoś, czego nie wiemy.
+function chipPozycji(p){
+  const pozycja = String((p && p.position) || '').trim();
+  if(!pozycja) return '<span class="meta">—</span>';
+  const numer = Number(p.pozycjaNmg) || 0;
+  const def = numer ? POSITION_NUMBERS.find(x=>x.number === numer) : null;
+  if(!def) return `<span class="poz-chip poz-chip-og" title="Pozycja ogólna — numer wg NMG niewskazany">${esc(pozycja)}</span>`;
+  return `<span class="poz-chip" title="${esc(def.number + ' · ' + def.label)} (wg Narodowego Modelu Gry)">
+    <span class="poz-nr">${def.number}</span><span class="poz-txt">${esc(def.label)}</span></span>`;
+}
+
 function rocznikHtml(p){
   const rok = rocznikZawodnika(p);
   if(rok) return `${esc(rok)}${odznakaMlodszego(p)}${isYouthPlayer(p)?youthBadge(p):''}`;
