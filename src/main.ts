@@ -4659,20 +4659,46 @@ function radarRaportow(metryki, opcje){
 }
 
 // ---------- CLUBS ----------
-function pill(label, active, action, dataAttrs){
+// Pigułka filtra. `ikona` to gotowy HTML (herb, logo ligi) — dokładany PRZED napisem.
+//
+// Znak graficzny obok nazwy skraca szukanie: oko trafia w kolor i kształt szybciej niż odczytuje
+// „II liga" i „III liga", które różnią się jedną kreską. Przy okazji przycisk robi się większy,
+// więc trudniej w niego nie trafić.
+function pill(label, active, action, dataAttrs, ikona){
   const attrs = Object.entries(dataAttrs||{}).map(([k,v])=>`data-${k}="${esc(v)}"`).join(' ');
-  return `<button class="secondary" data-action="${action}" ${attrs} style="border-radius:20px;padding:6px 14px;font-size:12.5px;${active?'background:var(--pitch);color:var(--on-pitch);border-color:var(--pitch);':''}">${esc(label)}</button>`;
+  const tresc = ikona
+    ? `<span style="display:inline-flex;align-items:center;gap:7px;">${ikona}<span>${esc(label)}</span></span>`
+    : esc(label);
+  return `<button class="secondary" data-action="${action}" ${attrs} style="border-radius:20px;padding:${ikona?'5px 14px 5px 6px':'6px 14px'};font-size:12.5px;${active?'background:var(--pitch);color:var(--on-pitch);border-color:var(--pitch);':''}">${tresc}</button>`;
 }
 // Logo poziomu rozgrywek (I liga, II liga...) — wgrywane przez użytkownika (jak herby klubów), bo oficjalne
 // logotypy lig (Ekstraklasa, Betclic 1/2/3 liga) to znaki towarowe, których nie pobieramy automatycznie.
 // Do czasu wgrania pokazuje się schludny placeholder z inicjałami poziomu.
-function leagueLogoImg(topLevel, size){
+function leagueLogoImg(topLevel, size, naCiemnym){
   const logo = DB.settings.leagueLogos && DB.settings.leagueLogos[topLevel];
   // max-width/max-height (nie width/height sztywne) — logo dowolnych proporcji mieści się w jednolitym
   // "gabarycie" bez rozciągania/spłaszczania.
-  if(logo) return `<img src="${esc(logo)}" alt="" style="max-width:${size}px;max-height:${Math.round(size*0.62)}px;object-fit:contain;">`;
-  const initials = (topLevel.match(/[A-ZĄĆĘŁŃÓŚŹŻ0-9]/g)||[]).join('').slice(0,3) || topLevel.slice(0,2).toUpperCase();
-  return `<span style="width:${size}px;height:${size}px;display:inline-flex;align-items:center;justify-content:center;background:var(--pitch);color:var(--gold);border-radius:9px;font-weight:800;font-size:${Math.round(size*0.34)}px;">${esc(initials)}</span>`;
+  // Na ciemnym tle (wybrana pigułka) wgrane logo dostaje jasną podkładkę: znaki lig są zwykle
+  // ciemne i bez niej znikają dokładnie w tym stanie, w którym mają potwierdzać wybór.
+  if(logo) return `<img src="${esc(logo)}" alt="" style="max-width:${size}px;max-height:${Math.round(size*0.62)}px;object-fit:contain;${
+    naCiemnym ? 'background:#fff;border-radius:5px;padding:1px;' : ''}">`;
+  // ZASTĘPKA MÓWI CYFRĄ, NIE POWTARZA NAPISU.
+  //
+  // Inicjały dawały przy „II liga" znaczek „II" — czyli dokładnie to samo, co początek etykiety,
+  // więc przycisk czytał się jak jąkanie i nic nie zyskiwał. Gorzej: I, II i III różnią się jedną
+  // kreską, a to właśnie one mylą się najczęściej. Cyfry arabskie są rozróżnialne z odległości
+  // jednym rzutem oka i nie dublują tekstu obok.
+  const CYFRY_POZIOMOW = {
+    'Ekstraklasa':'E', 'I liga':'1', 'II liga':'2', 'III liga':'3', 'IV liga':'4',
+    'Klasa okręgowa':'O', 'Kategorie juniorskie':'MŁ',
+  };
+  const initials = CYFRY_POZIOMOW[topLevel]
+    || (topLevel.match(/[A-ZĄĆĘŁŃÓŚŹŻ0-9]/g)||[]).join('').slice(0,3)
+    || topLevel.slice(0,2).toUpperCase();
+  // Zastępka odwraca barwy razem z pigułką — na ciemnej murawie złoty kwadrat z ciemnym napisem,
+  // bo „murawa na murawie" byłaby niewidoczna.
+  const barwy = naCiemnym ? 'background:var(--gold);color:var(--pitch);' : 'background:var(--pitch);color:var(--gold);';
+  return `<span style="width:${size}px;height:${size}px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;${barwy}border-radius:9px;font-weight:800;font-size:${Math.round(size*0.34)}px;letter-spacing:-.02em;">${esc(initials)}</span>`;
 }
 // Kluby widoczne w bieżącym widoku — wydzielone, bo obsługa przycisków działa już po
 // przerysowaniu, poza zasięgiem zmiennych z viewClubs, a musi widzieć DOKŁADNIE tę samą listę.
@@ -4704,9 +4730,13 @@ function viewClubs(){
       + `<div class="filters" style="margin-bottom:0;">${pigulki.join(' ')}</div></div>`
     : '';
 
+  // „Wszystkie" nie jest poziomem rozgrywek, więc nie dostaje znaczka — inaczej wyglądałoby na
+  // jeszcze jedną ligę. Reszta bierze logo wgrane na Dashboardzie, a do czasu wgrania zastępkę
+  // z inicjałami („E", „II", „IV"), która i tak odróżnia poziomy szybciej niż sam napis.
   const pigulkaPoziomu = (t)=>{
     const val = t==='Wszystkie' ? '' : t;
-    return pill(t, clubBrowse.top===val, 'browse-top', {val});
+    const wybrany = clubBrowse.top===val;
+    return pill(t, wybrany, 'browse-top', {val}, val ? leagueLogoImg(t, 20, wybrany) : '');
   };
   const SENIORSKIE = TOP_LEVELS.filter(t=>t!=='Kategorie juniorskie');
   const MLODZIEZOWE = TOP_LEVELS.filter(t=>t==='Kategorie juniorskie');
@@ -8803,8 +8833,18 @@ function viewRankingNumbersMode(){
 
   const activeCoords = FORMATION_COORDS[rankingFormationFilter] || FORMATION_COORDS[''];
 
+  // BOISKO W POZIOMIE, JAK W MAPIE ZESPOŁU — atak w prawo, własna bramka po lewej.
+  //
+  // W pionie ta mapa zajmowała cały ekran i trzeba było przewijać, żeby zobaczyć obronę razem
+  // z napastnikami; przy jedenastu plakietkach po sześć nazwisk to jest właśnie ten widok, który
+  // ma się ogarniać jednym spojrzeniem. Układ w FORMATION_COORDS zostaje pionowy — obracamy go
+  // przy rysowaniu, żeby nie trzymać drugiego kompletu współrzędnych do poprawiania w dwóch
+  // miejscach. Lewe skrzydło idzie na GÓRĘ: patrząc z lotu ptaka na zespół atakujący w prawo,
+  // jego lewa strona jest u góry ekranu.
+  const wPoziomie = (coord)=>({ x: 100 - coord.y, y: coord.x });
+
   const markerHtml = (posDef)=>{
-    const coord = activeCoords[posDef.number];
+    const coord = wPoziomie(activeCoords[posDef.number]);
     const key = positionMapKey(rankingLeague, rankingFormationFilter, posDef.number);
     const ids = positionMapAssignments[key] || [];
     const isGk = posDef.number === 1;
@@ -8815,8 +8855,13 @@ function viewRankingNumbersMode(){
       const statusCls = pl.status==='Do transferu' ? ' pmr-transfer' : '';
       return `<span class="pos-marker-row${statusCls}" draggable="true" data-id="${esc(pl.id)}" data-zrodlo="${posDef.number}" title="${esc(pl.status||'')} — przeciągnij na inną pozycję">${crestImg(clubCrest(pl.clubId),'xs',clubName(pl.clubId))}<span class="pmr-name">${esc(pl.lastName || pl.firstName || '—')}</span>${pl.birthYear?`<span class="pmr-year">${esc(pl.birthYear)}</span>`:''}</span>`;
     }).join('');
+    // Plakietki przy krawędziach uciekały poza boisko i nazwiska się urywały — przy skrajnych
+    // polach kotwiczymy je bokiem zamiast środkiem. Po obrocie bramkarz dotyka LEWEJ krawędzi,
+    // napastnicy PRAWEJ, a skrzydłowi górnej i dolnej.
+    const brzeg = (coord.x < 14 ? ' pm-lewy' : coord.x > 86 ? ' pm-prawy' : '')
+      + (coord.y > 78 ? ' pm-dol' : '');
     return `
-    <div class="pos-marker" style="left:${coord.x}%;top:${coord.y}%;" data-action="position-slot-click" data-number="${posDef.number}" title="${esc(posDef.label)} — kliknij, aby zarządzać (do 6 zawodników)">
+    <div class="pos-marker${brzeg}" style="left:${coord.x}%;top:${coord.y}%;" data-action="position-slot-click" data-number="${posDef.number}" title="${esc(posDef.label)} — kliknij, aby zarządzać (do 6 zawodników)">
       <span class="pos-marker-dot ${isGk?'gk':''}">${posDef.number}</span>
       <span class="pos-marker-tag">${ids.length ? playerRowsHtml : '<span class="pos-marker-row pmr-empty">—</span>'}</span>
     </div>`;
@@ -8827,17 +8872,13 @@ function viewRankingNumbersMode(){
   const logoSrc = logoEl ? logoEl.src : '';
 
   return `
-  <div class="pitch-wrap-outer">
+  <div class="pitch-wrap-outer mapa-rankingowa">
   <div class="position-map-pitch">
-    <div class="pitch-deco">
-      <div class="pitch-deco-box pitch-deco-box-top"></div>
-      <div class="pitch-deco-goal pitch-deco-goal-top"></div>
-      <div class="pitch-deco-circle"></div>
-      <div class="pitch-deco-line"></div>
-      <div class="pitch-deco-box pitch-deco-box-bottom"></div>
-      <div class="pitch-deco-goal pitch-deco-goal-bottom"></div>
-      <div class="pitch-deco-arc pitch-deco-arc-top"></div>
-      <div class="pitch-deco-arc pitch-deco-arc-bottom"></div>
+    <div class="pitch-deco boisko-poziome">
+      <div class="bp-linia-srodkowa"></div>
+      <div class="bp-kolo"></div>
+      <div class="bp-pole bp-pole-lewe"></div><div class="bp-bramka bp-bramka-lewa"></div>
+      <div class="bp-pole bp-pole-prawe"></div><div class="bp-bramka bp-bramka-prawa"></div>
     </div>
     ${logoSrc ? `<img src="${logoSrc}" class="pitch-watermark" alt="">` : ''}
     <div class="position-map-content">

@@ -377,20 +377,25 @@ tr:hover td{background:var(--card-soft);}
   .sbs-toast{animation:none;}
   .sbs-toast-znika{transition:none;}
 }
-/* MAPA ZESPOŁU W KARCIE KLUBU — jasna, kompaktowa, wzorowana na planszach składów.
-   Ciemna murawa z Rankingu ma sens na pełnym ekranie, ale w karcie klubu robiła z tej sekcji
-   najcięższy element strony — a to tylko pomoc w czytaniu kadry, nie główna atrakcja.
-   Jasne boisko z cienkimi liniami czyta się szybciej i nie walczy z resztą widoku. */
+/* MAPY BOISKOWE — jasne, poziome, kompaktowe. Dotyczy OBU: mapy zespołu w karcie klubu
+   i mapy rankingowej.
+   Ciemna murawa w pionie wyglądała efektownie, ale mapa rankingowa zajmowała przez nią cały
+   ekran: żeby zobaczyć obronę razem z napastnikami, trzeba było przewijać — a to jest właśnie
+   ten widok, który ma się ogarniać jednym spojrzeniem. Jasne boisko z cienkimi liniami czyta
+   się szybciej i nie walczy z resztą aplikacji. */
 .mapa-zespolu-uklad{display:grid;grid-template-columns:minmax(360px,1fr) 1.5fr;gap:16px;align-items:start;}
-.mapa-zespolu{
+.mapa-zespolu, .mapa-rankingowa{
   /* Murawa i linie idą przez zmienne, więc jasny wariant to podmiana trzech wartości,
      a nie przepisywanie wszystkich reguł boiska. */
   --turf-a:#EEF5EC; --turf-b:#E5EFE3; --turf-line:rgba(108,140,108,.5);
 }
+/* Znak wodny z logo jest jasny — robiony pod ciemną murawę. Na jasnej zostawia szarą smugę
+   pod nazwiskami, więc go tu nie pokazujemy. */
+:is(.mapa-zespolu,.mapa-rankingowa) .pitch-watermark{display:none;}
 /* BOISKO W POZIOMIE. W pionie ta sekcja zajmowała pół ekranu wysokości i strona ciągnęła się
    bez potrzeby — a kadra i tak rozkłada się szerzej niż głębiej. Pasy murawy biegną teraz
    w poprzek, jak przy koszeniu wzdłuż linii bocznej. */
-.mapa-zespolu .position-map-pitch{
+:is(.mapa-zespolu,.mapa-rankingowa) .position-map-pitch{
   aspect-ratio:1.62/1; clip-path:none; border-radius:12px; max-width:none;
   border:1px solid #D8E4D6;
   /* Pasy biegną w PIONIE — tak wygląda murawa koszona wzdłuż linii bocznej, gdy patrzymy na
@@ -412,41 +417,59 @@ tr:hover td{background:var(--card-soft);}
 .boisko-poziome .bp-bramka-lewa{left:0;border-left:none;}
 .boisko-poziome .bp-bramka-prawa{right:0;border-right:none;}
 /* Plakietka jak na planszy składu: biała karta, ciemny tekst, cienka ramka. */
-.mapa-zespolu .pos-marker-tag{
-  min-width:0; width:98px; padding:2px; border-radius:7px;
+/* Plakietka ROŚNIE DO NAZWISKA, zamiast je ucinać.
+   Sztywne 98 px robiło z „Wojciechowskiego" — „Wojcie…", z „Bąkowicza" — „Bąko…", choć na boisku
+   zostawało kilkaset pikseli pustej murawy. Ucięte nazwisko jest gorsze niż żadne: przy dwóch
+   zawodnikach o podobnym nazwisku nie wiadomo, na którego się patrzy. Górna granica zostaje, bo
+   pojedyncze bardzo długie nazwisko nie może rozepchnąć pola na sąsiednie. */
+:is(.mapa-zespolu,.mapa-rankingowa) .pos-marker-tag{
+  min-width:104px; width:auto; max-width:168px; padding:2px; border-radius:7px;
   background:#FFFFFF; border:1px solid #D5DFD3; backdrop-filter:none;
   box-shadow:0 2px 6px rgba(31,54,36,.16);
 }
-.mapa-zespolu .pos-marker-row{gap:3px;padding:1px 5px;border-radius:4px;}
-.mapa-zespolu .pos-marker-row + .pos-marker-row{border-top:1px solid #EDF1EC;}
-.mapa-zespolu .pmr-name{font-size:10.5px;font-weight:700;color:#1B2420;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:58px;}
-.mapa-zespolu .pmr-year{font-size:9px;color:#7A867C;padding-left:2px;margin-left:auto;}
-.mapa-zespolu .pmr-kropka{color:#C69B3C;font-size:12px;line-height:1;padding-left:2px;}
-.mapa-zespolu .pmr-empty{color:#9AA79B;font-size:11px;padding:3px;justify-content:center;}
-.mapa-zespolu .pmr-wiecej{justify-content:center;color:#7A867C;font-size:9.5px;font-weight:700;
+:is(.mapa-zespolu,.mapa-rankingowa) .pos-marker-row{gap:3px;padding:1px 5px;border-radius:4px;}
+:is(.mapa-zespolu,.mapa-rankingowa) .pos-marker-row + .pos-marker-row{border-top:1px solid #EDF1EC;}
+:is(.mapa-zespolu,.mapa-rankingowa) .pmr-name{font-size:10.5px;font-weight:700;color:#1B2420;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:116px;}
+:is(.mapa-zespolu,.mapa-rankingowa) .pmr-year{font-size:9px;color:#7A867C;padding-left:2px;margin-left:auto;}
+:is(.mapa-zespolu,.mapa-rankingowa) .pmr-kropka{color:#C69B3C;font-size:12px;line-height:1;padding-left:2px;}
+:is(.mapa-zespolu,.mapa-rankingowa) .pmr-empty{color:#9AA79B;font-size:11px;padding:3px;justify-content:center;}
+:is(.mapa-zespolu,.mapa-rankingowa) .pmr-wiecej{justify-content:center;color:#7A867C;font-size:9.5px;font-weight:700;
   border-top:1px solid #EDF1EC;padding-top:2px;}
 /* Zawodnik ze złotym podświetleniem statusu ma na jasnym tle zostać czytelny. */
-.mapa-zespolu .pos-marker-row.pmr-transfer .pmr-name{color:#2A1F05;}
-.mapa-zespolu .pos-marker-dot{width:19px;height:19px;font-size:10.5px;line-height:19px;
+:is(.mapa-zespolu,.mapa-rankingowa) .pos-marker-row.pmr-transfer .pmr-name{color:#2A1F05;}
+:is(.mapa-zespolu,.mapa-rankingowa) .pos-marker-dot{width:19px;height:19px;font-size:10.5px;line-height:19px;
   border-width:2px;box-shadow:0 2px 5px rgba(31,54,36,.3);}
 /* Skrajne pola kotwiczymy bokiem — inaczej plakietka wychodzi poza murawę i nazwiska się urywają. */
-.mapa-zespolu .pos-marker.pm-lewy{align-items:flex-start;}
-.mapa-zespolu .pos-marker.pm-lewy .pos-marker-tag{transform:translateX(24px);}
-.mapa-zespolu .pos-marker.pm-prawy{align-items:flex-end;}
-.mapa-zespolu .pos-marker.pm-prawy .pos-marker-tag{transform:translateX(-24px);}
+:is(.mapa-zespolu,.mapa-rankingowa) .pos-marker.pm-lewy{align-items:flex-start;}
+:is(.mapa-zespolu,.mapa-rankingowa) .pos-marker.pm-lewy .pos-marker-tag{transform:translateX(12px);}
+:is(.mapa-zespolu,.mapa-rankingowa) .pos-marker.pm-prawy{align-items:flex-end;}
+:is(.mapa-zespolu,.mapa-rankingowa) .pos-marker.pm-prawy .pos-marker-tag{transform:translateX(-12px);}
 /* Pole tuż nad linią końcową (bramkarz) dostaje nazwiska NAD kropką — pod nią wychodziły poza
    murawę i pierwszy wiersz ucinała krawędź karty. */
-.mapa-zespolu .pos-marker.pm-dol{flex-direction:column-reverse;}
-.mapa-zespolu .pos-marker:hover{z-index:30;}
-.mapa-zespolu .pos-marker:hover .pos-marker-tag{box-shadow:0 6px 16px rgba(31,54,36,.28);}
+:is(.mapa-zespolu,.mapa-rankingowa) .pos-marker.pm-dol{flex-direction:column-reverse;}
+:is(.mapa-zespolu,.mapa-rankingowa) .pos-marker:hover{z-index:30;}
+:is(.mapa-zespolu,.mapa-rankingowa) .pos-marker:hover .pos-marker-tag{box-shadow:0 6px 16px rgba(31,54,36,.28);}
+
+/* MAPA RANKINGOWA — te same barwy i ten sam obrót, ale własne rozmiary.
+   Mieści do SZEŚCIU nazwisk na polu (mapa zespołu pokazuje cztery) i jest w tym widoku głównym
+   narzędziem pracy, więc plakietki i kropki są większe. Szerokość ograniczamy, bo na pełnych
+   1240 px boisko poziome i tak wychodzi wyższe niż ekran laptopa.
+   Reguły stoją PO wspólnym bloku celowo: `:is(.mapa-zespolu,.mapa-rankingowa) .position-map-pitch`
+   ma taką samą wagę co `.pitch-wrap-outer.mapa-rankingowa .position-map-pitch`, więc o wyniku
+   rozstrzyga kolejność. Postawione wyżej — przegrywały bez śladu w narzędziach. */
+.pitch-wrap-outer.mapa-rankingowa .position-map-pitch{max-width:1240px;aspect-ratio:1.78/1;}
+.pitch-wrap-outer.mapa-rankingowa .pos-marker-tag{min-width:124px;max-width:184px;}
+.pitch-wrap-outer.mapa-rankingowa .pmr-name{font-size:11.5px;max-width:128px;}
+.pitch-wrap-outer.mapa-rankingowa .pmr-year{font-size:9.5px;}
+.pitch-wrap-outer.mapa-rankingowa .pos-marker-dot{width:23px;height:23px;font-size:12.5px;line-height:23px;}
 /* Poniżej 1500 px kolumny nie mają sensu: po odjęciu bocznego menu mapie zostawało tyle, że
    plakietki wchodziły na siebie, a lista kadry (osiem kolumn) i tak wymagała przewijania w bok. */
 /* Poniżej 1500 px mapa i lista stają jedna pod drugą — ale boisko poziome jest niskie, więc
    kosztuje to kilkaset pikseli wysokości zamiast pół ekranu jak układ pionowy. */
 @media (max-width: 1500px){
   .mapa-zespolu-uklad{grid-template-columns:1fr;}
-  .mapa-zespolu .position-map-pitch{aspect-ratio:1.9/1;}
+  :is(.mapa-zespolu,.mapa-rankingowa) .position-map-pitch{aspect-ratio:1.9/1;}
 }
 /* Radar młodzieży: ograny zawodnik (270+ minut, czyli trzy pełne mecze) na złotym tle.
    Bije tr:hover, bo najechanie myszą nie może kasować oznaczenia akurat w chwili, gdy
@@ -508,6 +531,10 @@ tr.player-row.prow-okazja.prow-mlodszy td:first-child{box-shadow:inset 4px 0 0 v
 @media (max-width:780px){
   .pitch-wrap-outer{width:calc(100% + 32px);margin-left:-16px;padding:0 6px;box-sizing:border-box;}
   .position-map-pitch{max-width:none;aspect-ratio:1/1.25;}
+  /* Na wąskim ekranie boisko poziome zrobiłoby się paskiem wysokim na kilka centymetrów, więc
+     mapy jasne zostają poziome, ale spłaszczone mniej niż na monitorze. Pionowego 1/1.25 im tu
+     NIE narzucamy — znaczniki są obrócone w kodzie i wylądowałyby w poprzek boiska. */
+  :is(.mapa-zespolu,.mapa-rankingowa) .position-map-pitch{aspect-ratio:1.15/1;}
   .pos-marker-dot{width:22px;height:22px;font-size:12px;}
   .pos-marker-tag{min-width:88px;}
   .pmr-name{font-size:9px;}
