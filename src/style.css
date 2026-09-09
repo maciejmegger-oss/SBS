@@ -824,6 +824,11 @@ tr.player-row.prow-okazja.prow-mlodszy:hover td:first-child{
 
 /* Ciasniejsze upakowanie, żeby wszystkie 15 kolumn zmieściło się bez przewijania w bok.
    Węższa czcionka i mniejsze odstępy dają razem kilkaset pikseli. */
+/* NAGŁÓWEK ZOSTAJE NA WIERZCHU przy przewijaniu długiej listy. Przy trzystu wierszach po zjechaniu
+   na dół nie było wiadomo, która kolumna jest która — a teraz w nagłówek się jeszcze klika, więc
+   sortowanie byłoby dostępne tylko z góry listy. Tło jest konieczne: bez niego wiersze
+   prześwitywałyby pod przyklejonym nagłówkiem. */
+.players-table thead th{position:sticky;top:0;z-index:2;background:var(--card);}
 .players-table{font-size:12px;}
 .players-table th,
 .players-table td{padding:7px 5px;}
@@ -833,6 +838,20 @@ tr.player-row.prow-okazja.prow-mlodszy:hover td:first-child{
 /* KOMÓRKA ZAWODNIKA — dwa poziomy, jak wizytówka. Metryka pod nazwiskiem jest wyraźnie mniejsza
    i szarsza, więc nie konkuruje z nim o uwagę: nazwisko czyta się pierwsze, reszta doczytuje się
    dopiero wtedy, gdy jest potrzebna. */
+/* NAGŁÓWEK, W KTÓRY DA SIĘ KLIKNĄĆ. Strzałka „⇅" mówi, że kolumna jest sortowalna, zanim ktokolwiek
+   w nią kliknie — bez niej trzeba by o tym wiedzieć z góry. Kolumna czynna dostaje kolor nagłówka
+   i pełną strzałkę kierunku, reszta zostaje przygaszona. */
+.th-sort{display:inline-flex;align-items:center;gap:4px;cursor:pointer;user-select:none;
+  border-radius:5px;padding:1px 4px;margin:-1px -4px;white-space:nowrap;}
+.th-sort:hover{background:var(--chalk-dim);color:var(--heading);}
+.th-sort .th-strzalka{font-size:10px;opacity:.42;line-height:1;}
+.th-sort.th-sort-czynna{color:var(--heading);font-weight:800;}
+.th-sort.th-sort-czynna .th-strzalka{opacity:1;color:var(--gold-dark);font-size:11px;}
+/* Drugi żeton w tym samym nagłówku („Zawodnik / rocznik") jest mniejszy, bo to sortowanie
+   dodatkowe, a nie druga kolumna. */
+th .th-sort + .th-sort{font-size:9.5px;opacity:.75;margin-left:2px;}
+th .th-sort + .th-sort.th-sort-czynna{opacity:1;}
+
 .zaw-cell{display:flex;flex-direction:column;gap:1px;line-height:1.25;}
 .zaw-cell .zaw-nazwa{white-space:nowrap;}
 .zaw-cell .zaw-meta{font-size:10.5px;color:var(--ink-soft);display:flex;align-items:center;gap:4px;flex-wrap:wrap;}

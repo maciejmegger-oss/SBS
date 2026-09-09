@@ -4210,6 +4210,63 @@ function viewDashboard(){
 
 // ---------- PLAYERS ----------
 let playerFilters = {region:"",league:"",status:"",position:"",search:"",birthYear:"",agent:"",club:""};
+
+// ---- SORTOWANIE LISTY ZAWODNIKÓW ----------------------------------------------------------
+//
+// Lista szła zawsze po nazwisku. To dobre, gdy się kogoś SZUKA, ale bezużyteczne, gdy się
+// PRZEGLĄDA: „kto ma najwięcej minut", „kto jest najmłodszy", „gdzie mamy najwyższe oceny" to
+// pytania, na które alfabet nie odpowiada. Ustawienia sortowania siedziały dotąd w osobnych
+// kontrolkach; kliknięcie w nagłówek jest tam, gdzie ręka i tak jest.
+let playerSort = { kolumna: 'nazwisko', kierunek: 'asc' };
+
+// PUSTE ZAWSZE NA KOŃCU — niezależnie od kierunku.
+//
+// Zawodnik bez wpisanych minut nie ma „zera minut", tylko niewiadomą. Wrzucony na czoło listy
+// przy sortowaniu rosnąco wyglądałby na najgorszego, a przy malejąco znikałby z oczu — w obu
+// wypadkach kłamie. Brak danych to nie jest wynik, więc ląduje pod wynikami.
+const PORZADEK_STATUSU = ['Do transferu','Rekomendowany','Na Testy','Do Obserwacji','Nowy typ'];
+function kluczSortowania(p, kolumna){
+  const a = playerAvg(p.id);
+  switch(kolumna){
+    case 'rocznik':  return { liczba: Number(rocznikZawodnika(p)) || null };
+    case 'pozycja':  return { liczba: Number(p.pozycjaNmg) || null, tekst: String(p.position||'') };
+    case 'klub':     return { tekst: clubName(p.clubId) || '' };
+    case 'status':   { const i = PORZADEK_STATUSU.indexOf(String(p.status||'')); return { liczba: i >= 0 ? i : null }; }
+    case 'mecze':    return { liczba: p.matches != null ? Number(p.matches) : null };
+    case 'minuty':   return { liczba: p.minutes != null ? Number(p.minutes) : null };
+    case 'gole':     return { liczba: p.goals != null ? Number(p.goals) : null };
+    case 'ocena':    return { liczba: a && a.overall != null ? Number(a.overall) : null };
+    case 'obsrap':   { const s = (a ? a.count : 0) + (a ? (a.raportow||0) : 0); return { liczba: s || null }; }
+    default:         return { tekst: `${p.lastName||''} ${p.firstName||''}`.trim() };
+  }
+}
+function porownajZawodnikow(x, y){
+  const znak = playerSort.kierunek === 'desc' ? -1 : 1;
+  const kx = kluczSortowania(x, playerSort.kolumna), ky = kluczSortowania(y, playerSort.kolumna);
+  if('liczba' in kx){
+    const bx = kx.liczba == null, by = ky.liczba == null;
+    if(bx !== by) return bx ? 1 : -1;             // brak danych zawsze na dół
+    if(!bx && kx.liczba !== ky.liczba) return (kx.liczba - ky.liczba) * znak;
+    if(kx.tekst != null && kx.tekst !== ky.tekst) return kx.tekst.localeCompare(ky.tekst, 'pl') * znak;
+  } else if(kx.tekst !== ky.tekst){
+    return String(kx.tekst).localeCompare(String(ky.tekst), 'pl') * znak;
+  }
+  // Rozstrzygnięcie remisu nazwiskiem — bez tego przy sortowaniu po klubie kolejność w obrębie
+  // jednego klubu zmieniałaby się przy każdym przerysowaniu i lista „drgałaby" bez powodu.
+  return `${x.lastName||''} ${x.firstName||''}`.localeCompare(`${y.lastName||''} ${y.firstName||''}`, 'pl');
+}
+// Żeton sortujący. Strzałka pokazuje kierunek TYLKO na kolumnie czynnej — strzałki przy
+// wszystkich naraz nie niosłyby informacji, a tylko szum.
+function zetonSort(kolumna, etykieta){
+  const czynna = playerSort.kolumna === kolumna;
+  const strzalka = czynna ? (playerSort.kierunek === 'asc' ? '↑' : '↓') : '⇅';
+  return `<span class="th-sort${czynna?' th-sort-czynna':''}" data-sort="${esc(kolumna)}"
+    title="Kliknij, aby posortować${czynna?' odwrotnie':''}">${esc(etykieta)}<span class="th-strzalka">${strzalka}</span></span>`;
+}
+function naglowekSort(kolumna, etykieta, styl){
+  return `<th style="${styl||''}">${zetonSort(kolumna, etykieta)}</th>`;
+}
+
 function viewPlayers(){
   if(viewingPlayerId) return viewPlayerDetail(viewingPlayerId);
 
@@ -4245,7 +4302,7 @@ function viewPlayers(){
     list = list.filter(p=> importNorm(clubName(p.clubId)).includes(q));
   }
   // Lista wg alfabetu (nazwisko, potem imię) — nie wg klubu/kolejności importu.
-  list.sort((a,b)=> (a.lastName||a.firstName||'').localeCompare(b.lastName||b.firstName||'','pl') || (a.firstName||'').localeCompare(b.firstName||'','pl'));
+  list.sort(porownajZawodnikow);
 
   const rows = list.map((p, idx)=>{
     const a = playerAvg(p.id);
@@ -4273,6 +4330,7 @@ function viewPlayers(){
       <td style="text-align:right;">${p.matches!=null?p.matches:'—'}</td>
       <td style="text-align:right;">${p.minutes!=null?p.minutes:'—'}</td>
       <td style="text-align:right;">${p.goals!=null?p.goals:'—'}</td>
+      <td style="text-align:right;">${fmtAvg(a)}</td>
       <td style="text-align:right;">${komorkaObsRap(a)}</td>
       <td style="white-space:nowrap;">
         <button class="link-btn" data-action="add-to-monitoring" data-id="${p.id}" title="${p.monitored?'W Monitoringu — kliknij, aby usunąć':'Dodaj do Monitoringu'}" style="color:${p.monitored?'var(--good)':'var(--gold-dark)'};">${p.monitored?'✓ Monitoring':'+ Monitoring'}</button>
@@ -4340,7 +4398,7 @@ function viewPlayers(){
   <p class="note" style="margin:0 0 6px;font-size:11.5px;">Tabela jest szeroka — przewiń ją w bok pod spodem albo przytrzymaj <strong>Shift</strong> i kręć kółkiem myszy. Kolumna akcji zostaje widoczna.</p>
   <div class="card table-scroll" style="padding:0;overflow:auto;">
     <table class="players-table">
-      <thead><tr><th style="width:24px;"><input type="checkbox" class="header-checkbox"></th><th style="width:34px;text-align:right;" title="Liczba porządkowa">Lp.</th><th>Zawodnik</th><th>Pozycja</th><th>Klub / region / liga</th><th>Status</th><th style="text-align:center;" title="Czy zawodnik ma menedżera — kliknij, aby przełączyć Tak/Nie">Agent</th><th style="text-align:right;" title="Rozegrane mecze w sezonie">Mecze</th><th style="text-align:right;" title="Rozegrane minuty w sezonie">Minuty</th><th style="text-align:right;" title="Gole w sezonie">Gole</th><th style="text-align:right;" title="Wpisy w Planie Obserwacji oraz raporty skautingowe">Obs. / rap.</th><th></th></tr></thead>
+      <thead><tr><th style="width:24px;"><input type="checkbox" class="header-checkbox"></th><th style="width:34px;text-align:right;" title="Liczba porządkowa">Lp.</th><th>${zetonSort('nazwisko','Zawodnik')} ${zetonSort('rocznik','rocznik')}</th>${naglowekSort('pozycja','Pozycja')}${naglowekSort('klub','Klub / region / liga')}${naglowekSort('status','Status')}<th style="text-align:center;" title="Czy zawodnik ma menedżera — kliknij, aby przełączyć Tak/Nie">Agent</th>${naglowekSort('mecze','Mecze','text-align:right;')}${naglowekSort('minuty','Minuty','text-align:right;')}${naglowekSort('gole','Gole','text-align:right;')}${naglowekSort('ocena','Śr. ocena','text-align:right;')}${naglowekSort('obsrap','Obs. / rap.','text-align:right;')}<th></th></tr></thead>
       <tbody>${rows || `<tr><td colspan="13"><div class="empty">Brak zawodników spełniających filtry.</div></td></tr>`}</tbody>
     </table>
   </div>`;
@@ -12117,6 +12175,23 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="pozycje-z-tm"]').forEach(b=>b.onclick=()=>openPozycjeZTmModal(widoczneKluby()));
   main.querySelectorAll('[data-action="systemy-gry"]').forEach(b=>b.onclick=()=>openSystemyModal(widoczneKluby()));
   main.querySelectorAll('[data-action="sklady-meczowe"]').forEach(b=>b.onclick=()=>openSkladyModal(widoczneKluby()));
+  // SORTOWANIE KLIKNIĘCIEM W NAGŁÓWEK.
+  //
+  // Pierwsze kliknięcie w nową kolumnę ustawia kierunek, który dla NIEJ jest naturalny: nazwisko
+  // i klub od A, ale mecze, minuty, gole i oceny od największych. Sortowanie po golach rosnąco
+  // pokazuje na czele zawodników z zerem — czyli dokładnie tych, o których się nie pyta.
+  const OD_NAJWIEKSZYCH = new Set(['mecze','minuty','gole','ocena','obsrap']);
+  main.querySelectorAll('[data-sort]').forEach(el=>{
+    (el as HTMLElement).onclick = ()=>{
+      const kolumna = (el as HTMLElement).dataset.sort;
+      if(playerSort.kolumna === kolumna){
+        playerSort.kierunek = playerSort.kierunek === 'asc' ? 'desc' : 'asc';
+      } else {
+        playerSort = { kolumna, kierunek: OD_NAJWIEKSZYCH.has(kolumna) ? 'desc' : 'asc' };
+      }
+      render();
+    };
+  });
   // PRZECIĄGNIĘCIE NA MAPIE ZESPOŁU ZAPISUJE POZYCJĘ ZAWODNIKA, a nie tylko przestawia obrazek.
   //
   // Mapa liczy się z kartotek, więc samo przesunięcie kafelka zniknęłoby przy najbliższym
