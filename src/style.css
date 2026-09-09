@@ -238,6 +238,13 @@ tr:hover td{background:var(--card-soft);}
    mapą pozycji szedł w naturalnej wielkości pliku — na liście klubów województwa dawało to godła
    wysokie na pół ekranu i tak szeroki wiersz, że kolumna z mapą Polski ściskała się do paska. */
 .crest-xs{width:18px;height:18px;object-fit:contain;border-radius:3px;background:var(--card);border:1px solid var(--border);flex-shrink:0;}
+
+/* Tabela grupy: nawet rozwinięta nie może zjeść ekranu. Osiemnaście wierszy przewija się w środku
+   karty, a nagłówek zostaje widoczny — inaczej po przewinięciu nie wiadomo, która kolumna jest która.
+   Wysokość ograniczamy na OPAKOWANIU, nie na samej tabeli: `display:block` na <table> rozjeżdża
+   szerokości kolumn, bo każdy wiersz przestaje należeć do wspólnego układu. */
+.tabela-grupy .tabela-wysoka{max-height:340px;overflow:auto;}
+.tabela-grupy .tabela-wysoka thead th{position:sticky;top:0;background:var(--card);z-index:1;}
 .player-photo-lg{width:64px;height:64px;object-fit:cover;border-radius:50%;background:var(--card);border:2px solid var(--gold);flex-shrink:0;display:flex;align-items:center;justify-content:center;}
 .player-photo-ph{background:var(--pitch);color:var(--on-pitch);font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:22px;}
 .crest-ph{display:flex;align-items:center;justify-content:center;color:var(--ink-soft);font-size:10px;text-align:center;}

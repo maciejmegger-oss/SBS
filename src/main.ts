@@ -4804,10 +4804,12 @@ function viewClubs(){
     </tr>`;
   }).join('');
 
-  return `
-  <h2 class="view-title">Kluby</h2>
-  <p class="view-sub">Przeglądaj wg ligi i grupy — jak w strukturze PZPN / mPZPN. Kliknij klub, aby zobaczyć skład na obecny sezon.
-  ${(()=>{
+  // TABELA GRUPY LICZONA OSOBNO, ŻEBY MOGŁA STANĄĆ POD PRZEŁĄCZNIKIEM LIG.
+  //
+  // Stała nad nim i rozwinięta, więc przy osiemnastu klubach zajmowała cały pierwszy ekran, a
+  // przyciski, którymi się tu pracuje — wybór ligi i grupy — trzeba było do nich przewijać. To
+  // odwrotnie niż wygląda praca: najpierw wybiera się rozgrywki, a tabela jest sprawdzeniem.
+  const blokTabeli = (()=>{
     // MINI TABELA GRUPY — stan po ostatniej wgranej kolejce.
     //
     // Po to, żeby dało się porównać z tabelą na 90minut bez wychodzenia z aplikacji i od razu
@@ -4826,14 +4828,18 @@ function viewClubs(){
         const n = nasze.get(importNorm(w.nazwa));
         return !n || n.wgrane < Number(w.mecze || 0);
       }).length;
-      return `<details class="card" style="margin-bottom:12px;" open>
+      // ZWINIĘTA DOMYŚLNIE. Osiemnaście wierszy to pół ekranu, a zagląda się tu wtedy, gdy coś
+      // się nie zgadza — nie za każdym wejściem w Kluby. To, co trzeba wiedzieć bez rozwijania
+      // (ile kolejek, ile klubów niekompletnych), stoi w samym nagłówku.
+      return `<details class="card tabela-grupy" style="margin-bottom:12px;">
         <summary style="cursor:pointer;font-weight:700;color:var(--heading);">
           📊 Tabela — ${esc(clubBrowse.group)}
           <span class="note" style="font-weight:400;">po ${oficjalna.kolejek} kolejkach &middot; z 90minut, pobrana ${esc(String(oficjalna.pobrano||'').slice(0,10))}</span>
+          ${braki ? `<span style="font-weight:700;color:var(--clay-dark);font-size:12.5px;">&middot; ${braki} ${braki===1?'niekompletny':'niekompletnych'}</span>` : ''}
         </summary>
         <p class="note" style="margin:8px 0;">Układ i punkty pochodzą z 90minut. Kolumna <strong>„u nas"</strong> mówi,
           ile meczów tego klubu mamy w SBS — ${braki ? `<strong style="color:var(--clay-dark);">${braki} ${braki===1?'klub jest niekompletny':'klubów jest niekompletnych'}</strong>.` : 'wszystkie są kompletne.'}</p>
-        <table style="font-size:12.5px;">
+        <div class="tabela-wysoka"><table style="font-size:12.5px;">
           <thead><tr><th style="width:28px;text-align:right;">Lp.</th><th>Klub</th>
             <th style="text-align:center;">M.</th><th style="text-align:center;">Pkt</th>
             <th style="text-align:center;">Z-R-P</th><th style="text-align:center;">Bramki</th>
@@ -4852,7 +4858,7 @@ function viewClubs(){
               <td style="text-align:center;${brak?'color:var(--clay-dark);font-weight:700;':''}">${mamy==null?'—':mamy}</td>
             </tr>`;
           }).join('')}</tbody>
-        </table>
+        </table></div>
       </details>`;
     }
 
@@ -4864,14 +4870,14 @@ function viewClubs(){
         || String(a.c.name||'').localeCompare(String(b.c.name||''),'pl'));
     if(!tabela.length) return '';
     const zPunktami = tabela.filter(x=>x.d.punkty != null).length;
-    return `<details class="card" style="margin-bottom:12px;">
+    return `<details class="card tabela-grupy" style="margin-bottom:12px;">
       <summary style="cursor:pointer;font-weight:700;color:var(--heading);">
         📊 Zestawienie z danych SBS — ${esc(clubBrowse.group)} <span class="note" style="font-weight:400;">(to NIE jest tabela ligowa)</span>
       </summary>
       <p class="note" style="margin:8px 0;">Liczone z kartotek, więc niepełne. Kliknij <strong>„⭳ Tabele z 90minut"</strong>,
         żeby zobaczyć prawdziwy układ i porównanie.
         ${zPunktami < tabela.length ? `Punkty ma ${zPunktami} z ${tabela.length} klubów — reszta nie ma zapisanych wyników przy meczach.` : ''}</p>
-      <table style="font-size:12.5px;">
+      <div class="tabela-wysoka"><table style="font-size:12.5px;">
         <thead><tr><th style="width:28px;text-align:right;">Lp.</th><th>Klub</th>
           <th style="text-align:center;">M.</th><th style="text-align:center;">Pkt</th></tr></thead>
         <tbody>${tabela.map((x,i)=>`<tr>
@@ -4880,10 +4886,11 @@ function viewClubs(){
           <td style="text-align:center;">${x.d.wgrane}</td>
           <td style="text-align:center;">${x.d.punkty == null ? '<span class="meta">—</span>' : `<strong>${x.d.punkty}</strong>`}</td>
         </tr>`).join('')}</tbody>
-      </table>
+      </table></div>
     </details>`;
-  })()}
-  ${najwiecejMeczow > 0 ? (()=>{
+  })();
+
+  const podsumowanieKolejek = najwiecejMeczow > 0 ? (()=>{
     const dorobki = [...dorobekKlubow.values()];
     const osiagalne = dorobki.map(d=>d.osiagalne).find(x=>x != null);
     const doWziecia = osiagalne != null ? Math.min(najwiecejMeczow, osiagalne) : najwiecejMeczow;
@@ -4911,9 +4918,15 @@ function viewClubs(){
         ? `<span style="color:var(--clay-dark);">${wTyle.length} ${wTyle.length===1?'klub ma niekomplet':'klubów ma niekomplet'} — brakuje kolejek, które ten klub już rozegrał:
            ${esc(wTyle.slice(0,5).map(c=>c.name).join(', '))}${wTyle.length>5?` i ${wTyle.length-5} więcej`:''}.</span>`
         : 'Każdy klub ma tyle, ile sam rozegrał — komplet.');
-  })() : ''}</p>
+  })() : '';
+
+  return `
+  <h2 class="view-title">Kluby</h2>
   ${topRow}
   ${groupRow}
+  <p class="view-sub" style="margin-top:12px;">Przeglądaj wg ligi i grupy — jak w strukturze PZPN / mPZPN.
+    Kliknij klub, aby zobaczyć skład na obecny sezon.${podsumowanieKolejek}</p>
+  ${blokTabeli}
   <div class="toolbar" style="margin-top:14px;">
     <div class="note">${list.length} ${list.length===1?'klub':'klubów'} w widoku${
       bezProtokolowNa90minut(clubBrowse.top)
