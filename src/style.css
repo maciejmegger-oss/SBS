@@ -239,6 +239,30 @@ tr:hover td{background:var(--card-soft);}
    wysokie na pół ekranu i tak szeroki wiersz, że kolumna z mapą Polski ściskała się do paska. */
 .crest-xs{width:18px;height:18px;object-fit:contain;border-radius:3px;background:var(--card);border:1px solid var(--border);flex-shrink:0;}
 
+/* MAŁA MAPA POZYCJI W PROFILU ZAWODNIKA — czytelna z odległości, wielkości znaczka pocztowego.
+   Jasna murawa, ta sama co w mapie zespołu: ciemna zieleń w tym widoku gryzła się z resztą karty. */
+.mini-mapa{width:186px;margin:0 auto 12px;}
+.mini-mapa-boisko{position:relative;width:100%;aspect-ratio:3/4;border-radius:8px;
+  border:1px solid rgba(108,140,108,.45);
+  background:repeating-linear-gradient(to bottom, #EEF5EC 0, #EEF5EC 12.5%, #E5EFE3 12.5%, #E5EFE3 25%);}
+.mini-mapa-boisko .mm-srodek{position:absolute;left:0;right:0;top:50%;height:1px;background:rgba(108,140,108,.45);}
+.mini-mapa-boisko .mm-kolo{position:absolute;left:50%;top:50%;width:30%;aspect-ratio:1;transform:translate(-50%,-50%);
+  border:1px solid rgba(108,140,108,.45);border-radius:50%;}
+.mini-mapa-boisko .mm-pole-karne{position:absolute;left:50%;transform:translateX(-50%);width:46%;height:13%;
+  border:1px solid rgba(108,140,108,.45);}
+.mini-mapa-boisko .mm-pk-dol{bottom:0;border-bottom:none;}
+.mini-mapa-boisko .mm-pk-gora{top:0;border-top:none;}
+.mm-pole{position:absolute;transform:translate(-50%,-50%);width:23px;height:23px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:12.5px;
+  background:var(--card);color:var(--ink-soft);border:1px solid var(--border);}
+/* Pole zawodnika — jedyny mocny akcent na tej mapie, więc widać go natychmiast. */
+.mm-pole.mm-wybrany{background:var(--pitch);color:var(--on-pitch);border-color:var(--gold);
+  box-shadow:0 0 0 3px rgba(190,160,80,.28);width:27px;height:27px;font-size:14px;}
+/* Pole tylko przypuszczalne (numeru nie wskazano) — celowo słabsze niż wybrane. */
+.mm-pole.mm-mozliwy{background:var(--chalk-dim);color:var(--heading);border-color:var(--gold-dark);border-style:dashed;}
+.mini-mapa-podpis{text-align:center;margin-top:6px;font-size:12.5px;line-height:1.35;}
+
 /* Tabela grupy: nawet rozwinięta nie może zjeść ekranu. Osiemnaście wierszy przewija się w środku
    karty, a nagłówek zostaje widoczny — inaczej po przewinięciu nie wiadomo, która kolumna jest która.
    Wysokość ograniczamy na OPAKOWANIU, nie na samej tabeli: `display:block` na <table> rozjeżdża

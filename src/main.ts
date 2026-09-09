@@ -4373,6 +4373,7 @@ function viewPlayerDetail(id){
     </div>
     <div class="card">
       <h4 style="margin-top:0;color:var(--heading);">Informacje</h4>
+      ${miniMapaPozycji(p)}
       <table>
         <tr><td style="color:var(--ink-soft);">Status</td><td>${p.status? `<span class="badge ${STATUS_CLASS[p.status]||'new'}">${esc(p.status)}</span>` : '—'}</td></tr>
         <tr><td style="color:var(--ink-soft);">Narodowość</td><td>${p.nationality? nationalityFlag(p.nationality)+' '+esc(p.nationality) : "—"}</td></tr>
@@ -8431,6 +8432,45 @@ const POSITION_NUMBERS = [
   {number:7,  label:'Prawe skrzydło',      posName:'Skrzydłowy',          rankOffset:6},
   {number:9,  label:'Napastnik',           posName:'Napastnik',           rankOffset:0},
 ];
+// MAŁA MAPA POZYCJI W PROFILU — jedno spojrzenie zamiast czytania „5 · Stoper (prawy)".
+//
+// Wiersz tekstem mówi to samo, ale trzeba go przeczytać i przełożyć na obraz boiska. Przy
+// przeglądaniu kilkunastu kartotek pod jedną pozycję to za wolno. Boisko rysujemy w UKŁADZIE
+// KLUBU — zawodnik z 3-4-2-1 stoi w 3-4-2-1, a nie w domyślnej czwórce obrony, więc mapa mówi
+// też, w jakim otoczeniu gra.
+//
+// GDY NUMERU NIE MA, podświetlamy słabiej WSZYSTKIE pola pasujące do pozycji ogólnej i mówimy o
+// tym wprost. Wskazanie jednego pola byłoby zgadywaniem strony boiska — dokładnie tym, czego
+// mapa zespołu unika kropką przy nazwisku.
+function miniMapaPozycji(p){
+  const wsp = FORMATION_COORDS[systemZawodnika(p)] || FORMATION_COORDS[''];
+  const jego = Number(p && p.pozycjaNmg) || 0;
+  const pozycjaOgolna = String((p && p.position) || '').trim();
+  const przypuszczalne = jego ? new Set() : new Set(POSITION_NUMBERS.filter(pn=>pn.posName === pozycjaOgolna).map(pn=>pn.number));
+  if(!jego && !przypuszczalne.size) return '';
+
+  const banki = POSITION_NUMBERS.map(pn=>{
+    const coord = wsp[pn.number];
+    if(!coord) return '';
+    const stan = pn.number === jego ? ' mm-wybrany' : przypuszczalne.has(pn.number) ? ' mm-mozliwy' : '';
+    return `<span class="mm-pole${stan}" style="left:${coord.x}%;top:${coord.y}%;"
+      title="${esc(pn.number + ' · ' + pn.label)}">${pn.number}</span>`;
+  }).join('');
+
+  const podpis = jego
+    ? `<strong>${esc(opisPozycjiNmg(p))}</strong>`
+    : `<span class="note">Numer wg NMG niewskazany — zaznaczone pola pasujące do „${esc(pozycjaOgolna)}"</span>`;
+
+  return `<div class="mini-mapa">
+    <div class="mini-mapa-boisko">
+      <span class="mm-srodek"></span><span class="mm-kolo"></span>
+      <span class="mm-pole-karne mm-pk-dol"></span><span class="mm-pole-karne mm-pk-gora"></span>
+      ${banki}
+    </div>
+    <div class="mini-mapa-podpis">${podpis}</div>
+  </div>`;
+}
+
 // Opis pozycji z profilu, np. „5 · Stoper (prawy)". Pusty, gdy skaut nie wskazał numeru —
 // wtedy mapa dobiera pole po ogólnej pozycji, jak dotąd.
 function opisPozycjiNmg(p){
