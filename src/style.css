@@ -231,7 +231,18 @@ tr:hover td{background:var(--card-soft);}
 .row-arrow-btn{background:none;border:1px solid var(--line);border-radius:4px;color:var(--ink-soft);font-size:10px;line-height:1;padding:2px 5px;cursor:pointer;}
 .row-arrow-btn:disabled{opacity:.3;cursor:default;}
 .obs-item .meta{font-size:11px;color:var(--ink-soft);}
-.avg-chip{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:15px;padding:2px 10px;border-radius:6px;background:var(--chalk-dim);color:var(--heading);}
+/* KAFELEK OCENY — barwa mówi o progu, liczba mówi dokładnie.
+   Wypukłość robi jasna krawędź u góry i cień pod spodem: kafelek wygląda jak wciśnięty klawisz,
+   więc oko traktuje go jako osobny obiekt, a nie jako tekst w komórce. */
+.avg-chip{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:15px;
+  min-width:38px;display:inline-flex;align-items:center;justify-content:center;
+  padding:2px 9px;border-radius:7px;background:var(--chalk-dim);color:var(--heading);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.45), 0 1px 2px rgba(31,54,36,.18);}
+.avg-chip.ocena-elita{background:linear-gradient(180deg,#3E7D4C,#2F6640);color:#F2F8F1;}
+.avg-chip.ocena-mocny{background:linear-gradient(180deg,#7FA96A,#6B9457);color:#12210F;}
+.avg-chip.ocena-solidny{background:linear-gradient(180deg,#D8B65A,#C69B3C);color:#2A1F05;}
+.avg-chip.ocena-zapas{background:linear-gradient(180deg,#C97A69,#B6503F);color:#FFF3F0;}
+.avg-chip.avg-chip-brak{background:transparent;color:var(--ink-faint);box-shadow:none;font-size:13px;}
 .crest{width:22px;height:22px;object-fit:contain;border-radius:4px;background:var(--card);border:1px solid var(--border);flex-shrink:0;}
 .crest-lg{width:48px;height:48px;object-fit:contain;border-radius:6px;background:var(--card);border:1px solid var(--border);flex-shrink:0;}
 /* Rozmiaru „xs" pilnowała dotąd WYŁĄCZNIE reguła .pos-marker-row .crest-xs, więc ten sam herb poza
@@ -736,7 +747,43 @@ tr.player-row.prow-okazja.prow-mlodszy td:first-child{box-shadow:inset 4px 0 0 v
 .stat-bar-fill{height:100%;border-radius:3px;transition:width .25s ease;}
 
 /* Lista zawodników — podświetlenie wiersza, żeby było widać, że cały otwiera profil. */
+/* WIERSZ JAKO PŁYTKA, NIE JAKO LINIA TEKSTU.
+   Płaska tabela z jedną kreską pod wierszem daje ścianę, po której oko się ślizga. Jasna krawędź
+   u góry i delikatny spad ku dołowi robią z każdego wiersza osobną płytkę — ten sam zabieg,
+   którym karty odcinają się od tła. Efekt jest celowo subtelny: przy trzydziestu wierszach mocny
+   cień zrobiłby z listy pofalowaną blachę.
+   Podświetlenia stanów (okazja, młodszy rocznik) są background-color, a to jest background-image,
+   więc kolor wiersza przebija się przez gradient i nic się nie gubi. */
+tr.player-row td{
+  background-image:linear-gradient(180deg, rgba(255,255,255,.55) 0%, rgba(255,255,255,0) 45%, rgba(27,36,32,.028) 100%);
+  border-top:1px solid rgba(255,255,255,.7);
+}
 tr.player-row:hover{background:var(--card-warm);}
+/* Najechanie UNOSI wiersz: mocniejszy blik u góry i cień pod spodem. To jedyne miejsce, gdzie
+   cień jest wyraźny — dzięki temu od razu wiadomo, który wiersz kliknie się za chwilę. */
+tr.player-row:hover td{
+  background-image:linear-gradient(180deg, rgba(255,255,255,.8) 0%, rgba(255,255,255,0) 50%, rgba(27,36,32,.05) 100%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.9), 0 2px 7px rgba(31,54,36,.13);
+}
+/* Kolorowy pasek stanu (okazja / młodszy rocznik) siedzi w tym samym box-shadow co uniesienie,
+   więc trzeba go dopisać RAZEM z cieniem — inaczej najechanie myszą kasowałoby oznaczenie
+   dokładnie w chwili, gdy sięgasz po wiersz. To ten sam błąd, przed którym broni się reguła
+   z tr:hover wyżej, tylko wchodzący inną drogą. */
+tr.player-row.prow-okazja:hover td:first-child{
+  box-shadow:inset 4px 0 0 var(--gold), inset 0 1px 0 rgba(255,255,255,.9), 0 2px 7px rgba(31,54,36,.13);}
+tr.player-row.prow-mlodszy:hover td:first-child,
+tr.player-row.prow-okazja.prow-mlodszy:hover td:first-child{
+  box-shadow:inset 4px 0 0 var(--good), inset 0 1px 0 rgba(255,255,255,.9), 0 2px 7px rgba(31,54,36,.13);}
+/* W ciemnym motywie ten sam zabieg, ale o połowę słabszy: na ciemnym tle biały blik o mocy
+   z jasnego motywu robi z listy pasiastą taśmę. */
+:root[data-theme="dark"] tr.player-row td{
+  background-image:linear-gradient(180deg, rgba(255,255,255,.055) 0%, rgba(255,255,255,0) 45%, rgba(0,0,0,.14) 100%);
+  border-top:1px solid rgba(255,255,255,.06);
+}
+:root[data-theme="dark"] tr.player-row:hover td{
+  background-image:linear-gradient(180deg, rgba(255,255,255,.09) 0%, rgba(255,255,255,0) 50%, rgba(0,0,0,.2) 100%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.12), 0 2px 8px rgba(0,0,0,.42);
+}
 
 /* Szeroka tabela zawodników: przewijana w bok, z widocznym paskiem i kursorem chwytania,
    żeby było jasne, że da się ją przesunąć. Kolumna akcji („Monitoring", usuwanie) jest

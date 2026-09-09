@@ -2876,7 +2876,28 @@ function playerAvg(playerId){
   return {avgs, overall, metryki, count: obs.length, raportow: reps.length, reportCount: ratedReports, last};
 }
 // "śr. ocena" w listach: kreska, dopóki nie ma żadnego raportu z ocenami.
-function fmtAvg(a){ return a && a.overall!=null ? fmt1(a.overall) : "—"; }
+// ŚREDNIA OCENA JAKO KAFELEK Z PROGIEM, NIE JAKO SAMA LICZBA.
+//
+// Na liście trzydziestu zawodników sama liczba wymaga PORÓWNANIA jej z sąsiednimi wierszami —
+// oko musi przeczytać „4,2", potem „3,8", potem odjąć. Próg zamienia to na kolor, który widać
+// bez czytania: przeglądając kadrę widzisz od razu, gdzie są oceny wysokie, a gdzie zaległości.
+// Progi na skali 1-6 są celowo surowe, bo raport z samymi czwórkami to zawodnik poprawny,
+// a nie wyróżniający się.
+//
+// Kolor NIGDY nie jest jedynym nośnikiem — liczba stoi w kafelku. Osoba słabo rozróżniająca
+// odcienie czyta dokładnie to samo, co wcześniej.
+function progOceny(v){
+  if(v >= 5) return {klasa:'ocena-elita', opis:'wyróżniający się (5,0+)'};
+  if(v >= 4.3) return {klasa:'ocena-mocny', opis:'mocny (4,3-4,9)'};
+  if(v >= 3.5) return {klasa:'ocena-solidny', opis:'solidny (3,5-4,2)'};
+  return {klasa:'ocena-zapas', opis:'poniżej progu (do 3,4)'};
+}
+function chipOceny(v){
+  if(v == null) return '<span class="avg-chip avg-chip-brak" title="Brak raportu z ocenami">—</span>';
+  const p = progOceny(Number(v));
+  return `<span class="avg-chip ${p.klasa}" title="Średnia z raportów, skala 1-6 — ${esc(p.opis)}">${fmt1(v)}</span>`;
+}
+function fmtAvg(a){ return chipOceny(a && a.overall != null ? a.overall : null); }
 // Ile razy zawodnik był oglądany — wpisy z Planu Obserwacji ORAZ raporty skautingowe.
 // Sama liczba obserwacji kłamała: przy zawodniku z jednym raportem stało „0", choć obok widniała
 // średnia z tego raportu i data jego powstania. Pokazujemy obie liczby, gdy się różnią.
@@ -4805,6 +4826,12 @@ function viewClubs(){
       czekaNaZrodlo ? `Ostatnie ${czekaNaZrodlo === 1 ? 'spotkanie czeka' : czekaNaZrodlo + ' spotkania czekają'} na protokół — 90minut wystawia wynik od razu, a składy i minuty dopisuje ręcznie kilka dni później. Nic tu nie przeoczyłeś.` : '',
       brakujeRozpisanych ? `Rozpisanych mecz po meczu: ${d.rozpisanych || 0} — reszta to sumy sezonowe z 90minut, bez składów i minut.` : '',
       d.zawyzone ? `W kartotekach jest o ${d.zawyzone} więcej — 90minut sumuje zawodnikowi WSZYSTKIE rozgrywki, więc doliczają się mecze Pucharu Polski i sparingi. To nie jest błąd; w tabeli ligowej liczy się ${d.rozegrane}.` : '',
+      // KTÓRE SPOTKANIA MAMY — wypisane z nazwy. „6/5" mówiło tylko, że czegoś brakuje; żeby
+      // dowiedzieć się CZEGO, trzeba było otwierać kartoteki zawodnik po zawodniku. Z tą listą
+      // porównanie z terminarzem na ŁNP zajmuje chwilę: brakujący rywal rzuca się w oczy sam.
+      braki > 0 && d.rywale && d.rywale.length
+        ? `Zebrane spotkania: ${d.rywale.join('; ')}. Porównaj z terminarzem — brakujące wklej ponownie.`
+        : '',
     ].filter(Boolean).join(' ');
     const komorkaMeczow = d.rozegrane === 0
       ? '<span class="meta">—</span>'
@@ -9254,6 +9281,7 @@ function meczeKlubu(clubId){
   const sezonKlubu = String((klub && klub.season) || '').trim();
   const nasi = DB.players.filter(p=>p.clubId === clubId);
   const spotkania = new Map();     // "rywal|D" -> wynik (albo '')
+  const nazwyRywali = new Map();   // "rywal|D" -> czytelna nazwa rywala do pokazania w podpowiedzi
   nasi.forEach(p=>{
     // TYLKO BIEŻĄCY SEZON. Przebieg zapisany dla poprzedniego nic nie mówi o tym, ile kolejek
     // mamy rozliczonych teraz — a zliczany razem zawyżał odniesienie dla całej grupy i kazał
@@ -9272,6 +9300,10 @@ function meczeKlubu(clubId){
       if(!rdzenRywala.length) return;
       const k = odciskKlubu(String(x.rywal||'')) + '|' + (x.dom ? 'D' : 'W');
       if(!spotkania.has(k) || !spotkania.get(k)) spotkania.set(k, String(x.wynik||''));
+      // Nazwa rywala w wersji czytelnej — klucz jest odciskiem i nie nadaje się do pokazania.
+      // Bez tej listy „6/5" mówi tylko, że czegoś brakuje, ale nie których spotkań: żeby to
+      // sprawdzić, trzeba było otwierać kartoteki zawodnik po zawodniku.
+      if(!nazwyRywali.has(k)) nazwyRywali.set(k, String(x.rywal||'').trim() + (x.dom ? ' (u siebie)' : ' (na wyjeździe)'));
     });
   });
   // SUMY SEZONOWE Z 90MINUT NIE NIOSĄ PRZEBIEGU (api/_90minut.js: „przebiegu mecz po meczu tą drogą
@@ -9313,6 +9345,7 @@ function meczeKlubu(clubId){
     wgrane: zTabeli != null ? Math.min(mamy, zTabeli) : mamy,
     zawyzone: zTabeli != null && mamy > zTabeli ? mamy - zTabeli : 0,
     rozpisanych: spotkania.size,
+    rywale: [...nazwyRywali.values()].sort((a,b)=>a.localeCompare(b,'pl')),
     zTabeli: zTabeli != null,
     // DO ILU KOLEJEK DA SIĘ W OGÓLE ZEBRAĆ. 90minut wystawia wynik zaraz po meczu, a protokół
     // (składy, minuty) dopisuje ręcznie kilka dni później. Statystyki zawodników liczymy właśnie
