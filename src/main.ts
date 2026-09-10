@@ -8575,6 +8575,91 @@ function promoteTalentToPlayer(talentId){
       + 'Dodany z zakładki Talent — zweryfikuj dane i uzupełnij dokładną datę urodzenia oraz klub.'
   };
   openPlayerModal(null, null, prefill);
+  // Okno otwiera się OD RAZU, a Transfermarkt dopisuje się do niego w tle. Blokowanie okna na
+  // dwa zapytania do obcego serwisu zamieniłoby każde „dodaj do bazy" w kilkusekundowe czekanie,
+  // także wtedy, gdy zawodnika tam w ogóle nie ma.
+  dociagnijZTransfermarktu(t);
+}
+
+// ---- AUTOMATYCZNE UZUPEŁNIANIE Z TRANSFERMARKTU -------------------------------------------
+//
+// Przy powołaniach mamy tylko imię, nazwisko i klub — a to właśnie ci zawodnicy są najtrudniejsi
+// do opisania: grający w Chelsea czy Bayernie nie pojawią się w żadnym polskim protokole.
+//
+// CZEGO TU NIE MA: zgadywania, który „Kowalski" to nasz. Wpisujemy dane WYŁĄCZNIE wtedy, gdy
+// serwis oddał jednego kandydata. Przy kilku pokazujemy listę i decyzję zostawiamy człowiekowi —
+// cudza data urodzenia w kartotece jest gorsza niż pusta rubryka, bo wygląda na prawdziwą.
+//
+// Klub sprawdzamy osobno i mówimy o wyniku wprost. Transfermarkt pisze „ŁKS Łódź Młodzież" tam,
+// gdzie powołanie mówi „ŁKS Łódź", więc porównanie musi tolerować dopiski — ale gdy kluby się
+// naprawdę różnią, ma to być widoczne, a nie schowane.
+function klubyToSamo(a, b){
+  const ra = rozbijNazweKlubu(String(a||'')).rdzen, rb = rozbijNazweKlubu(String(b||'')).rdzen;
+  if(!ra.length || !rb.length) return false;
+  const [krotszy, dluzszy] = ra.length <= rb.length ? [ra, rb] : [rb, ra];
+  const wspolne = krotszy.filter(x=>dluzszy.some(y=>tenSamCzlon(x,y)));
+  return wspolne.length >= krotszy.length && wspolne.some(x=>x.length >= 4);
+}
+
+async function dociagnijZTransfermarktu(t){
+  const pasek = document.getElementById('pm-tm-auto');
+  const powiedz = (html)=>{ const p = document.getElementById('pm-tm-auto'); if(p) p.innerHTML = html; };
+  if(!pasek) return;
+  const nazwa = `${t.firstName||''} ${t.lastName||''}`.trim();
+  if(nazwa.length < 3){ powiedz(''); return; }
+  powiedz('<span class="note">Szukam na Transfermarkcie…</span>');
+  try{
+    const odp = await fetch('/api/tm-szukaj?szukaj=' + encodeURIComponent(nazwa));
+    const d = await odp.json().catch(()=>({}));
+    if(!odp.ok || d.error){ powiedz(`<span class="note">Transfermarkt niedostępny: ${esc(String(d.error||odp.status))}. Uzupełnij ręcznie.</span>`); return; }
+    const kand = d.kandydaci || [];
+    if(!kand.length){ powiedz('<span class="note">Nie znalazłem tego nazwiska na Transfermarkcie — uzupełnij ręcznie.</span>'); return; }
+    if(kand.length > 1){
+      powiedz(`<div class="note"><strong>${kand.length} zawodników o tym nazwisku</strong> — nie zgaduję, który to.
+        Otwórz właściwy profil, skopiuj adres do pola „Profil Transfermarkt" i kliknij „⟳ Aktualizuj dane" w kartotece:<br>
+        ${kand.slice(0,5).map(k=>`<a class="ext-link" href="${esc(k.url)}" target="_blank" rel="noopener">${esc(k.nazwa)} ↗</a>`).join(' &middot; ')}</div>`);
+      return;
+    }
+    const profil = kand[0];
+    powiedz('<span class="note">Czytam profil…</span>');
+    const odp2 = await fetch('/api/transfermarkt?url=' + encodeURIComponent(profil.url));
+    const p = await odp2.json().catch(()=>({}));
+    if(!odp2.ok || p.error){ powiedz(`<span class="note">Znalazłem profil, ale nie dało się go odczytać: ${esc(String(p.error||odp2.status))}.</span>`); return; }
+
+    // UZUPEŁNIAMY TYLKO PUSTE POLA. To, co skaut zdążył wpisać, jest jego decyzją i ma pierwszeństwo
+    // przed cudzym serwisem.
+    const wstaw = (id, wartosc)=>{
+      const el = document.getElementById(id) as HTMLInputElement | null;
+      if(!el || !wartosc) return false;
+      if(String(el.value||'').trim()) return false;
+      el.value = String(wartosc);
+      return true;
+    };
+    const wpisane = [];
+    if(wstaw('pm-birth', p.dataUrodzenia && p.dataUrodzenia.length === 10 ? p.dataUrodzenia : '')) wpisane.push('data urodzenia');
+    if(wstaw('pm-height', p.wzrostCm)) wpisane.push('wzrost');
+    if(wstaw('pm-nationality', p.narodowosc)) wpisane.push('narodowość');
+    if(wstaw('pm-tm', profil.url)) wpisane.push('adres profilu');
+    const selPoz = document.getElementById('pm-position') as HTMLSelectElement | null;
+    if(selPoz && !selPoz.value && p.pozycja && Array.from(selPoz.options).some(o=>o.value === p.pozycja)){
+      selPoz.value = p.pozycja; wpisane.push('pozycja');
+    }
+    const selNoga = document.getElementById('pm-foot') as HTMLSelectElement | null;
+    if(selNoga && p.noga && Array.from(selNoga.options).some(o=>o.value === p.noga)){ selNoga.value = p.noga; wpisane.push('noga'); }
+
+    const zgodnyKlub = t.club && p.klub ? klubyToSamo(t.club, p.klub) : null;
+    const oKlubie = p.klub
+      ? (zgodnyKlub === false
+        ? `<br><strong style="color:var(--clay-dark);">Uwaga — kluby się różnią:</strong> powołanie mówi „${esc(t.club)}", Transfermarkt „${esc(p.klub)}". Sprawdź, czy to ten sam zawodnik.`
+        : `<br>Klub na Transfermarkcie: <strong>${esc(p.klub)}</strong>${zgodnyKlub ? ' — zgadza się z powołaniem.' : ''}`)
+      : '';
+    powiedz(`<div class="note">Uzupełniono z <a class="ext-link" href="${esc(profil.url)}" target="_blank" rel="noopener">${esc(profil.nazwa)} ↗</a>:
+      ${wpisane.length ? esc(wpisane.join(', ')) : 'nic nowego — pola były już wypełnione'}.
+      ${p.dataUrodzenia && p.dataUrodzenia.length !== 10 ? 'Serwis podaje tylko rocznik, bez pełnej daty. ' : ''}
+      ${oKlubie}</div>`);
+  }catch(e){
+    powiedz(`<span class="note">Nie udało się połączyć z Transfermarktem: ${esc(String((e && (e as Error).message) || e))}.</span>`);
+  }
 }
 
 async function addTalentManually(){
@@ -10929,6 +11014,9 @@ function openPlayerModal(id, presetClubId, prefillData){
       <div class="field-wrap"><label class="field">Profil Łączy Nas Piłka / mPZPN</label><input id="pm-lnp" value="${p?esc(p.lnpLink||''):''}" placeholder="https://laczynaspilka.pl/..."></div>
       <div class="field-wrap"><label class="field">Profil Transfermarkt</label><input id="pm-tm" value="${p?esc(p.tmLink||''):''}" placeholder="https://www.transfermarkt.pl/..."></div>
     </div>
+    <!-- Miejsce na sprawozdanie z automatycznego wyszukania na Transfermarkcie. Puste, dopóki
+         nic nie szukamy — komunikat pojawia się tylko przy promocji talentu do kartoteki. -->
+    <div id="pm-tm-auto" style="margin:-4px 0 10px;"></div>
     <div class="field-wrap" style="margin-bottom:6px;"><label class="field">Media — śledź zawodnika</label></div>
     <div class="grid grid-2">
       <div class="field-wrap"><label class="field">Instagram</label><input id="pm-instagram" value="${p?esc(p.instagramLink||''):''}" placeholder="https://instagram.com/..."></div>
