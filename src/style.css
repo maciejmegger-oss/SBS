@@ -716,6 +716,13 @@ tr.player-row.prow-okazja.prow-mlodszy td:first-child{box-shadow:inset 4px 0 0 v
   margin:10px -12px 0;padding:7px 12px;background:var(--pitch);color:var(--on-pitch);
   font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:14px;text-transform:uppercase;letter-spacing:.04em;}
 .talent-year-head:first-child{margin-top:-8px;}
+/* Znacznik kadry przy nazwisku. Biało-czerwony pasek przy krawędzi, bo to jedyna rzecz na tej
+   liście, która mówi o zawodniku coś, czego nie wyczyta się z żadnych rozgrywek: że wybrał go
+   selekcjoner. Napis zostaje zwykłym tekstem — ma być czytelny i dać się skopiować. */
+.kadra-znacznik{display:inline-block;vertical-align:middle;margin-left:6px;padding:1px 7px 1px 12px;
+  background:var(--chalk-dim);color:var(--heading);border-radius:5px;line-height:1.35;
+  box-shadow:inset 3px 0 0 var(--clay), inset 6px 0 0 #FFFFFF;
+  font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:11px;letter-spacing:.02em;}
 .talent-year-head .reports-count{background:var(--gold);color:var(--heading);}
 @media(max-width:1000px){ .talent-layout{grid-template-columns:1fr;} .talent-aside{position:static;} .talent-list{max-height:none;} }
 

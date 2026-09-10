@@ -8358,7 +8358,78 @@ function osobaZWierszaTalentu(linia, rocznik){
   return {firstName, lastName, birthYear: rok || rocznik || null, club: klub};
 }
 
+// ---- POWOŁANIA DO KADRY NARODOWEJ ---------------------------------------------------------
+//
+// PZPN publikuje kadrę jako JEDEN AKAPIT: „Essam Abdelhamid (PSV Eindhoven, Holandia), Antoni
+// Balcer (Talent Warszawa), …". To nie jest lista w linijkach ani tabela, więc dotychczasowy
+// czytnik odrzucał ją jako „artykuł" — a to najcenniejsza lista, jaka w ogóle powstaje: dwudziestu
+// paru chłopców wybranych z całego rocznika, w tym grający w Chelsea, Bayernie i PSV, których w
+// polskich rozgrywkach nie znajdziemy żadnym zbieraniem.
+
+// Kategoria wiekowa z nagłówka: „U-16: Powołania…" albo „reprezentacji Polski do lat 16".
+function kadraZTekstu(tekst){
+  const t = String(tekst||'');
+  const zNaglowka = t.match(/\bU[-\s]?(\d{2})\b/i);
+  if(zNaglowka) return 'U-' + zNaglowka[1];
+  const zOpisu = t.match(/do\s+lat\s+(\d{1,2})/i);
+  if(zOpisu) return 'U-' + zOpisu[1];
+  return '';
+}
+
+// Rozpoznanie osób w akapicie „Imię Nazwisko (Klub, Kraj), …".
+//
+// Nawiasy w tym samym tekście niosą też terminy meczów („(28 września, 11:00)"), więc samo
+// „coś w nawiasie" nie wystarczy. Przyjmujemy wpis dopiero, gdy PRZED nawiasem stoją dwa słowa
+// zaczynające się wielką literą — a więc imię i nazwisko — a w nawiasie nie ma godziny ani daty.
+function osobyZPowolaniaPzpn(tekst){
+  const WZOR = /([^(),;]{3,90}?)\s*\(([^)]{2,90})\)/g;
+  const WIELKA = /^[A-ZĄĆĘŁŃÓŚŹŻ][\p{L}'’.-]*$/u;
+  const osoby = [];
+  let m;
+  while((m = WZOR.exec(tekst)) !== null){
+    // Przed nazwiskiem stoi ogon poprzedniego zdania („Kadra:", przecinek, koniec akapitu) —
+    // bierzemy DWA OSTATNIE słowa, bo to one są imieniem i nazwiskiem.
+    const slowa = String(m[1]).split(/\s+/).filter(Boolean);
+    const dwa = slowa.slice(-2);
+    if(dwa.length < 2) continue;
+    if(!WIELKA.test(dwa[0]) || !WIELKA.test(dwa[1])) continue;
+    const wnetrze = String(m[2]).trim();
+    if(/^\d/.test(wnetrze) || /\d{1,2}:\d{2}/.test(wnetrze)) continue;   // termin meczu, nie klub
+    const [klub, kraj] = wnetrze.split(',').map(x=>x.trim());
+    if(!klub) continue;
+    osoby.push({
+      firstName: dwa[0].replace(/[.,;:]+$/,''),
+      lastName: dwa[1].replace(/[.,;:]+$/,''),
+      birthYear: null,
+      club: klub,
+      // Kraj klubu podajemy TYLKO wtedy, gdy PZPN go podał. Brak dopisku znaczy „klub polski" —
+      // ale to nasza interpretacja, nie treść komunikatu, więc jej nie dopisujemy jako faktu.
+      krajKlubu: kraj || '',
+      confidence: 'powołanie',
+    });
+  }
+  return osoby;
+}
+
 function parseTalentPastedText(text){
+  // POWOŁANIA CZYTAMY PIERWSZE. Wzór „Nazwisko (Klub)" powtórzony kilka razy nie występuje
+  // w żadnym z pozostałych obsługiwanych formatów: skopiowany skład ma w nawiasie numer na
+  // koszulce, czyli cyfrę, którą odsiewamy wyżej.
+  const kadra = kadraZTekstu(text);
+  const powolani = osobyZPowolaniaPzpn(String(text||''));
+  if(powolani.length >= 3){
+    const dzis = new Date().toISOString().slice(0,10);
+    return { talents: powolani.map(o=>({
+      id: uid('T'), ...o,
+      reprezentacja: kadra || 'kadra Polski',
+      dateAdded: dzis,
+      sourceImage: '',
+    })) };
+  }
+  return parseTalentPastedTextZwykly(text);
+}
+
+function parseTalentPastedTextZwykly(text){
   const surowe = String(text||'').split(/\r?\n/);
   // Lista powołań bywa wklejana jako jeden akapit: „1. Jan Kowalski - Legia 2. Piotr Nowak - Lech".
   // Numer porządkowy w środku linii to wtedy granica kolejnego zawodnika.
@@ -8455,7 +8526,13 @@ function promoteTalentToPlayer(talentId){
     firstName: t.firstName || '',
     lastName: t.lastName || '',
     birthDate: t.birthYear ? (t.birthYear+'-01-01') : '',
-    notes: (t.club? 'Klub wg zakładki Talent: '+t.club+'. ':'') + 'Dodany z zakładki Talent — zweryfikuj dane i uzupełnij dokładną datę urodzenia oraz klub.'
+    // POWOŁANIE JEST FAKTEM O ZAWODNIKU i musi przejść do kartoteki — inaczej po „dodaj do bazy"
+    // zostaje zwykły zawodnik, a to, że selekcjoner wybrał go z całego rocznika, przepada.
+    reprezentacja: !!t.reprezentacja,
+    notes: (t.reprezentacja ? 'Powołany do reprezentacji Polski ' + t.reprezentacja + '. ' : '')
+      + (t.club ? 'Klub wg zakładki Talent: ' + t.club + (t.krajKlubu ? ' (' + t.krajKlubu + ')' : '') + '. ' : '')
+      + (t.krajKlubu ? 'Klub zagraniczny — statystyk nie zbierzemy z polskich protokołów, uzupełnij z Transfermarktu. ' : '')
+      + 'Dodany z zakładki Talent — zweryfikuj dane i uzupełnij dokładną datę urodzenia oraz klub.'
   };
   openPlayerModal(null, null, prefill);
 }
@@ -8478,6 +8555,14 @@ async function addTalentManually(){
   render();
 }
 
+// KADRY MŁODZIEŻOWE — stały spis, nie lista wyprowadzona z tego, co akurat wklejono.
+//
+// Zakładki mają istnieć ZANIM wpadną do nich nazwiska: pusta „U-18" mówi, że tej kadry jeszcze
+// nie zebraliśmy, i sama się o to upomina. Gdyby powstawały dopiero z danych, brak kadry
+// wyglądałby identycznie jak jej nieistnienie.
+const KADRY_MLODZIEZOWE = ['U-21','U-20','U-19','U-18','U-17','U-16','U-15'];
+let talentKadra = '';
+
 function viewTalent(){
   // SEGREGACJA WEDŁUG ROCZNIKÓW.
   //
@@ -8485,35 +8570,74 @@ function viewTalent(){
   // (2013 i 2014) chłopcy mieszali się na jednej długiej liście. Grupujemy więc po roczniku,
   // od najmłodszych, a w obrębie rocznika alfabetycznie po nazwisku. Bez rocznika — na końcu,
   // w osobnej grupie, żeby było widać, komu trzeba go uzupełnić.
-  const rows = DB.talents.slice().sort((a,b)=>{
-    const ra = a.birthYear || -1, rb = b.birthYear || -1;
-    if(ra !== rb) return rb - ra;
+  // POWOŁANI STOJĄ NA GÓRZE, W SWOJEJ KADRZE.
+  //
+  // Powołanie nie niesie rocznika, więc wszyscy reprezentanci lądowaliby w worku „Bez rocznika"
+  // — obok przypadkowych wpisów bez daty. A to jest odwrotność ich wartości: to lista dwudziestu
+  // paru chłopców wybranych z całego rocznika w kraju. Dostają własną grupę i widać, z której kadry.
+  const grupaTalentu = (t)=> t.reprezentacja ? 'kadra:' + t.reprezentacja : 'rocznik:' + (t.birthYear || '');
+  const rangaGrupy = (t)=> t.reprezentacja ? 0 : 1;
+  // Zawężenie do jednej kadry. „Pozostali" to wszyscy bez powołania — talenty z arkuszy
+  // i wklejek, czyli dotychczasowa zawartość tej zakładki.
+  const wKadrze = (t, k)=> k === 'inni' ? !t.reprezentacja : String(t.reprezentacja||'') === k;
+  const widoczne = talentKadra ? DB.talents.filter(t=>wKadrze(t, talentKadra)) : DB.talents;
+  const rows = widoczne.slice().sort((a,b)=>{
+    if(rangaGrupy(a) !== rangaGrupy(b)) return rangaGrupy(a) - rangaGrupy(b);
+    if(a.reprezentacja || b.reprezentacja){
+      const k = String(a.reprezentacja||'').localeCompare(String(b.reprezentacja||''), 'pl');
+      if(k) return k;
+    } else {
+      const ra = a.birthYear || -1, rb = b.birthYear || -1;
+      if(ra !== rb) return rb - ra;
+    }
     return (a.lastName||'').localeCompare(b.lastName||'', 'pl') || (a.firstName||'').localeCompare(b.firstName||'', 'pl');
   });
   const wierszTalentu = (t)=>`
     <div class="talent-row">
-      <span class="talent-row-name"><input type="checkbox" class="talent-check" data-id="${t.id}" style="margin-right:6px;vertical-align:middle;">${esc(t.firstName)} ${esc(t.lastName)}</span>
+      <span class="talent-row-name"><input type="checkbox" class="talent-check" data-id="${t.id}" style="margin-right:6px;vertical-align:middle;">${esc(t.firstName)} ${esc(t.lastName)}${
+        t.reprezentacja ? ` <span class="kadra-znacznik" title="Powołany do reprezentacji ${esc(t.reprezentacja)}">${esc(t.reprezentacja)}</span>` : ''}</span>
       <span class="talent-row-actions">
         <button class="link-btn" data-action="talent-promote" data-id="${t.id}" style="color:var(--gold-dark);">pełny profil / dodaj do bazy</button>
         <button class="link-btn talent-remove-btn" data-id="${t.id}" style="color:var(--clay-dark);">usuń</button>
       </span>
-      <span class="talent-row-meta">${esc(t.club||'klub nieznany')}</span>
+      <span class="talent-row-meta">${esc(t.club||'klub nieznany')}${
+        // Kraj pokazujemy TYLKO gdy podało go źródło — przy klubie zagranicznym to najważniejsza
+        // informacja w wierszu, bo mówi, że kartoteki nie zbudujemy z polskich protokołów.
+        t.krajKlubu ? ` &middot; <strong>${esc(t.krajKlubu)}</strong>` : ''}</span>
     </div>`;
   let rowsHtml = '';
   if(rows.length){
-    let biezacyRocznik;
+    let biezacaGrupa;
     rows.forEach(t=>{
-      const r = t.birthYear || null;
-      if(r !== biezacyRocznik){
-        biezacyRocznik = r;
-        const ilu = rows.filter(x=>(x.birthYear||null) === r).length;
-        rowsHtml += `<div class="talent-year-head">${r ? 'Rocznik '+esc(String(r)) : 'Bez rocznika'} <span class="reports-count">${ilu}</span></div>`;
+      const g = grupaTalentu(t);
+      if(g !== biezacaGrupa){
+        biezacaGrupa = g;
+        const ilu = rows.filter(x=>grupaTalentu(x) === g).length;
+        const etykieta = t.reprezentacja
+          ? 'Reprezentacja Polski ' + esc(t.reprezentacja)
+          : (t.birthYear ? 'Rocznik ' + esc(String(t.birthYear)) : 'Bez rocznika');
+        rowsHtml += `<div class="talent-year-head">${etykieta} <span class="reports-count">${ilu}</span></div>`;
       }
       rowsHtml += wierszTalentu(t);
     });
   } else {
-    rowsHtml = '<div class="empty">Brak jeszcze dodanych talentów — użyj importu lub formularza poniżej.</div>';
+    rowsHtml = talentKadra
+      ? `<div class="empty">Kadry ${esc(talentKadra === 'inni' ? 'spoza reprezentacji' : talentKadra)} jeszcze nie zebraliśmy.
+         Wklej komunikat PZPN z powołaniami w polu obok — wejdzie tu w całości.</div>`
+      : '<div class="empty">Brak jeszcze dodanych talentów — użyj importu lub formularza poniżej.</div>';
   }
+
+  // ZAKŁADKI KADR. Liczba przy każdej mówi, ilu mamy — a zero jest tu równie ważne jak dwadzieścia
+  // dwa: pokazuje, której kadry brakuje, zamiast ukrywać ją przed oczami.
+  const iluWKadrze = (k)=> DB.talents.filter(t=>wKadrze(t, k)).length;
+  const pigulkaKadry = (wartosc, etykieta, ile)=> pill(
+    ile != null ? `${etykieta} (${ile})` : etykieta,
+    talentKadra === wartosc, 'talent-kadra', {val: wartosc});
+  const zakladkiKadr = `<div class="filters" style="margin-bottom:12px;">
+    ${pigulkaKadry('', 'Wszyscy', DB.talents.length)}
+    ${KADRY_MLODZIEZOWE.map(k=>pigulkaKadry(k, k, iluWKadrze(k))).join('')}
+    ${pigulkaKadry('inni', 'Poza kadrą', iluWKadrze('inni'))}
+  </div>`;
 
   return `
   <h2 class="view-title">Talent</h2>
@@ -8566,6 +8690,7 @@ function viewTalent(){
 
     <aside class="talent-aside">
       <h3 class="reports-aside-title">Lista talentów <span class="reports-count">${rows.length}</span></h3>
+      ${zakladkiKadr}
       ${rows.length ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:13px;">
           <input type="checkbox" id="talent-select-all"><span>Zaznacz wszystkie</span>
@@ -11597,6 +11722,10 @@ function attachHandlers(){
     DB.talents = DB.talents.filter(t=>!zbior.has(t.id));
     render();
   };
+  main.querySelectorAll('[data-action="talent-kadra"]').forEach(b=>b.onclick=()=>{
+    talentKadra = (b as HTMLElement).dataset.val || '';
+    render();
+  });
   main.querySelectorAll('[data-action="talent-add-manual"]').forEach(b=>b.onclick=()=>addTalentManually());
   main.querySelectorAll('[data-action="talent-paste-parse"]').forEach(b=>b.onclick=()=>{
     const ta = main.querySelector('#talent-paste-text');
