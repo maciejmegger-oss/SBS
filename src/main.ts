@@ -8643,7 +8643,22 @@ function viewTalent(){
   <h2 class="view-title">Talent</h2>
   <p class="view-sub">Lista młodych zawodników do szybkiego dodania — zaimportuj z arkusza, wpisz ręcznie, a potem kliknij "pełny profil", żeby uzupełnić wszystkie dane i dodać do głównej bazy.</p>
 
-  <div class="talent-layout">
+  <!-- LISTA NA PEŁNEJ SZEROKOŚCI, FORMULARZE POD NIĄ.
+       Lista stała w wąskiej kolumnie obok pól do wklejania, więc nazwisko, klub i przyciski
+       gniotły się w jednej trzeciej ekranu, a przyciski skakały w pionie zależnie od tego, czy
+       nazwa klubu zawinęła się do drugiej linijki. Wklejanie i dopisywanie ręczne robi się raz
+       na jakiś czas — lista jest tym, na co się patrzy — więc formularze schodzą pod nią. -->
+  <h3 class="reports-aside-title" style="margin-top:0;">Lista talentów <span class="reports-count">${rows.length}</span></h3>
+  ${zakladkiKadr}
+  ${rows.length ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+    <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:13px;">
+      <input type="checkbox" id="talent-select-all"><span>Zaznacz wszystkie</span>
+    </label>
+    <button class="danger" id="talent-delete-selected" style="display:none;" data-action="talent-delete-selected">🗑️ Usuń zaznaczonych (0)</button>
+  </div>` : ''}
+  <div class="card talent-list">${rowsHtml}</div>
+
+  <div class="talent-layout" style="margin-top:22px;">
     <div>
       <h3 style="margin-top:0;color:var(--heading);font-family:'Barlow Condensed',sans-serif;">Wklej tekst</h3>
       <div class="card">
@@ -8672,7 +8687,10 @@ function viewTalent(){
         ` : ''}
       </div>
 
-      <h3 style="margin-top:20px;color:var(--heading);font-family:'Barlow Condensed',sans-serif;">Dodaj ręcznie</h3>
+    </div>
+
+    <div>
+      <h3 style="margin-top:0;color:var(--heading);font-family:'Barlow Condensed',sans-serif;">Dodaj ręcznie</h3>
       <div class="card">
         <div class="grid grid-2">
           <div class="field-wrap"><label class="field">Imię</label><input id="talent-manual-first"></div>
@@ -8687,18 +8705,6 @@ function viewTalent(){
         </div>
       </div>
     </div>
-
-    <aside class="talent-aside">
-      <h3 class="reports-aside-title">Lista talentów <span class="reports-count">${rows.length}</span></h3>
-      ${zakladkiKadr}
-      ${rows.length ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:13px;">
-          <input type="checkbox" id="talent-select-all"><span>Zaznacz wszystkie</span>
-        </label>
-        <button class="danger" id="talent-delete-selected" style="display:none;" data-action="talent-delete-selected">🗑️ Usuń zaznaczonych (0)</button>
-      </div>` : ''}
-      <div class="card talent-list">${rowsHtml}</div>
-    </aside>
   </div>`;
 }
 

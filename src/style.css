@@ -702,13 +702,27 @@ tr.player-row.prow-okazja.prow-mlodszy td:first-child{box-shadow:inset 4px 0 0 v
    gdzie boczna lista jest węższa) i większe, czytelniejsze wiersze listy talentów. */
 .talent-layout{display:grid;grid-template-columns:1fr 1fr;gap:26px;align-items:start;}
 .talent-aside{position:sticky;top:12px;}
-.talent-list{max-height:76vh;overflow:auto;padding:8px 12px;}
-.talent-row{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 14px;
-  padding:12px 4px;border-bottom:1px solid var(--chalk-dim);}
+/* Lista jest teraz na pełnej szerokości i ma pod sobą formularze — bez ograniczenia wysokości
+   dwadzieścia parę nazwisk zepchnęłoby je poza ekran. Przewija się więc w środku karty. */
+.talent-list{max-height:62vh;overflow:auto;padding:8px 12px;}
+/* WIERSZ TALENTU W TRZECH STAŁYCH KOLUMNACH: nazwisko — klub — przyciski.
+   Wcześniej był to zawijany flex: klub szedł do OSOBNEJ linijki na całą szerokość, więc wysokość
+   wiersza zależała od długości nazwy klubu, a przyciski wędrowały w pionie razem z nią. Przy
+   przeglądaniu dwudziestu paru nazwisk oko musi za nimi gonić. W siatce stoją zawsze w tym samym
+   miejscu — przy prawej krawędzi, na wysokości nazwiska. */
+.talent-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(130px,260px) max-content;
+  align-items:center;gap:4px 18px;padding:10px 4px;border-bottom:1px solid var(--chalk-dim);}
 .talent-row:last-child{border-bottom:none;}
-.talent-row-name{font-size:15px;font-weight:700;color:var(--heading);}
-.talent-row-meta{flex:1 1 100%;font-size:12px;color:var(--ink-soft);}
-.talent-row-actions{display:flex;gap:14px;flex:0 0 auto;white-space:nowrap;}
+.talent-row-name{font-size:15px;font-weight:700;color:var(--heading);min-width:0;}
+.talent-row-meta{font-size:12px;color:var(--ink-soft);min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.talent-row-actions{display:flex;gap:14px;white-space:nowrap;justify-self:end;}
+/* Wąski ekran: trzy kolumny nie mieszczą się bez ściskania, więc wracamy do pionu — ale wtedy
+   przyciski i tak stoją równo, bo każdy wiersz ma ten sam układ. */
+@media(max-width:820px){
+  .talent-row{grid-template-columns:1fr;gap:4px;}
+  .talent-row-actions{justify-self:start;}
+}
 .talent-row-actions button{font-size:12.5px;}
 /* Nagłówek rocznika w liście talentów — przykleja się do góry przewijanej listy, żeby przy
    długiej wklejce zawsze było wiadomo, czyj rocznik się właśnie ogląda. */
