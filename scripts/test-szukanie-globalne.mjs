@@ -43,8 +43,8 @@ const { wynikiSzukania } = f(DB, clubName);
 
 const etykiety = (q) => wynikiSzukania(q).map(w => w.rodzaj + ':' + w.etykieta);
 
-console.log('\n1. Próg dwóch znaków');
-sprawdz('jeden znak nic nie zwraca', wynikiSzukania('k').length === 0);
+console.log('\n1. Od ilu znaków szukamy');
+sprawdz('jedna litera JUŻ szuka — próg dwóch znaków wyglądał jak awaria', wynikiSzukania('k').length > 0);
 sprawdz('pusta fraza nic nie zwraca', wynikiSzukania('').length === 0);
 sprawdz('dwa znaki już szukają', wynikiSzukania('ko').length > 0);
 

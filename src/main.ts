@@ -2479,7 +2479,7 @@ function pokazPotwierdzenie(tekst, rodzaj = 'ok'){
   setTimeout(()=>{ el.classList.add('sbs-toast-znika'); setTimeout(()=>el.remove(), 400); }, ileMs);
   el.onclick = ()=> el.remove();
 }
-async function saveTalents(){ return robustStorageSet('scouting:talents', JSON.stringify(DB.talents)); }
+async function saveTalents(){ indeksSzukania = null; return robustStorageSet('scouting:talents', JSON.stringify(DB.talents)); }
 async function saveContacts(){ return robustStorageSet('scouting:contacts', JSON.stringify(DB.contacts)); }
 async function saveMatches(){ return robustStorageSet('scouting:matches', JSON.stringify(DB.matches)); }
 // Agencje i menedżerowie idą ścieżką sbs_kv (jeden rekord JSON na kolekcję), tak jak terminarz
@@ -3380,13 +3380,26 @@ function zbudujIndeksSzukania(){
       opis: [a.city, a.country].filter(Boolean).join(' · '),
       klucz: norm(`${a.name||''} ${a.city||''}`),
     })),
+    // TALENTY TEŻ SĄ W BAZIE, choć nie mają jeszcze pełnych kartotek. Pominięte w indeksie
+    // dawały najgorszy możliwy wynik: nazwisko widoczne na liście talentów, a szukanie mówi
+    // „nie znalazłem" — czyli aplikacja zaprzecza samej sobie.
+    talenty: (DB.talents||[]).map(t=>({
+      id: t.id, etykieta: `${t.lastName||''} ${t.firstName||''}`.trim() || '(bez nazwiska)',
+      opis: [t.birthYear, t.club].filter(Boolean).join(' · ') || 'z listy talentów',
+      klucz: norm(`${t.lastName||''} ${t.firstName||''} ${t.club||''}`),
+    })),
   };
   return indeksSzukania;
 }
 
 function wynikiSzukania(fraza){
   const q = szukajNorm(String(fraza||'')).trim();
-  if(q.length < 2) return [];
+  // JEDNA LITERA JUŻ SZUKA.
+  //
+  // Próg dwóch znaków wyglądał dokładnie jak awaria: wpisujesz znak, nic się nie dzieje i nie ma
+  // jak się dowiedzieć, że aplikacja czeka na następny. Wyników i tak jest najwyżej kilkanaście
+  // (limity poniżej), więc jedna litera nic nie kosztuje, a pole od razu widać, że żyje.
+  if(!q.length) return [];
   const idx = zbudujIndeksSzukania();
   // Trafienie od POCZĄTKU nazwiska idzie przed trafieniem w środku wyrazu — wpisując „kow"
   // szuka się Kowalskiego, a nie Leśniaka grającego w Kowarach.
@@ -3398,6 +3411,7 @@ function wynikiSzukania(fraza){
   return [
     ...szukajW(idx.zawodnicy, 'zawodnik', 6),
     ...szukajW(idx.kluby, 'klub', 4),
+    ...szukajW(idx.talenty, 'talent', 3),
     ...szukajW(idx.menedzerowie, 'menedzer', 2),
   ];
 }
@@ -3410,7 +3424,7 @@ function podepnijSzukanieGlobalne(){
   if(!pole || !lista || (pole as any).__podpiete) return;
   (pole as any).__podpiete = true;
 
-  const ETYKIETY = {zawodnik:'Zawodnicy', klub:'Kluby', menedzer:'Menedżerowie'};
+  const ETYKIETY = {zawodnik:'Zawodnicy', klub:'Kluby', talent:'Talenty (bez kartoteki)', menedzer:'Menedżerowie'};
   const zamknij = ()=>{ lista.hidden = true; lista.innerHTML = ''; szukanieWybrany = -1; szukanieOstatnie = []; };
 
   const przejdz = (w)=>{
@@ -3418,6 +3432,9 @@ function podepnijSzukanieGlobalne(){
     editingPlayerId = null; viewingRocznikGroup = null;
     if(w.rodzaj === 'zawodnik'){ currentView = 'players'; viewingPlayerId = w.id; viewingClubId = null; }
     else if(w.rodzaj === 'klub'){ currentView = 'clubs'; viewingClubId = w.id; viewingPlayerId = null; clubBrowse = {top:'', group:''}; }
+    // Talent nie ma jeszcze kartoteki, więc nie ma dokąd „wejść" — otwieramy listę talentów,
+    // gdzie stoi jego wiersz z przyciskiem „pełny profil / dodaj do bazy".
+    else if(w.rodzaj === 'talent'){ currentView = 'talent'; viewingPlayerId = null; }
     else { currentView = 'agencies'; viewingAgencyId = w.id; }
     pole.value = ''; zamknij(); render();
   };
@@ -5081,11 +5098,26 @@ function viewClubs(){
     // Odwrotnie być nie może: nasze dane zawsze są niepełne, więc układanie po nich tabeli
     // pokazywałoby lidera, który po prostu został lepiej zebrany.
     if(oficjalna && Array.isArray(oficjalna.wiersze) && oficjalna.wiersze.length){
-      const nasze = new Map(list.map(c=>[importNorm(c.name), dorobekKlubow.get(c.id) || {wgrane:0}]));
-      const braki = oficjalna.wiersze.filter(w=>{
-        const n = nasze.get(importNorm(w.nazwa));
-        return !n || n.wgrane < Number(w.mecze || 0);
-      }).length;
+      // DOPASOWANIE NAZW ODCISKIEM, NIE SUROWĄ NAZWĄ.
+      //
+      // Stało tu importNorm, czyli porównanie nazw znak w znak po zdjęciu wielkich liter. 90minut
+      // pisze jednak „Wisła Dobrzyń n/Wisłą" tam, gdzie my mamy „Wisła Dobrzyń nad Wisłą", a przy
+      // rezerwach dokłada „II" w innym miejscu. Każda taka różnica dawała „nie znam tego klubu",
+      // więc nagłówek meldował „3 niekompletnych" nad tabelą, w której WSZYSTKIE wiersze mają
+      // komplet 6/6 — i nie dało się zgadnąć, o które kluby chodzi.
+      //
+      // odciskKlubu zdejmuje szum („KS", „MKS", „S.A."), rozwija skróty i uwzględnia numer
+      // zespołu, więc rezerwy nie mylą się z pierwszym składem. To ten sam odcisk, którym
+      // meczeKlubu odsiewa powtórzone spotkania — obie drogi widzą klub tak samo.
+      const nasze = new Map(list.map(c=>[odciskKlubu(c.name), dorobekKlubow.get(c.id) || {wgrane:0}]));
+      const nierozpoznane = [];
+      const zalegle = [];
+      oficjalna.wiersze.forEach(w=>{
+        const n = nasze.get(odciskKlubu(w.nazwa));
+        if(!n) nierozpoznane.push(w.nazwa);
+        else if(n.wgrane < Number(w.mecze || 0)) zalegle.push(w.nazwa);
+      });
+      const braki = zalegle.length;
       // ZWINIĘTA DOMYŚLNIE. Osiemnaście wierszy to pół ekranu, a zagląda się tu wtedy, gdy coś
       // się nie zgadza — nie za każdym wejściem w Kluby. To, co trzeba wiedzieć bez rozwijania
       // (ile kolejek, ile klubów niekompletnych), stoi w samym nagłówku.
@@ -5094,16 +5126,23 @@ function viewClubs(){
           📊 Tabela — ${esc(clubBrowse.group)}
           <span class="note" style="font-weight:400;">po ${oficjalna.kolejek} kolejkach &middot; z 90minut, pobrana ${esc(String(oficjalna.pobrano||'').slice(0,10))}</span>
           ${braki ? `<span style="font-weight:700;color:var(--clay-dark);font-size:12.5px;">&middot; ${braki} ${braki===1?'niekompletny':'niekompletnych'}</span>` : ''}
+          ${nierozpoznane.length ? `<span style="font-weight:700;color:var(--gold-dark);font-size:12.5px;">&middot; ${nierozpoznane.length} bez pary w SBS</span>` : ''}
         </summary>
         <p class="note" style="margin:8px 0;">Układ i punkty pochodzą z 90minut. Kolumna <strong>„u nas"</strong> mówi,
-          ile meczów tego klubu mamy w SBS — ${braki ? `<strong style="color:var(--clay-dark);">${braki} ${braki===1?'klub jest niekompletny':'klubów jest niekompletnych'}</strong>.` : 'wszystkie są kompletne.'}</p>
+          ile meczów tego klubu mamy w SBS — ${braki
+            ? `<strong style="color:var(--clay-dark);">${braki} ${braki===1?'klub jest niekompletny':'klubów jest niekompletnych'}</strong>: ${esc(zalegle.slice(0,6).join(', '))}${zalegle.length>6?` i ${zalegle.length-6} więcej`:''}.`
+            : 'wszystkie są kompletne.'}</p>
+        ${nierozpoznane.length ? `<p class="note" style="margin:0 0 8px;color:var(--gold-dark);">
+          <strong>Bez pary w kartotece (${nierozpoznane.length}):</strong> ${esc(nierozpoznane.join(', '))}.
+          To NIE znaczy, że brakuje statystyk — te kluby po prostu nazywają się u nas inaczej niż na 90minut
+          albo nie ma ich jeszcze w bazie. Popraw nazwę w kartotece albo dodaj klub, a liczby się połączą.</p>` : ''}
         <div class="tabela-wysoka"><table style="font-size:12.5px;">
           <thead><tr><th style="width:28px;text-align:right;">Lp.</th><th>Klub</th>
             <th style="text-align:center;">M.</th><th style="text-align:center;">Pkt</th>
             <th style="text-align:center;">Z-R-P</th><th style="text-align:center;">Bramki</th>
             <th style="text-align:center;" title="Ile meczów tego klubu mamy w kartotekach SBS">u nas</th></tr></thead>
           <tbody>${oficjalna.wiersze.map(w=>{
-            const n = nasze.get(importNorm(w.nazwa));
+            const n = nasze.get(odciskKlubu(w.nazwa));
             const mamy = n ? n.wgrane : null;
             const brak = mamy == null || mamy < Number(w.mecze || 0);
             return `<tr>
@@ -14443,7 +14482,14 @@ function rozbijNazweKlubu(nazwa){
   // W kartotece stoi „LKS Kadłub (k. Strzelec Opolskich)" — nawias mówi, o który Kadłub chodzi.
   // Liczyliśmy jednak jego treść jako człony nazwy, więc krótsza nazwa z ŁNP („LZS Adamietz
   // Kadłub") nigdy nie mogła pokryć wszystkich czterech i klub zostawał nierozpoznany.
-  const slowa = rozwinSkroty(nazwa).replace(/\([^)]*\)/g,' ').replace(/[.,()]/g,' ').replace(/[-–—]/g,' ')
+  // „S.A." TO FORMA PRAWNA, A NIE NAZWA — i musi zostać sklejona ZANIM kropki znikną.
+  //
+  // Bez tego „Górnik Łęczna S.A." rozpadało się na słowa „s" i „a", a że żadne z nich nie jest
+  // na liście szumu, wchodziły do rdzenia jako pełnoprawne człony nazwy. Skutek: klub zapisany
+  // z dopiskiem nigdy nie łączył się z tym samym klubem bez dopisku — a spółkami akcyjnymi jest
+  // w Ekstraklasie i I lidze większość zespołów, także ich rezerwy.
+  const slowa = rozwinSkroty(nazwa).replace(/\bs\s*\.\s*a\s*\.?/gi, ' sa ')
+    .replace(/\([^)]*\)/g,' ').replace(/[.,()]/g,' ').replace(/[-–—]/g,' ')
     .replace(/\bn\s*\/\s*/gi, 'nad ')
     .split(/\s+/).filter(Boolean);
   let numer = '';
