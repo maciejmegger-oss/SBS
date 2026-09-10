@@ -8358,6 +8358,46 @@ function osobaZWierszaTalentu(linia, rocznik){
   return {firstName, lastName, birthYear: rok || rocznik || null, club: klub};
 }
 
+// ---- ODCZYT TEKSTU ZE ZRZUTU EKRANU -------------------------------------------------------
+//
+// Część list w ogóle nie daje się skopiować: komunikat wklejony do grafiki, zdjęcie tablicy,
+// zrzut z telefonu. OCR jest tu jedyną drogą — ale świadomie NIE tworzy wpisów wprost.
+//
+// Rozpoznany tekst ląduje w polu do wklejania, żeby dało się go przeczytać i poprawić PRZED
+// rozpoznaniem zawodników. Powód jest prosty: OCR myli polskie znaki („Łukasiewicz" bywa
+// „Lukasiewicz", „Słota" bywa „Slota"), a nazwisko wpisane błędnie do bazy jest gorsze niż
+// jego brak — zakłada osobną kartotekę, której nikt potem nie scali.
+//
+// Silnik ściągamy z sieci DOPIERO przy pierwszym użyciu. Waży kilka megabajtów razem ze słownikiem
+// polskim, a używa się go raz na jakiś czas — wrzucony do głównego pliku aplikacji spowalniałby
+// każde wejście do systemu wszystkim i zawsze.
+let silnikOcr = null;
+function wczytajSilnikOcr(){
+  if((window as any).Tesseract) return Promise.resolve((window as any).Tesseract);
+  if(silnikOcr) return silnikOcr;
+  silnikOcr = new Promise((gotowe, blad)=>{
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+    s.onload = ()=> (window as any).Tesseract
+      ? gotowe((window as any).Tesseract)
+      : blad(new Error('Silnik odczytu wczytał się, ale nie wystartował.'));
+    s.onerror = ()=>{
+      silnikOcr = null;   // następna próba ma prawo się udać — sieć bywa chwilowo zerwana
+      blad(new Error('Nie udało się pobrać silnika odczytu. Sprawdź połączenie i spróbuj ponownie.'));
+    };
+    document.head.appendChild(s);
+  });
+  return silnikOcr;
+}
+
+async function tekstZeZrzutu(obraz, naPostep){
+  const T = await wczytajSilnikOcr();
+  const wynik = await T.recognize(obraz, 'pol', {
+    logger: (m)=>{ if(m && m.status === 'recognizing text' && naPostep) naPostep(Math.round((m.progress||0)*100)); },
+  });
+  return String((wynik && wynik.data && wynik.data.text) || '').trim();
+}
+
 // ---- POWOŁANIA DO KADRY NARODOWEJ ---------------------------------------------------------
 //
 // PZPN publikuje kadrę jako JEDEN AKAPIT: „Essam Abdelhamid (PSV Eindhoven, Holandia), Antoni
@@ -8666,9 +8706,19 @@ function viewTalent(){
         <div class="field-wrap">
           <textarea id="talent-paste-text" rows="6" placeholder="np.&#10;rocznik 2013&#10;1. Jan Kowalski — Legia Warszawa&#10;2. Piotr Nowak — Lech Poznań&#10;rocznik 2014&#10;Kacper	Kowalkowski	&#9;Zawisza Bydgoszcz">${esc(talentPasteText)}</textarea>
         </div>
-        <div class="modal-actions" style="justify-content:flex-start;margin-bottom:0;">
+        <div class="modal-actions" style="justify-content:flex-start;margin-bottom:0;gap:10px;flex-wrap:wrap;">
           <button class="secondary" data-action="talent-paste-parse">Rozpoznaj zawodników</button>
+          <label class="secondary" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;"
+                 title="Odczytaj tekst ze zrzutu ekranu — trafi do pola wyżej, do sprawdzenia">
+            🖼 Wczytaj zrzut ekranu
+            <input type="file" id="talent-zrzut" accept="image/*" style="display:none;">
+          </label>
+          <span id="talent-ocr-stan" class="note"></span>
         </div>
+        <p class="note" style="margin:8px 0 0;">Zrzut możesz też <strong>wkleić wprost do pola wyżej</strong> (Ctrl+V).
+          Odczytany tekst trafia do tego pola, a nie od razu na listę — <strong>przeczytaj go i popraw</strong>,
+          zanim klikniesz „Rozpoznaj zawodników". Odczyt myli polskie znaki, a błędnie zapisane nazwisko
+          zakłada osobną kartotekę, której potem nikt nie scali.</p>
         ${talentPasteParsed ? `
           <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:10px;max-height:260px;overflow:auto;">
             <p class="note" style="margin-top:0;">Rozpoznano <strong>${talentPasteParsed.length}</strong> ${plZaw(talentPasteParsed.length)}. Odznacz, czego nie chcesz dodać.</p>
@@ -11728,6 +11778,45 @@ function attachHandlers(){
     DB.talents = DB.talents.filter(t=>!zbior.has(t.id));
     render();
   };
+  // ODCZYT ZE ZRZUTU EKRANU — z pliku albo wprost ze schowka.
+  //
+  // Wynik ląduje w polu tekstowym, nie na liście. Człowiek ma go zobaczyć, zanim cokolwiek
+  // wejdzie do bazy: OCR gubi polskie znaki, a przekręcone nazwisko zakłada osobną kartotekę.
+  const polePastu = main.querySelector('#talent-paste-text') as HTMLTextAreaElement | null;
+  const stanOcr = main.querySelector('#talent-ocr-stan');
+  const czytajZrzut = async (obraz)=>{
+    if(!polePastu) return;
+    if(stanOcr) stanOcr.textContent = 'Wczytuję silnik odczytu…';
+    try{
+      const tekst = await tekstZeZrzutu(obraz, (proc)=>{ if(stanOcr) stanOcr.textContent = `Odczytuję… ${proc}%`; });
+      if(!tekst){
+        if(stanOcr) stanOcr.textContent = 'Nie znalazłem tekstu na tym obrazie.';
+        return;
+      }
+      // Dopisujemy, a nie nadpisujemy — kilka zrzutów jednej listy da się złożyć w całość.
+      polePastu.value = polePastu.value.trim() ? polePastu.value.trim() + '\n' + tekst : tekst;
+      talentPasteText = polePastu.value;
+      if(stanOcr) stanOcr.textContent = 'Odczytane — sprawdź tekst wyżej i popraw, zanim rozpoznasz.';
+    }catch(e){
+      if(stanOcr) stanOcr.textContent = '';
+      alert(String((e && (e as Error).message) || e));
+    }
+  };
+  const wejscieZrzutu = main.querySelector('#talent-zrzut') as HTMLInputElement | null;
+  if(wejscieZrzutu) wejscieZrzutu.onchange = ()=>{
+    const plik = wejscieZrzutu.files && wejscieZrzutu.files[0];
+    if(plik) czytajZrzut(plik);
+    wejscieZrzutu.value = '';   // ten sam plik ma dać się wczytać drugi raz
+  };
+  if(polePastu) polePastu.addEventListener('paste', (e:any)=>{
+    const obrazy = Array.from((e.clipboardData && e.clipboardData.items) || [])
+      .filter((it:any)=>it.type && it.type.startsWith('image/'));
+    if(!obrazy.length) return;               // zwykły tekst wkleja się jak dotąd
+    e.preventDefault();
+    const plik = (obrazy[0] as any).getAsFile();
+    if(plik) czytajZrzut(plik);
+  });
+
   main.querySelectorAll('[data-action="talent-kadra"]').forEach(b=>b.onclick=()=>{
     talentKadra = (b as HTMLElement).dataset.val || '';
     render();
