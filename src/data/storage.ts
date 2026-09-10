@@ -161,7 +161,13 @@ export const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }>
     //   w bazach założonych wcześniej NIE ISTNIEJE — schemat zakłada tabele przez „create table
     //   if not exists", co nigdy nie dopisuje kolumn do tabeli już istniejącej. Skutek: każdy
     //   raport z telefonu odbijał się od bazy z „Could not find the 'obs_type' column".
-    fields: ["match", "kind", "fromObservationId", "obsType"],
+    // KONTEKST SPOTKANIA — rywal, wynik, obejrzane minuty i pozycja, na której zawodnik grał.
+    //   Bez nich ocena nie jest porównywalna: czwórka za obronę przeciwko liderowi i czwórka
+    //   przeciwko ostatniej drużynie to dwie różne czwórki, a po pół roku nikt nie odtworzy,
+    //   która była która. Idą tą samą drogą co reszta dopisków — w polu `phases`, bo sbs_reports
+    //   nie ma kolumny custom_fields, a migracji nie wymuszamy.
+    fields: ["match", "kind", "fromObservationId", "obsType",
+             "rywal", "wynik", "minutyObejrzane", "pozycjaWMeczu"],
   },
 };
 

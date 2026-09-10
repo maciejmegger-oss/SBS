@@ -4647,6 +4647,7 @@ function viewPlayerDetail(id){
       ${swoje.length ? swoje.map(r=>`<div class="obs-item" style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">
           <span><strong>${esc(r.date||'bez daty')}</strong>
             <span class="meta">${esc(r.scout||'—')}${r.perspektywa?` &middot; perspektywa ${esc(r.perspektywa)}`:''}${r.obsType?` &middot; ${esc(r.obsType)}`:''}</span>
+            ${kontekstMeczuHtml(r)}
             ${r.description?`<div class="meta" style="margin-top:2px;">${esc(String(r.description).slice(0,180))}${String(r.description).length>180?'…':''}</div>`:''}
           </span>
           <button class="secondary" data-action="edit-report" data-id="${esc(r.id)}" style="flex-shrink:0;font-size:11.5px;" title="Otwórz raport">✎ Otwórz</button>
@@ -4714,6 +4715,7 @@ function viewPlayerDetail(id){
             <button class="secondary" data-action="print-player" data-id="${p.id}" style="padding:4px 10px;font-size:11.5px;">⭳ PDF</button>
           </span>
         </div>
+        ${kontekstMeczuHtml(r)}
         ${r.description? `<div style="font-size:12.5px;margin-top:4px;">${esc(r.description)}</div>`:''}
         <div class="meta" style="margin-top:6px;font-size:11.5px;">
           ${r.technika?`<div><strong>Technika:</strong> ${esc(r.technika)}</div>`:''}
@@ -7458,6 +7460,22 @@ function blokFazHtml(lista, wartosci){
       </div>`; }).join('')}
     </div>`;
 }
+// KONTEKST SPOTKANIA W JEDNEJ LINII — rywal, wynik, obejrzane minuty, pozycja w tym meczu.
+//
+// Stoi PRZED opisami, bo czyta się go pierwszy: dopiero wiedząc, z kim i ile, wiadomo, ile waży
+// ocena poniżej. Raporty wystawione przed dodaniem tych pól nie mają czego pokazać i wtedy
+// linia się nie pojawia — pusty pasek „—  —  —" udawałby, że czegoś brakuje z winy skauta.
+function kontekstMeczuHtml(r){
+  const czesci = [];
+  if(r.rywal) czesci.push(`<strong>${esc(r.rywal)}</strong>`);
+  if(r.wynik) czesci.push(esc(r.wynik));
+  if(r.minutyObejrzane != null) czesci.push(`obejrzane ${esc(String(r.minutyObejrzane))}′`);
+  const def = r.pozycjaWMeczu ? POSITION_NUMBERS.find(x=>x.number === Number(r.pozycjaWMeczu)) : null;
+  if(def) czesci.push(`grał na <strong>${esc(def.number + ' · ' + def.label)}</strong>`);
+  if(!czesci.length) return '';
+  return `<div class="meta" style="margin-top:4px;font-size:11.5px;">⚽ ${czesci.join(' &middot; ')}</div>`;
+}
+
 const REPORT_SET_PIECES = [
   {key:'rzutRoznyObrona', label:'Rzut rożny — obrona', krotko:'Rożny obr.'},
   {key:'rzutRoznyAtak', label:'Rzut rożny — atak', krotko:'Rożny atak'},
@@ -7958,6 +7976,30 @@ function viewReports(){
         ${OBSERVATION_TYPES.map(t=>`<button type="button" class="obstype-btn ${reportObsTypeValue===t?'active':''}" data-value="${esc(t)}">${esc(t)}</button>`).join('')}
       </div>
     </div>
+    <!-- KONTEKST SPOTKANIA.
+         Ocena bez niego nie jest porównywalna: czwórka za obronę przeciwko liderowi i czwórka
+         przeciwko ostatniej drużynie to dwie różne czwórki. Po pół roku nikt tego nie odtworzy
+         z pamięci, a średnia z raportów miesza wtedy oceny z nieporównywalnych meczów.
+         Minuty obejrzane są tu osobno od minut ROZEGRANYCH przez zawodnika — ocena wystawiona
+         po dwudziestu minutach z trybuny waży inaczej niż po całym meczu. -->
+    <div class="grid grid-2">
+      <div class="field-wrap"><label class="field">Rywal</label>
+        <input id="rep-rywal" value="${editing? esc(editing.rywal||'') : ''}" placeholder="np. Korona Kożuchów (u siebie)"></div>
+      <div class="field-wrap"><label class="field">Wynik</label>
+        <input id="rep-wynik" value="${editing? esc(editing.wynik||'') : ''}" placeholder="np. 2:1"></div>
+    </div>
+    <div class="grid grid-2">
+      <div class="field-wrap"><label class="field">Obejrzane minuty</label>
+        <input type="number" min="1" max="120" id="rep-minuty" value="${editing && editing.minutyObejrzane!=null ? esc(String(editing.minutyObejrzane)) : ''}" placeholder="np. 90"></div>
+      <div class="field-wrap"><label class="field">Pozycja w tym meczu</label>
+        <select id="rep-pozycja-w-meczu">
+          <option value="">— jak w kartotece —</option>
+          ${[...POSITION_NUMBERS].sort((a,b)=>a.number-b.number).map(pn=>`<option value="${pn.number}" ${
+            editing && Number(editing.pozycjaWMeczu)===pn.number ? 'selected' : ''}>${pn.number} &middot; ${esc(pn.label)}</option>`).join('')}
+        </select></div>
+    </div>
+    <p class="note" style="margin:-4px 0 12px;">Zawodnik bywa przestawiany na jeden mecz — ocena z gry na innej pozycji
+      znaczy co innego niż z jego własnej. Puste pole znaczy „grał tam, gdzie zwykle".</p>
     <div class="field-wrap"><label class="field">Technika (opis)</label><textarea id="rep-technika" rows="2" placeholder="Ocena techniczna opisowo...">${editing? esc(editing.technika||'') : ''}</textarea></div>
     <div class="field-wrap"><label class="field">Taktyka (opis)</label><textarea id="rep-taktyka" rows="2" placeholder="Ocena taktyczna opisowo...">${editing? esc(editing.taktyka||'') : ''}</textarea></div>
     <div class="field-wrap"><label class="field">Motoryka (opis)</label><textarea id="rep-motoryka" rows="2" placeholder="Ocena motoryczna opisowo...">${editing? esc(editing.motoryka||'') : ''}</textarea></div>
@@ -12619,6 +12661,13 @@ function attachHandlers(){
       potencjalOpis: document.getElementById('rep-potencjal-opis').value.trim(),
       perspektywa: reportPerspektywaValue,
       obsType: reportObsTypeValue,
+      rywal: (document.getElementById('rep-rywal') as HTMLInputElement).value.trim(),
+      wynik: (document.getElementById('rep-wynik') as HTMLInputElement).value.trim(),
+      // Puste pole zapisujemy jako null, a nie zero: „nie podano, ile obejrzałem" to nie to samo
+      // co „obejrzałem zero minut".
+      minutyObejrzane: (document.getElementById('rep-minuty') as HTMLInputElement).value
+        ? Number((document.getElementById('rep-minuty') as HTMLInputElement).value) : null,
+      pozycjaWMeczu: Number((document.getElementById('rep-pozycja-w-meczu') as HTMLSelectElement).value) || null,
       phases: {}, setPieces: {},
       setPieceComment: document.getElementById('rep-setpiece-comment').value.trim()
     };
