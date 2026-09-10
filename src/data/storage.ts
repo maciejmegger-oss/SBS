@@ -167,7 +167,9 @@ export const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }>
     //   która była która. Idą tą samą drogą co reszta dopisków — w polu `phases`, bo sbs_reports
     //   nie ma kolumny custom_fields, a migracji nie wymuszamy.
     fields: ["match", "kind", "fromObservationId", "obsType",
-             "rywal", "wynik", "minutyObejrzane", "pozycjaWMeczu"],
+             "rywal", "wynik", "minutyObejrzane", "pozycjaWMeczu",
+             // mocne / doPoprawy: dwie krotkie listy czytane PRZED reszta raportu.
+             "mocne", "doPoprawy"],
   },
 };
 

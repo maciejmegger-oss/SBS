@@ -4716,6 +4716,7 @@ function viewPlayerDetail(id){
           </span>
         </div>
         ${kontekstMeczuHtml(r)}
+        ${mocneSlaboHtml(r)}
         ${r.description? `<div style="font-size:12.5px;margin-top:4px;">${esc(r.description)}</div>`:''}
         <div class="meta" style="margin-top:6px;font-size:11.5px;">
           ${r.technika?`<div><strong>Technika:</strong> ${esc(r.technika)}</div>`:''}
@@ -7476,6 +7477,31 @@ function kontekstMeczuHtml(r){
   return `<div class="meta" style="margin-top:4px;font-size:11.5px;">⚽ ${czesci.join(' &middot; ')}</div>`;
 }
 
+// MOCNE STRONY I RZECZY DO POPRAWY — dwie listy czytane PRZED resztą raportu.
+//
+// Reszta raportu opisuje, JAK zawodnik grał. Te dwie listy mówią, NA CO PATRZEĆ — i po to je tu
+// postawiliśmy: skaut jadący obejrzeć zawodnika po koledze ma w dziesięć sekund wiedzieć, czego
+// szukać, zamiast czytać pięć akapitów opisu.
+//
+// Jedna myśl w linijce. Puste linie i wiodące myślniki odsiewamy, bo ludzie piszą listy różnie
+// („- coś", „• coś", „coś") i nie ma powodu, żeby wymagać jednej konwencji.
+function punktyZTekstu(tekst){
+  return String(tekst||'').split(/\r?\n/)
+    .map(l=>l.replace(/^\s*[-–—•*]\s*/, '').trim())
+    .filter(Boolean);
+}
+function mocneSlaboHtml(r){
+  const mocne = punktyZTekstu(r && r.mocne);
+  const slabe = punktyZTekstu(r && r.doPoprawy);
+  if(!mocne.length && !slabe.length) return '';
+  const lista = (tytul, punkty, klasa)=> punkty.length
+    ? `<div class="raport-lista ${klasa}">
+        <div class="raport-lista-tytul">${tytul}</div>
+        <ul>${punkty.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>
+      </div>` : '';
+  return `<div class="raport-listy">${lista('Mocne strony', mocne, 'rl-mocne')}${lista('Do poprawy', slabe, 'rl-slabe')}</div>`;
+}
+
 const REPORT_SET_PIECES = [
   {key:'rzutRoznyObrona', label:'Rzut rożny — obrona', krotko:'Rożny obr.'},
   {key:'rzutRoznyAtak', label:'Rzut rożny — atak', krotko:'Rożny atak'},
@@ -8000,6 +8026,15 @@ function viewReports(){
     </div>
     <p class="note" style="margin:-4px 0 12px;">Zawodnik bywa przestawiany na jeden mecz — ocena z gry na innej pozycji
       znaczy co innego niż z jego własnej. Puste pole znaczy „grał tam, gdzie zwykle".</p>
+    <!-- DWIE KRÓTKIE LISTY NA GÓRZE — pierwsze, co czyta cudzy skaut przed wyjazdem na mecz.
+         Reszta raportu opisuje, JAK zawodnik grał; te dwa pola mówią, NA CO PATRZEĆ. Jedna myśl
+         w linijce, bo lista, którą trzeba czytać zdaniami, przestaje być listą. -->
+    <div class="grid grid-2">
+      <div class="field-wrap"><label class="field">Mocne strony — jedna w linijce</label>
+        <textarea id="rep-mocne" rows="3" placeholder="Przyjęcie kierunkowe pod presją&#10;Podanie długie po ziemi&#10;Głos i organizacja linii">${editing? esc(editing.mocne||'') : ''}</textarea></div>
+      <div class="field-wrap"><label class="field">Do poprawy — jedna w linijce</label>
+        <textarea id="rep-do-poprawy" rows="3" placeholder="Lewa noga w prostowaniu&#10;Krycie przy rożnych&#10;Wytrzymałość po 75. minucie">${editing? esc(editing.doPoprawy||'') : ''}</textarea></div>
+    </div>
     <div class="field-wrap"><label class="field">Technika (opis)</label><textarea id="rep-technika" rows="2" placeholder="Ocena techniczna opisowo...">${editing? esc(editing.technika||'') : ''}</textarea></div>
     <div class="field-wrap"><label class="field">Taktyka (opis)</label><textarea id="rep-taktyka" rows="2" placeholder="Ocena taktyczna opisowo...">${editing? esc(editing.taktyka||'') : ''}</textarea></div>
     <div class="field-wrap"><label class="field">Motoryka (opis)</label><textarea id="rep-motoryka" rows="2" placeholder="Ocena motoryczna opisowo...">${editing? esc(editing.motoryka||'') : ''}</textarea></div>
@@ -9686,6 +9721,9 @@ async function pobierzOpinieAI(playerId, przycisk, miejsce){
   const an = analyzePlayer(p);
   const raporty = DB.reports.filter(r=>r.playerId===playerId).map(r=>({
     data: r.date || '', scout: r.scout || '', perspektywa: r.perspektywa || '', obserwacja: r.obsType || '',
+    // Mocne strony i braki idą do analizy AI jako OSOBNE pola, nie sklejone z opisem — to
+    // najgęstsza treść w całym raporcie i model ma ją dostać jako listę, którą jest.
+    mocneStrony: punktyZTekstu(r.mocne), doPoprawy: punktyZTekstu(r.doPoprawy),
     technika: r.technika || '', taktyka: r.taktyka || '', motoryka: r.motoryka || '',
     mentalnosc: r.mentalnoscOpis || '', potencjal: r.potencjalOpis || '',
     opis: r.description || '', fazyGry: r.phases || {}, staleFragmenty: r.setPieces || {},
@@ -12668,6 +12706,8 @@ function attachHandlers(){
       minutyObejrzane: (document.getElementById('rep-minuty') as HTMLInputElement).value
         ? Number((document.getElementById('rep-minuty') as HTMLInputElement).value) : null,
       pozycjaWMeczu: Number((document.getElementById('rep-pozycja-w-meczu') as HTMLSelectElement).value) || null,
+      mocne: (document.getElementById('rep-mocne') as HTMLTextAreaElement).value.trim(),
+      doPoprawy: (document.getElementById('rep-do-poprawy') as HTMLTextAreaElement).value.trim(),
       phases: {}, setPieces: {},
       setPieceComment: document.getElementById('rep-setpiece-comment').value.trim()
     };

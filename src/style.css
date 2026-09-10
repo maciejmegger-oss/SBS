@@ -730,6 +730,20 @@ tr.player-row.prow-okazja.prow-mlodszy td:first-child{box-shadow:inset 4px 0 0 v
   margin:10px -12px 0;padding:7px 12px;background:var(--pitch);color:var(--on-pitch);
   font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:14px;text-transform:uppercase;letter-spacing:.04em;}
 .talent-year-head:first-child{margin-top:-8px;}
+/* DWIE LISTY NA GÓRZE RAPORTU. Obok siebie, bo czyta się je razem i porównawczo — jedna pod
+   drugą kazałaby przewijać, żeby zestawić mocne strony z brakami. Zielony i ceglany pasek przy
+   krawędzi rozdziela je bez czytania nagłówków, ale nagłówki i tak zostają: sam kolor nigdy nie
+   może być jedynym nośnikiem. */
+.raport-listy{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:8px 0 6px;}
+.raport-lista{background:var(--card-soft);border-radius:8px;padding:7px 10px 7px 12px;}
+.raport-lista .raport-lista-tytul{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;
+  font-weight:800;color:var(--ink-soft);margin-bottom:3px;}
+.raport-lista ul{margin:0;padding-left:16px;}
+.raport-lista li{font-size:12px;line-height:1.45;color:var(--ink);}
+.raport-lista.rl-mocne{box-shadow:inset 3px 0 0 var(--good);}
+.raport-lista.rl-slabe{box-shadow:inset 3px 0 0 var(--clay);}
+@media(max-width:720px){ .raport-listy{grid-template-columns:1fr;} }
+
 /* Znacznik kadry przy nazwisku. Biało-czerwony pasek przy krawędzi, bo to jedyna rzecz na tej
    liście, która mówi o zawodniku coś, czego nie wyczyta się z żadnych rozgrywek: że wybrał go
    selekcjoner. Napis zostaje zwykłym tekstem — ma być czytelny i dać się skopiować. */

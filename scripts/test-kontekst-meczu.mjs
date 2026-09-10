@@ -64,5 +64,39 @@ console.log('\n7. Formularz i zapis mówią o tych samych polach');
   sprawdz(`pole „${id}" jest odczytywane przy zapisie`, zrodlo.includes(`getElementById('${id}')`));
 });
 
+// ---- Mocne strony / do poprawy ----
+const kod2 = [
+  wytnij('punktyZTekstu', /function punktyZTekstu\(tekst\)\{[\s\S]*?\n\}/),
+  wytnij('mocneSlaboHtml', /function mocneSlaboHtml\(r\)\{[\s\S]*?\n\}/),
+].join('\n');
+const { punktyZTekstu, mocneSlaboHtml } = new Function('esc', `${kod2}\n return { punktyZTekstu, mocneSlaboHtml };`)(
+  (x) => String(x).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])));
+
+console.log('\n8. Listy mocnych stron i braków');
+sprawdz('pusty raport nie pokazuje pustych ramek', mocneSlaboHtml({}) === '', mocneSlaboHtml({}));
+sprawdz('same puste linie to nadal nic', mocneSlaboHtml({ mocne: '\n\n  \n' }) === '');
+// Ludzie piszą listy różnie — wymaganie jednej konwencji byłoby wymaganiem od skauta,
+// żeby pamiętał o formatowaniu zamiast o zawodniku.
+const punkty = punktyZTekstu('- Przyjęcie pod presją\n• Podanie długie\n\n  Głos w linii  ');
+console.log('   ' + JSON.stringify(punkty));
+sprawdz('myślnik, kropka i sama treść dają ten sam wynik',
+  punkty.length === 3 && punkty[0] === 'Przyjęcie pod presją' && punkty[1] === 'Podanie długie' && punkty[2] === 'Głos w linii',
+  JSON.stringify(punkty));
+const html = mocneSlaboHtml({ mocne: 'Szybkość', doPoprawy: 'Gra głową' });
+sprawdz('obie listy trafiają do HTML', /Szybkość/.test(html) && /Gra głową/.test(html));
+sprawdz('mocne strony mają swój pasek', /rl-mocne/.test(html));
+sprawdz('braki mają swój pasek', /rl-slabe/.test(html));
+sprawdz('jedna lista bez drugiej też działa', /Szybkość/.test(mocneSlaboHtml({ mocne: 'Szybkość' })));
+sprawdz('treść od użytkownika jest odkażona',
+  !/<img/.test(mocneSlaboHtml({ mocne: '<img src=x onerror=alert(1)>' })));
+
+console.log('\n9. Nowe pola zapisują się i są odczytywane');
+['mocne', 'doPoprawy'].forEach(pole =>
+  sprawdz(`„${pole}" jest na liście pól zapisywanych`, new RegExp(`"${pole}"`).test(cfg)));
+['rep-mocne', 'rep-do-poprawy'].forEach(id => {
+  sprawdz(`pole „${id}" istnieje w formularzu`, zrodlo.includes(`id="${id}"`));
+  sprawdz(`pole „${id}" jest odczytywane przy zapisie`, zrodlo.includes(`getElementById('${id}')`));
+});
+
 console.log(bledy ? `\n${bledy} BŁĘDÓW` : '\nWszystko przeszło.');
 process.exit(bledy ? 1 : 0);
