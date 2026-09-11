@@ -22,6 +22,7 @@ const kod = [
   wytnij('ocenyZRaportow', /function ocenyZRaportow\(\)\{[\s\S]*?\n\}/),
   wytnij('pozycjaDoPorownan', /function pozycjaDoPorownan\(p\)\{[\s\S]*?\n\}/),
   wytnij('MIN_GRUPA_POROWNANIA', /const MIN_GRUPA_POROWNANIA = \d+;/),
+  wytnij('czyPoziomJuniorski', /function czyPoziomJuniorski\(poziom\)\{.*\}/),
   wytnij('porownanieNaPozycji', /function porownanieNaPozycji\(p, oceny\)\{[\s\S]*?\n\}/),
 ].join('\n');
 

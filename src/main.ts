@@ -2887,6 +2887,119 @@ function pozycjaDoPorownan(p){
 // a mówi tylko, że drugi raport akurat wypadł gorzej.
 const MIN_GRUPA_POROWNANIA = 3;
 
+// Poziomy juniorskie porównujemy tylko w obrębie jednej grupy. Jedna reguła dla rankingu i dla
+// profilu na tle pozycji — inaczej dwa widoki mierzyłyby tego samego zawodnika inną miarą.
+function czyPoziomJuniorski(poziom){ return poziom === 'Kategorie juniorskie'; }
+
+// METRYKI Z RAPORTÓW: średnia każdej osi (faza gry, stały fragment, pozycja bramkarska) z tych
+// raportów, w których ta oś ma ocenę. Wydzielone z playerAvg z tego samego powodu co średnia:
+// profil na tle pozycji musi liczyć osie zawodnika i jego rywali DOKŁADNIE tak, jak rysuje je radar.
+function metrykiZRaportow(reps){
+  const metryki = [];
+  const zbierz = (pole, lista)=> lista.forEach(f=>{
+    const wartosci = (reps||[]).map(r=> Number((r[pole]||{})[f.key])).filter(v=>Number.isFinite(v) && v>0);
+    if(wartosci.length) metryki.push({
+      key: f.key, label: f.krotko || f.label,
+      wartosc: wartosci.reduce((x,y)=>x+y,0)/wartosci.length,
+      zIlu: wartosci.length,
+    });
+  });
+  // Obie listy naraz. Klucze faz gry i pozycji bramkarskich nie mają części wspólnej, a rubryki
+  // bez ocen i tak odpadają wyżej — więc zawodnik z historią z obu skal (bramkarz przestawiony
+  // do pola albo odwrotnie) zachowa jedno i drugie, zamiast tracić połowę dorobku.
+  zbierz('phases', [...REPORT_PHASES, ...FAZY_BRAMKARZ]);
+  zbierz('setPieces', REPORT_SET_PIECES);
+  return metryki;
+}
+
+// ŚREDNIA POZYCJI NA KAŻDEJ OSI — przerywana linia odniesienia na radarze.
+//
+// Pomysł wzięty z CIES: wskaźnik zawodnika sam w sobie mówi mało, dopiero zestawiony ze średnią
+// pozycji pokazuje, gdzie odstaje. Grupa: ta sama pozycja ogólna i ten sam poziom rozgrywek
+// (juniorzy: ta sama grupa) — BEZ samego zawodnika, bo średnia z grupy, w której się siedzi,
+// ciągnie w jego stronę i zaciera różnicę, którą właśnie chcemy zobaczyć.
+// Oś, na której ocenionych rywali jest mniej niż MIN_GRUPA_POROWNANIA, nie dostaje odniesienia:
+// „średnia" z jednego czy dwóch raportów to przypadek, a nie poziom pozycji.
+function sredniaPozycjiNaOsiach(p){
+  const pozycja = pozycjaDoPorownan(p);
+  const liga = clubLeague(p.clubId);
+  if(!pozycja || !liga) return null;
+  const poziom = topLevelOf(liga);
+  const juniorzy = czyPoziomJuniorski(poziom);
+  const naleze = juniorzy
+    ? (x)=> clubLeague(x.clubId) === liga
+    : (x)=> topLevelOf(clubLeague(x.clubId)) === poziom;
+  const wgZawodnika = new Map();
+  DB.reports.forEach(r=>{
+    if(!r.playerId || r.playerId === p.id) return;
+    if(!wgZawodnika.has(r.playerId)) wgZawodnika.set(r.playerId, []);
+    wgZawodnika.get(r.playerId).push(r);
+  });
+  const sumy = new Map();   // klucz osi → { suma, ilu }
+  let rywali = 0;
+  DB.players.forEach(x=>{
+    const reps = wgZawodnika.get(x.id);
+    if(!reps || !naleze(x) || pozycjaDoPorownan(x) !== pozycja) return;
+    const m = metrykiZRaportow(reps);
+    if(!m.length) return;
+    rywali++;
+    m.forEach(o=>{
+      const s = sumy.get(o.key) || { suma: 0, ilu: 0 };
+      s.suma += o.wartosc; s.ilu++;
+      sumy.set(o.key, s);
+    });
+  });
+  const osie = {};
+  sumy.forEach((s, key)=>{ if(s.ilu >= MIN_GRUPA_POROWNANIA) osie[key] = { srednia: s.suma / s.ilu, ilu: s.ilu }; });
+  return { pozycja, etykieta: juniorzy ? liga : poziom, rywali, osie };
+}
+
+// ---- POZIOM MECZU: MINUTY WAŻONE ---------------------------------------------------------------
+//
+// 900 minut w III lidze i 900 w klasie okręgowej to nie to samo doświadczenie, a lista i profil
+// liczyły je identycznie. Wzorem CIES („kapitał doświadczenia" ważony poziomem meczów) mnożymy
+// minuty przez wagę poziomu rozgrywek. Ekstraklasa = 1.
+//
+// WAGI SĄ UMOWNE i tak je nazywamy w interfejsie. CIES wylicza swoje z modelu opartego na wynikach
+// z całego świata; my takiego modelu nie mamy, więc zamiast udawać precyzję dajemy rozsądny punkt
+// startu i możliwość zmiany w Ustawieniach — to skaut wie, ile w jego regionie jest wart mecz
+// CLJ U-19 wobec III ligi.
+const WAGI_POZIOMU_DOMYSLNE = {
+  'Ekstraklasa': 1, 'I liga': 0.75, 'II liga': 0.6, 'III liga': 0.45, 'IV liga': 0.33,
+  'Klasa okręgowa': 0.22, 'CLJ U19': 0.4, 'CLJ U17': 0.3, 'CLJ U16': 0.25, 'CLJ U15': 0.2,
+  'Liga makroregionalna U16': 0.2, 'Rocznik': 0.15,
+};
+const WAGA_MIN = 0.05, WAGA_MAX = 2;
+
+// Wagi z Ustawień nakładane na domyślne. Wartość spoza zakresu albo nie-liczba jest pomijana —
+// jedna literówka w ustawieniach nie może wyzerować minut całej ligi.
+function wagiPoziomu(){
+  const wlasne = (DB.settings && DB.settings.wagiPoziomu) || {};
+  const wynik = { ...WAGI_POZIOMU_DOMYSLNE };
+  Object.keys(wlasne).forEach(k=>{
+    const v = Number(wlasne[k]);
+    if(k in wynik && Number.isFinite(v) && v >= WAGA_MIN && v <= WAGA_MAX) wynik[k] = v;
+  });
+  return wynik;
+}
+
+// Klucz poziomu dla nazwy rozgrywek. Nieznane rozgrywki NIE dostają wagi — lepiej nie ważyć wcale
+// niż ważyć liczbą wymyśloną dla rozgrywek, których nikt nie ocenił.
+function kluczPoziomu(liga){
+  const l = String(liga || '');
+  if(/^Rocznik\s+\d{4}/i.test(l)) return 'Rocznik';
+  return Object.keys(WAGI_POZIOMU_DOMYSLNE).find(k=> k !== 'Rocznik' && wTychRozgrywkach(l, k)) || null;
+}
+function wagaPoziomu(liga){
+  const k = kluczPoziomu(liga);
+  return k ? wagiPoziomu()[k] : null;
+}
+function minutyWazone(p){
+  if(!p || p.minutes == null || p.minutes === '') return null;
+  const w = wagaPoziomu(clubLeague(p.clubId));
+  return w == null ? null : Math.round(Number(p.minutes) * w);
+}
+
 function porownanieNaPozycji(p, oceny){
   const moja = oceny && oceny.get(p.id);
   const pozycja = pozycjaDoPorownan(p);
@@ -2908,7 +3021,7 @@ function porownanieNaPozycji(p, oceny){
 
   // „Kategorie juniorskie" zlewają CLJ U-19, U-15 i roczniki w jeden worek — piętnastolatek nie
   // może się mierzyć z dziewiętnastolatkami. Tam porównujemy wyłącznie w obrębie tej samej grupy.
-  const juniorzy = poziom === 'Kategorie juniorskie';
+  const juniorzy = czyPoziomJuniorski(poziom);
   const wPoziomie = juniorzy ? null : policz(x=> topLevelOf(clubLeague(x.clubId)) === poziom);
   const wGrupie = (juniorzy || liga !== poziom) ? policz(x=> clubLeague(x.clubId) === liga) : null;
   return { pozycja, liga, poziom, ocena: moja.ocena, raportow: moja.raportow, wPoziomie, wGrupie };
@@ -2959,22 +3072,7 @@ function playerAvg(playerId){
   // obserwacji (ocenia się w zakładce Raporty). Stąd sprzeczność w profilu: „średnia 4.6 z 1 rap."
   // obok komunikatu „brak ocen". Ocen liczbowych dostarczają dziś raporty: cztery fazy gry i
   // cztery stałe fragmenty, wszystkie w skali 1-6 — i to jest osiem osi radaru.
-  const metryki = [];
-  if(reps.length){
-    const zbierz = (pole, lista)=> lista.forEach(f=>{
-      const wartosci = reps.map(r=> Number((r[pole]||{})[f.key])).filter(v=>Number.isFinite(v) && v>0);
-      if(wartosci.length) metryki.push({
-        key: f.key, label: f.krotko || f.label,
-        wartosc: wartosci.reduce((x,y)=>x+y,0)/wartosci.length,
-        zIlu: wartosci.length,
-      });
-    });
-    // Obie listy naraz. Klucze faz gry i pozycji bramkarskich nie mają części wspólnej, a rubryki
-    // bez ocen i tak odpadają wyżej — więc zawodnik z historią z obu skal (bramkarz przestawiony
-    // do pola albo odwrotnie) zachowa jedno i drugie, zamiast tracić połowę dorobku.
-    zbierz('phases', [...REPORT_PHASES, ...FAZY_BRAMKARZ]);
-    zbierz('setPieces', REPORT_SET_PIECES);
-  }
+  const metryki = reps.length ? metrykiZRaportow(reps) : [];
 
   if(!obs.length && overall===null && !avgs && !metryki.length) return null;
   const last = obs.length ? obs[obs.length-1]
@@ -3184,6 +3282,26 @@ function compareSeasonStats(entries){
     </tr>`;
   };
 
+  // MINUTY WAŻONE POZIOMEM. Bez tego wiersza zestawienie zawodnika z III ligi i z klasy okręgowej
+  // nagradzało samą liczbę minut — niezależnie od tego, z kim je grał.
+  const wierszWazonych = ()=>{
+    const wartosci = entries.map(e=> minutyWazone(e.p));
+    const konkretne = wartosci.filter(v=> v != null);
+    if(!konkretne.length) return '';
+    const max = Math.max(...konkretne) || 1, najm = Math.min(...konkretne), rozs = max - najm;
+    return `<tr>
+      <td><strong>Minuty ważone poziomem</strong><div class="note" style="font-size:10.5px;">minuty × waga ligi (umowna)</div></td>
+      ${wartosci.map(v=>{
+        if(v == null) return '<td style="text-align:right;color:var(--ink-soft);">—</td>';
+        const czyNaj = v === max && konkretne.length > 1;
+        const proc = Math.round(v / max * 100);
+        return `<td style="text-align:right;${czyNaj?'font-weight:800;color:var(--heading);':''}">
+          ${v}<div class="note" style="font-size:10.5px;">${proc}%</div>
+          ${statBar(proc, rozs === 0 ? 1 : (v - najm) / rozs)}</td>`;
+      }).join('')}
+    </tr>`;
+  };
+
   return `<div class="card" style="overflow:auto;">
     <h4 style="margin-top:0;color:var(--heading);">Statystyki sezonu</h4>
     <p class="note" style="margin-top:-6px;">Wartość bezwzględna, pod nią udział procentowy względem najwyższego wyniku w zestawieniu. Pogrubienie = najlepszy.</p>
@@ -3191,6 +3309,7 @@ function compareSeasonStats(entries){
       <tr><th style="text-align:left;">Wskaźnik</th>${entries.map(e=>`<th style="text-align:right;">${esc(e.p.lastName)} ${esc(e.p.firstName)}</th>`).join('')}</tr>
       ${POLA.map(wiersz).join('')}
       ${wierszNaMecz('Minuty / mecz','minutes',0)}
+      ${wierszWazonych()}
       ${wierszNaMecz('Gole / mecz','goals',2)}
     </table>
   </div>`;
@@ -4359,6 +4478,7 @@ function kluczSortowania(p, kolumna){
     case 'status':   { const i = PORZADEK_STATUSU.indexOf(String(p.status||'')); return { liczba: i >= 0 ? i : null }; }
     case 'mecze':    return { liczba: p.matches != null ? Number(p.matches) : null };
     case 'minuty':   return { liczba: p.minutes != null ? Number(p.minutes) : null };
+    case 'minutyWazone': return { liczba: minutyWazone(p) };
     case 'gole':     return { liczba: p.goals != null ? Number(p.goals) : null };
     case 'ocena':    return { liczba: a && a.overall != null ? Number(a.overall) : null };
     case 'obsrap':   { const s = (a ? a.count : 0) + (a ? (a.raportow||0) : 0); return { liczba: s || null }; }
@@ -4453,7 +4573,7 @@ function viewPlayers(){
       <td>${p.status? `<span class="badge ${cls}">${esc(p.status)}</span>` : '—'}</td>
       <td onclick="event.stopPropagation()" style="text-align:center;">${agentToggleHtml(p)}</td>
       <td style="text-align:right;">${p.matches!=null?p.matches:'—'}</td>
-      <td style="text-align:right;">${p.minutes!=null?p.minutes:'—'}</td>
+      <td style="text-align:right;">${p.minutes!=null?p.minutes:'—'}${minutyWazone(p)!=null && minutyWazone(p)!==Number(p.minutes) ? `<div class="note" style="font-size:10.5px;white-space:nowrap;" title="Minuty ważone poziomem rozgrywek (waga umowna, zmienisz w Ustawieniach)">≈${minutyWazone(p)} waż.</div>` : ''}</td>
       <td style="text-align:right;">${p.goals!=null?p.goals:'—'}</td>
       <td style="text-align:right;">${fmtAvg(a)}</td>
       <td style="text-align:right;">${komorkaObsRap(a)}</td>
@@ -4523,7 +4643,7 @@ function viewPlayers(){
   <p class="note" style="margin:0 0 6px;font-size:11.5px;">Tabela jest szeroka — przewiń ją w bok pod spodem albo przytrzymaj <strong>Shift</strong> i kręć kółkiem myszy. Kolumna akcji zostaje widoczna.</p>
   <div class="card table-scroll" style="padding:0;overflow:auto;">
     <table class="players-table">
-      <thead><tr><th style="width:24px;"><input type="checkbox" class="header-checkbox"></th><th style="width:34px;text-align:right;" title="Liczba porządkowa">Lp.</th><th>${zetonSort('nazwisko','Zawodnik')} ${zetonSort('rocznik','rocznik')}</th>${naglowekSort('pozycja','Pozycja')}${naglowekSort('klub','Klub / region / liga')}${naglowekSort('status','Status')}<th style="text-align:center;" title="Czy zawodnik ma menedżera — kliknij, aby przełączyć Tak/Nie">Agent</th>${naglowekSort('mecze','Mecze','text-align:right;')}${naglowekSort('minuty','Minuty','text-align:right;')}${naglowekSort('gole','Gole','text-align:right;')}${naglowekSort('ocena','Śr. ocena','text-align:right;')}${naglowekSort('obsrap','Obs. / rap.','text-align:right;')}<th></th></tr></thead>
+      <thead><tr><th style="width:24px;"><input type="checkbox" class="header-checkbox"></th><th style="width:34px;text-align:right;" title="Liczba porządkowa">Lp.</th><th>${zetonSort('nazwisko','Zawodnik')} ${zetonSort('rocznik','rocznik')}</th>${naglowekSort('pozycja','Pozycja')}${naglowekSort('klub','Klub / region / liga')}${naglowekSort('status','Status')}<th style="text-align:center;" title="Czy zawodnik ma menedżera — kliknij, aby przełączyć Tak/Nie">Agent</th>${naglowekSort('mecze','Mecze','text-align:right;')}<th style="text-align:right;">${zetonSort('minuty','Minuty')} ${zetonSort('minutyWazone','waż.')}</th>${naglowekSort('gole','Gole','text-align:right;')}${naglowekSort('ocena','Śr. ocena','text-align:right;')}${naglowekSort('obsrap','Obs. / rap.','text-align:right;')}<th></th></tr></thead>
       <tbody>${rows || `<tr><td colspan="13"><div class="empty">Brak zawodników spełniających filtry.</div></td></tr>`}</tbody>
     </table>
   </div>`;
@@ -4652,8 +4772,14 @@ function viewPlayerDetail(id){
   const obs = playerObs(id).slice().reverse();
   // Radar rysujemy z ocen w raportach (fazy gry + stałe fragmenty, 1-6). Stary radar z pięciu
   // atrybutów obserwacji zostaje tylko dla zawodników ocenianych, zanim to okno zniknęło.
+  // Profil na tle pozycji: przerywana linia to średnia rywali z tej samej pozycji i poziomu.
+  const odniesienie = (a && a.metryki && a.metryki.length >= 3) ? sredniaPozycjiNaOsiach(p) : null;
+  const odnWartosci = odniesienie ? a.metryki.map(m=> odniesienie.osie[m.key] ? odniesienie.osie[m.key].srednia : null) : null;
+  const maOdn = !!odnWartosci && odnWartosci.some(v=> v != null);
   const radarChartHtml = (a && a.metryki && a.metryki.length >= 3)
-    ? radarRaportow(a.metryki) + `<p class="note" style="flex-basis:100%;margin:2px 0 0;">Skala 1-6 &middot; średnia z ${a.reportCount} ${a.reportCount===1?'raportu':'raportów'} tego zawodnika.</p>`
+    ? radarRaportow(a.metryki, maOdn ? { odniesienie: odnWartosci } : {}) + `<p class="note" style="flex-basis:100%;margin:2px 0 0;">Skala 1-6 &middot; średnia z ${a.reportCount} ${a.reportCount===1?'raportu':'raportów'} tego zawodnika.${maOdn
+      ? ` <span class="radar-legenda-odn" aria-hidden="true"></span> Przerywana linia: średnia pozycji ${esc(odniesienie.pozycja)} — ${esc(odniesienie.etykieta)}, bez tego zawodnika (${odniesienie.rywali} ${odniesienie.rywali===1?'oceniony':'ocenionych'}; oś liczona od ${MIN_GRUPA_POROWNANIA} ocenionych). W nawiasie różnica do średniej.`
+      : ''}</p>`
     : (a && a.avgs) ? radarChart(a.avgs)
     : `<p class="note">Brak ocen — średnia i profil pojawią się po wypełnieniu raportu w zakładce „Raporty".</p>`;
 
@@ -4699,7 +4825,7 @@ function viewPlayerDetail(id){
         <tr><td style="color:var(--ink-soft);">Wzrost</td><td>${p.height? p.height+" cm":"—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">System gry</td><td>${systemZawodnika(p)? `<strong>${esc(etykietaSystemu(systemZawodnika(p)))}</strong>${p.formation?'':' <span style="color:var(--ink-soft);font-size:12px;">(z klubu)</span>'}`:"—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">Pozycja wg NMG</td><td>${opisPozycjiNmg(p) ? `<strong>${esc(opisPozycjiNmg(p))}</strong>` : "—"}</td></tr>
-        <tr><td style="color:var(--ink-soft);">Mecze / minuty / gole / asysty</td><td>${(p.matches!=null||p.minutes!=null||p.goals!=null||p.assists!=null) ? `${p.matches!=null?p.matches:'—'} mecze &middot; ${p.minutes!=null?p.minutes:'—'} min &middot; ${p.goals!=null?p.goals:'—'} goli &middot; ${p.assists!=null?p.assists:'—'} asyst` : "—"}${p.statsUpdatedAt?`<div class="note" style="font-size:11px;margin-top:2px;">Mecze i bramki z ${esc(p.statsSource||'90minut.pl')}${p.statsSeason?' (sezon '+esc(p.statsSeason)+')':''}, odświeżone ${esc(String(p.statsUpdatedAt).slice(0,10))}. Minuty i asysty wpisujesz ręcznie.</div>`:''}</td></tr>
+        <tr><td style="color:var(--ink-soft);">Mecze / minuty / gole / asysty</td><td>${(p.matches!=null||p.minutes!=null||p.goals!=null||p.assists!=null) ? `${p.matches!=null?p.matches:'—'} mecze &middot; ${p.minutes!=null?p.minutes:'—'} min &middot; ${p.goals!=null?p.goals:'—'} goli &middot; ${p.assists!=null?p.assists:'—'} asyst` : "—"}${minutyWazone(p)!=null ? `<div class="note" style="font-size:11px;margin-top:2px;" title="Minuty pomnożone przez wagę poziomu rozgrywek. Wagi są umowne — zmienisz je w Ustawieniach.">≈ <strong>${minutyWazone(p)}</strong> min ważonych poziomem &middot; ${esc(kluczPoziomu(clubLeague(p.clubId)))} ×${String(wagaPoziomu(clubLeague(p.clubId))).replace('.',',')}</div>` : ''}${p.statsUpdatedAt?`<div class="note" style="font-size:11px;margin-top:2px;">Mecze i bramki z ${esc(p.statsSource||'90minut.pl')}${p.statsSeason?' (sezon '+esc(p.statsSeason)+')':''}, odświeżone ${esc(String(p.statsUpdatedAt).slice(0,10))}. Minuty i asysty wpisujesz ręcznie.</div>`:''}</td></tr>
         <tr><td style="color:var(--ink-soft);">Kadra wojewódzka</td><td>${p.kadraWojewodzka? '<strong style="color:var(--good);">Tak</strong>' : 'Nie'}</td></tr>
         <tr><td style="color:var(--ink-soft);">Reprezentacja</td><td>${p.reprezentacja? `<strong style="color:var(--good);">Tak</strong>${p.powolania!=null?` &middot; ${p.powolania} ${p.powolania===1?'powołanie':'powołań'}`:''}` : 'Nie'}</td></tr>
         <tr><td style="color:var(--ink-soft);">Instagram</td><td>${p.instagramLink? `<a class="ext-link" href="${esc(p.instagramLink)}" target="_blank" rel="noopener">📷 śledź &rarr;</a>`:"—"}</td></tr>
@@ -4960,6 +5086,27 @@ function radarRaportow(metryki, opcje){
     const [x,y] = pkt(i, m.wartosc);
     return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.2" fill="${kolorLinia}"/>`;
   }).join('');
+  // LINIA ODNIESIENIA — średnia pozycji na każdej osi (o.odniesienie[i]: liczba albo null).
+  // Wielokąt rysujemy TYLKO, gdy odniesienie ma każda oś. Zamknięty kształt z dziurami udawałby
+  // średnią tam, gdzie jej nie ma — przy częściowym komplecie zostają same znaczniki na osiach.
+  const odn = Array.isArray(o.odniesienie) && o.odniesienie.length === n ? o.odniesienie : null;
+  const pelneOdn = !!odn && odn.every(v=> v != null);
+  const odnWielokat = pelneOdn
+    ? `<polygon class="radar-odniesienie" points="${odn.map((v,i)=> pkt(i, v).map(x=>x.toFixed(1)).join(',')).join(' ')}" fill="none" stroke="var(--ink-soft)" stroke-width="1.6" stroke-dasharray="4 3" stroke-linejoin="round"/>`
+    : '';
+  const odnZnaczniki = odn ? odn.map((v,i)=>{
+    if(v == null) return '';
+    const [x,y] = pkt(i, v);
+    return `<circle class="radar-odniesienie-pkt" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.6" fill="var(--card)" stroke="var(--ink-soft)" stroke-width="1.4"/>`;
+  }).join('') : '';
+  // Różnica do średniej przy wartości osi. Kolor to tylko wzmocnienie — znak „+" i „−" niesie
+  // informację sam, więc nie zgubi jej nikt, kto słabo rozróżnia zieleń i czerwień.
+  const roznicaOsi = (i, wartosc)=>{
+    if(!odn || odn[i] == null) return '';
+    const d = wartosc - odn[i];
+    if(Math.abs(d) < 0.05) return ` <tspan fill="var(--ink-soft)" font-weight="600">(=)</tspan>`;
+    return ` <tspan fill="${d > 0 ? 'var(--good)' : 'var(--clay-dark)'}" font-weight="700">(${d > 0 ? '+' : '−'}${fmt1(Math.abs(d))})</tspan>`;
+  };
   const podpisy = o.etykiety === false ? '' : metryki.map((m,i)=>{
     const a = kat(i);
     const lx = cx + (R+22)*Math.cos(a), ly = cy + (R+22)*Math.sin(a);
@@ -4969,13 +5116,13 @@ function radarRaportow(metryki, opcje){
     const anchor = cosA > 0.25 ? 'start' : cosA < -0.25 ? 'end' : 'middle';
     const dy = Math.sin(a) > 0.6 ? 10 : Math.sin(a) < -0.6 ? -3 : 4;
     return `<text x="${lx.toFixed(1)}" y="${(ly+dy).toFixed(1)}" font-size="10.5" font-weight="600" fill="${kolorPodpis}" text-anchor="${anchor}" font-family="Inter,Arial,sans-serif">${esc(m.label)}</text>
-      <text x="${lx.toFixed(1)}" y="${(ly+dy+12).toFixed(1)}" font-size="10" fill="${kolorLinia}" text-anchor="${anchor}" font-family="Inter,Arial,sans-serif" font-weight="700">${fmt1(m.wartosc)}</text>`;
+      <text x="${lx.toFixed(1)}" y="${(ly+dy+12).toFixed(1)}" font-size="10" fill="${kolorLinia}" text-anchor="${anchor}" font-family="Inter,Arial,sans-serif" font-weight="700">${fmt1(m.wartosc)}${roznicaOsi(i, m.wartosc)}</text>`;
   }).join('');
 
-  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="Profil ocen zawodnika w skali 1-6">
-    ${siatka}${osie}
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="Profil ocen zawodnika w skali 1-6${odn ? ' na tle średniej pozycji' : ''}">
+    ${siatka}${osie}${odnWielokat}
     <polygon points="${dane}" fill="${kolorPole}" fill-opacity="0.32" stroke="${kolorLinia}" stroke-width="2" stroke-linejoin="round"/>
-    ${kropki}${podpisy}
+    ${kropki}${odnZnaczniki}${podpisy}
   </svg>`;
 }
 
@@ -6851,7 +6998,7 @@ function viewClubDetail(id){
       <td>${chipPozycji(p)}</td>
       <td>${p.status? `<span class="badge ${STATUS_CLASS[p.status]||'new'}">${esc(p.status)}</span>` : '—'}</td>
       <td style="text-align:right;">${p.matches!=null?p.matches:'—'}</td>
-      <td style="text-align:right;">${p.minutes!=null?p.minutes:'—'}</td>
+      <td style="text-align:right;">${p.minutes!=null?p.minutes:'—'}${minutyWazone(p)!=null && minutyWazone(p)!==Number(p.minutes) ? `<div class="note" style="font-size:10.5px;white-space:nowrap;" title="Minuty ważone poziomem rozgrywek (waga umowna, zmienisz w Ustawieniach)">≈${minutyWazone(p)} waż.</div>` : ''}</td>
       <td style="text-align:right;">${p.goals!=null?p.goals:'—'}</td>
       <td style="text-align:right;white-space:nowrap;">${cardsCell(p)}</td>
       <td>${fmtAvg(a)}</td>
@@ -11164,6 +11311,21 @@ function viewSettings(){
     ${block('customFields','Dodatkowe pola zawodnika','Własne pola, które pojawią się dodatkowo w formularzu zawodnika i w jego profilu — dodawaj dowolną ilość, kiedy tylko czegoś zabraknie w standardowej kartotece.')}
   </div>
   <div class="card">
+    <h4 style="margin-top:0;">Waga poziomu rozgrywek</h4>
+    <p class="note">Mnożnik minut przy „minutach ważonych": 900 minut w III lidze i 900 w klasie okręgowej to nie to samo
+      doświadczenie. Ekstraklasa = 1. Wartości domyślne są <strong>umowne</strong> — dopasuj je do tego, jak oceniasz
+      poziom rozgrywek w swoim regionie. Zakres ${String(WAGA_MIN).replace('.',',')}–${WAGA_MAX}.</p>
+    <div class="wagi-poziomu">
+      ${Object.keys(WAGI_POZIOMU_DOMYSLNE).map(k=>`<label class="wagi-wiersz"><span>${esc(k)}</span>
+        <input type="number" step="0.01" min="${WAGA_MIN}" max="${WAGA_MAX}" class="waga-poziomu" data-poziom="${esc(k)}" value="${wagiPoziomu()[k]}">
+        <span class="note">dom. ${String(WAGI_POZIOMU_DOMYSLNE[k]).replace('.',',')}</span></label>`).join('')}
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+      <button class="gold" data-action="wagi-poziomu-zapisz">Zapisz wagi</button>
+      <button class="secondary" data-action="wagi-poziomu-domyslne">Przywróć domyślne</button>
+    </div>
+  </div>
+  <div class="card">
     <h4 style="margin-top:0;">Kopia zapasowa</h4>
     <p class="note" style="margin-bottom:10px;">Zapisuje <strong>wszystkie</strong> dane do jednego pliku na Twoim dysku:
     zawodników, kluby, obserwacje, raporty, talenty, kontakty, agencje, menedżerów, terminarz, herby i ustawienia.
@@ -12156,6 +12318,34 @@ function attachHandlers(){
     if(plik) czytajZrzut(plik);
   });
 
+  // WAGI POZIOMU. Zapisujemy wyłącznie to, co odbiega od domyślnych — dzięki temu zmiana wartości
+  // domyślnej w kodzie dotrze do wszystkich, którzy danej wagi nie ruszali.
+  main.querySelectorAll('[data-action="wagi-poziomu-zapisz"]').forEach(b=>b.onclick=async()=>{
+    const wagi = {};
+    const bledne = [];
+    main.querySelectorAll('.waga-poziomu').forEach(inp=>{
+      const k = (inp as HTMLElement).dataset.poziom;
+      const v = Number(String((inp as HTMLInputElement).value).replace(',', '.'));
+      if(!Number.isFinite(v) || v < WAGA_MIN || v > WAGA_MAX){ bledne.push(k); return; }
+      if(v !== WAGI_POZIOMU_DOMYSLNE[k]) wagi[k] = v;
+    });
+    // Jedna zła wartość wstrzymuje cały zapis. Zapisanie „reszty" zostawiłoby w ustawieniach stan,
+    // którego nikt nie wpisał w całości.
+    if(bledne.length){
+      pokazPotwierdzenie(`Waga poza zakresem ${String(WAGA_MIN).replace('.',',')}–${WAGA_MAX}: ${bledne.join(', ')}. Nic nie zapisałem.`, 'blad');
+      return;
+    }
+    DB.settings.wagiPoziomu = wagi;
+    const ok = await saveSettings();
+    render();
+    pokazPotwierdzenie(ok === false ? 'Nie udało się zapisać wag.' + powodNieudanegoZapisu() : 'Zapisano wagi poziomów.', ok === false ? 'blad' : 'ok');
+  });
+  main.querySelectorAll('[data-action="wagi-poziomu-domyslne"]').forEach(b=>b.onclick=async()=>{
+    DB.settings.wagiPoziomu = {};
+    const ok = await saveSettings();
+    render();
+    pokazPotwierdzenie(ok === false ? 'Nie udało się zapisać.' + powodNieudanegoZapisu() : 'Przywrócono domyślne wagi.', ok === false ? 'blad' : 'ok');
+  });
   main.querySelectorAll('[data-action="talent-kadra"]').forEach(b=>b.onclick=()=>{
     talentKadra = (b as HTMLElement).dataset.val || '';
     render();
@@ -12786,7 +12976,7 @@ function attachHandlers(){
   // Pierwsze kliknięcie w nową kolumnę ustawia kierunek, który dla NIEJ jest naturalny: nazwisko
   // i klub od A, ale mecze, minuty, gole i oceny od największych. Sortowanie po golach rosnąco
   // pokazuje na czele zawodników z zerem — czyli dokładnie tych, o których się nie pyta.
-  const OD_NAJWIEKSZYCH = new Set(['mecze','minuty','gole','ocena','obsrap']);
+  const OD_NAJWIEKSZYCH = new Set(['mecze','minuty','minutyWazone','gole','ocena','obsrap']);
   main.querySelectorAll('[data-sort]').forEach(el=>{
     (el as HTMLElement).onclick = ()=>{
       const kolumna = (el as HTMLElement).dataset.sort;
