@@ -2823,20 +2823,116 @@ function playerObs(playerId){ return DB.observations.filter(o=>o.playerId===play
 // overall === null, dopóki zawodnik nie ma żadnego raportu z ocenami. Radar (avgs, 5 atrybutów 1-10)
 // zostaje zasilany historycznymi ocenami z obserwacji, w których statystykę wypełniono ZANIM
 // usunęliśmy to okno — dla nowych zawodników radar po prostu się nie pokaże.
+// ŚREDNIA Z RAPORTÓW — JEDEN WZÓR DLA CAŁEJ APLIKACJI.
+//
+// Wydzielona z playerAvg, bo porównanie z resztą pozycji musi liczyć DOKŁADNIE tę samą liczbę,
+// którą profil pokazuje jako „średnią". Dwie kopie wzoru rozjechałyby się przy pierwszej zmianie
+// i zawodnik mógłby mieć w profilu 4,6, a w rankingu pozycji 4,4 — bez żadnego wyjaśnienia.
+// Średnia raportu to średnia jego wypełnionych rubryk; średnia zawodnika to średnia raportów.
+// Rubryki puste albo zerowe nie zaniżają wyniku — nie ocenione to nie „ocenione na zero".
+function sredniaZRaportow(reps){
+  let suma = 0, ratedReports = 0;
+  (reps || []).forEach(r=>{
+    const vals = [...Object.values(r.phases||{}), ...Object.values(r.setPieces||{})]
+      .map(Number).filter(v=>Number.isFinite(v) && v>0);
+    if(vals.length){ suma += vals.reduce((a,b)=>a+b,0)/vals.length; ratedReports++; }
+  });
+  return { overall: ratedReports ? suma/ratedReports : null, ratedReports };
+}
+
+// ---- PORÓWNANIE Z RESZTĄ POZYCJI --------------------------------------------------------------
+//
+// Ocena „4,3" nic nie mówi, dopóki nie wiadomo, jak wypadają inni. Zdanie „drugi z dziewięciu
+// ocenionych środkowych obrońców IV ligi" zamienia ją w coś, na czym da się oprzeć decyzję —
+// i da się je policzyć z własnych raportów, bez żadnego zewnętrznego źródła.
+
+// Oceny WSZYSTKICH zawodników jednym przejściem po raportach. Wołanie playerAvg dla czternastu
+// tysięcy kartotek przeglądałoby raporty czternaście tysięcy razy; tu przeglądamy je raz.
+function ocenyZRaportow(){
+  const wgZawodnika = new Map();
+  DB.reports.forEach(r=>{
+    if(!r.playerId) return;
+    if(!wgZawodnika.has(r.playerId)) wgZawodnika.set(r.playerId, []);
+    wgZawodnika.get(r.playerId).push(r);
+  });
+  const oceny = new Map();
+  wgZawodnika.forEach((reps, id)=>{
+    const s = sredniaZRaportow(reps);
+    if(s.overall != null) oceny.set(id, { ocena: s.overall, raportow: s.ratedReports });
+  });
+  return oceny;
+}
+
+// Pozycja do porównań: OGÓLNA, nie numer NMG. Numer rozdziela lewego i prawego stopera, a to
+// dzieliłoby i tak małą grupę na pół — lewy stoper konkuruje o miejsce z prawym, nie tylko
+// z innymi lewymi. Numer wskazany w kartotece wygrywa z wpisaną nazwą, bo jest dokładniejszy.
+function pozycjaDoPorownan(p){
+  const def = Number(p && p.pozycjaNmg) ? POSITION_NUMBERS.find(x=>x.number === Number(p.pozycjaNmg)) : null;
+  return def ? def.posName : String((p && p.position) || '').trim();
+}
+
+// Poniżej tylu ocenionych porównanie jest wróżeniem: „pierwszy z dwóch" brzmi jak wyróżnienie,
+// a mówi tylko, że drugi raport akurat wypadł gorzej.
+const MIN_GRUPA_POROWNANIA = 3;
+
+function porownanieNaPozycji(p, oceny){
+  const moja = oceny && oceny.get(p.id);
+  const pozycja = pozycjaDoPorownan(p);
+  const liga = clubLeague(p.clubId);
+  if(!moja || !pozycja || !liga) return null;
+  const poziom = topLevelOf(liga);
+
+  const policz = (naleze)=>{
+    const grupa = DB.players
+      .filter(x=> oceny.has(x.id) && naleze(x) && pozycjaDoPorownan(x) === pozycja)
+      .map(x=>({ p: x, ...oceny.get(x.id) }));
+    // MIEJSCE WSPÓLNE PRZY REMISIE: 1 + liczba zawodników z WYŻSZĄ oceną. Dwaj z tą samą średnią
+    // dzielą miejsce — rozstrzyganie remisu nazwiskiem albo kolejnością wpisu dawałoby jednemu
+    // przewagę, której nie ma.
+    const miejsce = 1 + grupa.filter(o=> o.ocena > moja.ocena + 1e-9).length;
+    const lepsi = grupa.filter(o=>o.ocena > moja.ocena + 1e-9).sort((a,b)=>b.ocena-a.ocena);
+    return { miejsce, ilu: grupa.length, wystarczy: grupa.length >= MIN_GRUPA_POROWNANIA, lepsi };
+  };
+
+  // „Kategorie juniorskie" zlewają CLJ U-19, U-15 i roczniki w jeden worek — piętnastolatek nie
+  // może się mierzyć z dziewiętnastolatkami. Tam porównujemy wyłącznie w obrębie tej samej grupy.
+  const juniorzy = poziom === 'Kategorie juniorskie';
+  const wPoziomie = juniorzy ? null : policz(x=> topLevelOf(clubLeague(x.clubId)) === poziom);
+  const wGrupie = (juniorzy || liga !== poziom) ? policz(x=> clubLeague(x.clubId) === liga) : null;
+  return { pozycja, liga, poziom, ocena: moja.ocena, raportow: moja.raportow, wPoziomie, wGrupie };
+}
+
+function porownanieNaPozycjiHtml(p){
+  const w = porownanieNaPozycji(p, ocenyZRaportow());
+  if(!w) return '';
+  const zdanie = (wynik, gdzie)=>{
+    if(!wynik) return '';
+    if(!wynik.wystarczy){
+      return `<div class="note">W ${esc(gdzie)}: za mało ocenionych na tej pozycji, żeby porównywać
+        (${wynik.ilu} z ${MIN_GRUPA_POROWNANIA} potrzebnych).</div>`;
+    }
+    const lepsi = wynik.lepsi.slice(0, 3).map(o=>
+      `${esc(o.p.lastName || o.p.firstName || '—')} ${fmt1(o.ocena)}`).join(', ');
+    return `<div style="font-size:13px;margin-top:4px;">
+      <strong style="font-size:15px;color:var(--heading);">${wynik.miejsce}.</strong> z ${wynik.ilu}
+      ocenionych — ${esc(gdzie)}
+      ${wynik.miejsce > 1 && lepsi ? `<span class="note"> &middot; wyżej: ${lepsi}${wynik.lepsi.length > 3 ? '…' : ''}</span>` : ''}
+    </div>`;
+  };
+  const tresc = zdanie(w.wPoziomie, w.poziom) + zdanie(w.wGrupie, w.liga);
+  if(!tresc) return '';
+  return `<div class="porownanie-pozycji">
+    <div class="raport-lista-tytul">Na tle pozycji: ${esc(w.pozycja)}</div>
+    ${tresc}
+    <div class="note" style="margin-top:4px;">Liczone ze średnich z Waszych raportów. Różni skauci oceniają
+      różnie surowo, więc przy małych grupach traktuj miejsce jako wskazówkę, nie werdykt.</div>
+  </div>`;
+}
+
 function playerAvg(playerId){
   const obs = playerObs(playerId);
   const reps = DB.reports.filter(r=>r.playerId===playerId);
-  let overall = null;
-  let ratedReports = 0;
-  if(reps.length){
-    let sum = 0;
-    reps.forEach(r=>{
-      const vals = [...Object.values(r.phases||{}), ...Object.values(r.setPieces||{})]
-        .map(Number).filter(v=>Number.isFinite(v) && v>0);
-      if(vals.length){ sum += vals.reduce((a,b)=>a+b,0)/vals.length; ratedReports++; }
-    });
-    if(ratedReports) overall = sum/ratedReports;
-  }
+  const { overall, ratedReports } = sredniaZRaportow(reps);
   // Radar tylko z obserwacji z faktycznie wypełnioną (historycznie) statystyką.
   const rated = obs.filter(o=> o.statsFilledIn && o.ratings && RATING_KEYS.some(k=>Number(o.ratings[k])>0));
   let avgs = null;
@@ -4575,6 +4671,7 @@ function viewPlayerDetail(id){
   <div class="grid grid-2">
     <div class="card">
       <h4 style="margin-top:0;color:var(--heading);">Profil ocen ${a && a.overall!=null? '&middot; średnia '+fmt1(a.overall)+' <span class="note" style="font-weight:400;">(z '+a.reportCount+' rap.)</span>' : ''}</h4>
+      ${porownanieNaPozycjiHtml(p)}
       ${a && a.avgs? `<div class="gauge-row" style="margin-bottom:14px;">
         ${RATING_KEYS.map(k=>gaugeRing(a.avgs[k], 64, RATING_LABELS[k])).join('')}
       </div>` : ''}

@@ -743,6 +743,9 @@ tr.player-row.prow-okazja.prow-mlodszy td:first-child{box-shadow:inset 4px 0 0 v
 .raport-lista.rl-mocne{box-shadow:inset 3px 0 0 var(--good);}
 .raport-lista.rl-slabe{box-shadow:inset 3px 0 0 var(--clay);}
 @media(max-width:720px){ .raport-listy{grid-template-columns:1fr;} }
+/* Porównanie z resztą pozycji — w profilu, tuż pod średnią, bo to jej jedyny sensowny kontekst. */
+.porownanie-pozycji{background:var(--card-soft);border-radius:8px;padding:8px 12px;margin:0 0 14px;
+  box-shadow:inset 3px 0 0 var(--gold);}
 
 /* Znacznik kadry przy nazwisku. Biało-czerwony pasek przy krawędzi, bo to jedyna rzecz na tej
    liście, która mówi o zawodniku coś, czego nie wyczyta się z żadnych rozgrywek: że wybrał go
