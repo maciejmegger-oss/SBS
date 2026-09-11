@@ -622,12 +622,51 @@ export function czytajZeZrzutu(tekst: string, kluby: string[]): DaneZeZrzutu {
   if (czas) wynik.godzina = `${String(Number(czas[1])).padStart(2, "0")}:${czas[2]}`;
   else wynik.braki.push("godzina");
 
+  // ---- BLOK SZCZEGÓŁÓW. Wiersze podpisane wprost („Stadion:", „Terminarz:", „Rozgrywka:")
+  // i wszystko, co między nimi stoi.
+  //
+  // To jest klucz do całej reszty. Tamta aplikacja ŁAMIE długą nazwę obiektu na kilka linijek,
+  // a wtedy jej dalszy ciąg zostaje w tekście jako osobny wiersz bez żadnego podpisu — na
+  // przykład „ZAWISZA - boisko sztuczne  (Bydgoszcz,". Taki wiersz wygląda dokładnie jak zapis
+  // „Gospodarz - Gość" i panel zakładał obserwację meczu o nazwie stadionu, z adresem urwanym
+  // w połowie. Wiersze z tego zakresu nie mogą więc uchodzić za drużyny — drużyny w tych
+  // układach stoją ZAWSZE nad szczegółami, przy herbach.
+  const ETYKIETA = /^\s*[\p{L}]+\s*:/u;
+
+  // Wiersz URWANY W POŁ — dalszy ciąg poprzedniego, a nie osobna informacja. Rozpoznajemy go po
+  // kształcie, a nie po tym, gdzie leży: nawias bez pary, przecinek albo nawias na końcu, początek
+  // małą literą. Nazwa drużyny nie wygląda tak nigdy.
+  //
+  // Po kształcie, bo „wszystko między pierwszą a ostatnią etykietą" byłoby za szerokie: źródło
+  // z podpisanym nagłówkiem NAD parą drużyn (np. „Kolejka: 3") połknęłoby wtedy sam mecz.
+  const urwany = (w: string) =>
+    /[,(]$/.test(w)
+    || (w.match(/\(/g) || []).length !== (w.match(/\)/g) || []).length
+    || /^[a-ząćęłńóśźż]/.test(w);
+
+  // Które wiersze są ciągiem dalszym podpisanego pola. Idziemy od każdej etykiety w dół, dopóki
+  // wiersze wyglądają na urwane — pierwszy, który wygląda na samodzielny, kończy pole.
+  const ciagDalszy = new Set<number>();
+  for (let i = 0; i < wiersze.length; i++) {
+    if (!ETYKIETA.test(wiersze[i])) continue;
+    for (let j = i + 1; j < wiersze.length && !ETYKIETA.test(wiersze[j]) && urwany(wiersze[j]); j++) {
+      ciagDalszy.add(j);
+    }
+  }
+
   // ---- MIEJSCE i ROZGRYWKI: pola podpisane wprost, więc bez zgadywania.
   // „Gdańska 163 , 85-915 Bydgoszcz" — odstęp przed przecinkiem bierze się z układu tamtej
   // aplikacji, nie z adresu.
   const poEtykiecie = (etykieta: RegExp) => {
-    const w = wiersze.find((x) => etykieta.test(x));
-    return w ? w.replace(etykieta, "").replace(/\s+,/g, ",").replace(/\s+/g, " ").trim() : "";
+    const i = wiersze.findIndex((x) => etykieta.test(x));
+    if (i < 0) return "";
+    // Doklejamy ciąg dalszy — aż do następnego podpisanego pola. Bez tego zapisywaliśmy sam
+    // początek nazwy obiektu („Bydgoskie Centrum Sportu, Kompleks Sportowy") i scout dostawał
+    // adres, pod który nie da się dojechać. Ostatnie pole w bloku nie zbiera nic — inaczej
+    // wciągnęłoby menu na dole cudzego ekranu.
+    const czesci = [wiersze[i].replace(etykieta, "")];
+    for (let j = i + 1; ciagDalszy.has(j); j++) czesci.push(wiersze[j]);
+    return czesci.join(" ").replace(/\s+,/g, ",").replace(/\s+/g, " ").trim();
   };
   wynik.miejsce = poEtykiecie(/^\s*(stadion|adres|obiekt|miejsce)\s*:\s*/i);
   wynik.rozgrywki = poEtykiecie(/^\s*(rozgrywka|rozgrywki|liga)\s*:\s*/i);
@@ -639,7 +678,10 @@ export function czytajZeZrzutu(tekst: string, kluby: string[]): DaneZeZrzutu {
   const znormalizuj = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
   const klubyN = kluby.map((k) => ({ nazwa: k, n: znormalizuj(k) })).filter((k) => k.n.length > 2);
 
-  const wJednym = wiersze
+  // Kandydaci na nazwę drużyny: wszystko poza polami podpisanymi i ich dalszym ciągiem.
+  const kandydaci = wiersze.filter((w, i) => !ciagDalszy.has(i) && !ETYKIETA.test(w));
+
+  const wJednym = kandydaci
     .map((w) => w.match(/^(.{3,40}?)\s+[-–—:]\s+(.{3,40})$/))
     .find((m) => m && !/^\s*(terminarz|stadion|runda|rozgrywka)/i.test(m[1]));
   if (wJednym) {
@@ -647,19 +689,23 @@ export function czytajZeZrzutu(tekst: string, kluby: string[]): DaneZeZrzutu {
     wynik.goscie = wJednym[2].trim();
   } else {
     const znalezione: string[] = [];
-    for (const w of wiersze) {
+    // Porównujemy po sprowadzeniu do wspólnej postaci, nie po surowym tekście: klub z bazy
+    // („Zawisza Bydgoszcz") i wiersz ze zrzutu („ZAWISZA BYDGOSZCZ") to ten sam zespół, a
+    // porównanie znak w znak wstawiłoby go po obu stronach i zrobiło mecz sam ze sobą.
+    const juzMam = (s: string) => znalezione.some((x) => znormalizuj(x) === znormalizuj(s));
+    for (const w of kandydaci) {
       const n = znormalizuj(w);
       if (NIE_DRUZYNA.has(n) || /[:]/.test(w) || /\d{2}:\d{2}/.test(w)) continue;
       const trafiony = klubyN.find((k) => k.n === n || (n.length > 4 && (k.n.includes(n) || n.includes(k.n))));
-      if (trafiony && !znalezione.includes(trafiony.nazwa)) znalezione.push(trafiony.nazwa);
+      if (trafiony && !juzMam(trafiony.nazwa)) znalezione.push(trafiony.nazwa);
       if (znalezione.length === 2) break;
     }
     // Kluby spoza bazy — drużyny młodzieżowe rzadko w niej są. Wiersz musi wyglądać jak nazwa:
     // od dużej litery, bez dwukropka, bez dat i liczb, najwyżej pięć słów.
     if (znalezione.length < 2) {
-      for (const w of wiersze) {
+      for (const w of kandydaci) {
         const n = znormalizuj(w);
-        if (znalezione.includes(w) || NIE_DRUZYNA.has(n)) continue;
+        if (juzMam(w) || NIE_DRUZYNA.has(n)) continue;
         if (/[:]/.test(w) || /\d/.test(w) || w.split(/\s+/).length > 5) continue;
         if (!/^[A-ZĄĆĘŁŃÓŚŹŻ]/.test(w)) continue;
         znalezione.push(w);
