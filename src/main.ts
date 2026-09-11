@@ -1945,7 +1945,7 @@ async function loadAllInner(){
     }
   };
 
-  const [p, c, o, rp, tl, ct, mt, ag, agt, pmaRow, radarRow, systemyRow, tabeleRow, s,
+  const [p, c, o, rp, tl, ct, mt, ag, agt, pmaRow, radarRow, systemyRow, tabeleRow, kadryRow, s,
     seedFlag, enrichFlag, enrichAviaFlag, enrichGornikFlag, enrichAviaV2Flag, recoMigrationFlag, statusMigrationFlag] = await Promise.all([
     czytaj('scouting:players'),
     czytaj('scouting:clubs'),
@@ -1963,6 +1963,9 @@ async function loadAllInner(){
     // co mapa pozycji: jeden wiersz JSON w sbs_kv, { idKlubu: '1-4-3-3' }.
     czytaj('scouting:systemy_klubow'),
     czytaj('scouting:tabele_lig'),
+    // Przynależność talentów do kadr (U-16, kraj klubu). Tabela sbs_talents nie ma na nią kolumny
+    // ani pola JSON, więc zapis po cichu ją wycinał i po odświeżeniu cała kadra znikała.
+    czytaj('scouting:talenty_kadry'),
     // Ustawienia to jedyny wiersz, który zapis NADPISUJE w całości (logotypy lig, lista scoutów).
     // Nieudany odczyt musi być więc widoczny, inaczej pierwszy zapis ustawień skasowałby logotypy.
     czytaj('scouting:settings'),
@@ -1993,6 +1996,8 @@ async function loadAllInner(){
   try{ radarPrzejrzane = radarRow ? JSON.parse(radarRow.value) : {}; }catch(e){ radarPrzejrzane = {}; }
   try{ systemyKlubow = systemyRow ? JSON.parse(systemyRow.value) : {}; }catch(e){ systemyKlubow = {}; }
   try{ tabeleLig = tabeleRow ? JSON.parse(tabeleRow.value) : {}; }catch(e){ tabeleLig = {}; }
+  try{ talentyKadry = kadryRow ? JSON.parse(kadryRow.value) : {}; }catch(e){ talentyKadry = {}; }
+  nalozKadryNaTalenty(DB.talents, talentyKadry);
   try{
     const loaded = s ? JSON.parse(s.value) : {};
     DB.settings = Object.assign(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), loaded);
@@ -2479,7 +2484,14 @@ function pokazPotwierdzenie(tekst, rodzaj = 'ok'){
   setTimeout(()=>{ el.classList.add('sbs-toast-znika'); setTimeout(()=>el.remove(), 400); }, ileMs);
   el.onclick = ()=> el.remove();
 }
-async function saveTalents(){ indeksSzukania = null; return robustStorageSet('scouting:talents', JSON.stringify(DB.talents)); }
+// Talenty zapisujemy DWIEMA drogami: sam wpis do tabeli, a przynależność do kadry do sbs_kv.
+// Tabela sbs_talents nie ma kolumny na kadrę — bez drugiego zapisu powołanie znikało po odświeżeniu.
+async function saveTalents(){
+  indeksSzukania = null;
+  const okWpisy = await robustStorageSet('scouting:talents', JSON.stringify(DB.talents));
+  const okKadry = await saveTalentyKadry();
+  return okWpisy !== false && okKadry !== false;
+}
 async function saveContacts(){ return robustStorageSet('scouting:contacts', JSON.stringify(DB.contacts)); }
 async function saveMatches(){ return robustStorageSet('scouting:matches', JSON.stringify(DB.matches)); }
 // Agencje i menedżerowie idą ścieżką sbs_kv (jeden rekord JSON na kolekcję), tak jak terminarz
@@ -3433,7 +3445,7 @@ const NAV_ITEMS = [
 const SAVE_FN_BY_KEY = {
   'scouting:players': ()=>savePlayers(), 'scouting:clubs': ()=>saveClubs(), 'scouting:observations': ()=>saveObservations(),
   'scouting:reports': ()=>saveReports(), 'scouting:talents': ()=>saveTalents(), 'scouting:contacts': ()=>saveContacts(),
-  'scouting:settings': ()=>saveSettings(), 'scouting:position_map_assignments': ()=>savePositionMapAssignments(), 'scouting:radar_przejrzane': ()=>saveRadarPrzejrzane(), 'scouting:systemy_klubow': ()=>saveSystemyKlubow(), 'scouting:tabele_lig': ()=>saveTabeleLig(),
+  'scouting:settings': ()=>saveSettings(), 'scouting:position_map_assignments': ()=>savePositionMapAssignments(), 'scouting:radar_przejrzane': ()=>saveRadarPrzejrzane(), 'scouting:systemy_klubow': ()=>saveSystemyKlubow(), 'scouting:tabele_lig': ()=>saveTabeleLig(), 'scouting:talenty_kadry': ()=>saveTalentyKadry(),
   'scouting:agencies': ()=>saveAgencies(), 'scouting:agents': ()=>saveAgents(),
   'scouting:agency_logos': ()=>saveAgencyLogos(),
 };
@@ -8860,6 +8872,68 @@ async function addTalentManually(){
 // nie zebraliśmy, i sama się o to upomina. Gdyby powstawały dopiero z danych, brak kadry
 // wyglądałby identycznie jak jej nieistnienie.
 const KADRY_MLODZIEZOWE = ['U-21','U-20','U-19','U-18','U-17','U-16','U-15'];
+
+// ---- TRWAŁOŚĆ KADR --------------------------------------------------------------------------
+//
+// BŁĄD, KTÓRY TO NAPRAWIA: tabela sbs_talents ma tylko kolumny imienia, nazwiska, rocznika i klubu —
+// bez pola JSON na dopiski. Zapis trafiał na „brak kolumny reprezentacja", warstwa zapisu usuwała
+// to pole i zapisywała resztę. Lista wyglądała dobrze aż do odświeżenia, a potem cała kadra U-16
+// lądowała w „Poza kadrą". Nic nie ostrzegało, bo zapis formalnie się udawał.
+//
+// Kadrę trzymamy więc w sbs_kv jako { idTalentu: { reprezentacja, krajKlubu } } — tą samą drogą
+// co systemy gry klubów. Działa od razu, bez migracji bazy. Mapę budujemy przy KAŻDYM zapisie
+// z bieżącej listy, więc usunięte talenty same z niej wypadają.
+let talentyKadry = {};
+
+function mapaKadrZTalentow(talenty){
+  const mapa = {};
+  (talenty || []).forEach(t=>{
+    if(t && t.id && (t.reprezentacja || t.krajKlubu)){
+      mapa[t.id] = { reprezentacja: t.reprezentacja || '', krajKlubu: t.krajKlubu || '' };
+    }
+  });
+  return mapa;
+}
+
+// Nakładamy TYLKO na puste pola. Gdyby kiedyś baza dostała prawdziwą kolumnę, jej wartość
+// ma pierwszeństwo przed kopią z sbs_kv.
+function nalozKadryNaTalenty(talenty, mapa){
+  (talenty || []).forEach(t=>{
+    const k = mapa && t && mapa[t.id];
+    if(!k) return;
+    if(!t.reprezentacja && k.reprezentacja) t.reprezentacja = k.reprezentacja;
+    if(!t.krajKlubu && k.krajKlubu) t.krajKlubu = k.krajKlubu;
+  });
+}
+
+async function saveTalentyKadry(){
+  talentyKadry = mapaKadrZTalentow(DB.talents);
+  return robustStorageSet('scouting:talenty_kadry', JSON.stringify(talentyKadry));
+}
+
+// Powołany, który JUŻ jest na liście, nie dostaje drugiego wpisu — dopisujemy kadrę istniejącemu.
+// Rozpoznajemy po imieniu i nazwisku; gdy obie strony znają klub, klub też musi się zgadzać,
+// żeby dwóch „Jakubów Kowalskich" z różnych klubów nie zlać w jedną osobę.
+// Wśród kilku pasujących wpisów wybieramy ten, który już ma TĘ kadrę — wtedy ponowne wklejenie
+// komunikatu niczego nie przestawia.
+function scalPowolanychZIstniejacymi(istniejace, nowe){
+  const doDodania = [];
+  let uzupelnieni = 0;
+  const osoba = (t)=> nazwiskoNorm(t.firstName) + '|' + nazwiskoNorm(t.lastName);
+  (nowe || []).forEach(n=>{
+    if(!n.reprezentacja){ doDodania.push(n); return; }
+    const pasujacy = (istniejace || []).filter(t=> osoba(t) === osoba(n) && (
+      !t.club || !n.club || klubyToSamo(t.club, n.club) || nazwiskoNorm(t.club) === nazwiskoNorm(n.club)
+    ));
+    const ten = pasujacy.find(t=>t.reprezentacja === n.reprezentacja) || pasujacy[0];
+    if(!ten){ doDodania.push(n); return; }
+    ten.reprezentacja = n.reprezentacja;
+    if(n.krajKlubu && !ten.krajKlubu) ten.krajKlubu = n.krajKlubu;
+    if(n.club && !ten.club) ten.club = n.club;
+    uzupelnieni++;
+  });
+  return { doDodania, uzupelnieni };
+}
 let talentKadra = '';
 
 function viewTalent(){
@@ -12102,11 +12176,15 @@ function attachHandlers(){
     const checked = Array.from(main.querySelectorAll('.talent-paste-check:checked')).map(c=>Number(c.dataset.idx));
     const toAdd = checked.map(i=>talentPasteParsed[i]).filter(Boolean);
     if(!toAdd.length){ alert('Brak zaznaczonych zawodników do dodania.'); return; }
-    DB.talents.push(...toAdd);
+    // Powołany, który JUŻ jest na liście, dostaje kadrę dopisaną do swojego wpisu — nie drugi wpis.
+    // Tak też odzyskuje się kadrę, którą wcześniej wyciął zapis: wystarczy wkleić komunikat ponownie.
+    const { doDodania, uzupelnieni } = scalPowolanychZIstniejacymi(DB.talents, toAdd);
+    DB.talents.push(...doDodania);
     const ok = await saveTalents();
     if(!ok){ alert(('Nie udało się zapisać.' + powodNieudanegoZapisu())); return; }
     talentPasteText = ''; talentPasteParsed = null;
     render();
+    if(uzupelnieni) pokazPotwierdzenie(`Dodano ${doDodania.length}. ${uzupelnieni} ${uzupelnieni===1?'zawodnik już był':'zawodników już było'} na liście — dopisałem kadrę do istniejących wpisów zamiast tworzyć duplikaty.`, 'ok');
   });
   main.querySelectorAll('.contact-remove-btn').forEach(b=>b.onclick=async()=>{
     const ok = await deleteContactRecord(b.dataset.id);
