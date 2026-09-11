@@ -4,6 +4,7 @@ import { currentUser, signIn, signOut, requestPasswordReset, setNewPassword, isP
          mojeKonto, listaKont, ustawStatusKonta, ustawRoleKonta, tokenSesji } from "./data/auth";
 import { VOIVODESHIP_PATHS } from "./data/voivodeships";
 import { SKLADY_MECZOWE } from "./data/sklady-meczowe";
+import { POWOLANIA_DO_PRZYWROCENIA } from "./data/powolania";
 // Kod zbieracza ŁNP — ten sam plik, który serwujemy pod /zakladka-lnp-v2.js.
 import LNP_ZBIERACZ from "../public/zakladka-lnp-v2.js?raw";
 import type { Database } from "./types";
@@ -1997,6 +1998,9 @@ async function loadAllInner(){
   try{ systemyKlubow = systemyRow ? JSON.parse(systemyRow.value) : {}; }catch(e){ systemyKlubow = {}; }
   try{ tabeleLig = tabeleRow ? JSON.parse(tabeleRow.value) : {}; }catch(e){ tabeleLig = {}; }
   try{ talentyKadry = kadryRow ? JSON.parse(kadryRow.value) : {}; }catch(e){ talentyKadry = {}; }
+  // Najpierw kadra z wiersza talentu (źródło główne), potem z zapasowej mapy — mapa uzupełnia
+  // wyłącznie talenty, które po pierwszym kroku nadal są bez kadry.
+  nalozKadreZPolaZrodla(DB.talents);
   nalozKadryNaTalenty(DB.talents, talentyKadry);
   try{
     const loaded = s ? JSON.parse(s.value) : {};
@@ -2059,6 +2063,24 @@ async function loadAllInner(){
   if(!wolnoUzupelniac){
     console.warn('Niepełne wczytanie (' + nieudaneOdczyty.map(x=>x.klucz).join(', ') +
       ') — pomijam listę startową, wzbogacanie i migracje. Odśwież stronę.');
+  }
+
+  // PRZYWRÓCENIE KADR wyciętych przez dawny błąd zapisu. Bezpieczne przy każdym starcie (patrz
+  // przywrocKadreZKomunikatow) i zapisuje wyłącznie wtedy, gdy rzeczywiście coś się zmieniło.
+  if(wolnoUzupelniac){
+    const naprawa = przywrocKadreZKomunikatow(DB.talents, POWOLANIA_DO_PRZYWROCENIA, ()=>uid('T'));
+    if(naprawa.zmienione || naprawa.nowe.length){
+      DB.talents.push(...naprawa.nowe);
+      const ok = await saveTalents();
+      const ilu = naprawa.zmienione + naprawa.nowe.length;
+      const kadry = [...new Set(POWOLANIA_DO_PRZYWROCENIA.map(k=>k.kadra))].join(', ');
+      // Z opóźnieniem, bo pierwsze przerysowanie widoku przychodzi dopiero po wczytaniu.
+      setTimeout(()=> pokazPotwierdzenie(ok === false
+        ? `Przywróciłem kadrę ${kadry} na ekranie, ale zapis do bazy się nie udał.` + powodNieudanegoZapisu()
+        : `Przywrócono kadrę ${kadry}: ${ilu} ${ilu===1?'powołany':'powołanych'}.`
+          + (naprawa.duplikaty ? ` Na liście zostało ${naprawa.duplikaty} zdublowanych wpisów tych samych zawodników — są w „Poza kadrą" i możesz je usunąć.` : ''),
+        ok === false ? 'blad' : 'ok'), 1500);
+    }
   }
 
   // Lista startowa klubów wstawia się TYLKO RAZ, przy pierwszym uruchomieniu na danej bazie.
@@ -2484,13 +2506,19 @@ function pokazPotwierdzenie(tekst, rodzaj = 'ok'){
   setTimeout(()=>{ el.classList.add('sbs-toast-znika'); setTimeout(()=>el.remove(), 400); }, ileMs);
   el.onclick = ()=> el.remove();
 }
-// Talenty zapisujemy DWIEMA drogami: sam wpis do tabeli, a przynależność do kadry do sbs_kv.
-// Tabela sbs_talents nie ma kolumny na kadrę — bez drugiego zapisu powołanie znikało po odświeżeniu.
+// KADRA JEDZIE W TYM SAMYM WIERSZU CO TALENT.
+//
+// Tabela sbs_talents nie ma kolumny na kadrę. Pierwsza naprawa trzymała ją w osobnym wierszu sbs_kv,
+// powiązanym z talentem po identyfikatorze — i kadra dalej nie wracała po odświeżeniu. Wiersz obok
+// może się nie zapisać, zapisać ze starszej karty albo rozjechać z listą; wiersz TEGO SAMEGO talentu
+// zapisuje się razem z nim albo wcale. Kadrę kodujemy więc w istniejącej kolumnie źródła wpisu
+// („powołanie U-16 · Holandia"), która przy talentach nigdzie się nie wyświetla.
+// Mapa w sbs_kv zostaje jako zapas — jej niepowodzenie nie blokuje zapisu talentów.
 async function saveTalents(){
   indeksSzukania = null;
-  const okWpisy = await robustStorageSet('scouting:talents', JSON.stringify(DB.talents));
-  const okKadry = await saveTalentyKadry();
-  return okWpisy !== false && okKadry !== false;
+  const okWpisy = await robustStorageSet('scouting:talents', JSON.stringify(talentyDoZapisu(DB.talents)));
+  await saveTalentyKadry();
+  return okWpisy !== false;
 }
 async function saveContacts(){ return robustStorageSet('scouting:contacts', JSON.stringify(DB.contacts)); }
 async function saveMatches(){ return robustStorageSet('scouting:matches', JSON.stringify(DB.matches)); }
@@ -3564,7 +3592,7 @@ const NAV_ITEMS = [
 const SAVE_FN_BY_KEY = {
   'scouting:players': ()=>savePlayers(), 'scouting:clubs': ()=>saveClubs(), 'scouting:observations': ()=>saveObservations(),
   'scouting:reports': ()=>saveReports(), 'scouting:talents': ()=>saveTalents(), 'scouting:contacts': ()=>saveContacts(),
-  'scouting:settings': ()=>saveSettings(), 'scouting:position_map_assignments': ()=>savePositionMapAssignments(), 'scouting:radar_przejrzane': ()=>saveRadarPrzejrzane(), 'scouting:systemy_klubow': ()=>saveSystemyKlubow(), 'scouting:tabele_lig': ()=>saveTabeleLig(), 'scouting:talenty_kadry': ()=>saveTalentyKadry(),
+  'scouting:settings': ()=>saveSettings(), 'scouting:position_map_assignments': ()=>savePositionMapAssignments(), 'scouting:radar_przejrzane': ()=>saveRadarPrzejrzane(), 'scouting:systemy_klubow': ()=>saveSystemyKlubow(), 'scouting:tabele_lig': ()=>saveTabeleLig(),
   'scouting:agencies': ()=>saveAgencies(), 'scouting:agents': ()=>saveAgents(),
   'scouting:agency_logos': ()=>saveAgencyLogos(),
 };
@@ -9020,6 +9048,39 @@ async function addTalentManually(){
 // wyglądałby identycznie jak jej nieistnienie.
 const KADRY_MLODZIEZOWE = ['U-21','U-20','U-19','U-18','U-17','U-16','U-15'];
 
+// PRZYWRACANIE KADR Z ZAPISANYCH KOMUNIKATÓW (src/data/powolania.ts).
+//
+// Naprawa danych po błędzie, który wycinał kadrę przy zapisie — napisana tak, żeby mogła ruszać
+// przy KAŻDYM starcie bez szkody:
+//  • dopisuje kadrę tylko talentowi, który jej NIE MA,
+//  • nie przestawia zawodnika, któremu ktoś później przypisał INNĄ kadrę — to świadoma decyzja,
+//  • nie tworzy drugiego wpisu dla kogoś, kto już jest na liście,
+//  • brakującego powołanego dodaje, bo komunikat mówi wprost, że był powołany.
+// Zwraca liczby zamiast zapisywać — o zapisie decyduje wołający, i tylko gdy coś się zmieniło.
+function przywrocKadreZKomunikatow(talenty, komunikaty, noweId){
+  const nowe = [];
+  let zmienione = 0, duplikaty = 0;
+  (komunikaty || []).forEach(k=>{
+    osobyZPowolaniaPzpn(k.tekst).forEach(o=>{
+      const osoba = { ...o, reprezentacja: k.kadra };
+      const pasujacy = (talenty || []).filter(t=> tenSamTalent(t, osoba));
+      if(!pasujacy.length){
+        nowe.push({ id: noweId(), ...osoba, dateAdded: k.data, sourceImage: '' });
+        return;
+      }
+      duplikaty += pasujacy.length - 1;
+      if(pasujacy.some(t=> t.reprezentacja === k.kadra)) return;   // już przywrócony
+      const ten = pasujacy.find(t=> !t.reprezentacja);
+      if(!ten) return;   // każdy wpis ma już INNĄ kadrę — nie ruszamy cudzej decyzji
+      ten.reprezentacja = k.kadra;
+      if(osoba.krajKlubu && !ten.krajKlubu) ten.krajKlubu = osoba.krajKlubu;
+      if(osoba.club && !ten.club) ten.club = osoba.club;
+      zmienione++;
+    });
+  });
+  return { nowe, zmienione, duplikaty };
+}
+
 // ---- TRWAŁOŚĆ KADR --------------------------------------------------------------------------
 //
 // BŁĄD, KTÓRY TO NAPRAWIA: tabela sbs_talents ma tylko kolumny imienia, nazwiska, rocznika i klubu —
@@ -9054,8 +9115,43 @@ function nalozKadryNaTalenty(talenty, mapa){
 }
 
 async function saveTalentyKadry(){
+  // Przy niepełnym wczytaniu nie zapisujemy nawet zapasu — mapa zbudowana z uboższej listy
+  // nadpisałaby tę pełniejszą, która jest w bazie.
+  if(nieudaneOdczyty.length) return false;
   talentyKadry = mapaKadrZTalentow(DB.talents);
-  return robustStorageSet('scouting:talenty_kadry', JSON.stringify(talentyKadry));
+  // ZAPAS, NIE ŹRÓDŁO — zapisujemy cicho, bez banera awarii: kadra jest już w wierszach talentów.
+  try{ await storage.set('scouting:talenty_kadry', JSON.stringify(talentyKadry), true); return true; }
+  catch(e){ console.warn('Zapasowa mapa kadr nie zapisała się (kadra jest w wierszach talentów):', e); return false; }
+}
+
+// Kadra zakodowana w polu źródła wpisu: „powołanie U-16" albo „powołanie U-16 · Holandia".
+function kadraDoPolaZrodla(t){
+  return 'powołanie ' + t.reprezentacja + (t.krajKlubu ? ' · ' + t.krajKlubu : '');
+}
+function kadraZPolaZrodla(pole){
+  const m = String(pole || '').match(/^powołanie\s+(U-\d{2}|kadra Polski)(?:\s+·\s+(.+))?$/);
+  return m ? { reprezentacja: m[1], krajKlubu: (m[2] || '').trim() } : null;
+}
+
+// Kopia listy do zapisu: kadra przeniesiona do pola źródła, pola bez kolumny w bazie usunięte.
+// Bez usunięcia każdy wsad odbijałby się od „brak kolumny reprezentacja" i szedł drugi raz bez niej.
+// Obiekty w pamięci zostają nietknięte — widok dalej ma kadrę pod swoją nazwą.
+function talentyDoZapisu(talenty){
+  return (talenty || []).map(t=>{
+    const { reprezentacja, krajKlubu, ...reszta } = t;
+    return reprezentacja ? { ...reszta, confidence: kadraDoPolaZrodla({ reprezentacja, krajKlubu }) } : reszta;
+  });
+}
+
+// Odczyt kadry z pola źródła po wczytaniu z bazy. Uzupełnia tylko talenty BEZ kadry.
+function nalozKadreZPolaZrodla(talenty){
+  (talenty || []).forEach(t=>{
+    if(!t || t.reprezentacja) return;
+    const k = kadraZPolaZrodla(t.confidence);
+    if(!k) return;
+    t.reprezentacja = k.reprezentacja;
+    if(!t.krajKlubu && k.krajKlubu) t.krajKlubu = k.krajKlubu;
+  });
 }
 
 // Powołany, który JUŻ jest na liście, nie dostaje drugiego wpisu — dopisujemy kadrę istniejącemu.
@@ -9063,15 +9159,18 @@ async function saveTalentyKadry(){
 // żeby dwóch „Jakubów Kowalskich" z różnych klubów nie zlać w jedną osobę.
 // Wśród kilku pasujących wpisów wybieramy ten, który już ma TĘ kadrę — wtedy ponowne wklejenie
 // komunikatu niczego nie przestawia.
+function tenSamTalent(t, n){
+  const osoba = (x)=> nazwiskoNorm(x.firstName) + '|' + nazwiskoNorm(x.lastName);
+  if(osoba(t) !== osoba(n)) return false;
+  return !t.club || !n.club || klubyToSamo(t.club, n.club) || nazwiskoNorm(t.club) === nazwiskoNorm(n.club);
+}
+
 function scalPowolanychZIstniejacymi(istniejace, nowe){
   const doDodania = [];
   let uzupelnieni = 0;
-  const osoba = (t)=> nazwiskoNorm(t.firstName) + '|' + nazwiskoNorm(t.lastName);
   (nowe || []).forEach(n=>{
     if(!n.reprezentacja){ doDodania.push(n); return; }
-    const pasujacy = (istniejace || []).filter(t=> osoba(t) === osoba(n) && (
-      !t.club || !n.club || klubyToSamo(t.club, n.club) || nazwiskoNorm(t.club) === nazwiskoNorm(n.club)
-    ));
+    const pasujacy = (istniejace || []).filter(t=> tenSamTalent(t, n));
     const ten = pasujacy.find(t=>t.reprezentacja === n.reprezentacja) || pasujacy[0];
     if(!ten){ doDodania.push(n); return; }
     ten.reprezentacja = n.reprezentacja;

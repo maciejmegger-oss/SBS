@@ -32,6 +32,7 @@ const kod = [
   wytnij('klubyToSamo', /function klubyToSamo\(a, b\)\{[\s\S]*?\n\}/),
   wytnij('mapaKadrZTalentow', /function mapaKadrZTalentow\(talenty\)\{[\s\S]*?\n\}/),
   wytnij('nalozKadryNaTalenty', /function nalozKadryNaTalenty\(talenty, mapa\)\{[\s\S]*?\n\}/),
+  wytnij('tenSamTalent', /function tenSamTalent\(t, n\)\{[\s\S]*?\n\}/),
   wytnij('scalPowolanychZIstniejacymi', /function scalPowolanychZIstniejacymi\(istniejace, nowe\)\{[\s\S]*?\n\}/),
 ].join('\n');
 const api = new Function(`${kod}\n return { mapaKadrZTalentow, nalozKadryNaTalenty, scalPowolanychZIstniejacymi };`)();
@@ -120,7 +121,8 @@ console.log('\n8. Zapis i odczyt są podpięte w aplikacji');
 sprawdz('odczyt „scouting:talenty_kadry" przy starcie', zrodlo.includes("czytaj('scouting:talenty_kadry')"));
 sprawdz('nałożenie mapy po wczytaniu talentów', /nalozKadryNaTalenty\(DB\.talents, talentyKadry\)/.test(zrodlo));
 sprawdz('saveTalents zapisuje też kadry', /async function saveTalents\(\)\{[\s\S]*?saveTalentyKadry\(\)[\s\S]*?\n\}/.test(zrodlo));
-sprawdz('ponowna próba zapisu zna nowy klucz', zrodlo.includes("'scouting:talenty_kadry': ()=>saveTalentyKadry()"));
+sprawdz('zapis talentów przenosi kadrę do wiersza talentu',
+  /robustStorageSet\('scouting:talents', JSON\.stringify\(talentyDoZapisu\(DB\.talents\)\)\)/.test(zrodlo));
 // Kolejność zmiennych musi odpowiadać kolejności odczytów w Promise.all — przesunięcie o jeden
 // podstawiłoby ustawienia pod kadry i odwrotnie.
 const zmienne = (zrodlo.match(/const \[p, c, o, rp, tl[^\]]*\]/) || [''])[0];
