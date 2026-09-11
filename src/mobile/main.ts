@@ -676,10 +676,58 @@ export function czytajZeZrzutu(tekst: string, kluby: string[]): DaneZeZrzutu {
   // (najpewniejsza droga — nazwa zgadza się wtedy z kartoteką), a na końcu odsiew wierszy
   // wyglądających na nazwę drużyny.
   const znormalizuj = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
-  const klubyN = kluby.map((k) => ({ nazwa: k, n: znormalizuj(k) })).filter((k) => k.n.length > 2);
+  // Do porównywania klubów bierzemy tę samą normalizację, co reszta panelu: formy prawne
+  // („SA", „sp. z o.o.") niosą zero informacji o drużynie, a psują dopasowanie.
+  const slowa = (s: string) => normKlub(s).split(" ").filter((w) => w.length > 2);
+  const klubyN = kluby
+    .map((k) => ({ nazwa: k, n: normKlub(k), s: slowa(k), zespol: znacznikZespolu(k) }))
+    .filter((k) => k.n.length > 2);
 
   // Kandydaci na nazwę drużyny: wszystko poza polami podpisanymi i ich dalszym ciągiem.
-  const kandydaci = wiersze.filter((w, i) => !ciagDalszy.has(i) && !ETYKIETA.test(w));
+  const surowi = wiersze.filter((w, i) => !ciagDalszy.has(i) && !ETYKIETA.test(w));
+
+  // NAPISY Z HERBÓW.
+  //
+  // Telefon czyta tekst z CAŁEGO zrzutu, więc do wklejki wpada też to, co napisane na tarczy
+  // herbowej — samo „POLONIA", sama litera „Z". Takie wiersze stoją w tekście WYŻEJ niż podpisy
+  // pod herbami, więc dochodziły do głosu pierwsze i wybierały drużynę za scouta.
+  //
+  // Poznajemy je po tym, że są fragmentem innego wiersza: „POLONIA" mieści się w całości w
+  // „Polonia Bydgoszcz", które stoi kilka wierszy niżej. Prawdziwa nazwa drużyny nie zawiera się
+  // w nazwie drugiej drużyny tego samego meczu.
+  const kandydaci = surowi.filter((w) => {
+    const sw = slowa(w);
+    if (!sw.length) return false;   // „Z", „5G" — nie ma tu żadnego słowa
+    return !surowi.some((inny) => {
+      const si = slowa(inny);
+      return si.length > sw.length && sw.every((x) => si.includes(x));
+    });
+  });
+
+  // DOPASOWANIE WIERSZA DO KLUBU Z BAZY.
+  //
+  // Dawniej wystarczyło, że nazwa klubu zawierała treść wiersza — i „POLONIA" z herbu pasowało
+  // do każdego klubu z tym słowem w nazwie, wygrywając pierwszy z brzegu. Teraz muszą zgadzać
+  // się CAŁE słowa, a przy kilku trafieniach wygrywa nazwa najbliższa długością: „Arka Gdynia"
+  // ma trafić w „Arkę Gdynia", a nie w „Arkę Gdynia II", bo to dwa różne zespoły.
+  const dopasujKlub = (w: string): string | null => {
+    const n = normKlub(w);
+    // Pierwszy zespół, rezerwy i młodzieżówka to RÓŻNE drużyny, choć klub jeden. Znacznik musi
+    // się zgadzać — inaczej mecz pierwszej ligi lądował pod „Arka Gdynia II" z czwartej.
+    const zespol = znacznikZespolu(w);
+    const zgodne = klubyN.filter((k) => k.zespol === zespol);
+    const dokladny = zgodne.find((k) => k.n === n);
+    if (dokladny) return dokladny.nazwa;
+    const sw = slowa(w);
+    // Jedno słowo to za mało na rozstrzygnięcie — „Polonia" albo „Arka" nosi kilkadziesiąt
+    // klubów i wybór między nimi byłby rzutem monetą.
+    if (sw.length < 2) return null;
+    const trafienia = zgodne.filter((k) =>
+      sw.every((x) => k.s.includes(x)) || (k.s.length >= 2 && k.s.every((x) => sw.includes(x))));
+    if (!trafienia.length) return null;
+    return trafienia.slice().sort((a, b) =>
+      Math.abs(a.n.length - n.length) - Math.abs(b.n.length - n.length))[0].nazwa;
+  };
 
   const wJednym = kandydaci
     .map((w) => w.match(/^(.{3,40}?)\s+[-–—:]\s+(.{3,40})$/))
@@ -696,18 +744,24 @@ export function czytajZeZrzutu(tekst: string, kluby: string[]): DaneZeZrzutu {
     for (const w of kandydaci) {
       const n = znormalizuj(w);
       if (NIE_DRUZYNA.has(n) || /[:]/.test(w) || /\d{2}:\d{2}/.test(w)) continue;
-      const trafiony = klubyN.find((k) => k.n === n || (n.length > 4 && (k.n.includes(n) || n.includes(k.n))));
-      if (trafiony && !juzMam(trafiony.nazwa)) znalezione.push(trafiony.nazwa);
+      const trafiony = dopasujKlub(w);
+      if (trafiony && !juzMam(trafiony)) znalezione.push(trafiony);
       if (znalezione.length === 2) break;
     }
     // Kluby spoza bazy — drużyny młodzieżowe rzadko w niej są. Wiersz musi wyglądać jak nazwa:
     // od dużej litery, bez dwukropka, bez dat i liczb, najwyżej pięć słów.
-    if (znalezione.length < 2) {
+    //
+    // Dwa przebiegi: najpierw nazwy z dwóch słów wzwyż, dopiero potem jednowyrazowe. Nazwy
+    // zespołów są w tych układach dwuczłonowe („Polonia Bydgoszcz"), a wiersze jednowyrazowe
+    // to najczęściej resztki napisów z herbu — bez tego rozdzielenia wygrywały, bo stoją wyżej.
+    for (const minSlow of [2, 1]) {
+      if (znalezione.length >= 2) break;
       for (const w of kandydaci) {
         const n = znormalizuj(w);
         if (juzMam(w) || NIE_DRUZYNA.has(n)) continue;
         if (/[:]/.test(w) || /\d/.test(w) || w.split(/\s+/).length > 5) continue;
         if (!/^[A-ZĄĆĘŁŃÓŚŹŻ]/.test(w)) continue;
+        if (slowa(w).length < minSlow) continue;
         znalezione.push(w);
         if (znalezione.length === 2) break;
       }
