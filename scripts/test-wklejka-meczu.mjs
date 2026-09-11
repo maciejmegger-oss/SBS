@@ -8,9 +8,18 @@ import fs from "node:fs";
 import { transformSync } from "esbuild";
 
 const zrodlo = fs.readFileSync("src/mobile/main.ts", "utf8");
-const blok = zrodlo.match(/const MIESIACE_PL[\s\S]*?\nexport function czytajZeZrzutu[\s\S]*?\n}\n/);
-if (!blok) { console.error("Nie znalazłem czytajZeZrzutu — test i kod się rozjechały."); process.exit(1); }
-const js = transformSync(blok[0].replace(/export /g, ""), { loader: "ts", format: "esm" }).code;
+const wytnijZe = (nazwa, wzor) => {
+  const m = zrodlo.match(wzor);
+  if (!m) { console.error(`Nie znalazłem ${nazwa} w src/mobile/main.ts — test i kod się rozjechały.`); process.exit(1); }
+  return m[0];
+};
+// czytajZeZrzutu porównuje kluby tak samo jak reszta panelu — przez znacznikZespolu i normKlub,
+// które leżą w pliku niżej. Bierzemy je razem z nią, żeby test sprawdzał prawdziwe dopasowanie.
+const blok =
+  wytnijZe("ZNACZNIKI_ZESPOLU + normKlub", /const ZNACZNIKI_ZESPOLU[\s\S]*?\nconst normKlub[\s\S]*?\n  \.trim\(\);/)
+  + "\n"
+  + wytnijZe("czytajZeZrzutu", /const MIESIACE_PL[\s\S]*?\nexport function czytajZeZrzutu[\s\S]*?\n}\n/);
+const js = transformSync(blok.replace(/export /g, ""), { loader: "ts", format: "esm" }).code;
 const { czytajZeZrzutu } = await import(
   "data:text/javascript;base64," + Buffer.from(js + "\nexport { czytajZeZrzutu };").toString("base64"));
 
@@ -193,6 +202,108 @@ console.log("\n9. Menu pod szczegółami nie wchodzi do rozgrywek");
     "Mecze", "Rozgrywki", "Dziś grają", "Ulubione",
   ].join("\n"), []);
   sprawdz("rozgrywki to samo C2", d.rozgrywki, "C2");
+}
+
+// ---------------------------------------------------------------------------
+// 10. NAPIS Z HERBU NIE MOŻE WYBRAĆ KLUBU.
+//
+// Telefon czyta tekst z CAŁEGO zrzutu, więc do wklejki wpada też napis z tarczy herbowej —
+// samo „POLONIA". Taki jednowyrazowy wiersz pasował do każdego klubu w bazie, który ma to
+// słowo w nazwie, i wygrywał pierwszy z brzegu: mecz Zawisza — Polonia Bydgoszcz zapisał się
+// jako „Grupa Chmiel Polonia Słubice - ZAWISZA BYDGOSZCZ". Zła drużyna i odwrócone strony,
+// bo napis z herbu stoi w tekście wyżej niż podpis pod herbem.
+// ---------------------------------------------------------------------------
+console.log("\n10. Napis z herbu nie wybiera klubu");
+{
+  const wklejka = [
+    "13:37", "5G", "83",
+    "Z",                       // napis z tarczy Zawiszy
+    "13.09, Ndz.",
+    "POLONIA", "BYDGOSZCZA",   // napis z tarczy Polonii — stoi WYŻEJ niż podpisy pod herbami
+    "12:30",
+    "Zawisza Bydgoszcz",
+    "Polonia Bydgoszcz",
+    "Szczegóły", "Relacja", "Statystyki",
+    "Szczegóły meczu",
+    "Terminarz: 13 września 2026 Niedziela 12:30",
+    "Stadion: Gdańska 163 , 85-915 Bydgoszcz",
+    "Runda: Kolejka 5, Runda jesienna",
+    "Rozgrywka: A1",
+    "Mecze", "Rozgrywki", "Dziś grają", "Ulubione",
+  ].join("\n");
+  const baza = ["ZAWISZA BYDGOSZCZ", "Grupa Chmiel Polonia Słubice", "Polonia Bydgoszcz"];
+
+  const d = czytajZeZrzutu(wklejka, baza);
+  sprawdz("gospodarze — gospodarz z lewej, nie z herbu", d.gospodarze, "ZAWISZA BYDGOSZCZ");
+  sprawdz("goście — Bydgoszcz, nie Słubice", d.goscie, "Polonia Bydgoszcz");
+  sprawdz("data", d.data, "2026-09-13");
+  sprawdz("godzina", d.godzina, "12:30");
+  sprawdz("rozgrywki", d.rozgrywki, "A1");
+  sprawdz("miejsce", d.miejsce, "Gdańska 163, 85-915 Bydgoszcz");
+}
+
+// ---------------------------------------------------------------------------
+// 11. Ten sam zrzut, ale gościa NIE MA w bazie — nazwa ma się wziąć z podpisu pod herbem,
+//     a nie z napisu na tarczy.
+// ---------------------------------------------------------------------------
+console.log("\n11. Gość spoza bazy — nazwa z podpisu, nie z tarczy");
+{
+  const d = czytajZeZrzutu([
+    "Z", "13.09, Ndz.", "POLONIA", "BYDGOSZCZA", "12:30",
+    "Zawisza Bydgoszcz",
+    "Polonia Bydgoszcz",
+    "Rozgrywka: A1",
+  ].join("\n"), ["ZAWISZA BYDGOSZCZ"]);
+  sprawdz("gospodarze", d.gospodarze, "ZAWISZA BYDGOSZCZ");
+  sprawdz("goście", d.goscie, "Polonia Bydgoszcz");
+}
+
+// ---------------------------------------------------------------------------
+// 12. Klub z bazy o nazwie będącej fragmentem innej — nie wolno wybrać dłuższej.
+// ---------------------------------------------------------------------------
+console.log("\n12. Wygrywa klub najbliższy nazwie, nie pierwszy z brzegu");
+{
+  const d = czytajZeZrzutu([
+    "Warta Poznań",
+    "Arka Gdynia",
+    "Rozgrywka: Betclic I liga",
+  ].join("\n"), ["Warta Sieradz", "Arka Gdynia II", "Arka Gdynia", "Warta Poznań"]);
+  sprawdz("gospodarze", d.gospodarze, "Warta Poznań");
+  sprawdz("goście", d.goscie, "Arka Gdynia");
+}
+
+// ---------------------------------------------------------------------------
+// 13. ZESPOŁY TEGO SAMEGO KLUBU TO RÓŻNE DRUŻYNY.
+// Arka Gdynia gra w I lidze, Arka II Gdynia w IV, Arka U17 w CLJ. Mecz pierwszego zespołu nie
+// może wylądować pod rezerwami tylko dlatego, że rezerw jest w bazie więcej niż jedne.
+// ---------------------------------------------------------------------------
+console.log("\n13. Pierwszy zespół, rezerwy i młodzież nie mieszają się");
+{
+  const baza = ["Arka Gdynia II", "Arka Gdynia U17", "Arka Gdynia", "Warta Poznań"];
+  const pierwszy = czytajZeZrzutu(["Warta Poznań", "Arka Gdynia", "Rozgrywka: Betclic I liga"].join("\n"), baza);
+  sprawdz("pierwszy zespół", pierwszy.goscie, "Arka Gdynia");
+
+  const rezerwy = czytajZeZrzutu(["Warta Poznań", "Arka II Gdynia", "Rozgrywka: IV liga"].join("\n"), baza);
+  sprawdz("rezerwy", rezerwy.goscie, "Arka Gdynia II");
+
+  const mlodziez = czytajZeZrzutu(["Warta Poznań", "Arka Gdynia U17", "Rozgrywka: CLJ U17"].join("\n"), baza);
+  sprawdz("młodzież", mlodziez.goscie, "Arka Gdynia U17");
+
+  // Gdy w bazie są SAME rezerwy, mecz pierwszego zespołu nie ma się do czego przypiąć —
+  // i wtedy lepiej zostawić nazwę z wklejki niż podstawić cudzą drużynę.
+  const bezPierwszego = czytajZeZrzutu(["Warta Poznań", "Arka Gdynia", "Rozgrywka: Betclic I liga"].join("\n"),
+    ["Arka Gdynia II", "Warta Poznań"]);
+  sprawdz("brak pierwszego zespołu w bazie — nie podstawiamy rezerw", bezPierwszego.goscie, "Arka Gdynia");
+}
+
+// ---------------------------------------------------------------------------
+// 14. Forma prawna w nazwie nie psuje dopasowania.
+// ---------------------------------------------------------------------------
+console.log("\n14. „SA\" w nazwie nie przeszkadza");
+{
+  const d = czytajZeZrzutu(["Warta Poznań", "Arka Gdynia", "Rozgrywka: Betclic I liga"].join("\n"),
+    ["Arka Gdynia SA", "Warta Poznań"]);
+  sprawdz("goście", d.goscie, "Arka Gdynia SA");
 }
 
 console.log(bledy ? `\n${bledy} błędów.` : "\nWszystko się zgadza.");
