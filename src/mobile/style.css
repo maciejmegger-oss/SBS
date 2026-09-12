@@ -812,11 +812,57 @@ textarea{resize:vertical; min-height:84px;}
 .tagujesz .chip.wybrany{background:var(--accent); border-color:var(--accent); color:var(--accent-ink);}
 
 /* ---------- lista obserwacji ----------
-   Karta ma się mieścić w całości bez przewijania: na stadionie wybór meczu to pierwsza
-   czynność i nie może zaczynać się od szukania. Stąd jeden wiersz opisu i niskie przyciski. */
-.obs-card .name{font-size:15px; line-height:1.25;}
-.obs-card .sub{font-size:12px; line-height:1.35;}
-.obs-card .btn{margin-top:7px; padding:9px; font-size:13px; min-height:40px;}
+   WIERSZE, NIE KARTY.
+   Każdy wpis był kartą w ramce, a pod nią trzy przyciski, każdy też w ramce — na ekranie
+   z czterema meczami szesnaście prostokątów naraz, wszystkie krzyczące jednakowo głośno.
+   Teraz wpisy rozdziela cienka kreska, a ramkę ma JEDNA rzecz: „Rozpocznij".
+
+   Wiersze idą od krawędzi do krawędzi (ujemne marginesy znoszą wyściółkę <main>), bo kreska
+   urwana przed brzegiem ekranu czyta się jak koniec listy, a nie jak granica między wpisami. */
+.obs-dzien{
+  font-family:var(--display); font-size:11.5px; font-weight:700; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--text-2);
+  margin:0 -14px; padding:14px 14px 6px;
+}
+.obs-dzien:first-child{ padding-top:4px; }
+.obs-wiersz{
+  margin:0 -14px; padding:11px 14px 12px;
+  border-top:1px solid var(--border);
+  background:var(--surface);
+}
+/* Trwająca obserwacja — pasek przy krawędzi zamiast obwódki dookoła. Widać go kątem oka przy
+   przewijaniu, a nie dokłada kolejnego prostokąta do i tak zatłoczonego ekranu. */
+.obs-wiersz.trwa{ box-shadow:inset 3px 0 0 var(--accent); }
+.ow-kiedy{
+  font-size:12px; color:var(--text-2); margin-bottom:3px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.ow-glowa{ display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
+.ow-tytul{
+  font-weight:650; color:var(--text-strong); font-size:16px; line-height:1.25;
+  min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.ow-meta{
+  font-size:12px; color:var(--text-2); margin-top:3px; line-height:1.35;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.ow-akcje{ display:flex; align-items:center; gap:14px; margin-top:9px; }
+/* Akcja główna. `width:auto` — bez tego .btn rozciąga się na całą szerokość i wraca nam
+   prostokąt, od którego uciekamy. */
+.ow-glowny{ margin:0; width:auto; padding:8px 18px; font-size:13px; min-height:40px; }
+/* „Oceń" bez ramki, ale z polem dotyku pełnej wysokości — napis to nie znaczy trudniej trafić. */
+.ow-tekst{
+  font-family:var(--display); font-size:13px; font-weight:600; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--text-2);
+  background:none; border:none; padding:10px 4px; min-height:40px;
+}
+.ow-tekst:active{ color:var(--text); }
+/* Kosz przy prawej krawędzi — daleko od kciuka trzymającego „Rozpocznij". */
+.ow-ikona{
+  margin-left:auto; background:none; border:none;
+  font-size:16px; opacity:.5; padding:10px 2px; min-height:40px; min-width:40px;
+}
+.ow-ikona:active{ opacity:.9; }
 
 /* Kasowanie pojedynczego zdarzenia z osi. Mały, bo oś czyta się w trakcie meczu, a nie edytuje —
    ale musi być, bo „Cofnij" sięga tylko ostatniego wpisu. */

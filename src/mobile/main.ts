@@ -466,33 +466,69 @@ function herbyMeczu(match?: string): string {
   return tarcze.length ? `<span class="herby">${tarcze.join("")}</span>` : "";
 }
 
-function kartaObserwacji(o: Observation, dzis: string): string {
+// LISTA POGRUPOWANA PO DNIACH.
+//
+// Data powtarzała się w każdym wierszu, choć na liście nadchodzących kolejne mecze i tak idą po
+// kolei — pięć razy „sobota, 12.09" pod rząd to pięć razy ta sama informacja zajmująca miejsce
+// nazwie meczu. Dzień mówi teraz nagłówek nad grupą, a w wierszu zostaje godzina i miejsce, czyli
+// to, co między meczami tego samego dnia faktycznie się różni.
+function wgDni(lista: Observation[], dzis: string): string {
+  const grupy = new Map<string, Observation[]>();
+  for (const o of lista) {
+    const klucz = o.date || "";
+    if (!grupy.has(klucz)) grupy.set(klucz, []);
+    grupy.get(klucz)!.push(o);
+  }
+  return [...grupy.entries()].map(([data, wpisy]) => `
+    <div class="obs-dzien">${esc(data ? (data === dzis ? "Dziś · " + dataZDniem(data) : dataZDniem(data)) : "Bez daty")}</div>
+    ${wpisy.map((o) => kartaObserwacji(o, dzis, false)).join("")}`).join("");
+}
+
+// WIERSZ LISTY OBSERWACJI — nie karta.
+//
+// Każdy wpis był wcześniej kartą w ramce, a pod nią trzy przyciski, każdy też w ramce. Na ekranie
+// z czterema meczami dawało to szesnaście prostokątów naraz i wzrok nie miał się o co zaczepić:
+// wszystko krzyczało jednakowo głośno. Teraz wiersze rozdziela cienka kreska, a ramkę ma JEDNA
+// rzecz w wierszu — „Rozpocznij", czyli to, po co scout tu wchodzi. „Oceń" jest napisem, kosz
+// samą ikoną: dostępne jednym dotknięciem, ale nie walczą o uwagę z akcją główną.
+//
+// `pokazDzien` — na liście nadchodzących dzień mówi nagłówek nad grupą, więc w wierszu zostaje
+// sama godzina i miejsce. Na liście zakończonych, grupowanej po miesiącach, dzień musi zostać.
+function kartaObserwacji(o: Observation, dzis: string, pokazDzien = true): string {
   const oceniona = !!o.statsFilledIn;
   const trwa = live && live.observationId === o.id;
+  const kiedy = [
+    pokazDzien ? dataZDniem(o.date || "") : "",
+    o.matchTime || "",
+    o.location || "",
+  ].filter(Boolean).map(esc).join(" · ");
   return `
-    <div class="card obs-card ${trwa ? "selected" : ""}">
-      <div class="row">
-        <div style="min-width:0;">
-          <div class="name">${herbyMeczu(o.match)}${esc(o.match || "Mecz bez nazwy")}</div>
-          <div class="sub" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(dataZDniem(o.date || ""))}${o.matchTime ? " · " + esc(o.matchTime) : ""}${o.location ? " · " + esc(o.location) : ""}</div>
-        </div>
-        <span class="tag ${trwa ? "live" : oceniona ? "done" : ""}">${trwa ? "W toku" : oceniona ? "Oceniona" : o.date === dzis ? "Dziś" : "Plan"}</span>
+    <div class="obs-wiersz ${trwa ? "trwa" : ""}">
+      ${kiedy ? `<div class="ow-kiedy">${kiedy}</div>` : ""}
+      <div class="ow-glowa">
+        <div class="ow-tytul">${herbyMeczu(o.match)}${esc(o.match || "Mecz bez nazwy")}</div>
+        ${/* Plakietka TYLKO wtedy, gdy coś wnosi. Pod nagłówkiem dnia („DZIŚ · SOBOTA, 12.09")
+              każdy wiersz powtarzał „DZIŚ" albo „PLAN" — ta sama informacja co w nagłówku, tyle że
+              tyle razy, ile meczów, i za cenę szerokości nazwy meczu. Zostają stany, których
+              z nagłówka nie widać: obserwacja w toku i już oceniona. */""}
+        ${trwa ? '<span class="tag live">W toku</span>'
+          : oceniona ? '<span class="tag done">Oceniona</span>'
+          : pokazDzien ? `<span class="tag">${o.date === dzis ? "Dziś" : "Plan"}</span>` : ""}
       </div>
-      <div class="sub" style="margin-top:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+      <div class="ow-meta">
         ${ligaChip(o)}
         ${o.playerId ? "<strong style=\"color:var(--text-strong)\">" + esc(playerLabel(o.playerId)) + "</strong>" : "Obserwacja zespołu"}
         ${o.scout ? " · " + esc(o.scout) : ""}
       </div>
-      <div style="display:flex; gap:8px;">
-        <button class="btn ${trwa ? "" : "ghost"}" data-act="start-live" data-id="${esc(o.id)}">${trwa ? "Wróć" : "Rozpocznij"}</button>
+      <div class="ow-akcje">
+        <button class="btn ${trwa ? "" : "ghost"} ow-glowny" data-act="start-live" data-id="${esc(o.id)}">${trwa ? "Wróć" : "Rozpocznij"}</button>
         ${oceniona
-          ? `<button class="btn ghost" data-act="podglad" data-id="${esc(o.id)}">Otwórz</button>`
-          : `<button class="btn ghost" data-act="open-ocena" data-id="${esc(o.id)}">Oceń</button>`}
-        <!-- Kosz jest wąski i stoi z boku: kasowanie ma być dostępne, ale nie pod kciukiem obok
-             „Rozpocznij". Pyta o potwierdzenie i podaje nazwę meczu, więc dotknięcie przez pomyłkę
-             niczego nie traci. -->
-        <button class="btn ghost" style="flex:0 0 auto; width:46px; padding:0;"
-                data-act="usun-obserwacje" data-id="${esc(o.id)}"
+          ? `<button class="ow-tekst" data-act="podglad" data-id="${esc(o.id)}">Otwórz</button>`
+          : `<button class="ow-tekst" data-act="open-ocena" data-id="${esc(o.id)}">Oceń</button>`}
+        <!-- Kosz stoi osobno, przy prawej krawędzi: kasowanie ma być dostępne, ale nie pod kciukiem
+             obok „Rozpocznij". Pyta o potwierdzenie i podaje nazwę meczu, więc dotknięcie przez
+             pomyłkę niczego nie traci. -->
+        <button class="ow-ikona" data-act="usun-obserwacje" data-id="${esc(o.id)}"
                 aria-label="Usuń obserwację ${esc(o.match || "")}" title="Usuń obserwację">🗑</button>
       </div>
     </div>`;
@@ -567,7 +603,7 @@ function viewDzis(): string {
     ${naglowekObserwacji("Zaplanowane" + (cache.fetchedAt ? " · kopia z " + new Date(cache.fetchedAt).toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""))}
     ${banerIkony()}
     ${przelacznik}
-    ${lista.length ? lista.map((o) => kartaObserwacji(o, dzis)).join("") : '<div class="empty">Nic nie czeka.<br>Zaplanuj obserwację albo zajrzyj do zakończonych.</div>'}
+    ${lista.length ? wgDni(lista, dzis) : '<div class="empty">Nic nie czeka.<br>Zaplanuj obserwację albo zajrzyj do zakończonych.</div>'}
     <button class="btn ghost" data-act="go-nowa">+ Zaplanuj obserwację</button>`;
 }
 
