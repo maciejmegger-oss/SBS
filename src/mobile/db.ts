@@ -60,6 +60,8 @@ const LS = {
   live: "sbs-m:live",            // stan trwającej obserwacji (zdarzenia, zegar)
   archiwum: "sbs-m:zdarzenia",   // zdarzenia zakończonych meczów, wg obserwacji
   scout: "sbs-m:scout",          // ostatnio wybrany scout
+  // Herby klubów (base64), OSOBNO od kopii bazy — patrz pobierzHerby.
+  herby: "sbs-m:herby",
 };
 
 export const uid = (prefix: string) =>
@@ -117,6 +119,7 @@ export function wyczyscKopieBazy(): void {
     localStorage.removeItem(LS.cache);
     localStorage.removeItem(LS.live);
     localStorage.removeItem(LS.archiwum);
+    localStorage.removeItem(LS.herby);
   } catch {
     /* tryb prywatny bez localStorage — nie ma czego czyścić */
   }
@@ -243,6 +246,51 @@ const page = async (table: string, columns = "*"): Promise<Record<string, unknow
   }
   return all;
 };
+
+// ---------------------------------------------------------------------------
+// HERBY KLUBÓW
+// ---------------------------------------------------------------------------
+//
+// Herb czyta się szybciej niż nazwę — na liście meczów wystarczy rzut oka zamiast czytania
+// dwóch nazw klubów. Kosztuje to jednak pamięć, i tu trzeba uważać.
+//
+// DLACZEGO OSOBNY KLUCZ, A NIE KOPIA BAZY. Pamięć przeglądarki ma około 5 MB na cały panel i
+// dzieli ją z zapisem zdarzeń z meczu. Herb po zmniejszeniu do 128 px waży jakieś 10 KB, więc
+// komplet z bazy liczącej kilkaset klubów potrafi tę pamięć wypełnić — a wtedy nie zapisałby się
+// JUŻ NIC, łącznie ze zdarzeniami wystukanymi na trybunie. Herby leżą więc pod własnym kluczem:
+// gdy zabraknie miejsca, przepada ozdoba, a nie praca.
+//
+// POBIERAMY TYLKO POTRZEBNE. Nie cały zbiór, lecz herby klubów z meczów, które faktycznie są na
+// liście — kilkanaście zamiast kilkuset.
+const MAKS_HERBOW = 400;
+
+export const getHerby = (): Record<string, string> => readLS<Record<string, string>>(LS.herby, {});
+
+/** Dobiera brakujące herby wskazanych klubów. Zwraca, ile doszło. */
+export async function pobierzHerby(ids: string[]): Promise<number> {
+  const mam = getHerby();
+  const brakuje = [...new Set(ids.filter((id) => id && !(id in mam)))];
+  if (!brakuje.length || !navigator.onLine) return 0;
+
+  // Zapamiętujemy też PUSTE odpowiedzi (klub bez herbu) — inaczej przy każdym odświeżeniu
+  // pytalibyśmy o to samo w kółko.
+  const { data, error } = await sb.from("sbs_club_crests").select("club_id, data_url").in("club_id", brakuje);
+  if (error) throw new Error(error.message);
+
+  for (const id of brakuje) mam[id] = "";
+  for (const r of (data || []) as { club_id: string; data_url: string }[]) {
+    if (r.data_url) mam[r.club_id] = r.data_url;
+  }
+
+  // Twardy limit. Gdy scout zaplanuje setki obserwacji, najstarsze herby ustępują nowym —
+  // lepiej stracić obrazek sprzed miesiąca niż miejsce na zdarzenia z dzisiejszego meczu.
+  const klucze = Object.keys(mam);
+  const przyciete = klucze.length > MAKS_HERBOW
+    ? Object.fromEntries(klucze.slice(klucze.length - MAKS_HERBOW).map((k) => [k, mam[k]]))
+    : mam;
+  writeLS(LS.herby, przyciete);
+  return (data || []).length;
+}
 
 // Jeden wiersz z sbs_kv. Brak wiersza to `null` BEZ błędu — to normalny stan (czegoś jeszcze nie
 // zapisano); błąd bazy leci wyjątkiem, żeby dało się te dwie rzeczy od siebie odróżnić.
