@@ -9046,6 +9046,21 @@ async function addTalentManually(){
 // Zakładki mają istnieć ZANIM wpadną do nich nazwiska: pusta „U-18" mówi, że tej kadry jeszcze
 // nie zebraliśmy, i sama się o to upomina. Gdyby powstawały dopiero z danych, brak kadry
 // wyglądałby identycznie jak jej nieistnienie.
+// ROCZNIK WPISANY RĘCZNIE. Puste pole znaczy „nie znam" i usuwa rocznik — nie zapisuje zera.
+// Zakres jest świadomie wąski: literówka „201" albo „20100" zapisana jako rocznik wrzuciłaby
+// zawodnika do grupy, która nie istnieje, i nikt by go potem nie znalazł.
+const NAJSTARSZY_ROCZNIK_TALENTU = 1990;
+function rocznikTalentuZPola(tekst, rokBiezacy){
+  const s = String(tekst == null ? '' : tekst).trim();
+  if(!s) return { ok: true, wartosc: null };
+  if(!/^\d{4}$/.test(s)) return { ok: false, powod: `„${s}" to nie rocznik — wpisz cztery cyfry, np. 2010.` };
+  const r = Number(s);
+  if(r < NAJSTARSZY_ROCZNIK_TALENTU || r > rokBiezacy){
+    return { ok: false, powod: `Rocznik ${r} jest poza zakresem ${NAJSTARSZY_ROCZNIK_TALENTU}–${rokBiezacy}.` };
+  }
+  return { ok: true, wartosc: r };
+}
+
 const KADRY_MLODZIEZOWE = ['U-21','U-20','U-19','U-18','U-17','U-16','U-15'];
 
 // PRZYWRACANIE KADR Z ZAPISANYCH KOMUNIKATÓW (src/data/powolania.ts).
@@ -9211,18 +9226,29 @@ function viewTalent(){
     }
     return (a.lastName||'').localeCompare(b.lastName||'', 'pl') || (a.firstName||'').localeCompare(b.firstName||'', 'pl');
   });
+  // Wiersz w kolejności czytania: kto — z jakiego rocznika — skąd — co z nim zrobić.
+  // Rocznik jest polem do wpisania wprost w wierszu: to jedyna dana, której brakuje większości
+  // talentów z importu, a otwieranie pełnego profilu dla samego roku to kilka kliknięć na osobę.
   const wierszTalentu = (t)=>`
     <div class="talent-row">
-      <span class="talent-row-name"><input type="checkbox" class="talent-check" data-id="${t.id}" style="margin-right:6px;vertical-align:middle;">${esc(t.firstName)} ${esc(t.lastName)}${
-        t.reprezentacja ? ` <span class="kadra-znacznik" title="Powołany do reprezentacji ${esc(t.reprezentacja)}">${esc(t.reprezentacja)}</span>` : ''}</span>
-      <span class="talent-row-actions">
-        <button class="link-btn" data-action="talent-promote" data-id="${t.id}" style="color:var(--gold-dark);">pełny profil / dodaj do bazy</button>
-        <button class="link-btn talent-remove-btn" data-id="${t.id}" style="color:var(--clay-dark);">usuń</button>
+      <span class="talent-row-name"><input type="checkbox" class="talent-check" data-id="${t.id}" aria-label="Zaznacz: ${esc(t.firstName)} ${esc(t.lastName)}"><span>${esc(t.firstName)} ${esc(t.lastName)}${
+        t.reprezentacja ? ` <span class="kadra-znacznik" title="Powołany do reprezentacji ${esc(t.reprezentacja)}">${esc(t.reprezentacja)}</span>` : ''}</span></span>
+      <span class="talent-rocznik-wrap">
+        <input type="number" inputmode="numeric" class="talent-rocznik${t.birthYear ? '' : ' brak'}" data-id="${t.id}"
+          min="${NAJSTARSZY_ROCZNIK_TALENTU}" max="${new Date().getFullYear()}" placeholder="rocznik"
+          value="${t.birthYear ? esc(String(t.birthYear)) : ''}"
+          title="Wpisz rocznik i naciśnij Enter — zapisze się i przejdziesz do następnego wiersza"
+          aria-label="Rocznik: ${esc(t.firstName)} ${esc(t.lastName)}">
+        <span class="talent-rocznik-stan" aria-live="polite"></span>
       </span>
       <span class="talent-row-meta">${esc(t.club||'klub nieznany')}${
         // Kraj pokazujemy TYLKO gdy podało go źródło — przy klubie zagranicznym to najważniejsza
         // informacja w wierszu, bo mówi, że kartoteki nie zbudujemy z polskich protokołów.
         t.krajKlubu ? ` &middot; <strong>${esc(t.krajKlubu)}</strong>` : ''}</span>
+      <span class="talent-row-actions">
+        <button class="link-btn" data-action="talent-promote" data-id="${t.id}" style="color:var(--gold-dark);">pełny profil / dodaj do bazy</button>
+        <button class="link-btn talent-remove-btn" data-id="${t.id}" style="color:var(--clay-dark);">usuń</button>
+      </span>
     </div>`;
   let rowsHtml = '';
   if(rows.length){
@@ -9274,6 +9300,11 @@ function viewTalent(){
       <input type="checkbox" id="talent-select-all"><span>Zaznacz wszystkie</span>
     </label>
     <button class="danger" id="talent-delete-selected" style="display:none;" data-action="talent-delete-selected">🗑️ Usuń zaznaczonych (0)</button>
+    <span id="talent-rocznik-zbiorczo" style="display:none;align-items:center;gap:6px;">
+      <input type="number" inputmode="numeric" id="talent-rocznik-wartosc" min="${NAJSTARSZY_ROCZNIK_TALENTU}" max="${new Date().getFullYear()}"
+        placeholder="rocznik" style="width:96px;" aria-label="Rocznik dla zaznaczonych">
+      <button class="secondary" data-action="talent-rocznik-zbiorczo">Ustaw rocznik zaznaczonym</button>
+    </span>
   </div>` : ''}
   <div class="card talent-list">${rowsHtml}</div>
 
@@ -12355,11 +12386,15 @@ function attachHandlers(){
   const talentChecks = main.querySelectorAll('.talent-check') as any;
   const talentAll = main.querySelector('#talent-select-all') as any;
   const talentDelBtn = main.querySelector('#talent-delete-selected') as any;
+  const talentRocznikZbiorczo = main.querySelector('#talent-rocznik-zbiorczo') as HTMLElement | null;
   function odswiezTalentPrzycisk(){
-    if(!talentDelBtn) return;
     const ile = Array.from(talentChecks).filter((c:any)=>c.checked).length;
-    talentDelBtn.style.display = ile ? 'inline-block' : 'none';
-    talentDelBtn.textContent = `🗑️ Usuń zaznaczonych (${ile})`;
+    if(talentDelBtn){
+      talentDelBtn.style.display = ile ? 'inline-block' : 'none';
+      talentDelBtn.textContent = `🗑️ Usuń zaznaczonych (${ile})`;
+    }
+    // Zbiorczy rocznik pokazuje się razem z usuwaniem — to te same zaznaczone wiersze.
+    if(talentRocznikZbiorczo) talentRocznikZbiorczo.style.display = ile ? 'inline-flex' : 'none';
   }
   if(talentAll) talentAll.onchange = ()=>{
     Array.from(talentChecks).forEach((c:any)=>c.checked = talentAll.checked);
@@ -12378,6 +12413,77 @@ function attachHandlers(){
     DB.talents = DB.talents.filter(t=>!zbior.has(t.id));
     render();
   };
+  // ROCZNIK WPISYWANY W WIERSZU.
+  //
+  // Zapisujemy BEZ przerysowania listy. Przy stu wpisach do uzupełnienia każde przerysowanie
+  // wracałoby z listą na górę i przenosiło właśnie wpisany wiersz do innej grupy — uzupełnianie
+  // zamieniłoby się w szukanie, gdzie się skończyło. Wiersz trafi do swojej grupy rocznika przy
+  // następnym otwarciu zakładki. Enter zapisuje i przenosi do pola w następnym wierszu.
+  //
+  // Zapis zbiera kilka zmian naraz (krótka zwłoka): wpisując rocznik za rocznikiem, nie wysyłamy
+  // całej listy talentów do bazy po każdym Enterze.
+  let zapisRocznikowTimer = null;
+  const zaplanujZapisRocznikow = ()=>{
+    clearTimeout(zapisRocznikowTimer);
+    zapisRocznikowTimer = setTimeout(async ()=>{
+      const ok = await saveTalents();
+      main.querySelectorAll('.talent-rocznik-stan[data-oczekuje]').forEach(el=>{
+        el.removeAttribute('data-oczekuje');
+        el.textContent = ok === false ? '✕' : '✓';
+        (el as HTMLElement).title = ok === false ? 'Nie zapisano.' + powodNieudanegoZapisu() : 'Zapisano';
+      });
+      if(ok === false) pokazPotwierdzenie('Nie udało się zapisać rocznika.' + powodNieudanegoZapisu(), 'blad');
+    }, 700);
+  };
+  const polaRocznika = Array.from(main.querySelectorAll('.talent-rocznik')) as HTMLInputElement[];
+  polaRocznika.forEach((pole, i)=>{
+    const zapiszRocznik = ()=>{
+      const t = DB.talents.find(x=>x.id === pole.dataset.id);
+      if(!t) return;
+      const stan = pole.parentElement ? pole.parentElement.querySelector('.talent-rocznik-stan') as HTMLElement : null;
+      const wynik = rocznikTalentuZPola(pole.value, new Date().getFullYear());
+      if(!wynik.ok){
+        pole.classList.add('blad');
+        if(stan){ stan.textContent = '!'; stan.title = wynik.powod; }
+        pokazPotwierdzenie(wynik.powod, 'blad');
+        return;
+      }
+      pole.classList.remove('blad');
+      const poprzedni = t.birthYear ? Number(t.birthYear) : null;
+      if(poprzedni === wynik.wartosc){ if(stan && stan.textContent === '!') stan.textContent = ''; return; }
+      t.birthYear = wynik.wartosc;
+      pole.classList.toggle('brak', wynik.wartosc == null);
+      if(stan){ stan.textContent = '…'; stan.title = 'Zapisuję'; stan.setAttribute('data-oczekuje', '1'); }
+      zaplanujZapisRocznikow();
+    };
+    pole.addEventListener('change', zapiszRocznik);
+    pole.addEventListener('keydown', (e:any)=>{
+      if(e.key !== 'Enter') return;
+      e.preventDefault();
+      zapiszRocznik();
+      const nastepne = polaRocznika[i + 1];
+      if(nastepne){ nastepne.focus(); nastepne.select(); }
+    });
+  });
+  // Ten sam rocznik wielu zaznaczonym naraz — np. cała lista powołań z jednego rocznika.
+  main.querySelectorAll('[data-action="talent-rocznik-zbiorczo"]').forEach(b=>b.onclick = async ()=>{
+    const ids = Array.from(talentChecks).filter((c:any)=>c.checked).map((c:any)=>c.dataset.id);
+    if(!ids.length) return;
+    const pole = main.querySelector('#talent-rocznik-wartosc') as HTMLInputElement | null;
+    const wynik = rocznikTalentuZPola(pole ? pole.value : '', new Date().getFullYear());
+    if(!wynik.ok || wynik.wartosc == null){
+      pokazPotwierdzenie(wynik.ok ? 'Wpisz rocznik, który mam ustawić zaznaczonym.' : wynik.powod, 'blad');
+      return;
+    }
+    const zbior = new Set(ids);
+    DB.talents.forEach(t=>{ if(zbior.has(t.id)) t.birthYear = wynik.wartosc; });
+    const ok = await saveTalents();
+    render();
+    pokazPotwierdzenie(ok === false
+      ? 'Nie udało się zapisać roczników.' + powodNieudanegoZapisu()
+      : `Rocznik ${wynik.wartosc} ustawiony dla ${ids.length} ${ids.length===1?'talentu':'talentów'}.`,
+      ok === false ? 'blad' : 'ok');
+  });
   // ODCZYT ZE ZRZUTU EKRANU — z pliku albo wprost ze schowka.
   //
   // Wynik ląduje w polu tekstowym, nie na liście. Człowiek ma go zobaczyć, zanim cokolwiek
