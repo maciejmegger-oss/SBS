@@ -12,7 +12,7 @@ import {
   saveObservation, saveReport, savePlayerStatus, saveLiveEvents, deleteObservation,
   zablokowaneZadania, liczbaZablokowanych, ponowZablokowane, ostatniBladWysylki,
   getLive, setLive, getScout, setScout, zarchiwizujZdarzenia, zdarzeniaObserwacji,
-  wyczyscKopieBazy,
+  wyczyscKopieBazy, getHerby, pobierzHerby,
   type Cache, type LiveEvent, type LiveState, type Period,
 } from "./db";
 import type { Observation, Report } from "../types";
@@ -245,6 +245,8 @@ let wklejTekst = "";
 let listaTryb: "nadchodzace" | "zakonczone" = "nadchodzace";
 
 let cache: Cache = getCache();
+// Herby klubów — osobno od kopii bazy, patrz pobierzHerby w db.ts.
+let herby: Record<string, string> = getHerby();
 let view: ViewName = "dzis";
 let live: LiveState | null = getLive();
 let polarity: 1 | -1 = 1;
@@ -388,6 +390,66 @@ function ligaChip(o: Observation & { rozgrywki?: string; kategoria?: string }): 
   return `<span style="color:${barwa}; font-weight:650;">${esc(opis)}</span> · `;
 }
 
+// HERB KLUBU DO LISTY MECZÓW.
+//
+// Herb rozpoznaje się szybciej niż nazwę: na liście kilkunastu spotkań oko łapie barwę i kształt,
+// zanim przeczyta „Lechia Gdańsk AP - Akademia Piłkarska". Bierzemy go z tego samego miejsca, co
+// system na komputerze: najpierw obrazek wgrany do bazy (działa bez zasięgu, bo leży w telefonie),
+// a gdy go nie ma — adres z kartoteki klubu.
+// Dobranie brakujących herbów dla meczów, które SĄ na liście. Osobno od kopii bazy i po cichu:
+// herb to ułatwienie, więc jego brak nie może przerwać pobierania ani zawołać o pomoc — scout ma
+// na trybunie ważniejsze rzeczy niż komunikat o nieudanym obrazku.
+async function dobierzHerby(): Promise<void> {
+  const potrzebne = new Set<string>();
+  for (const o of cache.observations) {
+    for (const nazwa of druzynyZMeczu(o.match)) {
+      const klub = klubZNazwy(nazwa);
+      if (klub) potrzebne.add(klub.id);
+    }
+  }
+  if (!potrzebne.size) return;
+  try {
+    const ile = await pobierzHerby([...potrzebne]);
+    herby = getHerby();
+    // Doszły nowe obrazki, więc zapamiętane „tego herbu nie ma" jest już nieaktualne.
+    herbyPamiec = new Map();
+    if (ile) render();
+  } catch (e) {
+    console.warn("Nie udało się pobrać herbów:", (e as Error).message);
+  }
+}
+
+// Odpowiedź pamiętana na czas życia kopii bazy i zestawu herbów. klubZNazwy przegląda całą
+// kartotekę klubów, a pytamy o to dla KAŻDEGO wiersza listy przy KAŻDYM przerysowaniu — czyli
+// przy każdym dotknięciu. Bez tego lista meczów zaczęłaby zauważalnie zwalniać.
+let herbyPamiec = new Map<string, string>();
+let herbyZrodlo: unknown = null;
+
+function herbDruzyny(nazwa: string): string {
+  if (herbyZrodlo !== cache.clubs) { herbyZrodlo = cache.clubs; herbyPamiec = new Map(); }
+  const znane = herbyPamiec.get(nazwa);
+  if (znane !== undefined) return znane;
+  const klub = klubZNazwy(nazwa);
+  const src = klub ? (herby[klub.id] || klub.crestUrl || "") : "";
+  herbyPamiec.set(nazwa, src);
+  return src;
+}
+
+// Herby przy nazwie meczu — tylko te, które NAPRAWDĘ mamy.
+//
+// Pierwsza wersja trzymała miejsce po nieznanym herbie, żeby nazwy w całej liście równały się do
+// jednej krawędzi. Na ekranie wyszło źle w obie strony: podkładka na tyle cicha, żeby nie hałasować,
+// była niewidoczna i zostawała po niej dziura czytana jak niewczytany obrazek, a na tyle wyraźna,
+// żeby ją było widać — wyglądała jak druga, pusta tarcza. Równanie nie jest tego warte: lepiej,
+// żeby nazwa przesunęła się o kilkanaście pikseli, niż żeby panel sugerował błąd, którego nie ma.
+function herbyMeczu(match?: string): string {
+  const [gosp, gosc] = druzynyZMeczu(match);
+  const tarcze = [[herbDruzyny(gosp), gosp], [herbDruzyny(gosc), gosc]]
+    .filter(([src]) => !!src)
+    .map(([src, alt]) => `<img class="herb" src="${esc(src)}" alt="${esc(alt)}" loading="lazy">`);
+  return tarcze.length ? `<span class="herby">${tarcze.join("")}</span>` : "";
+}
+
 function kartaObserwacji(o: Observation, dzis: string): string {
   const oceniona = !!o.statsFilledIn;
   const trwa = live && live.observationId === o.id;
@@ -395,7 +457,7 @@ function kartaObserwacji(o: Observation, dzis: string): string {
     <div class="card obs-card ${trwa ? "selected" : ""}">
       <div class="row">
         <div style="min-width:0;">
-          <div class="name">${esc(o.match || "Mecz bez nazwy")}</div>
+          <div class="name">${herbyMeczu(o.match)}${esc(o.match || "Mecz bez nazwy")}</div>
           <div class="sub" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(dataZDniem(o.date || ""))}${o.matchTime ? " · " + esc(o.matchTime) : ""}${o.location ? " · " + esc(o.location) : ""}</div>
         </div>
         <span class="tag ${trwa ? "live" : oceniona ? "done" : ""}">${trwa ? "W toku" : oceniona ? "Oceniona" : o.date === dzis ? "Dziś" : "Plan"}</span>
@@ -2852,7 +2914,7 @@ async function odswiezKopie(): Promise<void> {
   if (odswiezanie) return;
   zachowajWpisane();
   odswiezanie = true;
-  // Herb kręci się od razu, zanim ruszy sieć. Bez tego dotknięcie logo wyglądało na nieskuteczne:
+  // Herb błyska od razu, zanim ruszy sieć. Bez tego dotknięcie logo wyglądało na nieskuteczne:
   // przy dobrym zasięgu pobranie trwa ułamek sekundy i nic nie zdąży się zmienić na ekranie.
   $("app")?.querySelector(".mark-btn")?.setAttribute("aria-busy", "true");
   toast("Pobieram…");
@@ -2861,6 +2923,7 @@ async function odswiezKopie(): Promise<void> {
     cache = await refreshCache();
     refreshSyncPill();
     render();
+    void dobierzHerby();
     // O kłopotach mówimy wprost. „Pobrano" przy pustym terminarzu i cichym błędzie dostępu było
     // najgorszą z możliwych odpowiedzi: wyglądało na sukces, a nie przywoziło niczego.
     const problemy = cache.problemy || [];
@@ -3889,6 +3952,7 @@ async function start(pobranaKopia?: Cache) {
   try {
     cache = await refreshCache();
     render();
+    void dobierzHerby();
   } catch (e) {
     console.warn("Nie udało się odświeżyć kopii bazy:", (e as Error).message);
     if (!cache.players.length) toast("Brak połączenia i pustej kopii bazy — spróbuj przy zasięgu");
