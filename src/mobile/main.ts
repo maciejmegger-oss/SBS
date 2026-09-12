@@ -256,6 +256,10 @@ let liveTab: "zdarzenia" | "sklady" = "zdarzenia";
 let skladWidok: "lista" | "mapa" = "lista";
 let skladStrona: "gospodarze" | "goscie" = "gospodarze";
 let wyborZKadry: "gospodarze" | "goscie" | null = null;   // otwarta lista kadry klubu z bazy
+// Otwarty formularz wklejania składów. Wcześniej pokazywał się WYŁĄCZNIE przy obu składach
+// pustych, więc po wgraniu jednej drużyny nie było jak wkleić drugiej ani poprawić pierwszej —
+// a składy przychodzą na raty, kwadrans przed gwizdkiem i w trakcie rozgrzewki.
+let wklejanie = false;
 let obsadzanaPozycja: number | null = null;   // wybrane puste pole na planszy — czeka na zawodnika
 let ocenianyZawodnik: number | null = null;   // indeks zawodnika, którego panel oceny jest otwarty
 // Czy panel ocen na ekranie zdarzeń jest rozwinięty. Zwinięty pokazuje sam pasek z nazwiskiem
@@ -1328,20 +1332,59 @@ const normKlub = (s: string) => String(s || "").toLowerCase()
   .replace(/\s+/g, " ")
   .trim();
 
-function klubZNazwy(nazwa: string) {
+// ZNACZNIK ZESPOŁU Z NAZWY ROZGRYWEK — wyłącznie młodzieżowy.
+//
+// Nazwa meczu często NIE mówi, o który zespół klubu chodzi: „Legia Warszawa - Górnik Zabrze"
+// w CLJ U19 wygląda tak samo jak mecz Ekstraklasy, więc panel podstawiał kadrę pierwszej drużyny.
+// Rozgrywki to mówią wprost i stąd bierzemy podpowiedź.
+//
+// CELOWO NIE UŻYWAMY tu znacznikZespolu. Ta funkcja czyta też „II" i „III" jako numer zespołu, a
+// w nazwie ROZGRYWEK te same cyfry znaczą poziom ligi: „Betclic III liga, grupa: II" dałoby
+// znacznik rezerw i mecz trzeciej ligi zacząłby szukać drugiego zespołu klubu. Bierzemy więc
+// tylko to, co w nazwie rozgrywek nie może znaczyć nic innego: rocznik U-coś i słowo „junior".
+export function znacznikZRozgrywek(rozgrywki: string): string {
+  const n = String(rozgrywki || "");
+  const u = /\bu\s*-?\s*(\d{1,2})\b/i.exec(n);
+  if (u) return "u" + u[1];
+  if (/\bjuniorz?y?\b|\bjun\b/i.test(n)) return "junior";
+  return "";
+}
+
+// Człony oznaczające ZESPÓŁ, nie klub. Odpadają z porównania nazw, bo zespół rozstrzygamy
+// osobno — i bo w terminarzach stoją w różnych miejscach nazwy.
+const TOKEN_ZESPOLU = /^(?:ii|iii|[123]|u-?\d{1,2}|junior\w*|jun|rezerw\w*)$/i;
+const slowaKlubu = (n: string) =>
+  n.split(" ").filter((w) => w.length > 1 && !TOKEN_ZESPOLU.test(w));
+
+function klubZNazwy(nazwa: string, znacznikPodpowiedz = "") {
   const n = normKlub(nazwa);
   if (!n) return null;
-  const zn = znacznikZespolu(nazwa);
+  // Znacznik z NAZWY DRUŻYNY ma pierwszeństwo — „Arka Gdynia U17" mówi wprost, o co chodzi.
+  // Podpowiedź z rozgrywek wchodzi tylko wtedy, gdy nazwa milczy.
+  const zn = znacznikZespolu(nazwa) || znacznikPodpowiedz;
   const zgodnyZespol = (c: { name?: string }) => znacznikZespolu(c.name || "") === zn;
-  const zawiera = (a: string, b: string) => !!a && !!b && (a.includes(b) || b.includes(a));
 
-  return cache.clubs.find((c) => normKlub(c.name || "") === n)
-    // Zawieranie WYŁĄCZNIE w obrębie tego samego zespołu — inaczej U17 ląduje przy pierwszej drużynie.
-    || cache.clubs.find((c) => zgodnyZespol(c) && zawiera(normKlub(c.name || ""), n))
+  // Porównanie po SŁOWACH, nie po zawieraniu tekstu — i bez członu oznaczającego zespół, bo ten
+  // sprawdzamy osobno. „Arka II Gdynia" z terminarza i „Arka Gdynia II" z kartoteki to jedna
+  // drużyna, ale żaden z tych napisów nie zawiera drugiego: człon stoi w innym miejscu.
+  const pasujeSlowami = (c: { name?: string }) => {
+    const sk = slowaKlubu(normKlub(c.name || ""));
+    const sz = slowaKlubu(n);
+    if (!sk.length || !sz.length) return false;
+    return sz.every((w) => sk.includes(w)) || sk.every((w) => sz.includes(w));
+  };
+
+  // ZGODNOŚĆ ZESPOŁU SPRAWDZAMY PRZY KAŻDYM KROKU, także przy dokładnej nazwie.
+  // Wcześniej dokładne trafienie szło pierwsze, bez oglądania się na zespół — a normKlub zdejmuje
+  // formy prawne, więc „Legia Warszawa S.A." stawała się dokładnym odpowiednikiem „Legia Warszawa"
+  // i wygrywała, zanim znacznik U19 doszedł do głosu. Mecz CLJ U19 dostawał kadrę Ekstraklasy.
+  return cache.clubs.find((c) => zgodnyZespol(c) && normKlub(c.name || "") === n)
+    || cache.clubs.find((c) => zgodnyZespol(c) && pasujeSlowami(c))
     // Ostatnia deska: klub bez rozbicia na zespoły. Gdy w kartotece jest samo „Arka Gdynia”,
     // a obserwujemy U17, lepiej podać tę kadrę niż nie podać żadnej — scout i tak widzi, kogo
-    // dopisuje. Wchodzi to dopiero wtedy, gdy właściwego zespołu naprawdę nie ma w bazie.
-    || cache.clubs.find((c) => zawiera(normKlub(c.name || ""), n))
+    // dopisuje, a panel mówi wprost, że to inny zespół. Wchodzi dopiero wtedy, gdy właściwego
+    // zespołu naprawdę nie ma w bazie.
+    || cache.clubs.find((c) => pasujeSlowami(c))
     || null;
 }
 
@@ -1355,15 +1398,26 @@ function viewSklady(): string {
   // dla tych, których w bazie nie ma: składy pojawiają się 45 minut przed meczem, a kopiowanie
   // ze strony wyniku, bez rezerwowych na jednym ekranie, robi się na raty i zjada ten czas.
   if (wyborZKadry) {
-    const klub = klubZNazwy(wyborZKadry === "gospodarze" ? gosp : gosc);
+    // Rozgrywki mówią, o który zespół klubu chodzi — nazwa meczu często milczy.
+    const chcianyZespol = znacznikZRozgrywek((obs as { rozgrywki?: string } | undefined)?.rozgrywki || "");
+    const klub = klubZNazwy(wyborZKadry === "gospodarze" ? gosp : gosc, chcianyZespol);
     const kadra = klub ? cache.players.filter((pl) => pl.clubId === klub.id) : [];
     const juzWSkladzie = new Set((sklad?.[wyborZKadry]?.zawodnicy || []).map((z) => z.playerId).filter(Boolean));
+    // Trafiliśmy w inny zespół, niż mówią rozgrywki? Powiedzmy to wprost. Cicha kadra pierwszej
+    // drużyny w meczu CLJ U19 wygląda jak poprawny skład i scout zaznaczał nazwiska, których na
+    // boisku nie było.
+    const nieTenZespol = !!klub && !!chcianyZespol && znacznikZespolu(klub.name || "") !== chcianyZespol;
     return `
       <div class="row" style="margin-bottom:8px;">
         <span class="label" style="margin:0;">${esc(klub?.name || (wyborZKadry === "gospodarze" ? gosp : gosc))}</span>
         <button class="btn ghost small" data-act="zamknij-kadre">Gotowe</button>
       </div>
       ${klub ? "" : '<p class="hint">Nie znalazłem tego klubu w bazie — nazwa w polu „Mecz" musi się zgadzać z nazwą klubu w SBS.</p>'}
+      ${nieTenZespol
+        ? `<p class="hint" style="color:var(--accent-fg);">To kadra innego zespołu tego klubu. Rozgrywki mówią
+           <strong>${esc(chcianyZespol.toUpperCase())}</strong>, a w bazie nie ma takiej drużyny — dopisz ją w SBS
+           albo wklej skład niżej.</p>`
+        : ""}
       ${kadra.length
         ? kadra.slice().sort((a, b) => (a.lastName || "").localeCompare(b.lastName || "", "pl")).map((pl) => `
             <button class="sklad-row ${juzWSkladzie.has(pl.id) ? "on" : ""}" data-act="z-kadry" data-id="${esc(pl.id)}">
@@ -1374,19 +1428,30 @@ function viewSklady(): string {
         : klub ? '<div class="empty">Ten klub nie ma zawodników w bazie.</div>' : ""}`;
   }
 
-  if (!sklad || !STRONY.some((s) => (sklad[s]?.zawodnicy || []).length)) {
+  const pusto = !sklad || !STRONY.some((s) => (sklad[s]?.zawodnicy || []).length);
+  const ilu = (k: "gospodarze" | "goscie") => (sklad?.[k]?.zawodnicy || []).length;
+
+  // Wklejanie dostępne ZAWSZE, nie tylko przy pustym składzie. Wypełnione pole podmienia TĘ
+  // drużynę i tylko ją — puste zostawia w spokoju, więc da się poprawić jedną stronę, nie
+  // ruszając drugiej. Mówimy o tym wprost, bo podmiana kasuje wyróżnienia i oceny tej drużyny.
+  if (wklejanie || pusto) {
     return `
+      ${pusto ? "" : `<div class="row" style="margin-bottom:8px;">
+        <span class="label" style="margin:0;">Wklej skład</span>
+        <button class="btn ghost small" data-act="zamknij-wklejanie">Wróć</button>
+      </div>`}
       <div style="display:flex; gap:6px; margin-bottom:10px;">
         ${STRONY.map((k) => `<button class="btn ghost" style="margin-top:0;" data-act="otworz-kadre" data-strona="${k}">Kadra: ${esc(k === "gospodarze" ? gosp : gosc)}</button>`).join("")}
       </div>
-      <p class="hint">Wklej składy — po jednym zawodniku w wierszu. Numer na początku wiersza jest rozpoznawany.
-      Na iPhonie tekst da się skopiować wprost ze zdjęcia: przytrzymaj palec na zrzucie ekranu i zaznacz.</p>
+      <p class="hint">Po jednym zawodniku w wierszu. Numer na początku wiersza jest rozpoznawany.
+      Na iPhonie tekst da się skopiować wprost ze zdjęcia: przytrzymaj palec na zrzucie ekranu i zaznacz.
+      ${pusto ? "" : "Wypełnione pole <strong>podmienia całą tę drużynę</strong> — puste zostawia bez zmian."}</p>
       <div class="field">
-        <span class="label">${esc(gosp)}</span>
+        <span class="label">${esc(gosp)}${ilu("gospodarze") ? ` · w składzie ${ilu("gospodarze")}` : ""}</span>
         <textarea id="sklad-gospodarze" placeholder="1 Kowalski&#10;4 Nowak&#10;…"></textarea>
       </div>
       <div class="field">
-        <span class="label">${esc(gosc)}</span>
+        <span class="label">${esc(gosc)}${ilu("goscie") ? ` · w składzie ${ilu("goscie")}` : ""}</span>
         <textarea id="sklad-goscie" placeholder="1 Wiśniewski&#10;5 Zieliński&#10;…"></textarea>
       </div>
       <button class="btn" data-act="wczytaj-sklady">Wczytaj składy</button>`;
@@ -1419,6 +1484,9 @@ function viewSklady(): string {
   const dopiszZKadry = `
     <div style="display:flex; gap:6px; margin-bottom:8px;">
       ${STRONY.map((k) => `<button class="btn ghost small" style="flex:1;" data-act="otworz-kadre" data-strona="${k}">+ kadra: ${esc(k === "gospodarze" ? gosp : gosc)}</button>`).join("")}
+    </div>
+    <div style="margin-bottom:8px;">
+      <button class="btn ghost small" style="width:100%; margin:0;" data-act="otworz-wklejanie">Wklej albo wpisz skład</button>
     </div>`;
 
   const przelacznik = `
@@ -2428,7 +2496,7 @@ function syncPill(): string {
 
 // Który to ekran — nie sam widok, ale i zakładka wewnątrz Live. Po tym poznajemy, czy właśnie
 // przerysowujemy TO SAMO (dotknięcie kropki oceny), czy przechodzimy gdzie indziej.
-const sygnaturaEkranu = () => [view, liveTab, skladWidok, ocenianyZawodnik ?? "", wyborZKadry ?? "", obsadzanaPozycja ?? ""].join("|");
+const sygnaturaEkranu = () => [view, liveTab, skladWidok, ocenianyZawodnik ?? "", wyborZKadry ?? "", wklejanie ? "wklej" : "", obsadzanaPozycja ?? ""].join("|");
 let poprzedniEkran = "";
 
 function render() {
@@ -3375,6 +3443,8 @@ document.addEventListener("click", (e) => {
 
     case "otworz-kadre": wyborZKadry = el.dataset.strona as "gospodarze" | "goscie"; render(); break;
     case "zamknij-kadre": wyborZKadry = null; render(); break;
+    case "otworz-wklejanie": wklejanie = true; render(); break;
+    case "zamknij-wklejanie": wklejanie = false; render(); break;
 
     case "z-kadry": {
       if (!live || !wyborZKadry) break;
@@ -3524,6 +3594,7 @@ document.addEventListener("click", (e) => {
         goscie: goscie.length ? { nazwa: ns, zawodnicy: goscie } : obs.skladMeczu?.goscie,
       };
       saveObservation(obs);
+      wklejanie = false;
       render();
       toast(`Wczytano ${gospodarze.length + goscie.length} zawodników`);
       break;
