@@ -2681,32 +2681,56 @@ async function pobierzTabeleLig(zakresWszystko){
   const dane = await odp.json().catch(()=>({}));
   if(!odp.ok) throw new Error(dane.error || `Nie udało się pobrać tabel (HTTP ${odp.status}).`);
 
-  const grupy = [...new Set(DB.clubs.map(c=>String(c.league||'')).filter(Boolean))];
-  const klubyGrupyWg = new Map(grupy.map(g=>[g, new Set(
-    DB.clubs.filter(c=>String(c.league||'') === g).map(c=>importNorm(c.name)))]));
-
-  let przypisanych = 0;
-  const nieprzypisane = [];
-  (dane.tabele || []).forEach(t=>{
-    const nazwy = (t.wiersze || []).map(w=>importNorm(w.nazwa));
-    let najlepsza = '', ile = 0;
-    klubyGrupyWg.forEach((zbior, grupa)=>{
-      const wspolne = nazwy.filter(n=>zbior.has(n)).length;
-      if(wspolne > ile){ ile = wspolne; najlepsza = grupa; }
-    });
-    // Połowa składu musi się zgadzać. Niżej to już nie jest rozpoznanie, tylko przypadek —
-    // a przypisanie tabeli do złej grupy jest gorsze niż jej brak.
-    if(najlepsza && ile >= Math.ceil((t.wiersze || []).length / 2)){
-      tabeleLig[najlepsza] = { pobrano: dane.pobrano, zrodlo: t.nazwaZrodla, adres: t.adres,
-        kolejek: t.kolejek, kolejekZProtokolami: t.kolejekZProtokolami,
-        wiersze: t.wiersze, rozpoznanych: ile };
-      przypisanych++;
-    } else {
-      nieprzypisane.push(`${t.nazwaZrodla} (rozpoznanych klubów: ${ile})`);
-    }
+  const { przypisane, nieprzypisane } = przypiszTabeleDoGrup(dane.tabele, DB.clubs);
+  // Gdy dwie tabele celują w tę samą grupę, zostaje ta, która pasuje lepiej — zapisujemy od
+  // najsłabiej pasującej, więc lepsza nadpisuje gorszą.
+  przypisane.slice().sort((a,b)=> a.ile - b.ile).forEach(({ grupa, tabela: t, ile })=>{
+    tabeleLig[grupa] = { pobrano: dane.pobrano, zrodlo: t.nazwaZrodla, adres: t.adres,
+      kolejek: t.kolejek, kolejekZProtokolami: t.kolejekZProtokolami,
+      wiersze: t.wiersze, rozpoznanych: ile };
   });
   await saveTabeleLig();
-  return { przypisanych, nieprzypisane, pobranych: (dane.tabele || []).length, bledy: dane.bledy || [] };
+  return { przypisanych: przypisane.length, nieprzypisane, pobranych: (dane.tabele || []).length, bledy: dane.bledy || [] };
+}
+
+// PRZYPISANIE TABELI Z 90MINUT DO GRUPY W SBS.
+//
+// Grupy w SBS mają nazwy z ŁNP („CLJ U17 gr. I"), a 90minut własne („grupa: wschodnia"), więc grupę
+// rozpoznajemy po składzie: która grupa ma najwięcej klubów z tej tabeli.
+//
+// BŁĄD, KTÓRY TO NAPRAWIA: nazwy klubów porównywaliśmy znak w znak. Kluby CLJ noszą w kartotece
+// nazwy z ŁNP („KKS Lech Poznań", „RKS Raków Częstochowa"), a 90minut pisze „Lech Poznań" — więc
+// obie tabele CLJ U-17 nie dopasowywały się do żadnej grupy. Teraz:
+//  • kandydatami są TYLKO grupy z tego samego poziomu — tabela U-17 nie może trafić do U-19,
+//    choć grają w nich te same kluby i skład pokrywa się prawie w całości,
+//  • klub liczy się jako wspólny przy dokładnej nazwie ALBO zgodnych członach (klubyToSamo),
+//  • remis dwóch grup to odmowa — przypisanie tabeli do złej grupy jest gorsze niż jej brak.
+// Próg połowy składu zostaje: niżej to już nie rozpoznanie, tylko przypadek.
+function przypiszTabeleDoGrup(tabele, kluby){
+  const grupy = new Map();
+  (kluby || []).forEach(c=>{
+    const g = String(c.league || '');
+    if(!g) return;
+    if(!grupy.has(g)) grupy.set(g, []);
+    grupy.get(g).push(String(c.name || ''));
+  });
+  const przypisane = [], nieprzypisane = [];
+  (tabele || []).forEach(t=>{
+    const nazwy = (t.wiersze || []).map(w=> String(w.nazwa || ''));
+    let najlepsza = '', ile = 0, remis = false;
+    grupy.forEach((nazwyKlubow, grupa)=>{
+      if(t.poziom && poziomGrupy(grupa) !== t.poziom) return;
+      const wspolne = nazwy.filter(n=> nazwyKlubow.some(k=> importNorm(k) === importNorm(n) || klubyToSamo(k, n))).length;
+      if(wspolne > ile){ ile = wspolne; najlepsza = grupa; remis = false; }
+      else if(wspolne > 0 && wspolne === ile){ remis = true; }
+    });
+    if(najlepsza && !remis && ile >= Math.ceil(nazwy.length / 2)){
+      przypisane.push({ grupa: najlepsza, tabela: t, ile });
+    } else {
+      nieprzypisane.push(`${t.nazwaZrodla} (rozpoznanych klubów: ${ile}${remis ? ' — pasuje tak samo do kilku grup' : ''})`);
+    }
+  });
+  return { przypisane, nieprzypisane };
 }
 // System, w którym liczymy zawodnika: własny wpis z profilu, a gdy go nie ma — układ jego klubu.
 function systemZawodnika(p){
@@ -6861,7 +6885,13 @@ function miniTabelaKlubuHtml(c){
   // a adresy na 90minut są zapisane per POZIOM rozgrywek. Bez sprowadzenia do poziomu funkcja
   // nie znajdowała adresu i karta w ogóle się nie pokazywała.
   const etykieta = c.league || '';
-  const liga = scheduleUrlsFor(etykieta).length ? etykieta : topLevelOf(etykieta);
+  // Kolejność prób: pełna nazwa grupy → poziom grupy („CLJ U17 gr. I" → „CLJ U17") → poziom ogólny.
+  // Bez środkowego kroku kluby CLJ spadały od razu do „Kategorie juniorskie", które nie mają
+  // żadnego adresu, i karta mówiła, że tabeli nie ma.
+  const poziomTejGrupy = poziomGrupy(etykieta);
+  const liga = scheduleUrlsFor(etykieta).length ? etykieta
+    : (poziomTejGrupy && scheduleUrlsFor(poziomTejGrupy).length) ? poziomTejGrupy
+    : topLevelOf(etykieta);
   if(!liga || !scheduleUrlsFor(liga).length) return '';
 
   const ramka = (tresc)=>`<div class="card">
@@ -15482,6 +15512,14 @@ const SCHEDULE_SOURCES = {
                   'http://www.90minut.pl/liga/1/liga14779.html',   // wielkopolska
                   'http://www.90minut.pl/liga/1/liga14836.html',   // kujawsko-pomorska
                   'http://www.90minut.pl/liga/1/liga14968.html'],  // łódzka
+  // CENTRALNA LIGA JUNIORÓW. Bez tych wpisów karta każdego klubu CLJ pokazywała „nie mam adresu
+  // tych rozgrywek" — tabele istnieją, ale nie było skąd ich wziąć. Adresy MUSZĄ być te same co
+  // w api/_90minut.js (ZRODLA_LIG), z którego pobiera serwer; test-tabele-clj tego pilnuje.
+  // Grupy U-17: w SBS „gr. I" to wschodnia, „gr. II" zachodnia — obie pobieramy naraz, a klub
+  // sam odnajduje się w swojej.
+  'CLJ U19':     ['http://www.90minut.pl/liga/1/liga15142.html'],
+  'CLJ U17':     ['http://www.90minut.pl/liga/1/liga15144.html',   // zachodnia
+                  'http://www.90minut.pl/liga/1/liga15145.html'],  // wschodnia
 };
 // Przepisanie potwierdzonych terminów do ZAPLANOWANYCH obserwacji. Kluby mają czas do piątku do
 // północy na zgłoszenie terminu, więc mecz wybrany wcześniej często nie ma jeszcze dnia i godziny.
