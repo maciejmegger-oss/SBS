@@ -9,7 +9,7 @@ import { POWOLANIA_DO_PRZYWROCENIA } from "./data/powolania";
 import LNP_ZBIERACZ from "../public/zakladka-lnp-v2.js?raw";
 import type { Database } from "./types";
 // Skala bramkarza — jedno źródło dla systemu i dla panelu, patrz src/domain/bramkarz.ts.
-import { FAZY_BRAMKARZ, opisToBramkarz, fazyToBramkarskie } from "./domain/bramkarz";
+import { PROFILE, WSZYSTKIE_FAZY, grupaZOpisu, grupaZFaz } from "./domain/pozycje";
 import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
@@ -2935,7 +2935,7 @@ function metrykiZRaportow(reps){
   // Obie listy naraz. Klucze faz gry i pozycji bramkarskich nie mają części wspólnej, a rubryki
   // bez ocen i tak odpadają wyżej — więc zawodnik z historią z obu skal (bramkarz przestawiony
   // do pola albo odwrotnie) zachowa jedno i drugie, zamiast tracić połowę dorobku.
-  zbierz('phases', [...REPORT_PHASES, ...FAZY_BRAMKARZ]);
+  zbierz('phases', [...REPORT_PHASES, ...WSZYSTKIE_FAZY]);
   zbierz('setPieces', REPORT_SET_PIECES);
   return metryki;
 }
@@ -7723,12 +7723,23 @@ const REPORT_PHASES = [
 // pozycję w kartotece, a raporty sprzed zmiany nie zaczną nagle pokazywać cudzych nazw przy
 // swoich liczbach. Przy nowym, jeszcze pustym raporcie zawartości nie ma, więc wtedy — i tylko
 // wtedy — pyta się kartotekę.
+// Podpis nad protokołem 1–6: „Gra bramkarza", „Gra w obronie"… albo dawne „Fazy gry" przy
+// raportach sprzed podziału na pozycje. Jedno miejsce, bo ten sam podpis stoi w formularzu,
+// na profilu zawodnika i w PDF — rozjechanie się ich znaczyłoby, że te same liczby czyta się
+// w trzech miejscach pod trzema różnymi nazwami.
+function podpisProtokolu(lista){
+  const wpis = Object.values(PROFILE).find(pr => pr.fazy === lista);
+  return wpis ? wpis.etykietaFaz : 'Fazy gry';
+}
+
 function fazyRaportu(r){
-  return (r && fazyToBramkarskie(r.phases)) ? FAZY_BRAMKARZ : REPORT_PHASES;
+  const g = r && grupaZFaz(r.phases);
+  return g ? PROFILE[g].fazy : REPORT_PHASES;
 }
 // Fazy do formularza NOWEGO raportu — tu zawartości jeszcze nie ma, więc decyduje pozycja.
 function fazyDlaZawodnika(p){
-  return opisToBramkarz(p && p.position) ? FAZY_BRAMKARZ : REPORT_PHASES;
+  const g = grupaZOpisu(p && p.position);
+  return g ? PROFILE[g].fazy : REPORT_PHASES;
 }
 // Wnętrze bloku protokołu 1–6 w formularzu raportu. Osobna funkcja, bo ten sam blok trzeba umieć
 // zbudować dwa razy: przy rysowaniu formularza i jeszcze raz, gdy wybór zawodnika zmieni skalę
@@ -7736,7 +7747,7 @@ function fazyDlaZawodnika(p){
 // zapis czyta ją stamtąd, zamiast drugi raz zgadywać, którą skalę pokazano.
 function blokFazHtml(lista, wartosci){
   return `<label class="field" style="display:block;margin-bottom:8px;">${
-    lista===FAZY_BRAMKARZ ? 'Gra bramkarza' : 'Fazy gry'} (skala 1-6)</label>
+    podpisProtokolu(lista)} (skala 1-6)</label>
     <div data-klucze="${lista.map(f=>f.key).join(',')}">
     ${lista.map(f=>{ const v = wartosci && wartosci[f.key]!=null ? wartosci[f.key] : 3; return `
       <div class="slider-row">
@@ -20472,7 +20483,7 @@ async function generatePlayerPDF(playerId){
          <div class="notes-box" style="margin:0;">${esc(String(tresc).trim())}</div></div>`).join('')}</div>`;
     })()}
     ${latestReport.description?`<div class="lbl" style="margin-bottom:2px;">Opis raportu</div><div class="notes-box" style="margin-bottom:10px;">${esc(latestReport.description)}</div>`:''}
-    ${(latestReport.phases&&Object.keys(latestReport.phases).length)?`<div class="metric-section-label">${fazyToBramkarskie(latestReport.phases)?'Gra bramkarza':'Fazy gry'} (1-6)</div><div class="attr5-grid metric4">${fazyRaportu(latestReport).map(f=>`<div class="attr5-col"><div class="attr5-head"><span>${esc(f.label)}</span></div><div class="metric-num-body">${latestReport.phases[f.key]!=null?latestReport.phases[f.key]:'—'}</div></div>`).join('')}</div>`:''}
+    ${(latestReport.phases&&Object.keys(latestReport.phases).length)?`<div class="metric-section-label">${podpisProtokolu(fazyRaportu(latestReport))} (1-6)</div><div class="attr5-grid metric4">${fazyRaportu(latestReport).map(f=>`<div class="attr5-col"><div class="attr5-head"><span>${esc(f.label)}</span></div><div class="metric-num-body">${latestReport.phases[f.key]!=null?latestReport.phases[f.key]:'—'}</div></div>`).join('')}</div>`:''}
     ${(latestReport.setPieces&&Object.keys(latestReport.setPieces).length)?`<div class="metric-section-label">Stałe fragmenty (1-6)</div><div class="attr5-grid metric4">${REPORT_SET_PIECES.map(f=>`<div class="attr5-col"><div class="attr5-head"><span>${esc(f.label)}</span></div><div class="metric-num-body">${latestReport.setPieces[f.key]!=null?latestReport.setPieces[f.key]:'—'}</div></div>`).join('')}</div>`:''}
     ${latestReport.setPieceComment?`<div class="notes-box" style="margin-top:10px;">${esc(latestReport.setPieceComment)}</div>`:''}
   </div>`:''}
