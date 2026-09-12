@@ -728,6 +728,20 @@ tr.player-row.prow-okazja.prow-mlodszy td:first-child{box-shadow:inset 4px 0 0 v
 .talent-rocznik.brak{border-style:dashed;}
 .talent-rocznik.blad{border-color:var(--clay);box-shadow:0 0 0 2px rgba(182,80,63,.18);}
 .talent-rocznik-stan{flex:none;width:12px;font-size:11px;font-weight:800;color:var(--good);text-align:center;}
+/* LISTA TALENTÓW JAKO TABELA — ta sama co w Zawodnikach (players-table), plus nagłówki grup. */
+.talent-tabela .talent-check{width:auto;margin:0;}
+.talent-tabela tr.talent-grupa td{padding:0;border:none;background:none;box-shadow:none;}
+.talent-tabela .talent-year-head{position:static;margin:10px 0 0;}
+.talent-tabela tr.talent-grupa:first-child .talent-year-head{margin-top:0;}
+.talent-tabela .talent-rocznik-wrap{width:104px;}
+.talent-tabela .talent-akcje{white-space:nowrap;text-align:right;}
+.talent-tabela .talent-akcje button.secondary{padding:4px 10px;font-size:12px;margin-right:6px;}
+/* Podgląd porządkowania: wpis przed (przekreślony, szary) i to, co z niego wyjdzie. */
+.porzadek-wiersz{display:flex;gap:10px;align-items:flex-start;padding:8px 2px;border-bottom:1px solid var(--chalk-dim);
+  font-size:13px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--ink);cursor:pointer;}
+.porzadek-wiersz input{width:auto;margin-top:3px;flex:none;}
+.porzadek-przed{display:block;color:var(--ink-soft);text-decoration:line-through;text-decoration-color:rgba(27,36,32,.3);}
+.porzadek-po{display:block;margin-top:2px;}
 /* Wąski ekran: trzy kolumny nie mieszczą się bez ściskania, więc wracamy do pionu — ale wtedy
    przyciski i tak stoją równo, bo każdy wiersz ma ten sam układ. */
 @media(max-width:820px){

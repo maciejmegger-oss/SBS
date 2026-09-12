@@ -34,6 +34,7 @@ const kod = [
   wytnij('kadraDoPolaZrodla', /function kadraDoPolaZrodla\(t\)\{[\s\S]*?\n\}/),
   wytnij('kadraZPolaZrodla', /function kadraZPolaZrodla\(pole\)\{[\s\S]*?\n\}/),
   wytnij('talentyDoZapisu', /function talentyDoZapisu\(talenty\)\{[\s\S]*?\n\}/),
+  wytnij('pozycjaDoPolaTalentu', /function pozycjaDoPolaTalentu\(t\)\{[\s\S]*?\n\}/),
   wytnij('nalozKadreZPolaZrodla', /function nalozKadreZPolaZrodla\(talenty\)\{[\s\S]*?\n\}/),
   wytnij('przywrocKadreZKomunikatow', /function przywrocKadreZKomunikatow\(talenty, komunikaty, noweId\)\{[\s\S]*?\n\}/),
 ].join('\n');

@@ -2002,6 +2002,7 @@ async function loadAllInner(){
   // wyłącznie talenty, które po pierwszym kroku nadal są bez kadry.
   nalozKadreZPolaZrodla(DB.talents);
   nalozKadryNaTalenty(DB.talents, talentyKadry);
+  nalozPozycjeZPolaTalentu(DB.talents);
   try{
     const loaded = s ? JSON.parse(s.value) : {};
     DB.settings = Object.assign(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), loaded);
@@ -8719,6 +8720,254 @@ function osobaZWierszaTalentu(linia, rocznik){
   return {firstName, lastName, birthYear: rok || rocznik || null, club: klub};
 }
 
+// ---- PORZĄDKOWANIE SKLEJONYCH WPISÓW TALENTÓW ---------------------------------------------
+//
+// Starsze importy zostawiły w polu nazwiska wszystko naraz: „Bartosz Kotras (5) 2008 KS Wda
+// Świecie", „1 Karol Nowicki AF Brzoza AF Brzoza", a bywa, że i dwóch zawodników w jednym wpisie:
+// „Filip Zimoląg (11)-AP Młode Talenty Alan Kamiński(BR)-Olimpia Grudziądz". Taki wpis nie ma
+// klubu, rocznika ani pozycji — choć wszystkie trzy w nim są.
+//
+// NUMER TO POZYCJA. Listy z naborów i konsultacji zapisują przy nazwisku numer pola wg Narodowego
+// Modelu Gry: (1) bramkarz, (9) napastnik, (4)(6) — stoper z drugą pozycją defensywnego pomocnika.
+// Numerów powyżej 11 nie czytamy jako pozycji: to numery na koszulce, a pozycja zgadnięta z numeru
+// koszulki byłaby zmyśleniem.
+const KODY_POZYCJI_TALENTU = {
+  'BR': { nmg: 1 }, 'LO': { nmg: 3 }, 'PO': { nmg: 2 },
+  // Środkowy obrońca bez wskazania strony — pozycja ogólna, BEZ numeru 4 czy 5.
+  'ŚO': { pozycja: 'Obrońca środkowy' }, 'SO': { pozycja: 'Obrońca środkowy' },
+  'DP': { nmg: 6 }, 'ŚP': { nmg: 8 }, 'SP': { nmg: 8 }, 'N': { nmg: 9 }, 'NAP': { nmg: 9 },
+};
+const RE_ZNACZNIK_POZYCJI = /(?:\bpoz\.?\s*)?((?:\(\s*(?:\d{1,2}|BR|ŚO|SO|LO|PO|DP|ŚP|SP|NAP|N)\s*\)\s*)+)/gi;
+
+function pozycjeZeZnacznika(znacznik){
+  const nmg = [];
+  let pozycja = '';
+  (String(znacznik).match(/\(\s*([^)]+?)\s*\)/g) || []).forEach(z=>{
+    const kod = z.replace(/[()\s]/g, '').toUpperCase();
+    if(/^\d{1,2}$/.test(kod)){
+      const n = Number(kod);
+      if(n >= 1 && n <= 11 && !nmg.includes(n)) nmg.push(n);
+      return;
+    }
+    const k = KODY_POZYCJI_TALENTU[kod];
+    if(!k) return;
+    if(k.nmg && !nmg.includes(k.nmg)) nmg.push(k.nmg);
+    if(k.pozycja && !pozycja) pozycja = k.pozycja;
+  });
+  return { nmg, pozycja };
+}
+
+// Klub z ogona wpisu: bez myślników i pustych nawiasów na brzegach. Dwie typowe wady importu:
+// ta sama nazwa dwa razy („AF Brzoza AF Brzoza" — klub z dwóch kolumn arkusza) i dwa kluby z tego
+// samego miasta bez separatora („Legia Chełmża GOL Chełmża") — miasto zamyka pierwszą nazwę.
+function porzadkujKlubTalentu(tekst){
+  const s = String(tekst || '').replace(/\(\s*\)/g, ' ').replace(/\s+/g, ' ')
+    .replace(/^[\s\-–,;:.]+|[\s\-–,;:.]+$/g, '').trim();
+  if(!s) return '';
+  const slowa = s.split(' ');
+  if(slowa.length % 2 === 0){
+    const pol = slowa.length / 2;
+    if(slowa.slice(0, pol).join(' ').toLowerCase() === slowa.slice(pol).join(' ').toLowerCase()) return slowa.slice(0, pol).join(' ');
+  }
+  const ostatnie = slowa[slowa.length - 1].toLowerCase();
+  if(ostatnie.length >= 4){
+    for(let i = 1; i < slowa.length - 2; i++){
+      if(slowa[i].toLowerCase() === ostatnie) return slowa.slice(0, i + 1).join(' ') + ' / ' + slowa.slice(i + 1).join(' ');
+    }
+  }
+  return s;
+}
+
+function wyjmijRocznikTalentu(tekst){
+  const t = String(tekst || '');
+  const m = t.match(/\(?\s*\b((?:19[89]|20[0-4])\d)\b\s*\)?/);
+  if(!m) return { rok: null, reszta: t };
+  return { rok: Number(m[1]), reszta: t.slice(0, m.index) + ' ' + t.slice(m.index + m[0].length) };
+}
+
+// Dwa ostatnie słowa przed numerem to zawodnik, wszystko wcześniej — klub POPRZEDNIEGO zawodnika.
+// Samotne słowo, które nie wygląda na klub, to drugie imię albo człon nazwiska („Kai Leo Michalski").
+function nazwaIOgonTalentu(przed){
+  const slowa = String(przed || '').split(' ').filter(Boolean);
+  if(!slowa.length) return { nazwa: '', ogon: '' };
+  let nazwa = slowa.slice(-2).join(' ');
+  let ogon = slowa.slice(0, -2).join(' ');
+  if(ogon && !ogon.includes(' ') && !wygladaNaKlubTalentu(ogon)){ nazwa = ogon + ' ' + nazwa; ogon = ''; }
+  return { nazwa, ogon };
+}
+
+// Jeden surowy wpis → lista zawodników { firstName, lastName, birthYear, club, pozycjeNmg, pozycja }.
+function rozbierzWpisTalentu(tekst){
+  const l = czyscLinieTalentu(tekst).replace(/\(\s*M\s*\)/gi, ' ').replace(/\s+/g, ' ').trim();
+  if(!l) return [];
+  const znaczniki = [];
+  RE_ZNACZNIK_POZYCJI.lastIndex = 0;
+  let m;
+  while((m = RE_ZNACZNIK_POZYCJI.exec(l)) !== null){
+    znaczniki.push({ od: m.index, do: m.index + m[0].length, ...pozycjeZeZnacznika(m[1]) });
+  }
+
+  if(znaczniki.length){
+    const osoby = [];
+    let kursor = 0;
+    znaczniki.forEach(z=>{
+      const surowePrzed = l.slice(kursor, z.od).replace(/^[\s\-–,;]+/, '');
+      kursor = z.do;
+      // Rocznik stojący przed nazwiskiem należy do POPRZEDNIEGO zawodnika: „(9) 2014-AP Oleśnica Jan…".
+      const r = wyjmijRocznikTalentu(surowePrzed);
+      const { nazwa, ogon } = nazwaIOgonTalentu(r.reszta.replace(/^[\s\-–,;]+/, '').replace(/\s+/g, ' ').trim());
+      const poprzedni = osoby[osoby.length - 1];
+      if(poprzedni){
+        if(r.rok && !poprzedni.birthYear) poprzedni.birthYear = r.rok;
+        if(ogon && !poprzedni.club) poprzedni.club = porzadkujKlubTalentu(ogon);
+      }
+      const { firstName, lastName } = rozdzielImieNazwisko(nazwa);
+      if(!firstName && !lastName) return;
+      osoby.push({ firstName, lastName, birthYear: poprzedni ? null : (r.rok || null), club: '', pozycjeNmg: z.nmg, pozycja: z.pozycja });
+    });
+    const ogonKonca = wyjmijRocznikTalentu(l.slice(kursor));
+    const ostatni = osoby[osoby.length - 1];
+    if(ostatni){
+      if(ogonKonca.rok && !ostatni.birthYear) ostatni.birthYear = ogonKonca.rok;
+      const klub = porzadkujKlubTalentu(ogonKonca.reszta);
+      if(klub && !ostatni.club) ostatni.club = klub;
+    }
+    return osoby;
+  }
+
+  // Bez znaczników w nawiasach: „11 Tomasz Guba Legia Chełmża" albo „Hubert Simson -KS Wda (2014)".
+  const zNumerem = l.match(/^(\d{1,2})[.)]?\s+(.+)$/);
+  const pozycjeNmg = [];
+  let reszta = l;
+  if(zNumerem){
+    const n = Number(zNumerem[1]);
+    if(n >= 1 && n <= 11) pozycjeNmg.push(n);
+    reszta = zNumerem[2];
+  }
+  const r = wyjmijRocznikTalentu(reszta);
+  reszta = r.reszta.replace(/\(\s*\)/g, ' ').replace(/\s+/g, ' ').trim();
+  let nazwa = reszta, klub = '';
+  const myslnik = reszta.match(/^(.+?)\s+-\s*(.+)$/) || reszta.match(/^(.+?)\s*-\s+(.+)$/);
+  if(myslnik){ nazwa = myslnik[1]; klub = myslnik[2]; }
+  else {
+    const slowa = reszta.split(' ');
+    // Klub dopisany po nazwisku BEZ separatora rozpoznajemy tylko, gdy wiersz zaczynał się numerem
+    // (układ „nr Imię Nazwisko Klub") albo reszta wygląda na klub — inaczej trzyczłonowe nazwisko
+    // rozpadłoby się na zawodnika i wymyślony klub.
+    if(slowa.length > 2 && (zNumerem || wygladaNaKlubTalentu(slowa.slice(2).join(' ')))){
+      nazwa = slowa.slice(0, 2).join(' ');
+      klub = slowa.slice(2).join(' ');
+    }
+  }
+  const { firstName, lastName } = rozdzielImieNazwisko(nazwa);
+  if(!firstName && !lastName) return [];
+  return [{ firstName, lastName, birthYear: r.rok || null, club: porzadkujKlubTalentu(klub), pozycjeNmg, pozycja: '' }];
+}
+
+// Czy wpis wymaga uporządkowania — i co z niego wyjdzie. null = zostaw, jak jest.
+// Powołanych nie ruszamy: przyszli z czystego komunikatu, a ich wpis jest wzorcem, nie problemem.
+function wpisTalentuDoPorzadku(t){
+  if(!t || t.reprezentacja) return null;
+  const surowy = [t.firstName, t.lastName].filter(Boolean).join(' ').trim();
+  if(!surowy) return null;
+  const podejrzany = /[\d()]|\bpoz\.|\s-|-\s/.test(surowy) || (!t.club && surowy.split(/\s+/).length > 3);
+  if(!podejrzany) return null;
+  const osoby = rozbierzWpisTalentu([surowy, t.club].filter(Boolean).join(' '));
+  if(!osoby.length) return null;
+  if(osoby.length === 1){
+    const o = osoby[0];
+    const bezZmian = o.firstName === (t.firstName || '') && o.lastName === (t.lastName || '')
+      && (o.club || '') === (t.club || '') && !o.pozycjeNmg.length && !o.pozycja
+      && (!o.birthYear || Number(o.birthYear) === Number(t.birthYear));
+    if(bezZmian) return null;
+  }
+  return osoby;
+}
+
+// Zastąpienie wpisów rozebranymi osobami. Pierwsza osoba DZIEDZICZY wpis (identyfikator, datę,
+// źródło, wpisany rocznik), kolejne dostają nowe wpisy. Zwraca nową listę — nie zmienia starej,
+// żeby po nieudanym zapisie dało się wrócić do stanu sprzed rozdzielenia.
+function rozdzielWpisyTalentow(talenty, doRozdzielenia, noweId){
+  const wynik = [];
+  let zmienionych = 0, dodanych = 0;
+  (talenty || []).forEach(t=>{
+    const osoby = doRozdzielenia.get(t.id);
+    if(!osoby || !osoby.length){ wynik.push(t); return; }
+    osoby.forEach((o, i)=>{
+      const baza = i === 0 ? t : { id: noweId(), confidence: t.confidence || 'import', dateAdded: t.dateAdded || '', sourceImage: '' };
+      wynik.push({
+        ...baza,
+        firstName: o.firstName,
+        lastName: o.lastName,
+        birthYear: o.birthYear || (i === 0 ? (t.birthYear || null) : null),
+        club: o.club || (i === 0 ? (t.club || '') : ''),
+        pozycjeNmg: (o.pozycjeNmg && o.pozycjeNmg.length) ? o.pozycjeNmg : (i === 0 ? (t.pozycjeNmg || []) : []),
+        pozycja: o.pozycja || (i === 0 ? (t.pozycja || '') : ''),
+      });
+      if(i === 0) zmienionych++; else dodanych++;
+    });
+  });
+  return { talenty: wynik, zmienionych, dodanych };
+}
+
+function openPorzadkowanieTalentow(){
+  const doPorzadku = DB.talents.map(t=>({ t, osoby: wpisTalentuDoPorzadku(t) })).filter(x=>x.osoby);
+  if(!doPorzadku.length){ pokazPotwierdzenie('Nie ma sklejonych wpisów do rozdzielenia.', 'ok'); return; }
+  const opisOsoby = (o)=>{
+    const def = (o.pozycjeNmg || [])[0] ? POSITION_NUMBERS.find(x=>x.number === o.pozycjeNmg[0]) : null;
+    const poz = def ? `${o.pozycjeNmg.join('/')} · ${def.label}` : (o.pozycja || '');
+    return `<strong>${esc(o.firstName)} ${esc(o.lastName)}</strong>`
+      + [o.birthYear, poz, o.club].filter(Boolean).map(x=>` &middot; ${esc(String(x))}`).join('');
+  };
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal" style="max-width:780px;">
+    <h3>Rozdziel i uporządkuj wpisy</h3>
+    <p class="note" style="margin-top:-6px;">W tych wpisach nazwisko jest sklejone z klubem, rocznikiem, numerem pozycji —
+      albo z drugim zawodnikiem. Poniżej widać, co z nich odczytałem. <strong>Odznacz wszystko, co wygląda źle</strong> — ten wpis zostanie bez zmian.</p>
+    <p class="note">Numer 1–11 w nawiasie, po „poz." albo na początku wiersza czytam jako pozycję wg NMG; BR = bramkarz,
+      ŚO = środkowy obrońca (bez strony). Numery powyżej 11 to numery na koszulce — z nich pozycji nie zgaduję.</p>
+    <div style="max-height:52vh;overflow:auto;">
+      ${doPorzadku.map((x, i)=>`<label class="porzadek-wiersz">
+        <input type="checkbox" class="porzadek-check" data-i="${i}" checked>
+        <span>
+          <span class="porzadek-przed">${esc([x.t.firstName, x.t.lastName].filter(Boolean).join(' '))}${x.t.club ? ` <span class="meta">(${esc(x.t.club)})</span>` : ''}</span>
+          ${x.osoby.map(o=>`<span class="porzadek-po">→ ${opisOsoby(o)}</span>`).join('')}
+        </span>
+      </label>`).join('')}
+    </div>
+    <div class="modal-actions">
+      <button class="secondary" id="porzadek-anuluj">Anuluj</button>
+      <button class="gold" id="porzadek-zapisz">Rozdziel zaznaczone</button>
+    </div></div>`;
+  const zamknij = ()=> overlay.remove();
+  overlay.querySelector('#porzadek-anuluj').addEventListener('click', zamknij);
+  overlay.addEventListener('click', e=>{ if(e.target === overlay) zamknij(); });
+  const zapisz = overlay.querySelector('#porzadek-zapisz') as HTMLButtonElement;
+  zapisz.onclick = async ()=>{
+    const mapa = new Map();
+    overlay.querySelectorAll('.porzadek-check:checked').forEach(c=>{
+      const x = doPorzadku[Number((c as HTMLElement).dataset.i)];
+      if(x) mapa.set(x.t.id, x.osoby);
+    });
+    if(!mapa.size){ zamknij(); return; }
+    zapisz.disabled = true; zapisz.textContent = 'Zapisuję…';
+    const przed = DB.talents;
+    const w = rozdzielWpisyTalentow(DB.talents, mapa, ()=>uid('T'));
+    DB.talents = w.talenty;
+    const ok = await saveTalents();
+    if(ok === false) DB.talents = przed;   // nieudany zapis — wracamy do listy sprzed rozdzielenia
+    zamknij();
+    render();
+    pokazPotwierdzenie(ok === false
+      ? 'Nie udało się zapisać — lista została bez zmian.' + powodNieudanegoZapisu()
+      : `Uporządkowano ${w.zmienionych} ${w.zmienionych===1?'wpis':'wpisów'}`
+        + (w.dodanych ? `, z rozdzielenia doszło ${w.dodanych} ${w.dodanych===1?'zawodnik':'zawodników'}` : '') + '.',
+      ok === false ? 'blad' : 'ok');
+  };
+  document.body.appendChild(overlay);
+}
+
 // ---- ODCZYT TEKSTU ZE ZRZUTU EKRANU -------------------------------------------------------
 //
 // Część list w ogóle nie daje się skopiować: komunikat wklejony do grafiki, zdjęcie tablicy,
@@ -8930,6 +9179,9 @@ function promoteTalentToPlayer(talentId){
     // POWOŁANIE JEST FAKTEM O ZAWODNIKU i musi przejść do kartoteki — inaczej po „dodaj do bazy"
     // zostaje zwykły zawodnik, a to, że selekcjoner wybrał go z całego rocznika, przepada.
     reprezentacja: !!t.reprezentacja,
+    // Pozycja odczytana z listy przechodzi do kartoteki: numer wg NMG i pasująca do niego pozycja ogólna.
+    position: t.pozycja || (((t.pozycjeNmg || [])[0] && POSITION_NUMBERS.find(x=>x.number === t.pozycjeNmg[0])) || {}).posName || '',
+    pozycjaNmg: (t.pozycjeNmg || [])[0] || null,
     notes: (t.reprezentacja ? 'Powołany do reprezentacji Polski ' + t.reprezentacja + '. ' : '')
       + (t.club ? 'Klub wg zakładki Talent: ' + t.club + (t.krajKlubu ? ' (' + t.krajKlubu + ')' : '') + '. ' : '')
       + (t.krajKlubu ? 'Klub zagraniczny — statystyk nie zbierzemy z polskich protokołów, uzupełnij z Transfermarktu. ' : '')
@@ -9153,8 +9405,35 @@ function kadraZPolaZrodla(pole){
 // Obiekty w pamięci zostają nietknięte — widok dalej ma kadrę pod swoją nazwą.
 function talentyDoZapisu(talenty){
   return (talenty || []).map(t=>{
-    const { reprezentacja, krajKlubu, ...reszta } = t;
-    return reprezentacja ? { ...reszta, confidence: kadraDoPolaZrodla({ reprezentacja, krajKlubu }) } : reszta;
+    const { reprezentacja, krajKlubu, pozycjeNmg, pozycja, ...reszta } = t;
+    const wiersz = { ...reszta, sourceImage: pozycjaDoPolaTalentu({ pozycjeNmg, pozycja }) };
+    return reprezentacja ? { ...wiersz, confidence: kadraDoPolaZrodla({ reprezentacja, krajKlubu }) } : wiersz;
+  });
+}
+
+// POZYCJA TALENTU W WIERSZU TALENTU. Tabela nie ma na nią kolumny, a pole sourceImage nigdy nie
+// dostało zastosowania przy talentach — jedzie w nim „nmg=8,7" (numery wg NMG, pierwszy główny)
+// albo „poz=Obrońca środkowy", gdy znamy tylko pozycję ogólną. Ta sama zasada co przy kadrze:
+// dana zapisuje się razem z talentem albo wcale.
+function pozycjaDoPolaTalentu(t){
+  const nmg = ((t && t.pozycjeNmg) || []).map(Number).filter(n=> n >= 1 && n <= 11);
+  if(nmg.length) return 'nmg=' + nmg.join(',');
+  if(t && t.pozycja) return 'poz=' + t.pozycja;
+  return '';
+}
+function pozycjaZPolaTalentu(pole){
+  const s = String(pole || '').trim();
+  const n = s.match(/^nmg=(\d{1,2}(?:,\d{1,2})*)$/);
+  if(n) return { pozycjeNmg: n[1].split(',').map(Number).filter(x=> x >= 1 && x <= 11), pozycja: '' };
+  const p = s.match(/^poz=(.+)$/);
+  if(p) return { pozycjeNmg: [], pozycja: p[1].trim() };
+  return null;
+}
+function nalozPozycjeZPolaTalentu(talenty){
+  (talenty || []).forEach(t=>{
+    if(!t || (t.pozycjeNmg && t.pozycjeNmg.length) || t.pozycja) return;
+    const p = pozycjaZPolaTalentu(t.sourceImage);
+    if(p){ t.pozycjeNmg = p.pozycjeNmg; t.pozycja = p.pozycja; }
   });
 }
 
@@ -9226,30 +9505,81 @@ function viewTalent(){
     }
     return (a.lastName||'').localeCompare(b.lastName||'', 'pl') || (a.firstName||'').localeCompare(b.firstName||'', 'pl');
   });
-  // Wiersz w kolejności czytania: kto — z jakiego rocznika — skąd — co z nim zrobić.
-  // Rocznik jest polem do wpisania wprost w wierszu: to jedyna dana, której brakuje większości
-  // talentów z importu, a otwieranie pełnego profilu dla samego roku to kilka kliknięć na osobę.
-  const wierszTalentu = (t)=>`
-    <div class="talent-row">
-      <span class="talent-row-name"><input type="checkbox" class="talent-check" data-id="${t.id}" aria-label="Zaznacz: ${esc(t.firstName)} ${esc(t.lastName)}"><span>${esc(t.firstName)} ${esc(t.lastName)}${
-        t.reprezentacja ? ` <span class="kadra-znacznik" title="Powołany do reprezentacji ${esc(t.reprezentacja)}">${esc(t.reprezentacja)}</span>` : ''}</span></span>
-      <span class="talent-rocznik-wrap">
+  // TALENT WYGLĄDA JAK ZAWODNIK Z LISTY „ZAWODNICY": nazwisko z odznakami, rocznik, pozycja, herb
+  // i nazwa klubu, przycisk do profilu. Dzięki temu obie listy czyta się tak samo, a talent, który
+  // już jest w kartotece, prowadzi prosto do niej zamiast namawiać do założenia drugiej.
+  //
+  // Klub i kartotekę dopasowujemy raz na przerysowanie, z pamięcią po nazwie klubu: te same kluby
+  // powtarzają się w dziesiątkach wpisów, a dopasowanie nazwy do bazy klubów nie jest darmowe.
+  const klubPoNazwie = new Map();
+  const klubTalentu = (t)=>{
+    const nazwa = String(t.club || '').split(' / ')[0].trim();
+    if(!nazwa) return null;
+    if(!klubPoNazwie.has(nazwa)){
+      let k = null;
+      try{ k = dopasujKlubDoNazwy(nazwa); }catch(e){ k = null; }
+      klubPoNazwie.set(nazwa, k);
+    }
+    return klubPoNazwie.get(nazwa);
+  };
+  const zawodnicyPoNazwisku = new Map();
+  DB.players.forEach(p=>{
+    const k = nazwiskoNorm(p.firstName) + '|' + nazwiskoNorm(p.lastName);
+    if(!zawodnicyPoNazwisku.has(k)) zawodnicyPoNazwisku.set(k, []);
+    zawodnicyPoNazwisku.get(k).push(p);
+  });
+  // Kartoteka tego talentu: to samo imię i nazwisko, a gdy znamy klub — także ten sam klub.
+  // Samo nazwisko nie wystarcza: Jakubów Kowalskich jest w bazie kilku, a link do cudzego
+  // profilu jest gorszy niż brak linku.
+  const kartotekaTalentu = (t, klub)=>{
+    const kandydaci = zawodnicyPoNazwisku.get(nazwiskoNorm(t.firstName) + '|' + nazwiskoNorm(t.lastName)) || [];
+    if(!kandydaci.length) return null;
+    if(klub){
+      const zTegoKlubu = kandydaci.filter(p=>p.clubId === klub.id);
+      return zTegoKlubu.length === 1 ? zTegoKlubu[0] : null;
+    }
+    return (!t.club && kandydaci.length === 1) ? kandydaci[0] : null;
+  };
+  const wierszTalentu = (t)=>{
+    const klub = klubTalentu(t);
+    const karta = kartotekaTalentu(t, klub);
+    // Odznaki młodzieżowca i młodszego rocznika liczymy tymi samymi funkcjami co w Zawodnikach.
+    const jakZawodnik = { birthYear: t.birthYear, clubId: klub ? klub.id : (karta ? karta.clubId : '') };
+    const nmg = (t.pozycjeNmg || [])[0];
+    const defPozycji = nmg ? POSITION_NUMBERS.find(x=>x.number === nmg) : null;
+    const pozycjaHtml = (t.pozycja || defPozycji)
+      ? chipPozycji({ position: t.pozycja || defPozycji.posName, pozycjaNmg: defPozycji ? nmg : null })
+        + ((t.pozycjeNmg || []).length > 1 ? ` <span class="meta" title="Kolejne pozycje z listy">/${esc(t.pozycjeNmg.slice(1).join('/'))}</span>` : '')
+      : '<span class="meta">—</span>';
+    return `<tr class="player-row talent-wiersz">
+      <td style="width:26px;"><input type="checkbox" class="talent-check" data-id="${t.id}" aria-label="Zaznacz: ${esc(t.firstName)} ${esc(t.lastName)}"></td>
+      <td><div class="zaw-cell">
+        <span class="zaw-nazwa"><strong>${esc(t.lastName)}</strong> ${esc(t.firstName)}${
+          t.reprezentacja ? ` <span class="kadra-znacznik" title="Powołany do reprezentacji ${esc(t.reprezentacja)}">${esc(t.reprezentacja)}</span>` : ''}</span>
+        <span class="zaw-meta">${isYouthPlayer(jakZawodnik) ? youthBadge(jakZawodnik) : ''}${odznakaMlodszego(jakZawodnik)}</span>
+      </div></td>
+      <td><span class="talent-rocznik-wrap">
         <input type="number" inputmode="numeric" class="talent-rocznik${t.birthYear ? '' : ' brak'}" data-id="${t.id}"
           min="${NAJSTARSZY_ROCZNIK_TALENTU}" max="${new Date().getFullYear()}" placeholder="rocznik"
           value="${t.birthYear ? esc(String(t.birthYear)) : ''}"
           title="Wpisz rocznik i naciśnij Enter — zapisze się i przejdziesz do następnego wiersza"
           aria-label="Rocznik: ${esc(t.firstName)} ${esc(t.lastName)}">
         <span class="talent-rocznik-stan" aria-live="polite"></span>
-      </span>
-      <span class="talent-row-meta">${esc(t.club||'klub nieznany')}${
-        // Kraj pokazujemy TYLKO gdy podało go źródło — przy klubie zagranicznym to najważniejsza
-        // informacja w wierszu, bo mówi, że kartoteki nie zbudujemy z polskich protokołów.
-        t.krajKlubu ? ` &middot; <strong>${esc(t.krajKlubu)}</strong>` : ''}</span>
-      <span class="talent-row-actions">
-        <button class="link-btn" data-action="talent-promote" data-id="${t.id}" style="color:var(--gold-dark);">pełny profil / dodaj do bazy</button>
-        <button class="link-btn talent-remove-btn" data-id="${t.id}" style="color:var(--clay-dark);">usuń</button>
-      </span>
-    </div>`;
+      </span></td>
+      <td>${pozycjaHtml}</td>
+      <td><div class="club-cell">${t.club ? crestImg(klub ? clubCrest(klub.id) : null, null, t.club) : ''}<span>
+        <span class="club-name" title="${esc(t.club || '')}">${esc(t.club || 'klub nieznany')}</span>
+        <span class="club-sub">${klub ? esc(String(klub.league || '')) : (t.club ? 'klubu nie ma w bazie' : '')}${
+          // Kraj pokazujemy TYLKO gdy podało go źródło — przy klubie zagranicznym to najważniejsza
+          // informacja w wierszu, bo mówi, że kartoteki nie zbudujemy z polskich protokołów.
+          t.krajKlubu ? ` &middot; <strong>${esc(t.krajKlubu)}</strong>` : ''}</span>
+      </span></div></td>
+      <td class="talent-akcje">${karta
+        ? `<button class="secondary" data-action="talent-profil" data-player-id="${esc(karta.id)}" title="Ten zawodnik jest już w bazie">Profil →</button>`
+        : `<button class="secondary" data-action="talent-promote" data-id="${t.id}" title="Otwórz pełny profil i dodaj do bazy">Dodaj do bazy</button>`}
+        <button class="link-btn talent-remove-btn" data-id="${t.id}" style="color:var(--clay-dark);">usuń</button></td>
+    </tr>`;
+  };
   let rowsHtml = '';
   if(rows.length){
     let biezacaGrupa;
@@ -9261,10 +9591,14 @@ function viewTalent(){
         const etykieta = t.reprezentacja
           ? 'Reprezentacja Polski ' + esc(t.reprezentacja)
           : (t.birthYear ? 'Rocznik ' + esc(String(t.birthYear)) : 'Bez rocznika');
-        rowsHtml += `<div class="talent-year-head">${etykieta} <span class="reports-count">${ilu}</span></div>`;
+        rowsHtml += `<tr class="talent-grupa"><td colspan="6"><div class="talent-year-head">${etykieta} <span class="reports-count">${ilu}</span></div></td></tr>`;
       }
       rowsHtml += wierszTalentu(t);
     });
+    rowsHtml = `<table class="players-table talent-tabela">
+      <thead><tr><th></th><th>Zawodnik</th><th style="width:118px;">Rocznik</th><th>Pozycja</th><th>Klub</th><th></th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>`;
   } else {
     rowsHtml = talentKadra
       ? `<div class="empty">Kadry ${esc(talentKadra === 'inni' ? 'spoza reprezentacji' : talentKadra)} jeszcze nie zebraliśmy.
@@ -9295,6 +9629,12 @@ function viewTalent(){
        na jakiś czas — lista jest tym, na co się patrzy — więc formularze schodzą pod nią. -->
   <h3 class="reports-aside-title" style="margin-top:0;">Lista talentów <span class="reports-count">${rows.length}</span></h3>
   ${zakladkiKadr}
+  ${(()=>{
+    const ile = DB.talents.filter(t=> wpisTalentuDoPorzadku(t)).length;
+    return ile ? `<div style="margin:-4px 0 10px;">
+      <button class="secondary" data-action="talent-porzadkuj" title="Rozdziela kilku zawodników z jednego wpisu i wyciąga z nazwiska rocznik, klub i pozycję">✂ Rozdziel i uporządkuj wpisy (${ile})</button>
+    </div>` : '';
+  })()}
   ${rows.length ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
     <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:13px;">
       <input type="checkbox" id="talent-select-all"><span>Zaznacz wszystkie</span>
@@ -9306,7 +9646,7 @@ function viewTalent(){
       <button class="secondary" data-action="talent-rocznik-zbiorczo">Ustaw rocznik zaznaczonym</button>
     </span>
   </div>` : ''}
-  <div class="card talent-list">${rowsHtml}</div>
+  <div class="card talent-list"${rows.length ? ' style="padding:0;"' : ''}>${rowsHtml}</div>
 
   <div class="talent-layout" style="margin-top:22px;">
     <div>
@@ -12550,6 +12890,13 @@ function attachHandlers(){
     const ok = await saveSettings();
     render();
     pokazPotwierdzenie(ok === false ? 'Nie udało się zapisać.' + powodNieudanegoZapisu() : 'Przywrócono domyślne wagi.', ok === false ? 'blad' : 'ok');
+  });
+  main.querySelectorAll('[data-action="talent-porzadkuj"]').forEach(b=>b.onclick=()=>openPorzadkowanieTalentow());
+  main.querySelectorAll('[data-action="talent-profil"]').forEach(b=>b.onclick=()=>{
+    currentView = 'players';
+    viewingPlayerId = (b as HTMLElement).dataset.playerId;
+    viewingClubId = null;
+    render();
   });
   main.querySelectorAll('[data-action="talent-kadra"]').forEach(b=>b.onclick=()=>{
     talentKadra = (b as HTMLElement).dataset.val || '';

@@ -46,15 +46,16 @@ console.log('\n3. Literówki są odrzucane z powodem, a nie zapisywane');
 });
 
 console.log('\n4. Wiersz talentu');
-const wiersz = wytnij('wierszTalentu', /const wierszTalentu = \(t\)=>`[\s\S]*?\n    <\/div>`;/);
-const kolejnosc = ['talent-row-name', 'talent-rocznik-wrap', 'talent-row-meta', 'talent-row-actions'].map(k => wiersz.indexOf(k));
-sprawdz('kolejność kolumn: nazwisko → rocznik → klub → przyciski',
+const wiersz = wytnij('wierszTalentu', /const wierszTalentu = \(t\)=>\{[\s\S]*?\n  \};/);
+const kolejnosc = ['talent-check', 'zaw-cell', 'talent-rocznik-wrap', 'pozycjaHtml}', 'club-cell', 'talent-akcje'].map(k => wiersz.indexOf(k));
+sprawdz('kolejność kolumn jak w Zawodnikach: zaznaczenie → zawodnik → rocznik → pozycja → klub → akcje',
   kolejnosc.every(i => i >= 0) && kolejnosc.every((v, i, a) => i === 0 || v > a[i - 1]), JSON.stringify(kolejnosc));
 sprawdz('pole rocznika ma identyfikator talentu', /class="talent-rocznik[^"]*" data-id="\$\{t\.id\}"/.test(wiersz));
 sprawdz('puste pole oznaczone klasą „brak"', /talent-rocznik\$\{t\.birthYear \? '' : ' brak'\}/.test(wiersz));
 sprawdz('pole zaznaczenia bez stylu rozciągającego', !/talent-check"[^>]*style=/.test(wiersz));
-sprawdz('siatka wiersza ma cztery kolumny', /\.talent-row\{display:grid;grid-template-columns:minmax\(0,1fr\) 104px minmax\(130px,240px\) max-content;/.test(style));
-sprawdz('pole zaznaczenia nie dziedziczy width:100%', /\.talent-row \.talent-check\{width:auto;/.test(style));
+sprawdz('wiersz ma odznakę młodzieżowca liczoną jak w Zawodnikach', /isYouthPlayer\(jakZawodnik\) \? youthBadge\(jakZawodnik\)/.test(wiersz));
+sprawdz('talent z kartoteką prowadzi do profilu, bez kartoteki — do dodania', /data-action="talent-profil"/.test(wiersz) && /data-action="talent-promote"/.test(wiersz));
+sprawdz('pole zaznaczenia w tabeli nie dziedziczy width:100%', /\.talent-tabela \.talent-check\{width:auto;/.test(style));
 
 console.log('\n5. Zapis i nawigacja');
 sprawdz('zapis przy zmianie pola', zrodlo.includes("pole.addEventListener('change', zapiszRocznik);"));
