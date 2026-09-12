@@ -399,6 +399,14 @@ function ligaChip(o: Observation & { rozgrywki?: string; kategoria?: string }): 
 // Dobranie brakujących herbów dla meczów, które SĄ na liście. Osobno od kopii bazy i po cichu:
 // herb to ułatwienie, więc jego brak nie może przerwać pobierania ani zawołać o pomoc — scout ma
 // na trybunie ważniejsze rzeczy niż komunikat o nieudanym obrazku.
+// Czemu herbów nie widać. Pusty znaczy „wszystko w porządku".
+//
+// Bez tego brak herbów wygląda identycznie niezależnie od przyczyny: czy klubu nie ma w
+// kartotece, czy nikt nie wgrał logo, czy baza odmówiła dostępu do tabeli. Pierwsze dwie rzeczy
+// scout poprawia sam w systemie, trzecia wymaga zmiany reguł — a nie da się ich rozróżnić,
+// patrząc na listę.
+let stanHerbow = "";
+
 async function dobierzHerby(): Promise<void> {
   const potrzebne = new Set<string>();
   for (const o of cache.observations) {
@@ -407,14 +415,22 @@ async function dobierzHerby(): Promise<void> {
       if (klub) potrzebne.add(klub.id);
     }
   }
-  if (!potrzebne.size) return;
+  if (!potrzebne.size) {
+    stanHerbow = cache.observations.length
+      ? "nie rozpoznano klubów z nazw meczów — sprawdź, czy zgadzają się z kartoteką w SBS"
+      : "";
+    return;
+  }
   try {
     const ile = await pobierzHerby([...potrzebne]);
     herby = getHerby();
     // Doszły nowe obrazki, więc zapamiętane „tego herbu nie ma" jest już nieaktualne.
     herbyPamiec = new Map();
+    const maja = [...potrzebne].filter((id) => herby[id]).length;
+    stanHerbow = maja ? "" : `rozpoznano ${potrzebne.size} klubów, ale żaden nie ma wgranego herbu w SBS`;
     if (ile) render();
   } catch (e) {
+    stanHerbow = "baza odmówiła dostępu do herbów — " + (e as Error).message;
     console.warn("Nie udało się pobrać herbów:", (e as Error).message);
   }
 }
@@ -2125,6 +2141,12 @@ function viewBaza(): string {
         <strong style="font-family:var(--data); font-size:12.5px; color:var(--text-2);">${cache.players.length}</strong></div>
       <div class="row" style="margin-top:6px;"><span class="sub">Meczów w terminarzu</span>
         <strong style="font-family:var(--data); font-size:12.5px; color:${cache.matches.length ? "var(--text-2)" : "var(--accent-fg)"};">${cache.matches.length}</strong></div>
+      ${/* HERBY — liczba i, gdy ich nie widać, powód. Brak herbu na liście wygląda tak samo
+            niezależnie od przyczyny (klubu nie ma w kartotece, nikt nie wgrał logo, baza odmówiła
+            dostępu), a to trzy zupełnie różne sprawy i tylko jedną da się poprawić w panelu. */""}
+      <div class="row" style="margin-top:6px;"><span class="sub">Herby klubów</span>
+        <strong style="font-family:var(--data); font-size:12.5px; color:var(--text-2);">${Object.values(herby).filter(Boolean).length}</strong></div>
+      ${stanHerbow ? `<div class="sub" style="margin-top:2px; color:var(--accent-fg);">${esc(stanHerbow)}</div>` : ""}
       <div class="row" style="margin-top:6px;"><span class="sub">Wersja panelu</span>
         <strong style="font-family:var(--data); font-size:12.5px; color:var(--text-2);">${esc(WERSJA_PANELU)}</strong></div>
       <!-- ADRES, POD KTÓRYM STOI TEN PANEL.
@@ -3945,6 +3967,11 @@ async function start(pobranaKopia?: Cache) {
   // Scout planował go wtedy po raz drugi — i tak w bazie lądowały dwie obserwacje tego samego meczu.
   ponowPoAktualizacji();
   await wyslijKolejke();
+
+  // Herby dobieramy PRZED wyjściem poniżej. Wisiały wcześniej wyłącznie przy odświeżaniu kopii,
+  // a przy zwykłym uruchomieniu kopia przychodzi już ze sprawdzania dostępu i funkcja kończyła
+  // się linijkę niżej — więc herby nie pobierały się nigdy, dopóki scout sam nie dotknął logo.
+  void dobierzHerby();
   if (pobranaKopia) return; // kopia przyszła już przy sprawdzaniu dostępu — nie pobieramy drugi raz
 
   // Kopię bazy pobieramy w tle. Panel jest użyteczny natychmiast — z tym, co zostało w telefonie
