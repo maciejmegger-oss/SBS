@@ -1088,3 +1088,28 @@ tr.crow-rejected td,tr.crow-watching td{color:var(--row-ink);}
   /* Gdy u góry stoi czerwony baner nieudanego zapisu, przycisk zjeżdża pod niego, żeby go nie zasłaniać. */
   body.baner-zapisu .scout-box{ top:60px; }
 }
+
+/* ---------------------------------------------------------------------------
+   KONTO BEZ PRAW ADMINISTRATORA
+
+   Skaut pracuje w systemie normalnie: dodaje zawodników, obserwacje, raporty i wgrywa protokoły
+   z ŁNP. Nie usuwa jednak niczego i nie rusza kartoteki menedżerów — bo kasowanie jest
+   nieodwracalne, a kontakty agencji to dane, których nie ma po co rozdawać.
+
+   Znacznik na <body> ustawia render() (patrz czyAdmin()). Reguła działa po nazwie akcji, więc
+   obejmuje także przyciski dołożone w przyszłości — nie trzeba o niej pamiętać przy każdym nowym
+   widoku. To jest WYGODA, nie zamek: prawdziwa blokada siedzi w regułach dostępu bazy.
+   --------------------------------------------------------------------------- */
+body.bez-kasowania [data-action^="delete-"],
+body.bez-kasowania [data-action="reset-all"],
+body.bez-kasowania [data-action="kopia-wczytaj"],
+body.bez-kasowania [data-action="add-agency"],
+body.bez-kasowania [data-action="edit-agency"],
+body.bez-kasowania [data-action="add-agent"],
+body.bez-kasowania [data-action="edit-agent"],
+body.bez-kasowania [data-action="merge-duplicates"],
+body.bez-kasowania #delete-selected-btn,
+body.bez-kasowania #squad-delete-btn,
+body.bez-kasowania #delete-selected-agencies-btn{
+  display:none !important;
+}

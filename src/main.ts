@@ -3787,10 +3787,17 @@ function renderNav(){
   // samo, jak w panelu mobilnym (zakładka Baza).
   const znacznik = document.getElementById('wersja-znacznik');
   if(znacznik) znacznik.textContent = 'wersja ' + (typeof __WERSJA__ === 'string' ? __WERSJA__ : 'robocza');
+  // ROLA STERUJE WYGLĄDEM CAŁEGO OKNA, NIE POJEDYNCZYMI PRZYCISKAMI.
+  //
+  // Przycisków usuwania jest w systemie kilkanaście i rozsiane są po ośmiu widokach. Dopisywanie
+  // warunku przy każdym z nich kończyłoby się tym, że przy dwudziestym któryś zostanie pominięty.
+  // Znacznik na <body> ustawiamy więc raz, a arkusz stylów chowa po nim wszystko naraz — nowy
+  // przycisk usuwania jest objęty regułą od chwili powstania, bez pamiętania o czymkolwiek.
+  document.body.classList.toggle('bez-kasowania', !czyAdmin());
   const nav = document.getElementById('nav');
   // Zakładka „Dostęp" tylko dla administratora — reszcie nie ma czego pokazywać, bo baza i tak
   // odda im wyłącznie ich własny wiersz.
-  const pozycje = (kontoUzytkownika && kontoUzytkownika.rola === 'admin')
+  const pozycje = czyAdmin()
     ? NAV_ITEMS.concat([{id:'access', label:'Dostęp'}])
     : NAV_ITEMS;
   nav.innerHTML = pozycje.map(it => `
@@ -12400,11 +12407,12 @@ function attachHandlers(){
     render();
   });
   main.querySelectorAll('[data-action="back-agencies"]').forEach(b=>b.onclick=()=>cofnijWidok(()=>{ viewingAgencyId = null; }));
-  main.querySelectorAll('[data-action="add-agency"]').forEach(b=>b.onclick=()=>openAgencyModal(null));
-  main.querySelectorAll('[data-action="edit-agency"]').forEach(b=>b.onclick=()=>openAgencyModal(b.dataset.id));
-  main.querySelectorAll('[data-action="add-agent"]').forEach(b=>b.onclick=()=>openAgentModal(null, b.dataset.agency));
-  main.querySelectorAll('[data-action="edit-agent"]').forEach(b=>b.onclick=()=>openAgentModal(b.dataset.id, null));
+  main.querySelectorAll('[data-action="add-agency"]').forEach(b=>b.onclick=()=>{ if(!tylkoAdmin('Zakładanie i zmiana agencji.')) return; openAgencyModal(null); });
+  main.querySelectorAll('[data-action="edit-agency"]').forEach(b=>b.onclick=()=>{ if(!tylkoAdmin('Zmiana danych agencji.')) return; openAgencyModal(b.dataset.id); });
+  main.querySelectorAll('[data-action="add-agent"]').forEach(b=>b.onclick=()=>{ if(!tylkoAdmin('Dopisywanie menedżerów.')) return; openAgentModal(null, b.dataset.agency); });
+  main.querySelectorAll('[data-action="edit-agent"]').forEach(b=>b.onclick=()=>{ if(!tylkoAdmin('Zmiana danych menedżera.')) return; openAgentModal(b.dataset.id, null); });
   main.querySelectorAll('[data-action="delete-agency"]').forEach(b=>b.onclick=async()=>{
+    if(!tylkoAdmin('Usuwanie agencji.')) return;
     const a = agencyById(b.dataset.id);
     if(!a) return;
     const zaw = agencyPlayers(a.id).length, men = agencyAgents(a.id).length;
@@ -12421,6 +12429,7 @@ function attachHandlers(){
     render();
   });
   main.querySelectorAll('[data-action="delete-agent"]').forEach(b=>b.onclick=async()=>{
+    if(!tylkoAdmin('Usuwanie menedżera.')) return;
     const m = agentById(b.dataset.id);
     if(!m) return;
     const ilu = agentPlayers(m.id).length;
@@ -12480,6 +12489,7 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="back-players"]').forEach(b=>b.onclick=()=>cofnijWidok(()=>{ viewingPlayerId=null; }));
   main.querySelectorAll('[data-action="back-rocznik"]').forEach(b=>b.onclick=()=>cofnijWidok(()=>{ viewingRocznikGroup=null; currentView='clubs'; }));
   main.querySelectorAll('[data-action="delete-rocznik"]').forEach(b=>b.onclick=async()=>{
+    if(!tylkoAdmin('Usuwanie całego rocznika zawodników.')) return;
     const year = b.dataset.year;
     if(confirm(`Usunąć wszystkich zawodników z rocznika ${year}? To działanie nie może być cofnięte.`)){
       const toDelete = DB.players.filter(p=>String(p.birthYear||'')===String(year));
@@ -12549,6 +12559,7 @@ function attachHandlers(){
     pole.addEventListener('click', (e)=>{ if(przeciaganieTrwa){ e.preventDefault(); e.stopPropagation(); } }, true);
   });
   main.querySelectorAll('[data-action="delete-player"]').forEach(b=>b.onclick=async()=>{
+    if(!tylkoAdmin('Usuwanie zawodnika z kartoteki.')) return;
     if(confirm('Usunąć tego zawodnika i jego obserwacje?')){
       const id = b.dataset.id;
       const ok = await deletePlayerRecord(id);   // usuwa też obserwacje w bazie (kaskada FK)
@@ -13085,7 +13096,7 @@ function attachHandlers(){
   };
 
   main.querySelectorAll('[data-action="league-stats"]').forEach(b=>b.onclick=()=>openLeagueStatsModal(b.dataset.league));
-  main.querySelectorAll('[data-action="merge-duplicates"]').forEach(b=>b.onclick=()=>openMergeDuplicatesModal());
+  main.querySelectorAll('[data-action="merge-duplicates"]').forEach(b=>b.onclick=()=>{ if(!tylkoAdmin('Scalanie klubów wpisanych dwa razy.')) return; openMergeDuplicatesModal(); });
   main.querySelectorAll('[data-action="analyze-player"]').forEach(b=>b.onclick=()=>openPlayerAnalysisModal(b.dataset.id));
   main.querySelectorAll('[data-action="contacts-fill-clubs"]').forEach(b=>b.onclick=async()=>{
     let filled = 0, noMatch = 0;
@@ -13205,6 +13216,7 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="import-klubow-ligi"]').forEach(b=>b.onclick=()=>openImportKlubowModal());
   main.querySelectorAll('[data-action="edit-club"]').forEach(b=>b.onclick=()=>openClubModal(b.dataset.id));
   main.querySelectorAll('[data-action="delete-club"]').forEach(b=>b.onclick=async()=>{
+    if(!tylkoAdmin('Usuwanie klubu.')) return;
     if(confirm('Usunąć ten klub?')){
       const ok = await deleteClubRecord(b.dataset.id);
       if(!ok){ alert('Nie udało się usunąć klubu.' + powodNieudanegoZapisu() + ' Nic nie usunięto.'); return; }
@@ -13345,6 +13357,7 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="obs-pokaz"]').forEach(b=>b.onclick=()=>openObsPodgladModal(b.dataset.id));
   main.querySelectorAll('[data-action="cancel-edit-obs"]').forEach(b=>b.onclick=()=>{ editingObsId = null; render(); });
   main.querySelectorAll('[data-action="delete-obs"]').forEach(b=>b.onclick=async()=>{
+    if(!tylkoAdmin('Usuwanie obserwacji.')) return;
     if(!confirm('Usunąć tę obserwację?')) return;
     const ok = await deleteObservationRecord(b.dataset.id);
     if(!ok){ alert('Nie udało się usunąć obserwacji.' + powodNieudanegoZapisu() + ' Nic nie usunięto.'); return; }
@@ -13372,6 +13385,7 @@ function attachHandlers(){
     editingReportId = null; reportPerspektywaValue = ''; reportStatusValue = ''; reportObsTypeValue = ''; render();
   });
   main.querySelectorAll('[data-action="delete-report"]').forEach(b=>b.onclick=async()=>{
+    if(!tylkoAdmin('Usuwanie raportu.')) return;
     if(!confirm('Usunąć ten raport?')) return;
     const id = b.dataset.id;
     const ok = await deleteReportRecord(id);
@@ -13825,6 +13839,7 @@ function attachHandlers(){
   };
 
   main.querySelectorAll('[data-action="reset-all"]').forEach(b=>b.onclick=async()=>{
+    if(!tylkoAdmin('Czyszczenie całej bazy.')) return;
     if(confirm('Na pewno usunąć WSZYSTKIE dane (zawodnicy, kluby, obserwacje)? Tej operacji nie można cofnąć.')){
       DB.players=[]; DB.clubs=[]; DB.observations=[];
       await savePlayers(); await saveClubs(); await saveObservations();
@@ -21856,6 +21871,29 @@ let kontoUzytkownika = null;
 // Sama sesja (e-mail i identyfikator). Rozdzielone od konta, bo sesja może istnieć także wtedy,
 // gdy wiersza w sbs_konta jeszcze nie ma — a przycisk w panelu bocznym pyta właśnie o sesję.
 let sesjaUzytkownika = null;
+
+// KTO MOŻE KASOWAĆ I ZMIENIAĆ USTAWIENIA.
+//
+// Interfejs jest tu WYGODĄ, nie zabezpieczeniem — prawdziwy zamek siedzi w regułach dostępu bazy
+// (supabase/migration_2026-09-12_role_i_kasowanie.sql). Chowamy przyciski po to, żeby skaut nie
+// klikał w coś, co i tak skończy się błędem z bazy, a nie żeby go powstrzymać: kto zna konsolę
+// przeglądarki, obejdzie każde ukrycie. Dlatego kolejność jest taka, a nie odwrotna.
+//
+// Brak wiersza konta (baza bez tabeli sbs_konta) traktujemy jak administratora — czyli tak, jak
+// system działał przed wprowadzeniem ról. Inaczej wdrożenie odcięłoby od kasowania także
+// właściciela, zanim zdąży uruchomić migrację.
+function czyAdmin(){
+  return !kontoUzytkownika || kontoUzytkownika.rola === 'admin';
+}
+
+// Strażnik przy samej akcji. Ukrycie przycisku stylami odpada, gdy ktoś wywoła je z konsoli albo
+// gdy nowy widok zapomni o znaczniku — ten warunek stoi już przy wykonaniu.
+function tylkoAdmin(coRobi){
+  if(czyAdmin()) return true;
+  alert('To może zrobić tylko administrator.\n\n' + coRobi
+    + '\n\nJeśli potrzebujesz tej operacji, poproś administratora systemu.');
+  return false;
+}
 
 function renderLoginScreen(){
   document.querySelector('.app').style.display = 'none';
