@@ -5288,7 +5288,40 @@ function widoczneKluby(){
   let list = DB.clubs.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'','pl'));
   if(clubBrowse.top) list = list.filter(c=>topLevelOf(c.league)===clubBrowse.top);
   if(clubBrowse.group) list = list.filter(c=>c.league===clubBrowse.group);
+  // Po wybraniu ligi albo grupy — kolejność jak w aktualnej tabeli (patrz ulozWgTabeli).
+  if(clubBrowse.top) list = ulozWgTabeli(list, miejsceWTabeli);
   return list;
+}
+
+// KOLEJNOŚĆ JAK W TABELI LIGOWEJ.
+//
+// Po wybraniu ligi kluby stały alfabetycznie, a przeglądając ligę szuka się najpierw lidera i dołu
+// tabeli — trzeba było porównywać punkty wzrokiem, wiersz po wierszu. Kolejność bierzemy z pobranej
+// tabeli 90minut: miejsce po ostatniej kolejce. Kilka grup naraz (III liga bez wybranej grupy) —
+// grupa po grupie, w każdej od lidera. Klub bez wiersza w tabeli (tabeli nie pobrano, klub spoza
+// rozgrywek) stoi na końcu swojej grupy, alfabetycznie. „Wszystkie" zostaje alfabetyczne.
+function miejsceWTabeli(klub){
+  const w = wierszZTabeli(klub);
+  if(!w) return null;
+  const n = Number(w.miejsce);
+  if(Number.isFinite(n) && n > 0) return n;
+  const tab = tabeleLig[String(klub.league || '')];
+  const i = tab && Array.isArray(tab.wiersze) ? tab.wiersze.indexOf(w) : -1;
+  return i >= 0 ? i + 1 : null;
+}
+function ulozWgTabeli(kluby, miejsceKlubu){
+  // Miejsca liczymy raz — dopasowanie nazwy do wiersza tabeli nie jest darmowe, a sortowanie
+  // porównuje każdy klub wielokrotnie.
+  const miejsca = new Map(kluby.map(c=> [c.id, miejsceKlubu(c)]));
+  return kluby.slice().sort((a,b)=>{
+    const ga = String(a.league || ''), gb = String(b.league || '');
+    if(ga !== gb) return ga.localeCompare(gb, 'pl');
+    const pa = miejsca.get(a.id), pb = miejsca.get(b.id);
+    if(pa != null && pb != null && pa !== pb) return pa - pb;
+    if(pa != null && pb == null) return -1;
+    if(pa == null && pb != null) return 1;
+    return (a.name || '').localeCompare(b.name || '', 'pl');
+  });
 }
 
 function viewClubs(){
@@ -5411,7 +5444,11 @@ function viewClubs(){
         <label for="quick-crest-${c.id}" style="cursor:pointer;display:inline-flex;" title="Kliknij, aby wgrać/zmienić herb">${crestImg(clubCrest(c.id), null, c.name)}</label>
         <input type="file" id="quick-crest-${c.id}" class="quick-crest-input" data-club-id="${c.id}" accept="image/png,image/jpeg,image/jpg,.png,.jpg,.jpeg,application/pdf,.pdf" style="display:none;">
       </td>
-      <td><strong>${esc(c.name)}</strong></td>
+      <td>${(()=>{
+        // Miejsce w tabeli przed nazwą — widać od razu, że lista stoi wg tabeli, a nie alfabetycznie.
+        const miejsce = clubBrowse.top ? miejsceWTabeli(c) : null;
+        return miejsce ? `<span class="klub-miejsce" title="Miejsce w tabeli po ostatniej kolejce" style="display:inline-block;min-width:26px;font-weight:800;color:var(--gold-dark);">${miejsce}.</span>` : '';
+      })()}<strong>${esc(c.name)}</strong></td>
       <td>${esc(c.region)}</td>
       <td>${esc(c.league)}${c.season?` <span class="note">(${esc(c.season)})</span>`:''}</td>
       <td>${esc(c.city||"—")}</td>
