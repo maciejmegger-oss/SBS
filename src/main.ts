@@ -56,7 +56,7 @@ let editingPlayerId = null;
 let editingReportId = null;
 let obsPreselectPlayerId = null;
 let editingObsId = null;
-let promotingTalentId = null; // gdy ustawione, zapis nowego zawodnika usuwa też odpowiadający wpis z Talentu
+let promotingTalentId = null; // gdy ustawione, zapis nowego zawodnika ŁĄCZY wpis Talentu z kartoteką (wpis zostaje na liście)
 let talentPasteText = '';   // treść wklejona w Talent -> "Wklej tekst" (zachowana między re-renderami)
 let talentPasteParsed = null; // wynik rozpoznania (null = jeszcze nie kliknięto "Rozpoznaj")
 let monitoringSearchQuery = ''; // wyszukiwarka słów w zakładce Monitoring
@@ -4882,6 +4882,7 @@ function viewPlayerDetail(id){
     </div>
     <div style="display:flex;gap:8px;">
       <button class="secondary" data-action="edit-player" data-id="${p.id}">Edytuj</button>
+      ${talentZawodnika(p) ? '' : `<button class="secondary" data-action="dodaj-do-talentow" data-id="${p.id}" title="Dopisz tego zawodnika do listy Talent — z rocznikiem, klubem i pozycją z kartoteki">⭐ Dodaj do listy Talent</button>`}
       ${has90minutLink(p) ? `<button class="secondary" data-action="refresh-stats" data-id="${p.id}" title="Pobierz mecze i bramki z 90minut.pl">🔄 Odśwież statystyki</button>` : ''}
       ${/transfermarkt\./i.test(String(p.profileTm||'')) ? `<button class="gold" data-action="tm-odswiez" data-id="${p.id}" title="Pobiera z Transfermarktu wzrost, nogę, pozycję, narodowość, agenta, datę końca umowy, wartość rynkową i zdjęcie">⟳ Aktualizuj dane</button>` : ''}
       <button class="gold" data-action="paste-stats" data-id="${p.id}">📊 Wklej statystyki</button>
@@ -9792,6 +9793,40 @@ function wRocznikuTalentu(t, rocznik){
 // zapisanych odwrotnie przy imporcie („Szmyt Franciszek") — a klub rozstrzyga między imiennikami.
 // Klub porównujemy RODZINĄ (klubyToSamo pomija numer drużyny): talent z „KKS Lech II Poznań" to ten
 // sam Antczak co w kartotece Lecha. Imiennik z innego klubu przechodzi tylko przy zgodnym roczniku.
+// Dane z kartoteki dla wpisu Talentu po „Dodaj do bazy": imię i nazwisko jak w profilu (żeby wpis od razu
+// się z nim łączył), rocznik i klub z profilu, pozycja tylko gdy wpis jej nie miał. Kadra, kraj i data
+// dodania zostają nietknięte.
+function talentPowiazanyZZawodnikiem(t, p){
+  const zmiany: any = {};
+  if(!t || !p) return zmiany;
+  if(p.firstName) zmiany.firstName = p.firstName;
+  if(p.lastName) zmiany.lastName = p.lastName;
+  const rok = Number(p.birthYear || String(p.birthDate || '').slice(0, 4)) || null;
+  if(rok) zmiany.birthYear = rok;
+  const klub = p.clubId ? DB.clubs.find(c=> c.id === p.clubId) : null;
+  if(klub && klub.name) zmiany.club = klub.name;
+  if(!(t.pozycjeNmg || []).length && !t.pozycja){
+    if(Number(p.pozycjaNmg)) zmiany.pozycjeNmg = [Number(p.pozycjaNmg)];
+    else if(p.position) zmiany.pozycja = p.position;
+  }
+  return zmiany;
+}
+// Nowy wpis Talentu z kartoteki zawodnika — przycisk „⭐ Dodaj do listy Talent" w profilu. Tak wracają
+// też zawodnicy zdjęci z listy przez dawne „Dodaj do bazy", które kasowało wpis Talentu.
+function nowyTalentZZawodnika(p, noweId, dzis){
+  const t = { id: noweId, firstName: p.firstName || '', lastName: p.lastName || '', birthYear: null, club: '',
+    confidence: 'z kartoteki', sourceImage: '', dateAdded: dzis };
+  return Object.assign(t, talentPowiazanyZZawodnikiem(t, p));
+}
+// Wpis Talentu dla zawodnika z kartoteki — to samo imię i nazwisko, także zapisane odwrotnie.
+function talentZawodnika(p){
+  if(!p) return null;
+  const f = nazwiskoNorm(p.firstName), l = nazwiskoNorm(p.lastName);
+  if(!f && !l) return null;
+  return DB.talents.find(t=> (nazwiskoNorm(t.firstName) === f && nazwiskoNorm(t.lastName) === l)
+    || (nazwiskoNorm(t.firstName) === l && nazwiskoNorm(t.lastName) === f)) || null;
+}
+
 function indeksZawodnikowPoNazwisku(){
   const mapa = new Map();
   DB.players.forEach(p=>{
@@ -12748,6 +12783,21 @@ function attachHandlers(){
 
   main.querySelectorAll('[data-action="add-player"]').forEach(b=>b.onclick=()=>openPlayerModal(null));
   main.querySelectorAll('[data-action="edit-player"]').forEach(b=>b.onclick=()=>openPlayerModal(b.dataset.id));
+  main.querySelectorAll('[data-action="dodaj-do-talentow"]').forEach(b=>b.onclick=async()=>{
+    const p = DB.players.find(x=>x.id===(b as HTMLElement).dataset.id);
+    if(!p) return;
+    if(talentZawodnika(p)){ pokazPotwierdzenie('Ten zawodnik już jest na liście Talent.', 'ok'); render(); return; }
+    const t = nowyTalentZZawodnika(p, uid('T'), new Date().toISOString().slice(0,10));
+    DB.talents.push(t);
+    const ok = await saveTalents();
+    if(ok === false){
+      DB.talents = DB.talents.filter(x=> x.id !== t.id);   // nie udawaj wpisu, którego nie ma w bazie
+      pokazPotwierdzenie('Nie udało się dopisać do listy Talent.' + powodNieudanegoZapisu(), 'blad');
+      return;
+    }
+    render();
+    pokazPotwierdzenie(`${`${p.firstName || ''} ${p.lastName || ''}`.trim()} — dopisany do listy Talent.`, 'ok');
+  });
   main.querySelectorAll('[data-action="paste-stats"]').forEach(b=>b.onclick=()=>openPasteStatsModal(b.dataset.id));
   main.querySelectorAll('[data-action="tm-odswiez"]').forEach(b=>b.onclick=()=>odswiezZTransfermarktu(b.dataset.id, b));
   main.querySelectorAll('[data-action="refresh-stats"]').forEach(b=>b.onclick=async()=>{
@@ -22226,10 +22276,18 @@ function wireLastModal(){
       DB.players.push(data);
     }
     await savePlayers();
+    // DODANIE DO BAZY NIE ZDEJMUJE ZAWODNIKA Z LISTY TALENTÓW.
+    //
+    // Dawniej wpis Talentu był tu kasowany — zawodnik lądował w Zawodnikach i znikał z listy, na której
+    // skaut go śledzi (zgłoszenie: Bartosz Gaj). Teraz wpis zostaje i dostaje dane z zapisanego profilu,
+    // więc od razu łączy się z kartoteką i w wierszu stoi „Profil →" zamiast „Dodaj do bazy".
     if(promotingTalentId){
-      const talentId = promotingTalentId;
-      if(await deleteTalentRecord(talentId)){
-        DB.talents = DB.talents.filter(t=>t.id!==talentId);
+      const talent = DB.talents.find(t=>t.id===promotingTalentId);
+      const zapisany = edytowanyZawodnik || data;
+      if(talent && zapisany){
+        Object.assign(talent, talentPowiazanyZZawodnikiem(talent, zapisany));
+        const okTalent = await saveTalents();
+        if(okTalent === false) console.warn('Wpis Talentu nie zapisał danych z profilu (zostaje na liście):', powodNieudanegoZapisu());
       }
       promotingTalentId = null;
     }
