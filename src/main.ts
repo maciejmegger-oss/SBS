@@ -4334,7 +4334,7 @@ function leagueQuickAccessPanel(){
   return `<div class="card">
     <h4 style="margin-top:0;color:var(--heading);">Szybki dostęp wg lig</h4>
     <p class="note" style="margin-top:-4px;margin-bottom:10px;">Kliknij logo ligi, aby zobaczyć jej kluby — kliknij herb klubu, aby przejść do zawodników.</p>
-    <div class="league-logos-row">${logos}</div>
+    <div class="league-logos-row ligi-w-rzedzie" style="--ile-lig:${DASHBOARD_QUICK_LEAGUES.length};">${logos}</div>
     ${clubsRow}
     ${dashboardLeagueSelected ? tabelaLigowaHtml(dashboardLeagueSelected, dashboardGroupSelected) : ''}
   </div>`;
@@ -4449,7 +4449,19 @@ function viewDashboard(){
   const totalReports = DB.reports.length;
   const forTransferCount = DB.players.filter(p=>p.status==='Do transferu').length;
 
-  const recent = DB.observations.slice().sort((a,b)=> b.date.localeCompare(a.date)).slice(0,6);
+  const kartaStatystyk = `<div class="card">
+      <h4 style="margin-top:0;color:var(--heading);">Statystyki obserwacji</h4>
+      ${observationsDonut()}
+    </div>`;
+  const kartaAkcji = `<div class="card">
+      <h4 style="margin-top:0;color:var(--heading);">Szybkie akcje</h4>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <button class="gold" data-action="goto-newobs">+ Dodaj obserwację z meczu</button>
+        <button class="secondary" data-action="goto-addplayer">+ Dodaj nowego zawodnika</button>
+        <button class="secondary" data-action="goto-monitoring">Zobacz listę do re-obserwacji</button>
+      </div>
+      <p class="note" style="margin-top:14px;">Baza jest wspólna dla całego zespołu scoutów — dane synchronizują się automatycznie.</p>
+    </div>`;
 
   return `
   <h2 class="view-title">Dashboard</h2>
@@ -4474,59 +4486,22 @@ function viewDashboard(){
   <div style="margin-bottom:18px;">
     ${leagueQuickAccessPanel()}
   </div>
+  <!-- MAPA, A OBOK NIEJ JEDNA KOLUMNA: statystyki obserwacji → dystans → szybkie akcje.
+       „Ostatnie obserwacje" usunięte z Dashboardu — obserwacje są w Planie Obserwacji.
+       Po kliknięciu województwa jego lista klubów zajmuje miejsce kolumny (mapa i kluby obok
+       siebie, bez przewijania), a te trzy karty schodzą pod spód w jednym rzędzie. -->
   <div class="grid grid-2">
     <div class="card">
       <h4 style="margin-top:0;color:var(--heading);">Mapa Województw</h4>
       ${polandVoivodeshipMap()}
       <p class="note" style="text-align:center;margin-top:6px;">Liczba klubów w bazie wg województwa — <strong>kliknij województwo</strong>, aby zobaczyć jego kluby obok.</p>
     </div>
-    <!-- Po kliknięciu województwa jego lista zajmuje miejsce Szybkich akcji, a te schodzą niżej.
-         Mapa i lista stoją wtedy obok siebie, bez przewijania i bez otwierania osobnego okna. -->
-    ${dashboardWojewodztwo ? panelWojewodztwa() : `<div class="card">
-      <h4 style="margin-top:0;color:var(--heading);">Szybkie akcje</h4>
-      <div style="display:flex;flex-direction:column;gap:10px;">
-        <button class="gold" data-action="goto-newobs">+ Dodaj obserwację z meczu</button>
-        <button class="secondary" data-action="goto-addplayer">+ Dodaj nowego zawodnika</button>
-        <button class="secondary" data-action="goto-monitoring">Zobacz listę do re-obserwacji</button>
-      </div>
-      <p class="note" style="margin-top:14px;">Baza jest wspólna dla całego zespołu scoutów — dane synchronizują się automatycznie.</p>
-    </div>`}
+    ${dashboardWojewodztwo ? panelWojewodztwa()
+      : `<div class="dash-kolumna">${kartaStatystyk}${bydgoszczDistanceWidget()}${kartaAkcji}</div>`}
   </div>
-  ${dashboardWojewodztwo ? `<div class="card" style="margin-top:18px;">
-    <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <button class="gold" data-action="goto-newobs">+ Dodaj obserwację z meczu</button>
-      <button class="secondary" data-action="goto-addplayer">+ Dodaj nowego zawodnika</button>
-      <button class="secondary" data-action="goto-monitoring">Zobacz listę do re-obserwacji</button>
-    </div>
+  ${dashboardWojewodztwo ? `<div class="grid grid-3" style="margin-top:18px;">
+    ${kartaStatystyk}${bydgoszczDistanceWidget()}${kartaAkcji}
   </div>` : ''}
-  <div class="grid grid-2" style="margin-top:18px;">
-    <div class="card">
-      <h4 style="margin-top:0;color:var(--heading);">Statystyki obserwacji</h4>
-      ${observationsDonut()}
-    </div>
-    ${bydgoszczDistanceWidget()}
-  </div>
-  <div style="margin-top:18px;">
-    <div class="card">
-      <h4 style="margin-top:0;color:var(--heading);">Ostatnie obserwacje</h4>
-      ${recent.length? recent.map(o=>{
-        const pl = DB.players.find(p=>p.id===o.playerId);
-        const avg = RATING_KEYS.reduce((a,k)=>a+(Number(o.ratings[k])||0),0)/RATING_KEYS.length;
-        // Obserwacja BEZ wskazanego zawodnika to obserwacja całego meczu — świadomy wybór, a nie
-        // uszkodzony wpis. Pokazujemy wtedy sam mecz. Napis „(usunięty zawodnik)" sugerował awarię
-        // i był po prostu nieprawdziwy: takie obserwacje nigdy nie miały przypisanego zawodnika.
-        // Zawodnika naprawdę usuniętego rozpoznajemy po tym, że identyfikator JEST, ale nic mu nie
-        // odpowiada — i tylko wtedy trzeba o tym uprzedzić.
-        const naglowek = pl ? esc(pl.firstName + " " + pl.lastName)
-          : (o.playerId ? '<span style="color:var(--clay-dark);">(zawodnik usunięty z kartoteki)</span>'
-                        : esc(o.match || 'Obserwacja meczu'));
-        return `<div class="obs-item">
-          <strong>${naglowek}</strong>${pl || o.playerId ? ` — <span class="avg-chip">${fmt1(avg)}</span>` : ''}
-          <div class="meta">${esc(o.date)}${pl || o.playerId ? ' &middot; ' + esc(o.match) : ''}${ligaTag(o)} &middot; scout: ${esc(o.scout)}${ogladajMeczHtml(o)}</div>
-        </div>`;
-      }).join('') : `<div class="empty">Brak obserwacji — dodaj pierwszą w zakładce „Plan Obserwacji”.</div>`}
-    </div>
-  </div>
   <div style="margin-top:18px;">
     ${sponsorsPanel()}
   </div>`;
