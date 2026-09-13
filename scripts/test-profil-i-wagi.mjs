@@ -2,6 +2,7 @@
 //
 // Uruchomienie:  node scripts/test-profil-i-wagi.mjs
 import fs from "node:fs";
+import { buildSync } from "esbuild";
 
 const zrodlo = fs.readFileSync("src/main.ts", "utf8");
 let bledy = 0;
@@ -38,12 +39,17 @@ const kod = [
 const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fmt1 = (v) => Number(v).toFixed(1).replace('.', ',');
 
+// Fazy wszystkich pozycji — PRAWDZIWE, z src/domain/pozycje.ts (tam przeniosła je skala według
+// pozycji). Podstawiona pusta lista ukryłaby błąd w liczeniu osi bramkarza i zawodników z pola.
+const { outputFiles } = buildSync({ entryPoints: ["src/domain/pozycje.ts"], bundle: true, format: "esm", write: false });
+const { WSZYSTKIE_FAZY } = await import("data:text/javascript;base64," + Buffer.from(outputFiles[0].text).toString("base64"));
+
 function scena({ players = [], clubs = [], reports = [], settings = {} } = {}) {
   const DB = { players, clubs, reports, settings };
   const clubLeague = (id) => (clubs.find(c => c.id === id) || {}).league || '';
-  return new Function('DB', 'clubLeague', 'esc', 'fmt1', 'FAZY_BRAMKARZ',
+  return new Function('DB', 'clubLeague', 'esc', 'fmt1', 'WSZYSTKIE_FAZY',
     `${kod}\n return { metrykiZRaportow, sredniaPozycjiNaOsiach, kluczPoziomu, wagaPoziomu, minutyWazone, radarRaportow, wagiPoziomu };`
-  )(DB, clubLeague, esc, fmt1, []);
+  )(DB, clubLeague, esc, fmt1, WSZYSTKIE_FAZY);
 }
 // Raport z oceną w fazie ataku i obrony.
 const rap = (playerId, atak, obrona) => ({ playerId, phases: { fazaAtaku: atak, fazaObrony: obrona }, setPieces: {} });
