@@ -2105,6 +2105,28 @@ async function loadAllInner(){
     }
   }
 
+  // TALENTY UZUPEŁNIANE Z KARTOTEKI: rocznik, klub i pozycja zawodnika, który już jest w Zawodnikach
+  // (patrz kartotekaDlaTalentu). Tylko puste pola, zapis tylko gdy coś doszło. Po porządkowaniu
+  // wyżej, bo dopiero rozdzielone wpisy mają imię i nazwisko, po których da się kogoś znaleźć.
+  if(wolnoUzupelniac){
+    const poNazwisku = indeksZawodnikowPoNazwisku();
+    let uzupelnionych = 0;
+    DB.talents.forEach(t=>{
+      const nazwaKlubu = String(t.club || '').split(' / ')[0].trim();
+      let klub = null;
+      try{ klub = nazwaKlubu ? dopasujKlubDoNazwy(nazwaKlubu) : null; }catch(e){ klub = null; }
+      const zmiany = uzupelnienieTalentuZKartoteki(t, kartotekaDlaTalentu(t, klub, poNazwisku));
+      if(zmiany){ Object.assign(t, zmiany); uzupelnionych++; }
+    });
+    if(uzupelnionych){
+      const ok = await saveTalents();
+      setTimeout(()=> pokazPotwierdzenie(ok === false
+        ? `Uzupełniłem ${uzupelnionych} talentów z kartoteki na ekranie, ale zapis do bazy się nie udał.` + powodNieudanegoZapisu()
+        : `Talenty: uzupełniono z kartoteki zawodników ${uzupelnionych} ${uzupelnionych===1?'wpis':'wpisów'} (rocznik, klub, pozycja).`,
+        ok === false ? 'blad' : 'ok'), 4000);
+    }
+  }
+
   // Lista startowa klubów wstawia się TYLKO RAZ, przy pierwszym uruchomieniu na danej bazie.
   //
   // Wcześniej przebiegała przy każdym starcie i dokładała wszystko, czego akurat nie było — więc
@@ -9759,6 +9781,130 @@ function wRocznikuTalentu(t, rocznik){
   return String(t.birthYear || '') === String(rocznik);
 }
 
+// TALENT, KTÓRY JUŻ JEST W KARTOTECE.
+//
+// Na liście talentów stali zawodnicy bez rocznika i klubu, choć ta sama osoba ma w Zawodnikach
+// komplet danych (Antczak, Kotras z Lecha). Kartotekę znajdujemy po imieniu i nazwisku — także
+// zapisanych odwrotnie przy imporcie („Szmyt Franciszek") — a klub rozstrzyga między imiennikami.
+// Klub porównujemy RODZINĄ (klubyToSamo pomija numer drużyny): talent z „KKS Lech II Poznań" to ten
+// sam Antczak co w kartotece Lecha. Imiennik z innego klubu przechodzi tylko przy zgodnym roczniku.
+function indeksZawodnikowPoNazwisku(){
+  const mapa = new Map();
+  DB.players.forEach(p=>{
+    const k = nazwiskoNorm(p.firstName) + '|' + nazwiskoNorm(p.lastName);
+    if(!mapa.has(k)) mapa.set(k, []);
+    mapa.get(k).push(p);
+  });
+  return mapa;
+}
+function kartotekaDlaTalentu(t, klub, poNazwisku){
+  if(!t) return null;
+  const klucz = (f, l)=> nazwiskoNorm(f) + '|' + nazwiskoNorm(l);
+  let kandydaci = poNazwisku.get(klucz(t.firstName, t.lastName)) || [];
+  if(!kandydaci.length) kandydaci = poNazwisku.get(klucz(t.lastName, t.firstName)) || [];
+  if(!kandydaci.length) return null;
+  const rokZawodnika = (p)=> String(p.birthYear || String(p.birthDate || '').slice(0, 4) || '');
+  const nazwaKlubu = String(t.club || '').split(' / ')[0].trim();
+  if(nazwaKlubu){
+    const zKlubu = kandydaci.filter(p=> (klub && p.clubId === klub.id) || klubyToSamo(clubName(p.clubId), nazwaKlubu));
+    if(zKlubu.length === 1) return zKlubu[0];
+    if(zKlubu.length > 1) return null;
+    return (kandydaci.length === 1 && t.birthYear && rokZawodnika(kandydaci[0]) === String(t.birthYear)) ? kandydaci[0] : null;
+  }
+  if(kandydaci.length === 1) return kandydaci[0];
+  if(t.birthYear){
+    const zRocznika = kandydaci.filter(p=> rokZawodnika(p) === String(t.birthYear));
+    if(zRocznika.length === 1) return zRocznika[0];
+  }
+  return null;
+}
+// Co z kartoteki dopisać do talentu — WYŁĄCZNIE puste pola; wpisane ręcznie zostaje nietknięte.
+// Imię i nazwisko zapisane odwrotnie poprawiamy na zapis z kartoteki.
+function uzupelnienieTalentuZKartoteki(t, p){
+  if(!t || !p) return null;
+  const zmiany: any = {};
+  if(nazwiskoNorm(t.firstName) === nazwiskoNorm(p.lastName) && nazwiskoNorm(t.lastName) === nazwiskoNorm(p.firstName)
+     && nazwiskoNorm(t.firstName) !== nazwiskoNorm(t.lastName)){
+    zmiany.firstName = p.firstName; zmiany.lastName = p.lastName;
+  }
+  const rok = Number(p.birthYear || String(p.birthDate || '').slice(0, 4)) || null;
+  if(!t.birthYear && rok) zmiany.birthYear = rok;
+  const klub = p.clubId ? DB.clubs.find(c=> c.id === p.clubId) : null;
+  if(!String(t.club || '').trim() && klub && klub.name) zmiany.club = klub.name;
+  if(!(t.pozycjeNmg || []).length && !t.pozycja){
+    const nmg = Number(p.pozycjaNmg) || null;
+    if(nmg) zmiany.pozycjeNmg = [nmg];
+    else if(p.position) zmiany.pozycja = p.position;
+  }
+  return Object.keys(zmiany).length ? zmiany : null;
+}
+
+// HERBY KLUBÓW SPOZA KARTOTEKI — z Transfermarktu (api/tm-kluby.js).
+//
+// PSV Eindhoven, akademie, kluby zagraniczne: nie ma ich w naszych tabelach, więc stała przy nich
+// zaślepka z inicjałami. Adres herbu pamiętamy w sbs_kv (nazwa klubu → adres, albo '' gdy klubu nie
+// znaleziono), żeby nie pytać serwisu przy każdym wejściu. Kandydata wybiera klubyToSamo; drużynę
+// młodzieżową albo rezerwy bierzemy tylko wtedy, gdy lista też o nią pyta — inaczej herb pierwszej
+// drużyny. Do kartoteki klubów NIC nie zapisujemy: to herb do podglądu na liście, nie dane klubu.
+const KLUCZ_HERBOW_ZEWN = 'scouting:herby_zewnetrzne';
+let herbyZewnetrzne = null;
+let herbyZewnWczytywanie = null;
+const herbyZewnWToku = new Set();
+const herbyZewnNieudane = new Set();   // błąd sieci/serwisu w tej sesji — nie ponawiamy przy każdym przerysowaniu
+const kluczHerbuZewn = (nazwa)=> importNorm(String(nazwa || '').split(' / ')[0]);
+function herbZewnetrzny(nazwa){
+  const k = kluczHerbuZewn(nazwa);
+  return (k && herbyZewnetrzne && herbyZewnetrzne[k]) || null;
+}
+function wybierzKlubTransfermarktu(nazwa, kandydaci){
+  const MLODZIEZ_LUB_REZERWY = /\bU\s*-?\s*\d{2}\b|\b(II|III|B)\b|junior|youth/i;
+  const pasujace = (kandydaci || []).filter(k=> k && k.nazwa && k.herb && klubyToSamo(k.nazwa, nazwa));
+  if(!pasujace.length) return null;
+  const pytamOMlodziez = MLODZIEZ_LUB_REZERWY.test(nazwa);
+  return pasujace.find(k=> pytamOMlodziez === MLODZIEZ_LUB_REZERWY.test(k.nazwa)) || pasujace[0];
+}
+function wstawHerbyZewnetrzneWWidok(){
+  if(!herbyZewnetrzne) return;
+  document.querySelectorAll('[data-herb-klub]').forEach(el=>{
+    const url = herbyZewnetrzne[(el as HTMLElement).dataset.herbKlub];
+    if(url && !el.querySelector('img')) el.innerHTML = crestImg(url, null, '');
+  });
+}
+async function dociagnijHerbyZewnetrzne(nazwy){
+  if(herbyZewnetrzne === null){
+    if(!herbyZewnWczytywanie) herbyZewnWczytywanie = storage.get(KLUCZ_HERBOW_ZEWN, true)
+      .then(w=>{ try{ herbyZewnetrzne = JSON.parse((w && w.value) || '{}') || {}; }catch(e){ herbyZewnetrzne = {}; } })
+      .catch(()=>{ herbyZewnetrzne = {}; });
+    await herbyZewnWczytywanie;
+    wstawHerbyZewnetrzneWWidok();
+  }
+  const doSprawdzenia = [...new Set((nazwy || []).map(n=> String(n || '').split(' / ')[0].trim()).filter(n=> n.length >= 3))]
+    .filter(n=>{ const k = kluczHerbuZewn(n); return k && !(k in herbyZewnetrzne) && !herbyZewnWToku.has(k) && !herbyZewnNieudane.has(k); })
+    .slice(0, 25);
+  if(!doSprawdzenia.length) return;
+  doSprawdzenia.forEach(n=> herbyZewnWToku.add(kluczHerbuZewn(n)));
+  let zmienione = 0;
+  for(let i = 0; i < doSprawdzenia.length; i += 3){
+    await Promise.all(doSprawdzenia.slice(i, i + 3).map(async nazwa=>{
+      const k = kluczHerbuZewn(nazwa);
+      try{
+        const odp = await fetch('/api/tm-kluby?klub=' + encodeURIComponent(nazwa), { signal: AbortSignal.timeout(20000) });
+        if(!odp.ok){ herbyZewnNieudane.add(k); return; }   // chwilowy błąd — nie zapamiętujemy „brak herbu"
+        const dane = await odp.json();
+        const wybrany = wybierzKlubTransfermarktu(nazwa, dane.kandydaci);
+        herbyZewnetrzne[k] = wybrany ? wybrany.herb : '';
+        zmienione++;
+      }catch(e){ herbyZewnNieudane.add(k); }
+      finally{ herbyZewnWToku.delete(k); }
+    }));
+    wstawHerbyZewnetrzneWWidok();
+  }
+  if(zmienione && !nieudaneOdczyty.length){
+    try{ await storage.set(KLUCZ_HERBOW_ZEWN, JSON.stringify(herbyZewnetrzne), true); }
+    catch(e){ console.warn('Herby spoza kartoteki nie zapisały się (zostają do końca sesji):', e); }
+  }
+}
+
 function viewTalent(){
   // SEGREGACJA WEDŁUG ROCZNIKÓW.
   //
@@ -9807,27 +9953,17 @@ function viewTalent(){
     }
     return klubPoNazwie.get(nazwa);
   };
-  const zawodnicyPoNazwisku = new Map();
-  DB.players.forEach(p=>{
-    const k = nazwiskoNorm(p.firstName) + '|' + nazwiskoNorm(p.lastName);
-    if(!zawodnicyPoNazwisku.has(k)) zawodnicyPoNazwisku.set(k, []);
-    zawodnicyPoNazwisku.get(k).push(p);
-  });
-  // Kartoteka tego talentu: to samo imię i nazwisko, a gdy znamy klub — także ten sam klub.
-  // Samo nazwisko nie wystarcza: Jakubów Kowalskich jest w bazie kilku, a link do cudzego
-  // profilu jest gorszy niż brak linku.
-  const kartotekaTalentu = (t, klub)=>{
-    const kandydaci = zawodnicyPoNazwisku.get(nazwiskoNorm(t.firstName) + '|' + nazwiskoNorm(t.lastName)) || [];
-    if(!kandydaci.length) return null;
-    if(klub){
-      const zTegoKlubu = kandydaci.filter(p=>p.clubId === klub.id);
-      return zTegoKlubu.length === 1 ? zTegoKlubu[0] : null;
-    }
-    return (!t.club && kandydaci.length === 1) ? kandydaci[0] : null;
-  };
+  // Kartoteka tego talentu — patrz kartotekaDlaTalentu: imię i nazwisko (także odwrócone), klub
+  // rozstrzyga między imiennikami. Link do cudzego profilu jest gorszy niż brak linku.
+  const zawodnicyPoNazwisku = indeksZawodnikowPoNazwisku();
+  const kartotekaTalentu = (t, klub)=> kartotekaDlaTalentu(t, klub, zawodnicyPoNazwisku);
+  // Kluby bez herbu w kartotece — po narysowaniu listy dociągamy ich herby z Transfermarktu.
+  const potrzebneHerby = [];
   const wierszTalentu = (t)=>{
-    const klub = klubTalentu(t);
-    const karta = kartotekaTalentu(t, klub);
+    const klubZNazwy = klubTalentu(t);
+    const karta = kartotekaTalentu(t, klubZNazwy);
+    // Klub bez nazwy we wpisie bierzemy z kartoteki — razem z herbem.
+    const klub = klubZNazwy || (karta && !t.club ? (DB.clubs.find(c=> c.id === karta.clubId) || null) : null);
     // Odznaki młodzieżowca i młodszego rocznika liczymy tymi samymi funkcjami co w Zawodnikach.
     const jakZawodnik = { birthYear: t.birthYear, clubId: klub ? klub.id : (karta ? karta.clubId : '') };
     const nmg = (t.pozycjeNmg || [])[0];
@@ -9852,8 +9988,15 @@ function viewTalent(){
         <span class="talent-rocznik-stan" aria-live="polite"></span>
       </span></td>
       <td>${pozycjaHtml}</td>
-      <td><div class="club-cell">${t.club ? crestImg(klub ? clubCrest(klub.id) : null, null, t.club) : ''}<span>
-        <span class="club-name" title="${esc(t.club || '')}">${esc(t.club || 'klub nieznany')}</span>
+      <td><div class="club-cell">${(()=>{
+        const nazwaKlubu = t.club || (klub && klub.name) || '';
+        if(!nazwaKlubu) return '';
+        const herbKartoteki = klub ? clubCrest(klub.id) : null;
+        if(!herbKartoteki) potrzebneHerby.push(nazwaKlubu);
+        return `<span data-herb-klub="${esc(kluczHerbuZewn(nazwaKlubu))}" style="display:inline-flex;flex-shrink:0;">${
+          crestImg(herbKartoteki || herbZewnetrzny(nazwaKlubu), null, nazwaKlubu)}</span>`;
+      })()}<span>
+        <span class="club-name" title="${esc(t.club || (klub && klub.name) || '')}">${esc(t.club || (klub && klub.name) || 'klub nieznany')}</span>
         <span class="club-sub">${klub ? esc(String(klub.league || '')) : (t.club ? 'klubu nie ma w bazie' : '')}${
           // Kraj pokazujemy TYLKO gdy podało go źródło — przy klubie zagranicznym to najważniejsza
           // informacja w wierszu, bo mówi, że kartoteki nie zbudujemy z polskich protokołów.
@@ -9923,6 +10066,10 @@ function viewTalent(){
       </div>` : ''}
     </div>
   </div>`;
+
+  // Herby dociągamy PO narysowaniu listy (setTimeout) i wstawiamy w wiersze bez przerysowania strony,
+  // żeby nie gubić kursora w polach rocznika. Już znane herby są w pamięci, więc to nic nie kosztuje.
+  if(potrzebneHerby.length) setTimeout(()=> void dociagnijHerbyZewnetrzne(potrzebneHerby), 0);
 
   return `
   <h2 class="view-title">Talent</h2>
