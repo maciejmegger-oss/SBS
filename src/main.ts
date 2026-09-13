@@ -10040,9 +10040,17 @@ function viewTalent(){
   // ZAKŁADKI KADR. Liczba przy każdej mówi, ilu mamy — a zero jest tu równie ważne jak dwadzieścia
   // dwa: pokazuje, której kadry brakuje, zamiast ukrywać ją przed oczami.
   const iluWKadrze = (k)=> DB.talents.filter(t=>wKadrze(t, k)).length;
-  const pigulkaKadry = (wartosc, etykieta, ile)=> pill(
+  const pigulkaKadry = (wartosc, etykieta, ile, ikona = '')=> pill(
     ile != null ? `${etykieta} (${ile})` : etykieta,
-    talentKadra === wartosc, 'talent-kadra', {val: wartosc});
+    talentKadra === wartosc, 'talent-kadra', {val: wartosc}, ikona);
+  // ZNACZKI W PRZYCISKACH — żeby rodzaje zakładek nie zlewały się w jeden pas jednakowych pigułek:
+  // kadra = biało-czerwone kółko z wiekiem, talent klubowy = tarcza z gwiazdą, rocznik = „’13".
+  const znaczekKadry = (k)=> `<span aria-hidden="true" class="znaczek-kadry">${esc(String(k).replace(/^U-?/i, ''))}</span>`;
+  const tarczaTalentu = `<svg aria-hidden="true" class="znaczek-klubowy" viewBox="0 0 44 44" width="20" height="22">
+      <path d="M22 3 L38 8 L38 21 C38 30.5 31 37.5 22 40.5 C13 37.5 6 30.5 6 21 L6 8 Z" fill="var(--pitch)" stroke="var(--gold)" stroke-width="2.6"/>
+      <path d="M22 11.5 l3.1 6.3 6.9 1 -5 4.9 1.2 6.9 -6.2 -3.3 -6.2 3.3 1.2 -6.9 -5 -4.9 6.9 -1 z" fill="var(--gold)"/>
+    </svg>`;
+  const znaczekRocznika = (r)=> `<span aria-hidden="true" class="znaczek-rocznika">${r === 'brak' ? '?' : '’' + esc(String(r).slice(-2))}</span>`;
   // UKŁAD: Wszyscy → REPREZENTANCI (kadry U-21…U-15) → przycisk „Talent klubowy" (wszyscy bez
   // powołania, dawniej „Poza kadrą"). Po jego kliknięciu pod spodem otwierają się roczniki — od
   // najmłodszego, z liczbą zawodników — i lista zawęża się do wybranego rocznika.
@@ -10050,19 +10058,19 @@ function viewTalent(){
   const klubowi = DB.talents.filter(t=> !t.reprezentacja);
   const rocznikiKlubowe = [...new Set(klubowi.map(t=> Number(t.birthYear)).filter(Boolean))].sort((a,b)=> b - a);
   const bezRocznika = klubowi.filter(t=> !t.birthYear).length;
-  const pigulkaRocznika = (wartosc, etykieta, ile)=> pill(`${etykieta} (${ile})`, talentRocznik === wartosc, 'talent-rocznik-filtr', {val: wartosc});
+  const pigulkaRocznika = (wartosc, etykieta, ile, ikona = '')=> pill(`${etykieta} (${ile})`, talentRocznik === wartosc, 'talent-rocznik-filtr', {val: wartosc}, ikona);
   const zakladkiKadr = `<div style="margin-bottom:12px;">
     <div class="filters" style="margin-bottom:0;">${pigulkaKadry('', 'Wszyscy', DB.talents.length)}</div>
-    <div style="margin-top:10px;">
+    <div class="talent-sekcja talent-sekcja-repr">
       ${naglowekSekcji('Reprezentanci')}
-      <div class="filters" style="margin-bottom:0;">${KADRY_MLODZIEZOWE.map(k=>pigulkaKadry(k, k, iluWKadrze(k))).join('')}</div>
+      <div class="filters" style="margin-bottom:0;">${KADRY_MLODZIEZOWE.map(k=>pigulkaKadry(k, k, iluWKadrze(k), znaczekKadry(k))).join('')}</div>
     </div>
-    <div style="margin-top:12px;">
-      <div class="filters" style="margin-bottom:0;">${pigulkaKadry('inni', 'Talent klubowy', iluWKadrze('inni'))}</div>
+    <div class="talent-sekcja talent-sekcja-klub">
+      <div class="filters" style="margin-bottom:0;">${pigulkaKadry('inni', 'Talent klubowy', iluWKadrze('inni'), tarczaTalentu)}</div>
       ${talentKadra === 'inni' ? `<div class="filters talent-roczniki" style="margin:8px 0 0;">
         ${pigulkaRocznika('', 'Wszystkie roczniki', klubowi.length)}
-        ${rocznikiKlubowe.map(r=> pigulkaRocznika(String(r), String(r), klubowi.filter(t=> Number(t.birthYear) === r).length)).join('')}
-        ${bezRocznika ? pigulkaRocznika('brak', 'Bez rocznika', bezRocznika) : ''}
+        ${rocznikiKlubowe.map(r=> pigulkaRocznika(String(r), String(r), klubowi.filter(t=> Number(t.birthYear) === r).length, znaczekRocznika(r))).join('')}
+        ${bezRocznika ? pigulkaRocznika('brak', 'Bez rocznika', bezRocznika, znaczekRocznika('brak')) : ''}
       </div>` : ''}
     </div>
   </div>`;

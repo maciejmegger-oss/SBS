@@ -33,7 +33,9 @@ console.log('\n1. Filtr rocznika');
 console.log('\n2. Układ zakładek');
 const zakladki = wytnij('zakladkiKadr', /const zakladkiKadr = `[\s\S]*?\n  <\/div>`;/);
 sprawdz('„Poza kadrą" nie jest już przyciskiem', !/pigulkaKadry\('inni', 'Poza kadrą'/.test(zrodlo));
-sprawdz('przycisk „Talent klubowy" prowadzi do zawodników bez powołania', /pigulkaKadry\('inni', 'Talent klubowy', iluWKadrze\('inni'\)\)/.test(zakladki));
+sprawdz('przycisk „Talent klubowy" prowadzi do zawodników bez powołania', /pigulkaKadry\('inni', 'Talent klubowy', iluWKadrze\('inni'\), tarczaTalentu\)/.test(zakladki));
+sprawdz('kadry mają znaczek z wiekiem, roczniki swój znaczek', /pigulkaKadry\(k, k, iluWKadrze\(k\), znaczekKadry\(k\)\)/.test(zakladki) && /znaczekRocznika\(r\)/.test(zakladki));
+sprawdz('sekcje oddzielone paskiem: reprezentanci i talent klubowy', zakladki.includes('talent-sekcja talent-sekcja-repr') && zakladki.includes('talent-sekcja talent-sekcja-klub'));
 const iWszyscy = zakladki.indexOf("pigulkaKadry('', 'Wszyscy'");
 const iRepr = zakladki.indexOf("naglowekSekcji('Reprezentanci')");
 const iKadry = zakladki.indexOf('KADRY_MLODZIEZOWE.map');
@@ -42,7 +44,7 @@ sprawdz('kolejność: Wszyscy → Reprezentanci → kadry → Talent klubowy',
   iWszyscy >= 0 && iWszyscy < iRepr && iRepr < iKadry && iKadry < iKlubowy, JSON.stringify([iWszyscy, iRepr, iKadry, iKlubowy]));
 sprawdz('roczniki pokazują się tylko po wybraniu „Talentu klubowego"', /\$\{talentKadra === 'inni' \? `<div class="filters talent-roczniki"/.test(zakladki));
 sprawdz('roczniki od najmłodszego', /rocznikiKlubowe = \[\.\.\.new Set\([\s\S]*?\)\]\.sort\(\(a,b\)=> b - a\)/.test(zrodlo));
-sprawdz('„Bez rocznika" tylko, gdy ktoś go nie ma', /\$\{bezRocznika \? pigulkaRocznika\('brak', 'Bez rocznika', bezRocznika\) : ''\}/.test(zakladki));
+sprawdz('„Bez rocznika" tylko, gdy ktoś go nie ma', /\$\{bezRocznika \? pigulkaRocznika\('brak', 'Bez rocznika', bezRocznika, znaczekRocznika\('brak'\)\) : ''\}/.test(zakladki));
 
 console.log('\n3. Podpięcie');
 sprawdz('lista zawęża się do rocznika tylko w „Talencie klubowym"', /\.filter\(t=> talentKadra !== 'inni' \|\| wRocznikuTalentu\(t, talentRocznik\)\)/.test(zrodlo));
