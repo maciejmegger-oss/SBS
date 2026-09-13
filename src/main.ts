@@ -5286,11 +5286,11 @@ function viewClubs(){
     const wybrany = clubBrowse.top===val;
     return pill(t, wybrany, 'browse-top', {val}, val ? leagueLogoImg(t, 20, wybrany) : '');
   };
-  const SENIORSKIE = TOP_LEVELS.filter(t=>t!=='Kategorie juniorskie');
-  const MLODZIEZOWE = TOP_LEVELS.filter(t=>t==='Kategorie juniorskie');
+  // WSZYSTKIE POZIOMY W JEDNYM RZĘDZIE — „Kategorie juniorskie" stoją zaraz po IV lidze.
+  // Osobny wiersz „Rozgrywki młodzieżowe" z jedną pigułką tylko wydłużał stronę; to, co juniorskie
+  // rozdziela na rodziny (CLJ, pozostałe, roczniki), i tak otwiera się pod spodem po kliknięciu.
   const topRow = sekcjaPigulek('', [pigulkaPoziomu('Wszystkie')], 0)
-    + sekcjaPigulek('Rozgrywki seniorskie', SENIORSKIE.map(pigulkaPoziomu), 10)
-    + sekcjaPigulek('Rozgrywki młodzieżowe', MLODZIEZOWE.map(pigulkaPoziomu), 10);
+    + sekcjaPigulek('Rozgrywki', TOP_LEVELS.map(pigulkaPoziomu), 10);
 
   let groupRow = '';
   if(clubBrowse.top==='III liga' || clubBrowse.top==='IV liga' || clubBrowse.top==='Kategorie juniorskie'){
