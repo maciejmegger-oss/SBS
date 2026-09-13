@@ -31,7 +31,7 @@ const kod = [
   wytnij('odklejSlowoOdKlubu', /function odklejSlowoOdKlubu\(nazwa, ogon, znaneKluby\)\{[\s\S]*?\n\}/),
   wytnij('nazwaIOgonTalentu', /function nazwaIOgonTalentu\(przed, znaneKluby\)\{[\s\S]*?\n\}/),
   wytnij('osobyZeSkladuTalentu', /function osobyZeSkladuTalentu\(linia, rocznik\)\{[\s\S]*?\n\}/),
-  wytnij('wpisyZKilkomaZawodnikami', /function wpisyZKilkomaZawodnikami\(talenty\)\{[\s\S]*?\n\}/),
+  wytnij('wpisyDoAutoPorzadku', /function wpisyDoAutoPorzadku\(talenty\)\{[\s\S]*?\n\}/),
   wytnij('RE_OGON_ZAWODNIKA', /const RE_OGON_ZAWODNIKA = .*;/),
   wytnij('osobyZMyslnikowTalentu', /function osobyZMyslnikowTalentu\(l\)\{[\s\S]*?\n\}/),
   wytnij('rozbierzWpisTalentu', /function rozbierzWpisTalentu\(tekst\)\{[\s\S]*?\n\}/),
@@ -45,7 +45,7 @@ const kod = [
 ].join('\n');
 
 const DB = { clubs: [] };
-const api = new Function('DB', `${kod}\n return { rozbierzWpisTalentu, wpisTalentuDoPorzadku, rozdzielWpisyTalentow, talentyDoZapisu, nalozPozycjeZPolaTalentu, pozycjaZPolaTalentu, porzadkujKlubTalentu, osobyZeSkladuTalentu, wpisyZKilkomaZawodnikami };`)(DB);
+const api = new Function('DB', `${kod}\n return { rozbierzWpisTalentu, wpisTalentuDoPorzadku, rozdzielWpisyTalentow, talentyDoZapisu, nalozPozycjeZPolaTalentu, pozycjaZPolaTalentu, porzadkujKlubTalentu, osobyZeSkladuTalentu, wpisyDoAutoPorzadku };`)(DB);
 
 const opis = (o) => `${o.firstName} ${o.lastName} | ${o.birthYear || '—'} | ${o.pozycjeNmg.join('/') || o.pozycja || '—'} | ${o.club || '—'}`;
 const przypadek = (wpis, oczekiwane) => {
@@ -116,13 +116,13 @@ przypadek('Jan Nowak(8)-Rekord Bielsko-Biała Adam Kowal(9)-Rekord Bielsko-Biał
   // zawodnik w polu klubu.
   const konwinski = { id: 'W1', firstName: 'Oliwier', lastName: 'Konwiński-Wisła Fordon Aleksander Chybowski(4)-Wisła Fordon', club: '' };
   const marut = { id: 'W2', firstName: 'Mikołaj', lastName: 'Marut-Chemik Bydgoszcz(2013) Igor Lewandowski-Chemik Bydgoszcz(2013)', club: 'Wojtek Błaszczyk(8)-Chemik Bydgoszcz(2013)', birthYear: 2013 };
-  const mapa = api.wpisyZKilkomaZawodnikami([konwinski, marut]);
+  const mapa = api.wpisyDoAutoPorzadku([konwinski, marut]);
   sprawdz('oba wpisy idą do rozdzielenia przy starcie', mapa.size === 2, JSON.stringify([...mapa.keys()]));
   sprawdz('Konwiński i Chybowski — dwie osoby', (mapa.get('W1') || []).map(o => o.lastName).join(',') === 'Konwiński,Chybowski', JSON.stringify(mapa.get('W1')));
   sprawdz('Marut, Lewandowski i Błaszczyk z pola klubu — trzy osoby', (mapa.get('W2') || []).map(o => o.lastName).join(',') === 'Marut,Lewandowski,Błaszczyk', JSON.stringify(mapa.get('W2')));
 }
 
-console.log('\n3b. Wpisy z kilkoma zawodnikami rozdzielają się same przy starcie');
+console.log('\n3b. Sklejone wpisy porządkują się same przy starcie');
 {
   const lista = [
     { id: 'Z1', firstName: 'Dawid', lastName: 'Białkowski(9)-Chemik Bydgoszcz Kai Leo Michalski(4)(6)-Chemik Bydgoszcz', club: '' },
@@ -130,18 +130,58 @@ console.log('\n3b. Wpisy z kilkoma zawodnikami rozdzielają się same przy starc
     { id: 'Z3', firstName: 'Antoni', lastName: 'Balcer', club: 'Talent Warszawa' },
     { id: 'Z4', firstName: 'Jan', lastName: 'Kowalski (5) Adam Nowak (9)', reprezentacja: 'U-16' },
   ];
-  const mapa = api.wpisyZKilkomaZawodnikami(lista);
-  sprawdz('do automatu idzie tylko wpis z dwoma zawodnikami', mapa.size === 1 && mapa.has('Z1'), JSON.stringify([...mapa.keys()]));
-  sprawdz('pojedynczy sklejony wpis zostaje pod przyciskiem (z podglądem)', !mapa.has('Z2'));
-  sprawdz('powołanego automat nie rusza', !mapa.has('Z4'));
+  const mapa = api.wpisyDoAutoPorzadku(lista);
+  sprawdz('wpis z dwoma zawodnikami idzie do automatu', mapa.has('Z1'), JSON.stringify([...mapa.keys()]));
+  sprawdz('pojedynczy sklejony wpis też (klub i pozycja z numeru)', mapa.has('Z2'), JSON.stringify([...mapa.keys()]));
+  sprawdz('czysty wpis i powołanego automat nie rusza', !mapa.has('Z3') && !mapa.has('Z4'));
   const w = api.rozdzielWpisyTalentow(lista, mapa, () => 'NOWY');
   const nazwiska = w.talenty.map(t => `${t.firstName} ${t.lastName}`);
   sprawdz('na liście każdy zawodnik w osobnym wierszu', nazwiska[0] === 'Dawid Białkowski' && nazwiska[1] === 'Kai Leo Michalski' && w.talenty.length === 5, JSON.stringify(nazwiska));
 }
 sprawdz('automat podpięty przy starcie, z powrotem listy po nieudanym zapisie',
-  /const doRozdzielenia = wpisyZKilkomaZawodnikami\(DB\.talents\);[\s\S]{0,300}const ok = await saveTalents\(\);\s*if\(ok === false\) DB\.talents = przed;/.test(zrodlo));
+  /const doRozdzielenia = wpisyDoAutoPorzadku\(DB\.talents\);[\s\S]{0,300}const ok = await saveTalents\(\);\s*if\(ok === false\) DB\.talents = przed;/.test(zrodlo));
 sprawdz('automat działa tylko przy pełnym wczytaniu bazy',
-  /if\(wolnoUzupelniac\)\{\s*const doRozdzielenia = wpisyZKilkomaZawodnikami/.test(zrodlo));
+  /if\(wolnoUzupelniac\)\{\s*const doRozdzielenia = wpisyDoAutoPorzadku/.test(zrodlo));
+
+console.log('\n3d. Wpisy ze zrzutu (13.09.2026): numer, imię i nazwisko, klub — porządek bez pytania');
+{
+  // Tak leżą w bazie: cały napis w polu imienia, nazwisko puste.
+  const ZRZUT = [
+    ['1 Karol Nowicki AF Brzoza AF Brzoza', 'Karol Nowicki | — | 1 | AF Brzoza'],
+    ['11 Tomasz Guba Legia Chełmża GOL Chełmża', 'Tomasz Guba | — | 11 | Legia Chełmża / GOL Chełmża'],
+    ['2 Adam Kachel Chemik Bydgoszcz KS Brzoza', 'Adam Kachel | — | 2 | Chemik Bydgoszcz KS Brzoza'],
+    ['8 Igor Łukasiak Elana Toruń Elana Toruń', 'Igor Łukasiak | — | 8 | Elana Toruń'],
+    ['9 Wiktor Kosiński JSS Toruń JSS Toruń', 'Wiktor Kosiński | — | 9 | JSS Toruń'],
+    ['Igor Jeliński(7)-AP Młode talenty', 'Igor Jeliński | — | 7 | AP Młode talenty'],
+    ['Kacper Czajkowski(10)-MUKS Bydgoszcz', 'Kacper Czajkowski | — | 10 | MUKS Bydgoszcz'],
+    ['Maciej Kowalski - Legia Chełmża', 'Maciej Kowalski | — | — | Legia Chełmża'],
+    ['Julek Walczak (9) 2014-AP Oleśnica', 'Julek Walczak | 2014 | 9 | AP Oleśnica'],
+  ];
+  const lista = ZRZUT.map(([napis], i) => ({ id: 'S' + i, firstName: napis, lastName: '', club: '' }));
+  const mapa = api.wpisyDoAutoPorzadku(lista);
+  ZRZUT.forEach(([napis, oczekiwany], i) => {
+    const osoby = mapa.get('S' + i);
+    sprawdz(`„${napis}" → ${oczekiwany}`, osoby && osoby.length === 1 && opis(osoby[0]) === oczekiwany, osoby ? osoby.map(opis).join(' || ') : 'nie trafił do automatu');
+  });
+  const w = api.rozdzielWpisyTalentow(lista, mapa, () => 'NOWY');
+  sprawdz('po porządku żaden wpis nie wraca do kolejnego porządkowania', w.talenty.every(t => api.wpisTalentuDoPorzadku(t) === null),
+    JSON.stringify(w.talenty.filter(t => api.wpisTalentuDoPorzadku(t) !== null)));
+}
+
+console.log('\n3e. Czego automat NIE rusza — lepiej zostawić niż kogoś wyciąć');
+{
+  const uciety = { id: 'U1', firstName: 'Igor Lewandowski-Chemik Bydgoszcz(2013)', lastName: 'Mikołaj Marut-Chemik Bydgoszcz(2013)', club: 'Wojtek Błaszczyk(8)-' };
+  sprawdz('ucięty koniec: odczyt nie zostawia samego Błaszczyka (Marut i Lewandowski by przepadli)', api.wpisTalentuDoPorzadku(uciety) === null, JSON.stringify(api.wpisTalentuDoPorzadku(uciety)));
+  const resztki = { id: 'U2', firstName: 'Mikołaj Marut-Chemik Bydgoszcz(2013) Igor Lewandowski-', lastName: '', club: '' };
+  sprawdz('resztki drugiego zawodnika w klubie — bez automatu', !api.wpisyDoAutoPorzadku([resztki]).has('U2'), JSON.stringify(api.wpisTalentuDoPorzadku(resztki)));
+  const zgadywanie = { id: 'U3', firstName: 'Jan', lastName: 'Nowak(8)-UKS Orlik Bydgoszcz Piotr Paweł Zieliński(9)-KS Wda Świecie', club: '' };
+  sprawdz('kluby się nie potwierdzają (granica klub / imię to zgadywanie) — bez automatu', !api.wpisyDoAutoPorzadku([zgadywanie]).has('U3'));
+  const lacznik = { id: 'U4', firstName: 'Piotr', lastName: 'Nowak-Jeziorski(8)-Lech Poznań', club: '' };
+  sprawdz('nazwisko z łącznikiem — bez automatu', !api.wpisyDoAutoPorzadku([lacznik]).has('U4'));
+  const nicDoRoboty = { id: 'U5', firstName: 'Jan', lastName: 'Kowalski 2013', club: '' };
+  const w5 = api.wpisyDoAutoPorzadku([nicDoRoboty]);
+  sprawdz('sam rocznik bez klubu i pozycji — bez automatu', !w5.has('U5'));
+}
 
 console.log('\n4. Numer koszulki (ponad 11) NIE jest pozycją');
 // (22) rozdziela nazwisko od klubu tak samo jak numer pozycji — ale pozycji z niego nie odczytujemy.

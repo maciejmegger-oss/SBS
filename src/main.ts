@@ -2080,16 +2080,16 @@ async function loadAllInner(){
       setTimeout(()=> pokazPotwierdzenie(ok === false
         ? `Przywróciłem kadrę ${kadry} na ekranie, ale zapis do bazy się nie udał.` + powodNieudanegoZapisu()
         : `Przywrócono kadrę ${kadry}: ${ilu} ${ilu===1?'powołany':'powołanych'}.`
-          + (naprawa.duplikaty ? ` Na liście zostało ${naprawa.duplikaty} zdublowanych wpisów tych samych zawodników — są w „Poza kadrą" i możesz je usunąć.` : ''),
+          + (naprawa.duplikaty ? ` Na liście zostało ${naprawa.duplikaty} zdublowanych wpisów tych samych zawodników — są w „Talencie klubowym" i możesz je usunąć.` : ''),
         ok === false ? 'blad' : 'ok'), 1500);
     }
   }
 
-  // KILKU ZAWODNIKÓW W JEDNYM WPISIE TALENTU rozdzielamy sami, przy starcie (patrz
-  // wpisyZKilkomaZawodnikami). Na liście ma stać jeden zawodnik w wierszu — z własnym klubem,
-  // pozycją i przyciskiem do profilu. Zapis tylko wtedy, gdy było co rozdzielić.
+  // SKLEJONE WPISY TALENTÓW porządkujemy sami, przy starcie (patrz wpisyDoAutoPorzadku): kilku
+  // zawodników w jednym wierszu, klub i numer pozycji doklejone do nazwiska. Na liście ma stać jeden
+  // zawodnik w wierszu — z klubem, pozycją i przyciskiem do profilu. Zapis tylko, gdy było co zrobić.
   if(wolnoUzupelniac){
-    const doRozdzielenia = wpisyZKilkomaZawodnikami(DB.talents);
+    const doRozdzielenia = wpisyDoAutoPorzadku(DB.talents);
     if(doRozdzielenia.size){
       const przed = DB.talents;
       const w = rozdzielWpisyTalentow(DB.talents, doRozdzielenia, ()=>uid('T'));
@@ -2098,8 +2098,9 @@ async function loadAllInner(){
       if(ok === false) DB.talents = przed;   // nie udawaj rozdzielenia, którego nie ma w bazie
       const ile = doRozdzielenia.size;
       setTimeout(()=> pokazPotwierdzenie(ok === false
-        ? 'Nie udało się rozdzielić wpisów z kilkoma zawodnikami — lista bez zmian.' + powodNieudanegoZapisu()
-        : `Talenty: rozdzielono ${ile} ${ile===1?'wpis':'wpisów'} z kilkoma zawodnikami — każdy zawodnik ma teraz własny wiersz (doszło ${w.dodanych}).`,
+        ? 'Nie udało się uporządkować listy talentów — lista bez zmian.' + powodNieudanegoZapisu()
+        : `Talenty: uporządkowano ${ile} ${ile===1?'wpis':'wpisów'} — imię i nazwisko, klub i pozycja z numeru są w swoich kolumnach`
+          + (w.dodanych ? `, z rozdzielenia doszło ${w.dodanych} ${w.dodanych===1?'zawodnik':'zawodników'}` : '') + '.',
         ok === false ? 'blad' : 'ok'), 1500);
     }
   }
@@ -9023,6 +9024,9 @@ function rozbierzWpisTalentu(tekst){
   if(znaczniki.length){
     const osoby = [];
     let kursor = 0;
+    // Tekst przed pierwszym zawodnikiem, którego nie ma komu przypisać — np. inni zawodnicy bez numeru.
+    // Taki odczyt coś by zgubił, więc wtedy wpisu nie ruszamy wcale (patrz koniec tej gałęzi).
+    let zgubione = false;
     // Klub z końca wpisu — podpowiedź, gdzie kończy się nazwa klubu, a zaczyna drugie imię.
     const klubKonca = porzadkujKlubTalentu(wyjmijRocznikTalentu(l.slice(znaczniki[znaczniki.length - 1].do)).reszta);
     znaczniki.forEach(z=>{
@@ -9035,6 +9039,8 @@ function rozbierzWpisTalentu(tekst){
       if(poprzedni){
         if(r.rok && !poprzedni.birthYear) poprzedni.birthYear = r.rok;
         if(ogon && !poprzedni.club) poprzedni.club = porzadkujKlubTalentu(ogon);
+      } else if(ogon){
+        zgubione = true;
       }
       const { firstName, lastName } = rozdzielImieNazwisko(nazwa);
       if(!firstName && !lastName) return;
@@ -9050,7 +9056,10 @@ function rozbierzWpisTalentu(tekst){
     // Zawodnicy BEZ numeru przed pierwszym nawiasem przepadali — odczyt po myślnikach ich widzi.
     // Wygrywa tylko wtedy, gdy znalazł WIĘCEJ osób; przy remisie zostaje sprawdzony odczyt po numerach.
     const zMyslnikow = osobyZMyslnikowTalentu(l);
-    return (zMyslnikow && zMyslnikow.length > osoby.length) ? zMyslnikow : osoby;
+    if(zMyslnikow && zMyslnikow.length > osoby.length) return zMyslnikow;
+    // „Igor Lewandowski-… Mikołaj Marut-… Wojtek Błaszczyk(8)-" z uciętym końcem: po numerach wyszedłby
+    // sam Błaszczyk, a dwaj pozostali by przepadli. Lepiej nie ruszać wpisu niż kogoś wyciąć.
+    return zgubione ? [] : osoby;
   }
 
   // Kilku zawodników bez żadnego numeru: „Mikołaj Marut-Chemik Bydgoszcz(2013) Igor Lewandowski-…".
@@ -9134,18 +9143,45 @@ function rozdzielWpisyTalentow(talenty, doRozdzielenia, noweId){
   return { talenty: wynik, zmienionych, dodanych };
 }
 
-// WPISY Z KILKOMA ZAWODNIKAMI — do rozdzielenia bez pytania, przy starcie.
+// PORZĄDEK W TALENTACH — SAM, PRZY STARCIE, ALE TYLKO PRZY PEWNYM ODCZYCIE.
 //
-// Na liście talentów ma stać jeden zawodnik w wierszu. Tu granica jest pewna: każdy zawodnik ma
-// w nawiasie swój numer, więc z jednego wpisu wychodzi dwóch pełnych zawodników, a nie zgadywanie.
-// Bierzemy wyłącznie takie wpisy — co najmniej dwie osoby, każda z imieniem i nazwiskiem.
-// Porządkowanie pojedynczych wpisów (klub albo rocznik doklejony do nazwiska) zostaje pod
-// przyciskiem „✂ Rozdziel i uporządkuj", z podglądem, bo tam łatwiej o pomyłkę.
-function wpisyZKilkomaZawodnikami(talenty){
+// Na liście ma stać jeden zawodnik w wierszu: imię i nazwisko, klub w kolumnie klubu, pozycja z numeru,
+// rocznik. Bez pytania porządkujemy wyłącznie wpisy, których odczyt nie budzi wątpliwości:
+//  • każde imię i nazwisko to 2 słowa z wielkiej litery (3 — gdy wpis ma jawny podział: nawias albo
+//    myślnik), bez cyfr, nawiasów i łączników;
+//  • klub jest czystą nazwą — bez nawiasów i bez resztek innego wpisu („Bydgoszcz Igor Lewandowski-");
+//  • pojedynczy zawodnik wnosi klub albo pozycję (inaczej nie ma czego porządkować);
+//  • przy kilku zawodnikach klub każdego się POTWIERDZA: powtarza się w tym samym wpisie albo jest
+//    w kartotece — bez tego granica „klub / następne imię" byłaby zgadywaniem.
+// Wpis, z którego coś by przepadło, odczyt zwraca pusty i nie ruszamy go wcale. Wszystko, co tu nie
+// przejdzie, zostaje pod przyciskiem „✂ Rozdziel i uporządkuj", z podglądem.
+function wpisyDoAutoPorzadku(talenty){
+  const SLOWO = /^\p{Lu}[\p{L}'’]*$/u;
+  const CZYSTY_KLUB = /^[\p{L}\d][\p{L}\d .'’\/&-]*[\p{L}\d]$/u;
+  const norm = (s)=> String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const kartoteka = new Set((DB.clubs || []).map(c=> norm(c && c.name)).filter(Boolean));
+  const czystyKlub = (k)=> !k || (CZYSTY_KLUB.test(k) && k.split(/\s+/).length <= 7);
   const mapa = new Map();
   (talenty || []).forEach(t=>{
     const osoby = wpisTalentuDoPorzadku(t);
-    if(osoby && osoby.length >= 2 && osoby.every(o=> o.firstName && o.lastName)) mapa.set(t.id, osoby);
+    if(!osoby || !osoby.length) return;
+    const surowy = [t.firstName, t.lastName, t.club].filter(Boolean).join(' ');
+    const jawnyPodzial = /[()]|\s-|-\s|\p{L}-\p{Lu}/u.test(surowy);
+    const dobre = osoby.every(o=>{
+      const s = `${o.firstName || ''} ${o.lastName || ''}`.trim().split(/\s+/);
+      return !!(o.firstName && o.lastName) && s.length >= 2 && s.length <= (jawnyPodzial ? 3 : 2)
+        && s.every(w=> SLOWO.test(w)) && czystyKlub(o.club);
+    });
+    if(!dobre) return;
+    if(osoby.length === 1){
+      const o = osoby[0];
+      if(!o.club && !(o.pozycjeNmg || []).length && !o.pozycja) return;
+      if((surowy.match(/\p{L}-\p{Lu}/gu) || []).length > 1) return;   // kilka „Nazwisko-Klub" = kilka osób
+    } else {
+      const kluby = osoby.map(o=> norm(o.club));
+      if(!kluby.every(k=> k && (kluby.filter(x=> x === k).length > 1 || kartoteka.has(k)))) return;
+    }
+    mapa.set(t.id, osoby);
   });
   return mapa;
 }
@@ -9715,6 +9751,13 @@ function scalPowolanychZIstniejacymi(istniejace, nowe){
   return { doDodania, uzupelnieni };
 }
 let talentKadra = '';
+// Rocznik w „Talencie klubowym": '' = wszystkie, 'brak' = bez rocznika, inaczej rok („2013").
+let talentRocznik = '';
+function wRocznikuTalentu(t, rocznik){
+  if(!rocznik) return true;
+  if(rocznik === 'brak') return !t.birthYear;
+  return String(t.birthYear || '') === String(rocznik);
+}
 
 function viewTalent(){
   // SEGREGACJA WEDŁUG ROCZNIKÓW.
@@ -9733,7 +9776,9 @@ function viewTalent(){
   // Zawężenie do jednej kadry. „Pozostali" to wszyscy bez powołania — talenty z arkuszy
   // i wklejek, czyli dotychczasowa zawartość tej zakładki.
   const wKadrze = (t, k)=> k === 'inni' ? !t.reprezentacja : String(t.reprezentacja||'') === k;
-  const widoczne = talentKadra ? DB.talents.filter(t=>wKadrze(t, talentKadra)) : DB.talents;
+  // „Talent klubowy" (dawniej „Poza kadrą") zawęża się dodatkowo do wybranego rocznika.
+  const widoczne = (talentKadra ? DB.talents.filter(t=>wKadrze(t, talentKadra)) : DB.talents)
+    .filter(t=> talentKadra !== 'inni' || wRocznikuTalentu(t, talentRocznik));
   const rows = widoczne.slice().sort((a,b)=>{
     if(rangaGrupy(a) !== rangaGrupy(b)) return rangaGrupy(a) - rangaGrupy(b);
     if(a.reprezentacja || b.reprezentacja){
@@ -9840,9 +9885,12 @@ function viewTalent(){
       <tbody>${rowsHtml}</tbody>
     </table>`;
   } else {
-    rowsHtml = talentKadra
-      ? `<div class="empty">Kadry ${esc(talentKadra === 'inni' ? 'spoza reprezentacji' : talentKadra)} jeszcze nie zebraliśmy.
-         Wklej komunikat PZPN z powołaniami w polu obok — wejdzie tu w całości.</div>`
+    rowsHtml = talentKadra === 'inni'
+      ? `<div class="empty">Brak talentów klubowych${talentRocznik
+          ? (talentRocznik === 'brak' ? ' bez rocznika' : ' z rocznika ' + esc(talentRocznik)) : ''} — wklej listę w polu poniżej.</div>`
+      : talentKadra
+      ? `<div class="empty">Kadry ${esc(talentKadra)} jeszcze nie zebraliśmy.
+         Wklej komunikat PZPN z powołaniami w polu poniżej — wejdzie tu w całości.</div>`
       : '<div class="empty">Brak jeszcze dodanych talentów — użyj importu lub formularza poniżej.</div>';
   }
 
@@ -9852,10 +9900,28 @@ function viewTalent(){
   const pigulkaKadry = (wartosc, etykieta, ile)=> pill(
     ile != null ? `${etykieta} (${ile})` : etykieta,
     talentKadra === wartosc, 'talent-kadra', {val: wartosc});
-  const zakladkiKadr = `<div class="filters" style="margin-bottom:12px;">
-    ${pigulkaKadry('', 'Wszyscy', DB.talents.length)}
-    ${KADRY_MLODZIEZOWE.map(k=>pigulkaKadry(k, k, iluWKadrze(k))).join('')}
-    ${pigulkaKadry('inni', 'Poza kadrą', iluWKadrze('inni'))}
+  // UKŁAD: Wszyscy → REPREZENTANCI (kadry U-21…U-15) → przycisk „Talent klubowy" (wszyscy bez
+  // powołania, dawniej „Poza kadrą"). Po jego kliknięciu pod spodem otwierają się roczniki — od
+  // najmłodszego, z liczbą zawodników — i lista zawęża się do wybranego rocznika.
+  const naglowekSekcji = (tekst)=> `<div class="note" style="margin:0 0 5px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;opacity:.75;">${esc(tekst)}</div>`;
+  const klubowi = DB.talents.filter(t=> !t.reprezentacja);
+  const rocznikiKlubowe = [...new Set(klubowi.map(t=> Number(t.birthYear)).filter(Boolean))].sort((a,b)=> b - a);
+  const bezRocznika = klubowi.filter(t=> !t.birthYear).length;
+  const pigulkaRocznika = (wartosc, etykieta, ile)=> pill(`${etykieta} (${ile})`, talentRocznik === wartosc, 'talent-rocznik-filtr', {val: wartosc});
+  const zakladkiKadr = `<div style="margin-bottom:12px;">
+    <div class="filters" style="margin-bottom:0;">${pigulkaKadry('', 'Wszyscy', DB.talents.length)}</div>
+    <div style="margin-top:10px;">
+      ${naglowekSekcji('Reprezentanci')}
+      <div class="filters" style="margin-bottom:0;">${KADRY_MLODZIEZOWE.map(k=>pigulkaKadry(k, k, iluWKadrze(k))).join('')}</div>
+    </div>
+    <div style="margin-top:12px;">
+      <div class="filters" style="margin-bottom:0;">${pigulkaKadry('inni', 'Talent klubowy', iluWKadrze('inni'))}</div>
+      ${talentKadra === 'inni' ? `<div class="filters talent-roczniki" style="margin:8px 0 0;">
+        ${pigulkaRocznika('', 'Wszystkie roczniki', klubowi.length)}
+        ${rocznikiKlubowe.map(r=> pigulkaRocznika(String(r), String(r), klubowi.filter(t=> Number(t.birthYear) === r).length)).join('')}
+        ${bezRocznika ? pigulkaRocznika('brak', 'Bez rocznika', bezRocznika) : ''}
+      </div>` : ''}
+    </div>
   </div>`;
 
   return `
@@ -13162,6 +13228,11 @@ function attachHandlers(){
   });
   main.querySelectorAll('[data-action="talent-kadra"]').forEach(b=>b.onclick=()=>{
     talentKadra = (b as HTMLElement).dataset.val || '';
+    talentRocznik = '';   // każde wejście w zakładkę zaczyna od wszystkich roczników
+    render();
+  });
+  main.querySelectorAll('[data-action="talent-rocznik-filtr"]').forEach(b=>b.onclick=()=>{
+    talentRocznik = (b as HTMLElement).dataset.val || '';
     render();
   });
   main.querySelectorAll('[data-action="talent-add-manual"]').forEach(b=>b.onclick=()=>addTalentManually());
