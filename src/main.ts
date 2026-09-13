@@ -6625,6 +6625,32 @@ function klubyWWidoku(){
   if(clubBrowse.group) lista = lista.filter(c=>c.league===clubBrowse.group);
   return lista;
 }
+// ZAPIS STATYSTYK GRUPY: CO JEST CHWILOWE, A CO ODMOWĄ.
+//
+// „zapisano 22 z 23 — baza odrzuciła zapis (kod 504 Gateway Timeout)" było nieprawdą: 504 znaczy,
+// że baza nie odpowiedziała na czas przy fali równoległych zapisów, a nie że czegoś nie przyjęła.
+// Chwilowe błędy ponawiamy (serwer: api/_ponawianie.js, przeglądarka: pakietDoPonowienia),
+// a jeśli mimo to zostaną — mówimy wprost, że to chwilowe i wystarczy „Ponów nieudane".
+// Lista kodów musi być ta sama co w api/_ponawianie.js — pilnuje tego test-ponawianie-zapisu.
+const CHWILOWE_STATUSY_BAZY = new Set([408, 425, 429, 500, 502, 503, 504]);
+const bladChwilowy = (b)=> !!b && (b.chwilowy === true || CHWILOWE_STATUSY_BAZY.has(Number(b.status)));
+
+function pakietDoPonowienia(pakiet, nieudane){
+  const ids = new Set((nieudane || []).filter(b=> bladChwilowy(b) && b.id).map(b=> b.id));
+  return (pakiet || []).filter(x=> x && ids.has(x.id));
+}
+
+function opisNieudanegoZapisu(zapisani, wszystkich, nieudane){
+  const lista = nieudane || [];
+  const pierwszy = lista[0];
+  const kto = pierwszy
+    ? ` (${pierwszy.kto}: kod ${pierwszy.status}${pierwszy.tresc ? ' ' + String(pierwszy.tresc).slice(0,120) : ''})` : '';
+  if(lista.length && lista.every(bladChwilowy)){
+    return `zapisano ${zapisani} z ${wszystkich} — baza nie odpowiedziała na czas${kto}. To chwilowe, liczby są policzone: kliknij „Ponów nieudane"`;
+  }
+  return `zapisano ${zapisani} z ${wszystkich} — baza odrzuciła zapis${kto}`;
+}
+
 function openGrupaStatsModal(){
   const kluby = klubyWWidoku();
   if(!kluby.length){ alert('Brak klubów w tym widoku.'); return; }
@@ -6753,12 +6779,16 @@ function openGrupaStatsModal(){
         opis: (dopisani ? `dopisano ${dopisani}, liczby bez zmian` : 'bez zmian') + skadLiczby };
     }
 
-    const zapis = await fetch('/api/stats-90minut?clubId=' + encodeURIComponent(poz.id) + '&apply=1',
-      { method: 'POST', signal: AbortSignal.timeout(120000),
-        headers: { ...naglowki, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pakiet: dane.pakiet }) });
-    const odp = await zapis.json().catch(()=>({ error: 'serwer nie zwrócił danych' }));
-    if(!zapis.ok || odp.error) throw new Error(odp.error || ('kod ' + zapis.status));
+    const wyslijPakiet = async (pakiet)=>{
+      const zapis = await fetch('/api/stats-90minut?clubId=' + encodeURIComponent(poz.id) + '&apply=1',
+        { method: 'POST', signal: AbortSignal.timeout(120000),
+          headers: { ...naglowki, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pakiet }) });
+      const odp = await zapis.json().catch(()=>({ error: 'serwer nie zwrócił danych' }));
+      if(!zapis.ok || odp.error) throw new Error(odp.error || ('kod ' + zapis.status));
+      return odp;
+    };
+    const odp = await wyslijPakiet(dane.pakiet);
 
     // ZAPIS, KTÓRY SIĘ NIE UDAŁ, MUSI BYĆ WIDOCZNY.
     //
@@ -6767,12 +6797,24 @@ function openGrupaStatsModal(){
     // że przebieg całej grupy kończył się samymi zielonymi ptaszkami, a liczby w kartotece
     // zostawały stare i nie było o tym ani słowa. Teraz nieudany zapis jest błędem klubu,
     // razem z tym, co odpowiedziała baza.
-    const nieudane = Array.isArray(odp.bledyZapisu) ? odp.bledyZapisu : [];
-    const zapisani = odp.zapisani || 0;
+    let nieudane = Array.isArray(odp.bledyZapisu) ? odp.bledyZapisu : [];
+    let zapisani = odp.zapisani || 0;
+    // CHWILOWY BRAK ODPOWIEDZI BAZY TO NIE ODMOWA. Serwer sam ponawia 504/503/502 — a jeśli mimo
+    // to coś zostało, po krótkiej przerwie wysyłamy JESZCZE RAZ wyłącznie te wiersze. Zapis
+    // zawodnika nadpisuje te same pola, więc powtórka niczego nie dubluje.
+    const doPonowienia = pakietDoPonowienia(dane.pakiet, nieudane);
+    if(doPonowienia.length){
+      await new Promise(gotowe=> setTimeout(gotowe, 2000));
+      try{
+        const odp2 = await wyslijPakiet(doPonowienia);
+        const ponowione = new Set(doPonowienia.map(x=> x.id));
+        zapisani += odp2.zapisani || 0;
+        nieudane = nieudane.filter(b=> !ponowione.has(b.id))
+          .concat(Array.isArray(odp2.bledyZapisu) ? odp2.bledyZapisu : []);
+      }catch(e){ /* druga próba też bez odpowiedzi — zostaje wynik pierwszej */ }
+    }
     if(nieudane.length || zapisani < dane.pakiet.length){
-      const pierwszy = nieudane[0];
-      throw new Error(`zapisano ${zapisani} z ${dane.pakiet.length} — baza odrzuciła zapis`
-        + (pierwszy ? ` (${pierwszy.kto}: kod ${pierwszy.status} ${String(pierwszy.tresc||'').slice(0,120)})` : ''));
+      throw new Error(opisNieudanegoZapisu(zapisani, dane.pakiet.length, nieudane));
     }
     zapisaneWPrzebiegu.push(...dane.pakiet);
     return { zapisani,
@@ -6791,7 +6833,7 @@ function openGrupaStatsModal(){
     const dane = await res.json();
     if(!res.ok || dane.error){
       const e = new Error(dane.error || ('kod ' + res.status));
-      e.chwilowy = res.status === 503 || res.status === 429;
+      e.chwilowy = CHWILOWE_STATUSY_BAZY.has(res.status);
       e.podpowiedz = dane.podpowiedz || '';
       e.widzianeKluby = dane.widzianeKluby || [];
       e.bezMeczow = !!dane.bezMeczow;

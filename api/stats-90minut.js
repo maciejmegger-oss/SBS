@@ -23,6 +23,7 @@ import {
 import { czyLnp, pobierzLnp, parseProtokolLnp, protokolZDanychStrony, zbadajSkryptyStrony, opiszZawartosc } from "./_lnp.js";
 
 import { BAZA, KLUCZ_BAZY, naglowkiDlaZadania, maDostepDoBazy, PODPOWIEDZ_BRAK_KLUCZA } from "./_baza.js";
+import { patchZPonowieniem } from "./_ponawianie.js";
 
 const kluczNazwiska = (s) =>
   String(s || "").split(/\s+/).map(normalizujNazwe).filter(Boolean).sort().join(" ");
@@ -73,11 +74,12 @@ export default async function handler(req, res) {
     for (let i = 0; i < pakiet.length; i += 8) {
       await Promise.all(pakiet.slice(i, i + 8).map(async (poz) => {
         if (!poz || !poz.id || !poz.dane) return;
-        const r = await fetch(`${BAZA}/rest/v1/sbs_players?id=eq.${encodeURIComponent(poz.id)}`, {
-          method: "PATCH", headers: naglowki, body: JSON.stringify(poz.dane),
+        // Chwilowy brak odpowiedzi bazy (504/503/502) ponawiamy — patrz api/_ponawianie.js.
+        const w = await patchZPonowieniem(`${BAZA}/rest/v1/sbs_players?id=eq.${encodeURIComponent(poz.id)}`, {
+          headers: naglowki, body: JSON.stringify(poz.dane),
         });
-        if (r.ok) zapisaneSzybko++;
-        else bledySzybkie.push({ kto: poz.kto || poz.id, status: r.status, tresc: (await r.text()).slice(0, 200) });
+        if (w.ok) zapisaneSzybko++;
+        else bledySzybkie.push({ id: poz.id, kto: poz.kto || poz.id, status: w.status, tresc: w.tresc, chwilowy: w.chwilowy, proby: w.proby });
       }));
     }
     return res.status(200).json({
@@ -933,11 +935,11 @@ export default async function handler(req, res) {
     // co wyglądało dokładnie jak „nie zapisuje".
     for (let i = 0; zapisz && i < zadaniaZapisu.length; i += 8) {
       await Promise.all(zadaniaZapisu.slice(i, i + 8).map(async ({ p, doWyslania }) => {
-        const r = await fetch(`${BAZA}/rest/v1/sbs_players?id=eq.${encodeURIComponent(p.id)}`, {
-          method: "PATCH", headers: naglowki, body: JSON.stringify(doWyslania),
+        const w = await patchZPonowieniem(`${BAZA}/rest/v1/sbs_players?id=eq.${encodeURIComponent(p.id)}`, {
+          headers: naglowki, body: JSON.stringify(doWyslania),
         });
-        if (r.ok) zapisani++;
-        else bledyZapisu.push({ kto: p.kto, status: r.status, tresc: (await r.text()).slice(0, 200) });
+        if (w.ok) zapisani++;
+        else bledyZapisu.push({ id: p.id, kto: p.kto, status: w.status, tresc: w.tresc, chwilowy: w.chwilowy, proby: w.proby });
       }));
     }
   }
