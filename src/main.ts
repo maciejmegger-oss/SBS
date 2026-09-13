@@ -87,7 +87,7 @@ const DEFAULT_SETTINGS = {
   regions: ["Dolnośląski ZPN","Kujawsko-Pomorski ZPN","Lubelski ZPN","Lubuski ZPN","Łódzki ZPN","Małopolski ZPN","Mazowiecki ZPN","Opolski ZPN","Podkarpacki ZPN","Podlaski ZPN","Pomorski ZPN","Śląski ZPN","Świętokrzyski ZPN","Warmińsko-Mazurski ZPN","Wielkopolski ZPN","Zachodniopomorski ZPN"],
   leagues: ["Ekstraklasa","I liga","II liga","III liga, gr. I","III liga, gr. II","III liga, gr. III","III liga, gr. IV","IV liga (pomorska)","IV liga (zachodniopomorska)","IV liga (dolnośląska)","IV liga (śląska)","IV liga (wielkopolska)","IV liga (kujawsko-pomorska)","IV liga (łódzka)","Klasa okręgowa","CLJ U19","CLJ U17 gr. I","CLJ U17 gr. II","CLJ U15 gr. A","CLJ U15 gr. B","CLJ U15 gr. C","CLJ U15 gr. D","Liga makroregionalna U16","Rocznik 2011","Rocznik 2012","Rocznik 2013","Rocznik 2014"],
   positions: ["Bramkarz","Obrońca","Obrońca prawy","Obrońca lewy","Obrońca środkowy","Obrońca środkowy prawy","Obrońca środkowy centralny","Obrońca środkowy lewy","Obrońca boczny","Wahadłowy prawy","Wahadłowy lewy","Pomocnik defensywny","Pomocnik środkowy","Pomocnik ofensywny","Skrzydłowy","Skrzydłowy prawy","Skrzydłowy lewy","Napastnik"],
-  statuses: ["Do Obserwacji","Na Testy","Do transferu","Z polecenia","Rekomendowany","Odrzucony"],
+  statuses: ["Do Obserwacji","Na Testy","Do transferu","Rekomendowany","Odrzucony"],
   recommendations: ["Kontynuować obserwację","Zaprosić na testy","(Do transferu)","Odrzucić","Zbyt wcześnie ocenić"],
   scouts: [],
   customFields: [],
@@ -2303,11 +2303,12 @@ async function loadAllInner(){
     }
     await quietFlagSet('scouting:numeracja_nmg_v1');
   }
-  // Zapewnienia ustawień PO migracjach (żeby migracja statusów ich nie nadpisała): status "Z polecenia"
-  // oraz nazwy grup CLJ U17 zgodne z ŁNP. Idempotentne, bez wymuszania zapisu.
-  if(Array.isArray(DB.settings.statuses) && !DB.settings.statuses.includes('Z polecenia')){
-    const idx = DB.settings.statuses.indexOf('Odrzucony');
-    if(idx >= 0) DB.settings.statuses.splice(idx, 0, 'Z polecenia'); else DB.settings.statuses.push('Z polecenia');
+  // Zapewnienia ustawień PO migracjach (żeby migracja statusów ich nie nadpisała): nazwy grup CLJ U17
+  // zgodne z ŁNP. Idempotentne, bez wymuszania zapisu.
+  // „Z polecenia" USUNIĘTE Z WYBORU (09.2026). Dawniej dopisywaliśmy je tu przy każdym starcie — teraz
+  // odwrotnie: znika z listy statusów do wyboru. Zawodnik, który już ma ten status, zachowuje go.
+  if(Array.isArray(DB.settings.statuses)){
+    DB.settings.statuses = DB.settings.statuses.filter(s=> s !== 'Z polecenia');
   }
   if(Array.isArray(DB.settings.leagues)){
     const L = DB.settings.leagues;
@@ -7798,7 +7799,7 @@ async function saveNewObservation(){
     let playerChanged = false;
     if(!obsPlayer.monitored){ obsPlayer.monitored = true; playerChanged = true; }
     if(!obsPlayer.status){ obsPlayer.status = 'Do Obserwacji'; playerChanged = true; }
-    if(playerChanged) await savePlayers();
+    if(playerChanged) await savePlayerOne(obsPlayer);   // jeden zawodnik, nie cała kartoteka
   }
   let settingsChanged = false;
   if(scout && !DB.settings.scouts.includes(scout)){ DB.settings.scouts.push(scout); settingsChanged = true; }
@@ -8258,11 +8259,12 @@ function selectPerspektywa(value){
 
 // Decyzja/status na dole raportu. value = docelowy status zawodnika. Pierwsze cztery => Monitoring;
 // "Do transferu" i "Na Testy" => mapa pozycji w Rankingu (Do transferu najwyżej).
+// Kolejność wg ważności decyzji: najpierw „Do transferu". „Z polecenia" usunięte z wyboru (09.2026) —
+// zawodnicy, którzy już mają ten status, zachowują go i zostają w Monitoringu (MONITORING_STATUSES).
 const REPORT_STATUS_OPTIONS = [
+  {value:'Do transferu',  label:'Do transferu'},
   {value:'Do Obserwacji', label:'Do obserwacji'},
   {value:'Na Testy',      label:'Testy'},
-  {value:'Do transferu',  label:'Do transferu'},
-  {value:'Z polecenia',   label:'Z polecenia'},
   {value:'Odrzucony',     label:'Odrzucony'},
 ];
 let reportStatusValue = '';
@@ -8484,7 +8486,7 @@ function viewReports(){
       <div class="status-picker" id="rep-status-picker" data-value="${esc(reportStatusValue)}">
         ${REPORT_STATUS_OPTIONS.map(o=>`<button type="button" class="status-btn ${reportStatusValue===o.value?'active':''}" data-value="${esc(o.value)}">${esc(o.label)}</button>`).join('')}
       </div>
-      <p class="note" style="margin-top:6px;">Kliknięcie tylko zaznacza — <strong>nic nie kasuje</strong>. Pierwsze cztery dodają zawodnika do <strong>Monitoringu</strong>; „Do transferu" i „Testy" trafiają też na <strong>mapę pozycji</strong> w Rankingu (Do transferu najwyżej). Status zostaje przypisany po kliknięciu „Zapisz raport".</p>
+      <p class="note" style="margin-top:6px;">Kliknięcie tylko zaznacza — <strong>nic nie kasuje</strong>. „Do transferu", „Do obserwacji" i „Testy" dodają zawodnika do <strong>Monitoringu</strong>; „Do transferu" i „Testy" trafiają też na <strong>mapę pozycji</strong> w Rankingu (Do transferu najwyżej). Status zostaje przypisany po kliknięciu „Zapisz raport".</p>
     </div>
 
     <div class="modal-actions" style="justify-content:flex-start;">
@@ -13835,9 +13837,18 @@ function attachHandlers(){
     }
     // Przypisanie statusu z decyzji na dole raportu (jeśli wybrano). Pierwsze cztery => Monitoring,
     // "Do transferu"/"Na Testy" => mapa pozycji w Rankingu. Zapisujemy zawodnika osobno.
+    // TYLKO TEN JEDEN ZAWODNIK. savePlayers() wysyłało całą kartotekę (ponad 14 tys. zawodników,
+    // kilkadziesiąt MB) — przy zaznaczonym statusie „Zapisz zmiany" wisiało wtedy minutami i wyglądało
+    // na niezapisane, choć sam raport był już w bazie.
     if(reportStatusValue){
       const pl = DB.players.find(x=>x.id===playerId);
-      if(pl){ pl.status = reportStatusValue; await savePlayers(); }
+      if(pl){
+        pl.status = reportStatusValue;
+        const okStatus = await savePlayerOne(pl);
+        if(okStatus === false){
+          pokazPotwierdzenie('Raport zapisany, ale statusu zawodnika nie udało się zapisać.' + powodNieudanegoZapisu(), 'blad');
+        }
+      }
     }
     const status = reportStatusValue;
     reportPerspektywaValue = '';

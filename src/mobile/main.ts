@@ -45,11 +45,11 @@ const REPORT_SET_PIECES = [
   { key: "rzutWolnyAtak", label: "Rzut wolny — atak" },
   { key: "rzutWolnyObrona", label: "Rzut wolny — obrona" },
 ];
+// Ta sama kolejność co REPORT_STATUS_OPTIONS na komputerze: najpierw „Do transferu"; bez „Z polecenia".
 const STATUS_OPTIONS = [
+  { value: "Do transferu", label: "Do transferu" },
   { value: "Do Obserwacji", label: "Do obserwacji" },
   { value: "Na Testy", label: "Testy" },
-  { value: "Do transferu", label: "Do transferu" },
-  { value: "Z polecenia", label: "Z polecenia" },
   { value: "Odrzucony", label: "Odrzucony" },
 ];
 const PERSPEKTYWA = ["WYSOKA", "ŚREDNIA", "NISKA"];
