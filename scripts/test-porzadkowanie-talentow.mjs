@@ -32,6 +32,8 @@ const kod = [
   wytnij('nazwaIOgonTalentu', /function nazwaIOgonTalentu\(przed, znaneKluby\)\{[\s\S]*?\n\}/),
   wytnij('osobyZeSkladuTalentu', /function osobyZeSkladuTalentu\(linia, rocznik\)\{[\s\S]*?\n\}/),
   wytnij('wpisyZKilkomaZawodnikami', /function wpisyZKilkomaZawodnikami\(talenty\)\{[\s\S]*?\n\}/),
+  wytnij('RE_OGON_ZAWODNIKA', /const RE_OGON_ZAWODNIKA = .*;/),
+  wytnij('osobyZMyslnikowTalentu', /function osobyZMyslnikowTalentu\(l\)\{[\s\S]*?\n\}/),
   wytnij('rozbierzWpisTalentu', /function rozbierzWpisTalentu\(tekst\)\{[\s\S]*?\n\}/),
   wytnij('wpisTalentuDoPorzadku', /function wpisTalentuDoPorzadku\(t\)\{[\s\S]*?\n\}/),
   wytnij('rozdzielWpisyTalentow', /function rozdzielWpisyTalentow\(talenty, doRozdzielenia, noweId\)\{[\s\S]*?\n\}/),
@@ -95,6 +97,29 @@ przypadek('Dawid Białkowski(9)-Chemik Bydgoszcz Kai Leo Michalski(4)(6)-Chemik 
   const w = api.osobyZeSkladuTalentu('Dawid Białkowski(9)-Chemik Bydgoszcz Kai Leo Michalski(4)(6)-Chemik Bydgoszcz', null);
   const dostal = w.map(o => `${o.firstName} ${o.lastName} | ${o.club}`).join('  ||  ');
   sprawdz('wklejanie listy (osobyZeSkladuTalentu) rozdziela tak samo', dostal === 'Dawid Białkowski | Chemik Bydgoszcz  ||  Kai Leo Michalski | Chemik Bydgoszcz', dostal);
+}
+
+console.log('\n3c. Numer tylko przy części zawodników albo wcale — wpisy ze zrzutu (13.09.2026)');
+// Błąd: Konwiński (bez numeru, przed pierwszym nawiasem) przepadał — zostawał sam Chybowski.
+przypadek('Oliwier Konwiński-Wisła Fordon Aleksander Chybowski(4)-Wisła Fordon',
+  ['Oliwier Konwiński | — | — | Wisła Fordon', 'Aleksander Chybowski | — | 4 | Wisła Fordon']);
+// W nawiasach roczniki, nie pozycje; trzeci zawodnik siedział w polu klubu.
+przypadek('Mikołaj Marut-Chemik Bydgoszcz(2013) Igor Lewandowski-Chemik Bydgoszcz(2013) Wojtek Błaszczyk(8)-Chemik Bydgoszcz(2013)',
+  ['Mikołaj Marut | 2013 | — | Chemik Bydgoszcz', 'Igor Lewandowski | 2013 | — | Chemik Bydgoszcz', 'Wojtek Błaszczyk | 2013 | 8 | Chemik Bydgoszcz']);
+przypadek('Mikołaj Marut-Chemik Bydgoszcz(2013) Igor Lewandowski-Chemik Bydgoszcz(2013)',
+  ['Mikołaj Marut | 2013 | — | Chemik Bydgoszcz', 'Igor Lewandowski | 2013 | — | Chemik Bydgoszcz']);
+// Klub z łącznikiem w nazwie nie może rozciąć wpisu na śmieci.
+przypadek('Jan Nowak(8)-Rekord Bielsko-Biała Adam Kowal(9)-Rekord Bielsko-Biała',
+  ['Jan Nowak | — | 8 | Rekord Bielsko-Biała', 'Adam Kowal | — | 9 | Rekord Bielsko-Biała']);
+{
+  // Dokładnie tak, jak te wpisy leżą w bazie: pierwsze słowo w imieniu, reszta w nazwisku, a trzeci
+  // zawodnik w polu klubu.
+  const konwinski = { id: 'W1', firstName: 'Oliwier', lastName: 'Konwiński-Wisła Fordon Aleksander Chybowski(4)-Wisła Fordon', club: '' };
+  const marut = { id: 'W2', firstName: 'Mikołaj', lastName: 'Marut-Chemik Bydgoszcz(2013) Igor Lewandowski-Chemik Bydgoszcz(2013)', club: 'Wojtek Błaszczyk(8)-Chemik Bydgoszcz(2013)', birthYear: 2013 };
+  const mapa = api.wpisyZKilkomaZawodnikami([konwinski, marut]);
+  sprawdz('oba wpisy idą do rozdzielenia przy starcie', mapa.size === 2, JSON.stringify([...mapa.keys()]));
+  sprawdz('Konwiński i Chybowski — dwie osoby', (mapa.get('W1') || []).map(o => o.lastName).join(',') === 'Konwiński,Chybowski', JSON.stringify(mapa.get('W1')));
+  sprawdz('Marut, Lewandowski i Błaszczyk z pola klubu — trzy osoby', (mapa.get('W2') || []).map(o => o.lastName).join(',') === 'Marut,Lewandowski,Błaszczyk', JSON.stringify(mapa.get('W2')));
 }
 
 console.log('\n3b. Wpisy z kilkoma zawodnikami rozdzielają się same przy starcie');

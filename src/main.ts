@@ -8938,6 +8938,77 @@ function nazwaIOgonTalentu(przed, znaneKluby){
   return { nazwa, ogon };
 }
 
+// „Imię Nazwisko(poz)-Klub(rocznik) Imię Nazwisko-Klub…" — MYŚLNIK ODDZIELA ZAWODNIKA OD KLUBU.
+//
+// Numer pozycji bywa tylko przy części zawodników albo wcale: „Oliwier Konwiński-Wisła Fordon
+// Aleksander Chybowski(4)-Wisła Fordon", „Mikołaj Marut-Chemik Bydgoszcz(2013) Igor Lewandowski-…".
+// Czytanie od numeru do numeru gubiło wtedy każdego, kto numeru nie miał: stał przed pierwszym
+// nawiasem, a nie było „poprzedniego zawodnika", któremu dałoby się go przypisać.
+//
+// Tu czytamy od myślnika do myślnika. Rocznik w środku to pewna granica (przed nim klub poprzednika,
+// za nim następny zawodnik); bez rocznika granicę wskazuje klub znany z końca wpisu albo z kartoteki.
+// Tylko przy CO NAJMNIEJ DWÓCH myślnikach i tylko gdy każde nazwisko wygląda na nazwisko — pojedyncze
+// „Nowak-Jeziorski" to nazwisko z łącznikiem, a „Rekord Bielsko-Biała" rozcięte na części nie przejdzie
+// sprawdzenia i zostanie odczytane po staremu.
+const RE_OGON_ZAWODNIKA = /((?:\(\s*(?:\d{1,2}|BR|ŚO|SO|LO|PO|DP|ŚP|SP|NAP|N)\s*\)\s*|\(?\s*\b(?:19[89]|20[0-4])\d\b\s*\)?\s*|\bpoz\.?\s*)+)$/i;
+function osobyZMyslnikowTalentu(l){
+  const czesci = String(l || '').split(/\s*[-–]\s*/).map(s=> s.trim());
+  if(czesci.length < 3 || czesci.some(s=> !s)) return null;
+  const SLOWO_NAZWISKA = /^\p{Lu}[\p{L}'’]*$/u;
+  const dobraNazwa = (n)=>{ const s = String(n || '').split(' ').filter(Boolean); return s.length >= 2 && s.length <= 3 && s.every(w=> SLOWO_NAZWISKA.test(w)); };
+  const norm = (s)=> String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const znane = new Set([porzadkujKlubTalentu(wyjmijRocznikTalentu(czesci[czesci.length - 1]).reszta),
+    ...((DB.clubs || []).map(c=> c && c.name))].map(norm).filter(Boolean));
+
+  // Numer pozycji i rocznik stojące PRZY nazwisku („Chybowski(4)", „Walczak (9) 2014").
+  const stronaZawodnika = (tekst)=>{
+    let t = String(tekst).trim(), nmg = [], pozycja = '', rok = null;
+    const ogon = t.match(RE_OGON_ZAWODNIKA);
+    if(ogon){
+      const r = wyjmijRocznikTalentu(ogon[1]);
+      rok = r.rok;
+      ({ nmg, pozycja } = pozycjeZeZnacznika(r.reszta));
+      t = t.slice(0, ogon.index).trim();
+    }
+    return { nazwa: t.replace(/\s+/g, ' '), nmg, pozycja, rok };
+  };
+  // Część między myślnikami: klub poprzedniego zawodnika + następny zawodnik.
+  const podzielSrodek = (tekst)=>{
+    const nastepny = stronaZawodnika(tekst);   // numer i rocznik z końca należą do NASTĘPNEGO
+    const reszta = nastepny.nazwa;
+    const r = reszta.match(/\(?\s*\b((?:19[89]|20[0-4])\d)\b\s*\)?/);
+    if(r){
+      return { klub: porzadkujKlubTalentu(reszta.slice(0, r.index)), rokKlubu: Number(r[1]),
+        zawodnik: { ...nastepny, nazwa: reszta.slice(r.index + r[0].length).trim() } };
+    }
+    const slowa = reszta.split(' ').filter(Boolean);
+    // Nazwisko ma 2 albo 3 słowa; najpierw sprawdzamy dłuższy klub (krótsze nazwisko).
+    let i = [slowa.length - 2, slowa.length - 3].find(k=> k >= 1 && znane.has(norm(slowa.slice(0, k).join(' '))));
+    if(i === undefined) i = slowa.length - 2;
+    if(i < 1) return { klub: '', rokKlubu: null, zawodnik: nastepny };
+    return { klub: porzadkujKlubTalentu(slowa.slice(0, i).join(' ')), rokKlubu: null,
+      zawodnik: { ...nastepny, nazwa: slowa.slice(i).join(' ') } };
+  };
+
+  const osoby = [];
+  let biezacy = stronaZawodnika(czesci[0]);
+  for(let i = 1; i < czesci.length; i++){
+    let klub, rokKlubu = null, nastepny = null;
+    if(i === czesci.length - 1){
+      const r = wyjmijRocznikTalentu(czesci[i]);
+      klub = porzadkujKlubTalentu(r.reszta); rokKlubu = r.rok;
+    } else {
+      ({ klub, rokKlubu, zawodnik: nastepny } = podzielSrodek(czesci[i]));
+    }
+    if(!biezacy || !dobraNazwa(biezacy.nazwa) || !klub) return null;
+    const { firstName, lastName } = rozdzielImieNazwisko(biezacy.nazwa);
+    osoby.push({ firstName, lastName, birthYear: biezacy.rok || rokKlubu || null, club: klub,
+      pozycjeNmg: biezacy.nmg, pozycja: biezacy.pozycja });
+    biezacy = nastepny;
+  }
+  return osoby.length >= 2 ? osoby : null;
+}
+
 // Jeden surowy wpis → lista zawodników { firstName, lastName, birthYear, club, pozycjeNmg, pozycja }.
 function rozbierzWpisTalentu(tekst){
   const l = czyscLinieTalentu(tekst).replace(/\(\s*M\s*\)/gi, ' ').replace(/\s+/g, ' ').trim();
@@ -8976,7 +9047,16 @@ function rozbierzWpisTalentu(tekst){
       const klub = porzadkujKlubTalentu(ogonKonca.reszta);
       if(klub && !ostatni.club) ostatni.club = klub;
     }
-    return osoby;
+    // Zawodnicy BEZ numeru przed pierwszym nawiasem przepadali — odczyt po myślnikach ich widzi.
+    // Wygrywa tylko wtedy, gdy znalazł WIĘCEJ osób; przy remisie zostaje sprawdzony odczyt po numerach.
+    const zMyslnikow = osobyZMyslnikowTalentu(l);
+    return (zMyslnikow && zMyslnikow.length > osoby.length) ? zMyslnikow : osoby;
+  }
+
+  // Kilku zawodników bez żadnego numeru: „Mikołaj Marut-Chemik Bydgoszcz(2013) Igor Lewandowski-…".
+  {
+    const zMyslnikow = osobyZMyslnikowTalentu(l);
+    if(zMyslnikow) return zMyslnikow;
   }
 
   // Bez znaczników w nawiasach: „11 Tomasz Guba Legia Chełmża" albo „Hubert Simson -KS Wda (2014)".
