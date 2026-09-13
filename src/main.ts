@@ -2914,6 +2914,10 @@ async function deleteContactRecord(id){ return robustStorageDelete('scouting:con
 function clubName(id){ const c = DB.clubs.find(x=>x.id===id); return c? c.name : "—"; }
 function clubRegion(id){ const c = DB.clubs.find(x=>x.id===id); return c? c.region : ""; }
 function clubLeague(id){ const c = DB.clubs.find(x=>x.id===id); return c? c.league : ""; }
+// LIGA ZAWODNIKA, NIE KLUBU. Chłopiec z rocznika 2011 w Zawiszy Bydgoszcz należy do klubu (herb, kartoteka),
+// ale nie gra w II lidze — bez tego stawał na mapie i w rankingu seniorów. „Sam klub, bez ligi" (klubBezLigi)
+// zostawia klub i herb, a z map, rankingów i filtrów ligi go wyłącza.
+function ligaZawodnika(p){ return p && p.klubBezLigi ? '' : clubLeague(p && p.clubId); }
 function clubCrest(id){ if(DB.clubCrests[id]) return DB.clubCrests[id]; const c = DB.clubs.find(x=>x.id===id); return c && c.crestUrl ? c.crestUrl : null; }
 function clubSeason(id){ const c = DB.clubs.find(x=>x.id===id); return c && c.season ? c.season : ""; }
 function crestImg(url, size, name){
@@ -3019,13 +3023,13 @@ function metrykiZRaportow(reps){
 // „średnia" z jednego czy dwóch raportów to przypadek, a nie poziom pozycji.
 function sredniaPozycjiNaOsiach(p){
   const pozycja = pozycjaDoPorownan(p);
-  const liga = clubLeague(p.clubId);
+  const liga = ligaZawodnika(p);
   if(!pozycja || !liga) return null;
   const poziom = topLevelOf(liga);
   const juniorzy = czyPoziomJuniorski(poziom);
   const naleze = juniorzy
-    ? (x)=> clubLeague(x.clubId) === liga
-    : (x)=> topLevelOf(clubLeague(x.clubId)) === poziom;
+    ? (x)=> ligaZawodnika(x) === liga
+    : (x)=> topLevelOf(ligaZawodnika(x)) === poziom;
   const wgZawodnika = new Map();
   DB.reports.forEach(r=>{
     if(!r.playerId || r.playerId === p.id) return;
@@ -3093,14 +3097,14 @@ function wagaPoziomu(liga){
 }
 function minutyWazone(p){
   if(!p || p.minutes == null || p.minutes === '') return null;
-  const w = wagaPoziomu(clubLeague(p.clubId));
+  const w = wagaPoziomu(ligaZawodnika(p));
   return w == null ? null : Math.round(Number(p.minutes) * w);
 }
 
 function porownanieNaPozycji(p, oceny){
   const moja = oceny && oceny.get(p.id);
   const pozycja = pozycjaDoPorownan(p);
-  const liga = clubLeague(p.clubId);
+  const liga = ligaZawodnika(p);
   if(!moja || !pozycja || !liga) return null;
   const poziom = topLevelOf(liga);
 
@@ -3119,8 +3123,8 @@ function porownanieNaPozycji(p, oceny){
   // „Kategorie juniorskie" zlewają CLJ U-19, U-15 i roczniki w jeden worek — piętnastolatek nie
   // może się mierzyć z dziewiętnastolatkami. Tam porównujemy wyłącznie w obrębie tej samej grupy.
   const juniorzy = czyPoziomJuniorski(poziom);
-  const wPoziomie = juniorzy ? null : policz(x=> topLevelOf(clubLeague(x.clubId)) === poziom);
-  const wGrupie = (juniorzy || liga !== poziom) ? policz(x=> clubLeague(x.clubId) === liga) : null;
+  const wPoziomie = juniorzy ? null : policz(x=> topLevelOf(ligaZawodnika(x)) === poziom);
+  const wGrupie = (juniorzy || liga !== poziom) ? policz(x=> ligaZawodnika(x) === liga) : null;
   return { pozycja, liga, poziom, ocena: moja.ocena, raportow: moja.raportow, wPoziomie, wGrupie };
 }
 
@@ -4604,7 +4608,7 @@ function viewPlayers(){
     list = list.filter(p => rocznikZawodnika(p) === year);
   }
   if(playerFilters.region) list = list.filter(p=>clubRegion(p.clubId)===playerFilters.region);
-  if(playerFilters.league) list = list.filter(p=>clubLeague(p.clubId)===playerFilters.league);
+  if(playerFilters.league) list = list.filter(p=>ligaZawodnika(p)===playerFilters.league);
   if(playerFilters.status) list = list.filter(p=>p.status===playerFilters.status);
   if(playerFilters.position) list = list.filter(p=>p.position===playerFilters.position);
   if(playerFilters.birthYear) list = list.filter(p=>rocznikZawodnika(p)===String(playerFilters.birthYear));
@@ -4647,7 +4651,7 @@ function viewPlayers(){
       <td>${chipPozycji(p)}</td>
       <td><div class="club-cell">${crestImg(clubCrest(p.clubId))}<span>
         <span class="club-name">${esc(clubName(p.clubId))}</span>
-        <span class="club-sub">${esc((clubRegion(p.clubId)||'').replace(/\s*ZPN$/,''))}${clubLeague(p.clubId)?' · '+esc((clubLeague(p.clubId)||'').replace(/,\s*gr\./,' gr.')):''}</span>
+        <span class="club-sub">${esc((clubRegion(p.clubId)||'').replace(/\s*ZPN$/,''))}${p.klubBezLigi ? ' · sam klub' : (clubLeague(p.clubId)?' · '+esc((clubLeague(p.clubId)||'').replace(/,\s*gr\./,' gr.')):'')}</span>
       </span></div></td>
       <td>${p.status? `<span class="badge ${cls}">${esc(p.status)}</span>` : '—'}</td>
       <td onclick="event.stopPropagation()" style="text-align:center;">${agentToggleHtml(p)}</td>
@@ -4873,7 +4877,7 @@ function viewPlayerDetail(id){
       ${crestImg(clubCrest(p.clubId),'lg')}
       <div>
         <h2 class="view-title" style="margin-bottom:0;">${esc(p.firstName)} ${esc(p.lastName)}</h2>
-        <p class="view-sub" style="margin-bottom:0;">${esc(p.birthYear||"")} &middot; ${esc(p.position)} &middot; ${esc(clubName(p.clubId))}${clubSeason(p.clubId)?" ("+esc(clubSeason(p.clubId))+")":""} &middot; ${esc(clubRegion(p.clubId))} / ${esc(clubLeague(p.clubId))}</p>
+        <p class="view-sub" style="margin-bottom:0;">${esc(p.birthYear||"")} &middot; ${esc(p.position)} &middot; ${esc(clubName(p.clubId))}${clubSeason(p.clubId)?" ("+esc(clubSeason(p.clubId))+")":""} &middot; ${esc(clubRegion(p.clubId))} / ${esc(p.klubBezLigi ? 'sam klub, bez ligi' : clubLeague(p.clubId))}</p>
       </div>
     </div>
     <div style="display:flex;gap:8px;">
@@ -4904,7 +4908,7 @@ function viewPlayerDetail(id){
         <tr><td style="color:var(--ink-soft);">Wzrost</td><td>${p.height? p.height+" cm":"—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">System gry</td><td>${systemZawodnika(p)? `<strong>${esc(etykietaSystemu(systemZawodnika(p)))}</strong>${p.formation?'':' <span style="color:var(--ink-soft);font-size:12px;">(z klubu)</span>'}`:"—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">Pozycja wg NMG</td><td>${opisPozycjiNmg(p) ? `<strong>${esc(opisPozycjiNmg(p))}</strong>` : "—"}</td></tr>
-        <tr><td style="color:var(--ink-soft);">Mecze / minuty / gole / asysty</td><td>${(p.matches!=null||p.minutes!=null||p.goals!=null||p.assists!=null) ? `${p.matches!=null?p.matches:'—'} mecze &middot; ${p.minutes!=null?p.minutes:'—'} min &middot; ${p.goals!=null?p.goals:'—'} goli &middot; ${p.assists!=null?p.assists:'—'} asyst` : "—"}${minutyWazone(p)!=null ? `<div class="note" style="font-size:11px;margin-top:2px;" title="Minuty pomnożone przez wagę poziomu rozgrywek. Wagi są umowne — zmienisz je w Ustawieniach.">≈ <strong>${minutyWazone(p)}</strong> min ważonych poziomem &middot; ${esc(kluczPoziomu(clubLeague(p.clubId)))} ×${String(wagaPoziomu(clubLeague(p.clubId))).replace('.',',')}</div>` : ''}${p.statsUpdatedAt?`<div class="note" style="font-size:11px;margin-top:2px;">Mecze i bramki z ${esc(p.statsSource||'90minut.pl')}${p.statsSeason?' (sezon '+esc(p.statsSeason)+')':''}, odświeżone ${esc(String(p.statsUpdatedAt).slice(0,10))}. Minuty i asysty wpisujesz ręcznie.</div>`:''}</td></tr>
+        <tr><td style="color:var(--ink-soft);">Mecze / minuty / gole / asysty</td><td>${(p.matches!=null||p.minutes!=null||p.goals!=null||p.assists!=null) ? `${p.matches!=null?p.matches:'—'} mecze &middot; ${p.minutes!=null?p.minutes:'—'} min &middot; ${p.goals!=null?p.goals:'—'} goli &middot; ${p.assists!=null?p.assists:'—'} asyst` : "—"}${minutyWazone(p)!=null ? `<div class="note" style="font-size:11px;margin-top:2px;" title="Minuty pomnożone przez wagę poziomu rozgrywek. Wagi są umowne — zmienisz je w Ustawieniach.">≈ <strong>${minutyWazone(p)}</strong> min ważonych poziomem &middot; ${esc(kluczPoziomu(ligaZawodnika(p)))} ×${String(wagaPoziomu(ligaZawodnika(p))).replace('.',',')}</div>` : ''}${p.statsUpdatedAt?`<div class="note" style="font-size:11px;margin-top:2px;">Mecze i bramki z ${esc(p.statsSource||'90minut.pl')}${p.statsSeason?' (sezon '+esc(p.statsSeason)+')':''}, odświeżone ${esc(String(p.statsUpdatedAt).slice(0,10))}. Minuty i asysty wpisujesz ręcznie.</div>`:''}</td></tr>
         <tr><td style="color:var(--ink-soft);">Kadra wojewódzka</td><td>${p.kadraWojewodzka? '<strong style="color:var(--good);">Tak</strong>' : 'Nie'}</td></tr>
         <tr><td style="color:var(--ink-soft);">Reprezentacja</td><td>${p.reprezentacja? `<strong style="color:var(--good);">Tak</strong>${p.powolania!=null?` &middot; ${p.powolania} ${p.powolania===1?'powołanie':'powołań'}`:''}` : 'Nie'}</td></tr>
         <tr><td style="color:var(--ink-soft);">Instagram</td><td>${p.instagramLink? `<a class="ext-link" href="${esc(p.instagramLink)}" target="_blank" rel="noopener">📷 śledź &rarr;</a>`:"—"}</td></tr>
@@ -8096,7 +8100,7 @@ const minutyZawodnika = (p)=> Number(p && p.minutes) || 0;
 async function dopiszMlodziezowcowDoMonitoringu(){
   const nowi = DB.players.filter(p=>
     !p.monitored && !p.watchlistRemoved
-    && LIGI_Z_MLODZIEZOWCAMI.has(clubLeague(p.clubId))
+    && LIGI_Z_MLODZIEZOWCAMI.has(ligaZawodnika(p))
     && isYouthPlayer(p)
     && minutyZawodnika(p) >= MINUTY_DO_MONITORINGU);
   if(!nowi.length) return 0;
@@ -10444,7 +10448,7 @@ function buildAutoPositionCandidates(league, formation, number){
   // tych, których ktoś wcześniej ręcznie wziął na warsztat, więc trzeba było wiedzieć o zawodniku,
   // zanim się go zobaczyło. Teraz wchodzą wszyscy, którzy zagrali choć minutę.
   const kwalifikujeSie = (p)=> p.status==='Do transferu' || p.status==='Na Testy' || !!p.monitored
-    || (LIGI_Z_MLODZIEZOWCAMI.has(clubLeague(p.clubId)) && isYouthPlayer(p) && minutyZawodnika(p) > 0);
+    || (LIGI_Z_MLODZIEZOWCAMI.has(ligaZawodnika(p)) && isYouthPlayer(p) && minutyZawodnika(p) > 0);
   const statusRank = {'Do transferu':0, 'Na Testy':1};
   // Młodzieżowiec bez statusu ląduje za prowadzonymi, ale przed resztą — i wyżej, im więcej zagrał.
   const rangaZawodnika = (p)=> statusRank[p.status] !== undefined ? statusRank[p.status] : (p.monitored ? 2 : 3);
@@ -10459,7 +10463,7 @@ function buildAutoPositionCandidates(league, formation, number){
     // zapisany w profilu. Wcześniej ci bez wpisanego systemu wchodzili do każdego układu naraz,
     // przez co ten sam zawodnik widniał we wszystkich systemach i mapa przestawała cokolwiek
     // rozróżniać. Kto nie ma systemu w profilu, jest widoczny pod „Wszystkie systemy".
-    .filter(p => clubLeague(p.clubId)===league && (!formation || systemZawodnika(p)===formation)
+    .filter(p => ligaZawodnika(p)===league && (!formation || systemZawodnika(p)===formation)
       && kwalifikujeSie(p)
       && (numerZawodnika(p) ? numerZawodnika(p)===number : p.position===posDef.posName))
     .map(p => ({p, a: playerAvg(p.id)}))
@@ -10618,7 +10622,7 @@ function wyroznieniZMeczow(liga, system){
         // Niejednoznaczność zostawiamy bez rozstrzygnięcia — lepiej nie pokazać nikogo,
         // niż postawić na mapie niewłaściwego zawodnika.
         if(kand.length !== 1) return;
-        if(clubLeague(kand[0].clubId) !== liga) return;
+        if(ligaZawodnika(kand[0]) !== liga) return;
         // Pozycja WSKAZANA na planszy w telefonie jest ważniejsza niż ta z kartoteki: scout
         // widział, gdzie ten zawodnik naprawdę grał w tym meczu, a kartoteka opisuje jego pozycję
         // ogólnie i bywa nieaktualna. Kartoteka wchodzi dopiero wtedy, gdy planszy nie obsadzono.
@@ -10717,7 +10721,7 @@ function viewRankingNumbersMode(){
   // Ilu zawodników wypada z widoku TYLKO dlatego, że nie mają wpisanego systemu gry. Bez tej
   // informacji znikaliby po cichu i wyglądałoby to na zgubione dane.
   const bezSystemu = rankingFormationFilter
-    ? DB.players.filter(p => clubLeague(p.clubId)===rankingLeague && !systemZawodnika(p)
+    ? DB.players.filter(p => ligaZawodnika(p)===rankingLeague && !systemZawodnika(p)
         && (p.status==='Do transferu' || p.status==='Na Testy' || !!p.monitored)
         && POSITION_NUMBERS.some(pd => pd.posName === p.position)).length
     : 0;
@@ -10989,7 +10993,7 @@ async function pobierzOpinieAI(playerId, przycisk, miejsce){
         zawodnik: {
           imie: p.firstName || '', nazwisko: p.lastName || '',
           rocznik: p.birthYear || '', dataUrodzenia: p.birthDate || '',
-          klub: clubName(p.clubId) || '', liga: clubLeague(p.clubId) || '',
+          klub: clubName(p.clubId) || '', liga: ligaZawodnika(p) || '',
           pozycja: p.position || '', pozycjaNmg: opisPozycjiNmg(p) || '',
           noga: p.foot || '', wzrost: p.height || '', narodowosc: p.nationality || '',
           mecze: p.matches, minuty: p.minutes, gole: p.goals, asysty: p.assists,
@@ -11058,7 +11062,7 @@ async function generateAnalysisPDF(playerId){
   </style></head><body>
   <h1>Analiza zawodnika — ${esc(p.firstName||'')} ${esc(p.lastName||'')}</h1>
   <p class="pod">${esc(clubName(p.clubId)||'—')} &middot; ${esc(p.position||'—')}${p.birthYear?` &middot; rocznik ${esc(String(p.birthYear))}`:''}
-    &middot; ${esc(clubLeague(p.clubId)||'')}</p>
+    &middot; ${esc(ligaZawodnika(p)||'')}</p>
 
   <div class="wskaznik">
     <div style="text-align:center;"><div class="liczba">${an.score!=null?an.score:'—'}</div>
@@ -11883,7 +11887,7 @@ function radarKandydaci(){
       const przebieg = p.przebieg || [];
       const minuty = Number(p.minutes || 0);
       return {
-        p, minuty, liga: clubLeague(p.clubId),
+        p, minuty, liga: ligaZawodnika(p),
         wystapien: przebieg.length,
         // Zagrał choćby minutę, czy jak dotąd tylko bywał w kadrze?
         tylkoKadra: minuty === 0 && przebieg.length > 0,
@@ -12349,6 +12353,10 @@ function openPlayerModal(id, presetClubId, prefillData){
           <div class="club-combo-list" id="pm-club-list"></div>
         </div>
       </div>
+      <label style="display:flex;align-items:flex-start;gap:7px;margin-top:7px;font-size:12.5px;cursor:pointer;">
+        <input type="checkbox" id="pm-club-bez-ligi" style="width:auto;margin-top:2px;" ${p && p.klubBezLigi ? 'checked' : ''}>
+        <span><strong>Sam klub, bez ligi</strong> — np. młodzież albo akademia: herb klubu zostaje, ale zawodnik nie trafia na mapę ani do rankingu ligi seniorów (np. II ligi).</span>
+      </label>
     </div>
     <div class="grid grid-2">
       <div class="field-wrap"><label class="field">Scout odpowiedzialny</label><input id="pm-scout" value="${p?esc(p.scout||''):esc(currentScout)}"></div>
@@ -21920,23 +21928,33 @@ function wireLastModal(){
   if(clubHidden && clubSearch && clubList){
     const norm = szukajNorm;
     const clubs = DB.clubs.slice().sort((a,b)=> (a.name||'').localeCompare(b.name||'','pl'));
-    function setClub(c){
+    const bezLigiBox = ov.querySelector('#pm-club-bez-ligi') as HTMLInputElement | null;
+    // bezLigi: true = „sam klub" (młodzież/akademia), false = klub razem z ligą, undefined = bez zmian.
+    function setClub(c, bezLigi?){
       clubHidden.value = c ? c.id : '';
       clubSearch.value = c ? c.name : '';
       if(crestWrap) crestWrap.innerHTML = crestImg(c?clubCrest(c.id):null,'lg');
+      if(bezLigiBox && bezLigi !== undefined) bezLigiBox.checked = !!bezLigi;
     }
+    // WIERSZ = KLUB Z LIGĄ, PRZYCISK „sam klub" = TEN SAM KLUB BEZ LIGI. Herb przy każdej nazwie, żeby
+    // „Zawisza Bydgoszcz" z II ligi i z CLJ nie trzeba było rozróżniać po samym dopisku.
     function renderList(q){
       const nq = norm(q);
       const matches = (nq ? clubs.filter(c=>norm(c.name).includes(nq)) : clubs).slice(0,80);
       clubList.innerHTML = matches.length ? matches.map(c=>{
         const reg = (c.region||'').replace(' ZPN','');
         const sub = [c.league, reg].filter(Boolean).join(' · ');
-        return `<div class="club-combo-item" data-id="${esc(c.id)}"><strong>${esc(c.name)}</strong>${sub?`<span class="club-combo-reg">${esc(sub)}</span>`:''}</div>`;
+        return `<div class="club-combo-item" data-id="${esc(c.id)}">
+          <span class="club-combo-herb">${crestImg(clubCrest(c.id), 'xs', c.name)}</span>
+          <span class="club-combo-tekst"><strong>${esc(c.name)}</strong>${sub?`<span class="club-combo-reg">${esc(sub)}</span>`:''}</span>
+          ${c.league ? `<button type="button" class="club-combo-sam" data-id="${esc(c.id)}" title="Sam klub z herbem — bez ligi (młodzież, akademia)">sam klub</button>` : ''}
+        </div>`;
       }).join('') : '<div class="club-combo-empty">Brak klubu pasującego do frazy.</div>';
       clubList.style.display = 'block';
       clubList.querySelectorAll('.club-combo-item').forEach(it=>it.onmousedown=(e)=>{
         e.preventDefault(); // wybór przed zdarzeniem blur pola tekstowego
-        setClub(clubs.find(x=>x.id===it.dataset.id));
+        const samKlub = !!(e.target as HTMLElement).closest('.club-combo-sam');
+        setClub(clubs.find(x=>x.id===(it as HTMLElement).dataset.id), samKlub);
         clubList.style.display = 'none';
       });
     }
@@ -22122,6 +22140,9 @@ function wireLastModal(){
       nationality: document.getElementById('pm-nationality').value.trim(),
       status: document.getElementById('pm-status').value,
       clubId: document.getElementById('pm-club').value,
+      // „Sam klub, bez ligi" ma sens tylko przy wybranym klubie.
+      klubBezLigi: !!document.getElementById('pm-club').value
+        && !!((document.getElementById('pm-club-bez-ligi') as HTMLInputElement | null)?.checked),
       scout: document.getElementById('pm-scout').value.trim(),
       videoLink: document.getElementById('pm-video').value.trim(),
       lnpLink: normalizuj90minut(document.getElementById('pm-lnp').value.trim()),

@@ -18,6 +18,8 @@ const wytnij = (nazwa, wzor) => {
 
 const kod = [
   wytnij('topLevelOf', /function topLevelOf\(league\)\{[\s\S]*?\n\}/),
+  // Liga ZAWODNIKA (klubBezLigi wyłącza młodzież z ligi klubu) — korzysta z podstawionego clubLeague.
+  wytnij('ligaZawodnika', /function ligaZawodnika\(p\)\{.*\}/),
   wytnij('wTychRozgrywkach', /function wTychRozgrywkach\(liga, wskazanie\)\{[\s\S]*?\n\}/),
   wytnij('POSITION_NUMBERS', /const POSITION_NUMBERS = \[[\s\S]*?\n\];/),
   wytnij('REPORT_PHASES', /const REPORT_PHASES = \[[\s\S]*?\n\];/),

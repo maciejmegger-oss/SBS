@@ -59,6 +59,8 @@ const DB = { players: [
 const wspolne = {
   POSITION_NUMBERS, DB,
   clubLeague: () => 'II liga',
+  // Jak w aplikacji: „sam klub, bez ligi" nie należy do ligi klubu.
+  ligaZawodnika: (p) => (p && p.klubBezLigi) ? '' : 'II liga',
   playerAvg: () => ({ overall: 7 }),
   LIGI_Z_MLODZIEZOWCAMI: new Set(),
   isYouthPlayer: () => false,

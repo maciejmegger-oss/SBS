@@ -125,6 +125,9 @@ export const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }>
       // wchodzi do PDF-a analizy i na posiedzeniu komitetu musi być ta sama, którą już czytano —
       // generowana od nowa brzmiałaby inaczej przy tych samych danych.
       "opiniaAI",
+      // „Sam klub, bez ligi": zawodnik należy do klubu (herb, kartoteka), ale nie gra w lidze
+      // seniorów tego klubu — np. rocznik 2011 w Zawiszy z II ligi. Wyłącza go z map i rankingów ligi.
+      "klubBezLigi",
     ],
   },
   sbs_observations: {

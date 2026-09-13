@@ -24,6 +24,8 @@ export interface Player {
   birthDate?: string;
   birthYear?: string;
   position?: string;
+  // Klub bez jego ligi (młodzież/akademia) — zawodnik nie wchodzi na mapy i rankingi ligi klubu.
+  klubBezLigi?: boolean;
   foot?: string;
   height?: number;
   status?: string;
