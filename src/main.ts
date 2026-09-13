@@ -8363,6 +8363,26 @@ function podepnijOcenyPunktowe(root){
 // i z powrotem. Bez tego pomyłkowe wskazanie bramkarza kasowałoby wypełniony już protokół.
 let pamiecFazFormularza = {};
 
+// Raport zawodnika = ma zawodnika i nie jest raportem całego meczu.
+function czyRaportZawodnika(r){ return !!(r && r.playerId && r.kind !== 'mecz'); }
+// RAPORT Z CAŁEGO MECZU pokazujemy tylko wtedy, gdy z tego meczu powstał choć jeden raport zawodnika —
+// sam w sobie jest tłem dla raportów indywidualnych, a bez nich był pustym wpisem między zawodnikami.
+// Łączymy po obserwacji (fromObservationId, raporty z telefonu), a bez niej po dacie i meczu: raport
+// z telefonu niesie nazwę meczu, raport z komputera — rywala („Olimpia Grudziądz (u siebie)").
+function raportMeczuMaRaportyZawodnikow(m, raportyZawodnikow){
+  if(!m || m.kind !== 'mecz') return false;
+  const klucz = (s)=> importNorm(String(s || '').replace(/\([^)]*\)/g, ' '));
+  const mecz = klucz(m.match);
+  return (raportyZawodnikow || []).some(r=>{
+    if(!r) return false;
+    if(m.fromObservationId && r.fromObservationId) return r.fromObservationId === m.fromObservationId;
+    if(!m.date || r.date !== m.date || !mecz) return false;
+    if(r.match && klucz(r.match) === mecz) return true;
+    const rywal = klucz(r.rywal);
+    return rywal.length >= 4 && mecz.includes(rywal);
+  });
+}
+
 function viewReports(){
   const editing = editingReportId ? DB.reports.find(r=>r.id===editingReportId) : null;
   pamiecFazFormularza = Object.assign({}, editing && editing.phases);
@@ -8372,9 +8392,15 @@ function viewReports(){
   // Liczba porządkowa wg kolejności TWORZENIA: DB.reports jest w kolejności dodawania (push),
   // więc index+1 = numer porządkowy raportu. Lista pokazana od najnowszego, ale każdy raport ma
   // swój stały numer z chwili utworzenia. Lista boczna „Raporty" — z przyciskiem usuwania.
+  // NA LIŚCIE: RAPORTY ZAWODNIKÓW i raporty meczów, z których powstał choć jeden raport zawodnika
+  // (raportMeczuMaRaportyZawodnikow). Raport meczu bez żadnego raportu indywidualnego zostaje w bazie —
+  // nie kasujemy go — ale tu go nie ma. Raport zawodnika usuniętego z kartoteki zostaje (ma playerId),
+  // żeby dało się go skasować. Numer porządkowy liczymy wśród pokazanych, w kolejności utworzenia.
+  const raportyZawodnikow = DB.reports.filter(czyRaportZawodnika);
+  const widoczneRaporty = DB.reports.filter(r=> czyRaportZawodnika(r) || raportMeczuMaRaportyZawodnikow(r, raportyZawodnikow));
   const ordinalOf = {};
-  DB.reports.forEach((r,i)=> ordinalOf[r.id] = i+1);
-  const allReports = DB.reports.slice().sort((a,b)=> (b.date||'').localeCompare(a.date||'') || (ordinalOf[b.id]-ordinalOf[a.id]));
+  widoczneRaporty.forEach((r,i)=> ordinalOf[r.id] = i+1);
+  const allReports = widoczneRaporty.slice().sort((a,b)=> (b.date||'').localeCompare(a.date||'') || (ordinalOf[b.id]-ordinalOf[a.id]));
   const listHtml = allReports.length ? allReports.map(r=>{
     const pl = DB.players.find(p=>p.id===r.playerId);
     // Raport z CAŁEGO MECZU nie ma jednego zawodnika i to jest w porządku — nosi opis spotkania.
@@ -8387,7 +8413,10 @@ function viewReports(){
     return `<div class="report-row${editingReportId===r.id?' editing':''}">
       <span class="report-num" title="Numer porządkowy (kolejność utworzenia)">${ordinalOf[r.id]}</span>
       <div class="report-row-body">
-        ${pl?`<strong data-action="view-player" data-id="${pl.id}">${name}</strong>`:`<strong>${name}</strong>`}
+        <div class="report-row-glowa">${pl?`<strong data-action="view-player" data-id="${pl.id}">${name}</strong>`:`<strong>${name}</strong>`}${
+          // Klub zawodnika z herbem obok nazwiska — przy trzydziestu raportach samo nazwisko nie mówi,
+          // z której drużyny ktoś jest, a to pierwsze, czego się szuka.
+          pl && pl.clubId ? `<span class="report-klub">${crestImg(clubCrest(pl.clubId), 'xs', clubName(pl.clubId))}<span>${esc(clubName(pl.clubId))}</span></span>` : ''}</div>
         <span class="meta">${esc(r.date||'')}${r.perspektywa?' · '+esc(r.perspektywa):''}</span>
       </div>
       <div class="report-row-actions">

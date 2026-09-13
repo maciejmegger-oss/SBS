@@ -738,6 +738,11 @@ tr.player-row.prow-okazja.prow-mlodszy td:first-child{box-shadow:inset 4px 0 0 v
 .report-row-body [data-action="view-player"]{cursor:pointer;}
 .report-row-body [data-action="view-player"]:hover{color:var(--gold-dark);text-decoration:underline;}
 .report-row-body .meta{font-size:11px;}
+/* Nazwisko i klub z herbem w jednej linii; długa nazwa klubu skraca się wielokropkiem, a nie łamie wiersza. */
+.report-row-glowa{display:flex;align-items:center;gap:10px;min-width:0;}
+.report-row-glowa strong{display:inline-block;flex:0 1 auto;min-width:0;}
+.report-klub{display:inline-flex;align-items:center;gap:5px;min-width:0;font-size:12px;font-weight:600;color:var(--ink-soft);white-space:nowrap;overflow:hidden;}
+.report-klub span{overflow:hidden;text-overflow:ellipsis;}
 .report-row-actions{display:flex;gap:4px;flex:0 0 auto;}
 .report-row-actions button{padding:3px 7px;font-size:11px;line-height:1;}
 .danger-btn{background:var(--card);border:1px solid var(--border-strong);color:var(--clay-dark);border-radius:7px;cursor:pointer;}
