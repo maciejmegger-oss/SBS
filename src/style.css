@@ -619,6 +619,13 @@ tr.player-row.prow-okazja.prow-mlodszy td:first-child{box-shadow:inset 4px 0 0 v
 .status-btn[data-value="Do transferu"].active{color:#3A2C0C;}
 .status-btn[data-value="Z polecenia"]{--sc:#2F6FED;}
 .status-btn[data-value="Odrzucony"]{--sc:var(--clay);}
+/* Decyzja komitetu w barwie tej samej decyzji z protokołu obserwacji. Kolorowa jest ramka i pasek z lewej,
+   a NIE tekst — złoty napis na białym tle miałby kontrast ok. 2,9:1, za mało do czytania. */
+.committee-decision-select[data-decyzja="Do Obserwacji"]{--sc:#1F8A70;}
+.committee-decision-select[data-decyzja="Na Testy"]{--sc:#D97706;}
+.committee-decision-select[data-decyzja="Do transferu"]{--sc:#B8912E;}
+.committee-decision-select[data-decyzja="Odrzucony"]{--sc:var(--clay);}
+.committee-decision-select:not([data-decyzja=""]){border:2px solid var(--sc, var(--border-strong));box-shadow:inset 4px 0 0 var(--sc, transparent);font-weight:700;}
 
 /* Typ obserwacji (Live/Online/Video) — odcienie niebieskiego, wyraźnie inna paleta niż status/ocena. */
 .obstype-picker{display:flex;flex-wrap:wrap;gap:8px;}

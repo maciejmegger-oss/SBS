@@ -10287,11 +10287,14 @@ async function updateContactField(id, field, value){
   await saveContacts();
 }
 
+// TYLKO TEN JEDEN ZAWODNIK. savePlayers() wysyłało całą kartotekę (ponad 14 tys. zawodników) przy każdej
+// zmianie decyzji albo notatki komitetu — to samo, przez co wisiał zapis raportu ze statusem.
 async function updateCommitteeField(playerId, field, value){
   const p = DB.players.find(x=>x.id===playerId);
   if(!p) return;
   p[field] = value;
-  await savePlayers();
+  const ok = await savePlayerOne(p);
+  if(ok === false) pokazPotwierdzenie('Nie udało się zapisać decyzji komitetu.' + powodNieudanegoZapisu(), 'blad');
 }
 
 function contactRow(c, num){
@@ -10949,6 +10952,20 @@ const COMMITTEE_ROW_CLASS = {
   'Do transferu':'crow-transfer', 'Na Testy':'crow-trial', 'Rekomendowany':'crow-reco',
   'Z polecenia':'crow-reco', 'Do Obserwacji':'crow-watching', 'Odrzucony':'crow-rejected'
 };
+// DECYZJA KOMITETU = TE SAME DECYZJE CO W PROTOKOLE OBSERWACJI (REPORT_STATUS_OPTIONS): Do transferu,
+// Do obserwacji, Testy, Odrzucony. Dwa różne słowniki dla tej samej decyzji — raz „Zatwierdzony", raz
+// „Do transferu" — kazały zgadywać, czy to to samo. Dawne wartości nie przepadają: pokazujemy je
+// pod nowymi nazwami, a zapisują się po nowemu przy najbliższej zmianie.
+const DAWNE_DECYZJE_KOMITETU = {
+  'Zatwierdzony': 'Do transferu',
+  'Do dalszej analizy': 'Do Obserwacji',
+  'Odrzucony przez komitet': 'Odrzucony',
+};
+function decyzjaKomitetu(p){
+  const d = String((p && p.committeeDecision) || '');
+  return DAWNE_DECYZJE_KOMITETU[d] || d;
+}
+
 function viewTransferCommittee(){
   // Pokazuj wszystkich zawodników z nadanym statusem. „Do transferu" zawsze na górze i alfabetycznie,
   // każdy inny status niżej (też alfabetycznie). Sort działa na każdym renderze, więc po zmianie
@@ -10967,11 +10984,9 @@ function viewTransferCommittee(){
       <td><span class="badge ${STATUS_CLASS[p.status]||'new'}">${esc(p.status)}</span></td>
       <td>${fmtAvg(a)}</td>
       <td>
-        <select class="committee-decision-select" data-id="${p.id}">
-          <option value="" ${!p.committeeDecision?'selected':''}>Do rozpatrzenia</option>
-          <option value="Zatwierdzony" ${p.committeeDecision==='Zatwierdzony'?'selected':''}>Zatwierdzony</option>
-          <option value="Do dalszej analizy" ${p.committeeDecision==='Do dalszej analizy'?'selected':''}>Do dalszej analizy</option>
-          <option value="Odrzucony przez komitet" ${p.committeeDecision==='Odrzucony przez komitet'?'selected':''}>Odrzucony przez komitet</option>
+        <select class="committee-decision-select" data-id="${p.id}" data-decyzja="${esc(decyzjaKomitetu(p))}">
+          <option value="" ${!decyzjaKomitetu(p)?'selected':''}>Do rozpatrzenia</option>
+          ${REPORT_STATUS_OPTIONS.map(o=>`<option value="${esc(o.value)}" ${decyzjaKomitetu(p)===o.value?'selected':''}>${esc(o.label)}</option>`).join('')}
         </select>
       </td>
       <td><input class="committee-notes-input" data-id="${p.id}" value="${esc(p.committeeNotes||'')}" placeholder="Notatka komitetu"></td>
@@ -13567,6 +13582,7 @@ function attachHandlers(){
     if(inp.dataset.field === 'club') render();
   });
   main.querySelectorAll('.committee-decision-select').forEach(sel=>sel.onchange = ()=>{
+    sel.dataset.decyzja = sel.value;   // kolor pola jak przycisk decyzji w protokole
     updateCommitteeField(sel.dataset.id, 'committeeDecision', sel.value);
   });
   main.querySelectorAll('.committee-notes-input').forEach(inp=>inp.onchange = ()=>{
