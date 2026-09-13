@@ -2115,7 +2115,7 @@ async function loadAllInner(){
       const nazwaKlubu = String(t.club || '').split(' / ')[0].trim();
       let klub = null;
       try{ klub = nazwaKlubu ? dopasujKlubDoNazwy(nazwaKlubu) : null; }catch(e){ klub = null; }
-      const zmiany = uzupelnienieTalentuZKartoteki(t, kartotekaDlaTalentu(t, klub, poNazwisku));
+      const zmiany = uzupelnienieTalentuZKartoteki(t, kartotekaDlaTalentu(t, klub, poNazwisku), klub);
       if(zmiany){ Object.assign(t, zmiany); uzupelnionych++; }
     });
     if(uzupelnionych){
@@ -9859,7 +9859,8 @@ function kartotekaDlaTalentu(t, klub, poNazwisku){
 }
 // Co z kartoteki dopisać do talentu — WYŁĄCZNIE puste pola; wpisane ręcznie zostaje nietknięte.
 // Imię i nazwisko zapisane odwrotnie poprawiamy na zapis z kartoteki.
-function uzupelnienieTalentuZKartoteki(t, p){
+// klubZNazwy: klub, z którym połączyła się nazwa klubu z listy (null = nie połączyła się z żadnym).
+function uzupelnienieTalentuZKartoteki(t, p, klubZNazwy?){
   if(!t || !p) return null;
   const zmiany: any = {};
   if(nazwiskoNorm(t.firstName) === nazwiskoNorm(p.lastName) && nazwiskoNorm(t.lastName) === nazwiskoNorm(p.firstName)
@@ -9870,6 +9871,11 @@ function uzupelnienieTalentuZKartoteki(t, p){
   if(!t.birthYear && rok) zmiany.birthYear = rok;
   const klub = p.clubId ? DB.clubs.find(c=> c.id === p.clubId) : null;
   if(!String(t.club || '').trim() && klub && klub.name) zmiany.club = klub.name;
+  // „Chemik Bydgoszcz KS Brzoza" — dwa kluby sklejone z dwóch kolumn arkusza. Nazwa nie łączy się z żadnym
+  // klubem bazy (więc bez herbu i z „klubu nie ma w bazie"), ale ZAWIERA klub z kartoteki zawodnika —
+  // bierzemy czystą nazwę z kartoteki. Tylko gdy wiadomo, że nazwa z listy nie połączyła się z niczym
+  // (klubZNazwy === null): „KKS Lech II Poznań" to poprawny klub z bazy i zostaje.
+  else if(klubZNazwy === null && klub && klub.name && String(t.club).trim() !== klub.name && klubyToSamo(klub.name, t.club)) zmiany.club = klub.name;
   if(!(t.pozycjeNmg || []).length && !t.pozycja){
     const nmg = Number(p.pozycjaNmg) || null;
     if(nmg) zmiany.pozycjeNmg = [nmg];
@@ -10054,7 +10060,9 @@ function viewTalent(){
     const klubZNazwy = klubTalentu(t);
     const karta = kartotekaTalentu(t, klubZNazwy);
     // Klub bez nazwy we wpisie bierzemy z kartoteki — razem z herbem.
-    const klub = klubZNazwy || (karta && !t.club ? (DB.clubs.find(c=> c.id === karta.clubId) || null) : null);
+    // …także gdy nazwa z listy jest sklejona z dwóch klubów, ale zawiera klub z kartoteki („Chemik Bydgoszcz KS Brzoza").
+    const klub = klubZNazwy || (karta && (!t.club || klubyToSamo(clubName(karta.clubId), t.club))
+      ? (DB.clubs.find(c=> c.id === karta.clubId) || null) : null);
     // Odznaki młodzieżowca i młodszego rocznika liczymy tymi samymi funkcjami co w Zawodnikach.
     const jakZawodnik = { birthYear: t.birthYear, clubId: klub ? klub.id : (karta ? karta.clubId : '') };
     const nmg = (t.pozycjeNmg || [])[0];
@@ -10080,7 +10088,7 @@ function viewTalent(){
       </span></td>
       <td>${pozycjaHtml}</td>
       <td><div class="club-cell">${(()=>{
-        const nazwaKlubu = t.club || (klub && klub.name) || '';
+        const nazwaKlubu = ((!klubZNazwy && klub) ? klub.name : t.club) || '';
         if(!nazwaKlubu) return '';
         const herbKartoteki = (klub && clubCrest(klub.id)) || herbRodzinyKlubu(nazwaKlubu, pamiecHerbowRodziny);
         if(!herbKartoteki) potrzebneHerby.push(nazwaKlubu);
@@ -10088,7 +10096,7 @@ function viewTalent(){
           herbKartoteki ? ' data-herb-kartoteki="1"' : ''} style="display:inline-flex;flex-shrink:0;">${
           crestImg(herbKartoteki, null, nazwaKlubu)}</span>`;
       })()}<span>
-        <span class="club-name" title="${esc(t.club || (klub && klub.name) || '')}">${esc(t.club || (klub && klub.name) || 'klub nieznany')}</span>
+        <span class="club-name" title="${esc(t.club || (klub && klub.name) || '')}">${esc(((!klubZNazwy && klub) ? klub.name : t.club) || 'klub nieznany')}</span>
         <span class="club-sub">${klub ? esc(String(klub.league || '')) : (t.club ? 'klubu nie ma w bazie' : '')}${
           // Kraj pokazujemy TYLKO gdy podało go źródło — przy klubie zagranicznym to najważniejsza
           // informacja w wierszu, bo mówi, że kartoteki nie zbudujemy z polskich protokołów.

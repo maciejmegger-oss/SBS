@@ -33,8 +33,8 @@ const kod = [
   wytnij('clubName', /function clubName\(id\)\{.*\}/),
   wytnij('indeksZawodnikowPoNazwisku', /function indeksZawodnikowPoNazwisku\(\)\{[\s\S]*?\n\}/),
   wytnij('kartotekaDlaTalentu', /function kartotekaDlaTalentu\(t, klub, poNazwisku\)\{[\s\S]*?\n\}/),
-  wytnij('uzupelnienieTalentuZKartoteki', /function uzupelnienieTalentuZKartoteki\(t, p\)\{[\s\S]*?\n\}/)
-    .replace('const zmiany: any = {};', 'const zmiany = {};'),
+  wytnij('uzupelnienieTalentuZKartoteki', /function uzupelnienieTalentuZKartoteki\(t, p, klubZNazwy\?\)\{[\s\S]*?\n\}/)
+    .replace('const zmiany: any = {};', 'const zmiany = {};').replace('klubZNazwy?)', 'klubZNazwy)'),
   wytnij('topLevelOf', /function topLevelOf\(league\)\{[\s\S]*?\n\}/),
   wytnij('clubCrest', /function clubCrest\(id\)\{.*\}/),
   wytnij('RANGA_POZIOMU_HERBU', /const RANGA_POZIOMU_HERBU = \[.*\];/),
@@ -88,6 +88,23 @@ console.log('\n2. Uzupełnianie — tylko puste pola');
   sprawdz('Antczak: rocznik dochodzi, wpisany klub i pozycja zostają', zAntczak && zAntczak.birthYear === 2008 && !('club' in zAntczak) && !('pozycjeNmg' in zAntczak), JSON.stringify(zAntczak));
   const zSzmyt = api.uzupelnienieTalentuZKartoteki({ firstName: 'Szmyt', lastName: 'Franciszek', club: 'Zawisza Bydgoszcz' }, DB.players[2]);
   sprawdz('Szmyt: imię i nazwisko poprawione, rocznik z daty urodzenia, pozycja opisowa', zSzmyt && zSzmyt.firstName === 'Franciszek' && zSzmyt.lastName === 'Szmyt' && zSzmyt.birthYear === 2010 && zSzmyt.pozycja === 'Skrzydłowy', JSON.stringify(zSzmyt));
+  {
+    // Zgłoszenie (13.09.2026): Adam Kachel z klubem „Chemik Bydgoszcz KS Brzoza" — bez herbu, „klubu nie ma w bazie".
+    DB.clubs.push({ id: 'CH', name: 'Chemik Bydgoszcz', league: 'IV liga (kujawsko-pomorska)' });
+    const kachelZaw = { id: 'P9', firstName: 'Adam', lastName: 'Kachel', clubId: 'CH', birthYear: '2013', pozycjaNmg: 2 };
+    DB.players.push(kachelZaw);
+    const kachel = { firstName: 'Adam', lastName: 'Kachel', club: 'Chemik Bydgoszcz KS Brzoza', birthYear: 2013, pozycjeNmg: [2] };
+    const idx = api.indeksZawodnikowPoNazwisku();
+    sprawdz('Kachel znajduje kartotekę mimo sklejonej nazwy klubu', (api.kartotekaDlaTalentu(kachel, null, idx) || {}).id === 'P9');
+    const zK = api.uzupelnienieTalentuZKartoteki(kachel, kachelZaw, null);
+    sprawdz('sklejony klub zamienia się na czystą nazwę z kartoteki', zK && zK.club === 'Chemik Bydgoszcz', JSON.stringify(zK));
+    sprawdz('gdy nazwa z listy połączyła się z klubem bazy — zostaje (Lech II)',
+      api.uzupelnienieTalentuZKartoteki({ firstName: 'Jakub', lastName: 'Antczak', club: 'KKS Lech II Poznań', birthYear: 2008, pozycjeNmg: [11] }, DB.players[0], DB.clubs[1]) === null);
+    sprawdz('klub z listy niezwiązany z kartoteką — bez zmiany',
+      api.uzupelnienieTalentuZKartoteki({ firstName: 'Adam', lastName: 'Kachel', club: 'Elana Toruń', birthYear: 2013, pozycjeNmg: [2] }, kachelZaw, null) === null);
+  }
+  sprawdz('uzupełnianie przy starcie przekazuje klub dopasowany z nazwy', zrodlo.includes('uzupelnienieTalentuZKartoteki(t, kartotekaDlaTalentu(t, klub, poNazwisku), klub);'));
+  sprawdz('wiersz: klub i herb z kartoteki także przy sklejonej nazwie', /const klub = klubZNazwy \|\| \(karta && \(!t\.club \|\| klubyToSamo\(clubName\(karta\.clubId\), t\.club\)\)/.test(zrodlo));
   const pelny = { firstName: 'Bartosz', lastName: 'Kotras', club: 'KS Wda Świecie', birthYear: 2007, pozycjeNmg: [6] };
   sprawdz('talent z kompletem danych — nic nie nadpisujemy', api.uzupelnienieTalentuZKartoteki(pelny, DB.players[1]) === null);
   sprawdz('bez kartoteki — nic', api.uzupelnienieTalentuZKartoteki(pelny, null) === null);
