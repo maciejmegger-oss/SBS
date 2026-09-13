@@ -5,6 +5,7 @@ import { currentUser, signIn, signOut, requestPasswordReset, setNewPassword, isP
 import { VOIVODESHIP_PATHS } from "./data/voivodeships";
 import { SKLADY_MECZOWE } from "./data/sklady-meczowe";
 import { POWOLANIA_DO_PRZYWROCENIA } from "./data/powolania";
+import { linkDoMeczuZPola, bezpiecznyLinkMeczu, serwisLinkuMeczu, obserwacjeTegoSamegoMeczu } from "./data/link-meczu";
 // Kod zbieracza ŁNP — ten sam plik, który serwujemy pod /zakladka-lnp-v2.js.
 import LNP_ZBIERACZ from "../public/zakladka-lnp-v2.js?raw";
 import type { Database } from "./types";
@@ -2080,6 +2081,25 @@ async function loadAllInner(){
         ? `Przywróciłem kadrę ${kadry} na ekranie, ale zapis do bazy się nie udał.` + powodNieudanegoZapisu()
         : `Przywrócono kadrę ${kadry}: ${ilu} ${ilu===1?'powołany':'powołanych'}.`
           + (naprawa.duplikaty ? ` Na liście zostało ${naprawa.duplikaty} zdublowanych wpisów tych samych zawodników — są w „Poza kadrą" i możesz je usunąć.` : ''),
+        ok === false ? 'blad' : 'ok'), 1500);
+    }
+  }
+
+  // KILKU ZAWODNIKÓW W JEDNYM WPISIE TALENTU rozdzielamy sami, przy starcie (patrz
+  // wpisyZKilkomaZawodnikami). Na liście ma stać jeden zawodnik w wierszu — z własnym klubem,
+  // pozycją i przyciskiem do profilu. Zapis tylko wtedy, gdy było co rozdzielić.
+  if(wolnoUzupelniac){
+    const doRozdzielenia = wpisyZKilkomaZawodnikami(DB.talents);
+    if(doRozdzielenia.size){
+      const przed = DB.talents;
+      const w = rozdzielWpisyTalentow(DB.talents, doRozdzielenia, ()=>uid('T'));
+      DB.talents = w.talenty;
+      const ok = await saveTalents();
+      if(ok === false) DB.talents = przed;   // nie udawaj rozdzielenia, którego nie ma w bazie
+      const ile = doRozdzielenia.size;
+      setTimeout(()=> pokazPotwierdzenie(ok === false
+        ? 'Nie udało się rozdzielić wpisów z kilkoma zawodnikami — lista bez zmian.' + powodNieudanegoZapisu()
+        : `Talenty: rozdzielono ${ile} ${ile===1?'wpis':'wpisów'} z kilkoma zawodnikami — każdy zawodnik ma teraz własny wiersz (doszło ${w.dodanych}).`,
         ok === false ? 'blad' : 'ok'), 1500);
     }
   }
@@ -4502,7 +4522,7 @@ function viewDashboard(){
                         : esc(o.match || 'Obserwacja meczu'));
         return `<div class="obs-item">
           <strong>${naglowek}</strong>${pl || o.playerId ? ` — <span class="avg-chip">${fmt1(avg)}</span>` : ''}
-          <div class="meta">${esc(o.date)}${pl || o.playerId ? ' &middot; ' + esc(o.match) : ''}${ligaTag(o)} &middot; scout: ${esc(o.scout)}</div>
+          <div class="meta">${esc(o.date)}${pl || o.playerId ? ' &middot; ' + esc(o.match) : ''}${ligaTag(o)} &middot; scout: ${esc(o.scout)}${ogladajMeczHtml(o)}</div>
         </div>`;
       }).join('') : `<div class="empty">Brak obserwacji — dodaj pierwszą w zakładce „Plan Obserwacji”.</div>`}
     </div>
@@ -4961,7 +4981,7 @@ function viewPlayerDetail(id){
           <strong>${esc(o.date)} &middot; ${esc(o.match||'—')}</strong>
           ${avg!=null?`<span class="avg-chip">${fmt1(avg)}</span>`:''}
         </div>
-        <div class="meta">Scout: ${esc(o.scout)}${hasHistRatings?' &middot; '+RATING_KEYS.map(k=>RATING_LABELS[k]+": "+o.ratings[k]).join(' &middot; '):''}</div>
+        <div class="meta">Scout: ${esc(o.scout)}${hasHistRatings?' &middot; '+RATING_KEYS.map(k=>RATING_LABELS[k]+": "+o.ratings[k]).join(' &middot; '):''}${ogladajMeczHtml(o)}</div>
         ${o.recommendation?`<div class="meta">Rekomendacja: <strong>${esc(o.recommendation)}</strong></div>`:''}
         ${o.notes? `<div style="font-size:12.5px;margin-top:4px;">${esc(o.notes)}</div>`:''}
       </div>`;
@@ -7300,6 +7320,15 @@ function viewNewObs(){
           <button type="button" class="gold" data-action="open-match-schedule" style="white-space:nowrap;">📅 Terminarz</button>
         </div>
       </div>
+      <div class="field-wrap">
+        <label class="field">Link do transmisji / nagrania <span style="font-weight:400;text-transform:none;">(opcjonalnie)</span></label>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input id="obs-link" inputmode="url" autocomplete="off" spellcheck="false" placeholder="wklej link do meczu, np. https://…" style="flex:1;" value="${editing? esc(editing.linkDoMeczu||'') : ''}">
+          <button type="button" class="secondary" data-action="obs-link-wklej" style="white-space:nowrap;" title="Wkleja link skopiowany do schowka">📋 Wklej</button>
+          ${editing ? ogladajMeczHtml(editing, '▶ Oglądaj') : ''}
+        </div>
+        <div class="note" style="font-size:11.5px;margin-top:4px;">Mecz na serwerze klubu, YouTube, stream — skopiuj adres z paska przeglądarki. Po zapisaniu przy obserwacji pojawi się „▶ Oglądaj mecz".</div>
+      </div>
       <div class="field-wrap" style="position:relative;">
         <label class="field">Punkt startowy (miejscowość)</label>
         <input id="obs-start" autocomplete="off" placeholder="np. Świdnik" value="${editing? esc(editing.startLocation||DB.settings.startLocation||'Bydgoszcz') : esc(DB.settings.startLocation || 'Bydgoszcz')}">
@@ -7358,7 +7387,7 @@ function obsMonthListHtml(){
           <button class="link-btn" data-action="delete-obs" data-id="${o.id}" style="font-size:11px;color:var(--clay-dark);">Usuń</button>
         </span>
       </div>
-      <div class="meta">${pl ? esc(o.match||'brak danych meczu') : '<em>obserwacja całego meczu</em>'}${ligaTag(o)}${o.location?' &middot; 📍 '+esc(o.location):''} &middot; scout: ${esc(o.scout)}</div>
+      <div class="meta">${pl ? esc(o.match||'brak danych meczu') : '<em>obserwacja całego meczu</em>'}${ligaTag(o)}${o.location?' &middot; 📍 '+esc(o.location):''} &middot; scout: ${esc(o.scout)}${ogladajMeczHtml(o)}</div>
     </div>`;
   }).join('');
 }
@@ -7422,6 +7451,7 @@ function openObsPodgladModal(obsId){
         &middot; scout: ${esc(obs.scout||'—')}
         ${obs.location?` &middot; <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(obs.location)}" target="_blank" rel="noopener noreferrer">📍 ${esc(obs.location)}</a>`:''}
       </p>
+      ${ogladajMeczHtml(obs) ? `<p style="margin:-4px 0 10px;">${ogladajMeczHtml(obs)}</p>` : ''}
       ${pl ? `<p class="note" style="margin-top:-6px;">Obserwowany zawodnik: <strong>${esc(pl.firstName+' '+pl.lastName)}</strong></p>` : ''}
       ${obs.poziomMeczu||obs.warunki||obs.notatkaMeczu ? `<div class="card" style="padding:8px 10px;margin-bottom:10px;">
         ${obs.poziomMeczu?`<div class="meta">Poziom spotkania: <strong>${esc(obs.poziomMeczu)}</strong></div>`:''}
@@ -7549,6 +7579,15 @@ function kategoriaObserwacji(o){
 
 // Znacznik na karcie. Kategoria barwą, bo to ona rozstrzyga, jak czytać ocenę; nazwa rozgrywek
 // obok, jako uszczegółowienie.
+// „▶ Oglądaj mecz" przy obserwacji z linkiem do transmisji albo nagrania. Adres sprawdzamy przy
+// KAŻDYM wyświetleniu, nie tylko przy zapisie — do bazy piszą też telefon i serwer, a link idzie
+// wprost do href. Nowa karta i noopener: strona z transmisją nie dostaje dostępu do SBS.
+function ogladajMeczHtml(o, etykieta = '▶ Oglądaj mecz'){
+  const href = bezpiecznyLinkMeczu(o && o.linkDoMeczu);
+  if(!href) return '';
+  return `<a class="ogladaj-link" href="${esc(href)}" target="_blank" rel="noopener noreferrer" title="Otwiera w nowej karcie: ${esc(serwisLinkuMeczu(href))}">${esc(etykieta)}</a>`;
+}
+
 function ligaTag(o){
   const kat = kategoriaObserwacji(o);
   const nazwa = (o && o.rozgrywki) || '';
@@ -7628,6 +7667,7 @@ function obsCalendarHtml(){
         czas ? `<strong style="color:var(--heading);">${esc(czas)}</strong>` : '',
         gdzie ? `<a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(gdzie)}"
                     target="_blank" rel="noopener noreferrer">📍 ${esc(gdzie)}</a>` : '',
+        ogladajMeczHtml(o),
       ].filter(Boolean).join(' &middot; ');
       return `<div class="obs-item" style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
         <span>${pl ? `<strong>${esc(pl.firstName+' '+pl.lastName)}</strong> — ${esc(o.match||'brak danych meczu')}`
@@ -7677,6 +7717,9 @@ async function saveNewObservation(){
     scout = scoutSelectEl.value;
   }
   if(!scout) scout = currentScout || 'Nieznany';
+  // Link sprawdzamy PRZED jakąkolwiek zmianą — zły adres ma zatrzymać zapis, a nie zapisać się pusty.
+  const linkPole = linkDoMeczuZPola((document.getElementById('obs-link')||{}).value);
+  if(!linkPole.ok){ alert('Link do meczu: ' + linkPole.powod); return; }
   const editing = editingObsId ? DB.observations.find(o=>o.id===editingObsId) : null;
   const planFields = {
     playerId,
@@ -7686,6 +7729,7 @@ async function saveNewObservation(){
     location: document.getElementById('obs-location').value.trim(),
     obsType: (document.getElementById('obs-type')||{}).value || OBS_TYPES[0].id,
     scout,
+    linkDoMeczu: linkPole.wartosc,
   };
   // Przy edycji nadpisujemy TYLKO pola planu — ewentualne historyczne oceny/notatki zostają nietknięte.
   const obs = editing ? Object.assign(editing, planFields) : Object.assign({
@@ -7703,10 +7747,16 @@ async function saveNewObservation(){
   obs.startLocation = startLoc;
   try{ obs.distanceKm = await calcDistanceBetween(startLoc, obs.location); }catch(e){ obs.distanceKm = null; }
   if(!editing) DB.observations.push(obs);
+  // Ten sam mecz zaplanowany dla kilku zawodników: transmisja jest jedna, więc link dostają też
+  // pozostałe obserwacje tego spotkania — ale tylko te, które własnego linku jeszcze nie mają.
+  const linkDlaInnych = obs.linkDoMeczu
+    ? obserwacjeTegoSamegoMeczu(DB.observations, obs).filter(x=> !x.linkDoMeczu) : [];
+  linkDlaInnych.forEach(x=>{ x.linkDoMeczu = obs.linkDoMeczu; });
   // Wynik zapisu MUSI być sprawdzony. Wcześniej szedł bez kontroli, więc gdy baza odrzucała
   // zapis, plan znikał po cichu: na ekranie wyglądał na zapisany, a w bazie go nie było.
   const zapisano = await saveObservations();
   if(!zapisano){
+    linkDlaInnych.forEach(x=>{ x.linkDoMeczu = ''; });
     if(!editing) DB.observations = DB.observations.filter(x=>x.id !== obs.id);   // nie udawaj, że jest
     alert('NIE ZAPISANO planu obserwacji — baza odrzuciła zapis.\n\n' +
       'Plan nie został dodany. Sprawdź baner u góry strony i spróbuj ponownie; jeśli błąd wraca, zgłoś go.');
@@ -7739,6 +7789,9 @@ async function saveNewObservation(){
   if(settingsChanged) await saveSettings();
   editingObsId = null;
   render();
+  if(linkDlaInnych.length){
+    pokazPotwierdzenie(`Link do meczu dopisany także do ${linkDlaInnych.length} ${linkDlaInnych.length===1?'innej obserwacji':'innych obserwacji'} tego spotkania.`, 'ok');
+  }
 }
 
 function playerReports(playerId){ return DB.reports.filter(r=>r.playerId===playerId).sort((a,b)=>a.date.localeCompare(b.date)); }
@@ -8680,6 +8733,8 @@ function osobyZeSkladuTalentu(linia, rocznik){
 
   const out = [];
   let kursor = 0;
+  const klubKonca = l.slice(znaczniki[znaczniki.length-1].do).replace(/^[\s\-,;]+/,'').replace(/[-,;]+$/,'')
+    .replace(RE_ROK_TALENTU,'').replace(/\s+/g,' ').trim();
   znaczniki.forEach(z=>{
     const przed = l.slice(kursor, z.od).replace(/^[\s\-,;]+/,'').trim();
     kursor = z.do;
@@ -8690,6 +8745,8 @@ function osobyZeSkladuTalentu(linia, rocznik){
     // Jedno samotne słowo przed nazwiskiem, które nie wygląda na klub, to zwykle drugie imię
     // albo pierwszy człon nazwiska — nie robimy z niego klubu.
     if(ogon && !ogon.includes(' ') && !wygladaNaKlubTalentu(ogon)){ nazwa = ogon + ' ' + nazwa; ogon = ''; }
+    // Dwa imiona przy dłuższej nazwie klubu: „Chemik Bydgoszcz Kai Leo Michalski" (odklejSlowoOdKlubu).
+    if(ogon.includes(' ')) ({ nazwa, ogon } = odklejSlowoOdKlubu(nazwa, ogon, [klubKonca]));
     if(ogon && out.length && !out[out.length-1].club) out[out.length-1].club = ogon;
     const {firstName, lastName} = rozdzielImieNazwisko(nazwa);
     if(!firstName && !lastName) return;
@@ -8833,14 +8890,32 @@ function wyjmijRocznikTalentu(tekst){
   return { rok: Number(m[1]), reszta: t.slice(0, m.index) + ' ' + t.slice(m.index + m[0].length) };
 }
 
+// DRUGIE IMIĘ PRZYKLEJONE DO KLUBU POPRZEDNIKA.
+//
+// „…(9)-Chemik Bydgoszcz Kai Leo Michalski(4)(6)-Chemik Bydgoszcz": dwa ostatnie słowa przed numerem
+// to „Leo Michalski", a „Kai" lądował w klubie poprzedniego zawodnika („Chemik Bydgoszcz Kai").
+// Samo słowo nie powie, czy to imię, czy człon nazwy klubu — rozstrzyga klub, który już ZNAMY:
+// z końca tego samego wpisu albo z kartoteki. Gdy ogon bez ostatniego słowa jest znanym klubem,
+// a cały ogon nie jest — to ostatnie słowo należy do zawodnika.
+function odklejSlowoOdKlubu(nazwa, ogon, znaneKluby){
+  const slowa = String(ogon || '').split(' ').filter(Boolean);
+  if(slowa.length < 2) return { nazwa, ogon };
+  const norm = (s)=> String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const znane = new Set([...(znaneKluby || []), ...((DB.clubs || []).map(c=> c && c.name))].map(norm).filter(Boolean));
+  const bezOstatniego = slowa.slice(0, -1).join(' ');
+  if(znane.has(norm(ogon)) || !znane.has(norm(bezOstatniego))) return { nazwa, ogon };
+  return { nazwa: slowa[slowa.length - 1] + ' ' + nazwa, ogon: bezOstatniego };
+}
+
 // Dwa ostatnie słowa przed numerem to zawodnik, wszystko wcześniej — klub POPRZEDNIEGO zawodnika.
 // Samotne słowo, które nie wygląda na klub, to drugie imię albo człon nazwiska („Kai Leo Michalski").
-function nazwaIOgonTalentu(przed){
+function nazwaIOgonTalentu(przed, znaneKluby){
   const slowa = String(przed || '').split(' ').filter(Boolean);
   if(!slowa.length) return { nazwa: '', ogon: '' };
   let nazwa = slowa.slice(-2).join(' ');
   let ogon = slowa.slice(0, -2).join(' ');
   if(ogon && !ogon.includes(' ') && !wygladaNaKlubTalentu(ogon)){ nazwa = ogon + ' ' + nazwa; ogon = ''; }
+  if(ogon.includes(' ')) ({ nazwa, ogon } = odklejSlowoOdKlubu(nazwa, ogon, znaneKluby));
   return { nazwa, ogon };
 }
 
@@ -8858,12 +8933,14 @@ function rozbierzWpisTalentu(tekst){
   if(znaczniki.length){
     const osoby = [];
     let kursor = 0;
+    // Klub z końca wpisu — podpowiedź, gdzie kończy się nazwa klubu, a zaczyna drugie imię.
+    const klubKonca = porzadkujKlubTalentu(wyjmijRocznikTalentu(l.slice(znaczniki[znaczniki.length - 1].do)).reszta);
     znaczniki.forEach(z=>{
       const surowePrzed = l.slice(kursor, z.od).replace(/^[\s\-–,;]+/, '');
       kursor = z.do;
       // Rocznik stojący przed nazwiskiem należy do POPRZEDNIEGO zawodnika: „(9) 2014-AP Oleśnica Jan…".
       const r = wyjmijRocznikTalentu(surowePrzed);
-      const { nazwa, ogon } = nazwaIOgonTalentu(r.reszta.replace(/^[\s\-–,;]+/, '').replace(/\s+/g, ' ').trim());
+      const { nazwa, ogon } = nazwaIOgonTalentu(r.reszta.replace(/^[\s\-–,;]+/, '').replace(/\s+/g, ' ').trim(), [klubKonca]);
       const poprzedni = osoby[osoby.length - 1];
       if(poprzedni){
         if(r.rok && !poprzedni.birthYear) poprzedni.birthYear = r.rok;
@@ -8956,6 +9033,22 @@ function rozdzielWpisyTalentow(talenty, doRozdzielenia, noweId){
     });
   });
   return { talenty: wynik, zmienionych, dodanych };
+}
+
+// WPISY Z KILKOMA ZAWODNIKAMI — do rozdzielenia bez pytania, przy starcie.
+//
+// Na liście talentów ma stać jeden zawodnik w wierszu. Tu granica jest pewna: każdy zawodnik ma
+// w nawiasie swój numer, więc z jednego wpisu wychodzi dwóch pełnych zawodników, a nie zgadywanie.
+// Bierzemy wyłącznie takie wpisy — co najmniej dwie osoby, każda z imieniem i nazwiskiem.
+// Porządkowanie pojedynczych wpisów (klub albo rocznik doklejony do nazwiska) zostaje pod
+// przyciskiem „✂ Rozdziel i uporządkuj", z podglądem, bo tam łatwiej o pomyłkę.
+function wpisyZKilkomaZawodnikami(talenty){
+  const mapa = new Map();
+  (talenty || []).forEach(t=>{
+    const osoby = wpisTalentuDoPorzadku(t);
+    if(osoby && osoby.length >= 2 && osoby.every(o=> o.firstName && o.lastName)) mapa.set(t.id, osoby);
+  });
+  return mapa;
 }
 
 function openPorzadkowanieTalentow(){
@@ -12296,6 +12389,24 @@ function attachHandlers(){
     }
   });
   main.querySelectorAll('[data-action="open-match-schedule"]').forEach(b=>b.onclick=()=>openMatchScheduleModal());
+  // „📋 Wklej" — link ze schowka od razu do pola. Przeglądarka może odmówić odczytu schowka
+  // (brak zgody, starsza przeglądarka); wtedy ustawiamy kursor w polu i prosimy o Ctrl+V.
+  main.querySelectorAll('[data-action="obs-link-wklej"]').forEach(b=>b.onclick=async ()=>{
+    const pole = document.getElementById('obs-link') as HTMLInputElement;
+    if(!pole) return;
+    try{
+      const w = linkDoMeczuZPola(await navigator.clipboard.readText());
+      if(!w.ok || !w.wartosc){
+        pole.focus();
+        pokazPotwierdzenie('W schowku nie ma linku do meczu. Skopiuj adres z paska przeglądarki i kliknij „📋 Wklej" jeszcze raz.', 'blad');
+        return;
+      }
+      pole.value = w.wartosc;
+    }catch(e){
+      pole.focus();
+      pokazPotwierdzenie('Przeglądarka nie pozwoliła odczytać schowka — kliknij w pole linku i wklej Ctrl+V.', 'blad');
+    }
+  });
   // Wybór rodzaju obserwacji przestawiamy W MIEJSCU, bez przerysowania formularza.
   //
   // Przerysowanie kasowało wszystko, co było już wpisane: przy NOWEJ obserwacji pola renderują
@@ -19289,7 +19400,7 @@ function openObsSkladModal(obsId){
     <div class="modal" style="max-width:820px;">
       <h3>👥 Skład meczu</h3>
       <p class="note" style="margin-bottom:4px;">${esc(obs.match||'brak danych meczu')}
-        &middot; ${esc(obs.date||'')}${obs.matchTime?' '+esc(obs.matchTime):''}</p>
+        &middot; ${esc(obs.date||'')}${obs.matchTime?' '+esc(obs.matchTime):''}${ogladajMeczHtml(obs)}</p>
       <p class="note" style="font-size:11.5px;margin-bottom:10px;">
         <strong>Przed meczem</strong> składów nie ma nigdzie publicznie — kluby ogłaszają je na godzinę przed gwizdkiem.
         Weź wtedy <strong>kadrę z bazy SBS</strong>. <strong>Po meczu</strong> (i przy oglądaniu z wideo)

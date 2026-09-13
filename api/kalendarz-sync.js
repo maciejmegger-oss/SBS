@@ -154,6 +154,8 @@ export default async function handler(req, res) {
       o.match ? `Mecz: ${o.match}` : "",
       o.scout ? `Scout: ${o.scout}` : "",
       e.obsType ? `Rodzaj: ${e.obsType}` : "",
+      // Tylko http(s) — w opisie wydarzenia Google i tak zrobi z adresu klikalny link.
+      /^https?:\/\//i.test(e.linkDoMeczu || "") ? `Transmisja: ${e.linkDoMeczu}` : "",
       "",
       "Wpis prowadzony przez Scout Base System. Datę i godzinę możesz zmienić tutaj —",
       "zmiana wróci do SBS. Pozostałe pola nadpisuje SBS.",

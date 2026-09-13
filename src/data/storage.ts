@@ -143,8 +143,9 @@ export const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }>
     // rozgrywki / kategoria: w jakich rozgrywkach grano i czy to seniorzy, czy młodzież. Bez tego
     // lista obserwacji nie odróżnia meczu III ligi od spotkania A1, choć to dwie zupełnie różne
     // oceny tego samego zawodnika.
+    // linkDoMeczu: adres transmisji albo nagrania (serwer klubu, YouTube) — „▶ Oglądaj" przy obserwacji.
     fields: ["startLocation", "distanceKm", "obsType", "skladMeczu", "googleEventId",
-             "poziomMeczu", "warunki", "notatkaMeczu", "rozgrywki", "kategoria"],
+             "poziomMeczu", "warunki", "notatkaMeczu", "rozgrywki", "kategoria", "linkDoMeczu"],
   },
   sbs_reports: {
     // sbs_reports nie ma kolumny custom_fields — chowamy w istniejącej `phases` (jsonb).

@@ -16,6 +16,7 @@ import {
   type Cache, type LiveEvent, type LiveState, type Period,
 } from "./db";
 import type { Observation, Report } from "../types";
+import { linkDoMeczuZPola, bezpiecznyLinkMeczu } from "../data/link-meczu";
 // Skala według pozycji — jedno źródło dla panelu i dla systemu, patrz src/domain/pozycje.ts.
 import {
   PROFILE, WSZYSTKIE_KAFLE, grupaZNumeru, grupaZOpisu, grupaZFaz,
@@ -232,6 +233,7 @@ let podgladObsId: string | null = null;
 // Wybór z terminarza wypełnia formularz planowania, więc jego treść musi przeżyć przejście
 // do listy meczów i z powrotem.
 let planMecz = "", planData = "", planGodzina = "", planMiejsce = "";
+let planLink = "";   // adres transmisji / nagrania meczu (src/data/link-meczu.ts)
 let planRozgrywki = "", planKategoria = "";
 // Czy kategorię wskazał scout, czy tylko podpowiedział ją panel. Po ręcznym wyborze przestajemy
 // nadpisywać go rozpoznaniem z nazwy — inaczej dopisanie litery w polu rozgrywek cofałoby poprawkę.
@@ -529,6 +531,9 @@ function kartaObserwacji(o: Observation, dzis: string, pokazDzien = true): strin
         ${oceniona
           ? `<button class="ow-tekst" data-act="podglad" data-id="${esc(o.id)}">Otwórz</button>`
           : `<button class="ow-tekst" data-act="open-ocena" data-id="${esc(o.id)}">Oceń</button>`}
+        ${bezpiecznyLinkMeczu(o.linkDoMeczu)
+          ? `<a class="ow-tekst ow-ogladaj" href="${esc(bezpiecznyLinkMeczu(o.linkDoMeczu))}" target="_blank" rel="noopener noreferrer">▶ Oglądaj</a>`
+          : ""}
         <!-- Kosz stoi osobno, przy prawej krawędzi: kasowanie ma być dostępne, ale nie pod kciukiem
              obok „Rozpocznij". Pyta o potwierdzenie i podaje nazwę meczu, więc dotknięcie przez
              pomyłkę niczego nie traci. -->
@@ -939,6 +944,8 @@ function viewNowa(): string {
         <button class="btn ghost small" style="margin:0;" data-act="otworz-terminarz">📅 Z terminarza</button>
         <button class="btn ghost small" style="margin:0;" data-act="otworz-wklej">🖼 Ze zrzutu</button>
       </div></div>
+    <div class="field"><span class="label">Link do transmisji / nagrania (opcjonalnie)</span>
+      <input id="n-link" value="${esc(planLink)}" inputmode="url" autocomplete="off" spellcheck="false" placeholder="wklej link do meczu, np. https://…"></div>
     <div class="grid-2">
       <div class="field"><span class="label">Data</span><input type="date" id="n-date" value="${esc(planData || todayISO())}">
         <span class="hint" id="n-dzien" style="display:block; margin-top:4px;">${esc(dataZDniem(planData || todayISO()))}</span></div>
@@ -2125,6 +2132,10 @@ function viewPodglad(): string {
   return `
     <h2>${esc(obs.match || "Obserwacja")}</h2>
     <p class="hint">${ligaChip(obs)}${esc(dataZDniem(obs.date || ""))}${obs.matchTime ? " · " + esc(obs.matchTime) : ""}${obs.scout ? " · " + esc(obs.scout) : ""}</p>
+    ${bezpiecznyLinkMeczu(obs.linkDoMeczu)
+      ? `<a class="btn ghost small ow-ogladaj" href="${esc(bezpiecznyLinkMeczu(obs.linkDoMeczu))}" target="_blank" rel="noopener noreferrer"
+            style="display:inline-flex; width:auto; margin:0 0 12px; text-decoration:none;">▶ Oglądaj mecz</a>`
+      : ""}
 
     ${(o as any).poziomMeczu || ((o as any).warunki || []).length || (o as any).notatkaMeczu ? `
       <div class="section" style="border-top:none; margin-top:0; padding-top:0;">
@@ -3011,6 +3022,7 @@ function zapamietajPlan() {
   planGodzina = $<HTMLInputElement>("n-time")?.value ?? planGodzina;
   planMiejsce = $<HTMLInputElement>("n-location")?.value ?? planMiejsce;
   planRozgrywki = $<HTMLInputElement>("n-liga")?.value ?? planRozgrywki;
+  planLink = $<HTMLInputElement>("n-link")?.value ?? planLink;
 }
 
 // Ustawienie rozgrywek z zewnątrz (terminarz, zrzut ekranu) razem z podpowiedzią kategorii.
@@ -3130,12 +3142,21 @@ function saveNowa(odRazu: boolean) {
   const match = $<HTMLInputElement>("n-match")?.value.trim() || "";
   if (!match) { toast("Podaj nazwę meczu"); return; }
   const data = $<HTMLInputElement>("n-date")?.value || todayISO();
+  // Zły adres zatrzymuje zapis — pusty link to świadomy brak, nie błąd.
+  const link = linkDoMeczuZPola($<HTMLInputElement>("n-link")?.value);
+  if (!link.ok) { toast(link.powod); return; }
 
   // JEDNA OBSERWACJA NA MECZ. Ten sam mecz zaplanowany na komputerze i jeszcze raz w telefonie
   // dawał dwa wpisy o tej samej nazwie — nie do odróżnienia na liście, z oceną rozbitą na oba.
   // Zamiast tworzyć drugi, otwieramy ten, który już jest.
   const juzJest = istniejacaObserwacja(match, data);
   if (juzJest) {
+    // Link wklejony przy ponownym planowaniu nie może przepaść — trafia do istniejącej obserwacji,
+    // o ile ta własnego jeszcze nie ma.
+    if (link.wartosc && !juzJest.linkDoMeczu) {
+      saveObservation({ ...juzJest, linkDoMeczu: link.wartosc });
+      cache = getCache();
+    }
     zapamietajPlan();
     if (odRazu) { beginLive(juzJest.id); toast("Ta obserwacja już istniała — otwieram ją"); return; }
     listaTryb = juzJest.statsFilledIn ? "zakonczone" : "nadchodzace";
@@ -3163,6 +3184,7 @@ function saveNowa(odRazu: boolean) {
     obsType: $<HTMLSelectElement>("n-typ")?.value || "live",
     rozgrywki: ($<HTMLInputElement>("n-liga")?.value || "").trim(),
     kategoria: planKategoria,
+    linkDoMeczu: link.wartosc,
   };
   saveObservation(obs);
   cache = getCache();
@@ -3223,6 +3245,7 @@ document.addEventListener("click", (e) => {
     case "lista-tryb": listaTryb = v === "zakonczone" ? "zakonczone" : "nadchodzace"; render(); break;
     case "go-nowa":
       planMecz = planData = planGodzina = planMiejsce = planRozgrywki = planKategoria = "";
+      planLink = "";
       kategoriaRecznie = false;
       wklejTekst = "";
       view = "nowa";

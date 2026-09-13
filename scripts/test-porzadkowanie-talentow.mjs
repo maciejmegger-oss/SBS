@@ -28,7 +28,10 @@ const kod = [
   wytnij('pozycjeZeZnacznika', /function pozycjeZeZnacznika\(znacznik\)\{[\s\S]*?\n\}/),
   wytnij('porzadkujKlubTalentu', /function porzadkujKlubTalentu\(tekst\)\{[\s\S]*?\n\}/),
   wytnij('wyjmijRocznikTalentu', /function wyjmijRocznikTalentu\(tekst\)\{[\s\S]*?\n\}/),
-  wytnij('nazwaIOgonTalentu', /function nazwaIOgonTalentu\(przed\)\{[\s\S]*?\n\}/),
+  wytnij('odklejSlowoOdKlubu', /function odklejSlowoOdKlubu\(nazwa, ogon, znaneKluby\)\{[\s\S]*?\n\}/),
+  wytnij('nazwaIOgonTalentu', /function nazwaIOgonTalentu\(przed, znaneKluby\)\{[\s\S]*?\n\}/),
+  wytnij('osobyZeSkladuTalentu', /function osobyZeSkladuTalentu\(linia, rocznik\)\{[\s\S]*?\n\}/),
+  wytnij('wpisyZKilkomaZawodnikami', /function wpisyZKilkomaZawodnikami\(talenty\)\{[\s\S]*?\n\}/),
   wytnij('rozbierzWpisTalentu', /function rozbierzWpisTalentu\(tekst\)\{[\s\S]*?\n\}/),
   wytnij('wpisTalentuDoPorzadku', /function wpisTalentuDoPorzadku\(t\)\{[\s\S]*?\n\}/),
   wytnij('rozdzielWpisyTalentow', /function rozdzielWpisyTalentow\(talenty, doRozdzielenia, noweId\)\{[\s\S]*?\n\}/),
@@ -40,7 +43,7 @@ const kod = [
 ].join('\n');
 
 const DB = { clubs: [] };
-const api = new Function('DB', `${kod}\n return { rozbierzWpisTalentu, wpisTalentuDoPorzadku, rozdzielWpisyTalentow, talentyDoZapisu, nalozPozycjeZPolaTalentu, pozycjaZPolaTalentu, porzadkujKlubTalentu };`)(DB);
+const api = new Function('DB', `${kod}\n return { rozbierzWpisTalentu, wpisTalentuDoPorzadku, rozdzielWpisyTalentow, talentyDoZapisu, nalozPozycjeZPolaTalentu, pozycjaZPolaTalentu, porzadkujKlubTalentu, osobyZeSkladuTalentu, wpisyZKilkomaZawodnikami };`)(DB);
 
 const opis = (o) => `${o.firstName} ${o.lastName} | ${o.birthYear || '—'} | ${o.pozycjeNmg.join('/') || o.pozycja || '—'} | ${o.club || '—'}`;
 const przypadek = (wpis, oczekiwane) => {
@@ -73,6 +76,47 @@ przypadek('Michał Kulski(ŚO)-BKS Bydgoszcz Bartosz Szpyt(9)-BKS Bydgoszcz',
   ['Michał Kulski | — | Obrońca środkowy | BKS Bydgoszcz', 'Bartosz Szpyt | — | 9 | BKS Bydgoszcz']);
 przypadek('Kai Leo Michalski(4)(6)-Chemik Bydgoszcz Dawid Białkowski(9)-Chemik Bydgoszcz',
   ['Kai Leo Michalski | — | 4/6 | Chemik Bydgoszcz', 'Dawid Białkowski | — | 9 | Chemik Bydgoszcz']);
+
+console.log('\n3a. Dwa imiona jako DRUGI zawodnik — wpis ze zrzutu (12.09.2026)');
+// Błąd: „Kai" lądował w klubie poprzednika („Chemik Bydgoszcz Kai"), a zawodnik był „Leo Michalski".
+przypadek('Dawid Białkowski(9)-Chemik Bydgoszcz Kai Leo Michalski(4)(6)-Chemik Bydgoszcz',
+  ['Dawid Białkowski | — | 9 | Chemik Bydgoszcz', 'Kai Leo Michalski | — | 4/6 | Chemik Bydgoszcz']);
+{
+  // Klub poprzednika inny niż na końcu wpisu — rozstrzyga kartoteka klubów.
+  DB.clubs = [{ name: 'UKS Orlik Bydgoszcz' }];
+  przypadek('Jan Nowak(8)-UKS Orlik Bydgoszcz Piotr Paweł Zieliński(9)-KS Wda Świecie',
+    ['Jan Nowak | — | 8 | UKS Orlik Bydgoszcz', 'Piotr Paweł Zieliński | — | 9 | KS Wda Świecie']);
+  DB.clubs = [];
+  // Bez żadnej wiedzy o klubie nie zgadujemy — ogon zostaje klubem, jak dotąd.
+  przypadek('Jan Nowak(8)-UKS Orlik Bydgoszcz Piotr Paweł Zieliński(9)-KS Wda Świecie',
+    ['Jan Nowak | — | 8 | UKS Orlik Bydgoszcz Piotr', 'Paweł Zieliński | — | 9 | KS Wda Świecie']);
+}
+{
+  const w = api.osobyZeSkladuTalentu('Dawid Białkowski(9)-Chemik Bydgoszcz Kai Leo Michalski(4)(6)-Chemik Bydgoszcz', null);
+  const dostal = w.map(o => `${o.firstName} ${o.lastName} | ${o.club}`).join('  ||  ');
+  sprawdz('wklejanie listy (osobyZeSkladuTalentu) rozdziela tak samo', dostal === 'Dawid Białkowski | Chemik Bydgoszcz  ||  Kai Leo Michalski | Chemik Bydgoszcz', dostal);
+}
+
+console.log('\n3b. Wpisy z kilkoma zawodnikami rozdzielają się same przy starcie');
+{
+  const lista = [
+    { id: 'Z1', firstName: 'Dawid', lastName: 'Białkowski(9)-Chemik Bydgoszcz Kai Leo Michalski(4)(6)-Chemik Bydgoszcz', club: '' },
+    { id: 'Z2', firstName: 'Bartosz', lastName: 'Kotras (5) 2008 KS Wda Świecie', club: '' },
+    { id: 'Z3', firstName: 'Antoni', lastName: 'Balcer', club: 'Talent Warszawa' },
+    { id: 'Z4', firstName: 'Jan', lastName: 'Kowalski (5) Adam Nowak (9)', reprezentacja: 'U-16' },
+  ];
+  const mapa = api.wpisyZKilkomaZawodnikami(lista);
+  sprawdz('do automatu idzie tylko wpis z dwoma zawodnikami', mapa.size === 1 && mapa.has('Z1'), JSON.stringify([...mapa.keys()]));
+  sprawdz('pojedynczy sklejony wpis zostaje pod przyciskiem (z podglądem)', !mapa.has('Z2'));
+  sprawdz('powołanego automat nie rusza', !mapa.has('Z4'));
+  const w = api.rozdzielWpisyTalentow(lista, mapa, () => 'NOWY');
+  const nazwiska = w.talenty.map(t => `${t.firstName} ${t.lastName}`);
+  sprawdz('na liście każdy zawodnik w osobnym wierszu', nazwiska[0] === 'Dawid Białkowski' && nazwiska[1] === 'Kai Leo Michalski' && w.talenty.length === 5, JSON.stringify(nazwiska));
+}
+sprawdz('automat podpięty przy starcie, z powrotem listy po nieudanym zapisie',
+  /const doRozdzielenia = wpisyZKilkomaZawodnikami\(DB\.talents\);[\s\S]{0,300}const ok = await saveTalents\(\);\s*if\(ok === false\) DB\.talents = przed;/.test(zrodlo));
+sprawdz('automat działa tylko przy pełnym wczytaniu bazy',
+  /if\(wolnoUzupelniac\)\{\s*const doRozdzielenia = wpisyZKilkomaZawodnikami/.test(zrodlo));
 
 console.log('\n4. Numer koszulki (ponad 11) NIE jest pozycją');
 // (22) rozdziela nazwisko od klubu tak samo jak numer pozycji — ale pozycji z niego nie odczytujemy.

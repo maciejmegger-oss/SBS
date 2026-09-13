@@ -857,6 +857,8 @@ textarea{resize:vertical; min-height:84px;}
   background:none; border:none; padding:10px 4px; min-height:40px;
 }
 .ow-tekst:active{ color:var(--text); }
+/* „▶ Oglądaj" — link do transmisji. Kolor akcentu ma osobne wartości dla jasnego i ciemnego motywu. */
+.ow-ogladaj{ color:var(--accent-fg); text-decoration:none; display:inline-flex; align-items:center; }
 /* Kosz przy prawej krawędzi — daleko od kciuka trzymającego „Rozpocznij". */
 .ow-ikona{
   margin-left:auto; background:none; border:none;

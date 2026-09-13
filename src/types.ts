@@ -91,6 +91,9 @@ export interface Observation {
   // wyświetleniu: nazwy bywają nieoczywiste (A1 to juniorzy, klasa A to seniorzy), więc scout musi
   // móc poprawić rozpoznanie — a raz poprawione ma zostać.
   kategoria?: string;
+  // Adres transmisji albo nagrania meczu (serwer klubu, YouTube, stream). Tylko http/https —
+  // sprawdzany przy zapisie i ponownie przy wyświetleniu (src/data/link-meczu.ts).
+  linkDoMeczu?: string;
 }
 
 export interface Report {
