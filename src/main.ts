@@ -9867,12 +9867,64 @@ function wybierzKlubTransfermarktu(nazwa, kandydaci){
   const pytamOMlodziez = MLODZIEZ_LUB_REZERWY.test(nazwa);
   return pasujace.find(k=> pytamOMlodziez === MLODZIEZ_LUB_REZERWY.test(k.nazwa)) || pasujace[0];
 }
+// HERB Z KARTOTEKI DLA NAZWY, KTÓRA NIE POŁĄCZYŁA SIĘ Z JEDNYM KLUBEM.
+//
+// „Cracovia Kraków" z listy talentów pasuje w bazie do „Cracovia", „Cracovia II" i „KS Cracovia" (U17)
+// naraz, więc dopasowanie klubu słusznie odmawia zgadywania — a herb i tak jest ten sam. Bierzemy go
+// z drużyny najwyższego poziomu (Ekstraklasa przed III ligą przed juniorami). Dwa różne herby na tym
+// samym, najwyższym poziomie = dwa różne kluby, więc wtedy nie zgadujemy.
+const RANGA_POZIOMU_HERBU = ['Ekstraklasa', 'I liga', 'II liga', 'III liga', 'IV liga'];
+function herbRodzinyKlubu(nazwa, pamiec?){
+  const klucz = importNorm(nazwa);
+  if(!klucz) return null;
+  if(pamiec && pamiec.has(klucz)) return pamiec.get(klucz);
+  const ranga = (c)=>{ const i = RANGA_POZIOMU_HERBU.indexOf(topLevelOf(c.league)); return i >= 0 ? i : 9; };
+  const zHerbem = DB.clubs.filter(c=> clubCrest(c.id) && klubyToSamo(c.name, nazwa));
+  let wynik = null;
+  if(zHerbem.length){
+    const najwyzej = Math.min(...zHerbem.map(ranga));
+    const herby = [...new Set(zHerbem.filter(c=> ranga(c) === najwyzej).map(c=> clubCrest(c.id)))];
+    wynik = herby.length === 1 ? herby[0] : null;
+  }
+  if(pamiec) pamiec.set(klucz, wynik);
+  return wynik;
+}
+
+// Herbu z zewnątrz NIE wstawiamy od razu: najpierw wczytuje się w tle, a dopiero udany obrazek trafia
+// do wiersza. Zły adres (np. drużyna młodzieżowa bez herbu na Transfermarkcie) zostawiał pusty kwadrat.
+const herbyZewnBledneObrazki = new Set();
 function wstawHerbyZewnetrzneWWidok(){
   if(!herbyZewnetrzne) return;
   document.querySelectorAll('[data-herb-klub]').forEach(el=>{
-    const url = herbyZewnetrzne[(el as HTMLElement).dataset.herbKlub];
-    if(url && !el.querySelector('img')) el.innerHTML = crestImg(url, null, '');
+    const e = el as HTMLElement;
+    if(e.dataset.herbKartoteki === '1' || e.querySelector('img')) return;
+    const k = e.dataset.herbKlub;
+    const url = herbyZewnetrzne[k];
+    if(!url || e.dataset.herbSprawdzany === url) return;
+    e.dataset.herbSprawdzany = url;
+    const obraz = new Image();
+    obraz.onload = ()=>{ if(!e.querySelector('img')) e.innerHTML = crestImg(url, null, ''); };
+    obraz.onerror = ()=> zlyHerbZewnetrzny(k, e.dataset.herbNazwa || '');
+    obraz.src = url;
   });
+}
+// Zapamiętany adres się nie wczytuje: raz pytamy serwis ponownie (sprawdza już, czy herb istnieje,
+// i szuka bez miasta), a gdy i to nie pomoże — zapisujemy „brak herbu".
+function zlyHerbZewnetrzny(k, nazwa){
+  if(!herbyZewnetrzne || !k) return;
+  if(nazwa && !herbyZewnBledneObrazki.has(k)){
+    herbyZewnBledneObrazki.add(k);
+    delete herbyZewnetrzne[k];
+    void dociagnijHerbyZewnetrzne([nazwa]);
+    return;
+  }
+  herbyZewnetrzne[k] = '';
+  void zapiszHerbyZewnetrzne();
+}
+async function zapiszHerbyZewnetrzne(){
+  if(!herbyZewnetrzne || nieudaneOdczyty.length) return;
+  try{ await storage.set(KLUCZ_HERBOW_ZEWN, JSON.stringify(herbyZewnetrzne), true); }
+  catch(e){ console.warn('Herby spoza kartoteki nie zapisały się (zostają do końca sesji):', e); }
 }
 async function dociagnijHerbyZewnetrzne(nazwy){
   if(herbyZewnetrzne === null){
@@ -9880,8 +9932,9 @@ async function dociagnijHerbyZewnetrzne(nazwy){
       .then(w=>{ try{ herbyZewnetrzne = JSON.parse((w && w.value) || '{}') || {}; }catch(e){ herbyZewnetrzne = {}; } })
       .catch(()=>{ herbyZewnetrzne = {}; });
     await herbyZewnWczytywanie;
-    wstawHerbyZewnetrzneWWidok();
   }
+  // Za każdym razem — przy kolejnym przerysowaniu listy wiersze są nowe i znane herby trzeba wstawić od nowa.
+  wstawHerbyZewnetrzneWWidok();
   const doSprawdzenia = [...new Set((nazwy || []).map(n=> String(n || '').split(' / ')[0].trim()).filter(n=> n.length >= 3))]
     .filter(n=>{ const k = kluczHerbuZewn(n); return k && !(k in herbyZewnetrzne) && !herbyZewnWToku.has(k) && !herbyZewnNieudane.has(k); })
     .slice(0, 25);
@@ -9892,7 +9945,8 @@ async function dociagnijHerbyZewnetrzne(nazwy){
     await Promise.all(doSprawdzenia.slice(i, i + 3).map(async nazwa=>{
       const k = kluczHerbuZewn(nazwa);
       try{
-        const odp = await fetch('/api/tm-kluby?klub=' + encodeURIComponent(nazwa), { signal: AbortSignal.timeout(20000) });
+        // v=2: odpowiedzi sprzed sprawdzania herbów leżą w pamięci podręcznej serwera przez tydzień.
+        const odp = await fetch('/api/tm-kluby?v=2&klub=' + encodeURIComponent(nazwa), { signal: AbortSignal.timeout(25000) });
         if(!odp.ok){ herbyZewnNieudane.add(k); return; }   // chwilowy błąd — nie zapamiętujemy „brak herbu"
         const dane = await odp.json();
         const wybrany = wybierzKlubTransfermarktu(nazwa, dane.kandydaci);
@@ -9903,10 +9957,7 @@ async function dociagnijHerbyZewnetrzne(nazwy){
     }));
     wstawHerbyZewnetrzneWWidok();
   }
-  if(zmienione && !nieudaneOdczyty.length){
-    try{ await storage.set(KLUCZ_HERBOW_ZEWN, JSON.stringify(herbyZewnetrzne), true); }
-    catch(e){ console.warn('Herby spoza kartoteki nie zapisały się (zostają do końca sesji):', e); }
-  }
+  if(zmienione) await zapiszHerbyZewnetrzne();
 }
 
 function viewTalent(){
@@ -9963,6 +10014,7 @@ function viewTalent(){
   const kartotekaTalentu = (t, klub)=> kartotekaDlaTalentu(t, klub, zawodnicyPoNazwisku);
   // Kluby bez herbu w kartotece — po narysowaniu listy dociągamy ich herby z Transfermarktu.
   const potrzebneHerby = [];
+  const pamiecHerbowRodziny = new Map();
   const wierszTalentu = (t)=>{
     const klubZNazwy = klubTalentu(t);
     const karta = kartotekaTalentu(t, klubZNazwy);
@@ -9995,10 +10047,11 @@ function viewTalent(){
       <td><div class="club-cell">${(()=>{
         const nazwaKlubu = t.club || (klub && klub.name) || '';
         if(!nazwaKlubu) return '';
-        const herbKartoteki = klub ? clubCrest(klub.id) : null;
+        const herbKartoteki = (klub && clubCrest(klub.id)) || herbRodzinyKlubu(nazwaKlubu, pamiecHerbowRodziny);
         if(!herbKartoteki) potrzebneHerby.push(nazwaKlubu);
-        return `<span data-herb-klub="${esc(kluczHerbuZewn(nazwaKlubu))}" style="display:inline-flex;flex-shrink:0;">${
-          crestImg(herbKartoteki || herbZewnetrzny(nazwaKlubu), null, nazwaKlubu)}</span>`;
+        return `<span data-herb-klub="${esc(kluczHerbuZewn(nazwaKlubu))}" data-herb-nazwa="${esc(nazwaKlubu)}"${
+          herbKartoteki ? ' data-herb-kartoteki="1"' : ''} style="display:inline-flex;flex-shrink:0;">${
+          crestImg(herbKartoteki, null, nazwaKlubu)}</span>`;
       })()}<span>
         <span class="club-name" title="${esc(t.club || (klub && klub.name) || '')}">${esc(t.club || (klub && klub.name) || 'klub nieznany')}</span>
         <span class="club-sub">${klub ? esc(String(klub.league || '')) : (t.club ? 'klubu nie ma w bazie' : '')}${
