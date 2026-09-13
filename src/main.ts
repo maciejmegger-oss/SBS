@@ -5226,13 +5226,15 @@ function pill(label, active, action, dataAttrs, ikona){
 // Logo poziomu rozgrywek (I liga, II liga...) — wgrywane przez użytkownika (jak herby klubów), bo oficjalne
 // logotypy lig (Ekstraklasa, Betclic 1/2/3 liga) to znaki towarowe, których nie pobieramy automatycznie.
 // Do czasu wgrania pokazuje się schludny placeholder z inicjałami poziomu.
-function leagueLogoImg(topLevel, size, naCiemnym){
+// proporcja: wysokość wgranego logo względem szerokości. 0,62 pasuje do kafelków na Dashboardzie; w małych
+// przyciskach logo przy tej proporcji miało ledwie kilkanaście pikseli wysokości i było nieczytelne.
+function leagueLogoImg(topLevel, size, naCiemnym, proporcja = 0.62){
   const logo = DB.settings.leagueLogos && DB.settings.leagueLogos[topLevel];
   // max-width/max-height (nie width/height sztywne) — logo dowolnych proporcji mieści się w jednolitym
   // "gabarycie" bez rozciągania/spłaszczania.
   // Na ciemnym tle (wybrana pigułka) wgrane logo dostaje jasną podkładkę: znaki lig są zwykle
   // ciemne i bez niej znikają dokładnie w tym stanie, w którym mają potwierdzać wybór.
-  if(logo) return `<img src="${esc(logo)}" alt="" style="max-width:${size}px;max-height:${Math.round(size*0.62)}px;object-fit:contain;${
+  if(logo) return `<img src="${esc(logo)}" alt="" style="max-width:${size}px;max-height:${Math.round(size*proporcja)}px;object-fit:contain;${
     naCiemnym ? 'background:#fff;border-radius:5px;padding:1px;' : ''}">`;
   // ZASTĘPKA MÓWI CYFRĄ, NIE POWTARZA NAPISU.
   //
@@ -5313,7 +5315,8 @@ function viewClubs(){
   const pigulkaPoziomu = (t)=>{
     const val = t==='Wszystkie' ? '' : t;
     const wybrany = clubBrowse.top===val;
-    return pill(t, wybrany, 'browse-top', {val}, val ? leagueLogoImg(t, 20, wybrany) : '');
+    // Większe logo (30 px, prawie kwadratowe) — przy 20 px i proporcji kafelka znaki lig były ledwo widoczne.
+    return pill(t, wybrany, 'browse-top', {val}, val ? leagueLogoImg(t, 30, wybrany, 0.9) : '');
   };
   // WSZYSTKIE POZIOMY W JEDNYM RZĘDZIE — „Kategorie juniorskie" stoją zaraz po IV lidze.
   // Osobny wiersz „Rozgrywki młodzieżowe" z jedną pigułką tylko wydłużał stronę; to, co juniorskie
