@@ -1,7 +1,7 @@
-// Sprawdza listę „Zapisane raporty": raporty zawodników, a raport meczu tylko wtedy, gdy z tego meczu
-// jest choć jeden raport zawodnika — na PRAWDZIWYM kodzie z src/main.ts.
-// Zgłoszenie (13.09.2026): „MECZ Chojniczanka Chojnice - Olimpia Grudziądz" stał na liście, choć z tego
-// meczu nie sporządzono żadnego raportu indywidualnego.
+// Sprawdza listę „Zapisane raporty": WYŁĄCZNIE raporty zawodników, bez raportów meczów — na
+// PRAWDZIWYM kodzie z src/main.ts.
+// Zgłoszenia (13–14.09.2026): „MECZ Chojniczanka Chojnice - Olimpia Grudziądz" i „MECZ Lech II Poznań -
+// Noteć Czarnków" między raportami zawodników; na liście mają być tylko zaznaczeni i otagowani zawodnicy.
 //
 // Uruchomienie:  node scripts/test-lista-raportow.mjs
 import fs from "node:fs";
@@ -18,55 +18,34 @@ const wytnij = (nazwa, wzor) => {
   return m[0];
 };
 
-const kod = [
-  wytnij('importNorm', /const importNorm = [\s\S]*?\.replace\(\/\[\^a-z0-9\]\/g,''\);/),
-  wytnij('czyRaportZawodnika', /function czyRaportZawodnika\(r\)\{.*\}/),
-  wytnij('raportMeczuMaRaportyZawodnikow', /function raportMeczuMaRaportyZawodnikow\(m, raportyZawodnikow\)\{[\s\S]*?\n\}/),
-].join('\n');
-const { czyRaportZawodnika, raportMeczuMaRaportyZawodnikow } =
-  new Function(`${kod}\n return { czyRaportZawodnika, raportMeczuMaRaportyZawodnikow };`)();
+const czyRaportZawodnika = new Function(`${wytnij('czyRaportZawodnika', /function czyRaportZawodnika\(r\)\{.*\}/)}\n return czyRaportZawodnika;`)();
 
-console.log('\n1. Raporty zawodników');
+console.log('\n1. Co trafia na listę');
 sprawdz('raport zawodnika — tak', czyRaportZawodnika({ id: 'R1', playerId: 'Z1' }) === true);
-sprawdz('raport meczu (nawet z przypiętym zawodnikiem) to nie raport zawodnika', czyRaportZawodnika({ kind: 'mecz' }) === false && czyRaportZawodnika({ kind: 'mecz', playerId: 'Z1' }) === false);
+sprawdz('raport meczu (Chojniczanka - Olimpia) — nie', czyRaportZawodnika({ kind: 'mecz', match: 'Chojniczanka Chojnice - Olimpia Grudziądz' }) === false);
+sprawdz('raport meczu z raportami zawodników z tego meczu (Lech II - Noteć) — też nie',
+  czyRaportZawodnika({ id: 'rep:O1:mecz', kind: 'mecz', match: 'Lech II Poznań - Noteć Czarnków', fromObservationId: 'O1' }) === false);
+sprawdz('raport meczu z przypiętym zawodnikiem — nie', czyRaportZawodnika({ kind: 'mecz', playerId: 'Z1' }) === false);
 sprawdz('raport zawodnika usuniętego z kartoteki — zostaje, żeby dało się go skasować', czyRaportZawodnika({ id: 'R4', playerId: 'SKASOWANY' }) === true);
 sprawdz('pusty wpis — nie', czyRaportZawodnika(null) === false && czyRaportZawodnika({}) === false);
 
-console.log('\n2. Raport meczu — tylko z raportem zawodnika z tego meczu');
-const MECZ = { id: 'rep:O1:mecz', kind: 'mecz', match: 'Chojniczanka Chojnice - Olimpia Grudziądz', date: '2026-09-19', fromObservationId: 'O1' };
-sprawdz('bez żadnego raportu zawodnika — NIE (zgłoszenie ze zrzutu)', raportMeczuMaRaportyZawodnikow(MECZ, []) === false);
-sprawdz('raport zawodnika z tej samej obserwacji (telefon) — tak',
-  raportMeczuMaRaportyZawodnikow(MECZ, [{ id: 'rep:O1:Z7', playerId: 'Z7', fromObservationId: 'O1', date: '2026-09-19' }]) === true);
-sprawdz('raport zawodnika z INNEJ obserwacji — nie, choć ta sama data',
-  raportMeczuMaRaportyZawodnikow(MECZ, [{ playerId: 'Z7', fromObservationId: 'O2', date: '2026-09-19', match: 'Chojniczanka Chojnice - Olimpia Grudziądz' }]) === false);
-sprawdz('bez obserwacji: ta sama data i mecz — tak',
-  raportMeczuMaRaportyZawodnikow({ ...MECZ, fromObservationId: '' }, [{ playerId: 'Z7', date: '2026-09-19', match: 'chojniczanka chojnice – olimpia grudziądz' }]) === true);
-sprawdz('raport z komputera: ta sama data i rywal z nazwy meczu — tak',
-  raportMeczuMaRaportyZawodnikow({ ...MECZ, fromObservationId: '' }, [{ playerId: 'Z7', date: '2026-09-19', rywal: 'Olimpia Grudziądz (u siebie)' }]) === true);
-sprawdz('ten sam rywal innego dnia — nie',
-  raportMeczuMaRaportyZawodnikow({ ...MECZ, fromObservationId: '' }, [{ playerId: 'Z7', date: '2026-09-26', rywal: 'Olimpia Grudziądz' }]) === false);
-sprawdz('raport zawodnika to nie raport meczu', raportMeczuMaRaportyZawodnikow({ playerId: 'Z1' }, [{ playerId: 'Z1' }]) === false);
-
-console.log('\n3. Lista, licznik i numery');
+console.log('\n2. Lista, licznik i numery');
 const widok = wytnij('viewReports', /function viewReports\(\)\{[\s\S]*?\n\}/);
-sprawdz('lista i licznik liczone z pokazanych raportów',
-  /const widoczneRaporty = DB\.reports\.filter\(r=> czyRaportZawodnika\(r\) \|\| raportMeczuMaRaportyZawodnikow\(r, raportyZawodnikow\)\);/.test(widok)
+sprawdz('lista i licznik tylko z raportów zawodników', /const widoczneRaporty = DB\.reports\.filter\(czyRaportZawodnika\);/.test(widok)
   && /const allReports = widoczneRaporty\.slice\(\)/.test(widok) && widok.includes('<span class="reports-count">${allReports.length}</span>'));
-sprawdz('numer porządkowy wśród pokazanych — bez dziur', /widoczneRaporty\.forEach\(\(r,i\)=> ordinalOf\[r\.id\] = i\+1\);/.test(widok) && !/DB\.reports\.forEach\(\(r,i\)=> ordinalOf/.test(widok));
+sprawdz('żadnego wyjątku dla raportów meczów', !/raportMeczuMaRaportyZawodnikow/.test(zrodlo));
+sprawdz('numer porządkowy wśród pokazanych — bez dziur', /widoczneRaporty\.forEach\(\(r,i\)=> ordinalOf\[r\.id\] = i\+1\);/.test(widok));
 {
   const reports = [
-    { id: 'A', playerId: 'Z1', date: '2026-09-12' },
-    MECZ,                                                     // bez raportu zawodnika — schowany
-    { id: 'rep:O3:mecz', kind: 'mecz', match: 'Legia - Górnik', date: '2026-09-12', fromObservationId: 'O3' },
-    { id: 'rep:O3:Z5', playerId: 'Z5', fromObservationId: 'O3', date: '2026-09-12' },
+    { id: 'A', playerId: 'Z1' },
+    { id: 'rep:O3:mecz', kind: 'mecz', match: 'Lech II Poznań - Noteć Czarnków', fromObservationId: 'O3' },
+    { id: 'rep:O3:Z5', playerId: 'Z5', fromObservationId: 'O3' },
   ];
-  const zawodnikow = reports.filter(czyRaportZawodnika);
-  const widoczne = reports.filter(r => czyRaportZawodnika(r) || raportMeczuMaRaportyZawodnikow(r, zawodnikow));
-  sprawdz('na liście: A, mecz Legia - Górnik (ma raport zawodnika), raport Z5; bez Chojniczanki',
-    JSON.stringify(widoczne.map(r => r.id)) === JSON.stringify(['A', 'rep:O3:mecz', 'rep:O3:Z5']), JSON.stringify(widoczne.map(r => r.id)));
+  const widoczne = reports.filter(czyRaportZawodnika).map(r => r.id);
+  sprawdz('na liście tylko A i raport zawodnika z Lecha II', JSON.stringify(widoczne) === JSON.stringify(['A', 'rep:O3:Z5']), JSON.stringify(widoczne));
 }
 
-console.log('\n4. Klub przy zawodniku');
+console.log('\n3. Klub przy zawodniku');
 sprawdz('wiersz raportu zawodnika pokazuje herb i nazwę klubu',
   widok.includes("pl && pl.clubId ? `<span class=\"report-klub\">${crestImg(clubCrest(pl.clubId), 'xs', clubName(pl.clubId))}<span>${esc(clubName(pl.clubId))}</span></span>` : ''"));
 

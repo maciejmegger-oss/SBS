@@ -8405,23 +8405,6 @@ let pamiecFazFormularza = {};
 
 // Raport zawodnika = ma zawodnika i nie jest raportem całego meczu.
 function czyRaportZawodnika(r){ return !!(r && r.playerId && r.kind !== 'mecz'); }
-// RAPORT Z CAŁEGO MECZU pokazujemy tylko wtedy, gdy z tego meczu powstał choć jeden raport zawodnika —
-// sam w sobie jest tłem dla raportów indywidualnych, a bez nich był pustym wpisem między zawodnikami.
-// Łączymy po obserwacji (fromObservationId, raporty z telefonu), a bez niej po dacie i meczu: raport
-// z telefonu niesie nazwę meczu, raport z komputera — rywala („Olimpia Grudziądz (u siebie)").
-function raportMeczuMaRaportyZawodnikow(m, raportyZawodnikow){
-  if(!m || m.kind !== 'mecz') return false;
-  const klucz = (s)=> importNorm(String(s || '').replace(/\([^)]*\)/g, ' '));
-  const mecz = klucz(m.match);
-  return (raportyZawodnikow || []).some(r=>{
-    if(!r) return false;
-    if(m.fromObservationId && r.fromObservationId) return r.fromObservationId === m.fromObservationId;
-    if(!m.date || r.date !== m.date || !mecz) return false;
-    if(r.match && klucz(r.match) === mecz) return true;
-    const rywal = klucz(r.rywal);
-    return rywal.length >= 4 && mecz.includes(rywal);
-  });
-}
 
 function viewReports(){
   const editing = editingReportId ? DB.reports.find(r=>r.id===editingReportId) : null;
@@ -8432,12 +8415,11 @@ function viewReports(){
   // Liczba porządkowa wg kolejności TWORZENIA: DB.reports jest w kolejności dodawania (push),
   // więc index+1 = numer porządkowy raportu. Lista pokazana od najnowszego, ale każdy raport ma
   // swój stały numer z chwili utworzenia. Lista boczna „Raporty" — z przyciskiem usuwania.
-  // NA LIŚCIE: RAPORTY ZAWODNIKÓW i raporty meczów, z których powstał choć jeden raport zawodnika
-  // (raportMeczuMaRaportyZawodnikow). Raport meczu bez żadnego raportu indywidualnego zostaje w bazie —
-  // nie kasujemy go — ale tu go nie ma. Raport zawodnika usuniętego z kartoteki zostaje (ma playerId),
-  // żeby dało się go skasować. Numer porządkowy liczymy wśród pokazanych, w kolejności utworzenia.
-  const raportyZawodnikow = DB.reports.filter(czyRaportZawodnika);
-  const widoczneRaporty = DB.reports.filter(r=> czyRaportZawodnika(r) || raportMeczuMaRaportyZawodnikow(r, raportyZawodnikow));
+  // NA LIŚCIE WYŁĄCZNIE RAPORTY ZAWODNIKÓW — zaznaczonych i otagowanych. Raport z całego meczu (kind 'mecz')
+  // tu nie wchodzi, nawet gdy z tego meczu są raporty zawodników: zostaje w bazie — nie kasujemy go —
+  // ale lista raportów to lista zawodników. Raport zawodnika usuniętego z kartoteki zostaje (ma
+  // playerId), żeby dało się go skasować. Numer porządkowy liczymy wśród pokazanych.
+  const widoczneRaporty = DB.reports.filter(czyRaportZawodnika);
   const ordinalOf = {};
   widoczneRaporty.forEach((r,i)=> ordinalOf[r.id] = i+1);
   const allReports = widoczneRaporty.slice().sort((a,b)=> (b.date||'').localeCompare(a.date||'') || (ordinalOf[b.id]-ordinalOf[a.id]));
