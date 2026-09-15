@@ -1805,13 +1805,21 @@ const NIE_ZAWODNIK = new Set([
   "terminarz", "komentarze", "relacja", "wynik", "stadion", "data", "godzina", "kolejka",
   "liga", "runda", "sezon", "druzyna", "drużyna", "zawodnik", "zawodnicy", "minuta", "minuty",
   "asysta", "asysty", "obserwator", "delegat", "widownia", "podsumowanie", "poczatek", "początek",
+  // Dolne menu i zakładki ŁNP — wpadały do składu jako „zawodnicy" o nazwiskach „Mecze"
+  // i „Ulubione". Sprawdzane jest PIERWSZE słowo wiersza, stąd „dziś" osobno.
+  "mecze", "rozgrywki", "ulubione", "dzis", "dziś", "wyjsciowy", "wyjściowy",
+  "rezerwa", "rezerwowy", "ekstraklasa", "clj",
 ]);
 
 const WIELKA_MALE = /[A-ZĄĆĘŁŃÓŚŹŻ][a-ząćęłńóśźż]{2,}/;
 
-function parsujSklad(tekst: string): SkladZawodnik[] {
+function parsujSklad(tekst: string, nazwyDruzyn: string[] = []): SkladZawodnik[] {
   const wynik: SkladZawodnik[] = [];
   const juzJest = new Set<string>();
+  // Nagłówek z nazwą klubu stoi w środku wklejki i wygląda jak nazwisko: „KORONA SA Kielce"
+  // nie jest w całości wersalikami, więc odsiew wersalików go przepuszczał. Znamy nazwy obu
+  // drużyn z pola „Mecz", więc zamiast zgadywać po kształcie — porównujemy wprost.
+  const naglowki = new Set(nazwyDruzyn.map((x) => normKlub(x)).filter(Boolean));
   // Numer z POPRZEDNIEGO wiersza. W aplikacjach z wynikami numer stoi we własnej komórce tabeli,
   // więc po skopiowaniu ląduje w osobnym wierszu, nad nazwiskiem:
   //     8
@@ -1848,6 +1856,14 @@ function parsujSklad(tekst: string): SkladZawodnik[] {
     const pierwsze = slowa[0].replace(/[.:,;)\]]+$/, "").toLowerCase();
     if (NIE_ZAWODNIK.has(pierwsze)) continue;
     if (/\d{3,}/.test(w)) continue;
+
+    // Nazwa klubu — nagłówek sekcji, nie zawodnik. Porównanie po słowach, bo w nagłówku bywa
+    // forma prawna („KORONA SA Kielce"), której w polu „Mecz" nie ma.
+    const slowaWiersza = slowaKlubu(normKlub(w));
+    if (slowaWiersza.length && [...naglowki].some((h) => {
+      const sh = slowaKlubu(h);
+      return sh.length && (sh.every((x) => slowaWiersza.includes(x)) || slowaWiersza.every((x) => sh.includes(x)));
+    })) { numerZPoprzedniego = undefined; continue; }
 
     const klucz = w.toLowerCase();
     if (juzJest.has(klucz)) { numerZPoprzedniego = undefined; continue; }
@@ -3606,8 +3622,9 @@ document.addEventListener("click", (e) => {
       if (!live) break;
       const obs = cache.observations.find((o) => o.id === live!.observationId) as (Observation & { skladMeczu?: Sklad }) | undefined;
       if (!obs) break;
-      const gospodarze = parsujSklad($<HTMLTextAreaElement>("sklad-gospodarze")?.value || "");
-      const goscie = parsujSklad($<HTMLTextAreaElement>("sklad-goscie")?.value || "");
+      const [ngWst, nsWst] = druzynyZMeczu(obs.match);
+      const gospodarze = parsujSklad($<HTMLTextAreaElement>("sklad-gospodarze")?.value || "", [ngWst, nsWst]);
+      const goscie = parsujSklad($<HTMLTextAreaElement>("sklad-goscie")?.value || "", [ngWst, nsWst]);
       if (!gospodarze.length && !goscie.length) { toast("Nie rozpoznałem żadnego zawodnika"); break; }
       const [ng, ns] = druzynyZMeczu(obs.match);
       // Dopisujemy do tego, co ewentualnie przyszło z komputera, zamiast nadpisywać całość:
