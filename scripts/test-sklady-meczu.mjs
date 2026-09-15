@@ -147,5 +147,54 @@ console.log("\n5. Wklejanie składu po wgraniu pierwszej drużyny");
     "bez tego panel traktowałby go jak ten sam ekran");
 }
 
+
+// ---------------------------------------------------------------------------
+// 6. WKLEJKA SKŁADU PROSTO Z ŁNP.
+// ŁNP pokazuje składy PRZED meczem — potwierdzone zrzutem na 10 minut przed gwizdkiem.
+// Numer stoi we własnym wierszu nad nazwiskiem, a między zawodnikami trafiają się litery
+// B (bramkarz) i K (kapitan). Do tego nagłówek klubu w środku i menu na dole ekranu.
+// ---------------------------------------------------------------------------
+console.log("\n6. Wklejka składu z ŁNP");
+{
+  const kodP = [
+    wytnij("ZNACZNIKI_ZESPOLU + normKlub", /const ZNACZNIKI_ZESPOLU[\s\S]*?\nconst normKlub[\s\S]*?\n  \.trim\(\);/),
+    wytnij("TOKEN_ZESPOLU + slowaKlubu", /const TOKEN_ZESPOLU[\s\S]*?filter\(\(w\) => w\.length > 1 && !TOKEN_ZESPOLU\.test\(w\)\);/),
+    wytnij("NIE_ZAWODNIK", /const NIE_ZAWODNIK = new Set\(\[[\s\S]*?\]\);/),
+    wytnij("WIELKA_MALE", /const WIELKA_MALE = [^\n]+/),
+    wytnij("parsujSklad", /function parsujSklad[\s\S]*?\n}\n/),
+  ].join("\n");
+  const jsP = transformSync(kodP.replace(/export /g, ""), { loader: "ts", format: "esm" }).code;
+  const parsujSklad = new Function(`${jsP}\nreturn parsujSklad;`)();
+
+  const zLnp = [
+    "Składy", "Szczegóły", "Relacja", "Statystyki",
+    "KORONA SA Kielce", "Skład wyjściowy",
+    "19", "Michael Ameyaw", "71", "Wiktor Długosz",
+    "1", "Xavier Dziekoński", "B",
+    "18", "Patrik Hellebrand", "35", "Kamil Jakubczyk", "32", "Ondrej Lingr",
+    "2", "Ariel Mosór", "6", "Marcel Pięczek", "8", "Martin Remacle",
+    "23", "Slobodan Rubežić", "14", "Mariusz Stępiński", "K",
+    "Mecze", "Rozgrywki", "Dziś grają", "Ulubione",
+  ].join("\n");
+
+  const wynik = parsujSklad(zLnp, ["Korona Kielce", "Górnik Zabrze"]);
+  sprawdz("jedenastu zawodników, nic ponadto", wynik.length, 11);
+  sprawdz("numer z osobnego wiersza trafia do zawodnika", wynik[0].numer, "19");
+  sprawdz("imię i nazwisko razem", wynik[0].nazwa, "Michael Ameyaw");
+  sprawdzWarunek("nagłówek klubu nie wszedł jako zawodnik",
+    !wynik.some((z) => /KORONA/i.test(z.nazwa)));
+  sprawdzWarunek("menu z dołu ekranu nie weszło",
+    !wynik.some((z) => ["Mecze", "Rozgrywki", "Dziś grają", "Ulubione"].includes(z.nazwa)));
+  sprawdzWarunek("litery B i K nie stały się zawodnikami",
+    !wynik.some((z) => z.nazwa.length < 3));
+  sprawdzWarunek("bramkarz zachował numer 1",
+    wynik.some((z) => z.nazwa === "Xavier Dziekoński" && z.numer === "1"));
+
+  // Nazwiska czteroczłonowe — u obcokrajowców to norma, a odsiew ucinał zdania po czterech słowach.
+  const dlugie = parsujSklad(["8", "Paulo Guilherme Goncalves Bernardo"].join("\n"), []);
+  sprawdz("czteroczłonowe nazwisko przechodzi w całości",
+    dlugie[0] && dlugie[0].nazwa, "Paulo Guilherme Goncalves Bernardo");
+}
+
 console.log(bledy ? `\n${bledy} błędów.` : "\nWszystko się zgadza.");
 process.exit(bledy ? 1 : 0);
