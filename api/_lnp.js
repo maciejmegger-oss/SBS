@@ -146,7 +146,12 @@ function numerMeczuZAdresu(adresStrony) {
   return (sciezka.match(/(\d{3,})/) || [])[1] || "";
 }
 
-export async function protokolZDanychStrony(html, adresStrony, nazwaKlubu) {
+// DANE MECZU SPOD ADRESÓW, KTÓRE STRONA SAMA PODAJE.
+//
+// Wydzielone z protokolZDanychStrony, bo potrzebne w dwóch celach: do rozliczania meczu
+// ROZEGRANYCH (minuty gry) i do pobrania SKŁADU przed pierwszym gwizdkiem. Szukanie adresów jest
+// w obu przypadkach identyczne — różni się dopiero to, co z odczytanych danych bierzemy.
+export async function daneStrony(html, adresStrony) {
   let adresy = uporzadkujAdresy(adresyDanychZeStrony(html), adresStrony);
   if (!adresy.length) {
     // W stronie nic nie ma — szukamy w plikach z jej kodem.
@@ -171,7 +176,7 @@ export async function protokolZDanychStrony(html, adresStrony, nazwaKlubu) {
       adresy = [...new Set([...adresy, ...kandydaci])].slice(0, 6);
     }
   }
-  if (!adresy.length) return null;
+  if (!adresy.length) return [];
   const odczytane = [];
   for (const adres of adresy) {
     try {
@@ -186,6 +191,11 @@ export async function protokolZDanychStrony(html, adresStrony, nazwaKlubu) {
       if (dane && typeof dane === "object") odczytane.push(dane);
     } catch { /* jeden nieudany adres nie przerywa reszty */ }
   }
+  return odczytane;
+}
+
+export async function protokolZDanychStrony(html, adresStrony, nazwaKlubu) {
+  const odczytane = await daneStrony(html, adresStrony);
   if (!odczytane.length) return null;
   const prot = protokolZJsonow(odczytane, nazwaKlubu);
   return prot ? { ...prot, zrodlo: "dane spod adresu podanego przez stronę" } : null;

@@ -237,6 +237,29 @@ export function protokolZeSkryptow(html, nazwaKlubu) {
 
 // To samo, ale na danych już odczytanych — używamy tego, gdy dane przychodzą nie w stronie,
 // tylko osobnym zapytaniem, pod adres, który strona sama podaje.
+// SAME SKŁADY, BEZ MINUT — dla obserwacji PRZED meczem.
+//
+// protokolZJsonow niżej liczy minuty gry i wymaga co najmniej siedmiu zawodników, bo powstał do
+// rozliczania meczów ROZEGRANYCH. Przed pierwszym gwizdkiem minut jeszcze nie ma, a skład jest —
+// ŁNP publikuje go z wyprzedzeniem. Ta funkcja bierze więc z tych samych danych wyłącznie to,
+// co przed meczem istnieje: kto jest w składzie, z jakim numerem i czy jest bramkarzem.
+//
+// Zwraca WSZYSTKIE znalezione grupy, obu drużyn naraz — dopasowaniem do gospodarzy i gości
+// zajmuje się ten, kto woła, bo tylko on wie, jak mecz nazywa się w obserwacji.
+export function skladyZJsonow(jsony) {
+  const grupy = [];
+  for (const korzen of jsony) {
+    for (const { osoby, droga, rodzic } of znajdzSklady(korzen)) {
+      const rezerwa = czyLawka(droga, rodzic);
+      const zawodnicy = zlozZawodnikow(osoby, rezerwa)
+        .map((z) => ({ nazwa: z.nazwaPelna, numer: z.numer || "", bramkarz: !!z.bramkarz, rezerwa: !!z.rezerwa }));
+      if (!zawodnicy.length) continue;
+      grupy.push({ nazwa: nazwaDruzyny(rodzic, droga) || "", rezerwa: rezerwa === true, zawodnicy });
+    }
+  }
+  return grupy;
+}
+
 export function protokolZJsonow(jsony, nazwaKlubu) {
   const szukany = norm(nazwaKlubu);
   if (!szukany) return null;
