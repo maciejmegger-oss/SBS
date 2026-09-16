@@ -6,6 +6,10 @@ import { VOIVODESHIP_PATHS } from "./data/voivodeships";
 import { SKLADY_MECZOWE } from "./data/sklady-meczowe";
 import { POWOLANIA_DO_PRZYWROCENIA } from "./data/powolania";
 import { linkDoMeczuZPola, bezpiecznyLinkMeczu, serwisLinkuMeczu, obserwacjeTegoSamegoMeczu } from "./data/link-meczu";
+// Przełącznik PL / EN — tłumaczy narysowany interfejs słownikiem (src/i18n). Uruchamiamy od razu, żeby
+// strona po odświeżeniu przy wybranym angielskim nie mignęła po polsku dłużej niż jedno przerysowanie.
+import { uruchomTlumaczenie, odswiezPrzelacznikJezyka } from "./i18n/dom";
+uruchomTlumaczenie();
 // Kod zbieracza ŁNP — ten sam plik, który serwujemy pod /zakladka-lnp-v2.js.
 import LNP_ZBIERACZ from "../public/zakladka-lnp-v2.js?raw";
 import type { Database } from "./types";
@@ -3819,6 +3823,7 @@ function renderNav(){
     brand.onclick = ()=>{ currentView='dashboard'; editingPlayerId=null; viewingPlayerId=null; render(); };
   }
   odswiezPrzelacznikMotywu();
+  odswiezPrzelacznikJezyka();
   // Przycisk sesji na dole panelu bocznego. Gość widzi „Zaloguj się" także wtedy, gdy logowanie
   // nie jest jeszcze wymagane — inaczej nie dałoby się sprawdzić hasła przed zamknięciem systemu.
   const sesjaBtn = document.getElementById('sesja-btn');
