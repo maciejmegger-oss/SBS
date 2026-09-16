@@ -147,8 +147,11 @@ export const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }>
     // lista obserwacji nie odróżnia meczu III ligi od spotkania A1, choć to dwie zupełnie różne
     // oceny tego samego zawodnika.
     // linkDoMeczu: adres transmisji albo nagrania (serwer klubu, YouTube) — „▶ Oglądaj" przy obserwacji.
+    // lnpUrl: adres TEJ SAMEJ rozgrywki na „Łączy nas piłka". Po nim panel pobiera skład sam,
+    // zamiast kazać przepisywać dwadzieścia dwa nazwiska na kwadrans przed gwizdkiem.
     fields: ["startLocation", "distanceKm", "obsType", "skladMeczu", "googleEventId",
-             "poziomMeczu", "warunki", "notatkaMeczu", "rozgrywki", "kategoria", "linkDoMeczu"],
+             "poziomMeczu", "warunki", "notatkaMeczu", "rozgrywki", "kategoria", "linkDoMeczu",
+             "lnpUrl"],
   },
   sbs_reports: {
     // sbs_reports nie ma kolumny custom_fields — chowamy w istniejącej `phases` (jsonb).
