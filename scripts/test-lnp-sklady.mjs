@@ -104,5 +104,26 @@ spr("bez sieci nie próbujemy", /navigator\.onLine/.test(panel));
 const storage = fs.readFileSync(new URL("../src/data/storage.ts", import.meta.url), "utf8");
 spr("adres meczu zapisuje się w bazie (ext)", /"lnpUrl"/.test(storage));
 
+
+// --- ADRES WYŁUSKANY Z TEKSTU ---
+// Aplikacja ŁNP nie ma paska adresu. Jedyna droga do odnośnika to przycisk „Udostępnij", a ten
+// wkleja całe zdanie, nie sam adres.
+console.log("\nAdres z tekstu udostępnienia");
+{
+  const { transformSync } = await import("esbuild");
+  const kodA = panel.match(/function adresLnp[\s\S]*?\n}\n/)[0];
+  const adresLnp = new Function(`${transformSync(kodA, { loader: "ts" }).code}\nreturn adresLnp;`)();
+
+  const adr = "https://www.laczynaspilka.pl/rozgrywki/mecz/123456";
+  spr("sam adres", adresLnp(adr) === adr + "/" || adresLnp(adr) === adr, adresLnp(adr));
+  spr("adres w zdaniu z udostępnienia",
+    adresLnp("Korona Kielce - Górnik Zabrze, 20:30\n" + adr).includes("laczynaspilka.pl"));
+  spr("adres z kropką na końcu zdania",
+    adresLnp("Zobacz mecz: " + adr + ".").includes("laczynaspilka.pl"));
+  spr("obcy adres odrzucony", adresLnp("https://przyklad.pl/mecz/1") === "");
+  spr("tekst bez adresu", adresLnp("Korona - Górnik 20:30") === "");
+  spr("pusto", adresLnp("") === "");
+}
+
 console.log(bledy ? `\n${bledy} błędów.` : "\nWszystko się zgadza.");
 process.exit(bledy?1:0);

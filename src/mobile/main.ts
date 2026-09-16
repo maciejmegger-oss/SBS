@@ -241,10 +241,18 @@ let planLnp = "";
 function adresLnp(tekst: string): string {
   const t = String(tekst || "").trim();
   if (!t) return "";
-  try {
-    const u = new URL(t);
-    return /(^|\.)laczynaspilka\.pl$/i.test(u.hostname) ? u.toString() : "";
-  } catch { return ""; }
+  // Adres WYŁUSKUJEMY z tekstu, nie wymagamy samego adresu. Przycisk „Udostępnij" w aplikacji
+  // ŁNP wkleja zwykle całe zdanie — nazwę meczu, godzinę i dopiero na końcu odnośnik — a wtedy
+  // odczyt „całość albo nic" odrzucał wklejkę, w której adres był i to poprawny.
+  const znalezione = t.match(/https?:\/\/[^\s"'<>]+/gi) || [];
+  for (const kandydat of znalezione) {
+    try {
+      // Ogon interpunkcyjny z końca zdania nie należy do adresu.
+      const u = new URL(kandydat.replace(/[.,;)\]]+$/, ""));
+      if (/(^|\.)laczynaspilka\.pl$/i.test(u.hostname)) return u.toString();
+    } catch { /* nieskładny kandydat — próbujemy następnego */ }
+  }
+  return "";
 }
 let planLink = "";   // adres transmisji / nagrania meczu (src/data/link-meczu.ts)
 let planRozgrywki = "", planKategoria = "";
@@ -961,9 +969,11 @@ function viewNowa(): string {
       <input id="n-link" value="${esc(planLink)}" inputmode="url" autocomplete="off" spellcheck="false" placeholder="wklej link do meczu, np. https://…"></div>
     <!-- ADRES MECZU W ŁNP — po nim panel pobiera SKŁAD, bez przepisywania nazwisk na trybunie.
          Osobno od linku do transmisji, bo to dwie różne rzeczy i scout ma prawo mieć obie. -->
-    <div class="field"><span class="label">Link do meczu w ŁNP — skład wczyta się sam (opcjonalnie)</span>
+    <div class="field"><span class="label">Mecz w ŁNP — skład wczyta się sam (opcjonalnie)</span>
       <input id="n-lnp" value="${esc(planLnp)}" inputmode="url" autocomplete="off" spellcheck="false"
-             placeholder="https://www.laczynaspilka.pl/…"></div>
+             placeholder="wklej odnośnik albo całe udostępnienie z aplikacji ŁNP">
+      <span class="hint" style="display:block; margin-top:4px;">W aplikacji ŁNP: otwórz mecz →
+        <strong>Udostępnij</strong> → skopiuj i wklej tutaj całość. Adres wyłuskam sam.</span></div>
     <div class="grid-2">
       <div class="field"><span class="label">Data</span><input type="date" id="n-date" value="${esc(planData || todayISO())}">
         <span class="hint" id="n-dzien" style="display:block; margin-top:4px;">${esc(dataZDniem(planData || todayISO()))}</span></div>
