@@ -196,5 +196,61 @@ console.log("\n6. Wklejka składu z ŁNP");
     dlugie[0] && dlugie[0].nazwa, "Paulo Guilherme Goncalves Bernardo");
 }
 
+
+// ---------------------------------------------------------------------------
+// 7. STRONA MECZU W ŁNP NA KOMPUTERZE.
+// Ma trzy sekcje pod rząd: skład wyjściowy, skład rezerwowy i SZTAB — trenerzy, fizjoterapeuci
+// i lekarz, wypisani dokładnie tak samo jak zawodnicy, z imieniem i nazwiskiem. Wklejenie całości
+// dokładało do składu jedenaście osób z ławki trenerskiej.
+// ---------------------------------------------------------------------------
+console.log("\n7. Skład wyjściowy, rezerwowy i sztab");
+{
+  const kodP = [
+    wytnij("ZNACZNIKI_ZESPOLU + normKlub", /const ZNACZNIKI_ZESPOLU[\s\S]*?\nconst normKlub[\s\S]*?\n  \.trim\(\);/),
+    wytnij("TOKEN_ZESPOLU + slowaKlubu", /const TOKEN_ZESPOLU[\s\S]*?filter\(\(w\) => w\.length > 1 && !TOKEN_ZESPOLU\.test\(w\)\);/),
+    wytnij("NIE_ZAWODNIK", /const NIE_ZAWODNIK = new Set\(\[[\s\S]*?\]\);/),
+    wytnij("WIELKA_MALE", /const WIELKA_MALE = [^\n]+/),
+    wytnij("parsujSklad", /function parsujSklad[\s\S]*?\n}\n/),
+  ].join("\n");
+  const jsP = transformSync(kodP.replace(/export /g, ""), { loader: "ts", format: "esm" }).code;
+  const parsujSklad = new Function(`${jsP}\nreturn parsujSklad;`)();
+
+  const zeStrony = [
+    "RKS RAKÓW CZĘSTOCHOWA S.A.",
+    "Skład wyjściowy", "Zawodnik",
+    "Marius Balaт", "Maho Esmeli", "Wladyslaw Kaczubin",
+    "Skład rezerwowy", "Zawodnik",
+    "Adam Bassa", "Arwid Bearsvan", "Izak Drozberg",
+    "Sztab", "Członek sztabu", "Funkcja",
+    "Tomasz Kaczmarek", "Trener",
+    "Łukasz Otzmek", "Pierwszy Asystent Trenera",
+    "Maciej Sikorski", "Trener Bramkarzy",
+    "Wojciech Kozak", "Lekarz",
+    "Konrad Czopczoка", "Inne | Psycholog",
+  ].join("\n");
+
+  const wynik = parsujSklad(zeStrony, ["RKS Raków Częstochowa", "Zagłębie Lubin"]);
+  const nazwiska = wynik.map((z) => z.nazwa);
+  sprawdz("sześciu zawodników, bez sztabu", wynik.length, 6);
+  sprawdzWarunek("trener nie wszedł do składu", !nazwiska.some((n) => /Kaczmarek/.test(n)),
+    nazwiska.join(", "));
+  sprawdzWarunek("trener bramkarzy nie wszedł", !nazwiska.some((n) => /Sikorski/.test(n)));
+  sprawdzWarunek("lekarz nie wszedł", !nazwiska.some((n) => /Kozak/.test(n)));
+  sprawdzWarunek("psycholog nie wszedł", !nazwiska.some((n) => /Czopcz/.test(n)));
+
+  const wyjsciowy = wynik.filter((z) => z.podstawowy !== false);
+  const rezerwowi = wynik.filter((z) => z.podstawowy === false);
+  sprawdz("trzech w składzie wyjściowym", wyjsciowy.length, 3);
+  sprawdz("trzech rezerwowych", rezerwowi.length, 3);
+  sprawdzWarunek("rezerwowi to ci spod właściwego nagłówka",
+    rezerwowi.every((z) => /Bassa|Bearsvan|Drozberg/.test(z.nazwa)),
+    rezerwowi.map((z) => z.nazwa).join(", "));
+
+  // Zwykła lista nazwisk, bez nagłówków, niczego nie przesądza.
+  const bezNaglowkow = parsujSklad(["1 Kowalski", "4 Nowak"].join("\n"), []);
+  sprawdzWarunek("bez nagłówków nie zgadujemy, kto wyszedł w pierwszym składzie",
+    bezNaglowkow.every((z) => z.podstawowy === undefined));
+}
+
 console.log(bledy ? `\n${bledy} błędów.` : "\nWszystko się zgadza.");
 process.exit(bledy ? 1 : 0);
