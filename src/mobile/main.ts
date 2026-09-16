@@ -1952,8 +1952,22 @@ function parsujSklad(tekst: string, nazwyDruzyn: string[] = []): SkladZawodnik[]
   // informację na liście — bez numeru nie da się rozpoznać zawodnika z trybuny.
   let numerZPoprzedniego: string | undefined;
 
+  // GDZIE W TEKŚCIE JESTEŚMY. Strona meczu w ŁNP dzieli zawodników na „Skład wyjściowy"
+  // i „Skład rezerwowy", a pod nimi ma jeszcze „Sztab" — trenerów, fizjoterapeutów i lekarza,
+  // wypisanych dokładnie tak samo jak zawodników, z imieniem i nazwiskiem. Bez rozpoznania tych
+  // nagłówków wklejenie całej sekcji dokładało do składu jedenaście osób z ławki trenerskiej,
+  // a rezerwowi wchodzili jako pierwszy skład.
+  let rezerwa = false;
+  let wSztabie = false;
+
   for (const surowy of tekst.split("\n")) {
     let w = surowy.trim();
+
+    if (/^sk[łl]ad\s+rezerwow/i.test(w)) { rezerwa = true; wSztabie = false; numerZPoprzedniego = undefined; continue; }
+    if (/^sk[łl]ad\s+(wyj[śs]ciow|podstawow)/i.test(w)) { rezerwa = false; wSztabie = false; numerZPoprzedniego = undefined; continue; }
+    // Sztab ciągnie się do końca sekcji drużyny — przerywa go dopiero następny nagłówek składu.
+    if (/^sztab\b/i.test(w)) { wSztabie = true; numerZPoprzedniego = undefined; continue; }
+    if (wSztabie) { numerZPoprzedniego = undefined; continue; }
 
     // Wiersz będący wyłącznie liczbą to numer koszulki czekający na nazwisko. Minuty zmian
     // („70 '") mają apostrof i tu nie wpadną — inaczej podmieniałyby numery kolejnym zawodnikom.
@@ -1992,7 +2006,12 @@ function parsujSklad(tekst: string, nazwyDruzyn: string[] = []): SkladZawodnik[]
     const klucz = w.toLowerCase();
     if (juzJest.has(klucz)) { numerZPoprzedniego = undefined; continue; }
     juzJest.add(klucz);
-    wynik.push(numer ? { nazwa: w, numer } : { nazwa: w });
+    // `podstawowy` zapisujemy tylko wtedy, gdy tekst NAPRAWDĘ to rozstrzygnął — czyli gdy padł
+    // nagłówek składu rezerwowego. Przy zwykłej liście nazwisk nie zgadujemy, kto wyszedł w
+    // pierwszym składzie.
+    const wpis: SkladZawodnik = numer ? { nazwa: w, numer } : { nazwa: w };
+    if (rezerwa) wpis.podstawowy = false;
+    wynik.push(wpis);
     numerZPoprzedniego = undefined;   // numer zużyty — nie może spłynąć na następne nazwisko
   }
   return wynik;
