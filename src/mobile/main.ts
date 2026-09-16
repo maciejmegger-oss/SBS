@@ -1433,18 +1433,81 @@ function klubZNazwy(nazwa: string, znacznikPodpowiedz = "") {
 let pobieranieSkladu = false;
 const probowanoLnp = new Set<string>();
 
+// ADRES MECZU SAM SIĘ ZNAJDUJE — BEZ WKLEJANIA.
+//
+// Wklejanie odnośnika do każdego meczu z osobna było drogą przez mękę: w aplikacji ŁNP nie ma
+// paska adresu, a przycisk „Udostępnij" trzeba znaleźć i użyć przed każdym spotkaniem. Dlatego
+// adres bierzemy z KARTOTEKI KLUBU — pole „profil ŁNP", które w systemie na komputerze i tak już
+// jest. Stoi tam lista meczów klubu, a na niej data, obie drużyny i odnośnik do każdego z nich.
+//
+// Scout podaje ten adres RAZ, przy klubie. Potem każdy kolejny mecz tego klubu panel odnajduje
+// sam: pyta serwer o wiersz z tą datą i tymi drużynami (patrz api/lnp-mecz.js) i zapamiętuje
+// znaleziony adres przy obserwacji, żeby drugi raz już nie szukać.
+let ostatniPowodLnp = "";
+
+function listyMeczow(obs: Observation): string[] {
+  const [ng, ns] = druzynyZMeczu(obs.match);
+  const znacznik = znacznikZRozgrywek(obs.rozgrywki || "");
+  const adresy: string[] = [];
+  for (const nazwa of [ng, ns]) {
+    const adres = String(klubZNazwy(nazwa, znacznik)?.profileLnp || "").trim();
+    // W tym samym polu bywa adres z 90minut.pl — tam takiej listy nie ma i nie ma czego szukać.
+    if (/^https?:\/\/(www\.)?laczynaspilka\.pl\//i.test(adres) && !adresy.includes(adres)) adresy.push(adres);
+  }
+  return adresy;
+}
+
+async function odnajdzAdresMeczu(obs: Observation): Promise<string> {
+  ostatniPowodLnp = "";
+  const listy = listyMeczow(obs);
+  if (!listy.length) return "";
+  if (!obs.date) { ostatniPowodLnp = "Obserwacja nie ma daty — bez niej nie rozpoznam meczu."; return ""; }
+  const [ng, ns] = druzynyZMeczu(obs.match);
+
+  // Obie drużyny mają swoją listę meczów, a wystarczy jedna z nich. Gdy na pierwszej nic nie ma
+  // (bo np. adres prowadzi do zeszłego sezonu), próbujemy drugiej.
+  for (const lista of listy) {
+    try {
+      const odp = await fetch("/api/lnp-mecz?url=" + encodeURIComponent(lista)
+        + "&home=" + encodeURIComponent(ng) + "&away=" + encodeURIComponent(ns)
+        + "&date=" + encodeURIComponent(obs.date), { headers: { Accept: "application/json" } });
+      const dane = await odp.json().catch(() => null);
+      if (dane?.adres) return String(dane.adres);
+      if (dane?.powod || dane?.error) ostatniPowodLnp = String(dane.powod || dane.error);
+    } catch (e) {
+      ostatniPowodLnp = (e as Error).message;
+    }
+  }
+  return "";
+}
+
 async function pobierzSkladZLnp(recznie: boolean): Promise<void> {
   if (!live || pobieranieSkladu) return;
   const obs = cache.observations.find((o) => o.id === live!.observationId) as
     (Observation & { skladMeczu?: Sklad; lnpUrl?: string }) | undefined;
-  if (!obs?.lnpUrl) { if (recznie) toast("Ta obserwacja nie ma adresu meczu w ŁNP"); return; }
+  if (!obs) return;
+  if (!obs.lnpUrl && !listyMeczow(obs).length) {
+    if (recznie) toast("Ani obserwacja, ani kluby nie mają adresu w ŁNP");
+    return;
+  }
   if (!navigator.onLine) { if (recznie) toast("Brak połączenia — skład pobierzemy przy zasięgu"); return; }
 
   const [ng, ns] = druzynyZMeczu(obs.match);
   pobieranieSkladu = true;
-  if (recznie) toast("Pobieram skład z ŁNP…");
+  if (recznie) toast(obs.lnpUrl ? "Pobieram skład z ŁNP…" : "Szukam meczu w ŁNP…");
   render();
   try {
+    // Adres meczu odnaleziony raz zostaje przy obserwacji — następnym razem idziemy prosto po skład.
+    if (!obs.lnpUrl) {
+      const znaleziony = await odnajdzAdresMeczu(obs);
+      if (!znaleziony) {
+        toast(ostatniPowodLnp || "Nie znalazłem tego meczu na liście w ŁNP");
+        return;
+      }
+      obs.lnpUrl = znaleziony;
+      saveObservation(obs);
+      cache = getCache();
+    }
     const adres = "/api/lnp-sklady?url=" + encodeURIComponent(obs.lnpUrl)
       + "&home=" + encodeURIComponent(ng) + "&away=" + encodeURIComponent(ns);
     const odp = await fetch(adres, { headers: { Accept: "application/json" } });
@@ -1497,7 +1560,10 @@ function przyciskLnp(): string {
   if (!live) return "";
   const obs = cache.observations.find((o) => o.id === live!.observationId) as
     (Observation & { lnpUrl?: string }) | undefined;
-  if (!obs?.lnpUrl) return "";
+  if (!obs) return "";
+  // Przycisk ma sens także bez adresu przy obserwacji — jeśli klub ma w kartotece listę meczów,
+  // jest gdzie szukać. Nie pokazujemy go tylko wtedy, gdy nie ma ani jednego, ani drugiego.
+  if (!obs.lnpUrl && !listyMeczow(obs).length) return "";
   return `
     <div style="margin-bottom:10px;">
       <button class="btn ghost small" style="width:100%; margin:0;" data-act="sklad-z-lnp"
@@ -1511,7 +1577,8 @@ function sprobujSkladZLnp(): void {
   if (!live) return;
   const obs = cache.observations.find((o) => o.id === live!.observationId) as
     (Observation & { skladMeczu?: Sklad; lnpUrl?: string }) | undefined;
-  if (!obs?.lnpUrl || probowanoLnp.has(obs.id)) return;
+  if (!obs || probowanoLnp.has(obs.id)) return;
+  if (!obs.lnpUrl && !listyMeczow(obs).length) return;
   if (STRONY.some((k) => (obs.skladMeczu?.[k]?.zawodnicy || []).length)) return;
   probowanoLnp.add(obs.id);
   void pobierzSkladZLnp(false);
