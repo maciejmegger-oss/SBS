@@ -4887,6 +4887,7 @@ function viewPlayerDetail(id){
     </div>
     <div style="display:flex;gap:8px;">
       <button class="secondary" data-action="edit-player" data-id="${p.id}">Edytuj</button>
+      <button class="gold" data-action="analiza-zawodnika" data-id="${p.id}" title="Pełna analiza: raporty z meczów, opinia AI, decyzja końcowa i poziom">🔍 Analiza zawodnika</button>
       ${talentZawodnika(p) ? '' : `<button class="secondary" data-action="dodaj-do-talentow" data-id="${p.id}" title="Dopisz tego zawodnika do listy Talent — z rocznikiem, klubem i pozycją z kartoteki">⭐ Dodaj do listy Talent</button>`}
       ${has90minutLink(p) ? `<button class="secondary" data-action="refresh-stats" data-id="${p.id}" title="Pobierz mecze i bramki z 90minut.pl">🔄 Odśwież statystyki</button>` : ''}
       ${/transfermarkt\./i.test(String(p.profileTm||'')) ? `<button class="gold" data-action="tm-odswiez" data-id="${p.id}" title="Pobiera z Transfermarktu wzrost, nogę, pozycję, narodowość, agenta, datę końca umowy, wartość rynkową i zdjęcie">⟳ Aktualizuj dane</button>` : ''}
@@ -11131,7 +11132,7 @@ function analyzePlayer(p){
 // mógłby tylko powtórzyć wskaźnik, a chodzi o coś odwrotnego — o wskazanie, czego w tych raportach
 // nie ma. Odpowiedź zapisujemy przy zawodniku, żeby weszła do PDF-a i nie trzeba jej było
 // generować drugi raz przed posiedzeniem komitetu.
-async function pobierzOpinieAI(playerId, przycisk, miejsce){
+async function pobierzOpinieAI(playerId, przycisk, miejsce, poZapisie?){
   const p = DB.players.find(x=>x.id===playerId);
   if(!p || !miejsce) return;
   const napis = przycisk ? przycisk.textContent : '';
@@ -11184,12 +11185,8 @@ async function pobierzOpinieAI(playerId, przycisk, miejsce){
     }
     (p as any).opiniaAI = { tekst: dane.tekst, data: new Date().toISOString(), model: dane.model || '' };
     await savePlayerOne(p);
-    miejsce.innerHTML = `<label class="field">Druga opinia (AI)</label>
-      <div style="white-space:pre-wrap;font-size:12.5px;line-height:1.6;border:1px solid var(--border);
-                  border-radius:8px;padding:10px 12px;background:var(--card-warm);max-height:320px;overflow:auto;">${esc(dane.tekst)}</div>
-      <p class="note" style="margin-top:6px;">Opinia powstała z danych w systemie i publicznych źródeł piłkarskich.
-        Nie obejmuje mediów społecznościowych ani życia prywatnego. Nie zastępuje obserwacji na żywo —
-        traktuj ją jak głos w dyskusji, nie jak rozstrzygnięcie. Wejdzie też do PDF-a analizy.</p>`;
+    miejsce.innerHTML = opiniaAIHtml(dane.tekst, (p as any).opiniaAI.data);
+    if(poZapisie) poZapisie();
   }catch(e){
     console.error(e);
     miejsce.innerHTML = `<div class="note" style="color:var(--clay-dark);">Nie udało się połączyć z usługą opinii.</div>`;
@@ -11209,6 +11206,8 @@ async function generateAnalysisPDF(playerId){
   const raporty = DB.reports.filter(r=>r.playerId===playerId)
     .slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
   const opinia = (p as any).opiniaAI;
+  const dk = decyzjaKoncowa(an, an.reports, opinia);
+  const szacunek = szacunekPoziomu(p, an);
   const wiersz = (etykieta, wartosc)=>
     `<tr><td style="color:#5B6560;padding:3px 10px 3px 0;white-space:nowrap;">${esc(etykieta)}</td><td style="padding:3px 0;"><strong>${esc(String(wartosc))}</strong></td></tr>`;
   const lista = (tab)=> tab.length
@@ -11249,6 +11248,16 @@ async function generateAnalysisPDF(playerId){
   </table>
   ${an.nData<3?'<p style="color:#8C3A2E;font-size:11.5px;margin-top:8px;">Mała próba — decyzji nie należy opierać wyłącznie na tym dokumencie.</p>':''}
 
+  <h2>Decyzja końcowa${dk.werdykt ? ` — z ${dk.glosy.length} ${slowoGlosy(dk.glosy.length)}` : ''}</h2>
+  ${dk.werdykt ? `<div style="font-size:16px;font-weight:800;color:#16302a;">${esc(dk.werdykt)}</div>
+    <div style="color:#5B6560;font-size:11.5px;margin-top:2px;">${dk.zgodne ? 'Głosy zgodne.' : 'Głosy rozbieżne — rozstrzyga komitet.'}${dk.ograniczenie ? ' ' + esc(dk.ograniczenie) : ''}</div>
+    <ul style="margin:6px 0;padding-left:18px;">${dk.glosy.map(g=>`<li>${esc(g.kto)}: <strong>${esc(werdyktZWyniku(g.wynik))}</strong></li>`).join('')}</ul>`
+    : '<div style="color:#5B6560;">Brak głosów — brak raportów z ocenami.</div>'}
+  <table>
+    ${wiersz('Poziom (szacunek systemu)', szacunek.tekst)}
+    ${dk.ai && dk.ai.poziom ? wiersz('Poziom wg opinii AI', dk.ai.poziom) : ''}
+  </table>
+
   <h2>Mocne strony i braki</h2>
   <div class="dwie">
     <div><strong>Mocne strony</strong>${lista(an.strengths)}</div>
@@ -11256,8 +11265,11 @@ async function generateAnalysisPDF(playerId){
   </div>
 
   <h2>Raporty, na których opiera się analiza (${raporty.length})</h2>
-  ${raporty.length ? raporty.map(r=>`<div class="rap"><strong>${esc(r.date||'bez daty')}</strong>
+  ${raporty.length ? raporty.map((r: any)=>`<div class="rap"><strong>${esc(r.date||'bez daty')}</strong>
       <span style="color:#5B6560;">${esc(r.scout||'—')}${r.perspektywa?` &middot; perspektywa ${esc(r.perspektywa)}`:''}${r.obsType?` &middot; ${esc(r.obsType)}`:''}</span>
+      ${[r.rywal, r.wynik].filter(Boolean).length ? `<div style="color:#5B6560;">${esc([r.rywal, r.wynik].filter(Boolean).join(' · '))}</div>` : ''}
+      ${punktyZTekstu(r.mocne).length ? `<div style="margin-top:2px;"><strong>Mocne strony:</strong> ${esc(punktyZTekstu(r.mocne).join('; '))}</div>` : ''}
+      ${punktyZTekstu(r.doPoprawy).length ? `<div><strong>Do poprawy:</strong> ${esc(punktyZTekstu(r.doPoprawy).join('; '))}</div>` : ''}
       ${r.description?`<div style="margin-top:2px;">${esc(r.description)}</div>`:''}</div>`).join('')
     : '<div style="color:#5B6560;">Brak raportów — analiza opiera się wyłącznie na danych z kartoteki.</div>'}
 
@@ -11956,12 +11968,136 @@ function openScalanieModal(playerId){
   document.body.appendChild(overlay);
 }
 
-function openPlayerAnalysisModal(playerId){
+// ANALIZA ZAWODNIKA — TRZY GŁOSY I JEDNA DECYZJA.
+//
+// Decyzja o transferze zapadała w głowie czytającego: dwa raporty tu, wskaźnik tam, opinia AI w osobnym
+// okienku. Teraz liczymy ją jawnie z KAŻDEGO głosu osobno — każdy raport ze swojej perspektywy (albo
+// średniej, gdy perspektywy nie wpisano), werdykt opinii AI i wskaźnik systemu — i pokazujemy, czy
+// głosy są zgodne. Rozbieżność jest informacją samą w sobie: wtedy rozstrzyga komitet, nie średnia.
+const DRABINA_POZIOMOW = ['Klasa okręgowa', 'IV liga', 'III liga', 'II liga', 'I liga', 'Ekstraklasa'];
+const WERDYKTY = ['NIE TRANSFEROWAŁBYM', 'DALSZA OBSERWACJA', 'TESTY', 'TRANSFEROWAŁBYM'];
+const GLOS_SYSTEMU = { go: 3, test: 2, watch: 1, no: 0 };
+
+function werdyktZWyniku(w){
+  return w >= 2.5 ? 'TRANSFEROWAŁBYM' : w >= 1.75 ? 'TESTY' : w >= 1 ? 'DALSZA OBSERWACJA' : 'NIE TRANSFEROWAŁBYM';
+}
+
+// Werdykt i poziom z opinii AI — z sekcji WERDYKT i REKOMENDOWANY POZIOM (patrz api/opinia-ai.js).
+// Model bywa niekonsekwentny w zapisie nagłówków („WERDYKT:", pogrubienia), więc szukamy słów, a nie linii.
+function werdyktZOpiniiAI(tekst){
+  const t = String(tekst || '').replace(/[*#]/g, '');
+  const iW = t.search(/WERDYKT/);
+  const iP = t.search(/REKOMENDOWANY POZIOM/);
+  const w = iW >= 0 ? t.slice(iW + 'WERDYKT'.length, iP > iW ? iP : undefined) : '';
+  const trafienia = [
+    ['NIE TRANSFEROWAŁBYM', w.search(/NIE\s+TRANSFEROWAŁBYM/i)],
+    ['DALSZA OBSERWACJA', w.search(/DALSZA\s+OBSERWACJA/i)],
+    ['TESTY', w.search(/\bTESTY\b/)],
+    ['TRANSFEROWAŁBYM', w.search(/(?<!NIE\s{1,3})TRANSFEROWAŁBYM/i)],
+  ].filter(([, i]) => (i as number) >= 0).sort((a, b)=> (a[1] as number) - (b[1] as number));
+  const poziom = iP >= 0 ? (t.slice(iP + 'REKOMENDOWANY POZIOM'.length).replace(/^[\s:–—-]+/, '').split('\n').map(l=>l.trim()).find(Boolean) || '') : '';
+  return { werdykt: trafienia.length ? trafienia[0][0] as string : null, poziom };
+}
+
+function glosRaportu(r){
+  const perspektywa = String((r && r.perspektywa) || '').toUpperCase();
+  const sr = sredniaZRaportow([r]).overall;
+  let wynik = perspektywa === 'WYSOKA' ? 3 : perspektywa === 'ŚREDNIA' ? 1.5 : perspektywa === 'NISKA' ? 0 : null;
+  if(wynik == null && sr != null) wynik = sr >= 5 ? 3 : sr >= 4.2 ? 2 : sr >= 3.4 ? 1 : 0;
+  return { wynik, sr, perspektywa };
+}
+
+function decyzjaKoncowa(an, raporty, opiniaAI){
+  const glosy = [];
+  (raporty || []).forEach((r, i)=>{
+    const g = glosRaportu(r);
+    if(g.wynik != null) glosy.push({ kto: `Raport ${i + 1}${r.scout ? ' — ' + r.scout : ''}${r.date ? ' (' + r.date + ')' : ''}`, wynik: g.wynik });
+  });
+  const ai = opiniaAI && opiniaAI.tekst ? werdyktZOpiniiAI(opiniaAI.tekst) : null;
+  if(ai && ai.werdykt) glosy.push({ kto: 'Opinia AI', wynik: WERDYKTY.indexOf(ai.werdykt) });
+  if(an && GLOS_SYSTEMU[an.recoTone] != null) glosy.push({ kto: 'Wskaźnik systemu', wynik: GLOS_SYSTEMU[an.recoTone] });
+  if(!glosy.length) return { werdykt: null, srednia: null, glosy, zgodne: null, ograniczenie: '', ai };
+  const srednia = glosy.reduce((s, g)=> s + g.wynik, 0) / glosy.length;
+  let werdykt = werdyktZWyniku(srednia);
+  let ograniczenie = '';
+  // Transfer wprost przy dwóch raportach i bez obserwacji na żywo to zakład, nie decyzja.
+  if(werdykt === 'TRANSFEROWAŁBYM' && an && an.nData < 3){
+    werdykt = 'TESTY';
+    ograniczenie = 'Za mało danych na transfer wprost — najpierw testy albo obserwacja na żywo.';
+  }
+  const wyniki = glosy.map(g=> g.wynik);
+  return { werdykt, srednia, glosy, zgodne: Math.max(...wyniki) - Math.min(...wyniki) <= 1, ograniczenie, ai };
+}
+
+// Na jaki poziom jest zawodnik TERAZ — z ligi, w której gra, średniej z raportów (skala 1-6) i wieku.
+// To szacunek z liczb, nie wyrok: obok stoi poziom z opinii AI, a różnica między nimi jest sygnałem.
+function szacunekPoziomu(p, an){
+  const liga = ligaZawodnika(p);
+  if(!liga) return { tekst: 'Brak ligi zawodnika — nie da się oszacować poziomu.', obecny: '' };
+  const top = topLevelOf(liga);
+  const i = DRABINA_POZIOMOW.indexOf(top);
+  if(i < 0) return { tekst: `Rozgrywki juniorskie (${liga}) — poziom seniorski oceń po meczach z seniorami.`, obecny: liga };
+  const sr = an ? an.overall : null;
+  if(sr == null) return { tekst: 'Brak ocen z raportów — za mało danych na szacunek poziomu.', obecny: top };
+  let pewnie, ryzyko = null;
+  if(sr >= 5.2){ pewnie = i + 1; ryzyko = i + 2; }
+  else if(sr >= 4.5){ pewnie = i; ryzyko = i + 1; }
+  else if(sr >= 3.8){ pewnie = i; }
+  else { pewnie = i - 1; }
+  // Zawodnik po trzydziestce nie przeskoczy dwóch szczebli — rozwój za nim, liczy się forma.
+  if(an.age != null && an.age >= 29 && ryzyko != null && ryzyko > i + 1) ryzyko = i + 1;
+  const nazwa = (k)=> DRABINA_POZIOMOW[Math.max(0, Math.min(DRABINA_POZIOMOW.length - 1, k))];
+  const pP = nazwa(pewnie), pR = ryzyko != null ? nazwa(ryzyko) : null;
+  return { tekst: `${pP} pewnie${pR && pR !== pP ? `, ${pR} z ryzykiem` : ''}. Obecnie: ${top}.`, obecny: top, pewnie: pP, ryzyko: pR };
+}
+
+function slowoGlosy(n){ return n === 1 ? 'głosu' : 'głosów'; }
+
+function decyzjaKoncowaHtml(dk, szacunek){
+  if(!dk || !dk.werdykt) return `<div class="note">Brak głosów — wypełnij raport z meczu, żeby powstała decyzja.</div>`;
+  const kolor = { 'TRANSFEROWAŁBYM': 'var(--good)', 'TESTY': 'var(--gold-dark)', 'DALSZA OBSERWACJA': 'var(--gold-dark)', 'NIE TRANSFEROWAŁBYM': 'var(--clay-dark)' }[dk.werdykt];
+  return `<div class="card" style="margin:0;padding:12px 14px;border-left:4px solid ${kolor};">
+    <label class="field">Decyzja końcowa — z ${dk.glosy.length} ${slowoGlosy(dk.glosy.length)}</label>
+    <div style="font-size:17px;font-weight:800;color:${kolor};">${esc(dk.werdykt)}</div>
+    <div class="note" style="margin-top:2px;">${dk.zgodne ? 'Głosy zgodne.' : 'Głosy rozbieżne — rozstrzyga komitet.'}${dk.ograniczenie ? ' ' + esc(dk.ograniczenie) : ''}${
+      dk.ai && dk.ai.werdykt ? '' : ' Bez opinii AI — decyzja z raportów i wskaźnika.'}</div>
+    <ul style="margin:6px 0 0;padding-left:18px;font-size:12.5px;">${dk.glosy.map(g=>`<li>${esc(g.kto)}: <strong>${esc(werdyktZWyniku(g.wynik))}</strong></li>`).join('')}</ul>
+    <div style="margin-top:8px;font-size:13px;"><strong>Poziom:</strong> ${esc(szacunek.tekst)}${
+      dk.ai && dk.ai.poziom ? `<br><strong>Poziom wg opinii AI:</strong> ${esc(dk.ai.poziom)}` : ''}</div>
+  </div>`;
+}
+
+function raportyMeczoweHtml(raporty){
+  if(!raporty.length) return '<div class="note">Brak raportów z meczów.</div>';
+  return raporty.map((r, i)=>{
+    const g = glosRaportu(r);
+    const mecz = [r.rywal, r.wynik].filter(Boolean).join(' · ');
+    return `<div class="obs-item" style="margin:6px 0 0;">
+      <strong>Raport ${i + 1}</strong> <span class="meta">${esc(r.date || 'bez daty')}${mecz ? ' · ' + esc(mecz) : ''}${r.scout ? ' · ' + esc(r.scout) : ''}${
+        g.perspektywa ? ' · perspektywa ' + esc(g.perspektywa) : ''}${g.sr != null ? ' · średnia ' + fmt1(g.sr) + '/6' : ''}</span>
+      ${mocneSlaboHtml(r)}
+    </div>`;
+  }).join('');
+}
+
+function opiniaAIHtml(tekst, data){
+  return `<label class="field">Druga opinia (AI)${data ? ' — ' + esc(String(data).slice(0, 10)) : ''}</label>
+    <div style="white-space:pre-wrap;font-size:12.5px;line-height:1.6;border:1px solid var(--border);
+                border-radius:8px;padding:10px 12px;background:var(--card-warm);max-height:320px;overflow:auto;">${esc(tekst)}</div>
+    <p class="note" style="margin-top:6px;">Opinia powstała z danych w systemie i publicznych źródeł piłkarskich.
+      Nie obejmuje mediów społecznościowych ani życia prywatnego. Nie zastępuje obserwacji na żywo —
+      traktuj ją jak głos w dyskusji, nie jak rozstrzygnięcie. Wejdzie też do PDF-a analizy.</p>`;
+}
+
+// opcje.automatycznieAI (domyślnie tak): pełna analiza sama pobiera opinię AI, chyba że zapisana jest
+// świeższa niż ostatni raport — wtedy pokazujemy zapisaną i nie płacimy za nią drugi raz.
+function openPlayerAnalysisModal(playerId, opcje: any = {}){
   const existing = document.querySelector('.modal-overlay[data-analysis-for]');
   if(existing) existing.remove();
   const p = DB.players.find(x=>x.id===playerId);
   if(!p) return;
   const an = analyzePlayer(p);
+  const szacunek = szacunekPoziomu(p, an);
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.dataset.analysisFor = playerId;
@@ -11989,8 +12125,11 @@ function openPlayerAnalysisModal(playerId){
       <div><label class="field">Do poprawy</label>${an.weaknesses.length? `<ul style="margin:4px 0;padding-left:18px;">${an.weaknesses.map(s=>`<li>${esc(s.etykieta||RATING_LABELS[s.k]||s.k)} (${fmt1(s.v)})</li>`).join('')}</ul>` : '<div class="note">Brak danych</div>'}</div>
     </div>
     <div style="margin-top:10px;"><label class="field">Potencjał rozwoju</label><div style="font-size:13px;">${esc(an.devNote)}</div></div>
+    <div style="margin-top:10px;"><label class="field">Raporty z meczów (${an.reports.length})</label>${raportyMeczoweHtml(an.reports)}</div>
+    <div style="margin-top:10px;"><label class="field">Poziom — szacunek systemu</label><div style="font-size:13px;">${esc(szacunek.tekst)}</div></div>
     <div class="note" style="margin-top:10px;">Podstawa: ${an.a?an.a.count:0} obserwacji, ${an.reports.length} raportów.${an.nData<3?' ⚠️ Mała próba — oprzyj decyzję też na obserwacji na żywo.':''}</div>
     <div id="opinia-ai-miejsce" style="margin-top:14px;"></div>
+    <div id="decyzja-koncowa" style="margin-top:14px;"></div>
     <div class="modal-actions" style="gap:8px;flex-wrap:wrap;">
       <button class="secondary" data-action="opinia-ai">🧠 Druga opinia (AI)</button>
       <button class="secondary" data-action="analiza-pdf">⭳ Pobierz analizę (PDF)</button>
@@ -12004,11 +12143,24 @@ function openPlayerAnalysisModal(playerId){
     catch(err){ console.error(err); pokazPotwierdzenie('Nie udało się złożyć PDF-a analizy.', 'blad'); }
     finally{ b.disabled = false; b.textContent = napis; }
   };
+  // Decyzja końcowa liczy się od razu (raporty + wskaźnik) i jeszcze raz, gdy dojdzie opinia AI.
+  const odswiezDecyzje = ()=>{
+    const miejsce = overlay.querySelector('#decyzja-koncowa');
+    if(miejsce) miejsce.innerHTML = decyzjaKoncowaHtml(decyzjaKoncowa(an, an.reports, (p as any).opiniaAI), szacunek);
+  };
   overlay.querySelector('[data-action="opinia-ai"]').onclick = (e)=>
-    pobierzOpinieAI(playerId, e.currentTarget, overlay.querySelector('#opinia-ai-miejsce'));
+    pobierzOpinieAI(playerId, e.currentTarget, overlay.querySelector('#opinia-ai-miejsce'), odswiezDecyzje);
   overlay.querySelector('[data-action="close-analysis"]').onclick = ()=>overlay.remove();
   overlay.addEventListener('click', e=>{ if(e.target===overlay) overlay.remove(); });
+  const zapisana = (p as any).opiniaAI;
+  if(zapisana && zapisana.tekst) overlay.querySelector('#opinia-ai-miejsce').innerHTML = opiniaAIHtml(zapisana.tekst, zapisana.data);
+  odswiezDecyzje();
   document.body.appendChild(overlay);
+  const najnowszyRaport = an.reports.map(r=> String(r.date || '')).sort().pop() || '';
+  const aktualna = !!(zapisana && zapisana.tekst && String(zapisana.data || '').slice(0, 10) >= najnowszyRaport);
+  if(opcje.automatycznieAI !== false && !aktualna && an.reports.length){
+    pobierzOpinieAI(playerId, overlay.querySelector('[data-action="opinia-ai"]'), overlay.querySelector('#opinia-ai-miejsce'), odswiezDecyzje);
+  }
 }
 
 // ---------- RADAR MŁODZIEŻY ----------
@@ -12862,6 +13014,8 @@ function attachHandlers(){
 
   main.querySelectorAll('[data-action="add-player"]').forEach(b=>b.onclick=()=>openPlayerModal(null));
   main.querySelectorAll('[data-action="edit-player"]').forEach(b=>b.onclick=()=>openPlayerModal(b.dataset.id));
+  // Pełna analiza jednym kliknięciem — razem z opinią AI (patrz openPlayerAnalysisModal).
+  main.querySelectorAll('[data-action="analiza-zawodnika"]').forEach(b=>b.onclick=()=>openPlayerAnalysisModal((b as HTMLElement).dataset.id, { automatycznieAI: true }));
   main.querySelectorAll('[data-action="dodaj-do-talentow"]').forEach(b=>b.onclick=async()=>{
     const p = DB.players.find(x=>x.id===(b as HTMLElement).dataset.id);
     if(!p) return;
