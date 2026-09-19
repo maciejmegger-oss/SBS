@@ -99,7 +99,12 @@ spr("adres przyjmowany TYLKO z ŁNP", /laczynaspilka\\.pl\$\/i\.test\(u\.hostnam
 spr("adres zapisuje się przy obserwacji", /lnpUrl: adresLnp/.test(panel));
 spr("jest przycisk pobrania", /data-act="sklad-z-lnp"/.test(panel));
 spr("próba samoczynna po wejściu w składy", /if \(liveTab === "sklady"\) sprobujSkladZLnp\(\);/.test(panel));
-spr("samoczynnie tylko raz na obserwację", /probowanoLnp\.has\(obs\.id\)/.test(panel));
+// Bylo tu kiedys "samoczynnie TYLKO RAZ na obserwacje" — i ten test pilnowal bledu zamiast go
+// zlapac. Jedna proba na obserwacje znaczyla, ze mecz otwarty przed ogloszeniem skladu nie
+// dostawal go juz nigdy. Regula wlasciwa jest odwrotna: probujemy dalej, tylko nie czesciej niz
+// co poltorej minuty. Szczegoly sprawdza scripts/test-lnp-ponawianie.mjs.
+spr("samoczynnie ponawiane, nie jednorazowe",
+  /PRZERWA_PROB_LNP/.test(panel) && !/probowanoLnp/.test(panel));
 spr("samoczynnie tylko przy pustym składzie",
   /if \(STRONY\.some\(\(k\) => \(obs\.skladMeczu\?\.\[k\]\?\.zawodnicy \|\| \[\]\)\.length\)\) return;/.test(panel));
 spr("podmiana wpisanego składu pyta o zgodę", /Skład z ŁNP podmieni to, co już jest wpisane/.test(panel));
