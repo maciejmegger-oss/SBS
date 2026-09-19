@@ -65,15 +65,24 @@ export default async function handler(req, res) {
   }
 
   if (!mecze.length) {
+    // ADRES, KTÓRY CZYTALIŚMY, MUSI WRÓCIĆ W ODPOWIEDZI. Bez tego „nie znalazłem listy meczów"
+    // nie daje się odróżnić od „czytałem nie tę stronę" — a panel ma kilka źródeł adresu
+    // (podany na telefonie, pole przy klubie, terminarz rozgrywek z systemu) i przy błędzie
+    // pierwszym pytaniem jest, które z nich poszło do boju.
     return res.status(200).json({
       adres: null,
       powod: "Na tej stronie nie znalazłem listy meczów.",
+      adresSzukany: adres,
       zawartosc: opiszZawartosc(html),
     });
   }
 
   const { mecz, powod, kandydaci } = znajdzMecz(mecze, { gospodarz, gosc, data });
-  if (!mecz) return res.status(200).json({ adres: null, powod, kandydaci, zrodlo: skad, ilu: mecze.length });
+  if (!mecz) {
+    return res.status(200).json({
+      adres: null, powod, kandydaci, zrodlo: skad, ilu: mecze.length, adresSzukany: adres,
+    });
+  }
 
   return res.status(200).json({ adres: mecz.adres, data: mecz.data, zrodlo: skad });
 }
