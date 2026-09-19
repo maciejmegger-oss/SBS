@@ -94,14 +94,15 @@ console.log("\nSkad panel bierze adres listy meczow");
   const kodListy = panel.match(/function listyMeczow\(obs: Observation\)[\s\S]*?\n}\n/)[0];
   const kodCzy = panel.match(/const czyListaLnp = [^;]+;/)[0];
 
-  function listy({ kluby = [null, null], grupy = {}, rozgrywki = "" } = {}) {
+  function listy({ kluby = [null, null], grupy = {}, rozgrywki = "", wlasne = {} } = {}) {
     const zrodlo = `
       ${transformSync(kodCzy, { loader: "ts" }).code}
       ${transformSync(kodListy, { loader: "ts" }).code}
       return listyMeczow;`;
-    const f = new Function("cache", "druzynyZMeczu", "znacznikZRozgrywek", "klubZNazwy", zrodlo);
+    const f = new Function("cache", "druzynyZMeczu", "znacznikZRozgrywek", "klubZNazwy",
+      "getListyLnp", zrodlo);
     let i = 0;
-    return f({ lnpGrupy: grupy }, () => ["Gospodarz", "Gość"], () => "", () => kluby[i++])
+    return f({ lnpGrupy: grupy }, () => ["Gospodarz", "Gość"], () => "", () => kluby[i++], () => wlasne)
       ({ match: "Gospodarz - Gość", rozgrywki });
   }
 
@@ -125,6 +126,27 @@ console.log("\nSkad panel bierze adres listy meczow");
   spr("gdy są oba, lista klubu idzie pierwsza", oba[0] === LNP && oba[1] === GRUPA, JSON.stringify(oba));
 
   spr("bez żadnego adresu lista jest pusta", listy().length === 0);
+
+  // Adres podany przez skauta WPROST NA TELEFONIE. Istnieje dla sytuacji, ktorej kartoteka nie
+  // obsluguje: wpis klubu jest zespolem mlodziezowym, a mecz seniorski — nie ma wtedy gdzie
+  // przypiac adresu seniorskich rozgrywek, bo przypiecie go do tego wpisu byloby nieprawda.
+  const WLASNY = "https://www.laczynaspilka.pl/rozgrywki/iii-liga-grupa-2/mecze";
+  spr("adres podany na telefonie jest brany",
+    listy({ wlasne: { "III liga, grupa 2": WLASNY }, rozgrywki: "III liga, grupa 2" })[0] === WLASNY);
+
+  // To on wie o tym meczu najwiecej — skaut podal go patrzac na ten konkretny mecz.
+  const kolejnosc = listy({
+    kluby: [{ profileLnp: LNP, league: "Ekstraklasa" }, null],
+    grupy: { Ekstraklasa: GRUPA },
+    wlasne: { Ekstraklasa: WLASNY },
+    rozgrywki: "Ekstraklasa",
+  });
+  spr("i idzie PRZED adresem z kartoteki", kolejnosc[0] === WLASNY, JSON.stringify(kolejnosc));
+  spr("nie dubluje się, gdy jest ten sam co w kartotece",
+    listy({ kluby: [{ profileLnp: WLASNY }, null], wlasne: { X: WLASNY }, rozgrywki: "X" }).length === 1);
+
+  spr("adres na telefonie dla INNYCH rozgrywek nie wchodzi",
+    listy({ wlasne: { "IV liga": WLASNY }, rozgrywki: "III liga, grupa 2" }).length === 0);
 }
 
 console.log("\nWpiecie ponawiania w panel");

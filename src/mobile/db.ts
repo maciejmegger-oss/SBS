@@ -62,6 +62,13 @@ const LS = {
   scout: "sbs-m:scout",          // ostatnio wybrany scout
   // Herby klubów (base64), OSOBNO od kopii bazy — patrz pobierzHerby.
   herby: "sbs-m:herby",
+  // Adresy list meczów w ŁNP podane PRZEZ SCOUTA na telefonie, rozgrywki -> adres.
+  // Osobno od lnpGrupy z kopii bazy, bo tamte przychodzą z systemu na komputerze i są przez
+  // odświeżenie nadpisywane. Ten zapis jest odpowiedzią na sytuację, której kartoteka nie
+  // obsługuje: wpis klubu bywa zespołem MŁODZIEŻOWYM, a mecz jest seniorski — wtedy nie ma
+  // gdzie przypiąć adresu seniorskich rozgrywek, bo przypięcie go do tego wpisu byłoby
+  // po prostu nieprawdą.
+  listyLnp: "sbs-m:listy-lnp",
 };
 
 export const uid = (prefix: string) =>
@@ -270,6 +277,15 @@ const page = async (table: string, columns = "*"): Promise<Record<string, unknow
 const MAKS_HERBOW = 400;
 
 export const getHerby = (): Record<string, string> => readLS<Record<string, string>>(LS.herby, {});
+
+/** Adresy list meczów ŁNP podane przez scouta na telefonie: rozgrywki -> adres. */
+export const getListyLnp = (): Record<string, string> => readLS<Record<string, string>>(LS.listyLnp, {});
+
+export function zapamietajListeLnp(rozgrywki: string, adres: string): void {
+  const klucz = String(rozgrywki || "").trim();
+  if (!klucz || !adres) return;
+  writeLS(LS.listyLnp, { ...getListyLnp(), [klucz]: adres });
+}
 
 /** Dobiera brakujące herby wskazanych klubów. Zwraca, ile doszło. */
 export async function pobierzHerby(ids: string[]): Promise<number> {

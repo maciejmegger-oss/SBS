@@ -12,7 +12,7 @@ import {
   saveObservation, saveReport, savePlayerStatus, saveLiveEvents, deleteObservation,
   zablokowaneZadania, liczbaZablokowanych, ponowZablokowane, ostatniBladWysylki,
   getLive, setLive, getScout, setScout, zarchiwizujZdarzenia, zdarzeniaObserwacji,
-  wyczyscKopieBazy, getHerby, pobierzHerby,
+  wyczyscKopieBazy, getHerby, pobierzHerby, getListyLnp, zapamietajListeLnp,
   type Cache, type LiveEvent, type LiveState, type Period,
 } from "./db";
 import type { Observation, Report } from "../types";
@@ -1506,6 +1506,15 @@ function listyMeczow(obs: Observation): string[] {
   // To bywa jedyny adres, jaki w ogóle jest: aplikacja ŁNP na telefonie nie ma przycisku
   // „Udostępnij", więc odnośnika do meczu nie da się z niej wyjąć, a pola przy klubie nikt nie
   // musiał wypełniać. Skoro system już wie, gdzie stoi terminarz tej ligi — korzystamy.
+  // Adres podany przez scouta wprost na telefonie idzie PRZED adresem klubu, gdy dotyczy tych
+  // rozgrywek. Podał go, patrząc na ten mecz — wie o nim więcej niż kartoteka.
+  const wlasny = String((getListyLnp())[String(obs.rozgrywki || "").trim()] || "").trim();
+  if (czyListaLnp(wlasny)) {
+    const juz = adresy.indexOf(wlasny);
+    if (juz >= 0) adresy.splice(juz, 1);
+    adresy.unshift(wlasny);
+  }
+
   const grupy = cache.lnpGrupy || {};
   for (const klucz of [obs.rozgrywki, ...kluby.map((k) => k?.league)]) {
     if (klucz && grupy[klucz]) dodaj(grupy[klucz]);
@@ -1612,10 +1621,35 @@ async function wgrajZUdostepnienia(): Promise<void> {
   const tekst = $<HTMLTextAreaElement>("udostepniony-mecz")?.value || "";
   if (!tekst.trim()) { toast("Wklej udostępniony mecz"); return; }
 
-  // Adres wprost z ŁNP to najkrótsza droga — wtedy nie ma czego szukać.
+  // ADRES Z ŁNP: MECZ CZY LISTA MECZÓW? To nie jest drobiazg — to dwie różne strony i dwie różne
+  // drogi. Adres meczu ma w sobie „/mecz/" i identyfikator z myślnikami; wszystko inne na tej
+  // domenie jest listą. Podanie listy tam, gdzie spodziewamy się meczu, kończyło się odpowiedzią
+  // „na tej stronie nie ma jeszcze składów" — zdaniem prawdziwym i zupełnie mylącym.
   const adres = adresLnp(tekst);
-  if (adres) {
+  if (adres && /\/mecz\/[0-9a-f-]{36}/i.test(adres)) {
     obs.lnpUrl = adres;
+    saveObservation(obs);
+    cache = getCache();
+    void pobierzSkladZLnp(true);
+    return;
+  }
+
+  // LISTA MECZÓW PODANA WPROST W PANELU.
+  //
+  // Po to jest ta droga: wpis klubu w kartotece bywa zespołem MŁODZIEŻOWYM, a mecz jest
+  // seniorski. Adresu seniorskich rozgrywek nie ma wtedy gdzie przypiąć — przypięcie go do wpisu
+  // młodzieżowego byłoby nieprawdą. Scout podaje go więc tutaj, przy meczu, a panel zapamiętuje
+  // go dla TYCH ROZGRYWEK, żeby przy następnej kolejce nie pytać o to samo.
+  if (adres) {
+    if (!navigator.onLine) { toast("Brak połączenia — spróbuj przy zasięgu"); return; }
+    zapamietajListeLnp(obs.rozgrywki || "", adres);
+    pobieranieSkladu = true;
+    toast("Szukam meczu na tej liście…");
+    render();
+    let zListy = "";
+    try { zListy = await odnajdzAdresMeczu(obs); } finally { pobieranieSkladu = false; }
+    if (!zListy) { toast(ostatniPowodLnp || "Nie znalazłem tego meczu na tej liście"); render(); return; }
+    obs.lnpUrl = zListy;
     saveObservation(obs);
     cache = getCache();
     void pobierzSkladZLnp(true);
@@ -1743,9 +1777,10 @@ function przyciskLnp(): string {
   if (!obs.lnpUrl && !listyMeczow(obs).length) {
     return `
       <div class="note" style="margin-bottom:10px; line-height:1.45;">
-        Skład wgra się sam, gdy klub będzie miał adres listy meczów z ŁNP.
-        W systemie na komputerze: <strong>klub → pole „profil ŁNP"</strong> — wklej tam adres
-        strony z meczami klubu. Podaje się go raz, potem każdy kolejny mecz znajdzie się sam.
+        Nie mam gdzie szukać tego meczu w ŁNP. Wklej niżej <strong>adres listy meczów</strong>
+        — strony z terminarzem tych rozgrywek albo klubu. Zapamiętam go dla
+        <strong>${esc(obs.rozgrywki || "tych rozgrywek")}</strong>, więc przy następnej kolejce
+        skład wgra się już sam.
       </div>`;
   }
   return `
@@ -1763,12 +1798,14 @@ function przyciskLnp(): string {
 function polUdostepnienia(): string {
   return `
     <details class="pol-udostepnienie" style="margin-bottom:10px;">
-      <summary class="label" style="cursor:pointer;">Albo udostępnij mecz z serwisu wynikowego</summary>
-      <p class="hint" style="margin:6px 0;">Wklej to, co daje przycisk „Udostępnij" — wystarczą nazwy
-      drużyn. Skład i tak pobierzemy z ŁNP, z pełnymi imionami.</p>
+      <summary class="label" style="cursor:pointer;">Wskaż mecz: udostępnienie albo adres z ŁNP</summary>
+      <p class="hint" style="margin:6px 0;">Przyjmuję trzy rzeczy: tekst z przycisku
+      „Udostępnij" w serwisie wynikowym, <strong>adres listy meczów z ŁNP</strong> (terminarz
+      rozgrywek albo klubu — zapamiętam go dla tych rozgrywek) albo adres samego meczu.
+      Skład zawsze pobieram z ŁNP, z pełnymi imionami.</p>
       <div class="field">
         <textarea id="udostepniony-mecz" rows="2"
-                  placeholder="GKS Katowice - Cracovia 0:0"></textarea>
+                  placeholder="GKS Katowice - Cracovia 0:0&#10;albo https://www.laczynaspilka.pl/rozgrywki/..."></textarea>
       </div>
       <button class="btn ghost small" style="width:100%; margin:0;" data-act="mecz-z-udostepnienia"
               ${pobieranieSkladu ? "disabled" : ""}>
@@ -1930,7 +1967,8 @@ function viewSklady(): string {
     <div style="margin-bottom:8px;">
       <button class="btn ghost small" style="width:100%; margin:0;" data-act="otworz-wklejanie">Wklej albo wpisz skład</button>
     </div>
-    ${przyciskLnp()}`;
+    ${przyciskLnp()}
+    ${polUdostepnienia()}`;
 
   const przelacznik = `
     <div class="polarity" style="margin-bottom:10px;">
