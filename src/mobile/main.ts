@@ -1471,12 +1471,74 @@ function listyMeczow(obs: Observation): string[] {
   return adresy;
 }
 
-async function odnajdzAdresMeczu(obs: Observation): Promise<string> {
+// MECZ Z TEKSTU UDOSTĘPNIENIA (serwis wynikowy albo cokolwiek innego).
+//
+// Serwisy wynikowe mają przycisk „Udostępnij", którego aplikacja ŁNP nie ma. Wklejony tekst
+// wygląda tak:
+//
+//     GKS Katowice - Cracovia 0:0
+//     Więcej informacji: https://www.flashscore.pl/r/?t=1&id=YyvF1Wam
+//
+// Bierzemy z niego WYŁĄCZNIE NAZWY DRUŻYN — czyli to, co scout sam wkleił. Pod podany adres nie
+// zaglądamy i zaglądać nie będziemy: skład przychodzi z ŁNP, tak samo jak zawsze. Serwisy
+// wynikowe skracają imię do inicjału („Nowak B."), więc ich skład i tak nie nadaje się do
+// kartoteki — a tu potrzebna jest tylko odpowiedź na pytanie „który to mecz".
+const NAZWA_DRUZYNY = /^[^\d:][^:]{1,39}$/;
+
+function czystaNazwa(s: string): string {
+  return String(s || "")
+    .replace(/\d+\s*[:\-–]\s*\d+\s*$/, "")   // wynik na końcu: „Cracovia 0:0"
+    .replace(/\((?:[^)]*)\)\s*$/, "")         // dopisek w nawiasie
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function meczZUdostepnienia(tekst: string): { gospodarz: string; gosc: string } | null {
+  const wiersze = String(tekst || "").split(/[\r\n]+/)
+    .map((w) => w.trim())
+    .filter((w) => w && !/^https?:\/\//i.test(w) && !/^wi[ęe]cej informacji/i.test(w));
+
+  // NAJPIERW WIERSZ Z WYNIKIEM, POTEM DOWOLNY.
+  //
+  // Pierwszy z brzegu wiersz z myślnikiem nie musi być meczem: nagłówek „Ekstraklasa - kolejka 9"
+  // ma dokładnie ten sam kształt co „Widzew - Raków" i wygrywał, bo stoi wyżej. Wiersz meczu
+  // w serwisie wynikowym niemal zawsze niesie wynik, więc to on ma pierwszeństwo — a gdy wyniku
+  // nie ma nigdzie (mecz przed pierwszym gwizdkiem), wracamy do przeglądania wszystkich.
+  const zWynikiem = wiersze.filter((w) => /\d{1,2}\s*[:\-–]\s*\d{1,2}\s*$|\s\d{1,2}\s*:\s*\d{1,2}\s/.test(w));
+  for (const wiersz of [...zWynikiem, ...wiersze]) {
+    // Odnośnik bywa doklejony do tej samej linii, co nazwy — ucinamy go, nie całą linię.
+    const bezAdresu = wiersz.replace(/https?:\/\/\S+/gi, " ").trim();
+    const proby: [string, string][] = [];
+    // „Gospodarz - Gość 0:0" — postać, którą wysyłają serwisy wynikowe.
+    const zMyslnikiem = bezAdresu.match(/^(.{2,40}?)\s+[-–—]\s+(.{2,60})$/);
+    if (zMyslnikiem) proby.push([zMyslnikiem[1], zMyslnikiem[2]]);
+    // „Gospodarz 2:1 Gość" — wynik w środku, tak pisze część serwisów.
+    const zWynikiem = bezAdresu.match(/^(.{2,40}?)\s+\d{1,2}\s*[:\-–]\s*\d{1,2}\s+(.{2,40})$/);
+    if (zWynikiem) proby.push([zWynikiem[1], zWynikiem[2]]);
+
+    for (const [a, b] of proby) {
+      const gospodarz = czystaNazwa(a);
+      const gosc = czystaNazwa(b);
+      if (!gospodarz || !gosc) continue;
+      if (!NAZWA_DRUZYNY.test(gospodarz) || !NAZWA_DRUZYNY.test(gosc)) continue;
+      // Nazwa klubu ma w sobie litery. Bez tego „7 - 3" z relacji uchodziłoby za mecz.
+      if (!/\p{L}{2}/u.test(gospodarz) || !/\p{L}{2}/u.test(gosc)) continue;
+      return { gospodarz, gosc };
+    }
+  }
+  return null;
+}
+
+async function odnajdzAdresMeczu(obs: Observation, nazwy?: { gospodarz: string; gosc: string }): Promise<string> {
   ostatniPowodLnp = "";
   const listy = listyMeczow(obs);
   if (!listy.length) return "";
   if (!obs.date) { ostatniPowodLnp = "Obserwacja nie ma daty — bez niej nie rozpoznam meczu."; return ""; }
-  const [ng, ns] = druzynyZMeczu(obs.match);
+  const [zMeczu, zMeczuGosc] = druzynyZMeczu(obs.match);
+  // Nazwy z udostępnienia mają pierwszeństwo przed nazwami z obserwacji: scout wkleił je
+  // świadomie, patrząc na ten konkretny mecz.
+  const ng = nazwy?.gospodarz || zMeczu;
+  const ns = nazwy?.gosc || zMeczuGosc;
 
   // Obie drużyny mają swoją listę meczów, a wystarczy jedna z nich. Gdy na pierwszej nic nie ma
   // (bo np. adres prowadzi do zeszłego sezonu), próbujemy drugiej.
@@ -1493,6 +1555,56 @@ async function odnajdzAdresMeczu(obs: Observation): Promise<string> {
     }
   }
   return "";
+}
+
+// „Udostępnij" z serwisu wynikowego → skład z ŁNP.
+//
+// Droga jest dwuczęściowa i obie części robią co innego: wklejony tekst mówi, KTÓRY to mecz,
+// a ŁNP mówi, KTO gra. Dzięki temu scout korzysta z przycisku, który ma pod ręką, a nazwiska
+// i tak przychodzą pełne.
+async function wgrajZUdostepnienia(): Promise<void> {
+  if (!live || pobieranieSkladu) return;
+  const obs = cache.observations.find((o) => o.id === live!.observationId) as
+    (Observation & { lnpUrl?: string }) | undefined;
+  if (!obs) return;
+  const tekst = $<HTMLTextAreaElement>("udostepniony-mecz")?.value || "";
+  if (!tekst.trim()) { toast("Wklej udostępniony mecz"); return; }
+
+  // Adres wprost z ŁNP to najkrótsza droga — wtedy nie ma czego szukać.
+  const adres = adresLnp(tekst);
+  if (adres) {
+    obs.lnpUrl = adres;
+    saveObservation(obs);
+    cache = getCache();
+    void pobierzSkladZLnp(true);
+    return;
+  }
+
+  const nazwy = meczZUdostepnienia(tekst);
+  if (!nazwy) {
+    toast("Nie rozpoznałem meczu w tym tekście — potrzebne są nazwy obu drużyn");
+    return;
+  }
+  if (!navigator.onLine) { toast("Brak połączenia — spróbuj przy zasięgu"); return; }
+
+  pobieranieSkladu = true;
+  toast(`Szukam: ${nazwy.gospodarz} – ${nazwy.gosc}`);
+  render();
+  let znaleziony = "";
+  try {
+    znaleziony = await odnajdzAdresMeczu(obs, nazwy);
+  } finally {
+    pobieranieSkladu = false;
+  }
+  if (!znaleziony) {
+    toast(ostatniPowodLnp || "Nie znalazłem tego meczu na liście w ŁNP");
+    render();
+    return;
+  }
+  obs.lnpUrl = znaleziony;
+  saveObservation(obs);
+  cache = getCache();
+  void pobierzSkladZLnp(true);
 }
 
 async function pobierzSkladZLnp(recznie: boolean): Promise<void> {
@@ -1603,6 +1715,26 @@ function przyciskLnp(): string {
     </div>`;
 }
 
+// Pole na udostępniony mecz. Stoi przy wklejaniu składu, bo to ta sama sytuacja: scout ma coś
+// w schowku i chce, żeby panel z tego skorzystał. Różnica jest taka, że tu wystarczy jedna linia
+// z nazwami drużyn — reszta dzieje się sama.
+function polUdostepnienia(): string {
+  return `
+    <details class="pol-udostepnienie" style="margin-bottom:10px;">
+      <summary class="label" style="cursor:pointer;">Albo udostępnij mecz z serwisu wynikowego</summary>
+      <p class="hint" style="margin:6px 0;">Wklej to, co daje przycisk „Udostępnij" — wystarczą nazwy
+      drużyn. Skład i tak pobierzemy z ŁNP, z pełnymi imionami.</p>
+      <div class="field">
+        <textarea id="udostepniony-mecz" rows="2"
+                  placeholder="GKS Katowice - Cracovia 0:0"></textarea>
+      </div>
+      <button class="btn ghost small" style="width:100%; margin:0;" data-act="mecz-z-udostepnienia"
+              ${pobieranieSkladu ? "disabled" : ""}>
+        ${pobieranieSkladu ? "Szukam…" : "Znajdź mecz i wgraj skład"}
+      </button>
+    </details>`;
+}
+
 // PRÓBA SAMOCZYNNA — PONAWIANA, NIE JEDNORAZOWA.
 //
 // Wcześniej próba była JEDNA na obserwację i to był błąd. Scout otwiera mecz zwykle wcześniej niż
@@ -1705,6 +1837,7 @@ function viewSklady(): string {
         ${STRONY.map((k) => `<button class="btn ghost" style="margin-top:0;" data-act="otworz-kadre" data-strona="${k}">Kadra: ${esc(k === "gospodarze" ? gosp : gosc)}</button>`).join("")}
       </div>
       ${przyciskLnp()}
+      ${polUdostepnienia()}
       <p class="hint">Po jednym zawodniku w wierszu. Numer na początku wiersza jest rozpoznawany.
       Na iPhonie tekst da się skopiować wprost ze zdjęcia: przytrzymaj palec na zrzucie ekranu i zaznacz.
       ${pusto ? "" : "Wypełnione pole <strong>podmienia całą tę drużynę</strong> — puste zostawia bez zmian."}</p>
@@ -3777,6 +3910,7 @@ document.addEventListener("click", (e) => {
     case "zamknij-kadre": wyborZKadry = null; render(); break;
     case "otworz-wklejanie": wklejanie = true; render(); break;
     case "sklad-z-lnp": void pobierzSkladZLnp(true); break;
+    case "mecz-z-udostepnienia": void wgrajZUdostepnienia(); break;
     case "zamknij-wklejanie": wklejanie = false; render(); break;
 
     case "z-kadry": {

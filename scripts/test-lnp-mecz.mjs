@@ -213,11 +213,68 @@ console.log("\nLista calej kolejki — kilka meczow tego samego dnia");
     String(d.tresc.adres || "").includes(KOLEJKA.piast), JSON.stringify(d.tresc).slice(0, 200));
 }
 
+// --- MECZ Z TEKSTU UDOSTEPNIENIA ---
+//
+// Aplikacja LNP nie ma przycisku "Udostepnij", serwisy wynikowe maja. Z ich tekstu bierzemy
+// WYLACZNIE nazwy druzyn — czyli to, co skaut sam wklein. Pod podany adres nie zagladamy:
+// sklad przychodzi z LNP, bo serwisy wynikowe skracaja imie do inicjalu i do kartoteki sie
+// nie nadaja.
+console.log("\nMecz z tekstu udostepnienia");
+{
+  const { transformSync } = await import("esbuild");
+  const zrodlo = fs.readFileSync(new URL("../src/mobile/main.ts", import.meta.url), "utf8");
+  const kod = [
+    zrodlo.match(/const NAZWA_DRUZYNY = [^;]+;/)[0],
+    zrodlo.match(/function czystaNazwa\(s: string\)[\s\S]*?\n}\n/)[0],
+    zrodlo.match(/export function meczZUdostepnienia[\s\S]*?\n}\n/)[0],
+  ].join("\n").replace(/export /g, "");
+  const czytaj = new Function(`${transformSync(kod, { loader: "ts" }).code}\nreturn meczZUdostepnienia;`)();
+
+  const pelne = "GKS Katowice - Cracovia 0:0\n\nWięcej informacji: https://www.flashscore.pl/r/?t=1&id=YyvF1Wam";
+  const a = czytaj(pelne);
+  spr("prawdziwa wklejka: gospodarz", a?.gospodarz === "GKS Katowice", JSON.stringify(a));
+  spr("prawdziwa wklejka: gość bez wyniku", a?.gosc === "Cracovia", JSON.stringify(a));
+
+  spr("myślnik długi też",
+    czytaj("Wisła Płock S.A. – Jagiellonia Białystok 1:2")?.gosc === "Jagiellonia Białystok");
+  spr("bez wyniku, sam mecz",
+    czytaj("Zagłębie Lubin - Raków Częstochowa")?.gospodarz === "Zagłębie Lubin");
+  spr("wynik w środku",
+    czytaj("Korona Kielce 1:1 Wisła Kraków")?.gosc === "Wisła Kraków");
+  spr("linia z nagłówkiem rozgrywek nie myli",
+    czytaj("POLSKA: PKO BP Ekstraklasa - kolejka 9\nGKS Katowice - Cracovia 0:0")?.gospodarz === "GKS Katowice",
+    JSON.stringify(czytaj("POLSKA: PKO BP Ekstraklasa - kolejka 9\nGKS Katowice - Cracovia 0:0")));
+  // Naglowek BEZ dwukropka ma ten sam ksztalt co mecz i stoi wyzej — przed poprawka wygrywal.
+  {
+    const t = "Ekstraklasa - kolejka 9\nGKS Katowice - Cracovia 0:0";
+    spr("nagłówek bez dwukropka przegrywa z wierszem meczu",
+      czytaj(t)?.gospodarz === "GKS Katowice", JSON.stringify(czytaj(t)));
+  }
+  // A gdy wyniku nie ma nigdzie — mecz przed pierwszym gwizdkiem — dalej musi cos znalezc.
+  spr("przed meczem, bez wyniku, dalej czyta",
+    czytaj("Widzew Łódź - Raków Częstochowa")?.gosc === "Raków Częstochowa");
+  spr("odnośnik w tej samej linii nie zjada nazw",
+    czytaj("GKS Katowice - Cracovia https://www.flashscore.pl/r/?t=1&id=Yy")?.gosc === "Cracovia");
+  spr("sam odnośnik to nie mecz", czytaj("https://www.flashscore.pl/r/?t=1&id=YyvF1Wam") === null);
+  spr("sama liczba to nie mecz", czytaj("7 - 3") === null);
+  spr("pusto", czytaj("") === null);
+}
+
 console.log("\nWpiecie w panel");
 const panel = fs.readFileSync(new URL("../src/mobile/main.ts", import.meta.url), "utf8");
 spr("panel woła punkt dostępowy", /\/api\/lnp-mecz\?url=/.test(panel));
 spr("adres listy brany z kartoteki klubu", /profileLnp/.test(panel));
 spr("znaleziony adres zapamiętywany przy obserwacji", /lnpUrl = /.test(panel));
+spr("jest pole na udostępniony mecz", /id="udostepniony-mecz"/.test(panel));
+spr("jest przycisk szukania z udostępnienia", /data-act="mecz-z-udostepnienia"/.test(panel));
+// Najwazniejsze: pod udostepniony adres NIE zagladamy. Panel pobiera wylacznie z wlasnych
+// punktow dostepowych, a te przyjmuja tylko laczynaspilka.pl (sprawdzane przez czyLnp).
+{
+  const cele = [...panel.matchAll(/fetch\(\s*["'`]([^"'`]+)/g)].map((m) => m[1]);
+  const obce = cele.filter((c) => !c.startsWith("/api/") && !c.startsWith("/"));
+  spr("panel nie pobiera niczego spoza własnych punktów dostępowych",
+    obce.length === 0, JSON.stringify(obce));
+}
 
 console.log(bledy ? `\n${bledy} błędów.` : "\nWszystko się zgadza.");
 process.exit(bledy?1:0);
