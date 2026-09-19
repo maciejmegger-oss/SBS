@@ -1444,14 +1444,29 @@ let pobieranieSkladu = false;
 // znaleziony adres przy obserwacji, żeby drugi raz już nie szukać.
 let ostatniPowodLnp = "";
 
+const czyListaLnp = (a: string) => /^https?:\/\/(www\.)?laczynaspilka\.pl\//i.test(a);
+
 function listyMeczow(obs: Observation): string[] {
   const [ng, ns] = druzynyZMeczu(obs.match);
   const znacznik = znacznikZRozgrywek(obs.rozgrywki || "");
   const adresy: string[] = [];
-  for (const nazwa of [ng, ns]) {
-    const adres = String(klubZNazwy(nazwa, znacznik)?.profileLnp || "").trim();
+  const dodaj = (a: unknown) => {
+    const adres = String(a || "").trim();
     // W tym samym polu bywa adres z 90minut.pl — tam takiej listy nie ma i nie ma czego szukać.
-    if (/^https?:\/\/(www\.)?laczynaspilka\.pl\//i.test(adres) && !adresy.includes(adres)) adresy.push(adres);
+    if (czyListaLnp(adres) && !adresy.includes(adres)) adresy.push(adres);
+  };
+
+  const kluby = [ng, ns].map((nazwa) => klubZNazwy(nazwa, znacznik));
+  // Najpierw adres własny klubu: jego lista meczów jest krótsza i pewniejsza niż lista całej grupy.
+  kluby.forEach((k) => dodaj(k?.profileLnp));
+
+  // Potem adres LISTY ROZGRYWEK, który system na komputerze zapamiętał przy zbieraniu protokołów.
+  // To bywa jedyny adres, jaki w ogóle jest: aplikacja ŁNP na telefonie nie ma przycisku
+  // „Udostępnij", więc odnośnika do meczu nie da się z niej wyjąć, a pola przy klubie nikt nie
+  // musiał wypełniać. Skoro system już wie, gdzie stoi terminarz tej ligi — korzystamy.
+  const grupy = cache.lnpGrupy || {};
+  for (const klucz of [obs.rozgrywki, ...kluby.map((k) => k?.league)]) {
+    if (klucz && grupy[klucz]) dodaj(grupy[klucz]);
   }
   return adresy;
 }
@@ -1565,8 +1580,20 @@ function przyciskLnp(): string {
     (Observation & { lnpUrl?: string }) | undefined;
   if (!obs) return "";
   // Przycisk ma sens także bez adresu przy obserwacji — jeśli klub ma w kartotece listę meczów,
-  // jest gdzie szukać. Nie pokazujemy go tylko wtedy, gdy nie ma ani jednego, ani drugiego.
-  if (!obs.lnpUrl && !listyMeczow(obs).length) return "";
+  // jest gdzie szukać.
+  //
+  // A gdy nie ma ŻADNEGO adresu, mówimy to wprost zamiast chować przycisk. Milczenie było tu
+  // najgorszą z możliwych odpowiedzi: scout stał przed pustym ekranem i nie miał jak odróżnić
+  // „panel nie umie" od „panelowi brakuje jednej rzeczy, którą podaje się raz". Zwłaszcza że
+  // aplikacja ŁNP w telefonie nie ma przycisku „Udostępnij" — samemu nie da się tego obejść.
+  if (!obs.lnpUrl && !listyMeczow(obs).length) {
+    return `
+      <div class="note" style="margin-bottom:10px; line-height:1.45;">
+        Skład wgra się sam, gdy klub będzie miał adres listy meczów z ŁNP.
+        W systemie na komputerze: <strong>klub → pole „profil ŁNP"</strong> — wklej tam adres
+        strony z meczami klubu. Podaje się go raz, potem każdy kolejny mecz znajdzie się sam.
+      </div>`;
+  }
   return `
     <div style="margin-bottom:10px;">
       <button class="btn ghost small" style="width:100%; margin:0;" data-act="sklad-z-lnp"
