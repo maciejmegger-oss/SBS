@@ -43,9 +43,13 @@ const dane = {
 const html = `<!doctype html><html><body><div id="__next"></div>
 <script id="__NEXT_DATA__" type="application/json">${JSON.stringify(dane)}</script></body></html>`;
 
-// Podmieniamy siec: strona LNP to nasz HTML, zadnych innych zapytan.
+// Podmieniamy siec: strona LNP to nasz HTML, zadnych innych zapytan. Kazdy blok testu moze
+// dolozyc wlasna odpowiedz pod wybranym fragmentem adresu — pierwsza pasujaca wygrywa.
+const trasy = new Map();
 globalThis.fetch = async (u) => {
-  if (String(u).includes("laczynaspilka.pl")) {
+  const adr = String(u);
+  for (const [fragment, daj] of trasy) if (adr.includes(fragment)) return daj(adr);
+  if (adr.includes("laczynaspilka.pl")) {
     return new Response(html, { status: 200, headers: { "content-type": "text/html" } });
   }
   return new Response("", { status: 404 });
@@ -95,7 +99,12 @@ spr("adres przyjmowany TYLKO z ŁNP", /laczynaspilka\\.pl\$\/i\.test\(u\.hostnam
 spr("adres zapisuje się przy obserwacji", /lnpUrl: adresLnp/.test(panel));
 spr("jest przycisk pobrania", /data-act="sklad-z-lnp"/.test(panel));
 spr("próba samoczynna po wejściu w składy", /if \(liveTab === "sklady"\) sprobujSkladZLnp\(\);/.test(panel));
-spr("samoczynnie tylko raz na obserwację", /probowanoLnp\.has\(obs\.id\)/.test(panel));
+// Bylo tu kiedys "samoczynnie TYLKO RAZ na obserwacje" — i ten test pilnowal bledu zamiast go
+// zlapac. Jedna proba na obserwacje znaczyla, ze mecz otwarty przed ogloszeniem skladu nie
+// dostawal go juz nigdy. Regula wlasciwa jest odwrotna: probujemy dalej, tylko nie czesciej niz
+// co poltorej minuty. Szczegoly sprawdza scripts/test-lnp-ponawianie.mjs.
+spr("samoczynnie ponawiane, nie jednorazowe",
+  /PRZERWA_PROB_LNP/.test(panel) && !/probowanoLnp/.test(panel));
 spr("samoczynnie tylko przy pustym składzie",
   /if \(STRONY\.some\(\(k\) => \(obs\.skladMeczu\?\.\[k\]\?\.zawodnicy \|\| \[\]\)\.length\)\) return;/.test(panel));
 spr("podmiana wpisanego składu pyta o zgodę", /Skład z ŁNP podmieni to, co już jest wpisane/.test(panel));
@@ -123,6 +132,50 @@ console.log("\nAdres z tekstu udostępnienia");
   spr("obcy adres odrzucony", adresLnp("https://przyklad.pl/mecz/1") === "");
   spr("tekst bez adresu", adresLnp("Korona - Górnik 20:30") === "");
   spr("pusto", adresLnp("") === "");
+}
+
+
+// --- PRAWDZIWY KSZTAŁT ADRESU MECZU ---
+//
+// Caly ten plik sprawdzal dotad adres ".../mecz/123456" — ksztalt wziety z glowy. Prawdziwe
+// mecze na LNP numeru nie maja: maja dlugi identyfikator z myslnikami, taki jak ponizej.
+// To roznica, ktora widac dopiero na zywym odnosniku, wiec sprawdzamy go wprost — i to na
+// drodze trudniejszej: strona bez danych wpisanych w HTML, gdzie identyfikator z adresu musi
+// posluzyc do zlozenia adresu danych.
+console.log("\nAdres meczu w postaci, jaką ŁNP naprawdę wysyła");
+{
+  const prawdziwy = "https://www.laczynaspilka.pl/rozgrywki/mecz/f0cf66a2-633b-4df7-a602-4cdfe2d564d9";
+  const identyfikator = "f0cf66a2-633b-4df7-a602-4cdfe2d564d9";
+
+  const { transformSync } = await import("esbuild");
+  const kodA = panel.match(/function adresLnp[\s\S]*?\n}\n/)[0];
+  const adresLnp = new Function(`${transformSync(kodA, { loader: "ts" }).code}\nreturn adresLnp;`)();
+  spr("panel przyjmuje taki adres", adresLnp(prawdziwy).includes(identyfikator), adresLnp(prawdziwy));
+  spr("przyjmuje go też ze zdania z udostępnienia",
+    adresLnp("Raków Częstochowa - Zagłębie Lubin\n" + prawdziwy).includes(identyfikator));
+
+  // Strona bez skladow w HTML — jak prawdziwa strona LNP, ktora buduje sie dopiero
+  // w przegladarce. Jedyny slad to plik z kodem, a w nim poczatek adresu danych i szablon.
+  const stronaPusta = `<!doctype html><html><body><div id="app"></div>`
+    + `<script src="https://www.laczynaspilka.pl/assets/main-abc.js"></script></body></html>`;
+  const kodStrony = `const API="https://api.laczynaspilka.pl/v1/";`
+    + `const adres=API+"matches/"+idMeczu+"/lineups";`;
+  let pytanoO = "";
+  trasy.set("/assets/main-abc.js",
+    () => new Response(kodStrony, { status: 200, headers: { "content-type": "application/javascript" } }));
+  trasy.set("api.laczynaspilka.pl", (adr) => {
+    pytanoO = adr;
+    if (!adr.includes("/lineups")) return new Response("", { status: 404 });
+    return new Response(JSON.stringify(dane), { status: 200, headers: { "content-type": "application/json" } });
+  });
+  trasy.set("/rozgrywki/mecz/f0cf66a2",
+    () => new Response(stronaPusta, { status: 200, headers: { "content-type": "text/html" } }));
+
+  const { kod, tresc } = await wywolaj({ url: prawdziwy, home: "Korona Kielce", away: "Górnik Zabrze" });
+  spr("odpowiedź 200", kod === 200, "kod " + kod);
+  spr("identyfikator z adresu trafił do zapytania o dane", pytanoO.includes(identyfikator), pytanoO || "(nie pytano)");
+  spr("skład gospodarzy wczytany", tresc.gospodarze?.zawodnicy?.length === 11, JSON.stringify(tresc).slice(0, 200));
+  spr("skład gości wczytany", tresc.goscie?.zawodnicy?.length === 11);
 }
 
 console.log(bledy ? `\n${bledy} błędów.` : "\nWszystko się zgadza.");

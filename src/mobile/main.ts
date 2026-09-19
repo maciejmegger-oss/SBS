@@ -1431,32 +1431,98 @@ function klubZNazwy(nazwa: string, znacznikPodpowiedz = "") {
 // Wynik PODMIENIA drużynę, której skład przyszedł, i tylko ją. Jeśli scout zdążył już coś wpisać
 // ręcznie, pytamy — bo nadpisanie skasowałoby wyróżnienia i oceny wystawione tej drużynie.
 let pobieranieSkladu = false;
-const probowanoLnp = new Set<string>();
+
+// ADRES MECZU SAM SIĘ ZNAJDUJE — BEZ WKLEJANIA.
+//
+// Wklejanie odnośnika do każdego meczu z osobna było drogą przez mękę: w aplikacji ŁNP nie ma
+// paska adresu, a przycisk „Udostępnij" trzeba znaleźć i użyć przed każdym spotkaniem. Dlatego
+// adres bierzemy z KARTOTEKI KLUBU — pole „profil ŁNP", które w systemie na komputerze i tak już
+// jest. Stoi tam lista meczów klubu, a na niej data, obie drużyny i odnośnik do każdego z nich.
+//
+// Scout podaje ten adres RAZ, przy klubie. Potem każdy kolejny mecz tego klubu panel odnajduje
+// sam: pyta serwer o wiersz z tą datą i tymi drużynami (patrz api/lnp-mecz.js) i zapamiętuje
+// znaleziony adres przy obserwacji, żeby drugi raz już nie szukać.
+let ostatniPowodLnp = "";
+
+function listyMeczow(obs: Observation): string[] {
+  const [ng, ns] = druzynyZMeczu(obs.match);
+  const znacznik = znacznikZRozgrywek(obs.rozgrywki || "");
+  const adresy: string[] = [];
+  for (const nazwa of [ng, ns]) {
+    const adres = String(klubZNazwy(nazwa, znacznik)?.profileLnp || "").trim();
+    // W tym samym polu bywa adres z 90minut.pl — tam takiej listy nie ma i nie ma czego szukać.
+    if (/^https?:\/\/(www\.)?laczynaspilka\.pl\//i.test(adres) && !adresy.includes(adres)) adresy.push(adres);
+  }
+  return adresy;
+}
+
+async function odnajdzAdresMeczu(obs: Observation): Promise<string> {
+  ostatniPowodLnp = "";
+  const listy = listyMeczow(obs);
+  if (!listy.length) return "";
+  if (!obs.date) { ostatniPowodLnp = "Obserwacja nie ma daty — bez niej nie rozpoznam meczu."; return ""; }
+  const [ng, ns] = druzynyZMeczu(obs.match);
+
+  // Obie drużyny mają swoją listę meczów, a wystarczy jedna z nich. Gdy na pierwszej nic nie ma
+  // (bo np. adres prowadzi do zeszłego sezonu), próbujemy drugiej.
+  for (const lista of listy) {
+    try {
+      const odp = await fetch("/api/lnp-mecz?url=" + encodeURIComponent(lista)
+        + "&home=" + encodeURIComponent(ng) + "&away=" + encodeURIComponent(ns)
+        + "&date=" + encodeURIComponent(obs.date), { headers: { Accept: "application/json" } });
+      const dane = await odp.json().catch(() => null);
+      if (dane?.adres) return String(dane.adres);
+      if (dane?.powod || dane?.error) ostatniPowodLnp = String(dane.powod || dane.error);
+    } catch (e) {
+      ostatniPowodLnp = (e as Error).message;
+    }
+  }
+  return "";
+}
 
 async function pobierzSkladZLnp(recznie: boolean): Promise<void> {
   if (!live || pobieranieSkladu) return;
   const obs = cache.observations.find((o) => o.id === live!.observationId) as
     (Observation & { skladMeczu?: Sklad; lnpUrl?: string }) | undefined;
-  if (!obs?.lnpUrl) { if (recznie) toast("Ta obserwacja nie ma adresu meczu w ŁNP"); return; }
+  if (!obs) return;
+  if (!obs.lnpUrl && !listyMeczow(obs).length) {
+    if (recznie) toast("Ani obserwacja, ani kluby nie mają adresu w ŁNP");
+    return;
+  }
   if (!navigator.onLine) { if (recznie) toast("Brak połączenia — skład pobierzemy przy zasięgu"); return; }
 
   const [ng, ns] = druzynyZMeczu(obs.match);
   pobieranieSkladu = true;
-  if (recznie) toast("Pobieram skład z ŁNP…");
+  if (recznie) toast(obs.lnpUrl ? "Pobieram skład z ŁNP…" : "Szukam meczu w ŁNP…");
   render();
   try {
+    // Adres meczu odnaleziony raz zostaje przy obserwacji — następnym razem idziemy prosto po skład.
+    if (!obs.lnpUrl) {
+      const znaleziony = await odnajdzAdresMeczu(obs);
+      if (!znaleziony) {
+        if (recznie) toast(ostatniPowodLnp || "Nie znalazłem tego meczu na liście w ŁNP");
+        return;
+      }
+      obs.lnpUrl = znaleziony;
+      saveObservation(obs);
+      cache = getCache();
+    }
     const adres = "/api/lnp-sklady?url=" + encodeURIComponent(obs.lnpUrl)
       + "&home=" + encodeURIComponent(ng) + "&away=" + encodeURIComponent(ns);
     const odp = await fetch(adres, { headers: { Accept: "application/json" } });
     const dane = await odp.json().catch(() => null);
     if (!odp.ok || !dane) {
-      toast((dane && dane.error) || "Nie udało się pobrać składu z ŁNP");
+      if (recznie) toast((dane && dane.error) || "Nie udało się pobrać składu z ŁNP");
       return;
     }
     // Serwer mówi WPROST, czego nie znalazł. „Składu jeszcze nie ma" i „nazwy się nie zgadzają"
     // to dwie różne sprawy i wymagają od scouta czego innego.
+    //
+    // Przy próbie SAMOCZYNNEJ milczymy. Panel sprawdza co półtorej minuty, więc komunikat
+    // „składu jeszcze nie ma" wyskakiwałby scoutowi na oczy kilkanaście razy przed meczem —
+    // za każdym razem mówiąc to samo i za każdym razem zasłaniając boisko.
     if (!dane.gospodarze && !dane.goscie) {
-      toast(dane.powod || "Na stronie meczu nie ma jeszcze składów");
+      if (recznie) toast(dane.powod || "Na stronie meczu nie ma jeszcze składów");
       return;
     }
 
@@ -1497,7 +1563,10 @@ function przyciskLnp(): string {
   if (!live) return "";
   const obs = cache.observations.find((o) => o.id === live!.observationId) as
     (Observation & { lnpUrl?: string }) | undefined;
-  if (!obs?.lnpUrl) return "";
+  if (!obs) return "";
+  // Przycisk ma sens także bez adresu przy obserwacji — jeśli klub ma w kartotece listę meczów,
+  // jest gdzie szukać. Nie pokazujemy go tylko wtedy, gdy nie ma ani jednego, ani drugiego.
+  if (!obs.lnpUrl && !listyMeczow(obs).length) return "";
   return `
     <div style="margin-bottom:10px;">
       <button class="btn ghost small" style="width:100%; margin:0;" data-act="sklad-z-lnp"
@@ -1507,14 +1576,50 @@ function przyciskLnp(): string {
     </div>`;
 }
 
+// PRÓBA SAMOCZYNNA — PONAWIANA, NIE JEDNORAZOWA.
+//
+// Wcześniej próba była JEDNA na obserwację i to był błąd. Scout otwiera mecz zwykle wcześniej niż
+// pojawia się skład: na kwadrans przed pierwszym gwizdkiem ŁNP ma jeszcze pusto, więc jedyna
+// próba trafiała w pustkę — i już nigdy się nie powtarzała. Dziesięć minut później skład na ŁNP
+// był, a w panelu dalej nie. Dokładnie to zgłosił scout: „w lnp jest już skład, ale nie wgrało".
+//
+// Teraz panel sprawdza dalej, co półtorej minuty, dopóki składu nie ma. Przerwa jest po to, żeby
+// wejście w zakładkę i wyjście z niej nie zamieniło się w pytanie za pytaniem.
+const ostatniaProbaLnp = new Map<string, number>();
+const PRZERWA_PROB_LNP = 90_000;
+
 function sprobujSkladZLnp(): void {
   if (!live) return;
   const obs = cache.observations.find((o) => o.id === live!.observationId) as
     (Observation & { skladMeczu?: Sklad; lnpUrl?: string }) | undefined;
-  if (!obs?.lnpUrl || probowanoLnp.has(obs.id)) return;
+  if (!obs) return;
+  const teraz = Date.now();
+  if (teraz - (ostatniaProbaLnp.get(obs.id) || 0) < PRZERWA_PROB_LNP) return;
+  if (!obs.lnpUrl && !listyMeczow(obs).length) return;
   if (STRONY.some((k) => (obs.skladMeczu?.[k]?.zawodnicy || []).length)) return;
-  probowanoLnp.add(obs.id);
+  ostatniaProbaLnp.set(obs.id, teraz);
   void pobierzSkladZLnp(false);
+}
+
+// PILNOWANIE SKŁADU, DOPÓKI GO NIE MA.
+//
+// Zegar chodzi tylko wtedy, gdy scout patrzy na zakładkę Składy przy pustym składzie — czyli
+// dokładnie wtedy, gdy czeka na ten skład. Sama sprobujSkladZLnp pilnuje reszty warunków
+// (zasięg, przerwa między próbami, adres meczu), więc tutaj wystarczy budzić ją co jakiś czas.
+let zegarLnp: ReturnType<typeof setInterval> | null = null;
+
+function pilnujSkladuZLnp(): void {
+  const chcemy = view === "live" && liveTab === "sklady";
+  if (chcemy && zegarLnp === null) {
+    zegarLnp = setInterval(() => {
+      // Telefon w kieszeni z wygaszonym ekranem nie ma po co pytać — zapyta, gdy wróci.
+      if (document.hidden) return;
+      sprobujSkladZLnp();
+    }, 30_000);
+  } else if (!chcemy && zegarLnp !== null) {
+    clearInterval(zegarLnp);
+    zegarLnp = null;
+  }
 }
 
 function viewSklady(): string {
@@ -2744,6 +2849,7 @@ function render() {
 
   if (view === "live" && live) startClockTicker();
   else window.clearInterval(clockTimer);
+  pilnujSkladuZLnp();
 }
 
 // Odświeżenie samego paska stanu — bez przerysowania widoku, żeby nie kasować tego, co scout
@@ -2776,6 +2882,10 @@ function beginLive(obsId: string) {
   }
   view = "live";
   render();
+  // Zakładka pamięta, gdzie się było ostatnio. Scout, który zamknął poprzedni mecz na Składach,
+  // wchodzi więc w następny OD RAZU na Składy — i dotąd nie padała wtedy ani jedna próba
+  // pobrania, bo próbę wyzwalało tylko dotknięcie zakładki, którego w tym przebiegu nie ma.
+  if (liveTab === "sklady") sprobujSkladZLnp();
 }
 
 function addEvent(key: string) {
