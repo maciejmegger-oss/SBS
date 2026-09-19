@@ -77,8 +77,24 @@ const bezZnacznikow = (html) => String(html || "")
 // wiersz — data, herby, nazwy, rozgrywki — jest klikalny, więc stoi wewnątrz swojego odnośnika.
 export function meczeZHtml(html, adresStrony = "") {
   const tekst = String(html || "");
-  const trafienia = [...tekst.matchAll(/\/mecz\/([0-9a-f-]{36})/gi)]
+  let trafienia = [...tekst.matchAll(/\/mecz\/([0-9a-f-]{36})/gi)]
     .filter((m) => UUID.test(m[1]));
+
+  // DROGA ZAPASOWA: ODNOŚNIK Z IDENTYFIKATOREM, ALE BEZ „/mecz/".
+  //
+  // Ścieżkę „/rozgrywki/mecz/…" znam z jednego prawdziwego odnośnika. Nie jest powiedziane, że
+  // wszystkie listy w ŁNP prowadzą do meczu tą samą ścieżką — a gdy prowadzą inną, powyższe
+  // szukanie nie znajduje NIC i kończy się zdaniem „na tej stronie nie ma listy meczów",
+  // choć lista jest.
+  //
+  // Bierzemy więc każdy odnośnik z identyfikatorem. Ryzyko jest małe i samoograniczające się:
+  // odnośnik do klubu albo zawodnika też ma identyfikator, ale żeby taki wiersz został uznany
+  // za nasz mecz, musiałby nieść JEDNOCZEŚNIE tę datę i obie nazwy drużyn. Gdy nie niesie,
+  // odpowiedź zmienia się z „nie ma listy" na „nie ma meczu tych drużyn" — a to już zupełnie
+  // inna wiadomość i mówi nam, gdzie naprawdę stoimy.
+  if (!trafienia.length) {
+    trafienia = [...tekst.matchAll(/href=["'][^"']*?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/gi)];
+  }
   if (!trafienia.length) return [];
 
   const mecze = [];

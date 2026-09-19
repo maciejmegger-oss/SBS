@@ -268,6 +268,42 @@ console.log("\nMecz z tekstu udostepnienia");
 //
 // Ta droga istnieje dla konkretnej sytuacji ze stadionu: wpis klubu w kartotece bywa zespolem
 // MLODZIEZOWYM, a mecz jest seniorski. Adresu seniorskich rozgrywek nie ma wtedy gdzie przypiac.
+// --- LISTA PROWADZACA DO MECZU INNA SCIEZKA ---
+//
+// Sciezke "/rozgrywki/mecz/..." znam z jednego prawdziwego odnosnika. Gdy lista prowadzi do meczu
+// inaczej, szukanie po "/mecz/" nie znajduje NIC i konczy sie zdaniem "na tej stronie nie ma
+// listy meczow" — choc lista jest. Droga zapasowa bierze kazdy odnosnik z identyfikatorem.
+console.log("\nLista prowadzaca do meczu inna sciezka");
+{
+  const listaE = "https://www.laczynaspilka.pl/rozgrywki/i-liga/terminarz";
+  const stronaInnaSciezka = `<!doctype html><html><body><table><tbody>
+${wiersze.map(([d, g, w, s, id]) => `<tr><td colspan="4">
+  <a href="/spotkanie/${id}"><span>${d}</span><span>${g}</span><span>${w}</span><span>${s}</span></a>
+</td></tr>`).join("\n")}
+</tbody></table></body></html>`;
+  strony.set("/rozgrywki/i-liga/terminarz", stronaInnaSciezka);
+
+  const { tresc } = await wywolaj({
+    url: listaE, home: "Raków Częstochowa", away: "Zagłębie Lubin", date: "2026-09-15" });
+  spr("mecz znaleziony mimo innej ścieżki w odnośniku",
+    String(tresc.adres || "").includes(ID.zaglebie), JSON.stringify(tresc).slice(0, 240));
+}
+
+// --- ODPOWIEDZ MOWI, CO CZYTALA ---
+//
+// Panel ma kilka zrodel adresu (podany na telefonie, pole przy klubie, terminarz rozgrywek
+// z systemu). Przy bledzie pierwszym pytaniem jest, KTORE z nich poszlo do boju.
+console.log("\nOdpowiedz mowi, ktory adres czytala");
+{
+  const pustaStrona = "https://www.laczynaspilka.pl/rozgrywki/pusto";
+  strony.set("/rozgrywki/pusto", "<!doctype html><html><body><p>Nic tu nie ma.</p></body></html>");
+  const { tresc } = await wywolaj({
+    url: pustaStrona, home: "Raków", away: "Zagłębie Lubin", date: "2026-09-15" });
+  spr("mówi, że listy nie znalazł", /nie znalazłem listy meczów/.test(tresc.powod || ""), JSON.stringify(tresc).slice(0,140));
+  spr("i podaje adres, który czytał", tresc.adresSzukany === pustaStrona, tresc.adresSzukany);
+  spr("oraz opis zawartości strony", !!tresc.zawartosc, JSON.stringify(tresc.zawartosc || null).slice(0, 120));
+}
+
 console.log("\nAdres meczu kontra adres listy");
 {
   const rozpoznaj = (a) => /\/mecz\/[0-9a-f-]{36}/i.test(a);
@@ -286,6 +322,21 @@ console.log("\nAdres meczu kontra adres listy");
     /adresy\.unshift\(wlasny\)/.test(panelZr));
   spr("podpowiedź mówi o adresie listy, nie o kartotece",
     /adres listy meczów/.test(panelZr));
+}
+
+// --- OPIS NIEUDANEJ PROBY ZOSTAJE NA EKRANIE ---
+//
+// Toast mowi jedno zdanie i znika. Za malo, gdy trzeba ustalic, DLACZEGO strona nie dala sie
+// przeczytac. Stadion jest jedynym miejscem, gdzie widac prawdziwa strone LNP.
+console.log("\nOpis nieudanej proby");
+{
+  const p = fs.readFileSync(new URL("../src/mobile/main.ts", import.meta.url), "utf8");
+  spr("panel zachowuje pełną odpowiedź serwera", /ostatniSzczegolLnp = JSON\.stringify\(dane/.test(p));
+  spr("i pokazuje ją na ekranie", /function blokDiagnozyLnp/.test(p));
+  spr("blok stoi w zakładce Składy", /\$\{blokDiagnozyLnp\(\)\}/.test(p));
+  spr("da się to skopiować", /data-act="kopiuj-diagnoze-lnp"/.test(p));
+  spr("kopiowanie jest obsłużone", /case "kopiuj-diagnoze-lnp"/.test(p));
+  spr("opis czyszczony przed nową próbą", /ostatniSzczegolLnp = "";/.test(p));
 }
 
 console.log("\nWpiecie w panel");

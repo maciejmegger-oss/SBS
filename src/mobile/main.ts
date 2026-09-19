@@ -1485,6 +1485,14 @@ let pobieranieSkladu = false;
 // sam: pyta serwer o wiersz z tą datą i tymi drużynami (patrz api/lnp-mecz.js) i zapamiętuje
 // znaleziony adres przy obserwacji, żeby drugi raz już nie szukać.
 let ostatniPowodLnp = "";
+// PEŁNA ODPOWIEDŹ SERWERA Z OSTATNIEJ NIEUDANEJ PRÓBY.
+//
+// Toast mówi jedno zdanie i znika. To za mało, gdy trzeba ustalić, DLACZEGO strona nie dała się
+// przeczytać: czy nie ma na niej odnośników do meczów, czy dane dociąga osobnym zapytaniem, czy
+// w ogóle czytaliśmy nie ten adres. Ta odpowiedź zostaje na ekranie i da się ją skopiować —
+// stadion jest jedynym miejscem, gdzie widać prawdziwą stronę ŁNP, więc to stamtąd musi
+// przyjechać do mnie opis tego, co na niej stoi.
+let ostatniSzczegolLnp = "";
 
 const czyListaLnp = (a: string) => /^https?:\/\/(www\.)?laczynaspilka\.pl\//i.test(a);
 
@@ -1582,6 +1590,7 @@ export function meczZUdostepnienia(tekst: string): { gospodarz: string; gosc: st
 
 async function odnajdzAdresMeczu(obs: Observation, nazwy?: { gospodarz: string; gosc: string }): Promise<string> {
   ostatniPowodLnp = "";
+  ostatniSzczegolLnp = "";
   const listy = listyMeczow(obs);
   if (!listy.length) return "";
   if (!obs.date) { ostatniPowodLnp = "Obserwacja nie ma daty — bez niej nie rozpoznam meczu."; return ""; }
@@ -1601,8 +1610,10 @@ async function odnajdzAdresMeczu(obs: Observation, nazwy?: { gospodarz: string; 
       const dane = await odp.json().catch(() => null);
       if (dane?.adres) return String(dane.adres);
       if (dane?.powod || dane?.error) ostatniPowodLnp = String(dane.powod || dane.error);
+      if (dane) ostatniSzczegolLnp = JSON.stringify(dane, null, 1);
     } catch (e) {
       ostatniPowodLnp = (e as Error).message;
+      ostatniSzczegolLnp = `Zapytanie o listę nie doszło: ${(e as Error).message}\nAdres: ${lista}`;
     }
   }
   return "";
@@ -1795,6 +1806,24 @@ function przyciskLnp(): string {
 // Pole na udostępniony mecz. Stoi przy wklejaniu składu, bo to ta sama sytuacja: scout ma coś
 // w schowku i chce, żeby panel z tego skorzystał. Różnica jest taka, że tu wystarczy jedna linia
 // z nazwami drużyn — reszta dzieje się sama.
+// Opis nieudanej próby — zostaje na ekranie, bo toast znika, zanim zdąży się go przeczytać.
+function blokDiagnozyLnp(): string {
+  if (!ostatniSzczegolLnp) return "";
+  return `
+    <details class="pol-udostepnienie" style="margin-bottom:10px;">
+      <summary class="label" style="cursor:pointer; color:var(--accent-fg);">
+        Dlaczego nie wyszło — szczegóły
+      </summary>
+      <p class="hint" style="margin:6px 0;">${esc(ostatniPowodLnp || "Próba się nie powiodła.")}
+      Skopiuj to i prześlij — z tego opisu widać, jak zbudowana jest ta strona w ŁNP.</p>
+      <pre style="white-space:pre-wrap; word-break:break-word; font-size:11px; line-height:1.35;
+                  max-height:220px; overflow:auto; margin:0 0 8px;">${esc(ostatniSzczegolLnp)}</pre>
+      <button class="btn ghost small" style="width:100%; margin:0;" data-act="kopiuj-diagnoze-lnp">
+        Kopiuj opis
+      </button>
+    </details>`;
+}
+
 function polUdostepnienia(): string {
   return `
     <details class="pol-udostepnienie" style="margin-bottom:10px;">
@@ -1922,6 +1951,7 @@ function viewSklady(): string {
       </div>
       ${przyciskLnp()}
       ${polUdostepnienia()}
+      ${blokDiagnozyLnp()}
       <p class="hint">Po jednym zawodniku w wierszu. Numer na początku wiersza jest rozpoznawany.
       Na iPhonie tekst da się skopiować wprost ze zdjęcia: przytrzymaj palec na zrzucie ekranu i zaznacz.
       ${pusto ? "" : "Wypełnione pole <strong>podmienia całą tę drużynę</strong> — puste zostawia bez zmian."}</p>
@@ -1968,7 +1998,8 @@ function viewSklady(): string {
       <button class="btn ghost small" style="width:100%; margin:0;" data-act="otworz-wklejanie">Wklej albo wpisz skład</button>
     </div>
     ${przyciskLnp()}
-    ${polUdostepnienia()}`;
+    ${polUdostepnienia()}
+    ${blokDiagnozyLnp()}`;
 
   const przelacznik = `
     <div class="polarity" style="margin-bottom:10px;">
@@ -3996,6 +4027,11 @@ document.addEventListener("click", (e) => {
     case "otworz-wklejanie": wklejanie = true; render(); break;
     case "sklad-z-lnp": void pobierzSkladZLnp(true); break;
     case "mecz-z-udostepnienia": void wgrajZUdostepnienia(); break;
+    case "kopiuj-diagnoze-lnp":
+      navigator.clipboard?.writeText(ostatniSzczegolLnp)
+        .then(() => toast("Skopiowane — wklej mi to"))
+        .catch(() => toast("Nie udało się skopiować — zaznacz tekst palcem"));
+      break;
     case "zamknij-wklejanie": wklejanie = false; render(); break;
 
     case "z-kadry": {
