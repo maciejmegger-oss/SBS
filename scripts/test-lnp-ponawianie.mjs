@@ -84,6 +84,49 @@ console.log("Ponawianie proby pobrania skladu");
   spr("sama lista meczów przy klubie wystarczy", stan.probyPobrania === 1, "prób: " + stan.probyPobrania);
 }
 
+// --- SKAD PANEL BIERZE ADRES LISTY MECZOW ---
+//
+// Aplikacja LNP na telefonie nie ma przycisku "Udostepnij" — odnosnika do meczu nie da sie z niej
+// wyjac w ogole. Dlatego panel musi znalezc liste meczow sam, i ma na to dwie drogi: adres przy
+// klubie w kartotece oraz adres rozgrywek, ktory system na komputerze juz zapamietal.
+console.log("\nSkad panel bierze adres listy meczow");
+{
+  const kodListy = panel.match(/function listyMeczow\(obs: Observation\)[\s\S]*?\n}\n/)[0];
+  const kodCzy = panel.match(/const czyListaLnp = [^;]+;/)[0];
+
+  function listy({ kluby = [null, null], grupy = {}, rozgrywki = "" } = {}) {
+    const zrodlo = `
+      ${transformSync(kodCzy, { loader: "ts" }).code}
+      ${transformSync(kodListy, { loader: "ts" }).code}
+      return listyMeczow;`;
+    const f = new Function("cache", "druzynyZMeczu", "znacznikZRozgrywek", "klubZNazwy", zrodlo);
+    let i = 0;
+    return f({ lnpGrupy: grupy }, () => ["Gospodarz", "Gość"], () => "", () => kluby[i++])
+      ({ match: "Gospodarz - Gość", rozgrywki });
+  }
+
+  const LNP = "https://www.laczynaspilka.pl/kluby/x/terminarz";
+  const GRUPA = "https://www.laczynaspilka.pl/rozgrywki/ekstraklasa/mecze";
+
+  spr("adres przy klubie jest brany",
+    listy({ kluby: [{ profileLnp: LNP }, null] }).includes(LNP));
+
+  spr("adres z 90minut jest pomijany",
+    listy({ kluby: [{ profileLnp: "http://www.90minut.pl/skarb.php?id_klub=1" }, null] }).length === 0);
+
+  // To jest nowa droga: klub nie ma nic, ale system zna adres terminarza tych rozgrywek.
+  spr("gdy klub nie ma adresu, wchodzi adres rozgrywek",
+    listy({ kluby: [null, null], grupy: { Ekstraklasa: GRUPA }, rozgrywki: "Ekstraklasa" })[0] === GRUPA);
+
+  spr("adres rozgrywek znaleziony też po lidze klubu",
+    listy({ kluby: [{ league: "Ekstraklasa" }, null], grupy: { Ekstraklasa: GRUPA } })[0] === GRUPA);
+
+  const oba = listy({ kluby: [{ profileLnp: LNP, league: "Ekstraklasa" }, null], grupy: { Ekstraklasa: GRUPA } });
+  spr("gdy są oba, lista klubu idzie pierwsza", oba[0] === LNP && oba[1] === GRUPA, JSON.stringify(oba));
+
+  spr("bez żadnego adresu lista jest pusta", listy().length === 0);
+}
+
 console.log("\nWpiecie ponawiania w panel");
 spr("nie ma już zbioru jednorazowych prób", !/probowanoLnp/.test(panel));
 spr("jest zegar pilnujący składu", /function pilnujSkladuZLnp/.test(panel));

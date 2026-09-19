@@ -99,6 +99,11 @@ export interface Cache {
   // nazwa rozgrywek z 90minut, wraz z grupą, bo III liga ma cztery grupy, a IV liga szesnaście.
   matches: (Match & { competition?: string })[];
   scouts: string[];
+  // Adresy list meczów w ŁNP, rozgrywki -> adres. Zapisuje je system na komputerze przy zbieraniu
+  // protokołów; panelowi służą do ODNALEZIENIA meczu, gdy klub nie ma własnego adresu w kartotece.
+  // Aplikacja ŁNP na telefonie nie ma przycisku „Udostępnij", więc odnośnika do meczu nie da się
+  // stamtąd wyjąć w ogóle — i każdy adres, który system już zna, jest na wagę złota.
+  lnpGrupy?: Record<string, string>;
   fetchedAt: string | null;
   // Co się NIE pobrało przy ostatnim odświeżeniu, w ludzkich słowach. Bez tego pusta lista
   // wygląda identycznie w dwóch zupełnie różnych sytuacjach: „w bazie faktycznie nic nie ma"
@@ -106,7 +111,7 @@ export interface Cache {
   problemy?: string[];
 }
 
-const EMPTY_CACHE: Cache = { players: [], clubs: [], observations: [], reports: [], matches: [], scouts: [], fetchedAt: null, problemy: [] };
+const EMPTY_CACHE: Cache = { players: [], clubs: [], observations: [], reports: [], matches: [], scouts: [], lnpGrupy: {}, fetchedAt: null, problemy: [] };
 
 export const getCache = (): Cache => readLS<Cache>(LS.cache, EMPTY_CACHE);
 
@@ -374,11 +379,13 @@ export async function refreshCache(): Promise<Cache> {
   };
 
   let scouts = poprzednia.scouts || [];
+  let lnpGrupy = poprzednia.lnpGrupy || {};
   if (ustawienia.blad) problemy.push("ustawienia: " + ustawienia.blad);
   else if (ustawienia.dane) {
     try {
       const s = JSON.parse(ustawienia.dane);
       if (s && Array.isArray(s.scouts)) scouts = s.scouts;
+      if (s && s.lnpGrupy && typeof s.lnpGrupy === "object") lnpGrupy = s.lnpGrupy;
     } catch {
       problemy.push("ustawienia: zapis w nieoczekiwanym kształcie");
     }
@@ -407,6 +414,7 @@ export async function refreshCache(): Promise<Cache> {
     reports: zTabeli<Report>(reports, "raporty", poprzednia.reports, (r) => liftExt("sbs_reports", objFromRow(r))),
     matches,
     scouts,
+    lnpGrupy,
     fetchedAt: new Date().toISOString(),
     problemy,
   };
