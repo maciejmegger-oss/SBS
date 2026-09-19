@@ -686,6 +686,48 @@ export function kategoriaZRozgrywek(nazwa: string, nazwaMeczu = ""): "seniorzy" 
 
 const ETYKIETA_KATEGORII: Record<string, string> = { seniorzy: "Seniorzy", mlodziez: "Młodzież" };
 
+// CZY TA KADRA W OGÓLE PASUJE DO TEGO MECZU — SPRAWDZANE PO ROCZNIKACH.
+//
+// Klub ma w bazie jeden wpis, a na boisku kilka zespołów. Przy meczu CLJ U19 poznawaliśmy to po
+// nazwie („Legia U19" kontra „Legia"), ale ta droga działa tylko w jedną stronę: rozgrywki
+// młodzieżowe same się nazywają, a seniorskie nie. Dla meczu III ligi znacznik zespołu jest
+// PUSTY, więc każdy wpis klubu pasuje — także ten, pod którym stoją dwunastolatkowie. Scout
+// dostawał wtedy do wyboru kadrę rocznika 2013 przy meczu seniorów i nic tego nie sygnalizowało.
+//
+// Rocznik jest sprawdzianem niezależnym od nazewnictwa — a to właśnie nazewnictwo tu zawiodło.
+// NIE UKRYWAMY nikogo: szesnastolatek w składzie III ligi to dokładnie ten zawodnik, po którego
+// scout przyjechał. Mówimy tylko, gdy CAŁA kadra jest nie z tego świata.
+function niezgodnyRocznik(
+  kadra: { birthYear?: string | number }[],
+  obs: (Observation & { rozgrywki?: string; kategoria?: string }) | undefined,
+): string {
+  if (!obs || kadra.length < 3) return "";
+  const kat = obs.kategoria || kategoriaZRozgrywek(obs.rozgrywki || "", obs.match || "");
+  if (kat !== "seniorzy" && kat !== "mlodziez") return "";
+
+  const rokMeczu = Number(String(obs.date || "").slice(0, 4)) || new Date().getFullYear();
+  const roczniki = kadra
+    .map((p) => Number(String(p.birthYear || "").slice(0, 4)))
+    .filter((r) => r >= 1950 && r <= rokMeczu)
+    .sort((a, b) => a - b);
+  if (roczniki.length < 3) return "";
+
+  // Mediana, nie średnia: jeden trener-weteran albo jeden debiutant nie może przeważyć obrazu.
+  const srodkowy = roczniki[Math.floor(roczniki.length / 2)];
+  const wiek = rokMeczu - srodkowy;
+  const zakres = `${roczniki[0]}–${roczniki[roczniki.length - 1]}`;
+
+  if (kat === "seniorzy" && wiek < 16) {
+    return `To kadra młodzieżowa — roczniki ${zakres}, czyli około ${wiek} lat.
+            Mecz jest seniorski. Dopisz w SBS osobny zespół klubu albo wklej skład niżej.`;
+  }
+  if (kat === "mlodziez" && wiek > 21) {
+    return `To kadra seniorska — roczniki ${zakres}, czyli około ${wiek} lat.
+            Mecz jest młodzieżowy. Dopisz w SBS właściwy zespół klubu albo wklej skład niżej.`;
+  }
+  return "";
+}
+
 // ============================================================================
 // WCZYTANIE MECZU ZE ZRZUTU EKRANU
 // ============================================================================
@@ -1800,6 +1842,10 @@ function viewSklady(): string {
     // drużyny w meczu CLJ U19 wygląda jak poprawny skład i scout zaznaczał nazwiska, których na
     // boisku nie było.
     const nieTenZespol = !!klub && !!chcianyZespol && znacznikZespolu(klub.name || "") !== chcianyZespol;
+    // Drugie sito, po rocznikach. Łapie to, czego nazwa nie zdradza — przy meczu seniorskim
+    // znacznik zespołu jest pusty, więc kadra dwunastolatków przechodzi tamten sprawdzian bez
+    // zająknięcia.
+    const zlyRocznik = nieTenZespol ? "" : niezgodnyRocznik(kadra, obs as Observation | undefined);
     return `
       <div class="row" style="margin-bottom:8px;">
         <span class="label" style="margin:0;">${esc(klub?.name || (wyborZKadry === "gospodarze" ? gosp : gosc))}</span>
@@ -1811,6 +1857,7 @@ function viewSklady(): string {
            <strong>${esc(chcianyZespol.toUpperCase())}</strong>, a w bazie nie ma takiej drużyny — dopisz ją w SBS
            albo wklej skład niżej.</p>`
         : ""}
+      ${zlyRocznik ? `<p class="hint" style="color:var(--accent-fg);">${zlyRocznik}</p>` : ""}
       ${kadra.length
         ? kadra.slice().sort((a, b) => (a.lastName || "").localeCompare(b.lastName || "", "pl")).map((pl) => `
             <button class="sklad-row ${juzWSkladzie.has(pl.id) ? "on" : ""}" data-act="z-kadry" data-id="${esc(pl.id)}">
