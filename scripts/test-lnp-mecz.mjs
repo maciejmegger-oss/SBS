@@ -260,6 +260,34 @@ console.log("\nMecz z tekstu udostepnienia");
   spr("pusto", czytaj("") === null);
 }
 
+// --- ADRES MECZU KONTRA ADRES LISTY ---
+//
+// To nie jest drobiazg, tylko dwie rozne strony i dwie rozne drogi. Podanie listy tam, gdzie
+// panel spodziewa sie meczu, konczylo sie odpowiedzia "na tej stronie nie ma jeszcze skladow" —
+// zdaniem prawdziwym i zupelnie mylacym.
+//
+// Ta droga istnieje dla konkretnej sytuacji ze stadionu: wpis klubu w kartotece bywa zespolem
+// MLODZIEZOWYM, a mecz jest seniorski. Adresu seniorskich rozgrywek nie ma wtedy gdzie przypiac.
+console.log("\nAdres meczu kontra adres listy");
+{
+  const rozpoznaj = (a) => /\/mecz\/[0-9a-f-]{36}/i.test(a);
+  spr("adres meczu rozpoznany jako mecz",
+    rozpoznaj("https://www.laczynaspilka.pl/rozgrywki/mecz/f0cf66a2-633b-4df7-a602-4cdfe2d564d9"));
+  spr("terminarz rozgrywek to NIE mecz",
+    !rozpoznaj("https://www.laczynaspilka.pl/rozgrywki/iii-liga-grupa-2/mecze"));
+  spr("strona klubu to NIE mecz",
+    !rozpoznaj("https://www.laczynaspilka.pl/kluby/chemik-bydgoszcz"));
+
+  const panelZr = fs.readFileSync(new URL("../src/mobile/main.ts", import.meta.url), "utf8");
+  spr("panel odróżnia jedno od drugiego", /\/\\\/mecz\\\/\[0-9a-f-\]\{36\}\/i\.test\(adres\)/.test(panelZr));
+  spr("adres listy jest zapamiętywany dla rozgrywek",
+    /zapamietajListeLnp\(obs\.rozgrywki \|\| ""/.test(panelZr));
+  spr("zapamiętany adres idzie przed adresem z kartoteki",
+    /adresy\.unshift\(wlasny\)/.test(panelZr));
+  spr("podpowiedź mówi o adresie listy, nie o kartotece",
+    /adres listy meczów/.test(panelZr));
+}
+
 console.log("\nWpiecie w panel");
 const panel = fs.readFileSync(new URL("../src/mobile/main.ts", import.meta.url), "utf8");
 spr("panel woła punkt dostępowy", /\/api\/lnp-mecz\?url=/.test(panel));
