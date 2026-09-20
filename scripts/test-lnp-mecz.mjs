@@ -300,6 +300,13 @@ console.log("\nOdpowiedz mowi, ktory adres czytala");
   const { tresc } = await wywolaj({
     url: pustaStrona, home: "Raków", away: "Zagłębie Lubin", date: "2026-09-15" });
   spr("mówi, że listy nie znalazł", /nie znalazłem listy meczów/.test(tresc.powod || ""), JSON.stringify(tresc).slice(0,140));
+  // DIAGNOZA W SAMYM POWODZIE. Panel pokazuje "powod" od pierwszej wersji, a bogatsze pola umie
+  // dopiero v26. Telefon na stadionie bywa o kilka wdrozen z tylu — i wtedy to zdanie jest
+  // jedynym, co do skauta dociera. Musi wiec niesc rozstrzygniecie, nie sama konstatacje.
+  spr("i niesie krótką diagnozę w samym zdaniu", /\[.+·.+\]/.test(tresc.powod || ""), tresc.powod);
+  spr("diagnoza podaje ścieżkę strony", /\/rozgrywki\/pusto/.test(tresc.powod || ""), tresc.powod);
+  spr("oraz mówi, że w stronie nie ma śladów danych",
+    /bez śladów danych w stronie/.test(tresc.powod || ""), tresc.powod);
   spr("i podaje adres, który czytał", tresc.adresSzukany === pustaStrona, tresc.adresSzukany);
   spr("oraz opis zawartości strony", !!tresc.zawartosc, JSON.stringify(tresc.zawartosc || null).slice(0, 120));
 }

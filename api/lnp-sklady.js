@@ -80,9 +80,16 @@ export default async function handler(req, res) {
   if (!grupy.length) {
     // Mówimy, co na tej stronie w ogóle było — bez tego „nie znalazłem" nie daje się odróżnić
     // od „skład jeszcze nie został ogłoszony", a to dwie różne sytuacje i różne reakcje.
+    // Diagnoza wchodzi w sam powód — patrz api/lnp-mecz.js. Telefon na stadionie bywa o kilka
+    // wdrożeń z tyłu i wtedy jedyne, co dociera do scouta, to to zdanie.
+    const zawartosc = opiszZawartosc(html);
+    const slady = (zawartosc.znakiRozpoznawcze || []).slice(0, 2).join("+") || "bez śladów danych w stronie";
     return res.status(200).json({
-      gospodarze: null, goscie: null, powod: "Na tej stronie nie ma jeszcze składów.",
-      zawartosc: opiszZawartosc(html),
+      gospodarze: null, goscie: null,
+      powod: `Na tej stronie nie ma jeszcze składów. [${Math.round((zawartosc.dlugoscStrony || 0) / 1024)} kB`
+        + ` · skryptów ${zawartosc.skryptow || 0} · ${slady}`
+        + ` · adresów danych ${(zawartosc.adresyApi || []).length}]`,
+      zawartosc,
     });
   }
 

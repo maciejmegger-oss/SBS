@@ -32,6 +32,21 @@ function scal(...listy) {
   return [...wg.values()];
 }
 
+// Najkrótszy opis tego, czym okazała się czytana strona. Mieści się w jednym powiadomieniu na
+// telefonie, a rozstrzyga rzecz, której inaczej nie da się ustalić bez dostępu do ŁNP: czy strona
+// niesie treść, czy tylko rusztowanie doklejane potem w przeglądarce.
+function krotkaDiagnoza(adres, z) {
+  const czesci = [];
+  try { czesci.push(new URL(adres).pathname.slice(0, 40)); } catch { /* adres i tak sprawdzony */ }
+  czesci.push(`${Math.round((z.dlugoscStrony || 0) / 1024)} kB`);
+  czesci.push(`skryptów ${z.skryptow || 0}`);
+  if ((z.znakiRozpoznawcze || []).length) czesci.push(z.znakiRozpoznawcze.slice(0, 2).join("+"));
+  else czesci.push("bez śladów danych w stronie");
+  if ((z.adresyApi || []).length) czesci.push(`adresów danych ${z.adresyApi.length}`);
+  if (z.znalezionychJsonow) czesci.push(`json ${z.znalezionychJsonow}`);
+  return "[" + czesci.join(" · ") + "]";
+}
+
 export default async function handler(req, res) {
   const adres = pierwszy(req.query.url);
   const gospodarz = pierwszy(req.query.home);
@@ -69,11 +84,20 @@ export default async function handler(req, res) {
     // nie daje się odróżnić od „czytałem nie tę stronę" — a panel ma kilka źródeł adresu
     // (podany na telefonie, pole przy klubie, terminarz rozgrywek z systemu) i przy błędzie
     // pierwszym pytaniem jest, które z nich poszło do boju.
+    const zawartosc = opiszZawartosc(html);
     return res.status(200).json({
       adres: null,
-      powod: "Na tej stronie nie znalazłem listy meczów.",
+      // DIAGNOZA WCHODZI W SAM POWÓD, NIE TYLKO OBOK NIEGO.
+      //
+      // Panel pokazuje „powod" od pierwszej wersji, a bogatsze pola („zawartosc", „adresSzukany")
+      // umie wyświetlić dopiero wersja v26. Telefon na stadionie bywa o kilka wdrożeń z tyłu —
+      // i wtedy jedyne, co dociera do scouta, to właśnie to zdanie. Skoro tak, to ono musi nieść
+      // rozstrzygnięcie: czy strona w ogóle ma treść, czy buduje się dopiero w przeglądarce
+      // i pod jakie adresy sama sięga. Inaczej diagnoza czeka na aktualizację, która nie
+      // przychodzi, a my stoimy w miejscu.
+      powod: "Na tej stronie nie znalazłem listy meczów. " + krotkaDiagnoza(adres, zawartosc),
       adresSzukany: adres,
-      zawartosc: opiszZawartosc(html),
+      zawartosc,
     });
   }
 
