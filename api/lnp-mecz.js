@@ -32,6 +32,27 @@ function scal(...listy) {
   return [...wg.values()];
 }
 
+// ADRES, POD KTÓRYM ŻADNEJ LISTY MECZÓW BYĆ NIE MOŻE.
+//
+// „laczynaspilka.pl/rozgrywki" to spis rozgrywek — strona, od której zaczyna się szukanie, a nie
+// taka, na której stoją mecze. Trafia tu, bo system na komputerze sam ją otwiera przy dodawaniu
+// adresu grupy (patrz window.open w src/main.ts) i bywa zapisana w całości, razem z tym, co scout
+// widział na ekranie przed kliknięciem.
+//
+// Rozstrzygamy to PRZED pobraniem, bo inaczej odpowiedź brzmi „nie znalazłem listy meczów" —
+// zdanie prawdziwe, które kieruje uwagę na odczyt, podczas gdy zepsuty jest adres. Ta pomyłka
+// potrafi kosztować dni: szuka się błędu w kodzie, który akurat zadziałał poprawnie.
+const SPISY_BEZ_MECZOW = new Set(["", "/", "/rozgrywki", "/kluby", "/druzyny", "/zawodnicy"]);
+
+function adresBezMeczow(adres) {
+  let sciezka;
+  try { sciezka = new URL(adres).pathname.replace(/\/+$/, ""); } catch { return ""; }
+  if (!SPISY_BEZ_MECZOW.has(sciezka)) return "";
+  return "Ten adres prowadzi do spisu rozgrywek, nie do listy meczów."
+    + " Wejdź w ŁNP w swoją grupę, otwórz jej terminarz i skopiuj adres STAMTĄD"
+    + ` (będzie dłuższy niż „${sciezka || "/"}").`;
+}
+
 // Najkrótszy opis tego, czym okazała się czytana strona. Mieści się w jednym powiadomieniu na
 // telefonie, a rozstrzyga rzecz, której inaczej nie da się ustalić bez dostępu do ŁNP: czy strona
 // niesie treść, czy tylko rusztowanie doklejane potem w przeglądarce.
@@ -57,6 +78,11 @@ export default async function handler(req, res) {
   // Adres bierze się od użytkownika, więc sprawdzamy go, zanim cokolwiek pobierzemy: bez tego
   // ten punkt dostępowy byłby otwartym pośrednikiem do dowolnego miejsca w internecie.
   if (!czyLnp(adres)) return res.status(400).json({ error: "To nie jest adres z laczynaspilka.pl." });
+
+  // Sprawdzane przed pobraniem — patrz adresBezMeczow. Zły adres ma się nazywać złym adresem,
+  // a nie „nie znalazłem listy meczów".
+  const zlyAdres = adresBezMeczow(adres);
+  if (zlyAdres) return res.status(200).json({ adres: null, powod: zlyAdres, adresSzukany: adres });
 
   let html;
   try {

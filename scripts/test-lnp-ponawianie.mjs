@@ -92,7 +92,8 @@ console.log("Ponawianie proby pobrania skladu");
 console.log("\nSkad panel bierze adres listy meczow");
 {
   const kodListy = panel.match(/function listyMeczow\(obs: Observation\)[\s\S]*?\n}\n/)[0];
-  const kodCzy = panel.match(/const czyListaLnp = [^;]+;/)[0];
+  const kodCzy = panel.match(/const SPIS_BEZ_MECZOW = [^;]+;/)[0]
+    + "\n" + panel.match(/const czyListaLnp = \([\s\S]*?\n};/)[0];
 
   function listy({ kluby = [null, null], grupy = {}, rozgrywki = "", wlasne = {} } = {}) {
     const zrodlo = `
@@ -147,6 +148,20 @@ console.log("\nSkad panel bierze adres listy meczow");
 
   spr("adres na telefonie dla INNYCH rozgrywek nie wchodzi",
     listy({ wlasne: { "IV liga": WLASNY }, rozgrywki: "III liga, grupa 2" }).length === 0);
+
+  // Spis rozgrywek zapisany jako "adres grupy" — tak wlasnie bylo u skauta. Panel ma go pominac
+  // i siegnac po nastepny adres, a nie tracic na niego probe.
+  spr("spis rozgrywek pominięty",
+    listy({ kluby: [{ profileLnp: "https://www.laczynaspilka.pl/rozgrywki" }, null] }).length === 0);
+  spr("spis klubów też",
+    listy({ kluby: [{ profileLnp: "https://www.laczynaspilka.pl/kluby/" }, null] }).length === 0);
+  spr("adres główny też",
+    listy({ kluby: [{ profileLnp: "https://www.laczynaspilka.pl/" }, null] }).length === 0);
+  spr("gdy zapisany jest spis, wchodzi następny adres",
+    listy({ kluby: [{ profileLnp: "https://www.laczynaspilka.pl/rozgrywki", league: "Ekstraklasa" }, null],
+            grupy: { Ekstraklasa: GRUPA } })[0] === GRUPA);
+  spr("prawdziwa lista NIE jest pomijana",
+    listy({ kluby: [{ profileLnp: LNP }, null] })[0] === LNP);
 }
 
 console.log("\nWpiecie ponawiania w panel");

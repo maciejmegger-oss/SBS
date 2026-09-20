@@ -1494,7 +1494,17 @@ let ostatniPowodLnp = "";
 // przyjechać do mnie opis tego, co na niej stoi.
 let ostatniSzczegolLnp = "";
 
-const czyListaLnp = (a: string) => /^https?:\/\/(www\.)?laczynaspilka\.pl\//i.test(a);
+// Strony, na których żadnej listy meczów być nie może: spis rozgrywek, spis klubów, adres główny.
+// Bywają zapisane jako „adres grupy", bo system na komputerze sam otwiera laczynaspilka.pl/rozgrywki
+// przy ich dodawaniu. Odsiewamy je TUTAJ, żeby panel nie tracił na nie próby i sięgnął po następny
+// adres z listy — a nie kończył zdaniem „nie znalazłem listy meczów" pod stroną, na której żadnej
+// listy z definicji nie ma. Punkt dostępowy sprawdza to drugi raz i mówi scoutowi, co poprawić.
+const SPIS_BEZ_MECZOW = /^\/(?:rozgrywki|kluby|druzyny|zawodnicy)?\/?$/i;
+
+const czyListaLnp = (a: string) => {
+  if (!/^https?:\/\/(www\.)?laczynaspilka\.pl\//i.test(a)) return false;
+  try { return !SPIS_BEZ_MECZOW.test(new URL(a).pathname); } catch { return false; }
+};
 
 function listyMeczow(obs: Observation): string[] {
   const [ng, ns] = druzynyZMeczu(obs.match);
