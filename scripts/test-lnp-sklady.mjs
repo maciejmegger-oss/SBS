@@ -229,9 +229,15 @@ console.log("\nStrona podana robotowi, a tresc przegladarce");
   // dostawalby sklad bokiem i sprawdzalby cos zupelnie innego, niz mial.
   trasy.set("api.laczynaspilka.pl", () => new Response("", { status: 404 }));
   const { tresc } = await wywolaj({ url: meczPusty, home: "Korona Kielce", away: "Górnik Zabrze" });
-  spr("mówi, że składów nie ma", /nie ma jeszcze składów/.test(tresc.powod || ""), JSON.stringify(tresc).slice(0,180));
-  spr("i pokazuje wynik obu prób w komunikacie", /próby:.*\|/.test(tresc.powod || ""), tresc.powod);
-  spr("obie nazwane szkieletem", (tresc.powod.match(/sam szkielet/g) || []).length === 2, tresc.powod);
+  // SAM SZKIELET PRZY OBU PYTANIACH TO NIE JEST "JESZCZE".
+  // Sprawdzone na prawdziwym meczu: 25 560 znakow szkieletu co do bajta tyle samo dla nas
+  // i dla przegladarki. Skladu tam nie ma i nie bedzie — a zdanie "nie ma JESZCZE" obiecywaloby,
+  // ze za kwadrans sie pojawi, i kazaloby odswiezac w kolko cos, co nie ma jak zadzialac.
+  spr("mówi wprost, że czekanie nic nie da",
+    /czekanie nic nie da/.test(tresc.powod || ""), JSON.stringify(tresc).slice(0,200));
+  spr("NIE mówi \"nie ma jeszcze\"", !/nie ma jeszcze/.test(tresc.powod || ""), tresc.powod);
+  spr("oddaje znacznik, po którym panel przestaje pytać", tresc.bezSzans === true);
+  spr("i pokazuje wynik obu prób", (tresc.powod.match(/sam szkielet/g) || []).length === 2, tresc.powod);
 }
 
 console.log(bledy ? `\n${bledy} błędów.` : "\nWszystko się zgadza.");

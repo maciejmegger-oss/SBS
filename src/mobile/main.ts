@@ -1746,6 +1746,17 @@ async function pobierzSkladZLnp(recznie: boolean): Promise<void> {
     // „składu jeszcze nie ma" wyskakiwałby scoutowi na oczy kilkanaście razy przed meczem —
     // za każdym razem mówiąc to samo i za każdym razem zasłaniając boisko.
     if (!dane.gospodarze && !dane.goscie) {
+      // „NIE MA JESZCZE" KONTRA „NIE BĘDZIE". Serwer odróżnia te dwie rzeczy i my też musimy.
+      //
+      // Sprawdzone na prawdziwym meczu: ŁNP oddaje serwerowi sam szkielet strony, co do bajta
+      // taki sam dla nas i dla przeglądarki. Składu tam nie ma i nie będzie — więc pytanie co
+      // półtorej minuty to tylko zużywanie baterii i łącza na stadionie, gdzie jedno i drugie
+      // bywa na wagę złota. Zapamiętujemy to przy obserwacji i przestajemy pytać.
+      if (dane.bezSzans) {
+        lnpBezSzans.add(obs.id);
+        ostatniPowodLnp = String(dane.powod || "");
+        ostatniSzczegolLnp = JSON.stringify(dane, null, 1);
+      }
       if (recznie) toast(dane.powod || "Na stronie meczu nie ma jeszcze składów");
       return;
     }
@@ -1865,12 +1876,17 @@ function polUdostepnienia(): string {
 // wejście w zakładkę i wyjście z niej nie zamieniło się w pytanie za pytaniem.
 const ostatniaProbaLnp = new Map<string, number>();
 const PRZERWA_PROB_LNP = 90_000;
+// Obserwacje, przy których ŁNP odpowiedziało, że składu nie poda NIGDY (sam szkielet strony przy
+// obu pytaniach). Ponawianie ma sens, gdy skład dopiero się pojawi — nie wtedy, gdy nie ma go
+// jak dostać. Zbiór żyje do przeładowania panelu: gdyby ŁNP kiedyś zaczęło te dane wysyłać,
+// pierwsze uruchomienie po wdrożeniu spróbuje znowu.
+const lnpBezSzans = new Set<string>();
 
 function sprobujSkladZLnp(): void {
   if (!live) return;
   const obs = cache.observations.find((o) => o.id === live!.observationId) as
     (Observation & { skladMeczu?: Sklad; lnpUrl?: string }) | undefined;
-  if (!obs) return;
+  if (!obs || lnpBezSzans.has(obs.id)) return;
   const teraz = Date.now();
   if (teraz - (ostatniaProbaLnp.get(obs.id) || 0) < PRZERWA_PROB_LNP) return;
   if (!obs.lnpUrl && !listyMeczow(obs).length) return;

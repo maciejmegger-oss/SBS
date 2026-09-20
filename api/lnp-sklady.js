@@ -86,7 +86,31 @@ export default async function handler(req, res) {
     const slady = (zawartosc.znakiRozpoznawcze || []).slice(0, 2).join("+") || "bez śladów danych w stronie";
     // Wynik OBU prób pobrania wchodzi w powód. Rozstrzyga rzecz, której inaczej nie da się
     // ustalić: czy strona jest pusta dla każdego, czy tylko dla nas — patrz pobierzLnp.
-    const proby = (ostatniOdczytLnp.proby || []).join(" | ");
+    const listaProb = ostatniOdczytLnp.proby || [];
+    const proby = listaProb.join(" | ");
+
+    // SAM SZKIELET PRZY OBU PYTANIACH — I TO NIE JEST „JESZCZE".
+    //
+    // Sprawdzone na prawdziwym meczu: oba pytania, nasze i przeglądarki, dostały odpowiedź co do
+    // bajta tę samą — 25 560 znaków szkieletu, zero śladów danych, zero adresów, pod które strona
+    // sama sięga. ŁNP nie podaje serwerowi składu w ogóle, więc czekanie nic nie zmieni.
+    //
+    // Zdanie „nie ma JESZCZE składów" byłoby tu kłamstwem przez sugestię: obiecywałoby, że za
+    // kwadrans się pojawi, i kazałoby scoutowi odświeżać w kółko coś, co nie ma jak zadziałać.
+    // Mówimy więc wprost i oddajemy znacznik, po którym panel przestaje pytać.
+    const samSzkielet = listaProb.length > 0 && listaProb.every((p) => /sam szkielet/.test(p));
+    if (samSzkielet) {
+      return res.status(200).json({
+        gospodarze: null, goscie: null,
+        bezSzans: true,
+        powod: "ŁNP nie wysyła składu poza przeglądarkę — ta strona jest pusta także dla serwera,"
+          + " więc czekanie nic nie da. Skład trzeba wpisać albo wkleić."
+          + ` [${Math.round((zawartosc.dlugoscStrony || 0) / 1024)} kB · ${proby}]`,
+        zawartosc,
+        proby: listaProb,
+      });
+    }
+
     return res.status(200).json({
       gospodarze: null, goscie: null,
       powod: `Na tej stronie nie ma jeszcze składów. [${Math.round((zawartosc.dlugoscStrony || 0) / 1024)} kB`
@@ -94,7 +118,7 @@ export default async function handler(req, res) {
         + ` · adresów danych ${(zawartosc.adresyApi || []).length}`
         + (proby ? ` · próby: ${proby}` : "") + "]",
       zawartosc,
-      proby: ostatniOdczytLnp.proby,
+      proby: listaProb,
     });
   }
 
