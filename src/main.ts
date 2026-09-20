@@ -20011,12 +20011,22 @@ function openObsSkladModal(obsId){
   // NA KOMPUTERZE, w przeglądarce, w której ta strona buduje się normalnie — wystarczy zaznaczyć
   // skład myszą i wkleić. To obchodzi całą przeszkodę i działa z dowolnej strony.
   function wczytajZWklejki(){
-    const pole = overlay.querySelector('[data-x="wklejka"]') as HTMLTextAreaElement | null;
-    const tekst = (pole && pole.value) || '';
-    if(!tekst.trim()){ bladPobrania = 'Najpierw wklej skład skopiowany ze strony.'; draw(); return; }
+    const wartosc = (klucz: string) => {
+      const pole = overlay.querySelector(`[data-x="${klucz}"]`) as HTMLTextAreaElement | null;
+      return ((pole && pole.value) || '').trim();
+    };
+    const tekst = wartosc('wklejka');
+    const tekstGosci = wartosc('wklejka-goscie');
+    if(!tekst && !tekstGosci){ bladPobrania = 'Najpierw wklej skład skopiowany ze strony.'; draw(); return; }
     if(!para){ bladPobrania = 'Pole „Mecz" nie zawiera dwóch drużyn rozdzielonych myślnikiem.'; draw(); return; }
 
-    const { gospodarze, goscie, podzielone } = podzielNaDruzyny(tekst, para.gospodarz, para.gosc);
+    // Gdy scout wypełnił OBA pola, nie ma czego dzielić — każde jest jedną drużyną i tyle.
+    // Dzielenie po nazwie wchodzi tylko wtedy, gdy wszystko wylądowało w jednym polu.
+    const { gospodarze, goscie, podzielone } = tekstGosci
+      ? { gospodarze: parsujSklad(tekst, [para.gospodarz, para.gosc]),
+          goscie: parsujSklad(tekstGosci, [para.gospodarz, para.gosc]),
+          podzielone: true }
+      : podzielNaDruzyny(tekst, para.gospodarz, para.gosc);
     if(!gospodarze.length && !goscie.length){
       bladPobrania = 'Nie rozpoznałem w tym tekście ani jednego nazwiska. Zaznacz sam skład — '
         + 'z numerami, bez menu i nagłówków strony.';
@@ -20034,7 +20044,8 @@ function openObsSkladModal(obsId){
     komunikat = podzielone
       ? `Wczytałem ${gospodarze.length} + ${goscie.length} zawodników z wklejonego tekstu.`
       : `Wczytałem ${gospodarze.length} zawodników, ale nie znalazłem w tekście nazwy drugiej `
-        + `drużyny — wszyscy trafili do „${para.gospodarz}". Wklej składy osobno albo popraw ręcznie.`;
+        + `drużyny — wszyscy trafili do „${para.gospodarz}". Jeśli to były oba składy, wklej `
+        + `drużynę gości do drugiego pola obok.`;
     zapisz();
   }
 
@@ -20158,12 +20169,16 @@ function openObsSkladModal(obsId){
       <p class="note" style="margin-bottom:4px;">${esc(obs.match||'brak danych meczu')}
         &middot; ${esc(obs.date||'')}${obs.matchTime?' '+esc(obs.matchTime):''}${ogladajMeczHtml(obs)}</p>
       <p class="note" style="font-size:11.5px;margin-bottom:10px;">
-        <strong>Na około godzinę przed meczem</strong> składy są już ogłoszone — na ŁNP, w serwisach
-        wynikowych, na stronach klubów. Otwórz taką stronę w drugiej karcie, <strong>zaznacz skład
-        myszą i wklej niżej</strong>. <strong>Po meczu</strong> (i przy oglądaniu z wideo) użyj
-        <strong>protokołu z 90minut</strong> — pokaże, kto faktycznie zagrał, z numerami i minutami
-        zejścia. <strong>Kadra z bazy SBS</strong> to cały klub, a nie dzisiejsza jedenastka —
-        bierz ją, gdy składu nie ma jeszcze nigdzie.</p>
+        <strong>Składy ogłaszane są na około godzinę przed pierwszym gwizdkiem</strong> — wcześniej
+        nie ma ich nigdzie. Strona meczu w ŁNP pisze wtedy wprost „Wróć później by zobaczyć składy
+        drużyn"; to znaczy <strong>jeszcze nie</strong>, a nie „nigdy". Gdy już są, otwórz taką
+        stronę w drugiej karcie, <strong>zaznacz skład myszą i wklej niżej</strong> — działa ŁNP,
+        serwis wynikowy albo strona klubu.<br>
+        <strong>🛰️ Skład od dostawcy</strong> nie wymaga kopiowania, ale obejmuje tylko rozgrywki
+        z wykupionego planu (Ekstraklasa, I liga — nie CLJ i nie niższe ligi).
+        <strong>Po meczu</strong> (i przy oglądaniu z wideo) użyj <strong>protokołu z 90minut</strong>
+        — pokaże, kto faktycznie zagrał, z numerami i minutami zejścia.
+        <strong>Kadra z bazy SBS</strong> to cały klub, a nie dzisiejsza jedenastka.</p>
 
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
         <button class="secondary" data-x="baza" ${pracuje?'disabled':''}>📋 Kadry z bazy SBS</button>
@@ -20180,11 +20195,29 @@ function openObsSkladModal(obsId){
            te same strony buduje normalnie. -->
       <details style="margin-bottom:10px;" ${s?'':'open'}>
         <summary style="cursor:pointer;font-weight:600;font-size:12.5px;">📋 Wklej skład ze strony (ŁNP, serwis wynikowy, strona klubu)</summary>
-        <p class="note" style="font-size:11.5px;margin:6px 0;">Zaznacz na stronie oba składy razem
-          z nagłówkami drużyn i wklej tutaj. Rozpoznaję numery, „Skład wyjściowy" i „Skład
-          rezerwowych"; sztab szkoleniowy pomijam.</p>
-        <textarea data-x="wklejka" rows="6" style="width:100%;font-size:12px;font-family:var(--data,monospace);"
-          placeholder="Lechia Gdańsk&#10;Skład wyjściowy&#10;1 Kowalski&#10;4 Nowak&#10;…&#10;Stal Mielec&#10;Skład wyjściowy&#10;1 Wiśniewski&#10;…"></textarea>
+        <!-- OSOBNE POLE NA KAŻDĄ DRUŻYNĘ — I TO NIE JEST OZDOBA.
+             Serwisy wynikowe pokazują oba składy OBOK SIEBIE, w dwóch kolumnach jednego wiersza.
+             Zaznaczenie takiej tabeli myszą daje tekst, w którym zawodnicy obu drużyn stoją NA
+             PRZEMIAN — jedno wspólne pole skleiłoby z tego jedną listę i połowa gości trafiłaby
+             do gospodarzy. Przy dwóch polach scout wkleja każdą stronę osobno i nie ma czego
+             zgadywać. Gdy strona wypisuje składy jeden pod drugim (tak robi ŁNP), wystarczy
+             wkleić całość w pierwsze pole — podział po nazwie drugiej drużyny działa dalej. -->
+        <p class="note" style="font-size:11.5px;margin:6px 0;">Rozpoznaję numery, „Skład wyjściowy"
+          i „Skład rezerwowych"; sztab szkoleniowy pomijam. Gdy strona pokazuje składy
+          <strong>obok siebie</strong> (tak robią serwisy wynikowe), wklej każdą drużynę do swojego
+          pola. Gdy <strong>jeden pod drugim</strong> — wystarczy wkleić całość w pierwsze.</p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <label style="flex:1;min-width:210px;font-size:11.5px;color:var(--ink-soft);">
+            ${esc(para?para.gospodarz:'gospodarze')}
+            <textarea data-x="wklejka" rows="6" style="width:100%;font-size:12px;font-family:var(--data,monospace);"
+              placeholder="1 Kowalski&#10;4 Nowak&#10;…"></textarea>
+          </label>
+          <label style="flex:1;min-width:210px;font-size:11.5px;color:var(--ink-soft);">
+            ${esc(para?para.gosc:'goście')}
+            <textarea data-x="wklejka-goscie" rows="6" style="width:100%;font-size:12px;font-family:var(--data,monospace);"
+              placeholder="1 Wiśniewski&#10;5 Zieliński&#10;…"></textarea>
+          </label>
+        </div>
         <button class="secondary" data-x="wklejka-wczytaj" style="margin-top:6px;">Wczytaj wklejony skład</button>
       </details>
 
