@@ -238,6 +238,12 @@ console.log("\nStrona podana robotowi, a tresc przegladarce");
   spr("NIE mówi \"nie ma jeszcze\"", !/nie ma jeszcze/.test(tresc.powod || ""), tresc.powod);
   spr("oddaje znacznik, po którym panel przestaje pytać", tresc.bezSzans === true);
   spr("i pokazuje wynik obu prób", (tresc.powod.match(/sam szkielet/g) || []).length === 2, tresc.powod);
+  // OSTATNI NIEODWROCONY KAMIEN: adresy danych stoja w PLIKACH Z KODEM strony, nie w samej
+  // stronie. Bez tego sladu "nie znalazlem adresow" nie odroznia sie od "nie udalo sie tych
+  // plikow pobrac" — a tylko jedna z tych diagnoz zamyka droge.
+  spr("mówi, ile plików z kodem miała strona", /plików z kodem \d/.test(tresc.powod || ""), tresc.powod);
+  spr("i ile adresów w nich znalazł", /adresów w kodzie \d/.test(tresc.powod || ""), tresc.powod);
+  spr("oddaje też ślad po każdym pliku", Array.isArray(tresc.pliki?.skrypty), JSON.stringify(tresc.pliki));
 }
 
 console.log(bledy ? `\n${bledy} błędów.` : "\nWszystko się zgadza.");

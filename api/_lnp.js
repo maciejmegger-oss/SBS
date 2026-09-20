@@ -60,7 +60,10 @@ export async function zbadajSkryptyStrony(html, adresStrony) {
   let baza;
   try { baza = new URL(adresStrony); } catch { return { adresy: [], sciezki: [], zbadane: [] }; }
   const zPamieci = znaleziona.get(baza.origin);
-  if (zPamieci && Date.now() - zPamieci.kiedy < CZAS_ZYCIA_ADRESOW) return zPamieci;
+  if (zPamieci && Date.now() - zPamieci.kiedy < CZAS_ZYCIA_ADRESOW) {
+    zapiszSladPlikow(zPamieci, "z pamięci");
+    return zPamieci;
+  }
 
   const pliki = [...String(html || "").matchAll(/<script[^>]+src=["']([^"']+)["']/gi)]
     .map((m) => { try { return new URL(m[1], baza).toString(); } catch { return ""; } })
@@ -133,7 +136,24 @@ export async function zbadajSkryptyStrony(html, adresStrony) {
   // nie zamknąć drogi na stałe, gdyby ŁNP kiedyś zaczęło te dane wysyłać.
   const naDlugo = adresy.size || sciezki.size;
   znaleziona.set(baza.origin, naDlugo ? wynik : { ...wynik, kiedy: Date.now() - CZAS_ZYCIA_ADRESOW + 10 * 60 * 1000 });
+  zapiszSladPlikow(wynik, "świeżo");
   return wynik;
+}
+
+// OSTATNI NIEODWRÓCONY KAMIEŃ.
+//
+// Wiemy już, że sama strona meczu nie niesie składu: oba pytania, nasze i przeglądarki, dostają
+// co do bajta ten sam szkielet. Ale strona ma w sobie CZTERY PLIKI Z KODEM, a to w nich stoją
+// adresy, pod które sięga przeglądarka. Dotąd wynik ich przeglądania zostawał wewnątrz tej
+// funkcji i nie docierał nigdzie — więc „nie znalazłem adresów danych" nie dawało się odróżnić
+// od „nie udało się tych plików pobrać". To dwie zupełnie różne diagnozy i tylko jedna z nich
+// zamyka drogę.
+function zapiszSladPlikow(wynik, skad) {
+  ostatniOdczytLnp.plikow = wynik.plikowWStronie || 0;
+  ostatniOdczytLnp.skrypty = (wynik.zbadane || []).slice(0, 6);
+  ostatniOdczytLnp.adresyZKodu = (wynik.adresy || []).slice(0, 6);
+  ostatniOdczytLnp.szablony = (wynik.szablony || []).slice(0, 6);
+  ostatniOdczytLnp.skadSlad = skad;
 }
 
 // Numer meczu z adresu strony. Na ŁNP jest to długi numer z myślnikami, a nie zwykła liczba —
