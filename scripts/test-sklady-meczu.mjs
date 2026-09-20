@@ -5,6 +5,9 @@ import fs from "node:fs";
 import { transformSync } from "esbuild";
 
 const panel = fs.readFileSync("src/mobile/main.ts", "utf8");
+// normKlub i slowaKlubu mieszkaja od teraz we wspolnym module — panel i system na komputerze
+// czytaja sklad TYM SAMYM kodem, zeby nie rozjechaly sie jak kiedys dwie kopie zbieracza LNP.
+const wspolne = fs.readFileSync("src/domain/sklad.ts", "utf8");
 const wytnij = (nazwa, wzor) => {
   const m = panel.match(wzor);
   if (!m) { console.error(`Nie znalazłem ${nazwa} — test i kod się rozjechały.`); process.exit(1); }
@@ -24,7 +27,9 @@ const sprawdzWarunek = (opis, w, dodatek = "") => {
 
 // Prawdziwy kod: znaczniki zespołu, normalizacja nazwy klubu, dobór zespołu z rozgrywek i klubu.
 const kod = [
-  wytnij("ZNACZNIKI_ZESPOLU + normKlub", /const ZNACZNIKI_ZESPOLU[\s\S]*?\nconst normKlub[\s\S]*?\n  \.trim\(\);/),
+  wytnij("ZNACZNIKI_ZESPOLU + znacznikZespolu", /const ZNACZNIKI_ZESPOLU[\s\S]*?\nexport function znacznikZespolu[\s\S]*?\n}\n/)
+    + "\n" + (wspolne.match(/export const normKlub[\s\S]*?\n  \.trim\(\);/) || [""])[0].replace("export ", "")
+  + "\n" + (wspolne.match(/export const TOKEN_ZESPOLU[\s\S]*?TOKEN_ZESPOLU\.test\(w\)\);/) || [""])[0].replace(/export /g, ""),
   wytnij("znacznikZRozgrywek + klubZNazwy", /\/\/ ZNACZNIK ZESPOŁU Z NAZWY ROZGRYWEK[\s\S]*?\nfunction klubZNazwy[\s\S]*?\n}\n/),
 ].join("\n");
 const js = transformSync(kod.replace(/export /g, ""), { loader: "ts", format: "esm" }).code;
@@ -156,13 +161,9 @@ console.log("\n5. Wklejanie składu po wgraniu pierwszej drużyny");
 // ---------------------------------------------------------------------------
 console.log("\n6. Wklejka składu z ŁNP");
 {
-  const kodP = [
-    wytnij("ZNACZNIKI_ZESPOLU + normKlub", /const ZNACZNIKI_ZESPOLU[\s\S]*?\nconst normKlub[\s\S]*?\n  \.trim\(\);/),
-    wytnij("TOKEN_ZESPOLU + slowaKlubu", /const TOKEN_ZESPOLU[\s\S]*?filter\(\(w\) => w\.length > 1 && !TOKEN_ZESPOLU\.test\(w\)\);/),
-    wytnij("NIE_ZAWODNIK", /const NIE_ZAWODNIK = new Set\(\[[\s\S]*?\]\);/),
-    wytnij("WIELKA_MALE", /const WIELKA_MALE = [^\n]+/),
-    wytnij("parsujSklad", /function parsujSklad[\s\S]*?\n}\n/),
-  ].join("\n");
+  // Caly wspolny modul — odczyt skladu mieszka tam w jednym kawalku, wiec nie ma sensu
+  // wycinac go po kawalku i pilnowac, czy wyciecia nadazaja za kodem.
+  const kodP = wspolne;
   const jsP = transformSync(kodP.replace(/export /g, ""), { loader: "ts", format: "esm" }).code;
   const parsujSklad = new Function(`${jsP}\nreturn parsujSklad;`)();
 
@@ -205,13 +206,9 @@ console.log("\n6. Wklejka składu z ŁNP");
 // ---------------------------------------------------------------------------
 console.log("\n7. Skład wyjściowy, rezerwowy i sztab");
 {
-  const kodP = [
-    wytnij("ZNACZNIKI_ZESPOLU + normKlub", /const ZNACZNIKI_ZESPOLU[\s\S]*?\nconst normKlub[\s\S]*?\n  \.trim\(\);/),
-    wytnij("TOKEN_ZESPOLU + slowaKlubu", /const TOKEN_ZESPOLU[\s\S]*?filter\(\(w\) => w\.length > 1 && !TOKEN_ZESPOLU\.test\(w\)\);/),
-    wytnij("NIE_ZAWODNIK", /const NIE_ZAWODNIK = new Set\(\[[\s\S]*?\]\);/),
-    wytnij("WIELKA_MALE", /const WIELKA_MALE = [^\n]+/),
-    wytnij("parsujSklad", /function parsujSklad[\s\S]*?\n}\n/),
-  ].join("\n");
+  // Caly wspolny modul — odczyt skladu mieszka tam w jednym kawalku, wiec nie ma sensu
+  // wycinac go po kawalku i pilnowac, czy wyciecia nadazaja za kodem.
+  const kodP = wspolne;
   const jsP = transformSync(kodP.replace(/export /g, ""), { loader: "ts", format: "esm" }).code;
   const parsujSklad = new Function(`${jsP}\nreturn parsujSklad;`)();
 
