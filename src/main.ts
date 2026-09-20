@@ -20038,6 +20038,42 @@ function openObsSkladModal(obsId){
     zapisz();
   }
 
+  // Skład od licencjonowanego dostawcy — patrz api/sklady-api-football.js. Jedyna droga, która
+  // daje skład PRZED meczem bez przepisywania: strony budują się w przeglądarce i serwerowi nie
+  // oddają niczego, co sprawdziliśmy pomiarem, a nie przypuszczeniem.
+  async function wczytajOdDostawcy(){
+    if(!para){ bladPobrania = 'Pole „Mecz" nie zawiera dwóch drużyn rozdzielonych myślnikiem.'; draw(); return; }
+    if(!obs.date){ bladPobrania = 'Obserwacja nie ma daty — bez niej dostawca nie rozpozna meczu.'; draw(); return; }
+    pracuje = true; bladPobrania = ''; komunikat = ''; draw();
+    try{
+      const res = await fetch('/api/sklady-api-football?home=' + encodeURIComponent(para.gospodarz)
+        + '&away=' + encodeURIComponent(para.gosc) + '&date=' + encodeURIComponent(obs.date));
+      const dane = await res.json();
+      if(!dane || (!dane.gospodarze && !dane.goscie)){
+        // Powód od dostawcy rozróżnia brak pokrycia od składu jeszcze nieogłoszonego — i to
+        // rozróżnienie jest tu najważniejsze, bo wymaga od scouta czego innego.
+        bladPobrania = (dane && (dane.powod || dane.error)) || ('Serwer odpowiedział kodem ' + res.status + '.');
+        pracuje = false; draw(); return;
+      }
+      const zawodnicy = (g) => (g && g.zawodnicy ? g.zawodnicy : [])
+        .filter(z => z && z.nazwa)
+        .map(z => (z.numer ? { nazwa: z.nazwa, numer: String(z.numer) } : { nazwa: z.nazwa }));
+      const g = zawodnicy(dane.gospodarze), s = zawodnicy(dane.goscie);
+      obs.skladMeczu = {
+        zrodlo: 'dostawca', pobrano: new Date().toISOString().slice(0,10),
+        gospodarze: { nazwa: para.gospodarz, zawodnicy: g },
+        goscie: { nazwa: para.gosc, zawodnicy: s },
+      };
+      pracuje = false; bladPobrania = '';
+      komunikat = `Wczytałem od dostawcy: ${g.length} + ${s.length} zawodników.`;
+      zapisz();
+    }catch(e){
+      pracuje = false;
+      bladPobrania = 'Nie udało się zapytać dostawcy: ' + ((e && e.message) || e);
+      draw();
+    }
+  }
+
   async function wczytajZ90minut(){
     if(!para){ bladPobrania = 'Pole „Mecz" nie zawiera dwóch drużyn rozdzielonych myślnikiem.'; draw(); return; }
     pracuje = true; bladPobrania = ''; komunikat = ''; draw();
@@ -20132,6 +20168,10 @@ function openObsSkladModal(obsId){
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
         <button class="secondary" data-x="baza" ${pracuje?'disabled':''}>📋 Kadry z bazy SBS</button>
         <button class="gold" data-x="protokol" ${pracuje?'disabled':''}>${pracuje?'Pobieram…':'⚽ Kto zagrał (90minut)'}</button>
+        <!-- Dostawca statystyk to jedyne źródło, które oddaje skład PRZED meczem maszynowo.
+             Obejmuje tylko rozgrywki z wykupionego planu — CLJ i niższych lig nie — więc brak
+             pokrycia jest nazwany po imieniu, a nie mylony z „nie znalazłem meczu". -->
+        <button class="secondary" data-x="dostawca" ${pracuje?'disabled':''}>🛰️ Skład od dostawcy</button>
       </div>
 
       <!-- WKLEJKA STOI PIERWSZA POD PRZYCISKAMI, bo to jedyna droga dająca skład PRZED meczem —
@@ -20174,6 +20214,8 @@ function openObsSkladModal(obsId){
     overlay.querySelector('[data-x="protokol"]').onclick = wczytajZ90minut;
     const przyciskWklejki = overlay.querySelector('[data-x="wklejka-wczytaj"]') as HTMLElement | null;
     if(przyciskWklejki) przyciskWklejki.onclick = wczytajZWklejki;
+    const przyciskDostawcy = overlay.querySelector('[data-x="dostawca"]') as HTMLElement | null;
+    if(przyciskDostawcy) przyciskDostawcy.onclick = wczytajOdDostawcy;
     overlay.querySelectorAll('.obs-wyroz').forEach(inp=>inp.onchange = ()=>{
       const wynik = ustawWyroznienie(obs, inp.dataset.strona, Number(inp.dataset.i), inp.checked);
       if(wynik && wynik.blad) komunikat = wynik.blad;
