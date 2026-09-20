@@ -56,6 +56,11 @@ let DB: Database = { players: [], clubs: [], observations: [], reports: [], tale
 // z wersji wysyłanej na serwer, więc w działającej aplikacji tego okna nie ma.
 if(import.meta.env && import.meta.env.DEV){ try{ (window as any).__SBS_DB = () => DB; }catch(e){} }
 let currentView = "dashboard";
+// Otwarcie zakładki bez logowania — też tylko na maszynie deweloperskiej. Bez tego test nie ma jak
+// wejść w Kluby: panel boczny rysuje się dopiero po zalogowaniu do bazy, więc nie ma w co kliknąć.
+if(import.meta.env && import.meta.env.DEV){
+  try{ (window as any).__SBS_POKAZ = (widok)=>{ currentView = widok; render(); }; }catch(e){}
+}
 let editingPlayerId = null;
 let editingReportId = null;
 let obsPreselectPlayerId = null;
@@ -81,7 +86,7 @@ let systemyKlubow = {};
 // Jedyne pewne zrodlo tego, ile kolejek naprawde rozegrano.
 let tabeleLig = {};
 let editingClubId = null;
-let clubBrowse = {top:"", group:""};
+let clubBrowse = {top:"", group:"", search:""};
 let dashboardLeagueSelected = null;
 // Wybrane wojewodztwo na mapie dashboardu — pokazuje obok liste jego klubow.
 let dashboardWojewodztwo = null;
@@ -3763,7 +3768,7 @@ function podepnijSzukanieGlobalne(){
     if(!w) return;
     editingPlayerId = null; viewingRocznikGroup = null;
     if(w.rodzaj === 'zawodnik'){ currentView = 'players'; viewingPlayerId = w.id; viewingClubId = null; }
-    else if(w.rodzaj === 'klub'){ currentView = 'clubs'; viewingClubId = w.id; viewingPlayerId = null; clubBrowse = {top:'', group:''}; }
+    else if(w.rodzaj === 'klub'){ currentView = 'clubs'; viewingClubId = w.id; viewingPlayerId = null; clubBrowse = {top:'', group:'', search:''}; }
     // Talent nie ma jeszcze kartoteki, więc nie ma dokąd „wejść" — otwieramy listę talentów,
     // gdzie stoi jego wiersz z przyciskiem „pełny profil / dodaj do bazy".
     else if(w.rodzaj === 'talent'){ currentView = 'talent'; viewingPlayerId = null; }
@@ -3866,7 +3871,7 @@ function renderNav(){
       editingPlayerId = null;
       viewingPlayerId = null;
       viewingClubId = null;
-      clubBrowse = { top: '', group: '' };
+      clubBrowse = { top: '', group: '', search: '' };
       viewingRocznikGroup = null;
       viewingAgencyId = null;
       compareIds = ['', '', ''];
@@ -5296,7 +5301,25 @@ function widoczneKluby(){
   if(clubBrowse.group) list = list.filter(c=>c.league===clubBrowse.group);
   // Po wybraniu ligi albo grupy — kolejność jak w aktualnej tabeli (patrz ulozWgTabeli).
   if(clubBrowse.top) list = ulozWgTabeli(list, miejsceWTabeli);
+  if(clubBrowse.search) list = list.filter(c=>pasujeDoSzukania(c, clubBrowse.search));
   return list;
+}
+
+// SZUKANIE KLUBU PO WPISANYM TEKŚCIE.
+//
+// Sześćset klubów w widoku „Wszystkie" to lista, przez którą nie da się przewinąć wzrokiem — a do
+// jednego klubu trafia się kilkanaście razy dziennie. Szukamy po nazwie, mieście, regionie i lidze,
+// bo „Warszawa" albo „IV liga" to równie naturalne wejście jak sama nazwa.
+//
+// Normalizujemy tym samym szukajNorm, co wyszukiwarka zawodników: zdejmuje wielkie litery i polskie
+// znaki (także „ł", którego NFD nie rozkłada), a spacje zostawia. Dzięki temu „leczna" trafia
+// w „Górnik Łęczna", a każde wpisane słowo liczy się OSOBNO: „mielec stal" znajdzie „Stal Mielec"
+// niezależnie od kolejności, a „warszawa iv" zawęzi do warszawskich klubów IV ligi.
+function pasujeDoSzukania(klub, fraza){
+  const slowa = szukajNorm(fraza).split(' ').filter(Boolean);
+  if(!slowa.length) return true;
+  const stog = szukajNorm([klub.name, klub.city, klub.region, klub.league].filter(Boolean).join(' '));
+  return slowa.every(s=>stog.includes(s));
 }
 
 // KOLEJNOŚĆ JAK W TABELI LIGOWEJ.
@@ -5333,6 +5356,41 @@ function ulozWgTabeli(kluby, miejsceKlubu){
 function viewClubs(){
   if(viewingClubId) return viewClubDetail(viewingClubId);
   const list = widoczneKluby();
+
+  // WYSZUKIWARKA KLUBU.
+  //
+  // W widoku „Wszystkie" stoi sześćset klubów — do jednego dochodziło się przewijaniem albo
+  // przypominaniem sobie, w której grupie IV ligi ten klub gra. Pole robi to samo, co pigułki lig,
+  // tylko od razu: wpisujesz kawałek nazwy i lista zostaje przy trafieniach.
+  //
+  // Szukanie działa WEWNĄTRZ wybranej ligi, bo inaczej wybór grupy przestawałby cokolwiek znaczyć.
+  // Kiedy jednak w tej grupie nie ma nic, a w całej bazie jest — mówimy to wprost i dajemy przycisk,
+  // który zdejmuje zawężenie. Bez tego „Polonia" przy wybranej Ekstraklasie dawałaby pustą tabelę
+  // i wyglądała na brak klubu w bazie, choć klub jest o jedną ligę niżej.
+  const szukanie = String(clubBrowse.search || '').trim();
+  const trafieniaWCalejBazie = szukanie
+    ? DB.clubs.filter(c=>pasujeDoSzukania(c, szukanie)).length
+    : 0;
+  const zaweszenie = clubBrowse.group || clubBrowse.top;
+  const paskiSzukania = `
+  <div class="toolbar" style="margin:10px 0 0;">
+    <div style="display:flex;gap:8px;align-items:center;flex:1;min-width:240px;max-width:460px;">
+      <input id="szukaj-klub" placeholder="🔎 Szukaj klubu — nazwa, miasto, liga…"
+             value="${esc(clubBrowse.search)}" autocomplete="off"
+             title="Wpisz fragment nazwy klubu, miasta albo ligi. Polskie znaki nie są potrzebne: „leczna” znajdzie „Górnik Łęczna”."
+             style="flex:1;min-width:0;">
+      ${szukanie ? `<button class="link-btn" data-action="szukaj-klub-wyczysc" title="Wyczyść wyszukiwanie">✕ Wyczyść</button>` : ''}
+    </div>
+    ${szukanie
+      ? `<div class="note">${list.length
+          ? `Znaleziono <strong>${list.length}</strong> ${list.length===1?'klub':(list.length<5?'kluby':'klubów')}${zaweszenie?` w: ${esc(zaweszenie)}`:''}.`
+          : `Nic nie pasuje${zaweszenie?` w: ${esc(zaweszenie)}`:''}.`}${
+          trafieniaWCalejBazie > list.length
+            ? ` W całej bazie pasuje <strong>${trafieniaWCalejBazie}</strong>.
+                <button class="link-btn" data-action="szukaj-klub-cala-baza">Szukaj we wszystkich ligach</button>`
+            : ''}</div>`
+      : ''}
+  </div>`;
 
   // PRZYCISKI ROZGRYWEK UŁOŻONE W RODZINY — TAK JAK NA ŁNP.
   //
@@ -5608,6 +5666,7 @@ function viewClubs(){
 
   return `
   <h2 class="view-title">Kluby</h2>
+  ${paskiSzukania}
   ${topRow}
   ${groupRow}
   <p class="view-sub" style="margin-top:12px;">Przeglądaj wg ligi i grupy — jak w strukturze PZPN / mPZPN.
@@ -6673,6 +6732,9 @@ function klubyWWidoku(){
   let lista = DB.clubs.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'','pl'));
   if(clubBrowse.top) lista = lista.filter(c=>topLevelOf(c.league)===clubBrowse.top);
   if(clubBrowse.group) lista = lista.filter(c=>c.league===clubBrowse.group);
+  // Wpisana fraza zawęża tak samo jak wybór ligi — inaczej przycisk mówiłby „cały widok (3)",
+  // a chodziłby po osiemnastu klubach grupy.
+  if(clubBrowse.search) lista = lista.filter(c=>pasujeDoSzukania(c, clubBrowse.search));
   return lista;
 }
 // ZAPIS STATYSTYK GRUPY: CO JEST CHWILOWE, A CO ODMOWĄ.
@@ -12877,7 +12939,7 @@ function openPasteClubsModal(){
     const ok = await saveClubs();
     if(!ok){ alert(('Nie udało się zapisać.' + powodNieudanegoZapisu())); return; }
     overlay.remove();
-    clubBrowse = { top: topLevelOf(liga), group: liga };
+    clubBrowse = { top: topLevelOf(liga), group: liga, search: '' };
     alert(`Założyłem ${nowe.length} ${nowe.length===1?'klub':'klubów'} w grupie „${liga}".\n\n` +
       'Herby, linki do 90minut i składy uzupełnisz w edycji klubu — a statystyki pobierzesz przyciskiem „⏱ Statystyki z 90minut" w widoku klubu.');
     render();
@@ -14008,6 +14070,17 @@ function attachHandlers(){
   });
   main.querySelectorAll('[data-action="browse-top"]').forEach(b=>b.onclick=()=>{
     clubBrowse.top = b.dataset.val; clubBrowse.group=""; render();
+  });
+  // Wyszukiwarka klubów. Przerysowujemy przy każdym znaku — render() sam przywraca kursor do pola
+  // (patrz focusRestore), więc pisanie nie jest przerywane.
+  const szukajKlub = document.getElementById('szukaj-klub');
+  if(szukajKlub) szukajKlub.oninput = ()=>{ clubBrowse.search = szukajKlub.value; render(); };
+  main.querySelectorAll('[data-action="szukaj-klub-wyczysc"]').forEach(b=>b.onclick=()=>{
+    clubBrowse.search = ''; render();
+  });
+  // „Szukaj we wszystkich ligach" — zdejmuje zawężenie do ligi i grupy, zostawiając wpisany tekst.
+  main.querySelectorAll('[data-action="szukaj-klub-cala-baza"]').forEach(b=>b.onclick=()=>{
+    clubBrowse.top = ''; clubBrowse.group = ''; render();
   });
   main.querySelectorAll('.league-logo-input').forEach(inp=>inp.onchange = async ()=>{
     const file = inp.files[0];
