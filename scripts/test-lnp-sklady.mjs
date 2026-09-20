@@ -91,49 +91,8 @@ const spr = (opis, w, dod="") => { console.log(`${w?"  OK  ":" BŁĄD "} ${opis}
   spr("i pokazujemy, co strona miała", (tresc.znalezione||[]).length > 0);
 }
 
-// --- WPIĘCIE W PANEL ---
-const panel = fs.readFileSync(new URL("../src/mobile/main.ts", import.meta.url), "utf8");
-console.log("\nWpięcie w panel");
-spr("panel woła punkt dostępowy", /\/api\/lnp-sklady\?url=/.test(panel));
-spr("adres przyjmowany TYLKO z ŁNP", /laczynaspilka\\.pl\$\/i\.test\(u\.hostname\)/.test(panel));
-spr("adres zapisuje się przy obserwacji", /lnpUrl: adresLnp/.test(panel));
-spr("jest przycisk pobrania", /data-act="sklad-z-lnp"/.test(panel));
-spr("próba samoczynna po wejściu w składy", /if \(liveTab === "sklady"\) sprobujSkladZLnp\(\);/.test(panel));
-// Bylo tu kiedys "samoczynnie TYLKO RAZ na obserwacje" — i ten test pilnowal bledu zamiast go
-// zlapac. Jedna proba na obserwacje znaczyla, ze mecz otwarty przed ogloszeniem skladu nie
-// dostawal go juz nigdy. Regula wlasciwa jest odwrotna: probujemy dalej, tylko nie czesciej niz
-// co poltorej minuty. Szczegoly sprawdza scripts/test-lnp-ponawianie.mjs.
-spr("samoczynnie ponawiane, nie jednorazowe",
-  /PRZERWA_PROB_LNP/.test(panel) && !/probowanoLnp/.test(panel));
-spr("samoczynnie tylko przy pustym składzie",
-  /if \(STRONY\.some\(\(k\) => \(obs\.skladMeczu\?\.\[k\]\?\.zawodnicy \|\| \[\]\)\.length\)\) return;/.test(panel));
-spr("podmiana wpisanego składu pyta o zgodę", /Skład z ŁNP podmieni to, co już jest wpisane/.test(panel));
-spr("bez sieci nie próbujemy", /navigator\.onLine/.test(panel));
-
-const storage = fs.readFileSync(new URL("../src/data/storage.ts", import.meta.url), "utf8");
-spr("adres meczu zapisuje się w bazie (ext)", /"lnpUrl"/.test(storage));
-
-
-// --- ADRES WYŁUSKANY Z TEKSTU ---
-// Aplikacja ŁNP nie ma paska adresu. Jedyna droga do odnośnika to przycisk „Udostępnij", a ten
-// wkleja całe zdanie, nie sam adres.
-console.log("\nAdres z tekstu udostępnienia");
-{
-  const { transformSync } = await import("esbuild");
-  const kodA = panel.match(/function adresLnp[\s\S]*?\n}\n/)[0];
-  const adresLnp = new Function(`${transformSync(kodA, { loader: "ts" }).code}\nreturn adresLnp;`)();
-
-  const adr = "https://www.laczynaspilka.pl/rozgrywki/mecz/123456";
-  spr("sam adres", adresLnp(adr) === adr + "/" || adresLnp(adr) === adr, adresLnp(adr));
-  spr("adres w zdaniu z udostępnienia",
-    adresLnp("Korona Kielce - Górnik Zabrze, 20:30\n" + adr).includes("laczynaspilka.pl"));
-  spr("adres z kropką na końcu zdania",
-    adresLnp("Zobacz mecz: " + adr + ".").includes("laczynaspilka.pl"));
-  spr("obcy adres odrzucony", adresLnp("https://przyklad.pl/mecz/1") === "");
-  spr("tekst bez adresu", adresLnp("Korona - Górnik 20:30") === "");
-  spr("pusto", adresLnp("") === "");
-}
-
+// Sekcje "Wpiecie w panel" i "Adres z tekstu udostepnienia" usuniete razem z automatem
+// w aplikacji mobilnej. Sam punkt dostepowy zostaje i jest dalej sprawdzany.
 
 // --- PRAWDZIWY KSZTAŁT ADRESU MECZU ---
 //
@@ -147,12 +106,6 @@ console.log("\nAdres meczu w postaci, jaką ŁNP naprawdę wysyła");
   const prawdziwy = "https://www.laczynaspilka.pl/rozgrywki/mecz/f0cf66a2-633b-4df7-a602-4cdfe2d564d9";
   const identyfikator = "f0cf66a2-633b-4df7-a602-4cdfe2d564d9";
 
-  const { transformSync } = await import("esbuild");
-  const kodA = panel.match(/function adresLnp[\s\S]*?\n}\n/)[0];
-  const adresLnp = new Function(`${transformSync(kodA, { loader: "ts" }).code}\nreturn adresLnp;`)();
-  spr("panel przyjmuje taki adres", adresLnp(prawdziwy).includes(identyfikator), adresLnp(prawdziwy));
-  spr("przyjmuje go też ze zdania z udostępnienia",
-    adresLnp("Raków Częstochowa - Zagłębie Lubin\n" + prawdziwy).includes(identyfikator));
 
   // Strona bez skladow w HTML — jak prawdziwa strona LNP, ktora buduje sie dopiero
   // w przegladarce. Jedyny slad to plik z kodem, a w nim poczatek adresu danych i szablon.

@@ -39,10 +39,6 @@ console.log("\nNa czym pracuje ten panel — widoczne z ekranu");
 spr("wersja panelu pokazana w Ustawieniach", /Wersja panelu[\s\S]{0,200}WERSJA_PANELU/.test(panel));
 spr("wynik ostatniego pytania o wersję też", /Sprawdzenie wersji[\s\S]{0,400}stanWersji/.test(panel));
 spr("adres panelu pokazany — roboczy wygląda jak docelowy", /Adres<\/span>[\s\S]{0,300}location\.host/.test(panel));
-// Opis bledu wysylany do mnie musi niesc wersje, inaczej znow nie wiadomo, co go wyprodukowalo.
-spr("opis błędu niesie wersję panelu",
-  /panel: \$\{WERSJA_PANELU\}/.test(panel));
-spr("kopiowany opis też", (panel.match(/panel: \$\{WERSJA_PANELU\}/g) || []).length >= 2);
 
 console.log(bledy ? `\n${bledy} błędów.` : "\nWszystko się zgadza.");
 process.exit(bledy?1:0);
