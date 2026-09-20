@@ -20,14 +20,15 @@ const kodFunkcji = panel.match(/function sprobujSkladZLnp\(\)[\s\S]*?\n}\n/)[0];
 const kodStalych = panel.match(/const ostatniaProbaLnp[\s\S]*?const PRZERWA_PROB_LNP = [^;]+;/)[0];
 
 // Stan, ktory funkcja widzi. Wszystko, czego dotyka, podstawiamy — liczy sie sama regula.
-function zbuduj({ sklad = {}, lnpUrl = "adres-meczu", listy = ["lista"] } = {}) {
+function zbuduj({ sklad = {}, lnpUrl = "adres-meczu", listy = ["lista"], bezSzans = [] } = {}) {
   const stan = { probyPobrania: 0, teraz: 1_000_000 };
   const obs = { id: "OBS-1", lnpUrl, skladMeczu: sklad };
   const zrodlo = `
     ${transformSync(kodStalych, { loader: "ts" }).code}
     ${transformSync(kodFunkcji, { loader: "ts" }).code}
     return sprobujSkladZLnp;`;
-  const fabryka = new Function("live", "cache", "STRONY", "listyMeczow", "pobierzSkladZLnp", "Date", zrodlo);
+  const fabryka = new Function("live", "cache", "STRONY", "listyMeczow", "pobierzSkladZLnp", "Date",
+    "lnpBezSzans", zrodlo);
   const wywolaj = fabryka(
     { observationId: "OBS-1" },
     { observations: [obs] },
@@ -35,6 +36,7 @@ function zbuduj({ sklad = {}, lnpUrl = "adres-meczu", listy = ["lista"] } = {}) 
     () => listy,
     () => { stan.probyPobrania++; },
     { now: () => stan.teraz },
+    new Set(bezSzans),
   );
   return { stan, obs, wywolaj };
 }
@@ -162,6 +164,30 @@ console.log("\nSkad panel bierze adres listy meczow");
             grupy: { Ekstraklasa: GRUPA } })[0] === GRUPA);
   spr("prawdziwa lista NIE jest pomijana",
     listy({ kluby: [{ profileLnp: LNP }, null] })[0] === LNP);
+}
+
+console.log("\nGdy LNP powie, ze skladu nie poda nigdy");
+{
+  // LNP oddaje serwerowi sam szkielet strony — sprawdzone na prawdziwym meczu, co do bajta tyle
+  // samo dla nas i dla przegladarki. Pytanie co poltorej minuty to wtedy tylko zuzywanie baterii
+  // i lacza na stadionie, gdzie jedno i drugie bywa na wage zlota.
+  const { stan, wywolaj } = zbuduj({ bezSzans: ["OBS-1"] });
+  wywolaj();
+  stan.teraz += 91_000;
+  wywolaj();
+  spr("nie pyta w ogóle", stan.probyPobrania === 0, "prób: " + stan.probyPobrania);
+
+  const zwykla = zbuduj();
+  zwykla.wywolaj();
+  spr("a obserwacja bez wyroku pyta normalnie", zwykla.stan.probyPobrania === 1);
+
+  const p = panel;
+  spr("panel zapamiętuje taką obserwację", /lnpBezSzans\.add\(obs\.id\)/.test(p));
+  spr("i przestaje o nią pytać", /if \(!obs \|\| lnpBezSzans\.has\(obs\.id\)\) return;/.test(p));
+  spr("znacznik bierze się z odpowiedzi serwera", /if \(dane\.bezSzans\)/.test(p));
+  // Zbior zyje do przeladowania panelu — gdyby LNP kiedys zaczelo te dane wysylac, pierwsze
+  // uruchomienie po wdrozeniu ma sprobowac znowu, a nie pamietac wyroku na zawsze.
+  spr("wyrok nie jest zapisywany na stałe", !/LS\.[a-zA-Z]*[Bb]ezSzans/.test(p));
 }
 
 console.log("\nWpiecie ponawiania w panel");
