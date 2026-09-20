@@ -311,6 +311,40 @@ console.log("\nOdpowiedz mowi, ktory adres czytala");
   spr("oraz opis zawartości strony", !!tresc.zawartosc, JSON.stringify(tresc.zawartosc || null).slice(0, 120));
 }
 
+// --- ADRES, POD KTORYM ZADNEJ LISTY BYC NIE MOZE ---
+//
+// Ze stadionu przyszla diagnoza: "[/rozgrywki · 25 kB · skryptow 4 · bez sladow danych w stronie]".
+// Czytana byla wiec strona "laczynaspilka.pl/rozgrywki" — SPIS rozgrywek, od ktorego zaczyna sie
+// szukanie, a nie taka, na ktorej stoja mecze. Trafila tam, bo system na komputerze sam ja otwiera
+// przy dodawaniu adresu grupy i zostala zapisana w calosci.
+//
+// Odpowiedz "nie znalazlem listy meczow" byla prawdziwa i kierowala uwage na odczyt, podczas gdy
+// zepsuty byl adres. Taka pomylka kosztuje dni: szuka sie bledu w kodzie, ktory zadzialal dobrze.
+console.log("\nAdres, pod ktorym zadnej listy byc nie moze");
+{
+  const spis = "https://www.laczynaspilka.pl/rozgrywki";
+  const { kod, tresc } = await wywolaj({
+    url: spis, home: "Warta Poznań", away: "Puszcza Niepołomice", date: "2026-09-20" });
+  spr("odpowiedź 200", kod === 200, "kod " + kod);
+  spr("zły adres nazwany złym adresem, nie brakiem listy",
+    /spisu rozgrywek, nie do listy meczów/.test(tresc.powod || ""), tresc.powod);
+  spr("i mówi, co zrobić", /skopiuj adres STAMTĄD/.test(tresc.powod || ""), tresc.powod);
+  spr("nie udaje, że coś znalazł", tresc.adres === null);
+
+  spr("ukośnik na końcu nie omija sprawdzenia",
+    /spisu rozgrywek/.test((await wywolaj({ url: spis + "/", home: "A", away: "B", date: "2026-09-20" })).tresc.powod || ""));
+  spr("sam adres główny też", /spisu rozgrywek/.test(
+    (await wywolaj({ url: "https://www.laczynaspilka.pl/", home: "A", away: "B", date: "2026-09-20" })).tresc.powod || ""));
+  spr("spis klubów tak samo", /spisu rozgrywek/.test(
+    (await wywolaj({ url: "https://www.laczynaspilka.pl/kluby", home: "A", away: "B", date: "2026-09-20" })).tresc.powod || ""));
+
+  // A adres PRAWDZIWEJ listy ma przejsc dalej i zostac przeczytany.
+  const { tresc: dobry } = await wywolaj({
+    url: lista, home: "Raków Częstochowa", away: "Zagłębie Lubin", date: "2026-09-15" });
+  spr("adres prawdziwej listy przechodzi dalej",
+    String(dobry.adres || "").includes(ID.zaglebie), JSON.stringify(dobry).slice(0, 160));
+}
+
 console.log("\nAdres meczu kontra adres listy");
 {
   const rozpoznaj = (a) => /\/mecz\/[0-9a-f-]{36}/i.test(a);
