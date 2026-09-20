@@ -112,13 +112,10 @@ console.log("\nKiedy dostawca nic nie da — i jak to nazywamy");
 
 console.log("\nWpiecie w obie aplikacje");
 {
+  // Panel mobilny dostawcy NIE wola — automat pobierania zostal w nim cofniety na zyczenie
+  // skauta. Zostaje wklejanie recznie, a pobieranie dzieje sie w systemie na komputerze.
   const panel = fs.readFileSync("src/mobile/main.ts", "utf8");
-  spr("panel woła dostawcę", /\/api\/sklady-api-football\?home=/.test(panel));
-  // Kolejnosc jest celowa: LNP obejmuje WSZYSTKO, co skaut oglada — takze CLJ i nizsze ligi,
-  // ktorych dostawca nie sprzedaje. Dostawca zamyka luke, nie zastepuje ich.
-  spr("dostawca dopiero PO tym, jak ŁNP powie, że nie poda",
-    /if \(dane\.bezSzans\) \{[\s\S]{0,400}sprobujDostawce/.test(panel));
-  spr("zapis składu jest wspólny dla obu źródeł", /function wgrajSkladDoObserwacji/.test(panel));
+  spr("panel nie pobiera składu sam", !/sklady-api-football|lnp-sklady/.test(panel));
 
   const app = fs.readFileSync("src/main.ts", "utf8");
   spr("okno na komputerze ma przycisk", /data-x="dostawca"/.test(app));

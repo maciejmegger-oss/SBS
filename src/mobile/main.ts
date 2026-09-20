@@ -13,7 +13,7 @@ import {
   saveObservation, saveReport, savePlayerStatus, saveLiveEvents, deleteObservation,
   zablokowaneZadania, liczbaZablokowanych, ponowZablokowane, ostatniBladWysylki,
   getLive, setLive, getScout, setScout, zarchiwizujZdarzenia, zdarzeniaObserwacji,
-  wyczyscKopieBazy, getHerby, pobierzHerby, getListyLnp, zapamietajListeLnp,
+  wyczyscKopieBazy, getHerby, pobierzHerby,
   type Cache, type LiveEvent, type LiveState, type Period,
 } from "./db";
 import type { Observation, Report } from "../types";
@@ -234,27 +234,6 @@ let podgladObsId: string | null = null;
 // Wybór z terminarza wypełnia formularz planowania, więc jego treść musi przeżyć przejście
 // do listy meczów i z powrotem.
 let planMecz = "", planData = "", planGodzina = "", planMiejsce = "";
-// Adres meczu na „Łączy nas piłka" — po nim panel pobiera skład sam, patrz api/lnp-sklady.js.
-let planLnp = "";
-
-// Adres przyjmujemy WYŁĄCZNIE z ŁNP. Pole jest wklejane ręcznie, a po tym adresie serwer pójdzie
-// pobrać stronę — obcy adres nie ma tu czego szukać. Pusty wynik znaczy „nie podano".
-function adresLnp(tekst: string): string {
-  const t = String(tekst || "").trim();
-  if (!t) return "";
-  // Adres WYŁUSKUJEMY z tekstu, nie wymagamy samego adresu. Przycisk „Udostępnij" w aplikacji
-  // ŁNP wkleja zwykle całe zdanie — nazwę meczu, godzinę i dopiero na końcu odnośnik — a wtedy
-  // odczyt „całość albo nic" odrzucał wklejkę, w której adres był i to poprawny.
-  const znalezione = t.match(/https?:\/\/[^\s"'<>]+/gi) || [];
-  for (const kandydat of znalezione) {
-    try {
-      // Ogon interpunkcyjny z końca zdania nie należy do adresu.
-      const u = new URL(kandydat.replace(/[.,;)\]]+$/, ""));
-      if (/(^|\.)laczynaspilka\.pl$/i.test(u.hostname)) return u.toString();
-    } catch { /* nieskładny kandydat — próbujemy następnego */ }
-  }
-  return "";
-}
 let planLink = "";   // adres transmisji / nagrania meczu (src/data/link-meczu.ts)
 let planRozgrywki = "", planKategoria = "";
 // Czy kategorię wskazał scout, czy tylko podpowiedział ją panel. Po ręcznym wyborze przestajemy
@@ -1010,13 +989,6 @@ function viewNowa(): string {
       </div></div>
     <div class="field"><span class="label">Link do transmisji / nagrania (opcjonalnie)</span>
       <input id="n-link" value="${esc(planLink)}" inputmode="url" autocomplete="off" spellcheck="false" placeholder="wklej link do meczu, np. https://…"></div>
-    <!-- ADRES MECZU W ŁNP — po nim panel pobiera SKŁAD, bez przepisywania nazwisk na trybunie.
-         Osobno od linku do transmisji, bo to dwie różne rzeczy i scout ma prawo mieć obie. -->
-    <div class="field"><span class="label">Mecz w ŁNP — skład wczyta się sam (opcjonalnie)</span>
-      <input id="n-lnp" value="${esc(planLnp)}" inputmode="url" autocomplete="off" spellcheck="false"
-             placeholder="wklej odnośnik albo całe udostępnienie z aplikacji ŁNP">
-      <span class="hint" style="display:block; margin-top:4px;">W aplikacji ŁNP: otwórz mecz →
-        <strong>Udostępnij</strong> → skopiuj i wklej tutaj całość. Adres wyłuskam sam.</span></div>
     <div class="grid-2">
       <div class="field"><span class="label">Data</span><input type="date" id="n-date" value="${esc(planData || todayISO())}">
         <span class="hint" id="n-dzien" style="display:block; margin-top:4px;">${esc(dataZDniem(planData || todayISO()))}</span></div>
@@ -1433,523 +1405,6 @@ function klubZNazwy(nazwa: string, znacznikPodpowiedz = "") {
     || null;
 }
 
-// POBRANIE SKŁADU Z ŁNP.
-//
-// Telefon nie może sam przeczytać strony ŁNP — przeglądarka nie pozwala jednej stronie czytać
-// drugiej. Prosi więc nasz serwer, a ten robi to bez tego ograniczenia (patrz api/lnp-sklady.js).
-//
-// Wynik PODMIENIA drużynę, której skład przyszedł, i tylko ją. Jeśli scout zdążył już coś wpisać
-// ręcznie, pytamy — bo nadpisanie skasowałoby wyróżnienia i oceny wystawione tej drużynie.
-let pobieranieSkladu = false;
-
-// ADRES MECZU SAM SIĘ ZNAJDUJE — BEZ WKLEJANIA.
-//
-// Wklejanie odnośnika do każdego meczu z osobna było drogą przez mękę: w aplikacji ŁNP nie ma
-// paska adresu, a przycisk „Udostępnij" trzeba znaleźć i użyć przed każdym spotkaniem. Dlatego
-// adres bierzemy z KARTOTEKI KLUBU — pole „profil ŁNP", które w systemie na komputerze i tak już
-// jest. Stoi tam lista meczów klubu, a na niej data, obie drużyny i odnośnik do każdego z nich.
-//
-// Scout podaje ten adres RAZ, przy klubie. Potem każdy kolejny mecz tego klubu panel odnajduje
-// sam: pyta serwer o wiersz z tą datą i tymi drużynami (patrz api/lnp-mecz.js) i zapamiętuje
-// znaleziony adres przy obserwacji, żeby drugi raz już nie szukać.
-let ostatniPowodLnp = "";
-// PEŁNA ODPOWIEDŹ SERWERA Z OSTATNIEJ NIEUDANEJ PRÓBY.
-//
-// Toast mówi jedno zdanie i znika. To za mało, gdy trzeba ustalić, DLACZEGO strona nie dała się
-// przeczytać: czy nie ma na niej odnośników do meczów, czy dane dociąga osobnym zapytaniem, czy
-// w ogóle czytaliśmy nie ten adres. Ta odpowiedź zostaje na ekranie i da się ją skopiować —
-// stadion jest jedynym miejscem, gdzie widać prawdziwą stronę ŁNP, więc to stamtąd musi
-// przyjechać do mnie opis tego, co na niej stoi.
-let ostatniSzczegolLnp = "";
-
-// Strony, na których żadnej listy meczów być nie może: spis rozgrywek, spis klubów, adres główny.
-// Bywają zapisane jako „adres grupy", bo system na komputerze sam otwiera laczynaspilka.pl/rozgrywki
-// przy ich dodawaniu. Odsiewamy je TUTAJ, żeby panel nie tracił na nie próby i sięgnął po następny
-// adres z listy — a nie kończył zdaniem „nie znalazłem listy meczów" pod stroną, na której żadnej
-// listy z definicji nie ma. Punkt dostępowy sprawdza to drugi raz i mówi scoutowi, co poprawić.
-const SPIS_BEZ_MECZOW = /^\/(?:rozgrywki|kluby|druzyny|zawodnicy)?\/?$/i;
-
-const czyListaLnp = (a: string) => {
-  if (!/^https?:\/\/(www\.)?laczynaspilka\.pl\//i.test(a)) return false;
-  try { return !SPIS_BEZ_MECZOW.test(new URL(a).pathname); } catch { return false; }
-};
-
-function listyMeczow(obs: Observation): string[] {
-  const [ng, ns] = druzynyZMeczu(obs.match);
-  const znacznik = znacznikZRozgrywek(obs.rozgrywki || "");
-  const adresy: string[] = [];
-  const dodaj = (a: unknown) => {
-    const adres = String(a || "").trim();
-    // W tym samym polu bywa adres z 90minut.pl — tam takiej listy nie ma i nie ma czego szukać.
-    if (czyListaLnp(adres) && !adresy.includes(adres)) adresy.push(adres);
-  };
-
-  const kluby = [ng, ns].map((nazwa) => klubZNazwy(nazwa, znacznik));
-  // Najpierw adres własny klubu: jego lista meczów jest krótsza i pewniejsza niż lista całej grupy.
-  kluby.forEach((k) => dodaj(k?.profileLnp));
-
-  // Potem adres LISTY ROZGRYWEK, który system na komputerze zapamiętał przy zbieraniu protokołów.
-  // To bywa jedyny adres, jaki w ogóle jest: aplikacja ŁNP na telefonie nie ma przycisku
-  // „Udostępnij", więc odnośnika do meczu nie da się z niej wyjąć, a pola przy klubie nikt nie
-  // musiał wypełniać. Skoro system już wie, gdzie stoi terminarz tej ligi — korzystamy.
-  // Adres podany przez scouta wprost na telefonie idzie PRZED adresem klubu, gdy dotyczy tych
-  // rozgrywek. Podał go, patrząc na ten mecz — wie o nim więcej niż kartoteka.
-  const wlasny = String((getListyLnp())[String(obs.rozgrywki || "").trim()] || "").trim();
-  if (czyListaLnp(wlasny)) {
-    const juz = adresy.indexOf(wlasny);
-    if (juz >= 0) adresy.splice(juz, 1);
-    adresy.unshift(wlasny);
-  }
-
-  const grupy = cache.lnpGrupy || {};
-  for (const klucz of [obs.rozgrywki, ...kluby.map((k) => k?.league)]) {
-    if (klucz && grupy[klucz]) dodaj(grupy[klucz]);
-  }
-  return adresy;
-}
-
-// MECZ Z TEKSTU UDOSTĘPNIENIA (serwis wynikowy albo cokolwiek innego).
-//
-// Serwisy wynikowe mają przycisk „Udostępnij", którego aplikacja ŁNP nie ma. Wklejony tekst
-// wygląda tak:
-//
-//     GKS Katowice - Cracovia 0:0
-//     Więcej informacji: https://www.flashscore.pl/r/?t=1&id=YyvF1Wam
-//
-// Bierzemy z niego WYŁĄCZNIE NAZWY DRUŻYN — czyli to, co scout sam wkleił. Pod podany adres nie
-// zaglądamy i zaglądać nie będziemy: skład przychodzi z ŁNP, tak samo jak zawsze. Serwisy
-// wynikowe skracają imię do inicjału („Nowak B."), więc ich skład i tak nie nadaje się do
-// kartoteki — a tu potrzebna jest tylko odpowiedź na pytanie „który to mecz".
-const NAZWA_DRUZYNY = /^[^\d:][^:]{1,39}$/;
-
-function czystaNazwa(s: string): string {
-  return String(s || "")
-    .replace(/\d+\s*[:\-–]\s*\d+\s*$/, "")   // wynik na końcu: „Cracovia 0:0"
-    .replace(/\((?:[^)]*)\)\s*$/, "")         // dopisek w nawiasie
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-export function meczZUdostepnienia(tekst: string): { gospodarz: string; gosc: string } | null {
-  const wiersze = String(tekst || "").split(/[\r\n]+/)
-    .map((w) => w.trim())
-    .filter((w) => w && !/^https?:\/\//i.test(w) && !/^wi[ęe]cej informacji/i.test(w));
-
-  // NAJPIERW WIERSZ Z WYNIKIEM, POTEM DOWOLNY.
-  //
-  // Pierwszy z brzegu wiersz z myślnikiem nie musi być meczem: nagłówek „Ekstraklasa - kolejka 9"
-  // ma dokładnie ten sam kształt co „Widzew - Raków" i wygrywał, bo stoi wyżej. Wiersz meczu
-  // w serwisie wynikowym niemal zawsze niesie wynik, więc to on ma pierwszeństwo — a gdy wyniku
-  // nie ma nigdzie (mecz przed pierwszym gwizdkiem), wracamy do przeglądania wszystkich.
-  const zWynikiem = wiersze.filter((w) => /\d{1,2}\s*[:\-–]\s*\d{1,2}\s*$|\s\d{1,2}\s*:\s*\d{1,2}\s/.test(w));
-  for (const wiersz of [...zWynikiem, ...wiersze]) {
-    // Odnośnik bywa doklejony do tej samej linii, co nazwy — ucinamy go, nie całą linię.
-    const bezAdresu = wiersz.replace(/https?:\/\/\S+/gi, " ").trim();
-    const proby: [string, string][] = [];
-    // „Gospodarz - Gość 0:0" — postać, którą wysyłają serwisy wynikowe.
-    const zMyslnikiem = bezAdresu.match(/^(.{2,40}?)\s+[-–—]\s+(.{2,60})$/);
-    if (zMyslnikiem) proby.push([zMyslnikiem[1], zMyslnikiem[2]]);
-    // „Gospodarz 2:1 Gość" — wynik w środku, tak pisze część serwisów.
-    const zWynikiem = bezAdresu.match(/^(.{2,40}?)\s+\d{1,2}\s*[:\-–]\s*\d{1,2}\s+(.{2,40})$/);
-    if (zWynikiem) proby.push([zWynikiem[1], zWynikiem[2]]);
-
-    for (const [a, b] of proby) {
-      const gospodarz = czystaNazwa(a);
-      const gosc = czystaNazwa(b);
-      if (!gospodarz || !gosc) continue;
-      if (!NAZWA_DRUZYNY.test(gospodarz) || !NAZWA_DRUZYNY.test(gosc)) continue;
-      // Nazwa klubu ma w sobie litery. Bez tego „7 - 3" z relacji uchodziłoby za mecz.
-      if (!/\p{L}{2}/u.test(gospodarz) || !/\p{L}{2}/u.test(gosc)) continue;
-      return { gospodarz, gosc };
-    }
-  }
-  return null;
-}
-
-async function odnajdzAdresMeczu(obs: Observation, nazwy?: { gospodarz: string; gosc: string }): Promise<string> {
-  ostatniPowodLnp = "";
-  ostatniSzczegolLnp = "";
-  const listy = listyMeczow(obs);
-  if (!listy.length) return "";
-  if (!obs.date) { ostatniPowodLnp = "Obserwacja nie ma daty — bez niej nie rozpoznam meczu."; return ""; }
-  const [zMeczu, zMeczuGosc] = druzynyZMeczu(obs.match);
-  // Nazwy z udostępnienia mają pierwszeństwo przed nazwami z obserwacji: scout wkleił je
-  // świadomie, patrząc na ten konkretny mecz.
-  const ng = nazwy?.gospodarz || zMeczu;
-  const ns = nazwy?.gosc || zMeczuGosc;
-
-  // Obie drużyny mają swoją listę meczów, a wystarczy jedna z nich. Gdy na pierwszej nic nie ma
-  // (bo np. adres prowadzi do zeszłego sezonu), próbujemy drugiej.
-  for (const lista of listy) {
-    try {
-      const odp = await fetch("/api/lnp-mecz?url=" + encodeURIComponent(lista)
-        + "&home=" + encodeURIComponent(ng) + "&away=" + encodeURIComponent(ns)
-        + "&date=" + encodeURIComponent(obs.date), { headers: { Accept: "application/json" } });
-      const dane = await odp.json().catch(() => null);
-      if (dane?.adres) return String(dane.adres);
-      if (dane?.powod || dane?.error) ostatniPowodLnp = String(dane.powod || dane.error);
-      if (dane) ostatniSzczegolLnp = JSON.stringify(dane, null, 1);
-    } catch (e) {
-      ostatniPowodLnp = (e as Error).message;
-      ostatniSzczegolLnp = `Zapytanie o listę nie doszło: ${(e as Error).message}\nAdres: ${lista}`;
-    }
-  }
-  return "";
-}
-
-// „Udostępnij" z serwisu wynikowego → skład z ŁNP.
-//
-// Droga jest dwuczęściowa i obie części robią co innego: wklejony tekst mówi, KTÓRY to mecz,
-// a ŁNP mówi, KTO gra. Dzięki temu scout korzysta z przycisku, który ma pod ręką, a nazwiska
-// i tak przychodzą pełne.
-async function wgrajZUdostepnienia(): Promise<void> {
-  if (!live || pobieranieSkladu) return;
-  const obs = cache.observations.find((o) => o.id === live!.observationId) as
-    (Observation & { lnpUrl?: string }) | undefined;
-  if (!obs) return;
-  const tekst = $<HTMLTextAreaElement>("udostepniony-mecz")?.value || "";
-  if (!tekst.trim()) { toast("Wklej udostępniony mecz"); return; }
-
-  // ADRES Z ŁNP: MECZ CZY LISTA MECZÓW? To nie jest drobiazg — to dwie różne strony i dwie różne
-  // drogi. Adres meczu ma w sobie „/mecz/" i identyfikator z myślnikami; wszystko inne na tej
-  // domenie jest listą. Podanie listy tam, gdzie spodziewamy się meczu, kończyło się odpowiedzią
-  // „na tej stronie nie ma jeszcze składów" — zdaniem prawdziwym i zupełnie mylącym.
-  const adres = adresLnp(tekst);
-  if (adres && /\/mecz\/[0-9a-f-]{36}/i.test(adres)) {
-    obs.lnpUrl = adres;
-    saveObservation(obs);
-    cache = getCache();
-    void pobierzSkladZLnp(true);
-    return;
-  }
-
-  // LISTA MECZÓW PODANA WPROST W PANELU.
-  //
-  // Po to jest ta droga: wpis klubu w kartotece bywa zespołem MŁODZIEŻOWYM, a mecz jest
-  // seniorski. Adresu seniorskich rozgrywek nie ma wtedy gdzie przypiąć — przypięcie go do wpisu
-  // młodzieżowego byłoby nieprawdą. Scout podaje go więc tutaj, przy meczu, a panel zapamiętuje
-  // go dla TYCH ROZGRYWEK, żeby przy następnej kolejce nie pytać o to samo.
-  if (adres) {
-    if (!navigator.onLine) { toast("Brak połączenia — spróbuj przy zasięgu"); return; }
-    zapamietajListeLnp(obs.rozgrywki || "", adres);
-    pobieranieSkladu = true;
-    toast("Szukam meczu na tej liście…");
-    render();
-    let zListy = "";
-    try { zListy = await odnajdzAdresMeczu(obs); } finally { pobieranieSkladu = false; }
-    if (!zListy) { toast(ostatniPowodLnp || "Nie znalazłem tego meczu na tej liście"); render(); return; }
-    obs.lnpUrl = zListy;
-    saveObservation(obs);
-    cache = getCache();
-    void pobierzSkladZLnp(true);
-    return;
-  }
-
-  const nazwy = meczZUdostepnienia(tekst);
-  if (!nazwy) {
-    toast("Nie rozpoznałem meczu w tym tekście — potrzebne są nazwy obu drużyn");
-    return;
-  }
-  if (!navigator.onLine) { toast("Brak połączenia — spróbuj przy zasięgu"); return; }
-
-  pobieranieSkladu = true;
-  toast(`Szukam: ${nazwy.gospodarz} – ${nazwy.gosc}`);
-  render();
-  let znaleziony = "";
-  try {
-    znaleziony = await odnajdzAdresMeczu(obs, nazwy);
-  } finally {
-    pobieranieSkladu = false;
-  }
-  if (!znaleziony) {
-    toast(ostatniPowodLnp || "Nie znalazłem tego meczu na liście w ŁNP");
-    render();
-    return;
-  }
-  obs.lnpUrl = znaleziony;
-  saveObservation(obs);
-  cache = getCache();
-  void pobierzSkladZLnp(true);
-}
-
-// SKŁAD OD DOSTAWCY STATYSTYK — DRUGIE ŹRÓDŁO, GDY ŁNP NIC NIE DA.
-//
-// Wchodzi dopiero wtedy, gdy ŁNP odpowiedziało, że składu serwerowi nie poda (patrz bezSzans
-// w api/lnp-sklady.js). Kolejność jest celowa: ŁNP obejmuje WSZYSTKO, co scout ogląda — także
-// CLJ i niższe ligi, których dostawca nie sprzedaje — więc gdy tamta droga zadziała, jest lepsza.
-// Dostawca zamyka lukę tam, gdzie zadziałać nie może.
-//
-// Zwraca true, gdy skład wszedł. Fałsz znaczy „spróbuj powiedzieć scoutowi co innego".
-async function sprobujDostawce(
-  obs: Observation & { skladMeczu?: Sklad; lnpUrl?: string },
-  recznie: boolean,
-): Promise<boolean> {
-  if (!obs.date) return false;
-  const [ng, ns] = druzynyZMeczu(obs.match);
-  if (!ng || !ns) return false;
-  try {
-    const odp = await fetch("/api/sklady-api-football?home=" + encodeURIComponent(ng)
-      + "&away=" + encodeURIComponent(ns) + "&date=" + encodeURIComponent(obs.date),
-      { headers: { Accept: "application/json" } });
-    const dane = await odp.json().catch(() => null);
-    if (!dane) return false;
-    if (!dane.gospodarze && !dane.goscie) {
-      // Powód od dostawcy jest konkretniejszy niż „ŁNP nic nie ma" — mówi, czy chodzi o brak
-      // pokrycia, czy o skład jeszcze nieogłoszony. Te dwie rzeczy znaczą dla scouta co innego.
-      ostatniPowodLnp = String(dane.powod || ostatniPowodLnp);
-      ostatniSzczegolLnp = JSON.stringify(dane, null, 1);
-      if (recznie && dane.powod) toast(String(dane.powod));
-      return !!(recznie && dane.powod);
-    }
-    const wpisany = wgrajSkladDoObserwacji(obs, dane, ng, ns);
-    if (!wpisany) return false;
-    toast(`Wczytano od dostawcy: ${wpisany} zawodników`);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-// Zapis składu z odpowiedzi serwera do obserwacji. Wspólny dla ŁNP i dostawcy — obie odpowiedzi
-// mają ten sam kształt, więc i zapis ma być jeden.
-function wgrajSkladDoObserwacji(
-  obs: Observation & { skladMeczu?: Sklad },
-  dane: { gospodarze?: { zawodnicy?: { nazwa: string; numer?: string }[] } | null;
-          goscie?: { zawodnicy?: { nazwa: string; numer?: string }[] } | null },
-  ng: string, ns: string,
-): number {
-  const naSklad = (grupa: { zawodnicy?: { nazwa: string; numer?: string }[] } | null | undefined) =>
-    (grupa?.zawodnicy || [])
-      .filter((z) => z.nazwa)
-      .map((z) => (z.numer ? { nazwa: z.nazwa, numer: String(z.numer) } : { nazwa: z.nazwa }));
-  const noweG = naSklad(dane.gospodarze);
-  const noweS = naSklad(dane.goscie);
-  if (!noweG.length && !noweS.length) return 0;
-  obs.skladMeczu = {
-    gospodarze: noweG.length ? { nazwa: ng, zawodnicy: noweG } : obs.skladMeczu?.gospodarze,
-    goscie: noweS.length ? { nazwa: ns, zawodnicy: noweS } : obs.skladMeczu?.goscie,
-  };
-  saveObservation(obs);
-  cache = getCache();
-  wklejanie = false;
-  render();
-  return noweG.length + noweS.length;
-}
-
-async function pobierzSkladZLnp(recznie: boolean): Promise<void> {
-  if (!live || pobieranieSkladu) return;
-  const obs = cache.observations.find((o) => o.id === live!.observationId) as
-    (Observation & { skladMeczu?: Sklad; lnpUrl?: string }) | undefined;
-  if (!obs) return;
-  if (!obs.lnpUrl && !listyMeczow(obs).length) {
-    if (recznie) toast("Ani obserwacja, ani kluby nie mają adresu w ŁNP");
-    return;
-  }
-  if (!navigator.onLine) { if (recznie) toast("Brak połączenia — skład pobierzemy przy zasięgu"); return; }
-
-  const [ng, ns] = druzynyZMeczu(obs.match);
-  pobieranieSkladu = true;
-  if (recznie) toast(obs.lnpUrl ? "Pobieram skład z ŁNP…" : "Szukam meczu w ŁNP…");
-  render();
-  try {
-    // Adres meczu odnaleziony raz zostaje przy obserwacji — następnym razem idziemy prosto po skład.
-    if (!obs.lnpUrl) {
-      const znaleziony = await odnajdzAdresMeczu(obs);
-      if (!znaleziony) {
-        if (recznie) toast(ostatniPowodLnp || "Nie znalazłem tego meczu na liście w ŁNP");
-        return;
-      }
-      obs.lnpUrl = znaleziony;
-      saveObservation(obs);
-      cache = getCache();
-    }
-    const adres = "/api/lnp-sklady?url=" + encodeURIComponent(obs.lnpUrl)
-      + "&home=" + encodeURIComponent(ng) + "&away=" + encodeURIComponent(ns);
-    const odp = await fetch(adres, { headers: { Accept: "application/json" } });
-    const dane = await odp.json().catch(() => null);
-    if (!odp.ok || !dane) {
-      if (recznie) toast((dane && dane.error) || "Nie udało się pobrać składu z ŁNP");
-      return;
-    }
-    // Serwer mówi WPROST, czego nie znalazł. „Składu jeszcze nie ma" i „nazwy się nie zgadzają"
-    // to dwie różne sprawy i wymagają od scouta czego innego.
-    //
-    // Przy próbie SAMOCZYNNEJ milczymy. Panel sprawdza co półtorej minuty, więc komunikat
-    // „składu jeszcze nie ma" wyskakiwałby scoutowi na oczy kilkanaście razy przed meczem —
-    // za każdym razem mówiąc to samo i za każdym razem zasłaniając boisko.
-    if (!dane.gospodarze && !dane.goscie) {
-      // „NIE MA JESZCZE" KONTRA „NIE BĘDZIE". Serwer odróżnia te dwie rzeczy i my też musimy.
-      //
-      // Sprawdzone na prawdziwym meczu: ŁNP oddaje serwerowi sam szkielet strony, co do bajta
-      // taki sam dla nas i dla przeglądarki. Składu tam nie ma i nie będzie — więc pytanie co
-      // półtorej minuty to tylko zużywanie baterii i łącza na stadionie, gdzie jedno i drugie
-      // bywa na wagę złota. Zapamiętujemy to przy obserwacji i przestajemy pytać.
-      if (dane.bezSzans) {
-        lnpBezSzans.add(obs.id);
-        ostatniPowodLnp = String(dane.powod || "");
-        ostatniSzczegolLnp = JSON.stringify(dane, null, 1);
-        // ŁNP powiedziało, że składu nie poda. Zamiast poprzestać na tej wiadomości, pytamy
-        // dostawcę statystyk — to jedyne źródło, które te dane sprzedaje z pełnymi nazwiskami.
-        if (await sprobujDostawce(obs, recznie)) return;
-      }
-      if (recznie) toast(dane.powod || "Na stronie meczu nie ma jeszcze składów");
-      return;
-    }
-
-    const naSklad = (grupa: { zawodnicy?: { nazwa: string; numer?: string }[] } | null) =>
-      (grupa?.zawodnicy || [])
-        .filter((z) => z.nazwa)
-        .map((z) => (z.numer ? { nazwa: z.nazwa, numer: String(z.numer) } : { nazwa: z.nazwa }));
-
-    const noweG = naSklad(dane.gospodarze);
-    const noweS = naSklad(dane.goscie);
-    const maG = (obs.skladMeczu?.gospodarze?.zawodnicy || []).length;
-    const maS = (obs.skladMeczu?.goscie?.zawodnicy || []).length;
-    if ((maG && noweG.length) || (maS && noweS.length)) {
-      if (!confirm("Skład z ŁNP podmieni to, co już jest wpisane. Podmienić?")) return;
-    }
-
-    obs.skladMeczu = {
-      gospodarze: noweG.length ? { nazwa: ng, zawodnicy: noweG } : obs.skladMeczu?.gospodarze,
-      goscie: noweS.length ? { nazwa: ns, zawodnicy: noweS } : obs.skladMeczu?.goscie,
-    };
-    saveObservation(obs);
-    cache = getCache();
-    wklejanie = false;
-    toast(`Wczytano z ŁNP: ${noweG.length + noweS.length} zawodników`);
-  } catch (e) {
-    toast("Nie udało się pobrać składu: " + (e as Error).message);
-  } finally {
-    pobieranieSkladu = false;
-    render();
-  }
-}
-
-// Próba SAMOCZYNNA — raz na wejście do składów, gdy nic jeszcze nie ma i znamy adres meczu.
-// Po to cała ta droga: scout otwiera mecz i skład już jest, bez jednego dotknięcia.
-// Przycisk „Pobierz skład z ŁNP". Pokazuje się TYLKO przy obserwacji, która ma adres meczu —
-// przycisk, który zawsze odpowiada „nie mam adresu", jest gorszy niż jego brak.
-function przyciskLnp(): string {
-  if (!live) return "";
-  const obs = cache.observations.find((o) => o.id === live!.observationId) as
-    (Observation & { lnpUrl?: string }) | undefined;
-  if (!obs) return "";
-  // Przycisk ma sens także bez adresu przy obserwacji — jeśli klub ma w kartotece listę meczów,
-  // jest gdzie szukać.
-  //
-  // A gdy nie ma ŻADNEGO adresu, mówimy to wprost zamiast chować przycisk. Milczenie było tu
-  // najgorszą z możliwych odpowiedzi: scout stał przed pustym ekranem i nie miał jak odróżnić
-  // „panel nie umie" od „panelowi brakuje jednej rzeczy, którą podaje się raz". Zwłaszcza że
-  // aplikacja ŁNP w telefonie nie ma przycisku „Udostępnij" — samemu nie da się tego obejść.
-  if (!obs.lnpUrl && !listyMeczow(obs).length) {
-    return `
-      <div class="note" style="margin-bottom:10px; line-height:1.45;">
-        Nie mam gdzie szukać tego meczu w ŁNP. Wklej niżej <strong>adres listy meczów</strong>
-        — strony z terminarzem tych rozgrywek albo klubu. Zapamiętam go dla
-        <strong>${esc(obs.rozgrywki || "tych rozgrywek")}</strong>, więc przy następnej kolejce
-        skład wgra się już sam.
-      </div>`;
-  }
-  return `
-    <div style="margin-bottom:10px;">
-      <button class="btn ghost small" style="width:100%; margin:0;" data-act="sklad-z-lnp"
-              ${pobieranieSkladu ? "disabled" : ""}>
-        ${pobieranieSkladu ? "Pobieram z ŁNP…" : "⬇ Pobierz skład z ŁNP"}
-      </button>
-    </div>`;
-}
-
-// Pole na udostępniony mecz. Stoi przy wklejaniu składu, bo to ta sama sytuacja: scout ma coś
-// w schowku i chce, żeby panel z tego skorzystał. Różnica jest taka, że tu wystarczy jedna linia
-// z nazwami drużyn — reszta dzieje się sama.
-// Opis nieudanej próby — zostaje na ekranie, bo toast znika, zanim zdąży się go przeczytać.
-function blokDiagnozyLnp(): string {
-  if (!ostatniSzczegolLnp) return "";
-  return `
-    <details class="pol-udostepnienie" style="margin-bottom:10px;">
-      <summary class="label" style="cursor:pointer; color:var(--accent-fg);">
-        Dlaczego nie wyszło — szczegóły
-      </summary>
-      <p class="hint" style="margin:6px 0;">${esc(ostatniPowodLnp || "Próba się nie powiodła.")}
-      Skopiuj to i prześlij — z tego opisu widać, jak zbudowana jest ta strona w ŁNP.</p>
-      <pre style="white-space:pre-wrap; word-break:break-word; font-size:11px; line-height:1.35;
-                  max-height:220px; overflow:auto; margin:0 0 8px;">${esc(
-                    `panel: ${WERSJA_PANELU}\n${ostatniSzczegolLnp}`)}</pre>
-      <button class="btn ghost small" style="width:100%; margin:0;" data-act="kopiuj-diagnoze-lnp">
-        Kopiuj opis
-      </button>
-    </details>`;
-}
-
-function polUdostepnienia(): string {
-  return `
-    <details class="pol-udostepnienie" style="margin-bottom:10px;">
-      <summary class="label" style="cursor:pointer;">Wskaż mecz: udostępnienie albo adres z ŁNP</summary>
-      <p class="hint" style="margin:6px 0;">Przyjmuję trzy rzeczy: tekst z przycisku
-      „Udostępnij" w serwisie wynikowym, <strong>adres listy meczów z ŁNP</strong> (terminarz
-      rozgrywek albo klubu — zapamiętam go dla tych rozgrywek) albo adres samego meczu.
-      Skład zawsze pobieram z ŁNP, z pełnymi imionami.</p>
-      <div class="field">
-        <textarea id="udostepniony-mecz" rows="2"
-                  placeholder="GKS Katowice - Cracovia 0:0&#10;albo https://www.laczynaspilka.pl/rozgrywki/..."></textarea>
-      </div>
-      <button class="btn ghost small" style="width:100%; margin:0;" data-act="mecz-z-udostepnienia"
-              ${pobieranieSkladu ? "disabled" : ""}>
-        ${pobieranieSkladu ? "Szukam…" : "Znajdź mecz i wgraj skład"}
-      </button>
-    </details>`;
-}
-
-// PRÓBA SAMOCZYNNA — PONAWIANA, NIE JEDNORAZOWA.
-//
-// Wcześniej próba była JEDNA na obserwację i to był błąd. Scout otwiera mecz zwykle wcześniej niż
-// pojawia się skład: na kwadrans przed pierwszym gwizdkiem ŁNP ma jeszcze pusto, więc jedyna
-// próba trafiała w pustkę — i już nigdy się nie powtarzała. Dziesięć minut później skład na ŁNP
-// był, a w panelu dalej nie. Dokładnie to zgłosił scout: „w lnp jest już skład, ale nie wgrało".
-//
-// Teraz panel sprawdza dalej, co półtorej minuty, dopóki składu nie ma. Przerwa jest po to, żeby
-// wejście w zakładkę i wyjście z niej nie zamieniło się w pytanie za pytaniem.
-const ostatniaProbaLnp = new Map<string, number>();
-const PRZERWA_PROB_LNP = 90_000;
-// Obserwacje, przy których ŁNP odpowiedziało, że składu nie poda NIGDY (sam szkielet strony przy
-// obu pytaniach). Ponawianie ma sens, gdy skład dopiero się pojawi — nie wtedy, gdy nie ma go
-// jak dostać. Zbiór żyje do przeładowania panelu: gdyby ŁNP kiedyś zaczęło te dane wysyłać,
-// pierwsze uruchomienie po wdrożeniu spróbuje znowu.
-const lnpBezSzans = new Set<string>();
-
-function sprobujSkladZLnp(): void {
-  if (!live) return;
-  const obs = cache.observations.find((o) => o.id === live!.observationId) as
-    (Observation & { skladMeczu?: Sklad; lnpUrl?: string }) | undefined;
-  if (!obs || lnpBezSzans.has(obs.id)) return;
-  const teraz = Date.now();
-  if (teraz - (ostatniaProbaLnp.get(obs.id) || 0) < PRZERWA_PROB_LNP) return;
-  if (!obs.lnpUrl && !listyMeczow(obs).length) return;
-  if (STRONY.some((k) => (obs.skladMeczu?.[k]?.zawodnicy || []).length)) return;
-  ostatniaProbaLnp.set(obs.id, teraz);
-  void pobierzSkladZLnp(false);
-}
-
-// PILNOWANIE SKŁADU, DOPÓKI GO NIE MA.
-//
-// Zegar chodzi tylko wtedy, gdy scout patrzy na zakładkę Składy przy pustym składzie — czyli
-// dokładnie wtedy, gdy czeka na ten skład. Sama sprobujSkladZLnp pilnuje reszty warunków
-// (zasięg, przerwa między próbami, adres meczu), więc tutaj wystarczy budzić ją co jakiś czas.
-let zegarLnp: ReturnType<typeof setInterval> | null = null;
-
-function pilnujSkladuZLnp(): void {
-  const chcemy = view === "live" && liveTab === "sklady";
-  if (chcemy && zegarLnp === null) {
-    zegarLnp = setInterval(() => {
-      // Telefon w kieszeni z wygaszonym ekranem nie ma po co pytać — zapyta, gdy wróci.
-      if (document.hidden) return;
-      sprobujSkladZLnp();
-    }, 30_000);
-  } else if (!chcemy && zegarLnp !== null) {
-    clearInterval(zegarLnp);
-    zegarLnp = null;
-  }
-}
 
 function viewSklady(): string {
   if (!live) return "";
@@ -2011,9 +1466,6 @@ function viewSklady(): string {
       <div style="display:flex; gap:6px; margin-bottom:10px;">
         ${STRONY.map((k) => `<button class="btn ghost" style="margin-top:0;" data-act="otworz-kadre" data-strona="${k}">Kadra: ${esc(k === "gospodarze" ? gosp : gosc)}</button>`).join("")}
       </div>
-      ${przyciskLnp()}
-      ${polUdostepnienia()}
-      ${blokDiagnozyLnp()}
       <p class="hint">Po jednym zawodniku w wierszu. Numer na początku wiersza jest rozpoznawany.
       Na iPhonie tekst da się skopiować wprost ze zdjęcia: przytrzymaj palec na zrzucie ekranu i zaznacz.
       ${pusto ? "" : "Wypełnione pole <strong>podmienia całą tę drużynę</strong> — puste zostawia bez zmian."}</p>
@@ -2059,9 +1511,7 @@ function viewSklady(): string {
     <div style="margin-bottom:8px;">
       <button class="btn ghost small" style="width:100%; margin:0;" data-act="otworz-wklejanie">Wklej albo wpisz skład</button>
     </div>
-    ${przyciskLnp()}
-    ${polUdostepnienia()}
-    ${blokDiagnozyLnp()}`;
+`;
 
   const przelacznik = `
     <div class="polarity" style="margin-bottom:10px;">
@@ -3103,7 +2553,6 @@ function render() {
 
   if (view === "live" && live) startClockTicker();
   else window.clearInterval(clockTimer);
-  pilnujSkladuZLnp();
 }
 
 // Odświeżenie samego paska stanu — bez przerysowania widoku, żeby nie kasować tego, co scout
@@ -3136,10 +2585,6 @@ function beginLive(obsId: string) {
   }
   view = "live";
   render();
-  // Zakładka pamięta, gdzie się było ostatnio. Scout, który zamknął poprzedni mecz na Składach,
-  // wchodzi więc w następny OD RAZU na Składy — i dotąd nie padała wtedy ani jedna próba
-  // pobrania, bo próbę wyzwalało tylko dotknięcie zakładki, którego w tym przebiegu nie ma.
-  if (liveTab === "sklady") sprobujSkladZLnp();
 }
 
 function addEvent(key: string) {
@@ -3544,7 +2989,6 @@ function zapamietajPlan() {
   planData = $<HTMLInputElement>("n-date")?.value ?? planData;
   planGodzina = $<HTMLInputElement>("n-time")?.value ?? planGodzina;
   planMiejsce = $<HTMLInputElement>("n-location")?.value ?? planMiejsce;
-  planLnp = $<HTMLInputElement>("n-lnp")?.value ?? planLnp;
   planRozgrywki = $<HTMLInputElement>("n-liga")?.value ?? planRozgrywki;
   planLink = $<HTMLInputElement>("n-link")?.value ?? planLink;
 }
@@ -3675,16 +3119,10 @@ function saveNowa(odRazu: boolean) {
   // Zamiast tworzyć drugi, otwieramy ten, który już jest.
   const juzJest = istniejacaObserwacja(match, data);
   if (juzJest) {
-    // Link wklejony przy ponownym planowaniu nie może przepaść — trafia do istniejącej obserwacji,
-    // o ile ta własnego jeszcze nie ma.
-    const lnpZPola = adresLnp($<HTMLInputElement>("n-lnp")?.value || "");
-    const juz = juzJest as Observation & { lnpUrl?: string };
-    if ((link.wartosc && !juzJest.linkDoMeczu) || (lnpZPola && !juz.lnpUrl)) {
-      saveObservation({
-        ...juzJest,
-        linkDoMeczu: juzJest.linkDoMeczu || link.wartosc,
-        ...(lnpZPola && !juz.lnpUrl ? { lnpUrl: lnpZPola } : {}),
-      } as Observation);
+    // Link wklejony przy ponownym planowaniu nie może przepaść — trafia do istniejącej
+    // obserwacji, o ile ta własnego jeszcze nie ma.
+    if (link.wartosc && !juzJest.linkDoMeczu) {
+      saveObservation({ ...juzJest, linkDoMeczu: link.wartosc } as Observation);
       cache = getCache();
     }
     zapamietajPlan();
@@ -3715,9 +3153,6 @@ function saveNowa(odRazu: boolean) {
     rozgrywki: ($<HTMLInputElement>("n-liga")?.value || "").trim(),
     kategoria: planKategoria,
     linkDoMeczu: link.wartosc,
-    // Adres ŁNP przyjmujemy tylko z tego serwisu — po nim panel pobiera skład, więc obcy adres
-    // nie miałby po co tu trafić.
-    lnpUrl: adresLnp($<HTMLInputElement>("n-lnp")?.value || ""),
   } as Observation;
   saveObservation(obs);
   cache = getCache();
@@ -3777,7 +3212,7 @@ document.addEventListener("click", (e) => {
     case "go-dzis": view = "dzis"; render(); break;
     case "lista-tryb": listaTryb = v === "zakonczone" ? "zakonczone" : "nadchodzace"; render(); break;
     case "go-nowa":
-      planMecz = planData = planGodzina = planMiejsce = planRozgrywki = planKategoria = planLnp = "";
+      planMecz = planData = planGodzina = planMiejsce = planRozgrywki = planKategoria = "";
       planLink = "";
       kategoriaRecznie = false;
       wklejTekst = "";
@@ -3965,9 +3400,6 @@ document.addEventListener("click", (e) => {
       liveTab = v === "sklady" ? "sklady" : "zdarzenia";
       ocenianyZawodnik = null;
       render();
-      // Skład pobieramy dopiero po wejściu w zakładkę — nie przy otwarciu meczu. Scout, który
-      // wchodzi tylko potagować, nie musi płacić za transfer, którego nie zamawiał.
-      if (liveTab === "sklady") sprobujSkladZLnp();
       break;
 
     case "usun-zawodnika": {
@@ -4003,13 +3435,6 @@ document.addEventListener("click", (e) => {
     case "otworz-kadre": wyborZKadry = el.dataset.strona as "gospodarze" | "goscie"; render(); break;
     case "zamknij-kadre": wyborZKadry = null; render(); break;
     case "otworz-wklejanie": wklejanie = true; render(); break;
-    case "sklad-z-lnp": void pobierzSkladZLnp(true); break;
-    case "mecz-z-udostepnienia": void wgrajZUdostepnienia(); break;
-    case "kopiuj-diagnoze-lnp":
-      navigator.clipboard?.writeText(`panel: ${WERSJA_PANELU}\n${ostatniSzczegolLnp}`)
-        .then(() => toast("Skopiowane — wklej mi to"))
-        .catch(() => toast("Nie udało się skopiować — zaznacz tekst palcem"));
-      break;
     case "zamknij-wklejanie": wklejanie = false; render(); break;
 
     case "z-kadry": {

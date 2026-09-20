@@ -62,13 +62,6 @@ const LS = {
   scout: "sbs-m:scout",          // ostatnio wybrany scout
   // Herby klubów (base64), OSOBNO od kopii bazy — patrz pobierzHerby.
   herby: "sbs-m:herby",
-  // Adresy list meczów w ŁNP podane PRZEZ SCOUTA na telefonie, rozgrywki -> adres.
-  // Osobno od lnpGrupy z kopii bazy, bo tamte przychodzą z systemu na komputerze i są przez
-  // odświeżenie nadpisywane. Ten zapis jest odpowiedzią na sytuację, której kartoteka nie
-  // obsługuje: wpis klubu bywa zespołem MŁODZIEŻOWYM, a mecz jest seniorski — wtedy nie ma
-  // gdzie przypiąć adresu seniorskich rozgrywek, bo przypięcie go do tego wpisu byłoby
-  // po prostu nieprawdą.
-  listyLnp: "sbs-m:listy-lnp",
 };
 
 export const uid = (prefix: string) =>
@@ -106,11 +99,6 @@ export interface Cache {
   // nazwa rozgrywek z 90minut, wraz z grupą, bo III liga ma cztery grupy, a IV liga szesnaście.
   matches: (Match & { competition?: string })[];
   scouts: string[];
-  // Adresy list meczów w ŁNP, rozgrywki -> adres. Zapisuje je system na komputerze przy zbieraniu
-  // protokołów; panelowi służą do ODNALEZIENIA meczu, gdy klub nie ma własnego adresu w kartotece.
-  // Aplikacja ŁNP na telefonie nie ma przycisku „Udostępnij", więc odnośnika do meczu nie da się
-  // stamtąd wyjąć w ogóle — i każdy adres, który system już zna, jest na wagę złota.
-  lnpGrupy?: Record<string, string>;
   fetchedAt: string | null;
   // Co się NIE pobrało przy ostatnim odświeżeniu, w ludzkich słowach. Bez tego pusta lista
   // wygląda identycznie w dwóch zupełnie różnych sytuacjach: „w bazie faktycznie nic nie ma"
@@ -118,7 +106,7 @@ export interface Cache {
   problemy?: string[];
 }
 
-const EMPTY_CACHE: Cache = { players: [], clubs: [], observations: [], reports: [], matches: [], scouts: [], lnpGrupy: {}, fetchedAt: null, problemy: [] };
+const EMPTY_CACHE: Cache = { players: [], clubs: [], observations: [], reports: [], matches: [], scouts: [], fetchedAt: null, problemy: [] };
 
 export const getCache = (): Cache => readLS<Cache>(LS.cache, EMPTY_CACHE);
 
@@ -278,15 +266,6 @@ const MAKS_HERBOW = 400;
 
 export const getHerby = (): Record<string, string> => readLS<Record<string, string>>(LS.herby, {});
 
-/** Adresy list meczów ŁNP podane przez scouta na telefonie: rozgrywki -> adres. */
-export const getListyLnp = (): Record<string, string> => readLS<Record<string, string>>(LS.listyLnp, {});
-
-export function zapamietajListeLnp(rozgrywki: string, adres: string): void {
-  const klucz = String(rozgrywki || "").trim();
-  if (!klucz || !adres) return;
-  writeLS(LS.listyLnp, { ...getListyLnp(), [klucz]: adres });
-}
-
 /** Dobiera brakujące herby wskazanych klubów. Zwraca, ile doszło. */
 export async function pobierzHerby(ids: string[]): Promise<number> {
   const mam = getHerby();
@@ -395,13 +374,11 @@ export async function refreshCache(): Promise<Cache> {
   };
 
   let scouts = poprzednia.scouts || [];
-  let lnpGrupy = poprzednia.lnpGrupy || {};
   if (ustawienia.blad) problemy.push("ustawienia: " + ustawienia.blad);
   else if (ustawienia.dane) {
     try {
       const s = JSON.parse(ustawienia.dane);
       if (s && Array.isArray(s.scouts)) scouts = s.scouts;
-      if (s && s.lnpGrupy && typeof s.lnpGrupy === "object") lnpGrupy = s.lnpGrupy;
     } catch {
       problemy.push("ustawienia: zapis w nieoczekiwanym kształcie");
     }
@@ -430,7 +407,6 @@ export async function refreshCache(): Promise<Cache> {
     reports: zTabeli<Report>(reports, "raporty", poprzednia.reports, (r) => liftExt("sbs_reports", objFromRow(r))),
     matches,
     scouts,
-    lnpGrupy,
     fetchedAt: new Date().toISOString(),
     problemy,
   };
