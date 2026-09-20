@@ -63,6 +63,46 @@ const NIE_ZAWODNIK = new Set([
 
 const WIELKA_MALE = /[A-ZĄĆĘŁŃÓŚŹŻ][a-ząćęłńóśźż]{2,}/;
 
+// NARODOWOŚĆ TO NIE ZAWODNIK.
+//
+// Serwisy wynikowe stawiają przy każdym nazwisku flagę z nazwą kraju, a zaznaczenie takiej listy
+// myszą kopiuje ją razem z resztą. W tekście wychodzi z tego wiersz „Polska" albo — gdy numer
+// koszulki przykleja się do flagi — „72Polska". Bez odsiewu wchodziło to do składu jako
+// zawodnicy o nazwiskach „Polska" i „2Portugalia": jedna wklejka dała dziewięćdziesięciu pięciu
+// „zawodników" zamiast dwudziestu kilku.
+//
+// NUMERU NIE WYRZUCAMY RAZEM Z KRAJEM. W tym układzie numer stoi właśnie przy fladze, a nazwisko
+// w następnym wierszu — więc kraj pomijamy, a numer zostawiamy dla nazwiska, które po nim idzie.
+// Inaczej cały skład byłby bez numerów, czyli bez jedynej rzeczy rozpoznawalnej z trybuny.
+const KRAJE = new Set([
+  "polska", "portugalia", "hiszpania", "niemcy", "francja", "wlochy", "anglia", "szkocja",
+  "walia", "irlandia", "irlandia polnocna", "holandia", "niderlandy", "belgia", "dania",
+  "szwecja", "norwegia", "finlandia", "islandia", "czechy", "slowacja", "wegry", "austria",
+  "szwajcaria", "chorwacja", "serbia", "slowenia", "bosnia i hercegowina", "czarnogora",
+  "macedonia", "macedonia polnocna", "albania", "kosowo", "grecja", "turcja", "rumunia",
+  "bulgaria", "ukraina", "bialorus", "litwa", "lotwa", "estonia", "rosja", "moldawia",
+  "gruzja", "armenia", "azerbejdzan", "cypr", "malta", "luksemburg", "kazachstan", "uzbekistan",
+  "brazylia", "argentyna", "urugwaj", "kolumbia", "chile", "peru", "paragwaj", "wenezuela",
+  "ekwador", "boliwia", "meksyk", "kostaryka", "honduras", "panama", "jamajka", "kanada",
+  "stany zjednoczone", "usa", "nigeria", "ghana", "senegal", "kamerun", "maroko", "algieria",
+  "tunezja", "egipt", "rpa", "kongo", "gwinea", "mali", "burkina faso", "gambia", "zambia",
+  "kenia", "angola", "togo", "benin", "wybrzeze kosci sloniowej", "japonia", "korea poludniowa",
+  "australia", "nowa zelandia", "izrael", "iran", "irak", "arabia saudyjska", "katar",
+  "indie", "chiny", "curacao", "albania",
+]);
+
+const BEZ_OGONKOW = (s: string) => s.toLowerCase()
+  .replace(/[ąćęłńóśźż]/g, (c) => ({ ą: "a", ć: "c", ę: "e", ł: "l", ń: "n", ó: "o", ś: "s", ź: "z", ż: "z" }[c] || c))
+  .replace(/\s+/g, " ").trim();
+
+// Zwraca numer koszulki, gdy wiersz jest samą narodowością (z przyklejonym numerem albo bez).
+// Pusty ciąg znaczy „to nie jest narodowość".
+function narodowosc(wiersz: string): string | null {
+  const m = wiersz.match(/^(\d{0,2})\s*([\p{L} ]{3,30})$/u);
+  if (!m) return null;
+  return KRAJE.has(BEZ_OGONKOW(m[2])) ? m[1] : null;
+}
+
 export function parsujSklad(tekst: string, nazwyDruzyn: string[] = []): SkladZawodnik[] {
   const wynik: SkladZawodnik[] = [];
   const juzJest = new Set<string>();
@@ -98,6 +138,10 @@ export function parsujSklad(tekst: string, nazwyDruzyn: string[] = []): SkladZaw
     // Wiersz będący wyłącznie liczbą to numer koszulki czekający na nazwisko. Minuty zmian
     // („70 '") mają apostrof i tu nie wpadną — inaczej podmieniałyby numery kolejnym zawodnikom.
     if (/^\d{1,2}$/.test(w)) { numerZPoprzedniego = w; continue; }
+
+    // Narodowość z flagi — patrz KRAJE. Numer przyklejony do niej należy do NASTĘPNEGO wiersza.
+    const zFlagi = narodowosc(w);
+    if (zFlagi !== null) { if (zFlagi) numerZPoprzedniego = zFlagi; continue; }
 
     if (w.length < 3 || w.length > 60) continue;
 
