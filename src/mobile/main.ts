@@ -1672,6 +1672,70 @@ async function wgrajZUdostepnienia(): Promise<void> {
   void pobierzSkladZLnp(true);
 }
 
+// SKŁAD OD DOSTAWCY STATYSTYK — DRUGIE ŹRÓDŁO, GDY ŁNP NIC NIE DA.
+//
+// Wchodzi dopiero wtedy, gdy ŁNP odpowiedziało, że składu serwerowi nie poda (patrz bezSzans
+// w api/lnp-sklady.js). Kolejność jest celowa: ŁNP obejmuje WSZYSTKO, co scout ogląda — także
+// CLJ i niższe ligi, których dostawca nie sprzedaje — więc gdy tamta droga zadziała, jest lepsza.
+// Dostawca zamyka lukę tam, gdzie zadziałać nie może.
+//
+// Zwraca true, gdy skład wszedł. Fałsz znaczy „spróbuj powiedzieć scoutowi co innego".
+async function sprobujDostawce(
+  obs: Observation & { skladMeczu?: Sklad; lnpUrl?: string },
+  recznie: boolean,
+): Promise<boolean> {
+  if (!obs.date) return false;
+  const [ng, ns] = druzynyZMeczu(obs.match);
+  if (!ng || !ns) return false;
+  try {
+    const odp = await fetch("/api/sklady-api-football?home=" + encodeURIComponent(ng)
+      + "&away=" + encodeURIComponent(ns) + "&date=" + encodeURIComponent(obs.date),
+      { headers: { Accept: "application/json" } });
+    const dane = await odp.json().catch(() => null);
+    if (!dane) return false;
+    if (!dane.gospodarze && !dane.goscie) {
+      // Powód od dostawcy jest konkretniejszy niż „ŁNP nic nie ma" — mówi, czy chodzi o brak
+      // pokrycia, czy o skład jeszcze nieogłoszony. Te dwie rzeczy znaczą dla scouta co innego.
+      ostatniPowodLnp = String(dane.powod || ostatniPowodLnp);
+      ostatniSzczegolLnp = JSON.stringify(dane, null, 1);
+      if (recznie && dane.powod) toast(String(dane.powod));
+      return !!(recznie && dane.powod);
+    }
+    const wpisany = wgrajSkladDoObserwacji(obs, dane, ng, ns);
+    if (!wpisany) return false;
+    toast(`Wczytano od dostawcy: ${wpisany} zawodników`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Zapis składu z odpowiedzi serwera do obserwacji. Wspólny dla ŁNP i dostawcy — obie odpowiedzi
+// mają ten sam kształt, więc i zapis ma być jeden.
+function wgrajSkladDoObserwacji(
+  obs: Observation & { skladMeczu?: Sklad },
+  dane: { gospodarze?: { zawodnicy?: { nazwa: string; numer?: string }[] } | null;
+          goscie?: { zawodnicy?: { nazwa: string; numer?: string }[] } | null },
+  ng: string, ns: string,
+): number {
+  const naSklad = (grupa: { zawodnicy?: { nazwa: string; numer?: string }[] } | null | undefined) =>
+    (grupa?.zawodnicy || [])
+      .filter((z) => z.nazwa)
+      .map((z) => (z.numer ? { nazwa: z.nazwa, numer: String(z.numer) } : { nazwa: z.nazwa }));
+  const noweG = naSklad(dane.gospodarze);
+  const noweS = naSklad(dane.goscie);
+  if (!noweG.length && !noweS.length) return 0;
+  obs.skladMeczu = {
+    gospodarze: noweG.length ? { nazwa: ng, zawodnicy: noweG } : obs.skladMeczu?.gospodarze,
+    goscie: noweS.length ? { nazwa: ns, zawodnicy: noweS } : obs.skladMeczu?.goscie,
+  };
+  saveObservation(obs);
+  cache = getCache();
+  wklejanie = false;
+  render();
+  return noweG.length + noweS.length;
+}
+
 async function pobierzSkladZLnp(recznie: boolean): Promise<void> {
   if (!live || pobieranieSkladu) return;
   const obs = cache.observations.find((o) => o.id === live!.observationId) as
@@ -1724,6 +1788,9 @@ async function pobierzSkladZLnp(recznie: boolean): Promise<void> {
         lnpBezSzans.add(obs.id);
         ostatniPowodLnp = String(dane.powod || "");
         ostatniSzczegolLnp = JSON.stringify(dane, null, 1);
+        // ŁNP powiedziało, że składu nie poda. Zamiast poprzestać na tej wiadomości, pytamy
+        // dostawcę statystyk — to jedyne źródło, które te dane sprzedaje z pełnymi nazwiskami.
+        if (await sprobujDostawce(obs, recznie)) return;
       }
       if (recznie) toast(dane.powod || "Na stronie meczu nie ma jeszcze składów");
       return;
