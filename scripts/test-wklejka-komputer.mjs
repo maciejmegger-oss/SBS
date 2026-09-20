@@ -160,6 +160,31 @@ console.log("\nWpiecie w okno na komputerze");
   // wysylalaby skauta po skladny mlodziezowe tam, gdzie ich nie ma.
   spr("granica dostawcy nazwana wprost", /nie CLJ i nie niższe ligi/.test(app));
 }
+// --- SKLAD MUSI DAC SIE POPRAWIC ---
+//
+// Zgloszenie: "sklad wgrany, ale nie mozna go juz edytowac". Kadra z bazy SBS to CALY klub —
+// piecdziesieciu kilku ludzi, z ktorych na boisku jest jedenastu. Bez usuwania skaut musialby
+// szukac swoich wsrod wszystkich przez caly mecz, a odszukanie nazwiska na liscie piecdziesieciu
+// pozycji w trakcie akcji jest niewykonalne. Lista, ktorej nie da sie przyciac, jest bezuzyteczna.
+console.log("\nSklad musi dac sie poprawic");
+{
+  const app = fs.readFileSync("src/main.ts", "utf8");
+  spr("każdy zawodnik ma przycisk usunięcia", /class="obs-usun"/.test(app));
+  spr("usuwanie jest obsłużone", /querySelectorAll\('\.obs-usun'\)/.test(app));
+  spr("da się dopisać zawodnika", /data-dodaj-nazwa=/.test(app) && /class="secondary obs-dodaj"/.test(app));
+  spr("dopisanie jest obsłużone", /querySelectorAll\('\.obs-dodaj'\)/.test(app));
+  spr("da się wyczyścić całą drużynę", /class="secondary obs-wyczysc"/.test(app));
+  // Kasowanie calej druzyny zabiera ze soba wyroznienia — o to pytamy, zanim zrobimy.
+  spr("czyszczenie pyta o zgodę", /Usunąć cały skład drużyny[\s\S]{0,120}confirm|confirm\(`Usunąć cały skład/.test(app));
+  // Przycisk stoi WEWNATRZ <label> z polem wyboru "wyrozniony" — bez zatrzymania zdarzenia
+  // usuniecie zawodnika wyrozniloby po drodze kogos innego.
+  spr("klik nie przełącza przy okazji wyróżnienia",
+    /obs-usun[\s\S]{0,200}stopPropagation\(\)/.test(app));
+  spr("każda zmiana zapisuje się od razu",
+    (app.match(/zapisz\(\);\n    \}\);/g) || []).length >= 3, "zapisow: "
+      + (app.match(/zapisz\(\);\n    \}\);/g) || []).length);
+}
+
 {
   const panel = fs.readFileSync("src/mobile/main.ts", "utf8");
   spr("panel też używa wspólnego odczytu",

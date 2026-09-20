@@ -20155,9 +20155,32 @@ function openObsSkladModal(obsId){
           <span class="meta" style="font-size:10.5px;white-space:nowrap;">${
             z.podstawowy===false ? 'ław.' : (z.zszedl ? z.zszedl+"'" : '')
           }${z.zolte?' 🟨':''}${z.czerwone?' 🟥':''}${z.pozycja?esc(z.pozycja):''}${z.rocznik?' '+esc(String(z.rocznik)):''}</span>
+          <!-- USUWANIE POJEDYNCZEGO ZAWODNIKA.
+               Kadra z bazy SBS to CALY klub — pięćdziesięciu kilku ludzi, z których na boisku
+               jest jedenastu. Bez usuwania scout musiał szukać swoich wśród wszystkich przez
+               cały mecz. Odszukanie nazwiska na liście pięćdziesięciu pozycji w trakcie akcji
+               jest niewykonalne, więc lista, której nie da się przyciąć, jest bezużyteczna. -->
+          <button type="button" class="obs-usun" data-strona="${strona}" data-i="${i}"
+                  title="Usuń ${esc(z.nazwa)} ze składu"
+                  style="border:none;background:none;cursor:pointer;color:var(--ink-soft);
+                         font-size:14px;line-height:1;padding:0 2px;">✕</button>
         </label>`;
       }).join('')
       : `<p class="note" style="font-size:11.5px;">Brak — wczytaj skład przyciskiem powyżej.</p>`}
+      <!-- DOPISANIE ZAWODNIKA RĘCZNIE. Zawodnik potrafi wejść na boisko, choć nie było go
+           w żadnym wczytanym składzie — doszedł po zamknięciu listy, przyszedł z rezerw albo
+           w niższej lidze nikt składu nie ogłosił. Bez tego pola zostawało przepisywanie
+           całego składu od nowa. -->
+      <div style="display:flex;gap:4px;margin-top:6px;">
+        <input data-dodaj-nr="${strona}" placeholder="nr" maxlength="2" inputmode="numeric"
+               style="width:42px;font-size:12px;padding:3px 5px;">
+        <input data-dodaj-nazwa="${strona}" placeholder="Nazwisko Imię — dopisz"
+               style="flex:1;min-width:0;font-size:12px;padding:3px 5px;">
+        <button type="button" class="secondary obs-dodaj" data-strona="${strona}"
+                style="padding:3px 10px;font-size:12px;">+</button>
+      </div>
+      ${zawodnicy.length ? `<button type="button" class="secondary obs-wyczysc" data-strona="${strona}"
+        style="margin-top:6px;padding:3px 10px;font-size:11.5px;">Wyczyść tę drużynę</button>` : ''}
     </div>`;
   }
 
@@ -20254,6 +20277,50 @@ function openObsSkladModal(obsId){
       if(wynik && wynik.blad) komunikat = wynik.blad;
       else if(inp.checked && wynik) komunikat = `„${wynik.firstName} ${wynik.lastName}" — w Monitoringu, kliknij nazwisko, by otworzyć profil.`;
       zapisz();     // zapisuje obserwację i przerysowuje okno (nazwisko staje się odnośnikiem)
+    });
+    // USUWANIE, DOPISYWANIE I CZYSZCZENIE — obsługa. Każda z tych rzeczy zmienia skład, więc
+    // każda zapisuje od razu: okno składu bywa zamykane w pośpiechu, a niezapisana poprawka
+    // wygląda potem jak błąd wczytywania.
+    //
+    // Klik idzie na <button> wewnątrz <label>, więc bez zatrzymania zdarzenia przeglądarka
+    // przełączyłaby przy okazji pole wyboru „wyróżniony" — czyli usunięcie zawodnika
+    // wyróżniałoby po drodze kogoś innego.
+    overlay.querySelectorAll('.obs-usun').forEach(b=>b.onclick = (e)=>{
+      e.preventDefault(); e.stopPropagation();
+      const strona = (b as HTMLElement).dataset.strona;
+      const lista = ((obs.skladMeczu||{})[strona]||{}).zawodnicy;
+      if(!lista) return;
+      const usuniety = lista[Number((b as HTMLElement).dataset.i)];
+      lista.splice(Number((b as HTMLElement).dataset.i), 1);
+      komunikat = usuniety ? `Usunięto „${usuniety.nazwa}".` : '';
+      zapisz();
+    });
+    overlay.querySelectorAll('.obs-wyczysc').forEach(b=>b.onclick = (e)=>{
+      e.preventDefault(); e.stopPropagation();
+      const strona = (b as HTMLElement).dataset.strona;
+      const dane = (obs.skladMeczu||{})[strona];
+      if(!dane || !(dane.zawodnicy||[]).length) return;
+      // Pytamy, bo to kasuje razem z nazwiskami wszystkie wyróżnienia tej drużyny.
+      if(!confirm(`Usunąć cały skład drużyny „${dane.nazwa||strona}"? Wyróżnienia też przepadną.`)) return;
+      dane.zawodnicy = [];
+      komunikat = 'Skład wyczyszczony.';
+      zapisz();
+    });
+    overlay.querySelectorAll('.obs-dodaj').forEach(b=>b.onclick = (e)=>{
+      e.preventDefault(); e.stopPropagation();
+      const strona = (b as HTMLElement).dataset.strona;
+      const poleNazwa = overlay.querySelector(`[data-dodaj-nazwa="${strona}"]`) as HTMLInputElement|null;
+      const poleNr = overlay.querySelector(`[data-dodaj-nr="${strona}"]`) as HTMLInputElement|null;
+      const nazwa = ((poleNazwa && poleNazwa.value) || '').trim();
+      if(!nazwa){ komunikat = 'Wpisz nazwisko, zanim dopiszesz zawodnika.'; draw(); return; }
+      obs.skladMeczu = obs.skladMeczu || {};
+      const domyslna = strona==='gospodarze' ? (para&&para.gospodarz) : (para&&para.gosc);
+      const dane = obs.skladMeczu[strona] || (obs.skladMeczu[strona] = { nazwa: domyslna||strona, zawodnicy: [] });
+      dane.zawodnicy = dane.zawodnicy || [];
+      const numer = ((poleNr && poleNr.value) || '').trim();
+      dane.zawodnicy.push(numer ? { nazwa, numer } : { nazwa });
+      komunikat = `Dopisano „${nazwa}".`;
+      zapisz();
     });
     // Przejście do profilu z okna składu — okno zamykamy, bo profil otwiera się w tle strony.
     overlay.querySelectorAll('.obs-wyroz-profil').forEach(a=>a.onclick = (e)=>{
