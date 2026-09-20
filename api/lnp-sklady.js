@@ -100,14 +100,28 @@ export default async function handler(req, res) {
     // Mówimy więc wprost i oddajemy znacznik, po którym panel przestaje pytać.
     const samSzkielet = listaProb.length > 0 && listaProb.every((p) => /sam szkielet/.test(p));
     if (samSzkielet) {
+      // Co dały PLIKI Z KODEM tej strony. To ostatnia rzecz, która może tę drogę otworzyć: adresy
+      // danych stoją w kodzie, nie w samej stronie. Bez tego „nie znalazłem adresów" nie odróżnia
+      // się od „nie udało się tych plików pobrać" — a to dwie różne diagnozy.
+      const pliki = ostatniOdczytLnp.plikow || 0;
+      const zKodu = (ostatniOdczytLnp.adresyZKodu || []).length;
+      const slad = `plików z kodem ${pliki} · adresów w kodzie ${zKodu}`
+        + ((ostatniOdczytLnp.skrypty || []).length ? ` · ${ostatniOdczytLnp.skrypty.join(" ; ")}` : "");
       return res.status(200).json({
         gospodarze: null, goscie: null,
         bezSzans: true,
         powod: "ŁNP nie wysyła składu poza przeglądarkę — ta strona jest pusta także dla serwera,"
           + " więc czekanie nic nie da. Skład trzeba wpisać albo wkleić."
-          + ` [${Math.round((zawartosc.dlugoscStrony || 0) / 1024)} kB · ${proby}]`,
+          + ` [${Math.round((zawartosc.dlugoscStrony || 0) / 1024)} kB · ${proby} · ${slad}]`,
         zawartosc,
         proby: listaProb,
+        pliki: {
+          plikow: pliki,
+          skrypty: ostatniOdczytLnp.skrypty || [],
+          adresyZKodu: ostatniOdczytLnp.adresyZKodu || [],
+          szablony: ostatniOdczytLnp.szablony || [],
+          skad: ostatniOdczytLnp.skadSlad || "",
+        },
       });
     }
 
