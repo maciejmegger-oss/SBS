@@ -1817,7 +1817,8 @@ function blokDiagnozyLnp(): string {
       <p class="hint" style="margin:6px 0;">${esc(ostatniPowodLnp || "Próba się nie powiodła.")}
       Skopiuj to i prześlij — z tego opisu widać, jak zbudowana jest ta strona w ŁNP.</p>
       <pre style="white-space:pre-wrap; word-break:break-word; font-size:11px; line-height:1.35;
-                  max-height:220px; overflow:auto; margin:0 0 8px;">${esc(ostatniSzczegolLnp)}</pre>
+                  max-height:220px; overflow:auto; margin:0 0 8px;">${esc(
+                    `panel: ${WERSJA_PANELU}\n${ostatniSzczegolLnp}`)}</pre>
       <button class="btn ghost small" style="width:100%; margin:0;" data-act="kopiuj-diagnoze-lnp">
         Kopiuj opis
       </button>
@@ -2843,6 +2844,14 @@ function viewBaza(): string {
         <strong style="font-family:var(--data); font-size:12.5px; color:var(--text-2); min-width:0; overflow:hidden; text-overflow:ellipsis;">${esc(kontoEmail || "—")}</strong></div>
       <button class="btn ghost" data-act="refresh">Odśwież kopię bazy</button>
       <button class="btn ghost" data-act="sprawdz-wersje">Sprawdź, czy jest nowsza wersja</button>
+      <!-- POBRANIE NA ŻĄDANIE, NIE TYLKO Z PASKA.
+           Sprzątanie pamięci i przeładowanie dało się dotąd uruchomić WYŁĄCZNIE paskiem „Jest
+           nowsza wersja", a ten pokazuje się sam i tylko wtedy, gdy pytanie o wersję się powiodło
+           I wykryło różnicę. Gdy pytanie nie doszło, gdy pasek mignął niezauważony albo gdy
+           wdrożenie skończyło się minutę po sprawdzeniu — scout nie miał ŻADNEGO sposobu, żeby
+           wziąć nową wersję. Pracował na starej i zgłaszał jako błąd coś, co było już naprawione.
+           Taka pomyłka kosztowała w tym projekcie kilka dni dwa razy. -->
+      <button class="btn ghost" data-act="wczytaj-wersje">Pobierz najnowszą wersję panelu</button>
       <!-- WYJŚCIE AWARYJNE, dostępne ZAWSZE — nie tylko wtedy, gdy panel sam wykrył nowszą wersję.
            Zdarzyło się dokładnie odwrotnie: wdrożona poprawka nie docierała do telefonu, a jedyny
            przycisk, który mógł to naprawić, pokazywał się wyłącznie po wykryciu — czyli wtedy,
@@ -4028,7 +4037,7 @@ document.addEventListener("click", (e) => {
     case "sklad-z-lnp": void pobierzSkladZLnp(true); break;
     case "mecz-z-udostepnienia": void wgrajZUdostepnienia(); break;
     case "kopiuj-diagnoze-lnp":
-      navigator.clipboard?.writeText(ostatniSzczegolLnp)
+      navigator.clipboard?.writeText(`panel: ${WERSJA_PANELU}\n${ostatniSzczegolLnp}`)
         .then(() => toast("Skopiowane — wklej mi to"))
         .catch(() => toast("Nie udało się skopiować — zaznacz tekst palcem"));
       break;
