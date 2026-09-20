@@ -208,6 +208,50 @@ export function czyLnp(adres) {
 
 const uspij = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// DWA ZESTAWY NAGŁÓWKÓW — I POWÓD, DLA KTÓREGO SĄ DWA.
+//
+// Przedstawiamy się uczciwie: „ScoutBaseSystem/1.0" z adresem kontaktowym. Ze stadionu przyszła
+// jednak diagnoza, która każe sprawdzić, czy to nie jest właśnie przyczyna pustki: strona meczu
+// oddaje 25 kB, cztery skrypty, ZERO śladów danych i ZERO adresów, pod które sama sięga. Tak
+// wygląda albo strona budowana dopiero w przeglądarce, albo odpowiedź podana robotowi zamiast
+// treści — a tych dwóch rzeczy nie da się odróżnić inaczej niż zapytaniem tak, jak pyta
+// przeglądarka.
+//
+// Kolejność jest celowa: najpierw pytamy pod własnym imieniem i dopiero gdy przyjdzie skorupa,
+// powtarzamy pytanie nagłówkami zwykłej przeglądarki. To ta sama strona, publicznie dostępna,
+// o którą scout i tak pyta ze swojego telefonu — zmienia się wyłącznie to, czy serwer poda nam
+// jej treść, czy sam szkielet.
+const NAGLOWKI_NASZE = {
+  "User-Agent": "Mozilla/5.0 (compatible; ScoutBaseSystem/1.0; +https://scoutbasesystem.com)",
+  "Accept": "text/html,application/xhtml+xml",
+  "Accept-Language": "pl-PL,pl;q=0.9",
+};
+const NAGLOWKI_PRZEGLADARKI = {
+  "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15"
+    + " (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8",
+  "Upgrade-Insecure-Requests": "1",
+};
+
+// Czy to, co przyszło, jest samym szkieletem strony. Krótka strona bez jednego śladu danych nie
+// niesie niczego, co dałoby się przeczytać — i tylko wtedy warto pytać drugi raz.
+function samSzkielet(html) {
+  const t = String(html || "");
+  if (t.length > 80_000) return false;
+  return !/__NEXT_DATA__|__next_f|__NUXT__|__INITIAL_STATE__|__APOLLO_STATE__|application\/json/i.test(t);
+}
+
+// Jak poszło ostatnie pobranie — do diagnozy pokazywanej scoutowi. Bez tego „nie ma składów"
+// nie odróżnia się od „dostaliśmy szkielet, bo pytaliśmy nie tak, jak trzeba".
+export const ostatniOdczytLnp = { proby: [] };
+
+async function jednoPobranie(adres, naglowki) {
+  const odp = await fetch(adres, { headers: naglowki, signal: AbortSignal.timeout(20000) });
+  if (!odp.ok) throw new Error(`ŁNP odpowiedziało kodem ${odp.status}.`);
+  return await odp.text();     // ŁNP serwuje UTF-8
+}
+
 export async function pobierzLnp(rawUrl) {
   let url;
   try { url = new URL(String(rawUrl).trim()); }
@@ -218,26 +262,27 @@ export async function pobierzLnp(rawUrl) {
   const zPamieci = cacheStron.get(klucz);
   if (zPamieci && Date.now() - zPamieci.kiedy < CZAS_ZYCIA_CACHE) return zPamieci.html;
 
+  const proby = [];
+  let najlepszy = "";
   let ostatniBlad;
-  for (let proba = 0; proba < 2; proba++) {
-    if (proba) await uspij(1200);
+  for (const [nazwa, naglowki] of [["własne", NAGLOWKI_NASZE], ["przeglądarka", NAGLOWKI_PRZEGLADARKI]]) {
     try {
-      const odp = await fetch(klucz, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (compatible; ScoutBaseSystem/1.0; +https://scoutbasesystem.com)",
-          "Accept": "text/html,application/xhtml+xml",
-          "Accept-Language": "pl-PL,pl;q=0.9",
-        },
-        signal: AbortSignal.timeout(20000),
-      });
-      if (!odp.ok) throw new Error(`ŁNP odpowiedziało kodem ${odp.status}.`);
-      const html = await odp.text();      // ŁNP serwuje UTF-8
-      if (cacheStron.size >= 200) cacheStron.delete(cacheStron.keys().next().value);
-      cacheStron.set(klucz, { kiedy: Date.now(), html });
-      return html;
-    } catch (e) { ostatniBlad = e; }
+      const html = await jednoPobranie(klucz, naglowki);
+      proby.push(`${nazwa}: ${html.length} zn.${samSzkielet(html) ? " (sam szkielet)" : ""}`);
+      if (html.length > najlepszy.length) najlepszy = html;
+      if (!samSzkielet(html)) break;   // mamy treść — drugiego pytania nie ma po co zadawać
+    } catch (e) {
+      ostatniBlad = e;
+      proby.push(`${nazwa}: ${(e && e.message) || e}`);
+    }
+    await uspij(600);
   }
-  throw ostatniBlad instanceof Error ? ostatniBlad : new Error(String(ostatniBlad));
+  ostatniOdczytLnp.proby = proby;
+
+  if (!najlepszy) throw ostatniBlad instanceof Error ? ostatniBlad : new Error(String(ostatniBlad));
+  if (cacheStron.size >= 200) cacheStron.delete(cacheStron.keys().next().value);
+  cacheStron.set(klucz, { kiedy: Date.now(), html: najlepszy });
+  return najlepszy;
 }
 
 const encje = { nbsp: " ", amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", oacute: "ó" };
