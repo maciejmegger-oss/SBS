@@ -8,6 +8,8 @@ import fs from "node:fs";
 import { transformSync } from "esbuild";
 
 const zrodlo = fs.readFileSync("src/mobile/main.ts", "utf8");
+// normKlub mieszka od teraz we wspolnym module (patrz src/domain/sklad.ts).
+const wspolne = fs.readFileSync("src/domain/sklad.ts", "utf8");
 const wytnijZe = (nazwa, wzor) => {
   const m = zrodlo.match(wzor);
   if (!m) { console.error(`Nie znalazłem ${nazwa} w src/mobile/main.ts — test i kod się rozjechały.`); process.exit(1); }
@@ -16,7 +18,8 @@ const wytnijZe = (nazwa, wzor) => {
 // czytajZeZrzutu porównuje kluby tak samo jak reszta panelu — przez znacznikZespolu i normKlub,
 // które leżą w pliku niżej. Bierzemy je razem z nią, żeby test sprawdzał prawdziwe dopasowanie.
 const blok =
-  wytnijZe("ZNACZNIKI_ZESPOLU + normKlub", /const ZNACZNIKI_ZESPOLU[\s\S]*?\nconst normKlub[\s\S]*?\n  \.trim\(\);/)
+  wytnijZe("ZNACZNIKI_ZESPOLU + znacznikZespolu", /const ZNACZNIKI_ZESPOLU[\s\S]*?\nexport function znacznikZespolu[\s\S]*?\n}\n/)
+  + "\n" + (wspolne.match(/export const normKlub[\s\S]*?\n  \.trim\(\);/) || [""])[0].replace("export ", "")
   + "\n"
   + wytnijZe("czytajZeZrzutu", /const MIESIACE_PL[\s\S]*?\nexport function czytajZeZrzutu[\s\S]*?\n}\n/);
 const js = transformSync(blok.replace(/export /g, ""), { loader: "ts", format: "esm" }).code;

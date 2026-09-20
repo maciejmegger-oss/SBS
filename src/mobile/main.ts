@@ -6,6 +6,7 @@
 // są cztery ekrany, które da się obsłużyć jedną ręką, stojąc.
 
 import "./style.css";
+import { parsujSklad, normKlub, slowaKlubu, TOKEN_ZESPOLU, type SkladZawodnik } from "../domain/sklad";
 import { currentUser, signIn, signOut, requestPasswordReset, mojeKonto, type Konto } from "../data/auth";
 import {
   uid, getCache, refreshCache, patchCache, flushQueue, queueLength,
@@ -1226,29 +1227,6 @@ function viewLive(): string {
 // wskaże kogo innego, i tak samo trzyma to komputer. Dlatego zaznaczenie z trybuny trafia
 // dokładnie tam, gdzie szuka go potem raport.
 
-interface SkladZawodnik {
-  nazwa: string; numer?: string; podstawowy?: boolean; zszedl?: boolean; wyrozniony?: boolean;
-  // Pola dokładane przez panel mobilny: pozycja na mapie (numer z POZYCJE), szybka ocena
-  // i notatka. Żyją razem z resztą składu w ratings.__ext.skladMeczu, więc nie wymagają
-  // zmian w bazie. Uwaga: ponowny import składu na komputerze przebudowuje zawodników
-  // i te pola by wtedy przepadły — dlatego mapę układa się po wczytaniu składu, nie przed.
-  pozycja?: number;
-  ocena?: Record<string, number>;
-  // Protokół w skali 1–6 wystawiany TEMU zawodnikowi, nie meczowi: fazy gry i stałe fragmenty.
-  // Te same klucze, co w raporcie na komputerze (REPORT_PHASES, REPORT_SET_PIECES), więc przy
-  // zapisie idą wprost do pól raportu, bez tłumaczenia.
-  fazy?: Record<string, number>;
-  sfg?: Record<string, number>;
-  // Decyzja o zawodniku — te same wartości, co w raporcie na komputerze (STATUS_OPTIONS):
-  // „Do Obserwacji", „Na Testy", „Do transferu"… Zapada NA TRYBUNIE, przy nazwisku, a nie pół
-  // godziny później przy jednym wspólnym formularzu po meczu, gdzie dotyczyła tylko jednej osoby.
-  status?: string;
-  notatka?: string;
-  noga?: string;
-  // Wskazanie na zawodnika z bazy, gdy skład powstał z kadry klubu, a nie z wklejki. Dzięki temu
-  // oceny z trybuny da się później przypisać do prawdziwego profilu, a nie do samego nazwiska.
-  playerId?: string;
-}
 interface SkladStrona { nazwa?: string; zawodnicy: SkladZawodnik[]; formacja?: string }
 interface Sklad { gospodarze?: SkladStrona; goscie?: SkladStrona }
 
@@ -1401,13 +1379,6 @@ export function znacznikZespolu(nazwa: string): string {
 
 // Formy prawne w nazwie („SA", „S.A.", „sp. z o.o.") niosą zero informacji o drużynie, a psują
 // porównanie: terminarz podaje „Arka Gdynia SA U17", kartoteka „Arka Gdynia U17".
-const normKlub = (s: string) => String(s || "").toLowerCase()
-  .replace(/\bs\s*\.?\s*a\s*\.?\b/g, " ")
-  .replace(/\bsp\s*\.?\s*z\s*o\s*\.?\s*o\s*\.?\b/g, " ")
-  .replace(/\bs\s*\.?\s*k\s*\.?\s*a\s*\.?\b/g, " ")
-  .replace(/[.,]/g, " ")
-  .replace(/\s+/g, " ")
-  .trim();
 
 // ZNACZNIK ZESPOŁU Z NAZWY ROZGRYWEK — wyłącznie młodzieżowy.
 //
@@ -1429,9 +1400,6 @@ export function znacznikZRozgrywek(rozgrywki: string): string {
 
 // Człony oznaczające ZESPÓŁ, nie klub. Odpadają z porównania nazw, bo zespół rozstrzygamy
 // osobno — i bo w terminarzach stoją w różnych miejscach nazwy.
-const TOKEN_ZESPOLU = /^(?:ii|iii|[123]|u-?\d{1,2}|junior\w*|jun|rezerw\w*)$/i;
-const slowaKlubu = (n: string) =>
-  n.split(" ").filter((w) => w.length > 1 && !TOKEN_ZESPOLU.test(w));
 
 function klubZNazwy(nazwa: string, znacznikPodpowiedz = "") {
   const n = normKlub(nazwa);
@@ -2330,100 +2298,8 @@ function zabezpieczNotatke() {
 
 // Nagłówki i etykiety, które na stronach meczowych wyglądają jak nazwisko — jedno słowo
 // zapisane z wielkiej litery. Bez tej listy „Przebieg" czy „Sędzia" przechodzą przez sito.
-const NIE_ZAWODNIK = new Set([
-  "przebieg", "sklady", "skład", "składy", "szczegoly", "szczegóły", "statystyki", "sedzia",
-  "sędzia", "sedziowie", "sędziowie", "widzow", "widzów", "widzowie", "trener", "trenerzy",
-  "rezerwowi", "lawka", "ławka", "zmiany", "kartki", "gole", "bramki", "mecz", "tabela",
-  "terminarz", "komentarze", "relacja", "wynik", "stadion", "data", "godzina", "kolejka",
-  "liga", "runda", "sezon", "druzyna", "drużyna", "zawodnik", "zawodnicy", "minuta", "minuty",
-  "asysta", "asysty", "obserwator", "delegat", "widownia", "podsumowanie", "poczatek", "początek",
-  // Dolne menu i zakładki ŁNP — wpadały do składu jako „zawodnicy" o nazwiskach „Mecze"
-  // i „Ulubione". Sprawdzane jest PIERWSZE słowo wiersza, stąd „dziś" osobno.
-  "mecze", "rozgrywki", "ulubione", "dzis", "dziś", "wyjsciowy", "wyjściowy",
-  "rezerwa", "rezerwowy", "ekstraklasa", "clj",
-]);
 
-const WIELKA_MALE = /[A-ZĄĆĘŁŃÓŚŹŻ][a-ząćęłńóśźż]{2,}/;
 
-function parsujSklad(tekst: string, nazwyDruzyn: string[] = []): SkladZawodnik[] {
-  const wynik: SkladZawodnik[] = [];
-  const juzJest = new Set<string>();
-  // Nagłówek z nazwą klubu stoi w środku wklejki i wygląda jak nazwisko: „KORONA SA Kielce"
-  // nie jest w całości wersalikami, więc odsiew wersalików go przepuszczał. Znamy nazwy obu
-  // drużyn z pola „Mecz", więc zamiast zgadywać po kształcie — porównujemy wprost.
-  const naglowki = new Set(nazwyDruzyn.map((x) => normKlub(x)).filter(Boolean));
-  // Numer z POPRZEDNIEGO wiersza. W aplikacjach z wynikami numer stoi we własnej komórce tabeli,
-  // więc po skopiowaniu ląduje w osobnym wierszu, nad nazwiskiem:
-  //     8
-  //     Tomasz Boczek
-  // Sam numer nie jest zawodnikiem, ale wyrzucenie go razem ze śmieciami kosztowało najważniejszą
-  // informację na liście — bez numeru nie da się rozpoznać zawodnika z trybuny.
-  let numerZPoprzedniego: string | undefined;
-
-  // GDZIE W TEKŚCIE JESTEŚMY. Strona meczu w ŁNP dzieli zawodników na „Skład wyjściowy"
-  // i „Skład rezerwowy", a pod nimi ma jeszcze „Sztab" — trenerów, fizjoterapeutów i lekarza,
-  // wypisanych dokładnie tak samo jak zawodników, z imieniem i nazwiskiem. Bez rozpoznania tych
-  // nagłówków wklejenie całej sekcji dokładało do składu jedenaście osób z ławki trenerskiej,
-  // a rezerwowi wchodzili jako pierwszy skład.
-  let rezerwa = false;
-  let wSztabie = false;
-
-  for (const surowy of tekst.split("\n")) {
-    let w = surowy.trim();
-
-    if (/^sk[łl]ad\s+rezerwow/i.test(w)) { rezerwa = true; wSztabie = false; numerZPoprzedniego = undefined; continue; }
-    if (/^sk[łl]ad\s+(wyj[śs]ciow|podstawow)/i.test(w)) { rezerwa = false; wSztabie = false; numerZPoprzedniego = undefined; continue; }
-    // Sztab ciągnie się do końca sekcji drużyny — przerywa go dopiero następny nagłówek składu.
-    if (/^sztab\b/i.test(w)) { wSztabie = true; numerZPoprzedniego = undefined; continue; }
-    if (wSztabie) { numerZPoprzedniego = undefined; continue; }
-
-    // Wiersz będący wyłącznie liczbą to numer koszulki czekający na nazwisko. Minuty zmian
-    // („70 '") mają apostrof i tu nie wpadną — inaczej podmieniałyby numery kolejnym zawodnikom.
-    if (/^\d{1,2}$/.test(w)) { numerZPoprzedniego = w; continue; }
-
-    if (w.length < 3 || w.length > 60) continue;
-
-    let numer = numerZPoprzedniego;
-    const zNumerem = w.match(/^(\d{1,2})[.)\s]+(.+)$/);
-    if (zNumerem) { numer = zNumerem[1]; w = zNumerem[2].trim(); }
-
-    // Ogony po nazwisku: minuty, kartki, nawiasy ze zmianą.
-    w = w.replace(/\(.*?\)/g, " ").replace(/\d{1,3}\s*['’]/g, " ").replace(/\s{2,}/g, " ").trim();
-    if (w.length < 3) continue;
-
-    if (w === w.toUpperCase()) continue;                       // wersaliki = klub albo nagłówek
-    if (!WIELKA_MALE.test(w)) continue;
-    if (/\d{1,2}:\d{2}/.test(w)) continue;                    // godzina
-    if (/^\d+\s*[-–—]\s*\d+$/.test(w)) continue;              // wynik
-
-    const slowa = w.split(/\s+/);
-    if (slowa.length > 4) continue;                            // zdanie, nie nazwisko
-
-    const pierwsze = slowa[0].replace(/[.:,;)\]]+$/, "").toLowerCase();
-    if (NIE_ZAWODNIK.has(pierwsze)) continue;
-    if (/\d{3,}/.test(w)) continue;
-
-    // Nazwa klubu — nagłówek sekcji, nie zawodnik. Porównanie po słowach, bo w nagłówku bywa
-    // forma prawna („KORONA SA Kielce"), której w polu „Mecz" nie ma.
-    const slowaWiersza = slowaKlubu(normKlub(w));
-    if (slowaWiersza.length && [...naglowki].some((h) => {
-      const sh = slowaKlubu(h);
-      return sh.length && (sh.every((x) => slowaWiersza.includes(x)) || slowaWiersza.every((x) => sh.includes(x)));
-    })) { numerZPoprzedniego = undefined; continue; }
-
-    const klucz = w.toLowerCase();
-    if (juzJest.has(klucz)) { numerZPoprzedniego = undefined; continue; }
-    juzJest.add(klucz);
-    // `podstawowy` zapisujemy tylko wtedy, gdy tekst NAPRAWDĘ to rozstrzygnął — czyli gdy padł
-    // nagłówek składu rezerwowego. Przy zwykłej liście nazwisk nie zgadujemy, kto wyszedł w
-    // pierwszym składzie.
-    const wpis: SkladZawodnik = numer ? { nazwa: w, numer } : { nazwa: w };
-    if (rezerwa) wpis.podstawowy = false;
-    wynik.push(wpis);
-    numerZPoprzedniego = undefined;   // numer zużyty — nie może spłynąć na następne nazwisko
-  }
-  return wynik;
-}
 
 
 // KOGO DOTYCZY ZDARZENIE.

@@ -3,6 +3,7 @@ import { storage } from "./data/storage";
 import { currentUser, signIn, signOut, requestPasswordReset, setNewPassword, isPasswordRecoveryLink,
          mojeKonto, listaKont, ustawStatusKonta, ustawRoleKonta, tokenSesji } from "./data/auth";
 import { VOIVODESHIP_PATHS } from "./data/voivodeships";
+import { parsujSklad, podzielNaDruzyny } from "./domain/sklad";
 import { SKLADY_MECZOWE } from "./data/sklady-meczowe";
 import { POWOLANIA_DO_PRZYWROCENIA } from "./data/powolania";
 import { linkDoMeczuZPola, bezpiecznyLinkMeczu, serwisLinkuMeczu, obserwacjeTegoSamegoMeczu } from "./data/link-meczu";
@@ -19997,6 +19998,46 @@ function openObsSkladModal(obsId){
     zapisz();
   }
 
+  // WKLEJENIE SKŁADU ZE STRONY — TRZECIA DROGA I JEDYNA, KTÓRA DZIAŁA PRZED MECZEM.
+  //
+  // Dwie dotychczasowe drogi mają swoje granice: kadra z bazy SBS to WSZYSCY zawodnicy klubu,
+  // a nie ci, którzy dziś wyszli na boisko (a przy klubie prowadzonym młodzieżowo bywa to kadra
+  // zupełnie innego zespołu), protokół z 90minut zaś pojawia się dopiero PO spotkaniu.
+  // Obserwacja dzieje się w trakcie meczu i potrzebuje składu przed pierwszym gwizdkiem.
+  //
+  // Składy są ogłaszane na około godzinę przed meczem — na ŁNP, w serwisach wynikowych, na
+  // stronach klubów. Sprawdziliśmy, że z SERWERA tych stron przeczytać się nie da: ŁNP wysyła
+  // serwerowi sam szkielet strony, co do bajta taki sam dla nas i dla przeglądarki. Ale tu jesteś
+  // NA KOMPUTERZE, w przeglądarce, w której ta strona buduje się normalnie — wystarczy zaznaczyć
+  // skład myszą i wkleić. To obchodzi całą przeszkodę i działa z dowolnej strony.
+  function wczytajZWklejki(){
+    const pole = overlay.querySelector('[data-x="wklejka"]') as HTMLTextAreaElement | null;
+    const tekst = (pole && pole.value) || '';
+    if(!tekst.trim()){ bladPobrania = 'Najpierw wklej skład skopiowany ze strony.'; draw(); return; }
+    if(!para){ bladPobrania = 'Pole „Mecz" nie zawiera dwóch drużyn rozdzielonych myślnikiem.'; draw(); return; }
+
+    const { gospodarze, goscie, podzielone } = podzielNaDruzyny(tekst, para.gospodarz, para.gosc);
+    if(!gospodarze.length && !goscie.length){
+      bladPobrania = 'Nie rozpoznałem w tym tekście ani jednego nazwiska. Zaznacz sam skład — '
+        + 'z numerami, bez menu i nagłówków strony.';
+      draw(); return;
+    }
+    obs.skladMeczu = {
+      zrodlo: 'wklejka', pobrano: new Date().toISOString().slice(0,10),
+      gospodarze: { nazwa: para.gospodarz, zawodnicy: gospodarze },
+      goscie: { nazwa: para.gosc, zawodnicy: goscie },
+    };
+    bladPobrania = '';
+    // Mówimy WPROST, czego nie rozstrzygnęliśmy. Wklejka bez nazwy drugiej drużyny w środku nie
+    // daje się podzielić, a podział „na pół" byłby zgadywaniem: ławki bywają różnej długości
+    // i połowa gości wylądowałaby u gospodarzy. Lepiej oddać jedną listę i powiedzieć o tym.
+    komunikat = podzielone
+      ? `Wczytałem ${gospodarze.length} + ${goscie.length} zawodników z wklejonego tekstu.`
+      : `Wczytałem ${gospodarze.length} zawodników, ale nie znalazłem w tekście nazwy drugiej `
+        + `drużyny — wszyscy trafili do „${para.gospodarz}". Wklej składy osobno albo popraw ręcznie.`;
+    zapisz();
+  }
+
   async function wczytajZ90minut(){
     if(!para){ bladPobrania = 'Pole „Mecz" nie zawiera dwóch drużyn rozdzielonych myślnikiem.'; draw(); return; }
     pracuje = true; bladPobrania = ''; komunikat = ''; draw();
@@ -20081,14 +20122,31 @@ function openObsSkladModal(obsId){
       <p class="note" style="margin-bottom:4px;">${esc(obs.match||'brak danych meczu')}
         &middot; ${esc(obs.date||'')}${obs.matchTime?' '+esc(obs.matchTime):''}${ogladajMeczHtml(obs)}</p>
       <p class="note" style="font-size:11.5px;margin-bottom:10px;">
-        <strong>Przed meczem</strong> składów nie ma nigdzie publicznie — kluby ogłaszają je na godzinę przed gwizdkiem.
-        Weź wtedy <strong>kadrę z bazy SBS</strong>. <strong>Po meczu</strong> (i przy oglądaniu z wideo)
-        użyj <strong>protokołu z 90minut</strong> — pokaże, kto faktycznie zagrał, z numerami i minutami zejścia.</p>
+        <strong>Na około godzinę przed meczem</strong> składy są już ogłoszone — na ŁNP, w serwisach
+        wynikowych, na stronach klubów. Otwórz taką stronę w drugiej karcie, <strong>zaznacz skład
+        myszą i wklej niżej</strong>. <strong>Po meczu</strong> (i przy oglądaniu z wideo) użyj
+        <strong>protokołu z 90minut</strong> — pokaże, kto faktycznie zagrał, z numerami i minutami
+        zejścia. <strong>Kadra z bazy SBS</strong> to cały klub, a nie dzisiejsza jedenastka —
+        bierz ją, gdy składu nie ma jeszcze nigdzie.</p>
 
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
         <button class="secondary" data-x="baza" ${pracuje?'disabled':''}>📋 Kadry z bazy SBS</button>
         <button class="gold" data-x="protokol" ${pracuje?'disabled':''}>${pracuje?'Pobieram…':'⚽ Kto zagrał (90minut)'}</button>
       </div>
+
+      <!-- WKLEJKA STOI PIERWSZA POD PRZYCISKAMI, bo to jedyna droga dająca skład PRZED meczem —
+           a obserwacja dzieje się w trakcie. Czytanie tych stron po stronie serwera sprawdziliśmy
+           i nie działa: ŁNP wysyła serwerowi sam szkielet. Przeglądarka, w której teraz jesteś,
+           te same strony buduje normalnie. -->
+      <details style="margin-bottom:10px;" ${s?'':'open'}>
+        <summary style="cursor:pointer;font-weight:600;font-size:12.5px;">📋 Wklej skład ze strony (ŁNP, serwis wynikowy, strona klubu)</summary>
+        <p class="note" style="font-size:11.5px;margin:6px 0;">Zaznacz na stronie oba składy razem
+          z nagłówkami drużyn i wklej tutaj. Rozpoznaję numery, „Skład wyjściowy" i „Skład
+          rezerwowych"; sztab szkoleniowy pomijam.</p>
+        <textarea data-x="wklejka" rows="6" style="width:100%;font-size:12px;font-family:var(--data,monospace);"
+          placeholder="Lechia Gdańsk&#10;Skład wyjściowy&#10;1 Kowalski&#10;4 Nowak&#10;…&#10;Stal Mielec&#10;Skład wyjściowy&#10;1 Wiśniewski&#10;…"></textarea>
+        <button class="secondary" data-x="wklejka-wczytaj" style="margin-top:6px;">Wczytaj wklejony skład</button>
+      </details>
 
       ${bladPobrania?`<div class="empty" style="text-align:left;padding:12px;border-color:var(--clay-dark);">
         <strong style="color:var(--clay-dark);">${esc(bladPobrania)}</strong></div>`:''}
@@ -20114,6 +20172,8 @@ function openObsSkladModal(obsId){
     overlay.querySelector('[data-x="zamknij"]').onclick = ()=>{ overlay.remove(); render(); };
     overlay.querySelector('[data-x="baza"]').onclick = wczytajZBazy;
     overlay.querySelector('[data-x="protokol"]').onclick = wczytajZ90minut;
+    const przyciskWklejki = overlay.querySelector('[data-x="wklejka-wczytaj"]') as HTMLElement | null;
+    if(przyciskWklejki) przyciskWklejki.onclick = wczytajZWklejki;
     overlay.querySelectorAll('.obs-wyroz').forEach(inp=>inp.onchange = ()=>{
       const wynik = ustawWyroznienie(obs, inp.dataset.strona, Number(inp.dataset.i), inp.checked);
       if(wynik && wynik.blad) komunikat = wynik.blad;
