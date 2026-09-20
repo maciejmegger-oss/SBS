@@ -20,7 +20,7 @@
 // zmyślony jest gorszy niż jego brak: przy nazwiskach, których nie było na boisku, cała obserwacja
 // idzie do kosza.
 
-import { czyLnp, pobierzLnp, daneStrony, opiszZawartosc } from "./_lnp.js";
+import { czyLnp, pobierzLnp, daneStrony, opiszZawartosc, ostatniOdczytLnp } from "./_lnp.js";
 import { jsonyZeStrony, skladyZJsonow } from "./_lnp-dane.js";
 
 const pierwszy = (v) => String((Array.isArray(v) ? v[0] : v) || "").trim();
@@ -84,12 +84,17 @@ export default async function handler(req, res) {
     // wdrożeń z tyłu i wtedy jedyne, co dociera do scouta, to to zdanie.
     const zawartosc = opiszZawartosc(html);
     const slady = (zawartosc.znakiRozpoznawcze || []).slice(0, 2).join("+") || "bez śladów danych w stronie";
+    // Wynik OBU prób pobrania wchodzi w powód. Rozstrzyga rzecz, której inaczej nie da się
+    // ustalić: czy strona jest pusta dla każdego, czy tylko dla nas — patrz pobierzLnp.
+    const proby = (ostatniOdczytLnp.proby || []).join(" | ");
     return res.status(200).json({
       gospodarze: null, goscie: null,
       powod: `Na tej stronie nie ma jeszcze składów. [${Math.round((zawartosc.dlugoscStrony || 0) / 1024)} kB`
         + ` · skryptów ${zawartosc.skryptow || 0} · ${slady}`
-        + ` · adresów danych ${(zawartosc.adresyApi || []).length}]`,
+        + ` · adresów danych ${(zawartosc.adresyApi || []).length}`
+        + (proby ? ` · próby: ${proby}` : "") + "]",
       zawartosc,
+      proby: ostatniOdczytLnp.proby,
     });
   }
 

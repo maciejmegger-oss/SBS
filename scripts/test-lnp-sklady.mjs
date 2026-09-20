@@ -46,9 +46,9 @@ const html = `<!doctype html><html><body><div id="__next"></div>
 // Podmieniamy siec: strona LNP to nasz HTML, zadnych innych zapytan. Kazdy blok testu moze
 // dolozyc wlasna odpowiedz pod wybranym fragmentem adresu — pierwsza pasujaca wygrywa.
 const trasy = new Map();
-globalThis.fetch = async (u) => {
+globalThis.fetch = async (u, opcje) => {
   const adr = String(u);
-  for (const [fragment, daj] of trasy) if (adr.includes(fragment)) return daj(adr);
+  for (const [fragment, daj] of trasy) if (adr.includes(fragment)) return daj(adr, opcje);
   if (adr.includes("laczynaspilka.pl")) {
     return new Response(html, { status: 200, headers: { "content-type": "text/html" } });
   }
@@ -176,6 +176,62 @@ console.log("\nAdres meczu w postaci, jaką ŁNP naprawdę wysyła");
   spr("identyfikator z adresu trafił do zapytania o dane", pytanoO.includes(identyfikator), pytanoO || "(nie pytano)");
   spr("skład gospodarzy wczytany", tresc.gospodarze?.zawodnicy?.length === 11, JSON.stringify(tresc).slice(0, 200));
   spr("skład gości wczytany", tresc.goscie?.zawodnicy?.length === 11);
+}
+
+
+// --- STRONA PODANA ROBOTOWI, A TRESC PRZEGLADARCE ---
+//
+// Ze stadionu: strona MECZU oddala serwerowi 25 kB, cztery skrypty, zero sladow danych i zero
+// adresow, pod ktore sama siega. Tak wyglada albo strona budowana dopiero w przegladarce, albo
+// odpowiedz podana ROBOTOWI zamiast tresci — a przedstawialismy sie jako robot
+// ("ScoutBaseSystem/1.0"). Tych dwoch rzeczy nie da sie odroznic inaczej niz zapytaniem tak,
+// jak pyta przegladarka.
+console.log("\nStrona podana robotowi, a tresc przegladarce");
+{
+  const { ostatniOdczytLnp } = await import("../api/_lnp.js");
+  const skorupa = `<!doctype html><html><body><app-root></app-root>${" ".repeat(2000)}</body></html>`;
+  const meczUA = "https://www.laczynaspilka.pl/rozgrywki/mecz/b61ea5cb-8f9b-4e4c-b44b-8a3b37051e0a";
+  const pytania = [];
+  trasy.set("/mecz/b61ea5cb", (_adr, opcje) => {
+    const ua = String((opcje?.headers || {})["User-Agent"] || "");
+    pytania.push(ua);
+    // Robotowi sam szkielet, przegladarce pelna strone — dokladnie ta roznica, ktora badamy.
+    const tresc = /ScoutBaseSystem/.test(ua) ? skorupa : html;
+    return new Response(tresc, { status: 200, headers: { "content-type": "text/html" } });
+  });
+
+  const { tresc } = await wywolaj({ url: meczUA, home: "Korona Kielce", away: "Górnik Zabrze" });
+  spr("zapytano dwa razy", pytania.length === 2, JSON.stringify(pytania.map((u) => u.slice(0, 30))));
+  spr("najpierw pod własnym imieniem", /ScoutBaseSystem/.test(pytania[0] || ""), pytania[0]);
+  spr("potem nagłówkami przeglądarki", !/ScoutBaseSystem/.test(pytania[1] || ""), pytania[1]);
+  spr("skład wczytany z pełnej strony", tresc.gospodarze?.zawodnicy?.length === 11, JSON.stringify(tresc).slice(0, 160));
+  spr("wynik obu prób zapamiętany", (ostatniOdczytLnp.proby || []).length === 2,
+    JSON.stringify(ostatniOdczytLnp.proby));
+  spr("i widać, że pierwsza dała sam szkielet",
+    /sam szkielet/.test((ostatniOdczytLnp.proby || [])[0] || ""), JSON.stringify(ostatniOdczytLnp.proby));
+}
+{
+  // Gdy pierwsza proba niesie tresc, drugiego pytania nie zadajemy — nie ma po co.
+  const meczOk = "https://www.laczynaspilka.pl/rozgrywki/mecz/cccccccc-1111-4111-8111-111111111111";
+  let ile = 0;
+  trasy.set("/mecz/cccccccc", () => { ile++; return new Response(html, { status: 200, headers: { "content-type": "text/html" } }); });
+  const { tresc } = await wywolaj({ url: meczOk, home: "Korona Kielce", away: "Górnik Zabrze" });
+  spr("treść za pierwszym razem — pytamy tylko raz", ile === 1, "pytań: " + ile);
+  spr("skład jest", tresc.gospodarze?.zawodnicy?.length === 11);
+}
+{
+  // Gdy OBA pytania dadza szkielet, mowimy o tym wprost — i to jest odpowiedz "LNP nic nam nie da".
+  const meczPusty = "https://www.laczynaspilka.pl/rozgrywki/mecz/dddddddd-1111-4111-8111-111111111111";
+  const skorupa = `<!doctype html><html><body><app-root></app-root></body></html>`;
+  trasy.set("/mecz/dddddddd", () => new Response(skorupa, { status: 200, headers: { "content-type": "text/html" } }));
+  // Wczesniejszy blok podstawil adres danych, ktory oddaje sklad na KAZDE pytanie — a odczyt
+  // siega tam z pamieci adresow trzymanej per domena. Bez zamkniecia tej drogi ten przypadek
+  // dostawalby sklad bokiem i sprawdzalby cos zupelnie innego, niz mial.
+  trasy.set("api.laczynaspilka.pl", () => new Response("", { status: 404 }));
+  const { tresc } = await wywolaj({ url: meczPusty, home: "Korona Kielce", away: "Górnik Zabrze" });
+  spr("mówi, że składów nie ma", /nie ma jeszcze składów/.test(tresc.powod || ""), JSON.stringify(tresc).slice(0,180));
+  spr("i pokazuje wynik obu prób w komunikacie", /próby:.*\|/.test(tresc.powod || ""), tresc.powod);
+  spr("obie nazwane szkieletem", (tresc.powod.match(/sam szkielet/g) || []).length === 2, tresc.powod);
 }
 
 console.log(bledy ? `\n${bledy} błędów.` : "\nWszystko się zgadza.");
