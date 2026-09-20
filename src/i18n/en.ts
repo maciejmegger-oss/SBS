@@ -764,6 +764,13 @@ export const EN: Record<string, string> = {
   'nowych': 'new',
   'wpisów do historii': 'history entries',
 
+  // ---- Wyszukiwarka klubu ----
+  '🔎 Szukaj klubu — nazwa, miasto, ZPN albo liga…': '🔎 Search clubs — name, city, FA or league…',
+  'Szuka w całej bazie, niezależnie od wybranej ligi. Możesz wpisać kilka słów, np. „zaw byd”.': 'Searches the whole database regardless of the selected league. You can type several words, e.g. "zaw byd".',
+  '✕ Wyczyść': '✕ Clear',
+  'Wróć do przeglądania wg lig': 'Back to browsing by league',
+  'Brak klubów w tym widoku.': 'No clubs in this view.',
+
   // ---- Analiza zawodnika ----
   'Analiza zawodnika': 'Player analysis',
   'Pełna analiza: raporty z meczów, opinia AI, decyzja końcowa i poziom': 'Full analysis: match reports, AI opinion, final decision and level',

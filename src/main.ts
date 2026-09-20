@@ -82,7 +82,7 @@ let systemyKlubow = {};
 // Jedyne pewne zrodlo tego, ile kolejek naprawde rozegrano.
 let tabeleLig = {};
 let editingClubId = null;
-let clubBrowse = {top:"", group:""};
+let clubBrowse = {top:"", group:"", szukaj:""};
 let dashboardLeagueSelected = null;
 // Wybrane wojewodztwo na mapie dashboardu — pokazuje obok liste jego klubow.
 let dashboardWojewodztwo = null;
@@ -5288,11 +5288,32 @@ function znaczekGrupy(nazwaGrupy, nr, aktywny){
 
 // Kluby widoczne w bieżącym widoku — wydzielone, bo obsługa przycisków działa już po
 // przerysowaniu, poza zasięgiem zmiennych z viewClubs, a musi widzieć DOKŁADNIE tę samą listę.
+// WYSZUKIWARKA KLUBU — po nazwie, mieście, ZPN albo lidze.
+//
+// Sześciuset klubów nie da się przeglądać kółkiem myszy, a żeby zawęzić listę pigułkami, trzeba
+// najpierw wiedzieć, w której lidze klub gra — czyli wiedzieć to, czego się właśnie szuka.
+// Fraza dzieli się na słowa i KAŻDE musi gdzieś trafić, więc „zaw byd" znajduje Zawiszę Bydgoszcz,
+// a „olimpia" pokazuje wszystkie Olimpie naraz, z ligami w kolumnie obok. Ogonki nie mają znaczenia
+// (szukajNorm): „slask" znajduje Śląsk, bo przy pisaniu w biegu nikt ich nie stawia.
+function filtrSzukaniaKlubu(fraza){
+  const slowa = szukajNorm(fraza).split(/\s+/).filter(Boolean);
+  if(!slowa.length) return null;
+  return (klub)=>{
+    const stog = szukajNorm([klub.name, klub.city, klub.region, klub.league].filter(Boolean).join(' '));
+    return slowa.every(s=> stog.includes(s));
+  };
+}
+
 function widoczneKluby(){
   // Alfabetycznie, po polsku — kolejność importu nie niesie żadnej informacji, a przy 18 klubach
   // w grupie szukanie wzrokiem konkretnej nazwy w przypadkowej kolejności jest mozolne.
   // localeCompare z 'pl' ustawia Ł po L, a nie na końcu alfabetu, jak zrobiłoby zwykłe porównanie.
   let list = DB.clubs.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'','pl'));
+  // SZUKANIE PATRZY NA CAŁĄ BAZĘ, PONAD WYBRANĄ LIGĄ. Inaczej wpisanie nazwy przy włączonej
+  // III lidze dawałoby „nie znaleziono" przy klubie, który w bazie jest — a szuka się właśnie
+  // wtedy, gdy nie wie się, gdzie klub stoi. Nagłówek nad listą mówi o tym wprost.
+  const szukanie = filtrSzukaniaKlubu(clubBrowse.szukaj);
+  if(szukanie) return list.filter(szukanie);
   if(clubBrowse.top) list = list.filter(c=>topLevelOf(c.league)===clubBrowse.top);
   if(clubBrowse.group) list = list.filter(c=>c.league===clubBrowse.group);
   // Po wybraniu ligi albo grupy — kolejność jak w aktualnej tabeli (patrz ulozWgTabeli).
@@ -5615,7 +5636,14 @@ function viewClubs(){
     Kliknij klub, aby zobaczyć skład na obecny sezon.${podsumowanieKolejek}</p>
   ${blokTabeli}
   <div class="toolbar" style="margin-top:14px;">
-    <div class="note">${list.length} ${list.length===1?'klub':'klubów'} w widoku${
+    <input id="club-search" placeholder="🔎 Szukaj klubu — nazwa, miasto, ZPN albo liga…" autocomplete="off"
+      value="${esc(clubBrowse.szukaj||'')}" style="max-width:380px;" title="Szuka w całej bazie, niezależnie od wybranej ligi. Możesz wpisać kilka słów, np. „zaw byd”.">
+    ${clubBrowse.szukaj ? `<button class="secondary" data-action="club-search-clear" title="Wróć do przeglądania wg lig">✕ Wyczyść</button>` : ''}
+  </div>
+  <div class="toolbar" style="margin-top:10px;">
+    <div class="note">${clubBrowse.szukaj
+      ? `${list.length} ${list.length===1?'klub pasuje':'klubów pasuje'} do „${esc(clubBrowse.szukaj)}" — szukam w całej bazie (${DB.clubs.length}), wybrana liga nie zawęża wyników`
+      : `${list.length} ${list.length===1?'klub':'klubów'} w widoku`}${
       bezProtokolowNa90minut(clubBrowse.top)
         // Sprawdzone na produkcji: ŁNP oddaje serwerom atrapę strony (plik z kodem aplikacji ma
         // dwieście znaków zamiast megabajtów), więc odświeżanie z serwera tej ligi nie rozliczy.
@@ -5665,7 +5693,9 @@ function viewClubs(){
   <div class="card" style="padding:0;overflow:auto;">
     <table>
       <thead><tr><th>Herb</th><th>Klub</th><th>ZPN / Region</th><th>Liga (aktualna)</th><th>Miasto</th><th style="text-align:center;" title="Rozegrane kolejki (z tabeli 90minut) / wgrane do SBS. „7/6" znaczy: liga zagrała siedem, mamy sześć.">Mecze</th><th style="text-align:center;" title="Punkty z tabeli 90minut. Gwiazdka oznacza wartość policzoną z naszych danych — niepełną, bo nie każdy protokół niesie wynik.">Pkt</th><th>Zawodnicy w bazie</th><th></th></tr></thead>
-      <tbody>${rows || `<tr><td colspan="9"><div class="empty">Brak klubów w tym widoku.</div></td></tr>`}</tbody>
+      <tbody>${rows || `<tr><td colspan="9"><div class="empty">${clubBrowse.szukaj
+        ? `Żaden klub nie pasuje do „${esc(clubBrowse.szukaj)}". Spróbuj krótszej frazy albo samego miasta — szukam też po ZPN i lidze.`
+        : 'Brak klubów w tym widoku.'}</div></td></tr>`}</tbody>
     </table>
   </div>`;
 }
@@ -14008,8 +14038,13 @@ function attachHandlers(){
     }
   });
   main.querySelectorAll('[data-action="browse-top"]').forEach(b=>b.onclick=()=>{
-    clubBrowse.top = b.dataset.val; clubBrowse.group=""; render();
+    // Wybór ligi kończy szukanie — inaczej pigułka wyglądałaby na zepsutą: klika się III ligę,
+    // a lista dalej pokazuje wynik wyszukiwania z całej bazy.
+    clubBrowse.top = b.dataset.val; clubBrowse.group=""; clubBrowse.szukaj=""; render();
   });
+  const poleSzukaniaKlubu = main.querySelector('#club-search') as HTMLInputElement | null;
+  if(poleSzukaniaKlubu) poleSzukaniaKlubu.oninput = ()=>{ clubBrowse.szukaj = poleSzukaniaKlubu.value; render(); };
+  main.querySelectorAll('[data-action="club-search-clear"]').forEach(b=>b.onclick=()=>{ clubBrowse.szukaj=""; render(); });
   main.querySelectorAll('.league-logo-input').forEach(inp=>inp.onchange = async ()=>{
     const file = inp.files[0];
     if(!file) return;
@@ -14022,7 +14057,7 @@ function attachHandlers(){
     }catch(e){ console.error('Nie udało się wczytać logo ligi:', e); alert('Nie udało się wczytać logo ligi.'); }
   });
   main.querySelectorAll('[data-action="browse-group"]').forEach(b=>b.onclick=()=>{
-    clubBrowse.group = b.dataset.val;
+    clubBrowse.group = b.dataset.val; clubBrowse.szukaj = "";
     if(/^Rocznik \d{4}$/.test(b.dataset.val)){
       viewingRocznikGroup = b.dataset.val;
       currentView = 'players';
