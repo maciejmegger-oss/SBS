@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="pl"><head><meta charset="utf-8">
+<link rel="stylesheet" href="inter_local.css">
+<style>
+  :root{--blue:#007AEA;--blue-soft:#5AAAF5;--gold:#C6A44E;--gold-soft:#DCC078;
+        --faint:#64788A;--M:60px}
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:1024px;height:1536px;background:#05080C}
+  body{font-family:'Inter',sans-serif;-webkit-font-smoothing:antialiased}
+  .poster{position:relative;width:1024px;height:1536px;overflow:hidden;
+    background:
+      radial-gradient(1200px 760px at 96% -6%, rgba(0,122,234,.26), transparent 60%),
+      radial-gradient(820px 560px at -8% 104%, rgba(198,164,78,.09), transparent 62%),
+      linear-gradient(168deg,#0E1823 0%,#0A121B 36%,#070C12 68%,#04070A 100%);}
+
+  .grid{position:absolute;inset:0;
+    background-image:linear-gradient(rgba(255,255,255,.030) 1px,transparent 1px),
+                     linear-gradient(90deg,rgba(255,255,255,.030) 1px,transparent 1px);
+    background-size:60px 60px;background-position:var(--M) 12px;
+    -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 20%,#000 46%,transparent 62%);}
+  .mark{position:absolute;right:-118px;top:74px}
+
+  /* ---------- photographic band ---------- */
+  .band{position:absolute;left:0;right:0;top:790px;height:320px;overflow:hidden;
+    -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 27%,#000 74%,transparent 100%)}
+  .band img{width:100%;height:100%;object-fit:cover;display:block}
+  .band:after{content:'';position:absolute;inset:0;
+    background:linear-gradient(90deg, rgba(7,12,18,.56) 0%, rgba(7,12,18,.12) 44%, rgba(7,12,18,.42) 100%)}
+
+  .kicker{position:absolute;left:var(--M);right:var(--M);top:48px;
+    display:flex;align-items:center;gap:22px;
+    font-size:11.5px;font-weight:600;letter-spacing:.28em;text-transform:uppercase}
+  .rule{width:90px;height:3px;background:var(--blue);flex:none}
+  .k-left{color:#C3D2E0}
+  .k-left b{color:var(--blue-soft);font-weight:700}
+  .k-left s{text-decoration:none;color:var(--faint);margin:0 7px;font-weight:400}
+  .k-right{margin-left:auto;color:#93A7B9;letter-spacing:.26em}
+  .k-right i{color:var(--faint);font-style:normal;margin:0 9px}
+
+  .head{position:absolute;left:var(--M);top:138px;width:840px}
+  h1{font-size:99px;line-height:.94;font-weight:800;letter-spacing:-.036em;color:#fff}
+  h1 em{font-style:normal;color:var(--gold-soft)}
+  .sub{margin-top:34px;font-size:30px;line-height:1.3;font-weight:500;
+    letter-spacing:-.014em;color:#A9BDCD;max-width:600px}
+  .divider{margin-top:38px;width:90px;height:3px;background:var(--blue)}
+
+  .lead{position:absolute;left:var(--M);top:630px;width:452px;
+    font-size:16px;line-height:1.78;color:#8DA1B3}
+  .lead strong{color:#CFDCE7;font-weight:600}
+
+  .pillars{position:absolute;left:var(--M);right:var(--M);top:1145px;
+    display:grid;grid-template-columns:1fr 1fr;column-gap:40px}
+  .p{padding:18px 0 20px;border-top:1px solid rgba(255,255,255,.13)}
+  .p .n{display:flex;align-items:center;gap:10px;
+    font-size:11px;font-weight:700;letter-spacing:.2em;color:var(--gold);margin-bottom:12px}
+  .p .n:after{content:'';flex:1;height:1px;background:rgba(198,164,78,.28)}
+  .p h3{font-size:20px;font-weight:700;letter-spacing:-.012em;color:#EDF3F8;margin-bottom:7px}
+  .p p{font-size:13.5px;line-height:1.6;color:#7A8EA1}
+
+  .bar{position:absolute;left:0;right:0;bottom:0;height:112px;
+    border-top:1px solid rgba(255,255,255,.07);
+    background:#04070A;display:flex;align-items:center;padding:0 var(--M)}
+  .bar img{height:34px;display:block}
+  .bar .rule{margin-left:auto}
+</style></head>
+<body>
+<div class="poster">
+  <div class="grid"></div>
+  <svg class="mark" width="420" height="380" viewBox="0 0 420 380" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <g fill="#C6A44E" fill-opacity=".055">
+      <path d="M168 0h70L108 380H38z"/><path d="M288 0h70L228 380h-70z"/>
+    </g>
+  </svg>
+
+  <div class="band"><img src="band.png" alt=""></div>
+
+  <div class="kicker">
+    <div class="rule"></div>
+    <div class="k-left"><b>Piłka nożna</b><s>/</s>Rozwój<s>/</s>Akademie</div>
+    <div class="k-right">Talenty<i>|</i>Strategia<i>|</i>Przyszłość</div>
+  </div>
+
+  <div class="head">
+    <h1>Piłka nożna<br>to nie tylko<br><em>wyniki</em></h1>
+    <div class="sub">Jak budować kluby, które wychowują talenty i myślą o przyszłości?</div>
+    <div class="divider"></div>
+  </div>
+
+  <div class="lead">Nowoczesny sport to nie tylko rywalizacja na boisku. To przede wszystkim <strong>ludzie, struktury i długofalowa strategia</strong>. Rozmowa o rozwoju akademii, skautingu i budowaniu wartości w polskiej piłce nożnej.</div>
+
+  <div class="pillars">
+    <div class="p"><div class="n">01</div><h3>Szkolenie</h3><p>Metodyka i spójny program rozwoju zawodnika.</p></div>
+    <div class="p"><div class="n">02</div><h3>Scouting</h3><p>Dane i obserwacja — systemowa ocena talentu.</p></div>
+    <div class="p"><div class="n">03</div><h3>Infrastruktura</h3><p>Baza treningowa jako fundament pracy klubu.</p></div>
+    <div class="p"><div class="n">04</div><h3>Doradztwo</h3><p>Strategia, zarządzanie i wartość organizacji.</p></div>
+  </div>
+
+  <div class="bar">
+    <img src="logo_knockout.png" alt="ELLITE-SPORTS">
+    <div class="rule"></div>
+  </div>
+</div>
+</body></html>
