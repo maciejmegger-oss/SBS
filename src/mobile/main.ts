@@ -4059,10 +4059,34 @@ function ponowPoAktualizacji(): void {
   if (ile) toast(`Nowa wersja panelu — próbuję wysłać ${ile} odrzuconych zapisów`);
 }
 
+// OTWARCIE WPROST NA KONKRETNEJ OBSERWACJI — „/m#obs=<id>".
+//
+// System na komputerze wystawia przy zaplanowanym meczu przycisk „Taguj online". Prowadzi on
+// TUTAJ, do tego samego panelu, zamiast do drugiej, osobno pisanej planszy do tagowania.
+//
+// Powód jest ten sam, dla którego skład czyta jeden wspólny kod: dwie kopie tej samej rzeczy
+// rozjeżdżają się, a poprawki trafiają tylko do jednej. Kafle zdarzeń, zegar, wyróżnieni
+// zawodnicy i kolejka wysyłki są tu dopracowane przez cały sezon — przepisanie ich drugi raz
+// na komputer byłoby powtórzeniem błędu, który ten projekt już popełnił przy zbieraczu ŁNP.
+//
+// Czego ten odnośnik NIE robi: nie tworzy obserwacji ani nie rusza zegara. Otwiera tę, która
+// już istnieje, i zostawia pierwszy gwizdek scoutowi.
+function obserwacjaZAdresu(): string {
+  const m = String(location.hash || "").match(/obs=([A-Za-z0-9_-]{3,40})/);
+  return m ? m[1] : "";
+}
+
 async function start(pobranaKopia?: Cache) {
   cache = pobranaKopia || getCache();
   live = getLive();
   if (live) view = "live";
+  // Wskazanie z adresu ma pierwszeństwo przed meczem zapamiętanym w telefonie: skoro ktoś
+  // kliknął KONKRETNY mecz, to o niego mu chodzi, a nie o ten sprzed tygodnia.
+  const zAdresu = obserwacjaZAdresu();
+  if (zAdresu && cache.observations.some((o) => o.id === zAdresu)) {
+    beginLive(zAdresu);
+    liveTab = "sklady";
+  }
   render();
 
   // NAJPIERW WYSYŁKA, DOPIERO POTEM POBRANIE.
