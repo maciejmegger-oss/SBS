@@ -7506,6 +7506,17 @@ function obsMonthListHtml(){
           <span class="meta">${esc(o.date)}${o.matchTime?' &middot; '+esc(o.matchTime):''}</span>
           <button class="link-btn" data-action="obs-pokaz" data-id="${o.id}" style="font-size:11px;font-weight:700;" title="Cały mecz: informacje, systemy gry, składy i wyróżnieni">👁 Pokaż</button>
           <button class="link-btn" data-action="obs-sklad" data-id="${o.id}" style="font-size:11px;" title="Składy obu drużyn i zaznaczanie zawodników wyróżniających się">👥 Skład${liczbaWyroznionych(o)?' ('+liczbaWyroznionych(o)+')':''}</button>
+          <!-- TAGOWANIE OTWIERA TEN SAM PANEL, CO NA TELEFONIE.
+               Kafle zdarzeń, zegar meczowy, pasek wyróżnionych i kolejka wysyłki są dopracowane
+               w panelu przez cały sezon. Napisanie drugiej, osobnej planszy do tagowania na
+               komputerze znaczyłoby dwie kopie tej samej rzeczy — a one się rozjeżdżają, bo
+               poprawki trafiają tylko do jednej. Ten projekt zapłacił już za to raz, przy
+               zbieraczu ŁNP.
+               Odnośnik wskazuje KONKRETNĄ obserwację (/m#obs=…): panel otwiera ją od razu na
+               składach, nie rusza zegara i nie zakłada niczego nowego. -->
+          <a class="link-btn" href="/m#obs=${esc(o.id)}" target="_blank" rel="noopener"
+             style="font-size:11px;text-decoration:none;"
+             title="Otwórz panel do tagowania na żywo — ten sam, co na telefonie">⏱ Taguj online</a>
           <button class="link-btn" data-action="edit-obs" data-id="${o.id}" style="font-size:11px;">✎ Edytuj</button>
           <button class="link-btn" data-action="delete-obs" data-id="${o.id}" style="font-size:11px;color:var(--clay-dark);">Usuń</button>
         </span>
@@ -20170,17 +20181,32 @@ function openObsSkladModal(obsId){
     draw();
   }
 
+  // PIERWSZY SKŁAD OSOBNO OD ŁAWKI.
+  //
+  // Skład meczowy to dwie różne rzeczy: jedenastu, którzy zaczynają, i rezerwowi, którzy mogą
+  // wejść. Obserwacja dotyczy przede wszystkim tych pierwszych, a jedna wspólna lista zrównywała
+  // ich z ławką — przy kadrze z bazy SBS (cały klub) znaczyło to pięćdziesiąt nazwisk bez żadnego
+  // podziału. Rozstrzygnięcie już mamy w danych: `podstawowy === false` stawia odczyt wklejki,
+  // gdy natrafi na nagłówek „Skład rezerwowych".
+  //
+  // Czego NIE zgadujemy: kto jest w pierwszym składzie, gdy tekst tego nie powiedział. Wpis bez
+  // rozstrzygnięcia trafia do pierwszej jedenastki i scout przesuwa go strzałką, jeśli trzeba —
+  // domyślne wrzucenie wszystkich na ławkę byłoby równie fałszywe, a trudniejsze do odkręcenia.
   function kolumnaHtml(strona, tytulZapasowy){
     const dane = (obs.skladMeczu||{})[strona];
     const zawodnicy = (dane && dane.zawodnicy) || [];
-    return `<div style="flex:1;min-width:250px;">
-      <h4 style="margin:0 0 6px;color:var(--heading);font-size:13px;">${esc((dane&&dane.nazwa)||tytulZapasowy||'—')}
-        <span class="meta" style="font-weight:400;">(${zawodnicy.length})</span></h4>
-      ${zawodnicy.length ? zawodnicy.map((z,i)=>{
+    const wiersze = zawodnicy.map((z,i)=>({ z, i }));
+    const pierwszy = wiersze.filter(x=>x.z.podstawowy !== false);
+    const lawka = wiersze.filter(x=>x.z.podstawowy === false);
+    const sekcja = (tytul, lista, naLawke) => !lista.length ? '' : `
+      <div class="meta" style="margin:8px 0 2px;font-size:11px;letter-spacing:.04em;text-transform:uppercase;">
+        ${tytul} <strong>(${lista.length})</strong></div>
+      ${lista.map(({z,i})=>wierszHtml(z,i,naLawke)).join('')}`;
+    const wierszHtml = (z,i,naLawke)=>{
         // Wyróżniony ma kartotekę, więc jego nazwisko prowadzi do profilu. Reszta zostaje
         // zwykłym tekstem — klikanie w kogoś, kogo nie ma w bazie, nie miałoby dokąd prowadzić.
-        const kartoteka = z.wyrozniony ? znajdzZawodnikaWyr(z.nazwa, klubStronyMeczu((dane&&dane.nazwa))) : null;
-        return `
+      const kartoteka = z.wyrozniony ? znajdzZawodnikaWyr(z.nazwa, klubStronyMeczu((dane&&dane.nazwa))) : null;
+      return `
         <label style="display:flex;align-items:center;gap:7px;padding:3px 4px;border-radius:5px;cursor:pointer;font-size:12.5px;${z.wyrozniony?'background:var(--card-warm);font-weight:700;':''}">
           <input type="checkbox" class="obs-wyroz" data-strona="${strona}" data-i="${i}" ${z.wyrozniony?'checked':''}>
           <span style="color:var(--ink-soft);min-width:20px;">${z.numer!=null?esc(String(z.numer)):''}</span>
@@ -20195,13 +20221,22 @@ function openObsSkladModal(obsId){
                jest jedenastu. Bez usuwania scout musiał szukać swoich wśród wszystkich przez
                cały mecz. Odszukanie nazwiska na liście pięćdziesięciu pozycji w trakcie akcji
                jest niewykonalne, więc lista, której nie da się przyciąć, jest bezużyteczna. -->
+          <button type="button" class="obs-lawka" data-strona="${strona}" data-i="${i}"
+                  title="${naLawke?'Przesuń na ławkę':'Przesuń do pierwszego składu'}"
+                  style="border:none;background:none;cursor:pointer;color:var(--ink-soft);
+                         font-size:13px;line-height:1;padding:0 2px;">${naLawke?'↓':'↑'}</button>
           <button type="button" class="obs-usun" data-strona="${strona}" data-i="${i}"
                   title="Usuń ${esc(z.nazwa)} ze składu"
                   style="border:none;background:none;cursor:pointer;color:var(--ink-soft);
                          font-size:14px;line-height:1;padding:0 2px;">✕</button>
         </label>`;
-      }).join('')
-      : `<p class="note" style="font-size:11.5px;">Brak — wczytaj skład przyciskiem powyżej.</p>`}
+    };
+    return `<div style="flex:1;min-width:250px;">
+      <h4 style="margin:0 0 6px;color:var(--heading);font-size:13px;">${esc((dane&&dane.nazwa)||tytulZapasowy||'—')}
+        <span class="meta" style="font-weight:400;">(${zawodnicy.length})</span></h4>
+      ${zawodnicy.length
+        ? sekcja('Pierwszy skład', pierwszy, true) + sekcja('Ławka rezerwowych', lawka, false)
+        : `<p class="note" style="font-size:11.5px;">Brak — wczytaj skład przyciskiem powyżej.</p>`}
       <!-- DOPISANIE ZAWODNIKA RĘCZNIE. Zawodnik potrafi wejść na boisko, choć nie było go
            w żadnym wczytanym składzie — doszedł po zamknięciu listy, przyszedł z rezerw albo
            w niższej lidze nikt składu nie ogłosił. Bez tego pola zostawało przepisywanie
@@ -20328,6 +20363,19 @@ function openObsSkladModal(obsId){
       const usuniety = lista[Number((b as HTMLElement).dataset.i)];
       lista.splice(Number((b as HTMLElement).dataset.i), 1);
       komunikat = usuniety ? `Usunięto „${usuniety.nazwa}".` : '';
+      zapisz();
+    });
+    // Przesunięcie między pierwszym składem a ławką. `podstawowy` trzymamy TYLKO wtedy, gdy
+    // rozstrzygnięte: wejście na ławkę zapisuje false, powrót do składu kasuje pole, zamiast
+    // stawiać true. Dzięki temu „nie wiadomo" i „na pewno w pierwszym składzie" zostają osobno —
+    // a to różnica, którą widać potem w raporcie.
+    overlay.querySelectorAll('.obs-lawka').forEach(b=>b.onclick = (e)=>{
+      e.preventDefault(); e.stopPropagation();
+      const strona = (b as HTMLElement).dataset.strona;
+      const lista = ((obs.skladMeczu||{})[strona]||{}).zawodnicy;
+      const z = lista && lista[Number((b as HTMLElement).dataset.i)];
+      if(!z) return;
+      if(z.podstawowy === false) delete z.podstawowy; else z.podstawowy = false;
       zapisz();
     });
     overlay.querySelectorAll('.obs-wyczysc').forEach(b=>b.onclick = (e)=>{
