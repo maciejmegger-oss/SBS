@@ -1180,3 +1180,16 @@ body.bez-kasowania #squad-delete-btn,
 body.bez-kasowania #delete-selected-agencies-btn{
   display:none !important;
 }
+
+/* Kafelki pakietów w panelu klienta. Auto-fill zamiast stałej liczby kolumn: przy sześciu
+   rozgrywkach na monitorze wychodzą trzy w rzędzie, na telefonie jedna, bez osobnych reguł. */
+.siatka-pakietow{ display:grid; gap:12px; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); }
+.siatka-pakietow .card{ margin-bottom:0; }
+
+/* Wiersz wyboru pakietu w oknie administratora. Cały wiersz jest etykietą, więc klik w nazwę ligi
+   zaznacza pole — celowanie w sam kwadracik przy sześciu pozycjach jest męczące. */
+.pakiet-wiersz{ display:flex; align-items:center; gap:10px; padding:8px 2px; cursor:pointer;
+  border-bottom:1px solid var(--chalk-dim); }
+.pakiet-wiersz:last-child{ border-bottom:0; }
+.pakiet-wiersz:hover{ background:var(--chalk-dim); }
+.pakiet-wiersz input{ width:16px; height:16px; flex:0 0 auto; cursor:pointer; }

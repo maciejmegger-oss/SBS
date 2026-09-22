@@ -131,6 +131,13 @@ export function onAuthChange(cb: (user: SessionUser | null) => void): void {
 
 export type StatusKonta = "oczekuje" | "zatwierdzone" | "odrzucone";
 
+// TRZY ROLE, NIE DWIE.
+//   admin  — właściciel systemu: wszystko, łącznie z kasowaniem i ustawieniami.
+//   scout  — pracownia: dopisuje i poprawia, nie kasuje, nie rusza kartoteki menedżerów.
+//   klient — kupuje dostęp do wybranych rozgrywek. Widzi tylko je, kartoteki nie zmienia,
+//            ale prowadzi własne obserwacje, raporty i oceny. Patrz `pakiety` niżej.
+export type RolaKonta = "admin" | "scout" | "klient";
+
 export interface Konto {
   userId: string;
   email: string;
@@ -138,7 +145,10 @@ export interface Konto {
   klub: string;
   rolaWKlubie: string;
   telefon: string;
-  rola: "admin" | "scout";
+  rola: RolaKonta;
+  // Wykupione rozgrywki, np. ["Ekstraklasa", "I liga"]. Wpis "Premium" oznacza wszystkie ligi.
+  // Znaczenie ma wyłącznie przy roli "klient" — admin i skaut widzą całość niezależnie od tego pola.
+  pakiety: string[];
   status: StatusKonta;
   utworzoneAt: string;
   zdecydowaneAt: string;
@@ -152,7 +162,10 @@ function mapujKonto(r: any): Konto {
     klub: r.klub || "",
     rolaWKlubie: r.rola_w_klubie || "",
     telefon: r.telefon || "",
-    rola: r.rola === "admin" ? "admin" : "scout",
+    rola: r.rola === "admin" ? "admin" : r.rola === "klient" ? "klient" : "scout",
+    // Baza sprzed migracji z 22.09 nie ma tej kolumny — pusta lista znaczy „żadnych pakietów",
+    // co dla admina i skauta jest bez znaczenia, a nowego klienta i tak trzeba dopiero wyposażyć.
+    pakiety: Array.isArray(r.pakiety) ? r.pakiety.filter(Boolean).map(String) : [],
     status: (r.status as StatusKonta) || "oczekuje",
     utworzoneAt: r.utworzone_at || "",
     zdecydowaneAt: r.zdecydowane_at || "",
@@ -230,8 +243,23 @@ export async function ustawStatusKonta(userId: string, status: StatusKonta): Pro
   return { ok: true };
 }
 
-export async function ustawRoleKonta(userId: string, rola: "admin" | "scout"): Promise<{ ok: boolean; error?: string }> {
+export async function ustawRoleKonta(userId: string, rola: RolaKonta): Promise<{ ok: boolean; error?: string }> {
   const { error } = await sb.from("sbs_konta").update({ rola }).eq("user_id", userId);
   if (error) return { ok: false, error: "Nie udało się zmienić roli: " + error.message };
+  return { ok: true };
+}
+
+// Pakiety, czyli wykupione rozgrywki. Zapisuje wyłącznie administrator — reguła dostępu w bazie
+// (migration_2026-09-22_klient_i_pakiety.sql) odrzuci ten zapis każdemu innemu, więc gdyby ktoś
+// wywołał tę funkcję z konsoli przeglądarki, nie zmieni sobie niczego.
+export async function ustawPakietyKonta(userId: string, pakiety: string[]): Promise<{ ok: boolean; error?: string }> {
+  const { error } = await sb.from("sbs_konta").update({ pakiety }).eq("user_id", userId);
+  if (error) {
+    // Najczęstsza przyczyna przy pierwszym uruchomieniu: migracja nie została jeszcze puszczona.
+    if ((error.message || "").includes("pakiety")) {
+      return { ok: false, error: "Baza nie ma jeszcze kolumny „pakiety”. Uruchom w Supabase skrypt supabase/migration_2026-09-22_klient_i_pakiety.sql." };
+    }
+    return { ok: false, error: "Nie udało się zapisać pakietów: " + error.message };
+  }
   return { ok: true };
 }
