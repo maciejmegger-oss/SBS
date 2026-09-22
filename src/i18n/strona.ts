@@ -188,6 +188,11 @@ export const STRONA: Record<string, Przeklad> = {
   'f-telefon': { en: 'Phone', de: 'Telefon' },
   'f-email': { en: 'E-mail address', de: 'E-Mail-Adresse' },
   'f-haslo': { en: 'Password', de: 'Passwort' },
+  'f-haslo2': { en: 'Repeat password', de: 'Passwort wiederholen' },
+  'f-haslo2-hint': {
+    en: 'Both fields must match.',
+    de: 'Beide Felder müssen übereinstimmen.',
+  },
   'f-haslo-hint': {
     en: 'At least 8 characters. You set it yourself — nobody else will see it.',
     de: 'Mindestens 8 Zeichen. Sie legen es selbst fest — niemand sonst sieht es.',

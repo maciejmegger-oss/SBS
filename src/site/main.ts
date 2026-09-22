@@ -82,6 +82,12 @@ form?.addEventListener("submit", async (e) => {
   if (!wniosek.imieNazwisko || !wniosek.klub) { pokaz("Podaj imię, nazwisko i klub.", "err"); return; }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(wniosek.email)) { pokaz("Podaj poprawny adres e-mail.", "err"); return; }
   if (wniosek.haslo.length < 8) { pokaz("Hasło musi mieć co najmniej 8 znaków.", "err"); return; }
+  // Porównujemy PRZED wysłaniem. Konto zakłada się raz, a literówka w haśle wychodzi dopiero
+  // przy pierwszym logowaniu — gdy nie ma już jak jej naprawić bez odzyskiwania konta.
+  if (wniosek.haslo !== String(dane.get("haslo2") || "")) {
+    pokaz("Hasła nie są takie same — sprawdź oba pola.", "err");
+    return;
+  }
   if (!dane.get("zgoda")) { pokaz("Potrzebna jest zgoda na przetwarzanie danych kontaktowych.", "err"); return; }
 
   const przycisk = form.querySelector("button[type=submit]") as HTMLButtonElement | null;
