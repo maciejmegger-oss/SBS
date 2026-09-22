@@ -210,7 +210,38 @@ export async function zglosDostep(w: WniosekODostep): Promise<{ ok: boolean; err
   if (m.includes("email") && m.includes("invalid")) {
     return { ok: false, error: "Podany adres e-mail wygląda na nieprawidłowy." };
   }
-  return { ok: false, error: "Nie udało się wysłać zgłoszenia: " + error.message };
+  // WYCZERPANY LIMIT WYSYŁKI MAILI.
+  //
+  // Zgłoszenie odbija się od bazy, zanim cokolwiek zapisze — konto NIE powstaje. Surowy komunikat
+  // brzmiał „email rate limit exceeded": po angielsku, bez wskazania winnego i bez podpowiedzi,
+  // co robić. Zgłaszający czytał to jako „ten formularz nie działa" i odchodził.
+  //
+  // Przyczyna nie leży po stronie zgłaszającego i nie zniknie przez ponowne kliknięcie, dlatego
+  // komunikat podaje drogę obejścia: zwykłą pocztę na adres, który odbiera człowiek.
+  if (m.includes("rate limit") || m.includes("too many requests") || m.includes("over_email_send_rate")) {
+    return {
+      ok: false,
+      error:
+        "Chwilowo nie możemy wysłać wiadomości potwierdzającej — system pocztowy przyjął dziś " +
+        "komplet zgłoszeń. To usterka po naszej stronie, nie po Twojej. Spróbuj za godzinę albo " +
+        "napisz na kontakt@scoutbasesystem.com, a założymy konto ręcznie.",
+    };
+  }
+  // Brak połączenia wygląda w przeglądarce jak „Failed to fetch" — komunikat bez treści dla nikogo,
+  // kto nie pisze programów.
+  if (m.includes("failed to fetch") || m.includes("networkerror") || m.includes("load failed")) {
+    return {
+      ok: false,
+      error:
+        "Nie udało się połączyć z systemem. Sprawdź internet i spróbuj ponownie, a jeśli to nie " +
+        "pomoże — napisz na kontakt@scoutbasesystem.com.",
+    };
+  }
+  return {
+    ok: false,
+    error: "Nie udało się wysłać zgłoszenia. Spróbuj ponownie, a jeśli błąd wraca — napisz na " +
+      "kontakt@scoutbasesystem.com. (Szczegóły: " + error.message + ")",
+  };
 }
 
 // Konto zalogowanego użytkownika — stan zgody i rola. Zwraca null, gdy nie ma sesji albo gdy
