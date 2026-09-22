@@ -14,14 +14,10 @@
 // Świadomie NIE ruszamy: nazwy własnej systemu, adresów e-mail, znaku w pasku i stopce.
 
 import { STRONA } from '../i18n/strona';
+import { FLAGI, JEZYKI } from '../i18n/flagi';
 
 type Jezyk = 'pl' | 'en' | 'de';
 const KLUCZ = 'sbs-jezyk-strony';
-const JEZYKI: { kod: Jezyk; etykieta: string; tytul: string }[] = [
-  { kod: 'pl', etykieta: 'PL', tytul: 'Polski' },
-  { kod: 'en', etykieta: 'EN', tytul: 'English' },
-  { kod: 'de', etykieta: 'DE', tytul: 'Deutsch' },
-];
 
 let jezyk: Jezyk = 'pl';
 // Polski oryginał każdego bloku — zdjęty ze strony przy pierwszym uruchomieniu, zanim cokolwiek
@@ -92,7 +88,8 @@ export function uruchomPrzelacznikJezyka() {
   const host = document.querySelector('.jezyk-strony');
   if (!host) return;
   host.innerHTML = JEZYKI.map((j) =>
-    `<button type="button" data-jezyk="${j.kod}" title="${j.tytul}" aria-pressed="false">${j.etykieta}</button>`
+    `<button type="button" data-jezyk="${j.kod}" title="${j.tytul}" aria-pressed="false">`
+    + `<span class="flaga">${FLAGI[j.kod]}</span><span>${j.etykieta}</span></button>`
   ).join('');
   host.querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
     b.addEventListener('click', () => ustawJezykStrony(b.dataset.jezyk as Jezyk));

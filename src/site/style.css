@@ -322,7 +322,14 @@ section[id]{scroll-margin-top:80px;}
   overflow:hidden; flex:0 0 auto; }
 .jezyk-strony button{ appearance:none; border:0; background:transparent; cursor:pointer;
   font-family:'Barlow Condensed',sans-serif; font-weight:600; font-size:14px; letter-spacing:.08em;
-  padding:6px 12px; color:#C9D6CD; line-height:1; transition:background .15s, color .15s; }
+  padding:6px 10px; color:#C9D6CD; line-height:1; transition:background .15s, color .15s;
+  display:inline-flex; align-items:center; gap:6px; }
+
+/* Flaga w przycisku. Cienka ramka jest tu potrzebna, nie ozdobna: biały pas polskiej flagi
+   i biel Union Jacka zlewałyby się bez niej z jasnym tłem wybranego przycisku. */
+.jezyk-strony .flaga{ display:block; width:18px; height:12px; flex:0 0 auto; border-radius:2px;
+  overflow:hidden; box-shadow:0 0 0 1px rgba(0,0,0,.35); }
+.jezyk-strony .flaga svg{ display:block; width:100%; height:100%; }
 .jezyk-strony button + button{ border-left:1px solid rgba(246,243,234,.2); }
 .jezyk-strony button:hover{ background:rgba(246,243,234,.12); color:#F6F3EA; }
 .jezyk-strony button[aria-pressed="true"]{ background:var(--gold, #E8A317); color:#16302A; }
@@ -334,7 +341,8 @@ section[id]{scroll-margin-top:80px;}
    a poziomy przewijak na stronie wizytówkowej wygląda po prostu na usterkę. */
 @media (max-width:520px){
   .topbar{ flex-wrap:wrap; row-gap:8px; }
-  .jezyk-strony button{ padding:6px 10px; font-size:13px; letter-spacing:.05em; }
+  .jezyk-strony button{ padding:6px 8px; font-size:13px; letter-spacing:.05em; gap:5px; }
+  .jezyk-strony .flaga{ width:16px; height:11px; }
 }
 
 /* Pozycja menu nie łamie się w środku. Po niemiecku i angielsku napisy są dłuższe niż po polsku,

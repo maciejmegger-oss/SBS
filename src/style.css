@@ -110,11 +110,23 @@
    Celowo NIE dziedziczy wyglądu .theme-toggle: tamten jest szeroki na całą szerokość panelu
    i ciągnie wzrok, a wybór języka ma być dostępny, nie krzyczeć. */
 .pasek-jezyka{display:flex;justify-content:flex-end;padding:0 20px 14px;}
-.jezyk-btn{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;cursor:pointer;
-  border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--on-pitch);
-  font-size:11px;font-weight:600;letter-spacing:.02em;line-height:1.3;}
-.jezyk-btn:hover{background:var(--pitch-2);border-color:var(--gold);}
-.jezyk-btn:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
+/* WYBÓR JĘZYKA W PANELU — te same trzy przyciski co na stronie publicznej.
+   Wygląd ma być jednakowy przed zalogowaniem i po nim: ten sam kształt, te same flagi,
+   ta sama kolejność. Inaczej wygląda to jak dwa różne systemy sklejone razem. */
+.jezyk-grupa{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;}
+.jezyk-grupa button{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;cursor:pointer;
+  border:0;background:transparent;color:var(--on-pitch);
+  font-size:11px;font-weight:600;letter-spacing:.04em;line-height:1.3;
+  transition:background .15s,color .15s;}
+.jezyk-grupa button + button{border-left:1px solid var(--line);}
+.jezyk-grupa button:hover{background:var(--pitch-2);}
+.jezyk-grupa button[aria-pressed="true"]{background:var(--gold);color:var(--pitch);}
+.jezyk-grupa button:focus-visible{outline:2px solid var(--gold);outline-offset:-2px;}
+/* Cienka ramka wokół flagi: biały pas polskiej flagi i biel Union Jacka zlewałyby się bez niej
+   z jasnym tłem wybranego przycisku. */
+.jezyk-grupa .flaga{display:block;width:16px;height:11px;flex:0 0 auto;border-radius:2px;
+  overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,.35);}
+.jezyk-grupa .flaga svg{display:block;width:100%;height:100%;}
 *{box-sizing:border-box;}
 body{margin:0;background:var(--chalk);color:var(--ink);}
 .app{display:flex;min-height:600px;}

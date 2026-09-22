@@ -9,14 +9,26 @@
 
 import { zbudujTlumacza } from './tlumacz';
 import { EN } from './en';
+import { DE } from './de';
+import { FLAGI, JEZYKI, type KodJezyka } from './flagi';
 
-type Jezyk = 'pl' | 'en';
+// TRZY JĘZYKI, NIE DWA. Polski jest oryginałem wpisanym w widoki — nie ma własnego słownika,
+// bo powrót do niego polega na przywróceniu zapamiętanych napisów, a nie na tłumaczeniu.
+type Jezyk = KodJezyka;
 const KLUCZ = 'sbs-jezyk';
 const ATRYBUTY = ['placeholder', 'title', 'aria-label', 'alt'];
 const POMIN = 'script, style, textarea, code, pre, [data-bez-tlumaczenia], [contenteditable="true"]';
 
 let jezyk: Jezyk = 'pl';
-const tlumacz = zbudujTlumacza(EN);
+// Tłumacz na każdy język obcy budujemy RAZ: zbudujTlumacza indeksuje słownik po pierwszym słowie
+// frazy, a przy siedmiuset hasłach robienie tego przy każdym przełączeniu byłoby marnotrawstwem.
+const TLUMACZE: Record<string, (t: string) => string> = {
+  en: zbudujTlumacza(EN),
+  de: zbudujTlumacza(DE),
+};
+// Przy polskim nie tłumaczymy niczego — ta funkcja i tak nigdy wtedy nie jest wołana,
+// ale bez niej każde wywołanie musiałoby sprawdzać język osobno.
+const tlumaczBiezacy = () => TLUMACZE[jezyk] || ((t: string) => t);
 
 const oryginalTekstu = new WeakMap<Node, string>();
 const tlumaczenieTekstu = new WeakMap<Node, string>();
@@ -31,7 +43,7 @@ function tekstWezla(n: Text) {
   const obecny = n.nodeValue || '';
   if (tlumaczenieTekstu.get(n) === obecny) return;          // już przetłumaczony — nasza własna zmiana
   if (pomijany(n.parentElement)) return;
-  const przetl = tlumacz(obecny);
+  const przetl = tlumaczBiezacy()(obecny);
   if (przetl !== obecny) {
     oryginalTekstu.set(n, obecny);
     tlumaczenieTekstu.set(n, przetl);
@@ -48,7 +60,7 @@ function atrybutElementu(el: Element, a: string) {
   const tl = tlumaczenieAtr.get(el);
   if (tl && tl.get(a) === obecny) return;
   if (pomijany(el)) return;
-  const przetl = tlumacz(obecny);
+  const przetl = tlumaczBiezacy()(obecny);
   if (przetl === obecny) {
     if (tl) tl.delete(a);
     const org = oryginalAtr.get(el);
@@ -106,7 +118,7 @@ let obserwator: MutationObserver | null = null;
 function obserwuj() {
   if (obserwator || !document.body) return;
   obserwator = new MutationObserver((zmiany) => {
-    if (jezyk !== 'en') return;
+    if (jezyk === 'pl') return;
     for (const z of zmiany) {
       if (z.type === 'childList') z.addedNodes.forEach((n) => przetlumaczPoddrzewo(n));
       else if (z.type === 'characterData') tekstWezla(z.target as Text);
@@ -121,7 +133,8 @@ function owinDialogi() {
   const w = window as any;
   if (w.__sbsDialogiOwiniete) return;
   w.__sbsDialogiOwiniete = true;
-  const przez = (m: unknown) => (jezyk === 'en' && typeof m === 'string') ? m.split('\n').map((l) => tlumacz(l)).join('\n') : m;
+  const przez = (m: unknown) => (jezyk !== 'pl' && typeof m === 'string')
+    ? m.split('\n').map((l) => tlumaczBiezacy()(l)).join('\n') : m;
   const alert0 = window.alert.bind(window);
   const confirm0 = window.confirm.bind(window);
   const prompt0 = window.prompt.bind(window);
@@ -130,13 +143,31 @@ function owinDialogi() {
   window.prompt = (m?: any, d?: any) => prompt0(przez(m) as any, d);
 }
 
+// TRZY PRZYCISKI, NIE JEDEN PRZEŁĄCZNIK TAM-I-Z-POWROTEM.
+//
+// Przy dwóch językach wystarczał guzik „🇬🇧 English", który przerzucał na drugą stronę. Przy trzech
+// to przestaje działać: z przycisku nie widać, co jest ustawione i co będzie po kliknięciu, a do
+// niemieckiego trzeba by klikać dwa razy. Trzy przyciski pokazują wszystkie języki naraz, a ten
+// wybrany jest podświetlony — tak samo jak na stronie publicznej, więc wygląda to jednakowo przed
+// zalogowaniem i po nim.
 export function odswiezPrzelacznikJezyka() {
-  const btn = document.getElementById('lang-toggle');
-  if (!btn) return;
-  btn.setAttribute('data-bez-tlumaczenia', '');
-  btn.innerHTML = jezyk === 'en' ? '🇵🇱 <span>Polski</span>' : '🇬🇧 <span>English</span>';
-  btn.title = jezyk === 'en' ? 'Przełącz na polski / Switch to Polish' : 'Switch to English / Przełącz na angielski';
-  btn.onclick = () => ustawJezyk(jezyk === 'en' ? 'pl' : 'en');
+  const host = document.getElementById('lang-toggle');
+  if (!host) return;
+  host.setAttribute('data-bez-tlumaczenia', '');
+  // Rysujemy raz; potem podmieniamy wyłącznie podświetlenie, żeby nie gubić podpiętych zdarzeń.
+  if (!host.dataset.gotowe) {
+    host.innerHTML = JEZYKI.map((j) =>
+      `<button type="button" data-jezyk="${j.kod}" title="${j.tytul}" aria-pressed="false">`
+      + `<span class="flaga">${FLAGI[j.kod]}</span><span>${j.etykieta}</span></button>`
+    ).join('');
+    host.querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
+      b.addEventListener('click', () => ustawJezyk(b.dataset.jezyk as Jezyk));
+    });
+    host.dataset.gotowe = '1';
+  }
+  host.querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
+    b.setAttribute('aria-pressed', b.dataset.jezyk === jezyk ? 'true' : 'false');
+  });
 }
 
 export function ustawJezyk(nowy: Jezyk) {
@@ -144,8 +175,11 @@ export function ustawJezyk(nowy: Jezyk) {
   try { localStorage.setItem(KLUCZ, nowy); } catch (e) { /* tryb prywatny */ }
   document.documentElement.lang = nowy;
   if (document.body) {
-    if (nowy === 'en') przetlumaczPoddrzewo(document.body);
-    else przywrocPoddrzewo(document.body);
+    // Zmiana języka obcego na inny obcy: najpierw WRACAMY do polskiego oryginału, dopiero potem
+    // tłumaczymy na nowy. Bez tego niemiecki liczyłby się z tekstu już przetłumaczonego
+    // na angielski, a słownik zna wyłącznie polskie klucze.
+    przywrocPoddrzewo(document.body);
+    if (nowy !== 'pl') przetlumaczPoddrzewo(document.body);
   }
   odswiezPrzelacznikJezyka();
 }
@@ -154,7 +188,10 @@ export function uruchomTlumaczenie() {
   owinDialogi();
   obserwuj();
   let zapisany: Jezyk = 'pl';
-  try { zapisany = localStorage.getItem(KLUCZ) === 'en' ? 'en' : 'pl'; } catch (e) { /* tryb prywatny */ }
-  if (zapisany === 'en') ustawJezyk('en');
+  try {
+    const z = localStorage.getItem(KLUCZ);
+    if (z === 'en' || z === 'de') zapisany = z;
+  } catch (e) { /* tryb prywatny */ }
+  if (zapisany !== 'pl') ustawJezyk(zapisany);
   else odswiezPrzelacznikJezyka();
 }
