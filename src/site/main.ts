@@ -6,6 +6,7 @@
 // Przy takiej awarii nie działa wyłącznie sam formularz, a zgłaszający dostaje adres e-mail.
 
 import { uruchomPrzelacznikJezyka } from "./jezyk";
+import { zlozNumer } from "./kierunkowe";
 
 const rok = document.getElementById("rok");
 if (rok) rok.textContent = String(new Date().getFullYear());
@@ -68,7 +69,10 @@ form?.addEventListener("submit", async (e) => {
     imieNazwisko: pole("imieNazwisko"),
     klub: pole("klub"),
     rolaWKlubie: pole("rolaWKlubie"),
-    telefon: pole("telefon"),
+    // Numer zapisujemy ZAWSZE z kierunkowym i zawsze tak samo: „+49 170 1234567". Bez tego
+    // w kartotece leżałyby obok siebie „507113413", „+48 507 113 413" i „0048507113413" — trzy
+    // zapisy tego samego numeru, z których żadnego nie da się porównać ani wybrać jednym klikiem.
+    telefon: zlozNumer(pole("telefon"), pole("kierunkowy")),
     email: pole("email"),
     haslo: String(dane.get("haslo") || ""),
   };

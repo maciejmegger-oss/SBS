@@ -215,7 +215,12 @@
             <input name="rolaWKlubie" type="text" placeholder="np. skaut, trener, dyrektor sportowy" data-i18n-ph="f-rola-ph">
           </label>
           <label><span data-i18n="f-telefon">Telefon</span>
-            <input name="telefon" type="tel" autocomplete="tel">
+            <!-- Kierunkowy z listy, numer obok. Numer bez kierunkowego jest bezużyteczny, gdy
+                 zgłoszenie przychodzi spoza Polski — a strona jest po niemiecku i angielsku. -->
+            <div class="telefon-pole">
+              <select name="kierunkowy" id="kierunkowy" aria-label="Numer kierunkowy"></select>
+              <input name="telefon" type="tel" inputmode="tel" autocomplete="tel">
+            </div>
           </label>
         </div>
         <div class="f2">

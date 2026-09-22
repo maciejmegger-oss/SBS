@@ -348,3 +348,20 @@ section[id]{scroll-margin-top:80px;}
 /* Pozycja menu nie łamie się w środku. Po niemiecku i angielsku napisy są dłuższe niż po polsku,
    więc „Für wen" rozpadało się na dwie linie i pasek górny puchł w pionie. */
 .topnav a{ white-space:nowrap; }
+
+/* POLE TELEFONU: kierunkowy z listy + numer obok.
+   Lista dostaje stałą, wąską szerokość, a numer resztę — inaczej długie nazwy krajów
+   („Bośnia i Hercegowina") rozpychałyby pole i numer robiłby się nieczytelnie wąski. */
+.telefon-pole{display:flex;gap:8px;margin-top:6px;}
+.telefon-pole select{
+  flex:0 0 108px;width:108px;
+  background:rgba(14,33,28,.6);
+  border:1px solid rgba(246,243,234,.18);
+  border-radius:9px;padding:11px 8px;
+  color:var(--chalk);font-family:inherit;font-size:15px;text-transform:none;letter-spacing:0;
+}
+.telefon-pole select:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(198,155,60,.18);}
+/* Rozwinięta lista rysuje się środkami systemu — na ciemnym tle domyślny biały tekst na białym
+   byłby nieczytelny, więc opcjom dajemy własne kolory. */
+.telefon-pole select option{background:#12261F;color:var(--chalk);}
+.telefon-pole input{margin-top:0 !important;}

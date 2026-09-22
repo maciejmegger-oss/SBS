@@ -15,6 +15,7 @@
 
 import { STRONA } from '../i18n/strona';
 import { FLAGI, JEZYKI } from '../i18n/flagi';
+import { KIERUNKOWE, DOMYSLNY_KIERUNKOWY } from './kierunkowe';
 
 type Jezyk = 'pl' | 'en' | 'de';
 const KLUCZ = 'sbs-jezyk-strony';
@@ -43,6 +44,30 @@ function podmienAtrybuty(j: Jezyk) {
   });
 }
 
+// LISTA KIERUNKOWYCH — nazwy krajów w języku strony.
+//
+// Przebudowujemy ją przy każdej zmianie języka, bo „Niemcy" po niemiecku to „Deutschland" i ktoś,
+// kto czyta stronę po niemiecku, szuka właśnie tego słowa. Wybór użytkownika przeżywa przełączenie:
+// zapamiętujemy kierunkowy, a nie pozycję na liście.
+function odswiezKierunkowe(j: Jezyk) {
+  const select = document.getElementById('kierunkowy') as HTMLSelectElement | null;
+  if (!select) return;
+  // Czy człowiek już sam wybrał? Jeśli nie, podpowiadamy kraj pasujący do języka strony.
+  const ruszony = select.dataset.ruszony === '1';
+  const bylo = select.value;
+  const lista = KIERUNKOWE.slice();
+  // KIERUNKOWY PRZED NAZWĄ KRAJU — i to nie jest kwestia gustu. Zamknięta lista jest wąska,
+  // więc długie nazwy („Bośnia i Hercegowina") i tak zostaną przycięte. Gdy pierwszy stoi numer,
+  // przycięcie nie szkodzi: widać to, co w tym polu naprawdę ważne.
+  select.innerHTML = lista.map((k) =>
+    `<option value="${k.kod}" title="${k[j]}">${k.kod} ${k[j]}</option>`).join('');
+  select.value = ruszony && bylo ? bylo : (DOMYSLNY_KIERUNKOWY[j] || '+48');
+  if (!select.dataset.podpiety) {
+    select.addEventListener('change', () => { select.dataset.ruszony = '1'; });
+    select.dataset.podpiety = '1';
+  }
+}
+
 export function ustawJezykStrony(j: Jezyk) {
   zapamietajOryginaly();
   jezyk = j;
@@ -61,6 +86,7 @@ export function ustawJezykStrony(j: Jezyk) {
     if (wpis && wpis[j]) el.innerHTML = wpis[j];
   });
   podmienAtrybuty(j);
+  odswiezKierunkowe(j);
 
   // Tytuł karty i opis dla wyszukiwarek nie są widoczne na stronie, ale to one trafiają do
   // zakładek i wyników wyszukiwania — po przełączeniu języka mają się zgadzać z treścią.
