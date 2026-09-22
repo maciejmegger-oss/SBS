@@ -314,3 +314,29 @@ section[id]{scroll-margin-top:80px;}
   .js [data-anim]{ opacity:1; transform:none; transition:none; }
   .btn.gold::after{ display:none; }
 }
+
+/* ---- WYBÓR JĘZYKA W PASKU GÓRNYM ----
+   Trzy krótkie kody zamiast flag: flaga oznacza kraj, nie język, a angielskim mówi się w kilkunastu
+   krajach. Do tego flaga w tekście bywa nieczytelna przy małym rozmiarze na części systemów. */
+.jezyk-strony{ display:flex; border:1px solid rgba(246,243,234,.28); border-radius:999px;
+  overflow:hidden; flex:0 0 auto; }
+.jezyk-strony button{ appearance:none; border:0; background:transparent; cursor:pointer;
+  font-family:'Barlow Condensed',sans-serif; font-weight:600; font-size:14px; letter-spacing:.08em;
+  padding:6px 12px; color:#C9D6CD; line-height:1; transition:background .15s, color .15s; }
+.jezyk-strony button + button{ border-left:1px solid rgba(246,243,234,.2); }
+.jezyk-strony button:hover{ background:rgba(246,243,234,.12); color:#F6F3EA; }
+.jezyk-strony button[aria-pressed="true"]{ background:var(--gold, #E8A317); color:#16302A; }
+.jezyk-strony button:focus-visible{ outline:2px solid var(--gold, #E8A317); outline-offset:-2px; }
+
+/* NA TELEFONIE PASEK GÓRNY JEST CIASNY i przełącznik dokłada mu szerokości. Dwie rzeczy naraz:
+   kody języków robią się węższe, a sam pasek dostaje prawo do zawinięcia. Bez tego drugiego
+   przy dłuższych napisach (niemiecki „Zugang anfragen") strona dawała się przesuwać w bok —
+   a poziomy przewijak na stronie wizytówkowej wygląda po prostu na usterkę. */
+@media (max-width:520px){
+  .topbar{ flex-wrap:wrap; row-gap:8px; }
+  .jezyk-strony button{ padding:6px 10px; font-size:13px; letter-spacing:.05em; }
+}
+
+/* Pozycja menu nie łamie się w środku. Po niemiecku i angielsku napisy są dłuższe niż po polsku,
+   więc „Für wen" rozpadało się na dwie linie i pasek górny puchł w pionie. */
+.topnav a{ white-space:nowrap; }

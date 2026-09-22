@@ -5,8 +5,14 @@
 // wczytywaniu — a strona wizytówkowa musi się pokazać zawsze, nawet gdy zaplecze akurat nie działa.
 // Przy takiej awarii nie działa wyłącznie sam formularz, a zgłaszający dostaje adres e-mail.
 
+import { uruchomPrzelacznikJezyka } from "./jezyk";
+
 const rok = document.getElementById("rok");
 if (rok) rok.textContent = String(new Date().getFullYear());
+
+// Wybór języka: polski, angielski, niemiecki. Uruchamiamy od razu, przed resztą — ktoś, kto nie
+// czyta po polsku, ma zobaczyć swoją wersję zamiast mignięcia polskiej treści.
+uruchomPrzelacznikJezyka();
 
 // ---------------------------------------------------------------------------
 // Odsłanianie sekcji przy przewijaniu

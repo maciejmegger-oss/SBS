@@ -23494,7 +23494,7 @@ function renderKontoScreen(konto){
     </div>
     <p class="note">
       Zalogowano jako <strong>${esc((konto && konto.email) || '')}</strong>.
-      W pilnej sprawie napisz na <strong>system@scoutbasesystem.com</strong>.
+      W pilnej sprawie napisz na <strong>kontakt@scoutbasesystem.com</strong>.
     </p>
     <div class="modal-actions" style="justify-content:space-between;">
       <button class="link-btn" data-action="konto-wyloguj">Wyloguj się</button>
