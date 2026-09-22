@@ -263,3 +263,67 @@ export async function ustawPakietyKonta(userId: string, pakiety: string[]): Prom
   }
   return { ok: true };
 }
+
+// ---------------------------------------------------------------------------
+// DZIENNIK ZDARZEŃ NA KONTACH
+// ---------------------------------------------------------------------------
+//
+// Ślad po tym, co działo się z kontami: kto komu przyznał dostęp, kto zmienił rolę, komu doszedł
+// pakiet. Zmianę hasła zapisuje sama baza (wyzwalacz z migration_2026-09-23), więc tutaj jej nie ma.
+//
+// CELOWO NIE PRZERYWAMY PRACY, gdy zapis do dziennika się nie uda. Dziennik jest ważny, ale nie
+// ważniejszy od operacji, którą opisuje: gdyby nieudany wpis cofał przyznanie dostępu, awaria
+// jednej tabeli blokowałaby cały panel administratora. Błąd ląduje w konsoli przeglądarki.
+
+export interface ZdarzenieKonta {
+  id: number;
+  konto: string;
+  email: string;
+  ktoEmail: string;
+  rodzaj: "haslo" | "dostep" | "rola" | "pakiety" | string;
+  opis: string;
+  utworzoneAt: string;
+}
+
+export async function zapiszZdarzenie(
+  konto: { userId: string; email: string },
+  rodzaj: string,
+  opis: string,
+): Promise<void> {
+  try {
+    const { data: sesja } = await sb.auth.getSession();
+    const ja = sesja.session?.user;
+    if (!ja) return;
+    await sb.from("sbs_zdarzenia_konta").insert({
+      konto: konto.userId,
+      email: konto.email,
+      kto: ja.id,
+      kto_email: ja.email,
+      rodzaj,
+      opis,
+    });
+  } catch (e) {
+    console.warn("Nie udało się zapisać zdarzenia w dzienniku:", e);
+  }
+}
+
+// Ostatnie zdarzenia do panelu administratora. Reguły dostępu w bazie i tak nie oddadzą tej tabeli
+// nikomu poza administratorem — brak tabeli (migracja nieuruchomiona) traktujemy jak pustą listę,
+// żeby zakładka „Dostęp" działała także przed wdrożeniem.
+export async function listaZdarzen(limit = 60): Promise<ZdarzenieKonta[]> {
+  const { data, error } = await sb
+    .from("sbs_zdarzenia_konta")
+    .select("*")
+    .order("utworzone_at", { ascending: false })
+    .limit(limit);
+  if (error) return [];
+  return (data || []).map((r: any) => ({
+    id: r.id,
+    konto: r.konto || "",
+    email: r.email || "",
+    ktoEmail: r.kto_email || "",
+    rodzaj: r.rodzaj || "",
+    opis: r.opis || "",
+    utworzoneAt: r.utworzone_at || "",
+  }));
+}

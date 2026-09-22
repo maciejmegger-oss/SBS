@@ -1,7 +1,8 @@
 import "./style.css";
 import { storage } from "./data/storage";
 import { currentUser, signIn, signOut, requestPasswordReset, setNewPassword, isPasswordRecoveryLink,
-         mojeKonto, listaKont, ustawStatusKonta, ustawRoleKonta, ustawPakietyKonta, tokenSesji } from "./data/auth";
+         mojeKonto, listaKont, ustawStatusKonta, ustawRoleKonta, ustawPakietyKonta,
+         zapiszZdarzenie, listaZdarzen, tokenSesji } from "./data/auth";
 import { VOIVODESHIP_PATHS } from "./data/voivodeships";
 import { parsujSklad, podzielNaDruzyny } from "./domain/sklad";
 import { SKLADY_MECZOWE } from "./data/sklady-meczowe";
@@ -70,6 +71,12 @@ if(import.meta.env && import.meta.env.DEV){
       status: 'zatwierdzone', utworzoneAt: '', zdecydowaneAt: '' } as any;
     sesjaUzytkownika = { id: 'test-konto', email: 'test@sbs' } as any;
     render();
+  }; }catch(e){}
+  // Podstawienie listy kont i dziennika bez logowania do bazy — inaczej zakładki „Dostęp"
+  // nie da się obejrzeć inaczej niż na produkcyjnych danych prawdziwych ludzi.
+  try{ (window as any).__SBS_DOSTEP = (konta, zdarzenia)=>{
+    kontaLista = konta || []; zdarzeniaLista = zdarzenia || []; kontaWczytywanie = false; kontaBlad = '';
+    currentView = 'access'; render();
   }; }catch(e){}
 }
 let editingPlayerId = null;
@@ -3588,11 +3595,16 @@ function viewCompare(){
 let kontaLista = null;          // null = jeszcze nie pobrano z bazy
 let kontaWczytywanie = false;
 let kontaBlad = '';
+// Dziennik zdarzeń na kontach — pobierany razem z listą kont, tą samą drogą.
+let zdarzeniaLista = null;
 
 async function odswiezKonta(){
   kontaWczytywanie = true; kontaBlad = '';
   try{
     kontaLista = await listaKont();
+    // Dziennik dociągamy przy okazji. Gdyby migracja nie była jeszcze uruchomiona, listaZdarzen
+    // odda pustą listę zamiast błędu — zakładka ma działać także przed wdrożeniem.
+    zdarzeniaLista = await listaZdarzen(60);
   }catch(e){
     kontaBlad = e.message || String(e);
     kontaLista = kontaLista || [];
@@ -3719,6 +3731,11 @@ function openPakietyModal(konto){
       b.disabled = false; b.textContent = 'Zapisz pakiety';
       return;
     }
+    // Zapisujemy STAN PRZED i PO. Samo „zmieniono pakiety" nie odpowiada na pytanie, które
+    // pada naprawdę: „za co klient płacił w marcu?".
+    const opisListy = (p)=> p.length ? p.join(', ') : 'brak';
+    await zapiszZdarzenie(konto, 'pakiety',
+      `Pakiety: ${opisListy(mial)} → ${opisListy(wybrane)}.`);
     overlay.remove();
     await odswiezKonta();
     render();
@@ -3846,7 +3863,68 @@ function viewAccess(){
   ${odrzucone.length ? `<div class="card" style="margin-top:18px;">
     <h4 style="margin-top:0;color:var(--heading);">Bez dostępu (${odrzucone.length})</h4>
     ${kontaTabela(odrzucone)}
-  </div>` : ''}`;
+  </div>` : ''}
+
+  ${dziennikBlok()}`;
+}
+
+// ---- DZIENNIK ZDARZEŃ -------------------------------------------------------------------------
+//
+// Ślad po tym, co działo się z kontami. Do tej pory nie zostawało po tym NIC: ktoś zmienił hasło —
+// nie wiadomo kiedy; ktoś stracił dostęp — nie wiadomo kto mu go odebrał. Przy jednym
+// administratorze dało się to trzymać w głowie, przy płacących klientach nie wolno.
+//
+// Zmiana hasła zapisuje się sama, wyzwalaczem w bazie — nie przez przeglądarkę. Gdyby zapisywała
+// ją przeglądarka, wystarczyłoby zamknąć kartę w złym momencie i zdarzenia by nie było.
+const ZDARZENIE_ZNACZEK = {
+  haslo:   {ikona:'🔑', kolor:'var(--gold-dark)',  nazwa:'Hasło'},
+  dostep:  {ikona:'🚪', kolor:'var(--pitch-2)',    nazwa:'Dostęp'},
+  rola:    {ikona:'👤', kolor:'var(--pitch-2)',    nazwa:'Rola'},
+  pakiety: {ikona:'📦', kolor:'var(--gold-dark)',  nazwa:'Pakiety'},
+};
+
+function dziennikBlok(){
+  if(zdarzeniaLista === null){
+    return `<div class="card" style="margin-top:18px;"><h4 style="margin-top:0;color:var(--heading);">Dziennik zdarzeń</h4>
+      <div class="empty">Wczytuję…</div></div>`;
+  }
+  if(!zdarzeniaLista.length){
+    return `<div class="card" style="margin-top:18px;">
+      <h4 style="margin-top:0;color:var(--heading);">Dziennik zdarzeń</h4>
+      <div class="empty">Nic się jeszcze nie wydarzyło — albo nie uruchomiono skryptu
+        <strong>migration_2026-09-23_dziennik_kont.sql</strong> w Supabase.</div></div>`;
+  }
+
+  const kiedy = (t)=>{
+    const d = new Date(t);
+    if(isNaN(d.getTime())) return esc(String(t).slice(0,16));
+    const dwie = (n)=>String(n).padStart(2,'0');
+    return `${dwie(d.getDate())}.${dwie(d.getMonth()+1)}.${d.getFullYear()} ${dwie(d.getHours())}:${dwie(d.getMinutes())}`;
+  };
+
+  const wiersze = zdarzeniaLista.map(z=>{
+    const zn = ZDARZENIE_ZNACZEK[z.rodzaj] || {ikona:'•', kolor:'var(--pitch-2)', nazwa:z.rodzaj};
+    // Kto wykonał pokazujemy TYLKO wtedy, gdy to ktoś inny niż osoba, której zdarzenie dotyczy.
+    // Przy zmianie własnego hasła „wykonał: ten sam" byłoby szumem.
+    const obcy = z.ktoEmail && z.ktoEmail !== z.email;
+    return `<tr>
+      <td style="white-space:nowrap;" class="meta">${kiedy(z.utworzoneAt)}</td>
+      <td><span class="badge" style="background:${zn.kolor};color:var(--on-pitch);">${zn.ikona} ${esc(zn.nazwa)}</span></td>
+      <td><strong>${esc(z.email || '—')}</strong></td>
+      <td>${esc(z.opis)}${obcy ? `<div class="note" style="margin:2px 0 0;">wykonał: ${esc(z.ktoEmail)}</div>` : ''}</td>
+    </tr>`;
+  }).join('');
+
+  return `<div class="card" style="margin-top:18px;">
+    <h4 style="margin-top:0;color:var(--heading);">Dziennik zdarzeń (${zdarzeniaLista.length})</h4>
+    <p class="note" style="margin:-4px 0 10px;">Zmiany haseł, dostępu, ról i pakietów. Zapisu nie da się
+      poprawić ani usunąć — także Tobie. Dziennik, który da się wyczyścić, nie jest dziennikiem.
+      Haseł tu nie ma: odnotowujemy, <strong>że</strong> je zmieniono, nigdy jakie.</p>
+    <div class="tabela-przewijana"><table>
+      <thead><tr><th>Kiedy</th><th>Co</th><th>Kogo dotyczy</th><th>Szczegóły</th></tr></thead>
+      <tbody>${wiersze}</tbody>
+    </table></div>
+  </div>`;
 }
 
 const NAV_ITEMS = [
@@ -13748,6 +13826,9 @@ function attachHandlers(){
     b.disabled = true; b.textContent = 'Zapisuję…';
     const r = await ustawStatusKonta(id, status);
     if(!r.ok){ alert(r.error); b.disabled=false; b.textContent=napis; return; }
+    if(konto) await zapiszZdarzenie(konto, 'dostep', status === 'zatwierdzone'
+      ? 'Przyznano dostęp do systemu.'
+      : 'Cofnięto dostęp — konto przestało widzieć dane.');
     await odswiezKonta();   // sam przerysowuje listę po pobraniu
   });
   main.querySelectorAll('[data-action="konto-rola"]').forEach(b=>b.onclick=async()=>{
@@ -13767,6 +13848,9 @@ function attachHandlers(){
     b.disabled = true;
     const r = await ustawRoleKonta(id, rola);
     if(!r.ok){ alert(r.error); b.disabled=false; return; }
+    const NAZWY_ROL = {admin:'administrator', klient:'klient', scout:'skaut'};
+    if(konto) await zapiszZdarzenie(konto, 'rola',
+      `Zmiana roli: ${NAZWY_ROL[konto.rola] || konto.rola} → ${NAZWY_ROL[rola] || rola}.`);
     await odswiezKonta();   // sam przerysowuje listę po pobraniu
     // Świeżo zrobiony klient nie ma jeszcze żadnego pakietu, więc jego panel jest pusty.
     // Otwieramy okno pakietów od razu — inaczej łatwo o tym zapomnieć i klient dzwoni,
