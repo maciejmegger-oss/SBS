@@ -188,6 +188,8 @@ export const STRONA: Record<string, Przeklad> = {
   'f-telefon': { en: 'Phone', de: 'Telefon' },
   'f-email': { en: 'E-mail address', de: 'E-Mail-Adresse' },
   'f-haslo': { en: 'Password', de: 'Passwort' },
+  'oko-pokaz': { en: 'Show password', de: 'Passwort anzeigen' },
+  'oko-ukryj': { en: 'Hide password', de: 'Passwort verbergen' },
   'f-haslo2': { en: 'Repeat password', de: 'Passwort wiederholen' },
   'f-haslo2-hint': {
     en: 'Both fields must match.',

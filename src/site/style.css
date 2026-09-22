@@ -365,3 +365,15 @@ section[id]{scroll-margin-top:80px;}
    byłby nieczytelny, więc opcjom dajemy własne kolory. */
 .telefon-pole select option{background:#12261F;color:var(--chalk);}
 .telefon-pole input{margin-top:0 !important;}
+
+/* PODGLĄD HASŁA — oczko w prawym brzegu pola.
+   Pole dostaje zapas z prawej, żeby długie hasło nie wchodziło pod przycisk. */
+.haslo-pole{position:relative;display:block;}
+.haslo-pole input{padding-right:44px !important;}
+.oko{position:absolute;right:6px;top:50%;transform:translateY(-50%);
+  display:inline-flex;align-items:center;justify-content:center;
+  width:32px;height:32px;padding:0;border:0;border-radius:8px;
+  background:transparent;color:#A9BEB4;cursor:pointer;}
+.oko svg{width:19px;height:19px;display:block;}
+.oko:hover{color:var(--chalk);background:rgba(246,243,234,.10);}
+.oko:focus-visible{outline:2px solid var(--gold);outline-offset:-2px;color:var(--chalk);}

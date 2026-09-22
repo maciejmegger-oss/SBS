@@ -228,7 +228,7 @@
             <input name="email" type="email" autocomplete="email" required>
           </label>
           <label><span data-i18n="f-haslo">Hasło</span> <span class="req">*</span>
-            <input name="haslo" type="password" autocomplete="new-password" minlength="8" required>
+            <span class="haslo-pole"><input name="haslo" type="password" autocomplete="new-password" minlength="8" required><button type="button" class="oko" data-oko="haslo" data-i18n-title="oko-pokaz" title="Pokaż hasło" aria-label="Pokaż hasło"></button></span>
             <small class="hint" data-i18n="f-haslo-hint">Minimum 8 znaków. Ustalasz je sam — nikt inny go nie zobaczy.</small>
           </label>
         </div>
@@ -237,7 +237,7 @@
                przy pierwszym logowaniu — czyli wtedy, gdy nie ma już jak jej naprawić bez
                odzyskiwania konta. Drugie pole wyłapuje ją od razu. -->
           <label><span data-i18n="f-haslo2">Powtórz hasło</span> <span class="req">*</span>
-            <input name="haslo2" type="password" autocomplete="new-password" minlength="8" required>
+            <span class="haslo-pole"><input name="haslo2" type="password" autocomplete="new-password" minlength="8" required><button type="button" class="oko" data-oko="haslo2" data-i18n-title="oko-pokaz" title="Pokaż hasło" aria-label="Pokaż hasło"></button></span>
             <small class="hint" data-i18n="f-haslo2-hint">Oba pola muszą być takie same.</small>
           </label>
         </div>

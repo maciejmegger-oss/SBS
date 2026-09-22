@@ -50,6 +50,42 @@ if (doOdsloniecia.length && ruchDozwolony && "IntersectionObserver" in window) {
   doOdsloniecia.forEach((el) => obserwator.observe(el));
 }
 
+// PODGLĄD HASŁA.
+//
+// Hasło wpisuje się w ciemno, a przy zakładaniu konta trzeba je wpisać dwa razy — bez podglądu
+// pomyłka wychodzi dopiero przy pierwszym logowaniu. Oczko pokazuje treść na żądanie.
+//
+// Ikona rysowana, nie emoji ani znak z kroju pisma: emoji oka i „👁" wyglądają inaczej na każdym
+// systemie, a na części Windowsów nie rysują się wcale. Te dwie ścieżki SVG wyglądają wszędzie
+// tak samo. Przycisk ma type="button", bo bez tego kliknięcie wysyłałoby formularz.
+const OKO_OTWARTE =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true" focusable="false">'
+  + '<path d="M1.8 12s3.8-7 10.2-7 10.2 7 10.2 7-3.8 7-10.2 7S1.8 12 1.8 12z" stroke-linejoin="round"/>'
+  + '<circle cx="12" cy="12" r="3.2"/></svg>';
+const OKO_ZAMKNIETE =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true" focusable="false">'
+  + '<path d="M1.8 12s3.8-7 10.2-7 10.2 7 10.2 7-3.8 7-10.2 7S1.8 12 1.8 12z" stroke-linejoin="round"/>'
+  + '<circle cx="12" cy="12" r="3.2"/>'
+  + '<path d="M3.5 3.5l17 17" stroke-linecap="round"/></svg>';
+
+document.querySelectorAll<HTMLButtonElement>(".oko").forEach((btn) => {
+  const pole = document.querySelector<HTMLInputElement>(`input[name="${btn.dataset.oko}"]`);
+  if (!pole) return;
+  btn.innerHTML = OKO_OTWARTE;
+  btn.addEventListener("click", () => {
+    const widoczne = pole.type === "text";
+    pole.type = widoczne ? "password" : "text";
+    btn.innerHTML = widoczne ? OKO_OTWARTE : OKO_ZAMKNIETE;
+    // Podpowiedź musi mówić, co się stanie PO kliknięciu, a nie jaki jest stan teraz.
+    btn.dataset.i18nTitle = widoczne ? "oko-pokaz" : "oko-ukryj";
+    const opis = widoczne ? "Pokaż hasło" : "Ukryj hasło";
+    btn.title = opis;
+    btn.setAttribute("aria-label", opis);
+    // Kursor wraca do pola — inaczej po podejrzeniu trzeba w nie klikać z powrotem.
+    pole.focus();
+  });
+});
+
 const form = document.getElementById("form-dostep") as HTMLFormElement | null;
 // Nazwa „status" jest zajęta przez globalne window.status (zwykły tekst) — stąd przyrostek.
 const statusEl = document.getElementById("form-status");

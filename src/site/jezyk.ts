@@ -33,15 +33,26 @@ function zapamietajOryginaly() {
   });
 }
 
-// Atrybuty tłumaczone osobno — podpowiedź w polu formularza nie jest treścią elementu.
+// Atrybuty tłumaczone osobno — podpowiedź w polu i opis przycisku nie są treścią elementu.
+//
+// Oryginał pamiętamy pod kluczem złożonym z nazwy atrybutu i identyfikatora, bo ten sam
+// identyfikator („oko-pokaz") bywa użyty przy kilku przyciskach naraz.
 function podmienAtrybuty(j: Jezyk) {
-  document.querySelectorAll<HTMLElement>('[data-i18n-ph]').forEach((el) => {
-    const id = el.dataset.i18nPh!;
-    const wpis = STRONA[id];
-    if (!wpis) return;
-    if (!oryginaly.has('ph:' + id)) oryginaly.set('ph:' + id, el.getAttribute('placeholder') || '');
-    el.setAttribute('placeholder', j === 'pl' ? oryginaly.get('ph:' + id)! : wpis[j]);
-  });
+  const atrybut = (selektor: string, pole: string, atr: string[]) => {
+    document.querySelectorAll<HTMLElement>(selektor).forEach((el) => {
+      const id = el.dataset[pole as keyof DOMStringMap] as string;
+      const wpis = STRONA[id];
+      if (!wpis) return;
+      atr.forEach((a) => {
+        const klucz = a + ':' + id;
+        if (!oryginaly.has(klucz)) oryginaly.set(klucz, el.getAttribute(a) || '');
+        el.setAttribute(a, j === 'pl' ? oryginaly.get(klucz)! : wpis[j]);
+      });
+    });
+  };
+  atrybut('[data-i18n-ph]', 'i18nPh', ['placeholder']);
+  // Przycisk podglądu hasła: to samo słowo trafia w podpowiedź i w opis dla czytnika ekranu.
+  atrybut('[data-i18n-title]', 'i18nTitle', ['title', 'aria-label']);
 }
 
 // LISTA KIERUNKOWYCH — nazwy krajów w języku strony.
