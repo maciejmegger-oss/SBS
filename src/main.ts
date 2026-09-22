@@ -1,7 +1,7 @@
 import "./style.css";
 import { storage } from "./data/storage";
 import { currentUser, signIn, signOut, requestPasswordReset, setNewPassword, isPasswordRecoveryLink,
-         mojeKonto, listaKont, ustawStatusKonta, ustawRoleKonta, tokenSesji } from "./data/auth";
+         mojeKonto, listaKont, ustawStatusKonta, ustawRoleKonta, ustawPakietyKonta, tokenSesji } from "./data/auth";
 import { VOIVODESHIP_PATHS } from "./data/voivodeships";
 import { parsujSklad, podzielNaDruzyny } from "./domain/sklad";
 import { SKLADY_MECZOWE } from "./data/sklady-meczowe";
@@ -57,6 +57,21 @@ let DB: Database = { players: [], clubs: [], observations: [], reports: [], tale
 // z wersji wysyłanej na serwer, więc w działającej aplikacji tego okna nie ma.
 if(import.meta.env && import.meta.env.DEV){ try{ (window as any).__SBS_DB = () => DB; }catch(e){} }
 let currentView = "dashboard";
+// Otwarcie zakładki bez logowania — też tylko na maszynie deweloperskiej. Bez tego test nie ma jak
+// wejść w Kluby: panel boczny rysuje się dopiero po zalogowaniu do bazy, więc nie ma w co kliknąć.
+if(import.meta.env && import.meta.env.DEV){
+  try{ (window as any).__SBS_POKAZ = (widok)=>{ currentView = widok; render(); }; }catch(e){}
+  // Wcielenie się w rolę bez zakładania konta w Supabase — też tylko na maszynie deweloperskiej.
+  // Bez tego nie da się sprawdzić panelu klienta inaczej niż zakładając prawdziwe konto i płacąc
+  // za to ryzykiem, że test zostawi śmieci w produkcyjnej bazie.
+  try{ (window as any).__SBS_ROLA = (rola, pakiety)=>{
+    kontoUzytkownika = { userId: 'test-konto', email: 'test@sbs', imieNazwisko: 'Konto testowe',
+      klub: '', rolaWKlubie: '', telefon: '', rola, pakiety: pakiety || [],
+      status: 'zatwierdzone', utworzoneAt: '', zdecydowaneAt: '' } as any;
+    sesjaUzytkownika = { id: 'test-konto', email: 'test@sbs' } as any;
+    render();
+  }; }catch(e){}
+}
 let editingPlayerId = null;
 let editingReportId = null;
 let obsPreselectPlayerId = null;
@@ -2534,8 +2549,20 @@ async function saveClubCrests(){
   Object.keys(DB.clubCrests||{}).forEach(id=>{ if(znaneKluby.has(id)) czyste[id] = DB.clubCrests[id]; });
   return robustStorageSet('scouting:club_crests', JSON.stringify(czyste));
 }
-async function saveObservations(){ return robustStorageSet('scouting:observations', JSON.stringify(DB.observations)); }
-async function saveReports(){ return robustStorageSet('scouting:reports', JSON.stringify(DB.reports)); }
+// ZAPIS OBSERWACJI I RAPORTÓW.
+//
+// Domyślnie idzie CAŁA kolekcja — tak działa zapis migawkowy w całym systemie i dla pracowni jest
+// to w porządku. Dla klienta nie: baza przyjmie od niego wyłącznie wpisy z jego podpisem, a że
+// upsert leci wsadami po 200 wierszy, jeden cudzy wiersz odrzuciłby cały wsad. Klient wysyła więc
+// wyłącznie swoje i tylko je — storage.saveSome zapisuje podaną garść, niczego nie kasując.
+async function saveObservations(){
+  if(czyKlient()) return storage.saveSome('scouting:observations', doZapisuDlaRoli(DB.observations));
+  return robustStorageSet('scouting:observations', JSON.stringify(DB.observations));
+}
+async function saveReports(){
+  if(czyKlient()) return storage.saveSome('scouting:reports', doZapisuDlaRoli(DB.reports));
+  return robustStorageSet('scouting:reports', JSON.stringify(DB.reports));
+}
 
 // POTWIERDZENIE, KTÓRE NIE ZATRZYMUJE PRACY.
 //
@@ -2566,6 +2593,11 @@ function pokazPotwierdzenie(tekst, rodzaj = 'ok'){
 // Mapa w sbs_kv zostaje jako zapas — jej niepowodzenie nie blokuje zapisu talentów.
 async function saveTalents(){
   indeksSzukania = null;
+  if(czyKlient()){
+    // Talent to jedyne miejsce, gdzie klient sam kogoś dopisuje — i tu też zapisuje wyłącznie
+    // swoje zgłoszenia. Kadry wojewódzkie leżą w ustawieniach, których klient nie rusza.
+    return storage.saveSome('scouting:talents', doZapisuDlaRoli(talentyDoZapisu(DB.talents)));
+  }
   const okWpisy = await robustStorageSet('scouting:talents', JSON.stringify(talentyDoZapisu(DB.talents)));
   await saveTalentyKadry();
   return okWpisy !== false;
@@ -3584,15 +3616,24 @@ function kontoWiersz(k){
     przyciski.push(`<button class="secondary" data-action="konto-decyzja" data-id="${esc(k.userId)}" data-status="odrzucone">${k.status==='zatwierdzone'?'Cofnij dostęp':'Odrzuć'}</button>`);
   }
   if(k.status === 'zatwierdzone' && !jaSam){
-    przyciski.push(k.rola === 'admin'
-      ? `<button class="secondary" data-action="konto-rola" data-id="${esc(k.userId)}" data-rola="scout">Odbierz prawa administratora</button>`
-      : `<button class="secondary" data-action="konto-rola" data-id="${esc(k.userId)}" data-rola="admin">Zrób administratorem</button>`);
+    // TRZY ROLE, WIĘC TRZY DROGI. Pokazujemy tylko przejścia sensowne z bieżącej roli, żeby
+    // w kolumnie nie stał rząd guzików, z których połowa nic nie zmienia.
+    if(k.rola === 'admin'){
+      przyciski.push(`<button class="secondary" data-action="konto-rola" data-id="${esc(k.userId)}" data-rola="scout">Odbierz prawa administratora</button>`);
+    } else if(k.rola === 'klient'){
+      przyciski.push(`<button class="gold" data-action="konto-pakiety" data-id="${esc(k.userId)}">Pakiety…</button>`);
+      przyciski.push(`<button class="secondary" data-action="konto-rola" data-id="${esc(k.userId)}" data-rola="scout">Zmień na skauta</button>`);
+    } else {
+      przyciski.push(`<button class="secondary" data-action="konto-rola" data-id="${esc(k.userId)}" data-rola="klient">Zrób klientem</button>`);
+      przyciski.push(`<button class="secondary" data-action="konto-rola" data-id="${esc(k.userId)}" data-rola="admin">Zrób administratorem</button>`);
+    }
   }
   const opis = [k.klub, k.rolaWKlubie].filter(Boolean).map(esc).join(' · ');
   return `<tr>
     <td>
-      <strong>${esc(k.imieNazwisko || '—')}</strong>${k.rola==='admin'?' <span class="badge tab-chip">administrator</span>':''}${jaSam?' <span class="badge new">to Ty</span>':''}
+      <strong>${esc(k.imieNazwisko || '—')}</strong>${k.rola==='admin'?' <span class="badge tab-chip">administrator</span>':''}${k.rola==='klient'?' <span class="badge tab-chip">klient</span>':''}${jaSam?' <span class="badge new">to Ty</span>':''}
       <div class="note" style="margin:2px 0 0;">${esc(k.email)}</div>
+      ${k.rola === 'klient' ? `<div class="note" style="margin:3px 0 0;">${opisPakietow(k.pakiety)}</div>` : ''}
     </td>
     <td>${opis || '<span class="note">—</span>'}</td>
     <td>${esc(k.telefon || '—')}</td>
@@ -3602,12 +3643,168 @@ function kontoWiersz(k){
   </tr>`;
 }
 
+// Krótki opis wykupionych rozgrywek do wiersza tabeli kont.
+function opisPakietow(pakiety){
+  const p = Array.isArray(pakiety) ? pakiety : [];
+  if(p.includes(PAKIET_PREMIUM)) return '<strong style="color:var(--gold-dark);">Premium — wszystkie rozgrywki</strong>';
+  const realne = p.filter(x=>PAKIETY_DOSTEPNE.includes(x));
+  if(!realne.length) return '<span style="color:var(--clay-dark);">bez pakietu — panel pusty</span>';
+  return 'Pakiety: <strong>' + esc(realne.join(', ')) + '</strong>';
+}
+
+// OKNO NADAWANIA PAKIETÓW.
+//
+// Jeden pakiet to jedne rozgrywki; zaznaczone sumują się same. „Premium" stoi osobno, bo nie jest
+// kolejną ligą tylko skrótem na wszystkie — po jego zaznaczeniu reszta przestaje mieć znaczenie
+// i dlatego wyszarza się na ekranie, zamiast dawać dwa sprzeczne stany do odczytania.
+function openPakietyModal(konto){
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  const mial = Array.isArray(konto.pakiety) ? konto.pakiety : [];
+
+  const liczKluby = (poziom)=> DB.clubs.filter(c=>topLevelOf(c.league)===poziom).length;
+  const wiersz = (poziom)=>`
+    <label class="pakiet-wiersz">
+      <input type="checkbox" class="pk-liga" value="${esc(poziom)}" ${mial.includes(poziom)?'checked':''}>
+      <span style="flex:1;">${esc(poziom)}</span>
+      <span class="note">${liczKluby(poziom)} klubów</span>
+    </label>`;
+
+  overlay.innerHTML = `<div class="modal" style="max-width:520px;">
+    <h3>Pakiety — ${esc(konto.imieNazwisko || konto.email)}</h3>
+    <p class="note" style="margin-top:-6px;">Zaznacz rozgrywki, które to konto ma widzieć. Dostęp obejmuje
+      wszystkie dane z tych rozgrywek: kluby, zawodników, statystyki i cały panel poza Ustawieniami.</p>
+
+    <label class="pakiet-wiersz" style="border-bottom:2px solid var(--gold);margin-bottom:6px;">
+      <input type="checkbox" id="pk-premium" ${mial.includes(PAKIET_PREMIUM)?'checked':''}>
+      <span style="flex:1;"><strong>Premium</strong> — wszystkie rozgrywki</span>
+      <span class="note">${DB.clubs.length} klubów</span>
+    </label>
+
+    <div id="pk-ligi">${PAKIETY_DOSTEPNE.map(wiersz).join('')}</div>
+
+    <p class="note" id="pk-podsumowanie" style="margin-top:10px;"></p>
+    <div class="modal-actions">
+      <button class="secondary" id="pk-anuluj">Anuluj</button>
+      <button class="gold" id="pk-zapisz">Zapisz pakiety</button>
+    </div></div>`;
+
+  document.body.appendChild(overlay);
+  const premium = overlay.querySelector('#pk-premium');
+  const ligi = [...overlay.querySelectorAll('.pk-liga')];
+  const blokLig = overlay.querySelector('#pk-ligi');
+  const podsumowanie = overlay.querySelector('#pk-podsumowanie');
+
+  const odswiez = ()=>{
+    const wszystko = premium.checked;
+    blokLig.style.opacity = wszystko ? '.45' : '';
+    ligi.forEach(i=>{ i.disabled = wszystko; });
+    const ile = wszystko ? PAKIETY_DOSTEPNE.length : ligi.filter(i=>i.checked).length;
+    podsumowanie.innerHTML = ile
+      ? `Konto zobaczy <strong>${ile}</strong> ${ile===1?'rozgrywki':(ile<5?'rozgrywki':'rozgrywek')}${wszystko?' (Premium)':''}.`
+      : '<span style="color:var(--clay-dark);">Bez zaznaczenia panel klienta będzie pusty.</span>';
+  };
+  premium.addEventListener('change', odswiez);
+  ligi.forEach(i=>i.addEventListener('change', odswiez));
+  odswiez();
+
+  overlay.querySelector('#pk-anuluj').addEventListener('click', ()=>overlay.remove());
+  overlay.querySelector('#pk-zapisz').addEventListener('click', async ()=>{
+    const b = overlay.querySelector('#pk-zapisz');
+    b.disabled = true; b.textContent = 'Zapisuję…';
+    const wybrane = premium.checked ? [PAKIET_PREMIUM] : ligi.filter(i=>i.checked).map(i=>i.value);
+    const r = await ustawPakietyKonta(konto.userId, wybrane);
+    if(!r.ok){
+      alert(r.error || 'Nie udało się zapisać pakietów.');
+      b.disabled = false; b.textContent = 'Zapisz pakiety';
+      return;
+    }
+    overlay.remove();
+    await odswiezKonta();
+    render();
+  });
+}
+
 function kontaTabela(lista){
   if(!lista.length) return '';
   return `<div class="tabela-przewijana"><table>
     <thead><tr><th>Osoba</th><th>Klub / rola</th><th>Telefon</th><th>Zgłoszenie</th><th>Stan</th><th></th></tr></thead>
     <tbody>${lista.map(kontoWiersz).join('')}</tbody>
   </table></div>`;
+}
+
+// ---- MOJE PAKIETY: CO KLIENT MA WYKUPIONE ----------------------------------------------------
+//
+// Ekran zastępuje klientowi Ustawienia. Ma odpowiedzieć na jedno pytanie: dlaczego widzę tyle,
+// ile widzę. Bez niego brak jakiejś ligi wygląda jak usterka systemu, a nie jak nieopłacony pakiet.
+// Dlatego pokazujemy WSZYSTKIE rozgrywki, a nie tylko wykupione — te bez dostępu stoją wyszarzone,
+// z informacją, jak je dobrać.
+function viewPakiety(){
+  const moje = pakietyKonta();
+  const premium = maPremium();
+  const liczKluby = (poziom)=> DB.clubs.filter(c=>topLevelOf(c.league)===poziom).length;
+  const liczZawodnikow = (poziom)=>{
+    const kluby = new Set(DB.clubs.filter(c=>topLevelOf(c.league)===poziom).map(c=>c.id));
+    return DB.players.filter(p=>kluby.has(p.clubId)).length;
+  };
+
+  const kafel = (poziom)=>{
+    const ma = premium || moje.includes(poziom);
+    return `<div class="card" style="padding:14px 16px;${ma?'':'opacity:.55;'}">
+      <div style="display:flex;align-items:center;gap:10px;">
+        ${leagueLogoImg(poziom, 30, false, 0.9)}
+        <strong style="flex:1;">${esc(poziom)}</strong>
+        ${ma ? '<span class="badge stan-zatwierdzone">aktywny</span>'
+             : '<span class="badge">nieaktywny</span>'}
+      </div>
+      <div class="note" style="margin-top:8px;">
+        ${ma ? `${liczKluby(poziom)} klubów &middot; ${liczZawodnikow(poziom)} zawodników w bazie`
+             : 'Pakiet nieaktywny — dane tych rozgrywek nie są widoczne.'}
+      </div>
+    </div>`;
+  };
+
+  const aktywnych = premium ? PAKIETY_DOSTEPNE.length : moje.filter(x=>PAKIETY_DOSTEPNE.includes(x)).length;
+
+  return `
+  <h2 class="view-title">Moje pakiety</h2>
+  <p class="view-sub">Jeden pakiet to jedne rozgrywki. Masz dostęp do wszystkich danych z tych rozgrywek:
+    klubów, zawodników, statystyk i całego panelu po lewej stronie.</p>
+
+  <div class="card" style="padding:16px 18px;margin-bottom:16px;">
+    ${premium
+      ? `<strong style="font-size:16px;">Pakiet Premium — wszystkie rozgrywki</strong>
+         <div class="note" style="margin-top:4px;">Widzisz całą bazę: ${DB.clubs.length} klubów i ${DB.players.length} zawodników.</div>`
+      : aktywnych
+        ? `<strong style="font-size:16px;">${aktywnych} ${aktywnych===1?'aktywny pakiet':(aktywnych<5?'aktywne pakiety':'aktywnych pakietów')}</strong>
+           <div class="note" style="margin-top:4px;">${moje.filter(x=>PAKIETY_DOSTEPNE.includes(x)).map(esc).join(' &middot; ')}</div>`
+        : `<strong style="font-size:16px;">Nie masz jeszcze aktywnego pakietu</strong>
+           <div class="note" style="margin-top:4px;">Do czasu włączenia pakietu panel jest pusty — to nie jest usterka.</div>`}
+  </div>
+
+  <div class="siatka-pakietow">${PAKIETY_DOSTEPNE.map(kafel).join('')}</div>
+
+  <div class="card" style="padding:14px 16px;margin-top:16px;">
+    <strong>Chcesz dobrać rozgrywki?</strong>
+    <div class="note" style="margin-top:4px;">
+      Pakiety włącza administrator Scout Base System. Napisz, które rozgrywki Cię interesują —
+      dostęp pojawi się przy następnym zalogowaniu. Pakiet Premium obejmuje wszystkie naraz.
+    </div>
+  </div>
+
+  <div class="card" style="padding:14px 16px;margin-top:16px;">
+    <strong>Co możesz robić w panelu</strong>
+    <ul style="margin:8px 0 0;padding-left:18px;line-height:1.7;">
+      <li>Prowadzić własne obserwacje i pisać raporty — zapisują się na Twoim koncie.</li>
+      <li>Oceniać zawodników w skali fazowej i cechach.</li>
+      <li>Zgłaszać zawodników w zakładce <strong>Talent</strong> — to jedyne miejsce, gdzie dopisujesz kogoś od siebie.</li>
+    </ul>
+    <div class="note" style="margin-top:8px;">
+      Kartotekę zawodników i klubów oraz statystyki prowadzi Scout Base System — te same dane dla
+      wszystkich, aktualizowane centralnie. Dlatego w Twoim panelu nie ma przycisków dopisywania,
+      usuwania ani odświeżania statystyk.
+    </div>
+  </div>`;
 }
 
 function viewAccess(){
@@ -3764,7 +3961,7 @@ function podepnijSzukanieGlobalne(){
     if(!w) return;
     editingPlayerId = null; viewingRocznikGroup = null;
     if(w.rodzaj === 'zawodnik'){ currentView = 'players'; viewingPlayerId = w.id; viewingClubId = null; }
-    else if(w.rodzaj === 'klub'){ currentView = 'clubs'; viewingClubId = w.id; viewingPlayerId = null; clubBrowse = {top:'', group:''}; }
+    else if(w.rodzaj === 'klub'){ currentView = 'clubs'; viewingClubId = w.id; viewingPlayerId = null; clubBrowse = {top:'', group:'', szukaj:''}; }
     // Talent nie ma jeszcze kartoteki, więc nie ma dokąd „wejść" — otwieramy listę talentów,
     // gdzie stoi jego wiersz z przyciskiem „pełny profil / dodaj do bazy".
     else if(w.rodzaj === 'talent'){ currentView = 'talent'; viewingPlayerId = null; }
@@ -3851,9 +4048,18 @@ function renderNav(){
   const nav = document.getElementById('nav');
   // Zakładka „Dostęp" tylko dla administratora — reszcie nie ma czego pokazywać, bo baza i tak
   // odda im wyłącznie ich własny wiersz.
-  const pozycje = czyAdmin()
-    ? NAV_ITEMS.concat([{id:'access', label:'Dostęp'}])
-    : NAV_ITEMS;
+  //
+  // KLIENT: cały panel poza Ustawieniami. W Ustawieniach siedzą listy lig, pozycji i statusów,
+  // skauci, logotypy i zapamiętane adresy grup ŁNP — to wspólny kręgosłup systemu, jeden dla
+  // wszystkich. Gdyby klient zmienił tam choć nazwę ligi, rozjechałby dopasowanie statystyk
+  // wszystkim pozostałym. Zamiast Ustawień dostaje „Moje pakiety": co ma wykupione i do kiedy.
+  let pozycje = NAV_ITEMS;
+  if(czyKlient()){
+    pozycje = NAV_ITEMS.filter(it => it.id !== 'settings')
+      .concat([{id:'pakiety', label:'Moje pakiety'}]);
+  } else if(czyAdmin()){
+    pozycje = NAV_ITEMS.concat([{id:'access', label:'Dostęp'}]);
+  }
   nav.innerHTML = pozycje.map(it => `
     <div class="nav-item ${currentView===it.id?'active':''}" data-view="${it.id}">
       <span class="nav-dot"></span>${it.label}
@@ -3867,7 +4073,7 @@ function renderNav(){
       editingPlayerId = null;
       viewingPlayerId = null;
       viewingClubId = null;
-      clubBrowse = { top: '', group: '' };
+      clubBrowse = { top: '', group: '', szukaj: '' };
       viewingRocznikGroup = null;
       viewingAgencyId = null;
       compareIds = ['', '', ''];
@@ -3944,7 +4150,9 @@ function render(){
   else if(currentView==="settings") main.innerHTML = viewSettings();
   else if(currentView==="compare") main.innerHTML = viewCompare();
   else if(currentView==="access") main.innerHTML = viewAccess();
+  else if(currentView==="pakiety") main.innerHTML = viewPakiety();
   attachHandlers();
+  schowajPrzyciskiPracowni();
   if(focusRestore){
     const el = document.getElementById(focusRestore.id);
     if(el && (el.tagName==='INPUT' || el.tagName==='TEXTAREA')){
@@ -4635,6 +4843,10 @@ function viewPlayers(){
     const q = importNorm(playerFilters.club);
     list = list.filter(p=> importNorm(clubName(p.clubId)).includes(q));
   }
+  // Klient widzi kartotekę wyłącznie z wykupionych rozgrywek — tak samo jak listę klubów.
+  // Po uruchomieniu migracji baza i tak nie odda mu innych wierszy, ale filtr musi stać również
+  // tutaj: dopóki migracja nie jest puszczona, to on jest jedyną granicą.
+  if(czyKlient()) list = list.filter(maDostepDoZawodnika);
   // Lista wg alfabetu (nazwisko, potem imię) — nie wg klubu/kolejności importu.
   list.sort(porownajZawodnikow);
 
@@ -5312,6 +5524,12 @@ function widoczneKluby(){
   // SZUKANIE PATRZY NA CAŁĄ BAZĘ, PONAD WYBRANĄ LIGĄ. Inaczej wpisanie nazwy przy włączonej
   // III lidze dawałoby „nie znaleziono" przy klubie, który w bazie jest — a szuka się właśnie
   // wtedy, gdy nie wie się, gdzie klub stoi. Nagłówek nad listą mówi o tym wprost.
+  // Klient widzi wyłącznie wykupione rozgrywki — i to zawężenie musi stać PRZED szukaniem.
+  // Szukanie celowo przeskakuje wybraną ligę i przegląda całą bazę; gdyby filtr klienta stał za
+  // nim, wpisanie nazwy wyciągnęłoby kluby z rozgrywek, za które nikt nie zapłacił. Baza i tak
+  // nie odda takich wierszy (reguły z migration_2026-09-22), ale dopóki migracja nie jest
+  // uruchomiona, to jest jedyna granica.
+  if(czyKlient()) list = list.filter(c=>maDostepDoLigi(c.league));
   const szukanie = filtrSzukaniaKlubu(clubBrowse.szukaj);
   if(szukanie) return list.filter(szukanie);
   if(clubBrowse.top) list = list.filter(c=>topLevelOf(c.league)===clubBrowse.top);
@@ -5320,6 +5538,7 @@ function widoczneKluby(){
   if(clubBrowse.top) list = ulozWgTabeli(list, miejsceWTabeli);
   return list;
 }
+
 
 // KOLEJNOŚĆ JAK W TABELI LIGOWEJ.
 //
@@ -5355,6 +5574,7 @@ function ulozWgTabeli(kluby, miejsceKlubu){
 function viewClubs(){
   if(viewingClubId) return viewClubDetail(viewingClubId);
   const list = widoczneKluby();
+
 
   // PRZYCISKI ROZGRYWEK UŁOŻONE W RODZINY — TAK JAK NA ŁNP.
   //
@@ -6704,6 +6924,9 @@ function klubyWWidoku(){
   let lista = DB.clubs.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'','pl'));
   if(clubBrowse.top) lista = lista.filter(c=>topLevelOf(c.league)===clubBrowse.top);
   if(clubBrowse.group) lista = lista.filter(c=>c.league===clubBrowse.group);
+  // Klient i tak nie widzi przycisków odświeżania statystyk, ale lista musi się zgadzać z tym,
+  // co ma na ekranie — gdyby kiedyś któryś przycisk wrócił, nie ruszy klubów spoza jego pakietów.
+  if(czyKlient()) lista = lista.filter(c=>maDostepDoLigi(c.league));
   return lista;
 }
 // ZAPIS STATYSTYK GRUPY: CO JEST CHWILOWE, A CO ODMOWĄ.
@@ -7880,7 +8103,7 @@ async function saveNewObservation(){
   const startLoc = startEl ? startEl.value.trim() : (DB.settings.startLocation || 'Bydgoszcz');
   obs.startLocation = startLoc;
   try{ obs.distanceKm = await calcDistanceBetween(startLoc, obs.location); }catch(e){ obs.distanceKm = null; }
-  if(!editing) DB.observations.push(obs);
+  if(!editing) DB.observations.push(podpiszKontem(obs));
   // Ten sam mecz zaplanowany dla kilku zawodników: transmisja jest jedna, więc link dostają też
   // pozostałe obserwacje tego spotkania — ale tylko te, które własnego linku jeszcze nie mają.
   const linkDlaInnych = obs.linkDoMeczu
@@ -9682,7 +9905,7 @@ async function addTalentManually(){
   const lastName = document.getElementById('talent-manual-last').value.trim();
   if(!firstName && !lastName){ alert('Podaj przynajmniej imię lub nazwisko.'); return; }
   const yearVal = document.getElementById('talent-manual-year').value;
-  DB.talents.push({
+  DB.talents.push(podpiszKontem({
     id: uid('T'),
     firstName, lastName,
     birthYear: yearVal ? Number(yearVal) : null,
@@ -9690,7 +9913,7 @@ async function addTalentManually(){
     confidence: 'ręcznie',
     sourceImage: '',
     dateAdded: new Date().toISOString().slice(0,10)
-  });
+  }));
   await saveTalents();
   render();
 }
@@ -12580,6 +12803,16 @@ function wyroznieniZMeczowHtml(){
 
 // ---------- SETTINGS ----------
 function viewSettings(){
+  // Ustawień klient nie otwiera. W panelu bocznym tej zakładki nie ma, ale wejść można też
+  // przyciskiem „wstecz" albo zapamiętanym adresem — dlatego warunek stoi tu, a nie tylko w menu.
+  if(czyKlient()){
+    return `<h2 class="view-title">Ustawienia</h2>
+      <div class="card"><div class="empty">
+        Ustawienia prowadzi administrator Scout Base System — listy rozgrywek, pozycji i statusów
+        są wspólne dla wszystkich kont.<br><br>
+        To, co masz wykupione, zobaczysz w zakładce <strong>Moje pakiety</strong>.
+      </div></div>`;
+  }
   function block(key,title,hint){
     const items = DB.settings[key];
     return `
@@ -12919,7 +13152,7 @@ function openPasteClubsModal(){
     const ok = await saveClubs();
     if(!ok){ alert(('Nie udało się zapisać.' + powodNieudanegoZapisu())); return; }
     overlay.remove();
-    clubBrowse = { top: topLevelOf(liga), group: liga };
+    clubBrowse = { top: topLevelOf(liga), group: liga, szukaj: '' };
     alert(`Założyłem ${nowe.length} ${nowe.length===1?'klub':'klubów'} w grupie „${liga}".\n\n` +
       'Herby, linki do 90minut i składy uzupełnisz w edycji klubu — a statystyki pobierzesz przyciskiem „⏱ Statystyki z 90minut" w widoku klubu.');
     render();
@@ -13063,7 +13296,7 @@ function attachHandlers(){
     if(!p) return;
     if(talentZawodnika(p)){ pokazPotwierdzenie('Ten zawodnik już jest na liście Talent.', 'ok'); render(); return; }
     const t = nowyTalentZZawodnika(p, uid('T'), new Date().toISOString().slice(0,10));
-    DB.talents.push(t);
+    DB.talents.push(podpiszKontem(t));
     const ok = await saveTalents();
     if(ok === false){
       DB.talents = DB.talents.filter(x=> x.id !== t.id);   // nie udawaj wpisu, którego nie ma w bazie
@@ -13521,13 +13754,31 @@ function attachHandlers(){
     const id = b.dataset.id, rola = b.dataset.rola;
     const konto = (kontaLista||[]).find(k=>k.userId===id);
     const kto = konto ? (konto.imieNazwisko || konto.email) : 'to konto';
-    if(!confirm(rola==='admin'
-      ? `Nadać prawa administratora: ${kto}? Będzie mógł przyznawać i odbierać dostęp innym.`
-      : `Odebrać prawa administratora: ${kto}?`)) return;
+    // Każda z trzech ról znaczy co innego, więc i pytanie musi być inne — „na pewno?" bez
+    // powiedzenia, co się właśnie stanie, jest pytaniem bez treści.
+    const pytania = {
+      admin:  `Nadać prawa administratora: ${kto}? Będzie mógł przyznawać i odbierać dostęp innym, kasować dane i zmieniać ustawienia.`,
+      klient: `Zmienić ${kto} w konto klienta? Straci możliwość dopisywania i poprawiania kartoteki, a zobaczy wyłącznie wykupione rozgrywki. Pakiety ustawisz zaraz potem przyciskiem „Pakiety…".`,
+      scout:  konto && konto.rola === 'klient'
+        ? `Zmienić ${kto} z klienta na skauta? Zobaczy CAŁĄ bazę, niezależnie od pakietów, i będzie mógł dopisywać oraz poprawiać kartotekę.`
+        : `Odebrać prawa administratora: ${kto}?`,
+    };
+    if(!confirm(pytania[rola] || `Zmienić rolę konta ${kto} na „${rola}"?`)) return;
     b.disabled = true;
     const r = await ustawRoleKonta(id, rola);
     if(!r.ok){ alert(r.error); b.disabled=false; return; }
     await odswiezKonta();   // sam przerysowuje listę po pobraniu
+    // Świeżo zrobiony klient nie ma jeszcze żadnego pakietu, więc jego panel jest pusty.
+    // Otwieramy okno pakietów od razu — inaczej łatwo o tym zapomnieć i klient dzwoni,
+    // że „nic nie działa".
+    if(rola === 'klient'){
+      const swieze = (kontaLista||[]).find(k=>k.userId===id);
+      if(swieze && !(swieze.pakiety||[]).length) openPakietyModal(swieze);
+    }
+  });
+  main.querySelectorAll('[data-action="konto-pakiety"]').forEach(b=>b.onclick=()=>{
+    const konto = (kontaLista||[]).find(k=>k.userId===b.dataset.id);
+    if(konto) openPakietyModal(konto);
   });
 
   main.querySelectorAll('.quick-crest-input').forEach(inp=>inp.onchange = async ()=>{
@@ -14520,9 +14771,9 @@ function attachHandlers(){
     const wasEditing = !!editingReportId;
     if(wasEditing){
       const idx = DB.reports.findIndex(r=>r.id===editingReportId);
-      if(idx>=0) DB.reports[idx] = rep; else DB.reports.push(rep);
+      if(idx>=0) DB.reports[idx] = rep; else DB.reports.push(podpiszKontem(rep));
     } else {
-      DB.reports.push(rep);
+      DB.reports.push(podpiszKontem(rep));
     }
     const zapisano = await saveReports();
     // NIEUDANY ZAPIS NIE MOŻE WYGLĄDAĆ JAK UDANY. Przy odmowie zapisu cofamy raport z pamięci
@@ -22980,6 +23231,148 @@ let sesjaUzytkownika = null;
 // właściciela, zanim zdąży uruchomić migrację.
 function czyAdmin(){
   return !kontoUzytkownika || kontoUzytkownika.rola === 'admin';
+}
+
+// ---- KONTO KLIENTA --------------------------------------------------------------------------
+//
+// Klient to ktoś, kto kupił dostęp do wybranych rozgrywek. Różnica wobec skauta nie polega na
+// tym, że „może mniej" — polega na tym, że pracuje na CUDZEJ kartotece. Kartotekę prowadzi
+// pracownia: to my dopisujemy zawodników, poprawiamy kluby i odświeżamy statystyki, raz dla
+// wszystkich. Klient wnosi swoje: obserwacje, raporty, oceny, zgłoszenia do Talentu.
+//
+// Ekran jest tu WYGODĄ, nie zamkiem — dokładnie jak przy roli administratora. Prawdziwe reguły
+// siedzą w bazie (supabase/migration_2026-09-22_klient_i_pakiety.sql) i to one odmówią zapisu
+// komuś, kto ominie interfejs. Chowamy przyciski po to, żeby klient nie klikał w coś, co i tak
+// skończy się błędem — a nie po to, żeby go powstrzymać.
+function czyKlient(){
+  return !!kontoUzytkownika && kontoUzytkownika.rola === 'klient';
+}
+
+// PAKIETY = ROZGRYWKI DO KUPIENIA. Jeden pakiet to jeden poziom rozgrywek, ten sam, po którym
+// przegląda się Kluby. „Premium" nie jest ligą, tylko skrótem na „wszystkie naraz".
+const PAKIET_PREMIUM = 'Premium';
+const PAKIETY_DOSTEPNE = TOP_LEVELS;
+
+function pakietyKonta(){
+  const p = kontoUzytkownika && kontoUzytkownika.pakiety;
+  return Array.isArray(p) ? p : [];
+}
+function maPremium(){
+  return pakietyKonta().includes(PAKIET_PREMIUM);
+}
+
+// Czy wolno pokazać dane z tych rozgrywek. Kto nie jest klientem, widzi wszystko — ten warunek
+// stoi pierwszy i dzięki niemu Twoje konto oraz konta skautów działają jak przedtem.
+//
+// Odpowiednik tej funkcji po stronie bazy to sbs_ma_lige(). Obie muszą liczyć poziom rozgrywek
+// tak samo, inaczej klient zapłaciłby za ligę, której nie widzi: tu topLevelOf(), tam
+// sbs_poziom_ligi(). Zmieniasz jedno — zmień drugie.
+function maDostepDoLigi(liga){
+  if(!czyKlient()) return true;
+  if(maPremium()) return true;
+  return pakietyKonta().includes(topLevelOf(liga));
+}
+function maDostepDoKlubu(klubId){
+  if(!czyKlient()) return true;
+  const k = DB.clubs.find(c=>c.id===klubId);
+  // Zawodnik bez klubu jest dla klienta niewidoczny: nie da się rozstrzygnąć, za którą ligę
+  // miałby być zapłacony, a zgadywanie na jego korzyść odsłoniłoby resztę bazy.
+  return !!k && maDostepDoLigi(k.league);
+}
+function maDostepDoZawodnika(zawodnik){
+  return !czyKlient() || (!!zawodnik && maDostepDoKlubu(zawodnik.clubId));
+}
+
+// CZEGO W PANELU KLIENTA NIE MA — JEDNA LISTA, NIE TRZYDZIEŚCI WARUNKÓW.
+//
+// Można było dopisać `if(czyKlient())` przy każdym przycisku z osobna. Odpadło z dwóch powodów:
+// takich miejsc jest kilkadziesiąt i rozsianych po całym pliku, a każdy nowy przycisk trzeba by
+// pamiętać o oznaczeniu — czyli prędzej czy później któryś by się przedostał. Tu stoi jedna lista
+// nazw akcji, którą widać w całości, i jeden przebieg po przerysowaniu ekranu.
+//
+// Trzy rodziny:
+//   1. KARTOTEKA — dopisywanie, poprawianie i kasowanie zawodników, klubów, agencji. Kartotekę
+//      prowadzi pracownia; klient nie może ani dołożyć, ani usunąć.
+//   2. AKTUALIZACJA DANYCH — pobieranie statystyk, tabel, protokołów, składów. Dane wchodzą raz,
+//      centralnie, i są te same dla wszystkich. U klienta ma być sam podgląd.
+//   3. NARZĘDZIA PRACOWNI — import z Excela, scalanie duplikatów, czyszczenie bazy, kopia zapasowa.
+//
+// ŚWIADOMIE NIE MA TU: save-obs, save-report, delete-obs/delete-report (kasowanie i tak zostaje
+// przy administratorze), dodaj-do-talentow, talent-add-manual, talent-promote, analiza-zawodnika,
+// opinia-ai, print-player, protokol-meczu — to jest praca, po którą klient tu przychodzi.
+const AKCJE_BEZ_KLIENTA = new Set([
+  // 1. Kartoteka
+  'add-player','add-player-to-club','edit-player','save-player','delete-player','delete-selected-players',
+  'delete-rocznik','scal-zawodnikow','save-opis','manage-transfer-history','save-transfer-history',
+  'add-club','edit-club','save-club','delete-club','merge-duplicates','merge-go','pokaz-duplikaty',
+  'add-agency','edit-agency','save-agency','delete-agency','delete-selected-agencies','unlink-agency',
+  'add-agent','edit-agent','save-agent','delete-agent','toggle-agent','agency-migrate',
+  'add-setting','del-setting','remove-sponsor','save-tm-url','save-quick-stats',
+  // 2. Aktualizacja danych
+  'refresh-stats','stats-90minut','stats-90minut-grupa','league-stats','league-stats-parse',
+  'pobierz-tabele','parse-stats','pm-parse-stats','paste-stats','paste-clubs','squad-stats-parse',
+  'reset-squad-stats','import-squad','import-squad-stats','import-matches','import-klubow-ligi',
+  'import-znicz-roster','protokoly-grupy','start-grupa','ponow-grupe','przerwij-grupe','zamknij-grupe',
+  'lnp-link-grupy','show-bookmarklet','fetch-schedule','fetch-from-link','schedule-url',
+  'squad-parse','squad-apply','squad-import-confirm','squad-diag','staff-parse','staff-apply',
+  'sklady-meczowe','systemy-gry','pozycje-z-tm','herby-z-pierwszych','tm-odswiez','tm-zakladka',
+  'agencies-import','agencies-parse','agencies-apply','agent-import','agent-parse','agent-apply',
+  'agency-add-players','agency-squad','agency-staff','do-import','get-template',
+  // 3. Narzędzia pracowni
+  'reset-all','kopia-pobierz','rocznik-excel-import','rocznik-import-go','rocznik-paste-go',
+  'talent-paste-import','talent-paste-parse','talent-porzadkuj','talent-delete-selected',
+  'talent-rocznik-zbiorczo','contacts-fill-clubs','contacts-download-template','download-match-template',
+  'manage-tabs','wagi-poziomu-zapisz','wagi-poziomu-domyslne','radar-punkt-odniesienia',
+]);
+
+// Sprzątanie po przerysowaniu ekranu. Usuwamy element, a nie chowamy stylami: schowany przycisk
+// dalej siedzi w drzewie i dalej da się go kliknąć z konsoli, a przy okazji łapią go skróty
+// klawiszowe i czytniki ekranu. Skoro tej czynności nie ma, ma jej nie być.
+function schowajPrzyciskiPracowni(){
+  if(!czyKlient()) return;
+  const main = document.getElementById('main');
+  if(!main) return;
+  main.querySelectorAll('[data-action]').forEach(el=>{
+    if(AKCJE_BEZ_KLIENTA.has(el.dataset.action)) el.remove();
+  });
+  // Zaznaczanie zawodników służy wyłącznie kasowaniu zbiorczemu, a tego klient nie robi.
+  main.querySelectorAll('#select-all-players, .player-checkbox, .header-checkbox').forEach(el=>{
+    const rodzic = el.closest('label') || el;
+    rodzic.remove();
+  });
+}
+
+// PODPIS KONTEM POD WŁASNYM WPISEM.
+//
+// Kolumna `scout` przy obserwacji trzyma IMIĘ I NAZWISKO wybrane z listy, a nie konto — można
+// więc podpisać się kimkolwiek. Dopóki tak było, reguła „poprawiasz tylko swoje" nie miała czego
+// pilnować. Kolumna `konto` (migration_2026-09-22) trzyma identyfikator zalogowanego użytkownika
+// i to po niej rozstrzyga baza.
+//
+// Stemplujemy przy TWORZENIU, a nie przy zapisie. Gdyby przy zapisie — klient podpisywałby się
+// pod każdym wpisem bez właściciela, czyli pod całym archiwum pracowni sprzed tej migracji.
+function podpiszKontem(wpis){
+  const id = sesjaUzytkownika && sesjaUzytkownika.id;
+  if(id && wpis && !wpis.konto) wpis.konto = id;
+  return wpis;
+}
+
+// Co z tej kolekcji wolno klientowi wysłać do bazy: wyłącznie wpisy, pod którymi sam się podpisał.
+// Reszta i tak odbiłaby się od reguł dostępu — a że zapis leci wsadami, jeden cudzy wiersz
+// wywróciłby cały zapis i klient nie zapisałby również swojego.
+function doZapisuDlaRoli(lista){
+  if(!czyKlient()) return lista;
+  const id = sesjaUzytkownika && sesjaUzytkownika.id;
+  return (lista || []).filter(x => x && x.konto === id);
+}
+
+// Strażnik przy akcjach, których klientowi nie wolno wykonać. Bliźniak tylkoAdmin().
+function nieDlaKlienta(coRobi){
+  if(!czyKlient()) return true;
+  alert('Tego nie zmienisz ze swojego konta.\n\n' + coRobi
+    + '\n\nKartotekę prowadzi i statystyki aktualizuje Scout Base System — te same dane dla '
+    + 'wszystkich. Twoje obserwacje, raporty i oceny zapisują się normalnie.');
+  return false;
 }
 
 // Strażnik przy samej akcji. Ukrycie przycisku stylami odpada, gdy ktoś wywoła je z konsoli albo
