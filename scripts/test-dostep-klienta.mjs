@@ -94,5 +94,60 @@ console.log('\n5. Współpracownik bez pakietu — ścieżka skauta bez zmian');
   sprawdz('bez przycisku klienta', !h.includes('konto-jako-klient'), h);
 }
 
+// ---------------------------------------------------------------------------
+// BRAMA PAKIETU
+// ---------------------------------------------------------------------------
+// Zgłoszenie (23.09.2026): „dopóki ja w panelu administratora nie odznaczę pakietu, to klient
+// jeszcze nie może mieć dostępu do konta i możliwości logowania się do systemu".
+//
+// Zgoda administratora i wykupione rozgrywki to DWIE osobne decyzje. Dotąd obowiązywała tylko
+// pierwsza: konto klienta bez żadnego pakietu wchodziło do środka i zastawało wszystko puste.
+
+console.log('\n6. Kto ma wykupione rozgrywki, a kto tylko tak wygląda');
+{
+  const kodBramy = [
+    wytnij('TOP_LEVELS', /const TOP_LEVELS = \[[^\]]*\];/),
+    wytnij('pakietyKonta', /function pakietyKonta\(\)\{[\s\S]*?\n\}/),
+    wytnij('maWykupioneRozgrywki', /function maWykupioneRozgrywki\(\)\{[\s\S]*?\n\}/),
+  ].join('\n');
+  const { ustaw, maWykupioneRozgrywki } = new Function(`
+    ${kodBramy.split('\n')[0]}
+    const PAKIET_PREMIUM = 'Premium';
+    const PAKIETY_DOSTEPNE = TOP_LEVELS;
+    let kontoUzytkownika = null;
+    ${kodBramy.split('\n').slice(1).join('\n')}
+    return { ustaw: (k)=>{ kontoUzytkownika = k; }, maWykupioneRozgrywki };
+  `)();
+
+  const z = (pakiety) => { ustaw({ rola: 'klient', pakiety }); return maWykupioneRozgrywki(); };
+  sprawdz('jedna liga wystarczy', z(['II liga']) === true);
+  sprawdz('Premium wystarczy', z(['Premium']) === true);
+  sprawdz('dwie ligi też', z(['II liga','III liga']) === true);
+  sprawdz('pusta lista to brak dostępu', z([]) === false);
+  // Literówka w bazie nie może wpuszczać konta, które i tak zobaczy pustą stronę.
+  sprawdz('sama nieznana nazwa to nadal brak dostępu', z(['Liga Mistrzów']) === false);
+  sprawdz('nieznana obok prawdziwej nie przeszkadza', z(['Liga Mistrzów','IV liga']) === true);
+  sprawdz('brak pola pakiety to brak dostępu', z(undefined) === false);
+  ustaw(null);
+  sprawdz('bez konta nie ma czego otwierać', maWykupioneRozgrywki() === false);
+}
+
+console.log('\n7. Brama jest naprawdę podpięta przy wejściu do systemu');
+{
+  const wejscie = wytnij('wpuscZalogowanego', /async function wpuscZalogowanego\(\)\{[\s\S]*?\n\}/);
+  sprawdz('wpuscZalogowanego pyta o wykupione rozgrywki',
+    /rola === 'klient' && !maWykupioneRozgrywki\(\)/.test(wejscie), wejscie);
+  sprawdz('i zatrzymuje na ekranie konta, zamiast ładować dane',
+    /!maWykupioneRozgrywki\(\)\)\{[\s\S]{0,120}renderKontoScreen/.test(wejscie), wejscie);
+  // Kolejność ma znaczenie: najpierw status, potem pakiety. Konto odrzucone ma zobaczyć
+  // „dostęp nie został przyznany", a nie „czekasz na pakiet".
+  sprawdz('status sprawdzany PRZED pakietami',
+    wejscie.indexOf("status !== 'zatwierdzone'") < wejscie.indexOf('maWykupioneRozgrywki'), wejscie);
+
+  const ekran = wytnij('renderKontoScreen', /function renderKontoScreen\(konto\)\{[\s\S]*?\n\}/);
+  sprawdz('ekran ma osobne zdanie dla konta bez pakietu', /Dostęp jeszcze nie został otwarty/.test(ekran), ekran);
+  sprawdz('„Sprawdź ponownie" też pyta o pakiety', /maWykupioneRozgrywki\(\)/.test(ekran), ekran);
+}
+
 console.log(bledy ? `\nBŁĘDÓW: ${bledy}` : '\nWSZYSTKO PRZESZŁO');
 process.exit(bledy ? 1 : 0);

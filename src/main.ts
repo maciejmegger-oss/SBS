@@ -3689,7 +3689,7 @@ function opisPakietow(pakiety){
   const p = Array.isArray(pakiety) ? pakiety : [];
   if(p.includes(PAKIET_PREMIUM)) return '<strong style="color:var(--gold-dark);">Premium — wszystkie rozgrywki</strong>';
   const realne = p.filter(x=>PAKIETY_DOSTEPNE.includes(x));
-  if(!realne.length) return '<span style="color:var(--clay-dark);">bez pakietu — panel pusty</span>';
+  if(!realne.length) return '<span style="color:var(--clay-dark);">bez pakietu — nie wejdzie do systemu</span>';
   return 'Pakiety: <strong>' + esc(realne.join(', ')) + '</strong>';
 }
 
@@ -3714,7 +3714,9 @@ function openPakietyModal(konto){
   overlay.innerHTML = `<div class="modal" style="max-width:520px;">
     <h3>Pakiety — ${esc(konto.imieNazwisko || konto.email)}</h3>
     <p class="note" style="margin-top:-6px;">Zaznacz rozgrywki, które to konto ma widzieć. Dostęp obejmuje
-      wszystkie dane z tych rozgrywek: kluby, zawodników, statystyki i cały panel poza Ustawieniami.</p>
+      wszystkie dane z tych rozgrywek: kluby, zawodników, statystyki i cały panel poza Ustawieniami.
+      <strong>To zaznaczenie otwiera system</strong> — dopóki nie ma tu ani jednej rozgrywki, konto
+      się nie zaloguje.</p>
 
     <label class="pakiet-wiersz" style="border-bottom:2px solid var(--gold);margin-bottom:6px;">
       <input type="checkbox" id="pk-premium" ${mial.includes(PAKIET_PREMIUM)?'checked':''}>
@@ -3743,7 +3745,10 @@ function openPakietyModal(konto){
     const ile = wszystko ? PAKIETY_DOSTEPNE.length : ligi.filter(i=>i.checked).length;
     podsumowanie.innerHTML = ile
       ? `Konto zobaczy <strong>${ile}</strong> ${ile===1?'rozgrywki':(ile<5?'rozgrywki':'rozgrywek')}${wszystko?' (Premium)':''}.`
-      : '<span style="color:var(--clay-dark);">Bez zaznaczenia panel klienta będzie pusty.</span>';
+      // ODZNACZENIE WSZYSTKIEGO TO ODEBRANIE DOSTĘPU, nie ustawienie pustego panelu — i trzeba
+      // to powiedzieć wprost, bo obie rzeczy wyglądają w tym oknie identycznie: puste kratki.
+      : '<span style="color:var(--clay-dark);">Bez zaznaczenia konto <strong>nie wejdzie do systemu</strong> '
+        + '— zobaczy ekran „Dostęp jeszcze nie został otwarty".</span>';
   };
   premium.addEventListener('change', odswiez);
   ligi.forEach(i=>i.addEventListener('change', odswiez));
@@ -23441,6 +23446,16 @@ function maPremium(){
   return pakietyKonta().includes(PAKIET_PREMIUM);
 }
 
+// CZY KLIENT MA COKOLWIEK, CO NAPRAWDĘ OTWIERA DANE.
+//
+// Pusta lista i lista z samymi nieznanymi nazwami znaczą dokładnie to samo: nie ma ani jednych
+// rozgrywek do pokazania. Liczymy więc nie „ile wpisów", tylko „ile z nich to prawdziwy pakiet" —
+// inaczej literówka w bazie wpuszczałaby do systemu konto, które i tak zobaczy pustą stronę.
+function maWykupioneRozgrywki(){
+  const p = pakietyKonta();
+  return p.includes(PAKIET_PREMIUM) || p.some(x=>PAKIETY_DOSTEPNE.includes(x));
+}
+
 // Czy wolno pokazać dane z tych rozgrywek. Kto nie jest klientem, widzi wszystko — ten warunek
 // stoi pierwszy i dzięki niemu Twoje konto oraz konta skautów działają jak przedtem.
 //
@@ -23681,14 +23696,33 @@ function renderKontoScreen(konto){
     host.id = 'login-host';
     document.body.appendChild(host);
   }
-  const odrzucone = konto && konto.status === 'odrzucone';
+  // TRZY POWODY, DLA KTÓRYCH SYSTEM SIĘ NIE OTWIERA — i każdy wymaga innego zdania.
+  //
+  // Trzeci doszedł 23.09: konto klienta BEZ ANI JEDNEGO PAKIETU. Dotąd takie konto wchodziło do
+  // środka i dostawało panel, w którym nie ma niczego — zero klubów, zero zawodników, puste
+  // wszystkie zakładki. Wygląda to jak zepsuty system, a jest po prostu dostępem, którego jeszcze
+  // nikt nie otworzył. Zatrzymujemy więc przed wejściem i mówimy wprost, na co się czeka.
+  const stan = konto && konto.status === 'odrzucone' ? 'odrzucone'
+    : konto && konto.status !== 'zatwierdzone' ? 'oczekuje'
+    : 'bez-pakietu';
+  const NAGLOWEK = {
+    odrzucone: 'Dostęp nie został przyznany',
+    oczekuje: 'Konto czeka na akceptację',
+    'bez-pakietu': 'Dostęp jeszcze nie został otwarty',
+  };
+  const TRESC = {
+    odrzucone: 'Administrator systemu nie przyznał dostępu temu kontu.',
+    oczekuje: 'Zgłoszenie dotarło. Dostęp do danych otwiera administrator systemu — dostaniesz wiadomość, gdy podejmie decyzję.',
+    'bez-pakietu': 'Konto jest już założone i hasło działa, ale nie ma jeszcze przypisanych rozgrywek. '
+      + 'Administrator systemu nadaje pakiet — od tej chwili zobaczysz kluby, zawodników i statystyki '
+      + 'z wykupionych rozgrywek.'
+      + (konto && konto.pakietZadany ? `\n\nZgłoszenie dotyczyło pakietu: ${konto.pakietZadany}.` : ''),
+  };
   host.innerHTML = `<div class="login-wrap"><div class="login-card">
     <h1 class="login-title">Scout Base System</h1>
-    <p class="login-sub">${odrzucone ? 'Dostęp nie został przyznany' : 'Konto czeka na akceptację'}</p>
-    <div class="${odrzucone ? 'login-error' : 'login-info'}">
-      ${odrzucone
-        ? 'Administrator systemu nie przyznał dostępu temu kontu.'
-        : 'Zgłoszenie dotarło. Dostęp do danych otwiera administrator systemu — dostaniesz wiadomość, gdy podejmie decyzję.'}
+    <p class="login-sub">${NAGLOWEK[stan]}</p>
+    <div class="${stan === 'odrzucone' ? 'login-error' : 'login-info'}" style="white-space:pre-line;">
+      ${esc(TRESC[stan])}
     </div>
     <p class="note">
       Zalogowano jako <strong>${esc((konto && konto.email) || '')}</strong>.
@@ -23705,8 +23739,11 @@ function renderKontoScreen(konto){
   host.querySelectorAll('[data-action="konto-sprawdz"]').forEach(b=>b.onclick=async()=>{
     b.disabled = true; b.textContent = 'Sprawdzam…';
     const swieze = await mojeKonto();
-    if(swieze && swieze.status === 'zatwierdzone'){
-      host.remove(); document.querySelector('.app').style.display=''; kontoUzytkownika = swieze; loadAll(); return;
+    // Konto podmieniamy PRZED sprawdzeniem pakietów: maWykupioneRozgrywki() czyta właśnie tę
+    // zmienną, więc na starej wartości odpowiadałoby na pytanie sprzed kliknięcia.
+    if(swieze) kontoUzytkownika = swieze;
+    if(swieze && swieze.status === 'zatwierdzone' && (swieze.rola !== 'klient' || maWykupioneRozgrywki())){
+      host.remove(); document.querySelector('.app').style.display=''; loadAll(); return;
     }
     renderKontoScreen(swieze || konto);
   });
@@ -23764,6 +23801,17 @@ async function wpuscZalogowanego(){
   // jeszcze uruchomiony). Blokowanie takiego konta odcięłoby właściciela od własnych danych, a nic
   // by nie dało: skoro nie ma tabeli kont, nie ma też reguł, które by o nią pytały.
   if(kontoUzytkownika && kontoUzytkownika.status !== 'zatwierdzone'){
+    renderKontoScreen(kontoUzytkownika);
+    return;
+  }
+  // DRUGA BRAMKA, TYLKO DLA KLIENTÓW: bez ani jednego pakietu system się nie otwiera.
+  //
+  // Zgoda administratora i wykupione rozgrywki to dwie osobne decyzje i obie muszą zapaść.
+  // Samo „przyznaj dostęp" nie znaczy jeszcze, że jest co pokazywać — a konto, które wchodzi
+  // do środka i zastaje wszystko puste, wygląda jak system zepsuty, nie jak dostęp w trakcie
+  // otwierania. Skautów i administratorów ten warunek nie dotyczy: oni nie mają pakietów
+  // i mieć nie powinni.
+  if(kontoUzytkownika && kontoUzytkownika.rola === 'klient' && !maWykupioneRozgrywki()){
     renderKontoScreen(kontoUzytkownika);
     return;
   }
