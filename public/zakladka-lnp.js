@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v50 z 06.09.2026";
+var SBS_ZBIERACZ="v51 z 23.09.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -501,6 +501,22 @@ function listaZPamieci(){
 var pominietych=0;
 var zebrane=[];try{zebrane=JSON.parse(localStorage.getItem(KLUCZ)||'[]');}catch(e){zebrane=[];}
 var bylo=zebrane.length, linki=[], i=0, kolejek=1, czekam=0, doliczen=0, rozwiniete=false, probowanoKlikac=false, wierszyNaEkranie=0, zakladkaNr=0;
+
+// ILE MECZOW MIALO WEJSC — zeby panel mowil "8 z 8", a nie samo "zebrano 3".
+//
+// Zmierzone na IV lidze zachodniopomorskiej (kolejka 6, wrzesien 2026): z osmiu rozegranych
+// meczow weszly trzy, a panel napisal "Zebrano 3 nowych protokolow" i wygladalo to na komplet.
+// Dopiero w SBS, tydzien pozniej, bylo widac "6/5" przy osmiu klubach. Liczba zebranych nie mowi
+// NIC o kompletnosci, jesli nie stoi obok niej liczba meczow, ktore na stronie byly.
+var widzianeMecze=[];
+function zanotujMecze(lista){
+ if(!lista) return;
+ for(var z=0;z<lista.length;z++){ if(lista[z] && widzianeMecze.indexOf(lista[z])<0) widzianeMecze.push(lista[z]); }
+}
+function maProtokol(url){
+ for(var q=0;q<zebrane.length;q++) if(zebrane[q].indexOf('### PROTOKOL: '+url+'\n')===0) return true;
+ return false;
+}
 
 // Czy w ten element wolno kliknac?
 //
@@ -1106,7 +1122,10 @@ function start(){
 // awaryjnosc LNP jest losowa, wiec ponowienie po kilkudziesieciu sekundach zwykle trafia lepiej.
 var PODEJSC = 10;
 var nieudanych = 0, nieudaneUrl = [];
+// Protokoly zdjete z jednym skladem — do ponowienia razem z tymi, ktore nie weszly wcale.
+var polowiczneUrl = [];
 function nastepny(){
+ zanotujMecze(linki);
  if(i>=linki.length){ poKolejce(); return; }
  wczytajMecz(linki[i], 0);
 }
@@ -1121,7 +1140,17 @@ function wczytajMecz(url, podejscie){
   prob++;
   var txt='';
   try{txt=(f.contentDocument&&f.contentDocument.body)?f.contentDocument.body.innerText:'';}catch(e){txt='';}
-  var ok=/Sk\u0142ad wyj\u015bciowy/.test(txt);
+  // CZEKAMY NA OBA SKLADY, NIE NA PIERWSZY.
+  //
+  // Protokol renderuje sie czesciami: najpierw gospodarze, chwile pozniej goscie. Branie go przy
+  // pierwszym "Sklad wyjsciowy" dawalo protokol POLOWICZNY \u2014 SBS zapisywal wtedy mecz jednej
+  // druzynie, a druga zostawala z "6/5" i wygladalo to na zgubiona kolejke. Droga przez ramke
+  // (zdejmijMeczZDruzyny) czekala na oba sklady od dawna; tutaj tego brakowalo.
+  //
+  // Po szesnastu probach (okolo osmiu sekundach) bierzemy to, co jest \u2014 polowa protokolu jest
+  // lepsza niz nic \u2014 ale zapisujemy adres do ponowienia, zeby druga tura dobrala pelna wersje.
+  var ileSkladow=(txt.match(/Sk\u0142ad wyj\u015bciowy/g)||[]).length;
+  var ok = ileSkladow>=2 || (ileSkladow>=1 && prob>16);
   var bladLnp=/Ups! Pi\u0142ka za boiskiem/.test(txt) || /\/rozgrywki\/404/.test((function(){try{return f.contentWindow.location.pathname;}catch(e){return '';}})());
   // Przy 404 nie ma na co czekac \u2014 wchodzimy pod ten sam adres jeszcze raz, i to od razu.
   if(bladLnp && podejscie < PODEJSC-1){
@@ -1139,6 +1168,9 @@ function wczytajMecz(url, podejscie){
     var byl=false;
     for(var q=0;q<zebrane.length;q++){if(zebrane[q].indexOf('### PROTOKOL: '+url+'\n')===0){zebrane[q]=wpis;byl=true;break;}}
     if(!byl)zebrane.push(wpis);
+    var pi=polowiczneUrl.indexOf(url);
+    if(ileSkladow<2){ if(pi<0) polowiczneUrl.push(url); }
+    else if(pi>=0) polowiczneUrl.splice(pi,1);
    } else { nieudanych++; if(nieudaneUrl.indexOf(url)<0) nieudaneUrl.push(url); }
    f.remove();i++;setTimeout(nastepny,300);
   }
@@ -1614,16 +1646,20 @@ function koniec(){
  // tur, z rosnaca przerwa. Konczymy wczesniej, gdy tura nic nie odzyskala: to znak, ze problem
  // nie jest chwilowy i dalsze dobijanie sie nic nie da.
  koniec.tura = koniec.tura || 0;
- if(!PRZERWANO_CZASEM && !koniec.bezSensu && nieudaneUrl.length){
-  var przedTura = nieudaneUrl.length;
+ // Ponawiamy JEDNO I DRUGIE: mecze, ktore nie weszly wcale, i te zdjete z jednym skladem.
+ // Polowiczny protokol wyglada na sukces, a w SBS konczy sie meczem doliczonym tylko jednej
+ // druzynie — wiec dla kompletnosci kolejki jest tak samo zly jak brak.
+ var doPonowienia = nieudaneUrl.concat(polowiczneUrl.filter(function(u){ return nieudaneUrl.indexOf(u)<0; }));
+ if(!PRZERWANO_CZASEM && !koniec.bezSensu && doPonowienia.length){
+  var przedTura = doPonowienia.length;
   if(koniec.tura > 0 && przedTura >= koniec.poprzednioNieudanych){
    koniec.bezSensu = true;                // ostatnia tura nic nie odzyskala — dalsze proby nic nie dadza
   } else {
    koniec.tura++;
    koniec.poprzednioNieudanych = przedTura;
-   linia.textContent='SBS '+SBS_ZBIERACZ+': '+przedTura+' meczow nie weszlo - tura '+(koniec.tura+1)
+   linia.textContent='SBS '+SBS_ZBIERACZ+': '+przedTura+' meczow do dobrania - tura '+(koniec.tura+1)
     +' (LNP odsyla 404 losowo, probuje dalej)';
-   linki = nieudaneUrl.slice();
+   linki = doPonowienia.slice();
    nieudaneUrl = []; nieudanych = 0; i = 0;
    setTimeout(nastepny, 1500 * koniec.tura);
    return;
@@ -1669,6 +1705,25 @@ function koniec(){
         + '<div style="margin-top:4px;font-size:12px;opacity:.85">Co widzialem na stronie: odnosnikow do meczow ' + ostatnioLinkow
         + ', wierszy z wynikiem ' + ostatnioWierszy + ', nierozegranych ' + pominietych + ' (krokow szukania ' + ostatnioKrokow + ').</div>')
   + '<div style="margin-top:4px">W buforze razem: ' + zebrane.length + '</div>'
+  // ILE Z ILU — bez tej linijki "zebrano 3" wyglada jak komplet.
+  + (function(){
+     if(!widzianeMecze.length || trybJedenMecz) return '';
+     var mam = widzianeMecze.filter(maProtokol).length;
+     var brak = widzianeMecze.length - mam;
+     return '<div style="margin-top:4px">Rozegranych meczow na stronie: ' + widzianeMecze.length
+      + ' &middot; mam protokoly do ' + mam + '</div>'
+      + (brak > 0
+         ? '<div style="margin-top:6px;padding:6px;border-radius:6px;background:rgba(240,160,160,.15);color:#F0A0A0">'
+           + '<b>To NIE jest komplet — brakuje ' + brak + ' ' + (brak===1?'meczu':'meczow') + '.</b><br>'
+           + 'Kliknij zakladke jeszcze raz na tej samej stronie: juz zebrane mecze pomija, a brakujace zwykle wchodza '
+           + 'za drugim albo trzecim razem (LNP losowo odsyla 404). Kolejka jest kompletna dopiero, gdy te liczby sa rowne.</div>'
+         : '<div style="color:#9BD8A6">Komplet kolejki — kazdy rozegrany mecz ma protokol.</div>');
+    })()
+  + (polowiczneUrl.length
+     ? '<div style="margin-top:4px;color:#F0C674">Protokoly z jednym skladem: ' + polowiczneUrl.length
+       + ' — druga druzyna nie zdazyla sie wyswietlic. Te mecze wejda do SBS tylko dla jednej strony; '
+       + 'kliknij zakladke ponownie, zeby dobrac pelne.</div>'
+     : '')
   + (kadry.length
      ? '<div style="color:#9BD8A6">Kadry klubow: ' + kadry.length
        + ' (' + kadry.reduce(function(s,k){ return s + k.osoby.length; }, 0) + ' zawodnikow)</div>'
