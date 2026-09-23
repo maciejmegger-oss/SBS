@@ -86,6 +86,38 @@ document.querySelectorAll<HTMLButtonElement>(".oko").forEach((btn) => {
   });
 });
 
+// WYBÓR PAKIETU.
+//
+// Przycisk przy pakiecie robi dwie rzeczy naraz: przenosi do formularza i ZAPAMIĘTUJE, o co
+// konkretnie chodzi. Bez tego drugiego zgłoszenia przychodziłyby bez informacji, które rozgrywki
+// kogo interesują — a to jedyne pytanie, na które ta sekcja ma odpowiadać.
+//
+// Wybór jest widoczny nad formularzem, bo po przewinięciu w dół nie widać już, w co się kliknęło.
+const poleWybranego = document.getElementById("wybrany-pakiet") as HTMLInputElement | null;
+const pasekPakietu = document.getElementById("pasek-pakietu");
+
+function pokazWybranyPakiet(nazwa: string) {
+  if (!poleWybranego || !pasekPakietu) return;
+  poleWybranego.value = nazwa;
+  // Etykieta idzie za językiem strony — ten sam słownik, co reszta.
+  const etykieta = pasekPakietu.dataset.etykieta || "Wybrany pakiet:";
+  pasekPakietu.innerHTML = `${etykieta} <strong>${nazwa}</strong>`;
+  pasekPakietu.hidden = false;
+}
+
+document.querySelectorAll<HTMLButtonElement>(".wez-pakiet").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    pokazWybranyPakiet(btn.dataset.pakiet || "");
+    const cel = document.getElementById("dostep");
+    if (cel) cel.scrollIntoView({ behavior: "smooth", block: "start" });
+    // Kursor do pierwszego pola — kto kliknął „poproś o dostęp", chce od razu pisać,
+    // a nie szukać, gdzie zacząć. Po przewinięciu, żeby strona nie skoczyła dwa razy.
+    window.setTimeout(() => {
+      document.querySelector<HTMLInputElement>('input[name="imieNazwisko"]')?.focus({ preventScroll: true });
+    }, 450);
+  });
+});
+
 const form = document.getElementById("form-dostep") as HTMLFormElement | null;
 // Nazwa „status" jest zajęta przez globalne window.status (zwykły tekst) — stąd przyrostek.
 const statusEl = document.getElementById("form-status");
@@ -109,6 +141,7 @@ form?.addEventListener("submit", async (e) => {
     // w kartotece leżałyby obok siebie „507113413", „+48 507 113 413" i „0048507113413" — trzy
     // zapisy tego samego numeru, z których żadnego nie da się porównać ani wybrać jednym klikiem.
     telefon: zlozNumer(pole("telefon"), pole("kierunkowy")),
+    pakiet: pole("pakiet"),
     email: pole("email"),
     haslo: String(dane.get("haslo") || ""),
   };

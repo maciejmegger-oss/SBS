@@ -99,6 +99,17 @@ export function ustawJezykStrony(j: Jezyk) {
   podmienAtrybuty(j);
   odswiezKierunkowe(j);
 
+  // Pasek „Wybrany pakiet" rysuje się dopiero po kliknięciu, więc jego etykietę podajemy
+  // z wyprzedzeniem w atrybucie — inaczej po zmianie języka zostałaby poprzednia.
+  const pasek = document.getElementById('pasek-pakietu');
+  if (pasek) {
+    const wpis = STRONA['pakiet-wybrany'];
+    const etykieta = j === 'pl' ? 'Wybrany pakiet:' : (wpis ? wpis[j] : 'Wybrany pakiet:');
+    pasek.dataset.etykieta = etykieta;
+    const mocne = pasek.querySelector('strong');
+    if (mocne) pasek.innerHTML = `${etykieta} <strong>${mocne.textContent}</strong>`;
+  }
+
   // Tytuł karty i opis dla wyszukiwarek nie są widoczne na stronie, ale to one trafiają do
   // zakładek i wyników wyszukiwania — po przełączeniu języka mają się zgadzać z treścią.
   const tytul = STRONA['meta-title'];

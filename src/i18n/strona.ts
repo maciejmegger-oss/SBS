@@ -34,8 +34,11 @@ export const STRONA: Record<string, Przeklad> = {
   'nav-moduly': { en: 'Modules', de: 'Module' },
   'nav-jak': { en: 'How it works', de: 'Ablauf' },
   'nav-bezpieczenstwo': { en: 'Security', de: 'Sicherheit' },
+  'nav-pakiety': { en: 'Packages', de: 'Pakete' },
   'nav-kontakt': { en: 'Contact', de: 'Kontakt' },
+  'cta-pakiety': { en: 'Packages', de: 'Pakete' },
   'cta-dostep': { en: 'Request access', de: 'Zugang anfragen' },
+  'hero-btn-pakiety': { en: 'See the packages', de: 'Pakete ansehen' },
   'cta-zaloguj': { en: 'Sign in', de: 'Anmelden' },
 
   // ---- Nagłówek strony ----
@@ -170,6 +173,50 @@ export const STRONA: Record<string, Przeklad> = {
     en: 'The administrator withdraws access at any moment — the account stops seeing data immediately, without waiting for anything to expire.',
     de: 'Der Administrator entzieht den Zugang jederzeit — das Konto sieht die Daten sofort nicht mehr, ohne dass etwas ablaufen muss.',
   },
+
+  // ---- Pakiety ----
+  'pak-h2': { en: 'Packages', de: 'Pakete' },
+  'pak-sub': {
+    en: 'One package is one competition. You take as many as you need — <strong>access adds up</strong>. Each package gives you all the data of those competitions: clubs, players, statistics, and the whole working panel: observations, reports and ratings.',
+    de: 'Ein Paket ist ein Wettbewerb. Sie nehmen so viele, wie Sie brauchen — <strong>die Zugänge summieren sich</strong>. Jedes Paket enthält sämtliche Daten dieser Wettbewerbe: Vereine, Spieler, Statistiken und das gesamte Arbeitspanel: Beobachtungen, Berichte und Bewertungen.',
+  },
+  'pk1-h3': { en: 'Ekstraklasa', de: 'Ekstraklasa' },
+  'pk1-p': {
+    en: 'Clubs, players and statistics of the top division.',
+    de: 'Vereine, Spieler und Statistiken der höchsten Spielklasse.',
+  },
+  'pk2-h3': { en: 'I liga', de: 'I liga' },
+  'pk2-p': { en: 'Full data of the second tier.', de: 'Vollständige Daten der zweiten Spielklasse.' },
+  'pk3-h3': { en: 'II liga', de: 'II liga' },
+  'pk3-p': { en: 'Full data of the third tier.', de: 'Vollständige Daten der dritten Spielklasse.' },
+  'pk4-h3': { en: 'III liga', de: 'III liga' },
+  'pk4-p': {
+    en: 'All four groups of the fourth tier — where the real market begins.',
+    de: 'Alle vier Gruppen der vierten Spielklasse — dort beginnt der eigentliche Markt.',
+  },
+  'pk5-h3': { en: 'IV liga', de: 'IV liga' },
+  'pk5-p': {
+    en: 'Every regional group. Data no commercial service carries.',
+    de: 'Sämtliche Regionalgruppen. Daten, die kein kommerzieller Anbieter führt.',
+  },
+  'pk6-h3': { en: 'Youth competitions', de: 'Nachwuchswettbewerbe' },
+  'pk6-p': {
+    en: 'The Central Youth League and the remaining youth competitions.',
+    de: 'Die Zentrale Juniorenliga und die übrigen Nachwuchswettbewerbe.',
+  },
+  'pk7-h3': { en: 'Premium', de: 'Premium' },
+  'pk7-p': {
+    en: '<strong>Every competition at once</strong> — from the top division to the youth categories, with nothing to pick and nothing to add later. One access to the whole database.',
+    de: '<strong>Alle Wettbewerbe auf einmal</strong> — von der höchsten Spielklasse bis zu den Nachwuchsklassen, ohne Auswahl und ohne späteres Nachbuchen. Ein Zugang zur gesamten Datenbank.',
+  },
+  'pak-wstega': { en: 'Widest access', de: 'Breitester Zugang' },
+  'pakiet-btn': { en: 'Request access', de: 'Zugang anfragen' },
+  'pakiet-btn-premium': { en: 'Request Premium access', de: 'Premium-Zugang anfragen' },
+  'pak-cena': {
+    en: 'Terms and pricing are agreed individually — tell us which competitions you need and we will come back with a quote.',
+    de: 'Konditionen und Preise vereinbaren wir individuell — sagen Sie uns, welche Wettbewerbe Sie brauchen, und wir melden uns mit einem Angebot.',
+  },
+  'pakiet-wybrany': { en: 'Selected package:', de: 'Gewähltes Paket:' },
 
   // ---- Formularz ----
   'form-h2': { en: 'Request access', de: 'Zugang anfragen' },

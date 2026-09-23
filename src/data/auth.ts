@@ -146,6 +146,9 @@ export interface Konto {
   rolaWKlubie: string;
   telefon: string;
   rola: RolaKonta;
+  // O który pakiet zgłaszający poprosił na stronie. Nie mylić z `pakiety` — tam stoją pakiety
+  // NADANE przez administratora, czyli to, za co klient faktycznie zapłacił.
+  pakietZadany: string;
   // Wykupione rozgrywki, np. ["Ekstraklasa", "I liga"]. Wpis "Premium" oznacza wszystkie ligi.
   // Znaczenie ma wyłącznie przy roli "klient" — admin i skaut widzą całość niezależnie od tego pola.
   pakiety: string[];
@@ -166,6 +169,7 @@ function mapujKonto(r: any): Konto {
     // Baza sprzed migracji z 22.09 nie ma tej kolumny — pusta lista znaczy „żadnych pakietów",
     // co dla admina i skauta jest bez znaczenia, a nowego klienta i tak trzeba dopiero wyposażyć.
     pakiety: Array.isArray(r.pakiety) ? r.pakiety.filter(Boolean).map(String) : [],
+    pakietZadany: r.pakiet_zadany || "",
     status: (r.status as StatusKonta) || "oczekuje",
     utworzoneAt: r.utworzone_at || "",
     zdecydowaneAt: r.zdecydowane_at || "",
@@ -179,6 +183,10 @@ export interface WniosekODostep {
   telefon: string;
   email: string;
   haslo: string;
+  // Który pakiet zgłaszający kliknął na stronie. Bez tego zgłoszenia przychodzą bez informacji,
+  // które rozgrywki kogo interesują — a to jedyne pytanie, na które sekcja pakietów odpowiada.
+  // Puste, gdy ktoś wszedł wprost do formularza, z pominięciem pakietów.
+  pakiet?: string;
 }
 
 // Zgłoszenie po dostęp ze strony publicznej. Zakłada konto w Supabase Auth i przekazuje dane
@@ -194,6 +202,7 @@ export async function zglosDostep(w: WniosekODostep): Promise<{ ok: boolean; err
         klub: w.klub.trim(),
         rola_w_klubie: w.rolaWKlubie.trim(),
         telefon: w.telefon.trim(),
+        pakiet: (w.pakiet || "").trim(),
       },
       emailRedirectTo: window.location.origin + "/app",
     },

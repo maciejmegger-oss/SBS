@@ -3646,6 +3646,7 @@ function kontoWiersz(k){
       <strong>${esc(k.imieNazwisko || '—')}</strong>${k.rola==='admin'?' <span class="badge tab-chip">administrator</span>':''}${k.rola==='klient'?' <span class="badge tab-chip">klient</span>':''}${jaSam?' <span class="badge new">to Ty</span>':''}
       <div class="note" style="margin:2px 0 0;">${esc(k.email)}</div>
       ${k.rola === 'klient' ? `<div class="note" style="margin:3px 0 0;">${opisPakietow(k.pakiety)}</div>` : ''}
+      ${k.pakietZadany ? `<div class="note" style="margin:3px 0 0;color:var(--gold-dark);">Prosi o pakiet: <strong>${esc(k.pakietZadany)}</strong></div>` : ''}
     </td>
     <td>${opis || '<span class="note">—</span>'}</td>
     <td>${esc(k.telefon || '—')}</td>

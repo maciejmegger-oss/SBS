@@ -44,13 +44,14 @@
     <a href="#moduly" data-i18n="nav-moduly">Moduły</a>
     <a href="#jak" data-i18n="nav-jak">Jak to działa</a>
     <a href="#bezpieczenstwo" data-i18n="nav-bezpieczenstwo">Bezpieczeństwo</a>
+    <a href="#pakiety" data-i18n="nav-pakiety">Pakiety</a>
     <a href="#kontakt" data-i18n="nav-kontakt">Kontakt</a>
   </nav>
   <div class="topcta">
     <!-- Wybór języka stoi PRZED przyciskami akcji: ktoś, kto nie czyta po polsku, musi móc
          przełączyć stronę, zanim zdecyduje, w co kliknąć. -->
     <div class="jezyk-strony" role="group" aria-label="Language / Sprache"></div>
-    <a class="btn ghost" href="#dostep" data-i18n="cta-dostep">Poproś o dostęp</a>
+    <a class="btn ghost" href="#pakiety" data-i18n="cta-pakiety">Pakiety</a>
     <a class="btn gold" href="/app" data-i18n="cta-zaloguj">Zaloguj się</a>
   </div>
 </header>
@@ -67,7 +68,7 @@
         dla całego sztabu, bez arkuszy krążących mailem.
       </p>
       <div class="hero-actions">
-        <a class="btn gold big" href="#dostep" data-i18n="hero-btn-dostep">Poproś o dostęp</a>
+        <a class="btn gold big" href="#pakiety" data-i18n="hero-btn-pakiety">Zobacz pakiety</a>
         <a class="btn ghost big" href="/app" data-i18n="hero-btn-konto">Mam już konto — zaloguj</a>
       </div>
     </div>
@@ -187,6 +188,71 @@
     </div>
   </section>
 
+
+  <section id="pakiety" class="band dark">
+    <h2 data-i18n="pak-h2">Pakiety</h2>
+    <p class="band-sub" data-i18n="pak-sub">
+      Jeden pakiet to jedne rozgrywki. Wybierasz tyle, ile potrzebujesz — <strong>dostępy sumują
+      się</strong>. W każdym pakiecie masz wszystkie dane tych rozgrywek: kluby, zawodników,
+      statystyki i cały panel pracy: obserwacje, raporty i oceny.
+    </p>
+
+    <div class="pakiety">
+      <article class="pakiet" data-anim>
+        <h3 data-i18n="pk1-h3">Ekstraklasa</h3>
+        <p data-i18n="pk1-p">Kluby, zawodnicy i statystyki najwyższej klasy rozgrywkowej.</p>
+        <button type="button" class="btn ghost wez-pakiet" data-pakiet="Ekstraklasa"
+                data-i18n="pakiet-btn">Poproś o dostęp</button>
+      </article>
+      <article class="pakiet" data-anim>
+        <h3 data-i18n="pk2-h3">I liga</h3>
+        <p data-i18n="pk2-p">Pełne dane drugiego poziomu rozgrywkowego.</p>
+        <button type="button" class="btn ghost wez-pakiet" data-pakiet="I liga"
+                data-i18n="pakiet-btn">Poproś o dostęp</button>
+      </article>
+      <article class="pakiet" data-anim>
+        <h3 data-i18n="pk3-h3">II liga</h3>
+        <p data-i18n="pk3-p">Pełne dane trzeciego poziomu rozgrywkowego.</p>
+        <button type="button" class="btn ghost wez-pakiet" data-pakiet="II liga"
+                data-i18n="pakiet-btn">Poproś o dostęp</button>
+      </article>
+      <article class="pakiet" data-anim>
+        <h3 data-i18n="pk4-h3">III liga</h3>
+        <p data-i18n="pk4-p">Cztery grupy trzeciej ligi — tam, gdzie zaczyna się prawdziwy rynek.</p>
+        <button type="button" class="btn ghost wez-pakiet" data-pakiet="III liga"
+                data-i18n="pakiet-btn">Poproś o dostęp</button>
+      </article>
+      <article class="pakiet" data-anim>
+        <h3 data-i18n="pk5-h3">IV liga</h3>
+        <p data-i18n="pk5-p">Wszystkie grupy wojewódzkie. Dane, których nie ma żaden serwis komercyjny.</p>
+        <button type="button" class="btn ghost wez-pakiet" data-pakiet="IV liga"
+                data-i18n="pakiet-btn">Poproś o dostęp</button>
+      </article>
+      <article class="pakiet" data-anim>
+        <h3 data-i18n="pk6-h3">Kategorie juniorskie</h3>
+        <p data-i18n="pk6-p">Centralna Liga Juniorów i pozostałe rozgrywki młodzieżowe.</p>
+        <button type="button" class="btn ghost wez-pakiet" data-pakiet="Kategorie juniorskie"
+                data-i18n="pakiet-btn">Poproś o dostęp</button>
+      </article>
+    </div>
+
+    <article class="pakiet premium" data-anim>
+      <span class="wstega" data-i18n="pak-wstega">Najszerszy dostęp</span>
+      <h3 data-i18n="pk7-h3">Premium</h3>
+      <p data-i18n="pk7-p">
+        <strong>Wszystkie rozgrywki naraz</strong> — od Ekstraklasy po kategorie juniorskie,
+        bez wybierania i bez dobierania później. Jeden dostęp do całej bazy.
+      </p>
+      <button type="button" class="btn gold wez-pakiet" data-pakiet="Premium"
+              data-i18n="pakiet-btn-premium">Poproś o dostęp Premium</button>
+    </article>
+
+    <p class="note pak-cena" data-i18n="pak-cena">
+      Warunki i cennik ustalamy indywidualnie — napisz, które rozgrywki Cię interesują,
+      a odezwiemy się z wyceną.
+    </p>
+  </section>
+
   <section id="dostep" class="band form-band">
     <div class="form-wrap">
       <div class="form-intro">
@@ -202,6 +268,10 @@
       </div>
 
       <form id="form-dostep" class="form" novalidate>
+        <!-- Wybrany pakiet. Pole ukryte wypełnia przycisk przy pakiecie, a pasek nad formularzem
+             pokazuje wybór, żeby nie trzeba było przewijać w górę i sprawdzać, w co się kliknęło. -->
+        <input type="hidden" name="pakiet" id="wybrany-pakiet" value="">
+        <p id="pasek-pakietu" class="pasek-pakietu" hidden></p>
         <div class="f2">
           <label><span data-i18n="f-imie">Imię i nazwisko</span> <span class="req">*</span>
             <input name="imieNazwisko" type="text" autocomplete="name" required>
