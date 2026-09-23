@@ -3621,8 +3621,27 @@ function kontoWiersz(k){
   const kiedy = (k.utworzoneAt||'').slice(0,10);
   const jaSam = kontoUzytkownika && kontoUzytkownika.userId === k.userId;
   const przyciski = [];
+
+  // PAKIET Z FORMULARZA TO PROŚBA, NIE PRZYZNANIE — i na tym łatwo się przejechać.
+  //
+  // Kto wybrał pakiet na stronie głównej, przychodzi tu po jedną rzecz: konto KLIENTA z tym
+  // pakietem. Złożenie tego z trzech osobnych kliknięć („Przyznaj dostęp" → „Zrób klientem" →
+  // „Pakiety…") wygląda niewinnie, ale ma pułapkę: po pierwszym kliknięciu konto JUŻ DZIAŁA,
+  // tyle że jako konto skauta — czyli widzi CAŁĄ bazę, wszystkie ligi, i może poprawiać
+  // kartotekę. Nic nie krzyczy, że coś jest nie tak, bo z punktu widzenia systemu nie jest:
+  // rola „skaut" to rola współpracownika, a nie klienta, który zapłacił za jedną ligę.
+  //
+  // Dlatego przy zgłoszeniu z wybranym pakietem główny przycisk robi wszystkie trzy rzeczy naraz.
+  // Osobne „Przyznaj dostęp" zostaje obok — dla współpracowników, którzy klientami nie są.
+  const zadany = String(k.pakietZadany || '');
+  const prosiOPakiet = zadany === PAKIET_PREMIUM || PAKIETY_DOSTEPNE.includes(zadany);
+
+  if(prosiOPakiet && k.rola !== 'klient' && !jaSam){
+    przyciski.push(`<button class="gold" data-action="konto-jako-klient" data-id="${esc(k.userId)}" data-pakiet="${esc(zadany)}">`
+      + `${k.status === 'zatwierdzone' ? 'Zrób klientem' : 'Przyznaj dostęp jako klient'} — ${esc(zadany)}</button>`);
+  }
   if(k.status !== 'zatwierdzone'){
-    przyciski.push(`<button class="gold" data-action="konto-decyzja" data-id="${esc(k.userId)}" data-status="zatwierdzone">Przyznaj dostęp</button>`);
+    przyciski.push(`<button class="${prosiOPakiet?'secondary':'gold'}" data-action="konto-decyzja" data-id="${esc(k.userId)}" data-status="zatwierdzone">${prosiOPakiet?'Przyznaj jako skaut':'Przyznaj dostęp'}</button>`);
   }
   if(k.status !== 'odrzucone' && !jaSam){
     // Własnego konta administrator nie odbiera sobie jednym kliknięciem — to pewna droga do
@@ -3648,7 +3667,14 @@ function kontoWiersz(k){
       <strong>${esc(k.imieNazwisko || '—')}</strong>${k.rola==='admin'?' <span class="badge tab-chip">administrator</span>':''}${k.rola==='klient'?' <span class="badge tab-chip">klient</span>':''}${jaSam?' <span class="badge new">to Ty</span>':''}
       <div class="note" style="margin:2px 0 0;">${esc(k.email)}</div>
       ${k.rola === 'klient' ? `<div class="note" style="margin:3px 0 0;">${opisPakietow(k.pakiety)}</div>` : ''}
-      ${k.pakietZadany ? `<div class="note" style="margin:3px 0 0;color:var(--gold-dark);">Prosi o pakiet: <strong>${esc(k.pakietZadany)}</strong></div>` : ''}
+      ${k.pakietZadany && k.rola !== 'klient' && k.status === 'zatwierdzone'
+        // NAJGROŹNIEJSZY STAN W CAŁEJ TEJ ZAKŁADCE, więc ma być widać go z drugiego końca pokoju.
+        // Konto poprosiło o JEDNĄ ligę, dostęp dostało, ale rolę ma skauta — a skaut widzi
+        // wszystko. Dopóki ten wiersz wyglądał jak każdy inny, jedyne, co o tym mówiło, to panel
+        // klienta pokazujący 600 klubów zamiast stu.
+        ? `<div class="note" style="margin:3px 0 0;color:var(--clay-dark);"><strong>Uwaga:</strong> prosi o pakiet
+             <strong>${esc(k.pakietZadany)}</strong>, ale ma rolę skauta — widzi CAŁĄ bazę, wszystkie ligi.</div>`
+        : (k.pakietZadany ? `<div class="note" style="margin:3px 0 0;color:var(--gold-dark);">Prosi o pakiet: <strong>${esc(k.pakietZadany)}</strong></div>` : '')}
     </td>
     <td>${opis || '<span class="note">—</span>'}</td>
     <td>${esc(k.telefon || '—')}</td>
@@ -4168,10 +4194,16 @@ function renderNav(){
       // NIEPEŁNE WCZYTANIE JEST GROŹNIEJSZE NIŻ NIEUDANY ZAPIS — bo wygląda jak utrata danych
       // i kusi, żeby „wpisać wszystko od nowa". Mówimy więc wprost, czego brakuje, i blokujemy
       // zapisywanie do czasu udanego odświeżenia.
+      // POWÓD BYŁ ZAPISYWANY OD POCZĄTKU, ALE NIGDZIE GO NIE BYŁO WIDAĆ — a to jedyne zdanie,
+      // które odróżnia „baza się zadławiła" od „reguły dostępu tego nie wydały". Bez niego
+      // każda taka awaria zaczyna się od zgadywania, choć odpowiedź leżała w pamięci przeglądarki.
+      const powody = nieudaneOdczyty.filter(x=>x.powod)
+        .map(x=>`${esc(x.klucz)}: ${esc(x.powod)}`).join(' · ');
       banner.innerHTML = `<div class="save-fail-bar">
         ⚠️ <strong>Nie wczytałem wszystkich danych</strong> — brakuje: ${esc(nieudaneOdczyty.map(x=>x.klucz).join(', '))}.
         To NIE znaczy, że dane zniknęły z bazy: nie udało się ich pobrać. Zapisywanie jest wstrzymane, żeby nie nadpisać dobrych danych.
         <button data-action="ponow-wczytanie">Wczytaj ponownie</button>
+        ${powody ? `<div class="note" style="margin:6px 0 0;opacity:.85;font-size:11.5px;">Powód: ${powody}</div>` : ''}
       </div>`;
       const btn = banner.querySelector('[data-action="ponow-wczytanie"]');
       if(btn) btn.onclick = ()=>window.location.reload();
@@ -13863,6 +13895,48 @@ function attachHandlers(){
       if(swieze && !(swieze.pakiety||[]).length) openPakietyModal(swieze);
     }
   });
+  // JEDNO KLIKNIĘCIE ZAMIAST TRZECH — dostęp, rola klienta i wykupiony pakiet naraz.
+  //
+  // Kolejność nie jest dowolna. Najpierw ROLA, dopiero potem STATUS: między jednym a drugim
+  // zapisem konto jest przez chwilę zatwierdzone, a gdyby w tej chwili miało jeszcze rolę skauta,
+  // zalogowany klient zobaczyłby całą bazę. Odwrotna kolejność zamyka to okno.
+  main.querySelectorAll('[data-action="konto-jako-klient"]').forEach(b=>b.onclick=async()=>{
+    const id = b.dataset.id, pakiet = b.dataset.pakiet;
+    const konto = (kontaLista||[]).find(k=>k.userId===id);
+    const kto = konto ? (konto.imieNazwisko || konto.email) : 'to konto';
+    const coZobaczy = pakiet === PAKIET_PREMIUM
+      ? 'wszystkie rozgrywki (Premium)'
+      : `wyłącznie rozgrywki „${pakiet}"`;
+    if(!confirm(`Otworzyć dostęp dla: ${kto}?\n\nKonto zobaczy ${coZobaczy} — kluby, zawodników i statystyki `
+      + 'z tych rozgrywek. Będzie mogło prowadzić własne obserwacje, raporty i oceny, ale nie '
+      + 'dopisze ani nie usunie nikogo z kartoteki i nie zaktualizuje statystyk.\n\n'
+      + 'Pakiety zmienisz później przyciskiem „Pakiety…".')) return;
+
+    const napis = b.textContent;
+    b.disabled = true; b.textContent = 'Zapisuję…';
+    const zle = (wiadomosc)=>{ alert(wiadomosc); b.disabled=false; b.textContent=napis; };
+
+    const rola = await ustawRoleKonta(id, 'klient');
+    if(!rola.ok) return zle(rola.error);
+    const pak = await ustawPakietyKonta(id, [pakiet]);
+    // Rola już zapisana, pakietu nie ma — konto widziałoby PUSTY panel. To stan do naprawienia
+    // ręcznie, ale bezpieczny, więc mówimy wprost, co się stało, zamiast cofać rolę po cichu.
+    if(!pak.ok) return zle((pak.error || 'Nie udało się zapisać pakietu.')
+      + '\n\nRola klienta została już zapisana, więc konto niczego nie zobaczy, dopóki nie nadasz '
+      + 'pakietu przyciskiem „Pakiety…".');
+    if(konto && konto.status !== 'zatwierdzone'){
+      const st = await ustawStatusKonta(id, 'zatwierdzone');
+      if(!st.ok) return zle(st.error);
+    }
+
+    if(konto){
+      await zapiszZdarzenie(konto, 'rola', 'Zmiana roli: skaut → klient (przy otwieraniu dostępu).');
+      await zapiszZdarzenie(konto, 'pakiety', `Pakiety: brak → ${pakiet}.`);
+      if(konto.status !== 'zatwierdzone') await zapiszZdarzenie(konto, 'dostep', 'Przyznano dostęp do systemu.');
+    }
+    await odswiezKonta();
+  });
+
   main.querySelectorAll('[data-action="konto-pakiety"]').forEach(b=>b.onclick=()=>{
     const konto = (kontaLista||[]).find(k=>k.userId===b.dataset.id);
     if(konto) openPakietyModal(konto);
