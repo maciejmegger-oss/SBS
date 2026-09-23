@@ -14,6 +14,8 @@ import { uruchomTlumaczenie, odswiezPrzelacznikJezyka } from "./i18n/dom";
 uruchomTlumaczenie();
 // Oczko przy polach hasła — ten sam przycisk co w formularzu zgłoszenia na stronie głównej.
 import { podepnijOczko } from "./ui/oko";
+// Herby jako pliki, a nie jako treść w bazie — 14 MB zdjęte z każdego otwarcia panelu.
+import { wyslijHerb, herbJestPlikiem, przeniesHerby } from "./data/herby";
 // Kod zbieracza ŁNP — ten sam plik, który serwujemy pod /zakladka-lnp-v2.js.
 import LNP_ZBIERACZ from "../public/zakladka-lnp-v2.js?raw";
 import type { Database } from "./types";
@@ -2965,6 +2967,35 @@ function clubLeague(id){ const c = DB.clubs.find(x=>x.id===id); return c? c.leag
 // zostawia klub i herb, a z map, rankingów i filtrów ligi go wyłącza.
 function ligaZawodnika(p){ return p && p.klubBezLigi ? '' : clubLeague(p && p.clubId); }
 function clubCrest(id){ if(DB.clubCrests[id]) return DB.clubCrests[id]; const c = DB.clubs.find(x=>x.id===id); return c && c.crestUrl ? c.crestUrl : null; }
+
+// HERB IDZIE DO PLIKÓW, NIE DO BAZY.
+//
+// Herb zapisany w bazie jako treść obrazka to dla przeglądarki zwykły tekst — nie ma czego
+// zapamiętać, więc te same megabajty lecą przy każdym wejściu do systemu. Plik pod własnym
+// adresem przeglądarka pobiera raz i trzyma przez rok.
+//
+// JEŚLI SIĘ NIE UDA, ZAPISUJEMY PO STAREMU. Kosz w Supabase zakłada osobny skrypt migracji;
+// dopóki nie został uruchomiony, wysyłka odbija się błędem. Przerwanie zapisu w tym miejscu
+// znaczyłoby „nie da się wgrać herbu", choć da się — tylko drożej. Lepiej herb w bazie niż
+// komunikat o błędzie zamiast herbu.
+// Ile herbów siedzi jeszcze w bazie jako treść obrazka. Zero znaczy, że przenosiny się skończyły
+// i przycisk znika sam — narzędzie jednorazowe nie ma powodu zajmować miejsca w pasku na zawsze.
+function herbowDoPrzeniesienia(){
+  return Object.keys(DB.clubCrests||{}).filter(id=>{
+    const v = DB.clubCrests[id];
+    return v && !herbJestPlikiem(v);
+  }).length;
+}
+
+async function herbDoZapisu(idKlubu, tresc){
+  if(!tresc) return tresc;
+  try{
+    return await wyslijHerb(idKlubu, tresc);
+  }catch(e){
+    console.warn('Herb zostaje w bazie — nie udało się wysłać do plików:', (e && e.message) || e);
+    return tresc;
+  }
+}
 function clubSeason(id){ const c = DB.clubs.find(x=>x.id===id); return c && c.season ? c.season : ""; }
 function crestImg(url, size, name){
   const cls = size==='lg' ? 'crest-lg' : size==='xs' ? 'crest-xs' : 'crest';
@@ -6025,6 +6056,7 @@ function viewClubs(){
       <button class="secondary" data-action="pobierz-tabele" title="Pobiera z 90minut tabele Ekstraklasy, I, II i III ligi — układ, punkty i liczbę rozegranych kolejek">⭳ Tabele z 90minut</button>
       <button class="secondary" data-action="merge-duplicates" title="Znajdź kluby wpisane dwa razy pod różnymi nazwami i połącz je w jeden">🧹 Scal duplikaty</button>
       ${list.some(c=>!clubCrest(c.id)) ? `<button class="secondary" data-action="herby-z-pierwszych" title="Skopiuj herby z kartotek seniorskich tych samych klubów">🛡️ Herby z pierwszych drużyn (${list.filter(c=>!clubCrest(c.id)).length})</button>` : ''}
+      ${(()=>{ const ile = herbowDoPrzeniesienia(); return ile ? `<button class="secondary" data-action="herby-do-plikow" title="Przenosi herby z bazy do plików. Przeglądarka zapamięta je na rok, więc przestaną się pobierać przy każdym wejściu — to największa pojedyncza pozycja w limicie transferu.">📦 Herby do plików (${ile})</button>` : ''; })()}
       <button class="gold" data-action="add-club">+ Nowy klub</button>
     </div>
   </div>
@@ -13953,7 +13985,7 @@ function attachHandlers(){
     const club = DB.clubs.find(c=>c.id===inp.dataset.clubId);
     if(!club) return;
     try{
-      DB.clubCrests[club.id] = await processCrestFile(file);
+      DB.clubCrests[club.id] = await herbDoZapisu(club.id, await processCrestFile(file));
       await saveClubCrests();
       render();
     }catch(e){
@@ -14808,7 +14840,7 @@ function attachHandlers(){
         }).filter(x=>x.rank<99).sort((a,b)=> a.rank-b.rank || a.dl-b.dl);
         const club = scored[0] && scored[0].c;
         if(!club){ unmatched.push(file.name); continue; }
-        try{ DB.clubCrests[club.id] = await processCrestFile(file); matchedPairs.push(file.name+' → '+club.name); }
+        try{ DB.clubCrests[club.id] = await herbDoZapisu(club.id, await processCrestFile(file)); matchedPairs.push(file.name+' → '+club.name); }
         catch(e){ unmatched.push(file.name+' (błąd pliku)'); }
       }
       if(matchedPairs.length) await saveClubCrests();
@@ -14820,6 +14852,54 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="scal-zawodnikow"]').forEach(b=>b.onclick=()=>openScalanieModal(b.dataset.id));
   main.querySelectorAll('[data-action="pokaz-duplikaty"]').forEach(b=>b.onclick=()=>openDuplikatyModal());
   main.querySelectorAll('[data-action="herby-z-pierwszych"]').forEach(b=>b.onclick=()=>openHerbyZPierwszychModal(widoczneKluby()));
+
+  // PRZENIESIENIE HERBÓW DO PLIKÓW — narzędzie jednorazowe.
+  //
+  // Idzie klub po klubie i melduje postęp wprost na przycisku, bo przy trzystu herbach cisza
+  // przez minutę wygląda jak zawieszony system. Zapis do bazy robimy RAZ, na końcu: trzysta
+  // osobnych zapisów to trzysta okazji, żeby coś przerwać w połowie.
+  main.querySelectorAll('[data-action="herby-do-plikow"]').forEach(b=>b.onclick=async()=>{
+    if(!tylkoAdmin('Przeniesienie herbów do plików zmienia zapis wspólny dla wszystkich kont.')) return;
+    const ile = herbowDoPrzeniesienia();
+    if(!confirm(`Przenieść ${ile} herbów z bazy do plików?\n\n`
+      + 'Herby wyglądają dokładnie tak samo — zmienia się tylko sposób ich przechowywania. '
+      + 'Przeglądarka zapamięta je wtedy na rok i przestaną się pobierać przy każdym wejściu '
+      + 'do systemu.\n\nMożna przerwać w dowolnej chwili i dokończyć później — przeniesione '
+      + 'herby zostają przeniesione.')) return;
+
+    const napis = b.textContent;
+    b.disabled = true;
+    try{
+      const wynik = await przeniesHerby(DB.clubCrests, (zrobione, wszystkich)=>{
+        b.textContent = `📦 Przenoszę… ${zrobione}/${wszystkich}`;
+      });
+      const ilePrzeniesionych = Object.keys(wynik.przeniesione).length;
+      if(ilePrzeniesionych){
+        Object.assign(DB.clubCrests, wynik.przeniesione);
+        b.textContent = '📦 Zapisuję…';
+        await saveClubCrests();
+      }
+      // Błędy wypisujemy CO DO KLUBU, a nie jako „nie udało się". Przy jednym powodzie dla
+      // wszystkich (brak kosza) i tak zobaczy jeden komunikat, a przy kilku rozsypanych
+      // pomyłkach będzie wiedział, które kluby poprawić ręcznie.
+      if(wynik.bledy.length){
+        const opis = wynik.bledy.slice(0, 5)
+          .map(x=>`• ${clubName(x.idKlubu) || x.idKlubu}: ${x.powod}`).join('\n');
+        alert(`Przeniesionych: ${ilePrzeniesionych}. Nie udało się: ${wynik.bledy.length}.\n\n`
+          + opis + (wynik.bledy.length > 5 ? `\n…i ${wynik.bledy.length - 5} więcej.` : '')
+          + '\n\nHerby, których nie udało się przenieść, zostają w bazie i nadal działają.');
+      }else{
+        alert(`Gotowe — przeniesionych: ${ilePrzeniesionych}.\n\n`
+          + 'Od tej chwili herby pobiera się raz i przeglądarka je zapamiętuje. '
+          + 'Przy następnym wejściu do systemu zobaczysz je od razu, bez czekania.');
+      }
+      render();
+    }catch(e){
+      console.error('Przenoszenie herbów:', e);
+      alert('Nie udało się przenieść herbów: ' + ((e && e.message) || e));
+      b.disabled = false; b.textContent = napis;
+    }
+  });
   main.querySelectorAll('[data-action="pozycje-z-tm"]').forEach(b=>b.onclick=()=>openPozycjeZTmModal(widoczneKluby()));
   main.querySelectorAll('[data-action="systemy-gry"]').forEach(b=>b.onclick=()=>openSystemyModal(widoczneKluby()));
   main.querySelectorAll('[data-action="sklady-meczowe"]').forEach(b=>b.onclick=()=>openSkladyModal(widoczneKluby()));
@@ -23319,7 +23399,7 @@ function wireLastModal(){
     else delete systemyKlubow[savedClubId];
     await saveSystemyKlubow();
     if(isUploadedImage){
-      DB.clubCrests[savedClubId] = crestValue;
+      DB.clubCrests[savedClubId] = await herbDoZapisu(savedClubId, crestValue);
       await saveClubCrests();
     }
     ov.remove(); render();
@@ -23510,7 +23590,7 @@ const AKCJE_BEZ_KLIENTA = new Set([
   'import-znicz-roster','protokoly-grupy','start-grupa','ponow-grupe','przerwij-grupe','zamknij-grupe',
   'lnp-link-grupy','show-bookmarklet','fetch-schedule','fetch-from-link','schedule-url',
   'squad-parse','squad-apply','squad-import-confirm','squad-diag','staff-parse','staff-apply',
-  'sklady-meczowe','systemy-gry','pozycje-z-tm','herby-z-pierwszych','tm-odswiez','tm-zakladka',
+  'sklady-meczowe','systemy-gry','pozycje-z-tm','herby-z-pierwszych','herby-do-plikow','tm-odswiez','tm-zakladka',
   'agencies-import','agencies-parse','agencies-apply','agent-import','agent-parse','agent-apply',
   'agency-add-players','agency-squad','agency-staff','do-import','get-template',
   // 3. Narzędzia pracowni
