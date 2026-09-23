@@ -95,10 +95,25 @@ export async function setNewPassword(password: string): Promise<{ ok: boolean; e
   return { ok: true };
 }
 
-// Czy adres strony pochodzi z linku resetującego hasło? Supabase dokłada tam znacznik typu recovery.
+// Czy adres strony pochodzi z linku RESETUJĄCEGO HASŁO?
+//
+// DLACZEGO SAM `access_token=` TO ZA MAŁO — a właściwie: za dużo.
+// Supabase wysyła kilka różnych linków i KAŻDY z nich niesie w adresie ten sam token dostępu:
+// potwierdzenie nowego konta (type=signup), zaproszenie (type=invite), link jednorazowy
+// (type=magiclink) i dopiero na końcu reset hasła (type=recovery). Warunek „jest access_token"
+// obejmował je wszystkie, więc klient, który w mailu potwierdzał założenie konta, trafiał na ekran
+// „Ustawienie nowego hasła" — choć hasło właśnie ustawił w formularzu zgłoszenia. Gdy wpisał tam
+// to samo hasło, baza odpowiadała „New password should be different from the old password"
+// i wejścia nie było w ogóle: nowego hasła wymyślać nie chciał, a starego wpisać nie mógł.
+//
+// Pytamy więc dokładnie o to, o co chodzi: czy to link RESETUJĄCY. Pozostałe linki też tworzą
+// sesję, ale one prowadzą prosto do systemu — czyli do zwykłego zalogowania.
+//
+// Znacznik bywa w części po „#" (zwykły przepływ) albo w zapytaniu po „?" (przepływ z kodem),
+// więc sprawdzamy oba miejsca.
 export function isPasswordRecoveryLink(): boolean {
-  const hash = window.location.hash || "";
-  return /type=recovery/.test(hash) || /access_token=/.test(hash);
+  const adres = (window.location.hash || "") + "&" + (window.location.search || "");
+  return /[#&?]type=recovery(&|$)/.test(adres);
 }
 
 // Token bieżącej sesji — do wywołań własnych funkcji serwerowych (/api/...).

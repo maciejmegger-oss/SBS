@@ -692,6 +692,10 @@ export const DE: Record<string, string> = {
   'Nie pamiętam hasła': 'Passwort vergessen',
   'Sprawdź ponownie': 'Erneut prüfen',
   'Hasło': 'Passwort',
+  'Pokaż hasło': 'Passwort anzeigen',
+  'Ukryj hasło': 'Passwort verbergen',
+  'Zostaw stare hasło': 'Bisheriges Passwort behalten',
+  'Zaloguj się swoim dotychczasowym hasłem.': 'Melden Sie sich mit Ihrem bisherigen Passwort an.',
 
   // ---- Konto klienta i pakiety ----
   'Moje pakiety': 'Meine Pakete',

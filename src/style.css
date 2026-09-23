@@ -899,6 +899,20 @@ tr.player-row.prow-okazja.prow-mlodszy td:first-child{box-shadow:inset 4px 0 0 v
 .login-sub{color:var(--ink-soft);font-size:13px;margin:0 0 20px;}
 .login-card .field-wrap{margin-bottom:14px;}
 .login-card input{width:100%;box-sizing:border-box;}
+
+/* OCZKO PRZY HAŚLE. Ten sam przycisk co w formularzu zgłoszenia na stronie głównej — tam jest
+   na ciemnym tle, tu na jasnej karcie, więc kolory bierzemy ze zmiennych motywu.
+   Opakowanie musi być `position:relative`, bo przycisk siedzi NA polu, a nie obok niego:
+   ustawiony obok zjadałby szerokość pola i hasło mieściłoby się w nim krócej. */
+.haslo-pole{position:relative;display:block;}
+.haslo-pole input{padding-right:42px !important;}
+.oko{position:absolute;right:4px;top:50%;transform:translateY(-50%);
+  display:inline-flex;align-items:center;justify-content:center;
+  width:32px;height:32px;padding:0;border:0;border-radius:7px;
+  background:transparent;color:var(--ink-soft);cursor:pointer;}
+.oko:hover{background:var(--chalk-dim);color:var(--heading);}
+.oko svg{width:19px;height:19px;display:block;}
+.oko:focus-visible{outline:2px solid var(--gold);outline-offset:-2px;color:var(--heading);}
 /* white-space:pre-line — komunikat o uśpionej bazie to instrukcja krok po kroku, a bez tego
    wszystkie punkty zlewały się w jeden akapit i nie dało się ich przeczytać. */
 .login-error{background:var(--bad-bg);border:1px solid var(--border-strong);color:var(--clay-dark);

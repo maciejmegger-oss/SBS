@@ -12,6 +12,8 @@ import { linkDoMeczuZPola, bezpiecznyLinkMeczu, serwisLinkuMeczu, obserwacjeTego
 // strona po odświeżeniu przy wybranym angielskim nie mignęła po polsku dłużej niż jedno przerysowanie.
 import { uruchomTlumaczenie, odswiezPrzelacznikJezyka } from "./i18n/dom";
 uruchomTlumaczenie();
+// Oczko przy polach hasła — ten sam przycisk co w formularzu zgłoszenia na stronie głównej.
+import { podepnijOczko } from "./ui/oko";
 // Kod zbieracza ŁNP — ten sam plik, który serwujemy pod /zakladka-lnp-v2.js.
 import LNP_ZBIERACZ from "../public/zakladka-lnp-v2.js?raw";
 import type { Database } from "./types";
@@ -23251,11 +23253,27 @@ function wireLastModal(){
 // wołał funkcję, która nie istniała, a dane dawały się czytać i zapisywać bez żadnego uwierzytelnienia.
 function loginScreenHtml(tryb, komunikat, blad){
   // Ostatni parametr jest opcjonalny — pola bez autofokusu wołają tę funkcję z trzema argumentami.
-  const pole = (id, typ, etykieta, autofokus?)=>`
+  //
+  // PRZY HAŚLE STOI OCZKO — ten sam przycisk co w formularzu zgłoszenia na stronie głównej
+  // (src/ui/oko.ts). Hasło wpisuje się w ciemno, a na telefonie klawiatura podmienia znaki;
+  // bez podglądu „Nieprawidłowy e-mail lub hasło" nie mówi, czy hasło jest złe, czy przekręcone.
+  //
+  // AUTOCOMPLETE rozróżnia dwa przypadki: przy logowaniu przeglądarka ma podpowiedzieć hasło
+  // zapisane w menedżerze (current-password), przy ustawianiu nowego — zaproponować świeże
+  // i zapamiętać je po zapisie (new-password). Jeden wspólny current-password podsuwał w oba
+  // pola stare hasło, czyli dokładnie to, którego tam być nie może.
+  const pole = (id, typ, etykieta, autofokus?)=>{
+    const auto = typ!=='password' ? 'username' : (id==='lg-haslo' ? 'current-password' : 'new-password');
+    const input = `<input id="${id}" type="${typ}" ${autofokus?'autofocus':''} autocomplete="${auto}">`;
+    const zOczkiem = typ!=='password' ? input
+      : `<span class="haslo-pole">${input}<button type="button" class="oko" data-oko="${id}"`
+        + ` title="Pokaż hasło" aria-label="Pokaż hasło"></button></span>`;
+    return `
     <div class="field-wrap">
       <label class="field" for="${id}">${etykieta}</label>
-      <input id="${id}" type="${typ}" ${autofokus?'autofocus':''} autocomplete="${typ==='password'?'current-password':'username'}">
+      ${zOczkiem}
     </div>`;
+  };
   const tresc = tryb==='reset' ? `
       <p class="note">Podaj adres e-mail konta. Wyślemy na niego link do ustawienia nowego hasła.</p>
       ${pole('lg-email','email','Adres e-mail', true)}
@@ -23267,7 +23285,10 @@ function loginScreenHtml(tryb, komunikat, blad){
       <p class="note">Ustaw nowe hasło do swojego konta. Minimum 8 znaków.</p>
       ${pole('lg-haslo1','password','Nowe hasło', true)}
       ${pole('lg-haslo2','password','Powtórz hasło')}
-      <div class="modal-actions"><button class="gold" data-action="lg-zapisz-haslo">Zapisz nowe hasło</button></div>`
+      <div class="modal-actions" style="justify-content:space-between;">
+        <button class="link-btn" data-action="lg-pomin-haslo">Zostaw stare hasło</button>
+        <button class="gold" data-action="lg-zapisz-haslo">Zapisz nowe hasło</button>
+      </div>`
     : `
       ${pole('lg-email','email','Adres e-mail', true)}
       ${pole('lg-haslo','password','Hasło')}
@@ -23527,6 +23548,24 @@ function renderLoginScreen(){
     loginBlad = r.error || 'Nie udało się zmienić hasła.'; przeladuj();
   });
 
+  // ZOSTAW STARE HASŁO. Link z poczty tworzy pełnoprawną sesję, więc zmiana hasła nie jest
+  // warunkiem wejścia — jest propozycją. Kto kliknął link przez pomyłkę albo rozmyślił się
+  // w trakcie, wchodzi do systemu jednym kliknięciem zamiast wymyślać hasło na siłę.
+  host.querySelectorAll('[data-action="lg-pomin-haslo"]').forEach(b=>b.onclick=async()=>{
+    history.replaceState(null,'',window.location.pathname);    // usuń token z adresu
+    const user = await currentUser();
+    if(user){ await wpuscZalogowanego(); return; }
+    // Sesji nie ma (link wygasł albo został już raz użyty) — wtedy zwykłe logowanie.
+    loginTryb='login'; loginBlad=''; loginKomunikat='Zaloguj się swoim dotychczasowym hasłem.'; przeladuj();
+  });
+
+  // OCZKO PRZY HAŚLE. Ekran rysuje się od nowa przy każdej zmianie, więc podpinamy po narysowaniu.
+  host.querySelectorAll('.oko').forEach(b=>{
+    const btn = b as HTMLButtonElement;
+    const pole = document.getElementById(btn.dataset.oko || '') as HTMLInputElement | null;
+    if(pole) podepnijOczko(btn, pole);
+  });
+
   // Enter zatwierdza formularz — bez tego trzeba celować w przycisk.
   host.querySelectorAll('input').forEach(inp=>inp.addEventListener('keydown',(e)=>{
     if(e.key!=='Enter') return;
@@ -23618,14 +23657,23 @@ function renderKontoScreen(konto){
 const WYMAGAJ_LOGOWANIA = true;
 
 async function startApp(){
-  // Wejście z linku resetującego: Supabase tworzy tymczasową sesję, więc zanim wpuścimy do
-  // aplikacji, prosimy o ustawienie nowego hasła.
+  // WEJŚCIE Z LINKU W MAILU. Rozstrzyga rodzaj linku, nie sama obecność tokenu:
+  //   * reset hasła  → ekran „Ustawienie nowego hasła" (po to ten link został wysłany),
+  //   * potwierdzenie konta, zaproszenie, link jednorazowy → prosto do systemu.
+  // Poprzednio wszystkie prowadziły na ekran zmiany hasła i klient potwierdzający konto był tam
+  // zablokowany: hasło miał już ustawione, a baza nie pozwala zapisać tego samego jeszcze raz.
   if(isPasswordRecoveryLink()){
     loginTryb='nowe-haslo';
     renderLoginScreen();
     return;
   }
   const user = await currentUser();
+  // Token zrobił już swoje — sesja jest utworzona. W adresie zostaje tylko po to, żeby wpaść do
+  // historii przeglądarki i do zakładek, więc ścieramy go, gdy tylko przestał być potrzebny.
+  // Dopiero TERAZ: wcześniej czytał go klient Supabase, a wyczyszczony adres znaczyłby brak sesji.
+  if(/access_token=|refresh_token=/.test(window.location.hash||'')){
+    history.replaceState(null,'',window.location.pathname);
+  }
   sesjaUzytkownika = user;
   // Zalogowanego sprawdzamy zawsze — także przy wyłączonym przełączniku. Dzięki temu zakładka
   // „Dostęp" i stan konta działają już teraz, bez zamykania systemu przed nikim.

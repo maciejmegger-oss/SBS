@@ -698,6 +698,10 @@ export const EN: Record<string, string> = {
   'Nie pamiętam hasła': 'Forgot password',
   'Sprawdź ponownie': 'Check again',
   'Hasło': 'Password',
+  'Pokaż hasło': 'Show password',
+  'Ukryj hasło': 'Hide password',
+  'Zostaw stare hasło': 'Keep the current password',
+  'Zaloguj się swoim dotychczasowym hasłem.': 'Log in with your current password.',
 
   // ---- Porównywarka ----
   'Wybierz 2–3 zawodników — porównanie graficzne (radar) i opisowe. Skala 1–10 ze średnich obserwacji.': 'Select 2–3 players — graphic (radar) and descriptive comparison. 1–10 scale from observation averages.',
