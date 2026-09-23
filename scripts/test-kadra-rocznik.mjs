@@ -10,7 +10,7 @@
 //
 // Uruchomienie:  node scripts/test-kadra-rocznik.mjs
 import fs from "node:fs";
-import { transformSync } from "/home/user/SBS/node_modules/esbuild/lib/main.js";
+import { transformSync } from "esbuild";
 
 const panel = fs.readFileSync(new URL("../src/mobile/main.ts", import.meta.url), "utf8");
 let bledy = 0;
