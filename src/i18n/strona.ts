@@ -213,8 +213,12 @@ export const STRONA: Record<string, Przeklad> = {
   'pakiet-btn': { en: 'Request access', de: 'Zugang anfragen' },
   'pakiet-btn-premium': { en: 'Request Premium access', de: 'Premium-Zugang anfragen' },
   'pak-cena': {
-    en: 'Terms and pricing are agreed individually — tell us which competitions you need and we will come back with a quote.',
-    de: 'Konditionen und Preise vereinbaren wir individuell — sagen Sie uns, welche Wettbewerbe Sie brauchen, und wir melden uns mit einem Angebot.',
+    en: 'Prices exclude VAT and cover one account. Each additional account in the organisation — 40% of the package price. '
+      + 'Packages add up, and access is opened by the administrator after reviewing your request. '
+      + 'On renewal we keep your existing price.',
+    de: 'Preise zzgl. MwSt. und für ein Konto. Jedes weitere Konto in der Organisation — 40% des Paketpreises. '
+      + 'Pakete summieren sich, und den Zugang öffnet der Administrator nach Prüfung der Anfrage. '
+      + 'Bei der Verlängerung behalten Sie Ihren bisherigen Preis.',
   },
   'pakiet-wybrany': { en: 'Selected package:', de: 'Gewähltes Paket:' },
 

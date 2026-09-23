@@ -422,3 +422,47 @@ section[id]{scroll-margin-top:80px;}
   font-size:14px;color:var(--chalk);
 }
 .pasek-pakietu strong{color:var(--gold-soft,#E8C578);}
+
+/* ---- CENY NA KARTACH PAKIETÓW ----
+   Kwota stoi NAD przyciskiem i pod opisem: człowiek czyta, co dostaje, potem ile to kosztuje,
+   a dopiero potem klika. Odwrotna kolejność (cena na górze) sortuje po cenie zamiast po
+   potrzebie — a tu chodzi o to, żeby klient wybrał rozgrywki, które naprawdę go interesują. */
+/* flex:0 0 auto jest tu konieczne. Reguła .pakiet p nadaje KAŻDEMU akapitowi w karcie flex:1,
+   więc kwota dzieliłaby się wolną przestrzenią z opisem — i przy dłuższym opisie lądowała niżej
+   niż u sąsiada. W cenniku ceny mają stać w jednej linii przez cały rząd, bo to po nich wodzi
+   się wzrokiem przy porównywaniu. Rośnie wyłącznie opis; cena i przycisk trzymają się dołu.
+
+   Selektor musi być `.pakiet .pak-kwota`, a nie samo `.pak-kwota`: reguła `.pakiet p` jest
+   bardziej szczegółowa (klasa + element) i wygrywa niezależnie od kolejności w pliku. */
+.pakiet .pak-kwota{margin:6px 0 2px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;flex:0 0 auto;}
+.pak-kwota-glowna{
+  font-family:'Barlow Condensed',sans-serif;font-size:30px;font-weight:700;
+  letter-spacing:.5px;line-height:1;color:var(--gold-soft);
+}
+/* Przeliczenie na miesiąc celowo szare i małe: to nie jest oferta, tylko miara porównawcza.
+   Przy kwartale wychodzi z niej drożej niż przy sezonie — i o to chodzi. */
+.pak-kwota-mies{font-size:12.5px;color:#8ca298;white-space:nowrap;}
+.pakiet.premium .pak-kwota-glowna{font-size:40px;color:var(--gold);}
+
+/* ---- PRZEŁĄCZNIK OKRESU ----
+   Ten sam kształt co przełącznik języka w pasku — pigułka z podświetlonym wyborem.
+   Powtórzony wzór znaczy, że nie trzeba się go uczyć drugi raz. */
+.okresy{
+  display:inline-flex;border:1px solid rgba(246,243,234,.28);border-radius:999px;
+  overflow:hidden;margin:0 0 20px;
+}
+.okresy button{
+  appearance:none;border:0;background:transparent;cursor:pointer;
+  font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:15px;letter-spacing:.06em;
+  padding:9px 20px;color:#c9d6cd;line-height:1;transition:background .15s,color .15s;
+}
+.okresy button + button{border-left:1px solid rgba(246,243,234,.2);}
+.okresy button:hover{background:rgba(246,243,234,.12);color:#F6F3EA;}
+.okresy button[aria-pressed="true"]{background:var(--gold);color:#16302A;}
+.okresy button:focus-visible{outline:2px solid var(--gold);outline-offset:-2px;}
+
+@media (max-width:520px){
+  .okresy button{padding:8px 14px;font-size:14px;}
+  .pak-kwota-glowna{font-size:26px;}
+  .pakiet.premium .pak-kwota-glowna{font-size:32px;}
+}

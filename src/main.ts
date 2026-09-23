@@ -23596,6 +23596,11 @@ const AKCJE_BEZ_KLIENTA = new Set([
   // 3. Narzędzia pracowni
   'reset-all','kopia-pobierz','rocznik-excel-import','rocznik-import-go','rocznik-paste-go',
   'talent-paste-import','talent-paste-parse','talent-porzadkuj','talent-delete-selected',
+  // EKSPORT KONTAKTÓW — nie dla klienta. Lista kontaktów do klubów to dorobek lat pracy,
+  // a nie dane z wykupionej ligi. Klient ma ją do PRACY (widzi numery, dzwoni), ale nie do
+  // wyniesienia jednym kliknięciem — bo wtedy kwartalny abonament wystarczy, żeby zabrać
+  // ze sobą to, co najcenniejsze, i nie wrócić.
+  'contacts-export-excel','contacts-export-pdf',
   'talent-rocznik-zbiorczo','contacts-fill-clubs','contacts-download-template','download-match-template',
   'manage-tabs','wagi-poziomu-zapisz','wagi-poziomu-domyslne','radar-punkt-odniesienia',
 ]);

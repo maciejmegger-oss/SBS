@@ -16,6 +16,7 @@
 import { STRONA } from '../i18n/strona';
 import { FLAGI, JEZYKI } from '../i18n/flagi';
 import { KIERUNKOWE, DOMYSLNY_KIERUNKOWY } from './kierunkowe';
+import { odswiezCennik } from './ceny-na-stronie';
 
 type Jezyk = 'pl' | 'en' | 'de';
 const KLUCZ = 'sbs-jezyk-strony';
@@ -98,6 +99,9 @@ export function ustawJezykStrony(j: Jezyk) {
   });
   podmienAtrybuty(j);
   odswiezKierunkowe(j);
+  // Cennik odświeżamy razem z językiem, bo język rozstrzyga o walucie: polski czyta ceny
+  // w złotych, angielski i niemiecki w euro.
+  odswiezCennik(j);
 
   // Pasek „Wybrany pakiet" rysuje się dopiero po kliknięciu, więc jego etykietę podajemy
   // z wyprzedzeniem w atrybucie — inaczej po zmianie języka zostałaby poprzednia.
