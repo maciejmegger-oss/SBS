@@ -340,7 +340,7 @@ p { margin: 0 0 1em; }
   .logo__txt b { font-size: 1.1rem; }
   .bento { grid-template-columns: 1fr 1fr; gap: 12px; }
   .card { padding: 20px; min-height: 170px; }
-  .card.big, .card.wide { grid-column: span 3; }
+  .card.big { grid-column: span 2; }
   .card.big h3 { font-size: 1.7rem; }
   .card.big .card__e { font-size: 3.2rem; }
   .card p { font-size: .88rem; }
