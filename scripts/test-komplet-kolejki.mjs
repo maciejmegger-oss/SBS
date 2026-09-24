@@ -59,7 +59,40 @@ console.log('\n3. Niepełne protokoły wracają do ponowienia');
   sprawdz('tura, która nic nie odzyskała, kończy ponawianie', /koniec\.bezSensu = true;/.test(zbieracz));
 }
 
-console.log('\n4. Panel mówi, czy to komplet');
+console.log('\n4. Przewijanie listy meczów — do końca, nie do pierwszych dwóch');
+{
+  // Sprawdzone na żywej stronie IV ligi warmińsko-mazurskiej (24.09.2026): pierwsze 40 wierszy to
+  // spotkania NIEROZEGRANE (kolejki 15…9), a 64 rozegrane doczytują się dopiero po kilkunastu
+  // przewinięciach. Reguła „mam dwa wiersze, jadę dalej" zbierała z tego dwa mecze.
+  const m = zbieracz.match(/var teraz = Math\.max\(ileLinkow, ileWierszy\);\s*\n\s*if\(teraz > najwiecej\)\{ najwiecej = teraz; bezZmian = 0; \} else bezZmian\+\+;\s*\n\s*var mamy = ([^\n]+);/);
+  sprawdz('kończymy dopiero, gdy lista przestanie rosnąć', !!m && /najwiecej >= 2 && bezZmian >= 4/.test(m[1]), m ? m[1] : 'nie znalazłem warunku');
+
+  // Ta sama reguła, przeliczona krok po kroku na prawdziwym przebiegu doczytywania.
+  const przebieg = (ilosci) => {
+    let najwiecej = 0, bezZmian = 0;
+    for (let k = 0; k < ilosci.length; k++) {
+      if (ilosci[k] > najwiecej) { najwiecej = ilosci[k]; bezZmian = 0; } else bezZmian++;
+      if (najwiecej >= 2 && bezZmian >= 4) return k;          // na którym kroku kończymy przewijanie
+    }
+    return -1;
+  };
+  const kroki = [0, 0, 8, 16, 24, 24, 32, 40, 48, 56, 64, 64, 64, 64, 64];
+  sprawdz('lista rosnąca 0→64: nie kończymy w połowie', przebieg(kroki) === 14, 'koniec na kroku ' + przebieg(kroki));
+  sprawdz('gdy doczyta się wszystko od razu, nie czekamy w nieskończoność',
+    przebieg([64, 64, 64, 64, 64, 64]) === 4, 'koniec na kroku ' + przebieg([64, 64, 64, 64, 64, 64]));
+  sprawdz('pusta strona nigdy nie uchodzi za gotową', przebieg([0, 0, 0, 0, 0, 0, 0, 0]) === -1);
+  sprawdz('limit kroków podniesiony (dłuższe listy doczytują się wolniej)', /var krok=0, MAX=45,/.test(zbieracz));
+}
+
+console.log('\n5. Przed zakończeniem jeszcze jedno przewinięcie');
+{
+  sprawdz('po zebraniu widocznych meczów zbieracz sprawdza, czy niżej nie ma następnych',
+    /if\(!poKolejce\.dociagnieto\)\{\s*\n\s*poKolejce\.dociagnieto=true;[\s\S]{0,260}dociagnijStrone\(function\(\)\{ poKolejce\(\); \}\);/.test(zbieracz));
+  sprawdz('nowe mecze otwierają prawo do kolejnego przewinięcia', /poKolejce\.dociagnieto=false;\s+\/\/ doszly nowe mecze/.test(zbieracz));
+  sprawdz('przejście do następnej kolejki też je zeruje', /clearInterval\(licz\);poKolejce\.dociagnieto=false;linki=teraz;/.test(zbieracz));
+}
+
+console.log('\n6. Panel mówi, czy to komplet');
 {
   sprawdz('podaje liczbę rozegranych meczów na stronie', /Rozegranych meczow na stronie: /.test(zbieracz));
   sprawdz('ostrzega, gdy brakuje meczów', /To NIE jest komplet — brakuje /.test(zbieracz));
@@ -68,7 +101,7 @@ console.log('\n4. Panel mówi, czy to komplet');
   sprawdz('na stronie jednego meczu nie straszy brakiem kolejki', /if\(!widzianeMecze\.length \|\| trybJedenMecz\) return '';/.test(zbieracz));
 }
 
-console.log('\n5. Wersja zakładki zgodna z aplikacją');
+console.log('\n7. Wersja zakładki zgodna z aplikacją');
 {
   const wZbieraczu = (zbieracz.match(/var SBS_ZBIERACZ="([^"]+)"/) || [])[1];
   const wAplikacji = (glowny.match(/const ZAKLADKA_WERSJA = '([^']+)'/) || [])[1];

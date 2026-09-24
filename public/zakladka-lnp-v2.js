@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v51 z 23.09.2026";
+var SBS_ZBIERACZ="v52 z 24.09.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -608,8 +608,16 @@ function otworzZakladkeMecze(gotowe){
 //
 // Teraz przewijamy dopoki lista sie nie pojawi (albo do dwudziestu sekund) i dopiero wtedy
 // decydujemy. Warunkiem konca jest ZOBACZENIE danych, nie zmeczenie licznika.
+//
+// DRUGA POPRAWKA (24.09.2026, IV liga warminsko-mazurska): "dwa wiersze wystarcza" tez bylo zle.
+// LNP wypisuje terminarz od najdalszej PRZYSZLEJ kolejki: sprawdzone na zywej stronie tej grupy —
+// pierwsze czterdziesci wierszy to same spotkania NIEROZEGRANE (kolejki 15...9), a rozegrane
+// doczytuja sie dopiero po kilkunastu przewinieciach. Zbieracz konczyl przewijanie w chwili, gdy
+// z szesdziesieciu czterech rozegranych meczow widzial pierwsze dwa — i zbieral te dwa zamiast
+// calej rundy. Dlatego teraz czekamy, az lista PRZESTANIE ROSNAC: cztery kroki bez ani jednego
+// nowego meczu znacza, ze to juz koniec listy.
 function dociagnijStrone(gotowe){
- var krok=0, MAX=28;
+ var krok=0, MAX=45, najwiecej=0, bezZmian=0;
  var t=setInterval(function(){
   krok++;
   // Przewijamy w dol i z powrotem — czesc ukladow doczytuje przy ruchu, nie na samym koncu.
@@ -623,8 +631,11 @@ function dociagnijStrone(gotowe){
   var ileLinkow = zbierzLinki().length;
   var ileWierszy = wierszeRozegrane().length;
   ostatnioLinkow = ileLinkow; ostatnioWierszy = ileWierszy; ostatnioKrokow = krok;
-  var mamy = ileLinkow >= 2 || ileWierszy >= 2;
-  linia.textContent='SBS '+SBS_ZBIERACZ+': szukam rozegranych meczow ('+krok+'/'+MAX+') - odnosnikow '+ileLinkow+', wierszy '+ileWierszy;
+  var teraz = Math.max(ileLinkow, ileWierszy);
+  if(teraz > najwiecej){ najwiecej = teraz; bezZmian = 0; } else bezZmian++;
+  var mamy = najwiecej >= 2 && bezZmian >= 4;
+  linia.textContent='SBS '+SBS_ZBIERACZ+': szukam rozegranych meczow ('+krok+'/'+MAX+') - odnosnikow '+ileLinkow
+   +', wierszy '+ileWierszy+(najwiecej>=2?' - czekam, az lista przestanie rosnac ('+bezZmian+'/4)':'');
 
   if(mamy || krok>=MAX || zaDlugo()){
    clearInterval(t);
@@ -1326,8 +1337,20 @@ function poKolejce(){
  });
  if(swieze.length&&doliczen<6){
   doliczen++;
+  poKolejce.dociagnieto=false;          // doszly nowe mecze — nizej moga byc nastepne
   linia.textContent='SBS '+SBS_ZBIERACZ+': doszlo '+swieze.length+' meczow - zbieram dalej';
   linki=swieze;i=0;nastepny();return;
+ }
+ // JESZCZE JEDNO PRZEWINIECIE, ZANIM UZNAMY KOLEJKE ZA ZEBRANA.
+ //
+ // Lista meczow doczytuje sie porcjami, a zbieranie protokolow trwa minuty — w tym czasie strona
+ // stoi nieruszona i nizszych kolejek na niej nie ma. Bez tego kroku zbieracz konczyl na tym, co
+ // zdazylo sie doczytac na poczatku, i meldowal sukces.
+ if(!poKolejce.dociagnieto){
+  poKolejce.dociagnieto=true;
+  linia.textContent='SBS '+SBS_ZBIERACZ+': sprawdzam, czy nizej nie ma jeszcze meczow...';
+  dociagnijStrone(function(){ poKolejce(); });
+  return;
  }
  var wybor=listaKolejek();
  if(wybor&&wybor.selectedIndex+1<wybor.options.length&&kolejek<40){
@@ -1340,7 +1363,7 @@ function poKolejce(){
   var licz=setInterval(function(){
    czek++;
    var teraz=zbierzLinki();
-   if(teraz.length&&teraz.join('|')!==poprzednie){clearInterval(licz);linki=teraz;i=0;nastepny();return;}
+   if(teraz.length&&teraz.join('|')!==poprzednie){clearInterval(licz);poKolejce.dociagnieto=false;linki=teraz;i=0;nastepny();return;}
    if(czek>16){clearInterval(licz);koniec();}
   },500);
   return;
