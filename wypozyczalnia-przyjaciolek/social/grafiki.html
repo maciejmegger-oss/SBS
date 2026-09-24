@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<title>Grafiki social media — Wypożyczalnia Przyjaciółek</title>
+<!-- Każda ramka .g to jedna grafika w docelowym rozmiarze. PNG generuje social/render.mjs -->
+<link rel="stylesheet" href="../fonts/fonts.css">
+<style>
+:root { --pink:#ff3d7f; --pink-d:#e62466; --pink-l:#ffe3ec; --yellow:#ffd23f; --ink:#1d1030; --muted:#6c6380; --bg:#fffaf6;
+  --display:"Bricolage Grotesque",sans-serif; --sans:"Plus Jakarta Sans",sans-serif; --hand:"Caveat",cursive; }
+* { box-sizing: border-box; margin: 0; }
+body { background: #ddd; font-family: var(--sans); color: var(--ink); padding: 40px; display: flex; flex-direction: column; gap: 40px; align-items: flex-start; }
+.g { position: relative; overflow: hidden; background: var(--bg); flex: none; }
+h1, h2 { font-family: var(--display); font-weight: 800; letter-spacing: -.03em; line-height: 1; }
+.pink { color: var(--pink); }
+.hand { font-family: var(--hand); font-weight: 700; }
+.blob { position: absolute; border-radius: 50%; filter: blur(90px); opacity: .6; }
+.mark { display: grid; place-items: center; background: linear-gradient(135deg, var(--pink), #ff8a5b); color: #fff; border-radius: 28%; transform: rotate(-8deg); }
+.logo { display: flex; align-items: center; gap: 18px; }
+.logo .mark { width: 72px; height: 72px; font-size: 38px; }
+.logo span { display: flex; flex-direction: column; font-weight: 700; font-size: 20px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); line-height: 1.1; }
+.logo b { font-family: var(--display); font-size: 40px; letter-spacing: -.02em; text-transform: none; color: var(--ink); font-weight: 800; }
+.photo { border: 12px solid #fff; border-radius: 56px; overflow: hidden; box-shadow: 0 40px 80px -30px rgba(60,20,70,.45); }
+.photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.chip { position: absolute; background: #fff; border-radius: 26px; padding: 20px 28px; font-weight: 700; font-size: 30px; box-shadow: 0 24px 50px -20px rgba(60,20,70,.45); white-space: nowrap; }
+.btn { display: inline-block; background: var(--pink); color: #fff; font-weight: 800; border-radius: 999px; }
+.url { font-weight: 700; color: var(--muted); }
+
+/* 1. Zdjęcie profilowe 1080x1080 */
+#avatar { width: 1080px; height: 1080px; background: linear-gradient(135deg, #ff3d7f, #ff7a59 60%, #ffb347); display: grid; place-items: center; }
+#avatar .inner { width: 620px; height: 620px; border-radius: 50%; background: #fff; display: grid; place-items: center; box-shadow: 0 40px 80px -30px rgba(80,0,40,.5); }
+#avatar .heart { font-size: 330px; color: var(--pink); line-height: 1; transform: rotate(-8deg) translateY(10px); }
+
+/* 2. Okładka Facebook 1640x624 (bezpieczny środek ~1230 px) */
+#cover { width: 1640px; height: 624px; }
+#cover .txt { position: absolute; left: 220px; top: 110px; width: 640px; }
+#cover h1 { font-size: 104px; margin: 26px 0 26px; }
+#cover .sub { font-size: 30px; color: var(--muted); font-weight: 600; }
+#cover .photo { position: absolute; right: 200px; top: 70px; width: 560px; height: 460px; transform: rotate(3deg); }
+#cover .chip { right: 650px; top: 60px; background: var(--yellow); }
+#cover .hand { position: absolute; right: 190px; bottom: 16px; font-size: 36px; color: var(--pink-d); transform: rotate(-3deg); }
+
+/* posty 1080x1350 */
+.post { width: 1080px; height: 1350px; padding: 90px 80px; }
+.post .foot { position: absolute; left: 80px; right: 80px; bottom: 70px; display: flex; justify-content: space-between; align-items: center; }
+.post .foot .logo .mark { width: 60px; height: 60px; font-size: 30px; }
+.post .foot .logo span { font-size: 16px; } .post .foot .logo b { font-size: 32px; }
+.kick { font-weight: 800; font-size: 26px; letter-spacing: .14em; text-transform: uppercase; color: var(--pink); }
+
+/* 3. Post powitalny */
+#p1 h1 { font-size: 116px; margin: 24px 0 44px; }
+#p1 .photo { width: 920px; height: 490px; transform: rotate(-2deg); }
+#p1 .chip { right: 50px; top: 610px; }
+
+/* 4. Okazje */
+#p2 { background: var(--ink); color: #fff; }
+#p2 h2 { color: #fff; font-size: 100px; margin: 20px 0 50px; }
+#p2 .kick { color: var(--yellow); }
+#p2 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+#p2 .t { border-radius: 30px; padding: 30px 32px; color: var(--ink); font-family: var(--display); font-weight: 800; font-size: 40px; display: flex; align-items: center; gap: 18px; letter-spacing: -.02em; }
+#p2 .t i { font-style: normal; font-size: 52px; }
+#p2 .foot .logo b { color: #fff; } #p2 .url { color: #cfc2e6; }
+
+/* 5. Typy przyjaciółek */
+#p3 { background: linear-gradient(180deg, #fff1f5, #fff8ee); }
+#p3 h2 { font-size: 104px; margin: 20px 0 50px; }
+#p3 .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+#p3 .row + .row { grid-template-columns: repeat(2, 1fr); width: 66%; margin: 24px auto 0; }
+#p3 .p { text-align: center; }
+#p3 .p img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 50%; border: 8px solid #fff; box-shadow: 0 20px 40px -20px rgba(60,20,70,.5); display: block; }
+#p3 .more { text-align: center; font-size: 36px; font-weight: 700; color: var(--muted); margin-top: 56px; }
+#p3 .p b { display: inline-block; margin-top: 14px; font-family: var(--display); font-size: 32px; padding: 6px 20px; border-radius: 999px; }
+
+/* 6. Cennik */
+#p4 h2 { font-size: 120px; margin: 20px 0 50px; }
+#p4 .pr { position: relative; display: flex; justify-content: space-between; align-items: center; background: #fff; border-radius: 32px; padding: 34px 44px; margin-bottom: 20px; box-shadow: 0 16px 40px -24px rgba(60,20,70,.4); }
+#p4 .pr span { font-weight: 700; font-size: 38px; }
+#p4 .pr b { font-family: var(--display); font-size: 72px; letter-spacing: -.03em; }
+#p4 .pr b small { font-size: 34px; }
+#p4 .hot { background: linear-gradient(120deg, var(--pink), #ff7a59); color: #fff; transform: scale(1.03); }
+#p4 .pr.w b { font-size: 40px; }
+
+/* 7. Story 1080x1920 */
+#story { width: 1080px; height: 1920px; background: linear-gradient(160deg, #ff3d7f, #ff7a59 55%, #ffb347); color: #fff; padding: 160px 90px; text-align: center; }
+#story h1 { font-size: 128px; color: #fff; margin: 30px 0 60px; }
+#story .q { display: grid; gap: 28px; }
+#story .q div { background: #fff; color: var(--ink); border-radius: 36px; padding: 34px; font-weight: 800; font-size: 46px; display: flex; align-items: center; gap: 24px; }
+#story .q img { width: 110px; height: 110px; border-radius: 50%; object-fit: cover; }
+#story .bottom { position: absolute; left: 0; right: 0; bottom: 170px; font-size: 44px; font-weight: 800; }
+#story .hand { font-size: 64px; display: block; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+
+<div class="g" id="avatar"><div class="inner"><div class="heart">♥</div></div></div>
+
+<div class="g" id="cover">
+  <div class="blob" style="width:600px;height:600px;background:#ffc2d6;right:-100px;top:-200px"></div>
+  <div class="blob" style="width:500px;height:500px;background:#ffe58a;left:-150px;bottom:-250px"></div>
+  <div class="txt">
+    <div class="logo"><div class="mark">♥</div><span>Wypożyczalnia<b>Przyjaciółek</b></span></div>
+    <h1>Przyjaciółka<br><span class="pink">na każdą okazję</span></h1>
+    <p class="sub">Zakupy · kawa · koncert · wyjazd · urodziny</p>
+  </div>
+  <div class="photo"><img src="../img/hero-grupa.jpg" alt=""></div>
+  <div class="chip">🥂 Zarezerwuj — od 149 zł</div>
+  <p class="hand">bo życie smakuje lepiej w dobrym towarzystwie ♡</p>
+</div>
+
+<div class="g post" id="p1">
+  <div class="blob" style="width:600px;height:600px;background:#ffc2d6;right:-200px;top:-200px"></div>
+  <p class="kick" style="position:relative">♥ Startujemy!</p>
+  <h1 style="position:relative">Nie masz<br>z kim wyjść? <span class="pink">Mamy<br>przyjaciółkę.</span></h1>
+  <div class="photo"><img src="../img/hero-grupa.jpg" alt=""></div>
+  <div class="chip">✅ Rezerwacja w 2 minuty</div>
+  <div class="foot"><div class="logo"><div class="mark">♥</div><span>Wypożyczalnia<b>Przyjaciółek</b></span></div><span class="url">link w bio →</span></div>
+</div>
+
+<div class="g post" id="p2">
+  <div class="blob" style="width:600px;height:600px;background:#ff3d7f;opacity:.3;right:-200px;top:-200px"></div>
+  <p class="kick" style="position:relative">♥ Na jaką okazję?</p>
+  <h2 style="position:relative">Wszystko, co fajniej robić <span style="color:var(--yellow)">we dwie</span></h2>
+  <div class="grid">
+    <div class="t" style="background:#ffc2d6"><i>🥂</i>Na imprezę</div>
+    <div class="t" style="background:#fff0b3"><i>☕</i>Do pogadania</div>
+    <div class="t" style="background:#e9dcff"><i>🛍️</i>Na zakupy</div>
+    <div class="t" style="background:#d6ecff"><i>✈️</i>Na wyjazd</div>
+    <div class="t" style="background:#ffdcc8"><i>💔</i>Po rozstaniu</div>
+    <div class="t" style="background:#cff5e4"><i>🎂</i>Na urodziny</div>
+  </div>
+  <div class="foot"><div class="logo"><div class="mark">♥</div><span>Wypożyczalnia<b>Przyjaciółek</b></span></div><span class="url">link w bio →</span></div>
+</div>
+
+<div class="g post" id="p3">
+  <p class="kick">♥ Poznaj nas</p>
+  <h2>Która jest <span class="pink">Twoja?</span></h2>
+  <div class="row">
+    <div class="p"><img src="../img/dama.jpg" alt=""><b style="background:#ffe08a">Dama</b></div>
+    <div class="p"><img src="../img/wariatka.jpg" alt=""><b style="background:#ffb3c9">Wariatka</b></div>
+    <div class="p"><img src="../img/powierniczka.jpg" alt=""><b style="background:#aef0d0">Powierniczka</b></div>
+  </div>
+  <div class="row">
+    <div class="p"><img src="../img/imprezowiczka.jpg" alt=""><b style="background:#d9c6ff">Imprezowiczka</b></div>
+    <div class="p"><img src="../img/instagramerka.jpg" alt=""><b style="background:#b9ddff">Instagramerka</b></div>
+  </div>
+  <p class="more">Każda ma inną supermoc. <span class="hand pink" style="font-size:48px">A może wszystkie? 😉</span></p>
+  <div class="foot"><div class="logo"><div class="mark">♥</div><span>Wypożyczalnia<b>Przyjaciółek</b></span></div><span class="url">napisz w komentarzu 👇</span></div>
+</div>
+
+<div class="g post" id="p4">
+  <div class="blob" style="width:600px;height:600px;background:#ffe58a;left:-250px;bottom:0"></div>
+  <p class="kick" style="position:relative">♥ Cennik</p>
+  <h2 style="position:relative">Proste ceny.<br><span class="pink">Zero niespodzianek.</span></h2>
+  <div class="pr"><span>2 godziny</span><b>149<small> zł</small></b></div>
+  <div class="pr hot"><span>4 godziny 🔥</span><b>249<small> zł</small></b></div>
+  <div class="pr"><span>Cały wieczór</span><b>399<small> zł</small></b></div>
+  <div class="pr w"><span>Weekend</span><b>wycena</b></div>
+  <div class="foot"><div class="logo"><div class="mark">♥</div><span>Wypożyczalnia<b>Przyjaciółek</b></span></div><span class="url">link w bio →</span></div>
+</div>
+
+<div class="g" id="story">
+  <p class="kick" style="color:#fff">♥ Quiz</p>
+  <h1>Którą przyjaciółkę dziś wybierasz?</h1>
+  <div class="q">
+    <div><img src="../img/dama.jpg" alt="">🍷 Dama</div>
+    <div><img src="../img/wariatka.jpg" alt="">⚡ Wariatka</div>
+    <div><img src="../img/powierniczka.jpg" alt="">☕ Powierniczka</div>
+    <div><img src="../img/imprezowiczka.jpg" alt="">💃 Imprezowiczka</div>
+  </div>
+  <div class="bottom"><span class="hand">odpisz w wiadomości ♡</span>Rezerwacja: link w bio</div>
+</div>
+
+</body>
+</html>

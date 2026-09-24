@@ -345,6 +345,9 @@ p { margin: 0 0 1em; }
   .card.big .card__e { font-size: 3.2rem; }
   .card p { font-size: .88rem; }
   .pers-grid { grid-template-columns: 1fr 1fr; gap: 12px; }
+  .pers:last-child { grid-column: span 2; }
+  .pers:last-child .pers__img { aspect-ratio: 16/10; }
+  .pers:last-child .pers__img img { object-position: 50% 25%; }
   .pers__body { padding: 14px; }
   .tags { display: none; }
   .pers__body p { font-size: .85rem; }
