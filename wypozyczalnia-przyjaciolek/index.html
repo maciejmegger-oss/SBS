@@ -1,39 +1,41 @@
 <!doctype html>
 <html lang="pl">
+<script>document.documentElement.classList.add("js")</script>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Wypożyczalnia Przyjaciółek — dobre towarzystwo na każdą okazję</title>
-<meta name="description" content="Towarzyszka na zakupy, wyjście, wyjazd albo do pogadania. Sprawdzone przyjaciółki, jasne zasady, prosta rezerwacja.">
+<meta name="description" content="Przyjaciółka na zakupy, koncert, kawę, wyjazd albo do pogadania. Zweryfikowane dziewczyny, jasne ceny, rezerwacja w 2 minuty.">
+<meta name="theme-color" content="#ff3d7f">
 <meta property="og:title" content="Wypożyczalnia Przyjaciółek">
-<meta property="og:description" content="Nie masz z kim wyjść? Zarezerwuj przyjaciółkę na zakupy, kawę, wyjazd albo urodziny.">
+<meta property="og:description" content="Nie masz z kim wyjść? Zarezerwuj przyjaciółkę na zakupy, kawę, koncert albo wyjazd.">
 <meta property="og:type" content="website">
-<!-- Podmień na własne zdjęcie 1200x630 px -->
-<meta property="og:image" content="img/og.jpg">
+<meta property="og:image" content="img/hero-grupa.jpg">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💗</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&family=Inter:wght@400;500;600&family=Parisienne&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Caveat:wght@600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
+<div class="topbar">🎁 <strong>Karty podarunkowe</strong> — przyjaciółka w prezencie na urodziny, imieniny albo „tak po prostu”. <a href="#prezent">Sprawdź →</a></div>
+
 <header class="nav" id="top">
   <div class="wrap nav__in">
     <a class="logo" href="#top" aria-label="Wypożyczalnia Przyjaciółek — strona główna">
-      <span class="logo__a">Wypożyczalnia</span>
-      <span class="logo__b">Przyjaciółek</span>
+      <span class="logo__mark">♥</span>
+      <span class="logo__txt">Wypożyczalnia<b>Przyjaciółek</b></span>
     </a>
-    <button class="nav__toggle" aria-expanded="false" aria-controls="menu" aria-label="Menu">
-      <span></span><span></span><span></span>
-    </button>
     <nav id="menu" class="nav__menu">
       <a href="#okazje">Okazje</a>
       <a href="#przyjaciolki">Przyjaciółki</a>
+      <a href="#jak">Jak to działa</a>
       <a href="#cennik">Cennik</a>
-      <a href="#zasady">Zasady</a>
       <a href="#faq">FAQ</a>
       <a class="btn btn--sm" href="#rezerwacja">Zarezerwuj</a>
     </nav>
+    <button class="nav__toggle" aria-expanded="false" aria-controls="menu" aria-label="Menu"><span></span><span></span><span></span></button>
   </div>
 </header>
 
@@ -41,257 +43,276 @@
 
 <!-- ============ HERO ============ -->
 <section class="hero">
+  <div class="blob blob--1"></div><div class="blob blob--2"></div><div class="blob blob--3"></div>
   <div class="wrap hero__in">
-    <div class="hero__txt">
-      <p class="eyebrow">Towarzystwo na godziny · <span data-city>Warszawa</span></p>
-      <h1>Nie masz z kim wyjść?<br><em>Mamy przyjaciółkę.</em></h1>
-      <p class="lead">Na zakupy, kawę, koncert, wesele znajomych albo po prostu do pogadania. Sprawdzone, uśmiechnięte dziewczyny, które lubią ludzi — i jasne zasady, dzięki którym obie strony czują się dobrze.</p>
+    <div class="hero__txt reveal">
+      <span class="pill">✨ Nowość w <span data-city>Warszawie</span></span>
+      <h1>Przyjaciółka<br><span class="rot" aria-live="polite"><span class="rot__w">na zakupy</span></span></h1>
+      <p class="lead">Nie masz z kim wyjść? Zarezerwuj pozytywną, sprawdzoną dziewczynę, która pójdzie z Tobą na kawę, koncert, zakupy albo wyjazd — i sprawi, że będzie to najlepszy dzień tygodnia.</p>
       <div class="hero__cta">
-        <a class="btn" href="#rezerwacja">Zarezerwuj przyjaciółkę</a>
-        <a class="btn btn--ghost" href="#przyjaciolki">Poznaj nasze przyjaciółki</a>
+        <a class="btn btn--lg" href="#rezerwacja">Zarezerwuj przyjaciółkę <span class="arr">→</span></a>
+        <a class="btn btn--ghost btn--lg" href="#quiz">Dobierz mi przyjaciółkę</a>
       </div>
       <ul class="hero__trust">
-        <li>Weryfikacja tożsamości</li>
-        <li>Spotkania w miejscach publicznych</li>
-        <li>100% platonicznie</li>
+        <li><b>✓</b> Zweryfikowane przyjaciółki</li>
+        <li><b>✓</b> Odpowiedź w 24 h</li>
+        <li><b>✓</b> Od 149 zł</li>
       </ul>
     </div>
-    <div class="hero__img">
-      <!-- Podmień na zdjęcie: <img src="img/hero.jpg" alt="Przyjaciółki śmieją się przy kawie"> -->
-      <div class="ph ph--hero"><span>Zdjęcie główne<br><small>img/hero.jpg · 4:5</small></span></div>
-      <p class="hero__note">Bo życie smakuje lepiej<br>w dobrym towarzystwie ♡</p>
+    <div class="hero__vis reveal" style="--d:.15s">
+      <div class="hero__photo"><img src="img/hero-grupa.jpg" alt="Cztery roześmiane przyjaciółki spędzają razem wieczór" width="1182" height="600"></div>
+      <div class="chip chip--a">✅ Rezerwacja potwierdzona</div>
+      <div class="chip chip--b">🥂 Sobota, 19:00 · koncert</div>
+      <div class="chip chip--c"><span class="chip__ava"><img src="img/wariatka.jpg" alt=""></span>Dopasowano: <b>Wariatka</b></div>
+      <p class="hero__script">bo życie smakuje lepiej<br>w dobrym towarzystwie ♡</p>
     </div>
   </div>
 </section>
 
+<!-- ============ MARQUEE ============ -->
+<div class="marquee-wrap" aria-hidden="true"><div class="marquee">
+  <div class="marquee__track">
+    <span>🥂 Na imprezę</span><span>☕ Do pogadania</span><span>🛍️ Na zakupy</span><span>✈️ Na wyjazd</span><span>💔 Po rozstaniu</span><span>🎂 Na urodziny</span><span>😄 Na poprawę humoru</span><span>💃 Na wesele</span>
+    <span>🥂 Na imprezę</span><span>☕ Do pogadania</span><span>🛍️ Na zakupy</span><span>✈️ Na wyjazd</span><span>💔 Po rozstaniu</span><span>🎂 Na urodziny</span><span>😄 Na poprawę humoru</span><span>💃 Na wesele</span>
+  </div>
+</div></div>
+
 <!-- ============ OKAZJE ============ -->
 <section class="sec" id="okazje">
   <div class="wrap">
-    <p class="eyebrow center">Na jaką okazję?</p>
-    <h2 class="center">Przyjaciółka do wszystkiego, co fajniej robić we dwie</h2>
-    <div class="grid grid--occ">
-      <article class="occ"><div class="occ__ic">🥂</div><h3>Na wyjście</h3><p>Koncert, teatr, kolacja, wieczór w mieście — żeby nie iść samej.</p></article>
-      <article class="occ"><div class="occ__ic">☕</div><h3>Do pogadania</h3><p>Bez oceniania i bez „a nie mówiłam”. Ktoś, kto naprawdę słucha.</p></article>
-      <article class="occ"><div class="occ__ic">🛍️</div><h3>Na zakupy</h3><p>Szczera opinia w przymierzalni. Gwarantowana.</p></article>
-      <article class="occ"><div class="occ__ic">✈️</div><h3>Na wyjazd</h3><p>City break, spa, wycieczka — podróż z kimś smakuje lepiej.</p></article>
-      <article class="occ"><div class="occ__ic">💌</div><h3>Po rozstaniu</h3><p>Pakiet „nie pisz do niego”: lody, spacer i trzymanie telefonu.</p></article>
-      <article class="occ"><div class="occ__ic">🎂</div><h3>Na urodziny</h3><p>Ktoś musi zrobić zdjęcia i wznieść toast.</p></article>
-      <article class="occ"><div class="occ__ic">💃</div><h3>Na wesele / event</h3><p>Towarzyszka na imprezę firmową lub wesele, żeby nie siedzieć samej przy stoliku.</p></article>
-      <article class="occ"><div class="occ__ic">🌿</div><h3>Nowa w mieście</h3><p>Pokażemy najlepsze kawiarnie i miejsca — i pomożemy się zadomowić.</p></article>
+    <div class="head reveal">
+      <span class="kicker">Okazje</span>
+      <h2>Wszystko, co fajniej robić <span class="hl">we dwie</span></h2>
+      <p>Wybierz okazję — resztę zorganizujemy razem.</p>
+    </div>
+    <div class="bento">
+      <article class="card c-pink big reveal"><span class="card__e">🥂</span><h3>Na imprezę</h3><p>Żeby nie iść samej. Koncert, klub, festiwal, wieczór w mieście — z kimś, kto zna najlepsze miejsca.</p></article>
+      <article class="card c-yellow reveal" style="--d:.05s"><span class="card__e">☕</span><h3>Do pogadania</h3><p>Bez oceniania i bez „a nie mówiłam”.</p></article>
+      <article class="card c-lilac reveal" style="--d:.1s"><span class="card__e">🛍️</span><h3>Na zakupy</h3><p>Szczera opinia w przymierzalni — gwarantowana.</p></article>
+      <article class="card c-sky reveal"><span class="card__e">✈️</span><h3>Na wyjazd</h3><p>Podróż z kimś smakuje lepiej.</p></article>
+      <article class="card c-peach reveal" style="--d:.05s"><span class="card__e">💔</span><h3>Po rozstaniu</h3><p>Pakiet „nie pisz do niego”.</p></article>
+      <article class="card c-mint reveal" style="--d:.1s"><span class="card__e">🎂</span><h3>Na urodziny</h3><p>Ktoś musi zrobić zdjęcia i wznieść toast.</p></article>
+      <article class="card c-ink wide reveal"><span class="card__e">😄</span><h3>Na poprawę humoru</h3><p>Śmiech wliczony w cenę. Nie wiesz, czego potrzebujesz? Napisz, jak się czujesz — wymyślimy plan.</p></article>
     </div>
   </div>
 </section>
 
 <!-- ============ PRZYJACIÓŁKI ============ -->
-<section class="sec sec--blush" id="przyjaciolki">
+<section class="sec sec--tint" id="przyjaciolki">
   <div class="wrap">
-    <p class="eyebrow center">Wybierz swój typ</p>
-    <h2 class="center">Każda z nas ma inną supermoc</h2>
-    <p class="center sub">Nie wiesz, którą wybrać? Opisz nam, czego potrzebujesz — dobierzemy za Ciebie.</p>
-    <div class="grid grid--pers">
-      <article class="pers">
-        <div class="ph ph--pers" style="--h:340"><span>Dama</span></div>
-        <div class="pers__body">
-          <h3>Dama</h3>
-          <p class="pers__tag">klasa · elegancja · rozmowy o życiu</p>
-          <p>Idealna na kolację, teatr, wernisaż albo spokojne prosecco z widokiem.</p>
-          <a class="link" href="#rezerwacja" data-pick="Dama">Wybieram Damę →</a>
-        </div>
+    <div class="head reveal">
+      <span class="kicker">Nasze przyjaciółki</span>
+      <h2>Wybierz swoją <span class="hl hl--y">przyjaciółkę</span></h2>
+      <p>Każda ma inną supermoc. Kliknij, żeby zarezerwować.</p>
+    </div>
+    <div class="pers-grid">
+      <article class="pers reveal">
+        <div class="pers__img"><img src="img/dama.jpg" alt="Dama" loading="lazy"><span class="pers__badge b-gold">Dama</span></div>
+        <div class="pers__body"><p>Klasa, elegancja, prosecco i rozmowy o życiu.</p><div class="tags"><span>kolacja</span><span>teatr</span><span>wernisaż</span></div>
+        <a class="pers__btn" href="#rezerwacja" data-pick="Dama">Wybieram Damę</a></div>
       </article>
-      <article class="pers">
-        <div class="ph ph--pers" style="--h:15"><span>Wariatka</span></div>
-        <div class="pers__body">
-          <h3>Wariatka</h3>
-          <p class="pers__tag">spontaniczna · energiczna · „a może…?”</p>
-          <p>Escape room, karaoke, kajaki, spontaniczny wyjazd nad morze. Nuda zakazana.</p>
-          <a class="link" href="#rezerwacja" data-pick="Wariatka">Wybieram Wariatkę →</a>
-        </div>
+      <article class="pers reveal" style="--d:.06s">
+        <div class="pers__img"><img src="img/wariatka.jpg" alt="Wariatka" loading="lazy"><span class="pers__badge b-pink">Wariatka</span></div>
+        <div class="pers__body"><p>Spontaniczna, energiczna i zawsze gotowa na przygodę.</p><div class="tags"><span>karaoke</span><span>escape room</span><span>wypad</span></div>
+        <a class="pers__btn" href="#rezerwacja" data-pick="Wariatka">Wybieram Wariatkę</a></div>
       </article>
-      <article class="pers">
-        <div class="ph ph--pers" style="--h:150"><span>Powierniczka</span></div>
-        <div class="pers__body">
-          <h3>Powierniczka</h3>
-          <p class="pers__tag">wysłucha · przytuli · powie „on na Ciebie nie zasługiwał”</p>
-          <p>Długi spacer, herbata i rozmowa, po której robi się lżej.</p>
-          <a class="link" href="#rezerwacja" data-pick="Powierniczka">Wybieram Powierniczkę →</a>
-        </div>
+      <article class="pers reveal" style="--d:.12s">
+        <div class="pers__img"><img src="img/powierniczka.jpg" alt="Powierniczka" loading="lazy"><span class="pers__badge b-mint">Powierniczka</span></div>
+        <div class="pers__body"><p>Wysłucha, przytuli i powie: „On na Ciebie nie zasługiwał”.</p><div class="tags"><span>spacer</span><span>herbata</span><span>rozmowa</span></div>
+        <a class="pers__btn" href="#rezerwacja" data-pick="Powierniczka">Wybieram Powierniczkę</a></div>
       </article>
-      <article class="pers">
-        <div class="ph ph--pers" style="--h:290"><span>Imprezowiczka</span></div>
-        <div class="pers__body">
-          <h3>Imprezowiczka</h3>
-          <p class="pers__tag">wie, gdzie gra najlepsza muzyka</p>
-          <p>Koncerty, festiwale, taniec do rana. Zna miasto nocą jak własną kieszeń.</p>
-          <a class="link" href="#rezerwacja" data-pick="Imprezowiczka">Wybieram Imprezowiczkę →</a>
-        </div>
+      <article class="pers reveal" style="--d:.18s">
+        <div class="pers__img"><img src="img/imprezowiczka.jpg" alt="Imprezowiczka" loading="lazy"><span class="pers__badge b-lilac">Imprezowiczka</span></div>
+        <div class="pers__body"><p>Wie, gdzie gra najlepsza muzyka i kiedy zamówić kolejną kolejkę.</p><div class="tags"><span>koncert</span><span>klub</span><span>festiwal</span></div>
+        <a class="pers__btn" href="#rezerwacja" data-pick="Imprezowiczka">Wybieram Imprezowiczkę</a></div>
       </article>
-      <article class="pers">
-        <div class="ph ph--pers" style="--h:40"><span>Instagramerka</span></div>
-        <div class="pers__body">
-          <h3>Instagramerka</h3>
-          <p class="pers__tag">wie, z której strony światło jest najlepsze</p>
-          <p>Sesja w mieście, brunch, nowe miejsca. Wrócisz z zdjęciami, jakich jeszcze nie masz.</p>
-          <a class="link" href="#rezerwacja" data-pick="Instagramerka">Wybieram Instagramerkę →</a>
-        </div>
+      <article class="pers reveal" style="--d:.24s">
+        <div class="pers__img"><img src="img/instagramerka.jpg" alt="Instagramerka" loading="lazy"><span class="pers__badge b-sky">Instagramerka</span></div>
+        <div class="pers__body"><p>Wie, z której strony światło jest najlepsze. Zdjęcia gwarantowane.</p><div class="tags"><span>brunch</span><span>sesja</span><span>nowe miejsca</span></div>
+        <a class="pers__btn" href="#rezerwacja" data-pick="Instagramerka">Wybieram Instagramerkę</a></div>
       </article>
+    </div>
+
+    <!-- QUIZ -->
+    <div class="quiz reveal" id="quiz">
+      <div class="quiz__side">
+        <span class="kicker kicker--w">Quiz · 20 sekund</span>
+        <h3>Nie wiesz, którą wybrać?</h3>
+        <p>Odpowiedz na dwa pytania — podpowiemy, kto będzie idealny.</p>
+      </div>
+      <div class="quiz__main">
+        <div class="quiz__step" data-step="1">
+          <p class="quiz__q">1. Jaki masz dziś nastrój?</p>
+          <div class="quiz__opts">
+            <button data-a="spokoj">😌 Spokojny</button><button data-a="energia">⚡ Pełen energii</button><button data-a="smutek">🥺 Trochę smutny</button><button data-a="glam">💅 Glamour</button>
+          </div>
+        </div>
+        <div class="quiz__step" data-step="2" hidden>
+          <p class="quiz__q">2. Gdzie idziemy?</p>
+          <div class="quiz__opts">
+            <button data-b="kawa">☕ Kawa / spacer</button><button data-b="miasto">🌃 Miasto nocą</button><button data-b="kolacja">🍝 Kolacja</button><button data-b="foto">📸 Nowe miejsca</button>
+          </div>
+        </div>
+        <div class="quiz__res" hidden>
+          <img class="quiz__img" src="img/dama.jpg" alt="">
+          <div>
+            <p class="quiz__q">Twoja idealna przyjaciółka to…</p>
+            <p class="quiz__name">Dama</p>
+            <div class="quiz__act"><a class="btn btn--sm" href="#rezerwacja" id="quiz-go">Rezerwuję</a><button class="btn btn--sm btn--ghost" id="quiz-again">Jeszcze raz</button></div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </section>
 
 <!-- ============ JAK TO DZIAŁA ============ -->
-<section class="sec">
+<section class="sec" id="jak">
   <div class="wrap">
-    <p class="eyebrow center">Prosto i bez stresu</p>
-    <h2 class="center">Jak to działa?</h2>
+    <div class="head reveal">
+      <span class="kicker">Jak to działa</span>
+      <h2>Trzy kroki do <span class="hl">dobrego dnia</span></h2>
+    </div>
     <ol class="steps">
-      <li><span class="steps__n">1</span><h3>Wybierasz</h3><p>Okazję i typ przyjaciółki — albo zdajesz się na nas.</p></li>
-      <li><span class="steps__n">2</span><h3>Rezerwujesz</h3><p>Wypełniasz formularz. Oddzwaniamy w ciągu 24 h i potwierdzamy szczegóły.</p></li>
-      <li><span class="steps__n">3</span><h3>Wpłacasz zadatek</h3><p>Szybki przelew lub BLIK. Resztę płacisz po spotkaniu.</p></li>
-      <li><span class="steps__n">4</span><h3>Spędzasz super czas</h3><p>A potem mówisz nam, jak było — i może umawiasz się znowu.</p></li>
+      <li class="reveal"><span class="steps__n">01</span><h3>Wybierasz</h3><p>Okazję, typ przyjaciółki i pakiet. Albo robisz quiz.</p></li>
+      <li class="reveal" style="--d:.1s"><span class="steps__n">02</span><h3>Rezerwujesz termin</h3><p>Wysyłasz formularz, w 24 h potwierdzamy szczegóły i przyjaciółkę.</p></li>
+      <li class="reveal" style="--d:.2s"><span class="steps__n">03</span><h3>Spędzasz wspaniały czas</h3><p>Śmiech, rozmowy, zdjęcia. A potem… pewnie wrócisz 😉</p></li>
     </ol>
   </div>
 </section>
 
 <!-- ============ CENNIK ============ -->
 <section class="sec sec--dark" id="cennik">
+  <div class="blob blob--4"></div>
   <div class="wrap">
-    <p class="eyebrow center">Cennik</p>
-    <h2 class="center">Jasne ceny, bez niespodzianek</h2>
-    <div class="grid grid--price">
-      <article class="price">
-        <h3>Kawa &amp; pogaduchy</h3>
-        <p class="price__v">149 <small>zł</small></p>
-        <p class="price__t">2 godziny</p>
-        <ul><li>Kawiarnia, spacer, zakupy</li><li>Dowolny typ przyjaciółki</li></ul>
-        <a class="btn btn--ghost-l" href="#rezerwacja" data-pkg="2 godziny — 149 zł">Wybieram</a>
+    <div class="head head--l reveal">
+      <span class="kicker kicker--y">Cennik</span>
+      <h2>Proste ceny. <span class="hl hl--y">Zero niespodzianek.</span></h2>
+    </div>
+    <div class="prices">
+      <article class="price reveal">
+        <p class="price__name">2 godziny</p>
+        <p class="price__v">149<small> zł</small></p>
+        <ul><li>Kawa, spacer, zakupy</li><li>Dowolna przyjaciółka</li></ul>
+        <a class="btn btn--line" href="#rezerwacja" data-pkg="2 godziny — 149 zł">Wybieram</a>
       </article>
-      <article class="price price--hot">
-        <span class="price__badge">Najczęściej wybierany</span>
-        <h3>Popołudnie</h3>
-        <p class="price__v">249 <small>zł</small></p>
-        <p class="price__t">4 godziny</p>
-        <ul><li>Zakupy + obiad, kino, wystawa</li><li>Pomoc w planie spotkania</li></ul>
+      <article class="price price--hot reveal" style="--d:.08s">
+        <span class="price__badge">🔥 Najpopularniejszy</span>
+        <p class="price__name">4 godziny</p>
+        <p class="price__v">249<small> zł</small></p>
+        <ul><li>Zakupy + obiad, kino, wystawa</li><li>Pomoc w planie spotkania</li><li>Oszczędzasz 49 zł</li></ul>
         <a class="btn" href="#rezerwacja" data-pkg="4 godziny — 249 zł">Wybieram</a>
       </article>
-      <article class="price">
-        <h3>Cały wieczór</h3>
-        <p class="price__v">399 <small>zł</small></p>
-        <p class="price__t">do 7 godzin</p>
-        <ul><li>Kolacja, koncert, wesele, event</li><li>Pomoc w przygotowaniach</li></ul>
-        <a class="btn btn--ghost-l" href="#rezerwacja" data-pkg="Cały wieczór — 399 zł">Wybieram</a>
-      </article>
-      <article class="price">
-        <h3>Weekend / wyjazd</h3>
-        <p class="price__v price__v--s">wycena<br>indywidualna</p>
-        <p class="price__t">1–3 dni</p>
-        <ul><li>City break, spa, wycieczka</li><li>Plan podróży ustalamy razem</li></ul>
-        <a class="btn btn--ghost-l" href="#rezerwacja" data-pkg="Weekend / wyjazd — wycena">Zapytaj</a>
+      <article class="price reveal" style="--d:.16s">
+        <p class="price__name">Cały wieczór</p>
+        <p class="price__v">399<small> zł</small></p>
+        <ul><li>Kolacja, koncert, impreza, wesele</li><li>Do 7 godzin razem</li></ul>
+        <a class="btn btn--line" href="#rezerwacja" data-pkg="Cały wieczór — 399 zł">Wybieram</a>
       </article>
     </div>
-    <p class="center fine">Ceny dotyczą czasu przyjaciółki. Koszty wspólnych wyjść (bilety, posiłki, dojazd poza miasto) pokrywa zamawiająca osoba. Karty podarunkowe — zapytaj!</p>
+    <div class="weekend reveal">
+      <div><span class="weekend__e">🧳</span><div><h3>Weekendowa przyjaciółka</h3><p>City break, spa, wycieczka — plan i cenę ustalamy indywidualnie.</p></div></div>
+      <a class="btn btn--y" href="#rezerwacja" data-pkg="Weekendowa przyjaciółka — wycena">Zapytaj o wycenę</a>
+    </div>
+    <p class="fine">Koszty wspólnych atrakcji (bilety, posiłki, dojazd) pokrywa osoba rezerwująca. Płatność: zadatek przy rezerwacji, reszta po spotkaniu.</p>
   </div>
 </section>
 
-<!-- ============ ZASADY ============ -->
-<section class="sec" id="zasady">
-  <div class="wrap zasady">
-    <div>
-      <p class="eyebrow">Bezpieczeństwo i zasady</p>
-      <h2>Przyjaźń na jasnych zasadach</h2>
-      <p class="sub">Dbamy o to, żeby i klientki, i nasze przyjaciółki czuły się bezpiecznie. Dlatego te zasady są nienegocjowalne.</p>
+<!-- ============ DLACZEGO MY ============ -->
+<section class="sec">
+  <div class="wrap why">
+    <div class="head head--l reveal">
+      <span class="kicker">Dlaczego my</span>
+      <h2>Dobra zabawa na <span class="hl">jasnych zasadach</span></h2>
+      <p>Chcemy, żeby każde spotkanie było bezpieczne i komfortowe — dla Ciebie i dla naszych przyjaciółek.</p>
     </div>
-    <ul class="rules">
-      <li><strong>Wyłącznie platonicznie.</strong> To usługa towarzyska w znaczeniu: rozmowa, wspólny czas, dobra zabawa. Żadnych usług o charakterze intymnym.</li>
-      <li><strong>Pierwsze spotkanie w miejscu publicznym.</strong> Kawiarnia, galeria, restauracja, park.</li>
-      <li><strong>Weryfikacja obu stron.</strong> Każda przyjaciółka przechodzi rozmowę i weryfikację tożsamości. Klientkę prosimy o potwierdzenie danych przy rezerwacji.</li>
-      <li><strong>Szacunek i trzeźwość.</strong> Przyjaciółka może zakończyć spotkanie, jeśli zasady są łamane — bez zwrotu kosztów.</li>
-      <li><strong>Pełnoletność.</strong> Usługa tylko dla osób 18+.</li>
-      <li><strong>Dyskrecja.</strong> Nie publikujemy zdjęć ze spotkań bez zgody.</li>
-    </ul>
+    <div class="why__grid">
+      <div class="why__i reveal"><span>🛡️</span><h3>Weryfikacja</h3><p>Każda przyjaciółka przechodzi rozmowę i weryfikację tożsamości.</p></div>
+      <div class="why__i reveal" style="--d:.06s"><span>📍</span><h3>Miejsca publiczne</h3><p>Kawiarnie, galerie, restauracje, koncerty — zawsze tam, gdzie są ludzie.</p></div>
+      <div class="why__i reveal" style="--d:.12s"><span>🤝</span><h3>Wyłącznie platonicznie</h3><p>To towarzystwo, rozmowa i wspólny czas. Nic więcej.</p></div>
+      <div class="why__i reveal" style="--d:.18s"><span>🤫</span><h3>Dyskrecja</h3><p>Twoje dane i zdjęcia zostają między nami.</p></div>
+    </div>
   </div>
 </section>
 
-<!-- ============ DOŁĄCZ ============ -->
-<section class="sec sec--blush">
-  <div class="wrap join">
-    <div>
-      <p class="eyebrow">Praca dla Ciebie?</p>
-      <h2>Zostań przyjaciółką do wynajęcia</h2>
-      <p>Lubisz ludzi, masz poczucie humoru i umiesz słuchać? Pracujesz, kiedy chcesz, w swoim mieście, na jasnych zasadach i z pełnym wsparciem zespołu.</p>
-    </div>
-    <a class="btn" href="mailto:kontakt@twojadomena.pl?subject=Chc%C4%99%20zosta%C4%87%20przyjaci%C3%B3%C5%82k%C4%85">Wyślij zgłoszenie</a>
+<!-- ============ PREZENT ============ -->
+<section class="wrap gift reveal" id="prezent">
+  <div class="gift__txt">
+    <span class="kicker kicker--w">Karta podarunkowa</span>
+    <h2>Podaruj komuś najlepszy dzień w miesiącu</h2>
+    <p>Voucher na 2 h, 4 h albo cały wieczór. Ładnie zapakowany, ważny 6 miesięcy.</p>
+    <a class="btn btn--w" href="#rezerwacja" data-pkg="Karta podarunkowa">Zamów voucher 🎁</a>
+  </div>
+  <div class="gift__card" aria-hidden="true">
+    <span class="gift__logo">♥ Wypożyczalnia Przyjaciółek</span>
+    <span class="gift__big">Voucher</span>
+    <span class="gift__for">dla najlepszej osoby na świecie</span>
   </div>
 </section>
 
 <!-- ============ FAQ ============ -->
 <section class="sec" id="faq">
   <div class="wrap wrap--narrow">
-    <p class="eyebrow center">Pytania</p>
-    <h2 class="center">Najczęściej pytacie</h2>
-    <div class="faq">
-      <details><summary>Czy to na pewno nie randka?</summary><p>Na pewno. To wspólnie spędzony czas w roli koleżanki — rozmowa, zakupy, wyjście. Każda próba przekroczenia tej granicy kończy spotkanie.</p></details>
-      <details><summary>Czy mogę zamówić przyjaciółkę dla kogoś w prezencie?</summary><p>Tak! Mamy karty podarunkowe na 2 h, 4 h i cały wieczór. Napisz do nas, przygotujemy ładny voucher.</p></details>
-      <details><summary>Czy z usługi mogą skorzystać mężczyźni?</summary><p>Tak, np. jako towarzystwo na wesele czy event. Obowiązują te same zasady: platonicznie, w miejscach publicznych, z weryfikacją.</p></details>
-      <details><summary>Jak wygląda płatność?</summary><p>Zadatek 30% przy rezerwacji (przelew lub BLIK), reszta po spotkaniu. Wystawiamy paragon lub fakturę.</p></details>
-      <details><summary>Co jeśli muszę odwołać spotkanie?</summary><p>Do 24 h przed spotkaniem zwracamy zadatek w całości. Później zadatek przepada — przyjaciółka zarezerwowała dla Ciebie czas.</p></details>
-      <details><summary>W jakich miastach działacie?</summary><p>Na start: <span data-city>Warszawa</span>. Kolejne miasta już wkrótce — zostaw kontakt, damy znać.</p></details>
+    <div class="head reveal">
+      <span class="kicker">FAQ</span>
+      <h2>Najczęstsze pytania</h2>
+    </div>
+    <div class="faq reveal">
+      <details><summary>Jak szybko potwierdzacie rezerwację?</summary><p>Zwykle w ciągu kilku godzin, najpóźniej w 24 h. Przy spotkaniach „na już” najlepiej napisz do nas na Instagramie lub WhatsAppie.</p></details>
+      <details><summary>Czy mogę kupić przyjaciółkę w prezencie?</summary><p>Tak! Mamy karty podarunkowe na każdy pakiet. Przygotujemy ładny voucher do wydruku lub wysłania.</p></details>
+      <details><summary>Czy z usługi mogą skorzystać mężczyźni?</summary><p>Tak — np. jako towarzystwo na wesele, event albo zwiedzanie miasta. Zasady są te same dla wszystkich.</p></details>
+      <details><summary>Jak wygląda płatność?</summary><p>Zadatek 30% (BLIK lub przelew) przy rezerwacji, reszta po spotkaniu. Wystawiamy paragon lub fakturę.</p></details>
+      <details><summary>A jeśli muszę odwołać spotkanie?</summary><p>Do 24 h przed spotkaniem oddajemy cały zadatek. Później zadatek przepada — przyjaciółka zarezerwowała dla Ciebie czas.</p></details>
+      <details><summary>Czy to usługa randkowa?</summary><p>Nie. To usługa wyłącznie towarzyska i platoniczna — rozmowa, wspólne wyjścia, dobra zabawa. Przyjaciółka może zakończyć spotkanie, jeśli zasady nie są przestrzegane.</p></details>
     </div>
   </div>
 </section>
 
 <!-- ============ REZERWACJA ============ -->
-<section class="sec sec--dark" id="rezerwacja">
-  <div class="wrap wrap--narrow">
-    <p class="eyebrow center">Rezerwacja</p>
-    <h2 class="center">Zarezerwuj przyjaciółkę</h2>
-    <p class="center sub">Odezwiemy się w ciągu 24 godzin, żeby potwierdzić termin i szczegóły.</p>
+<section class="sec sec--tint" id="rezerwacja">
+  <div class="wrap book">
+    <div class="book__side reveal">
+      <span class="kicker">Rezerwacja</span>
+      <h2>Zarezerwuj <span class="hl">przyjaciółkę</span></h2>
+      <p>Wypełnij formularz — odezwiemy się w ciągu 24 godzin. Wolisz napisać? Jesteśmy też tutaj:</p>
+      <div class="contact">
+        <a class="contact__i" href="https://instagram.com/TWOJ_PROFIL"><span class="ci ci--ig">IG</span><span><b>Instagram</b><small>@twoj_profil</small></span></a>
+        <a class="contact__i" href="https://wa.me/48000000000"><span class="ci ci--wa">WA</span><span><b>WhatsApp</b><small>+48 000 000 000</small></span></a>
+        <a class="contact__i" href="mailto:kontakt@twojadomena.pl"><span class="ci ci--em">@</span><span><b>E-mail</b><small>kontakt@twojadomena.pl</small></span></a>
+      </div>
+    </div>
 
-    <!-- Formularz: podepnij np. Formspree (action="https://formspree.io/f/TWOJE_ID") lub własny backend. -->
-    <form class="form" id="form" action="#" method="post" novalidate>
+    <!-- Formularz: ustaw action np. na https://formspree.io/f/TWOJE_ID — skrypt wyśle dane sam. -->
+    <form class="form reveal" id="form" action="#" method="post" novalidate style="--d:.1s">
       <div class="form__row">
-        <label>Typ przyjaciółki
-          <select name="typ" id="f-typ">
-            <option>Dobierzcie za mnie</option>
-            <option>Dama</option><option>Wariatka</option><option>Powierniczka</option>
-            <option>Imprezowiczka</option><option>Instagramerka</option>
+        <label>Przyjaciółka
+          <select name="przyjaciolka" id="f-typ">
+            <option>Dobierzcie za mnie</option><option>Dama</option><option>Wariatka</option><option>Powierniczka</option><option>Imprezowiczka</option><option>Instagramerka</option>
           </select>
         </label>
         <label>Pakiet
           <select name="pakiet" id="f-pkg">
-            <option>2 godziny — 149 zł</option>
-            <option selected>4 godziny — 249 zł</option>
-            <option>Cały wieczór — 399 zł</option>
-            <option>Weekend / wyjazd — wycena</option>
+            <option>2 godziny — 149 zł</option><option selected>4 godziny — 249 zł</option><option>Cały wieczór — 399 zł</option><option>Weekendowa przyjaciółka — wycena</option><option>Karta podarunkowa</option>
           </select>
         </label>
       </div>
       <div class="form__row">
         <label>Okazja
           <select name="okazja">
-            <option>Wyjście</option><option>Do pogadania</option><option>Zakupy</option><option>Wyjazd</option>
-            <option>Po rozstaniu</option><option>Urodziny</option><option>Wesele / event</option><option>Nowa w mieście</option><option>Inna</option>
+            <option>Na imprezę</option><option>Do pogadania</option><option>Na zakupy</option><option>Na wyjazd</option><option>Po rozstaniu</option><option>Na urodziny</option><option>Na poprawę humoru</option><option>Inna</option>
           </select>
         </label>
-        <label>Data
-          <input type="date" name="data" required>
-        </label>
+        <label>Data<input type="date" name="data" required></label>
       </div>
       <div class="form__row">
-        <label>Imię
-          <input type="text" name="imie" autocomplete="given-name" required>
-        </label>
-        <label>Telefon lub e-mail
-          <input type="text" name="kontakt" autocomplete="email" required>
-        </label>
+        <label>Imię<input type="text" name="imie" autocomplete="given-name" placeholder="Jak masz na imię?" required></label>
+        <label>Telefon lub e-mail<input type="text" name="kontakt" autocomplete="email" placeholder="Jak się z Tobą skontaktować?" required></label>
       </div>
       <label>Kilka słów o spotkaniu <span class="opt">(opcjonalnie)</span>
-        <textarea name="opis" rows="3" placeholder="Np. szukam towarzystwa na koncert w sobotę, lubię rozmawiać o podróżach…"></textarea>
+        <textarea name="opis" rows="3" placeholder="Np. sobota, koncert na Torwarze, lubię rozmawiać o podróżach…"></textarea>
       </label>
-      <label class="check">
-        <input type="checkbox" name="zgoda" required>
-        <span>Mam ukończone 18 lat, akceptuję <a href="#zasady">zasady</a> i zgadzam się na kontakt w sprawie rezerwacji.</span>
-      </label>
-      <button class="btn btn--wide" type="submit">Wyślij rezerwację ♡</button>
+      <label class="check"><input type="checkbox" name="zgoda" required><span>Mam 18+ lat, akceptuję <a href="#">regulamin</a> i zgadzam się na kontakt w sprawie rezerwacji.</span></label>
+      <button class="btn btn--lg btn--wide" type="submit">Wyślij rezerwację 💗</button>
       <p class="form__msg" id="form-msg" role="status" aria-live="polite"></p>
     </form>
   </div>
@@ -300,26 +321,26 @@
 </main>
 
 <footer class="foot">
+  <div class="wrap foot__cta">
+    <p>Nie masz z kim wyjść?<br><span>Nie czekaj. Po prostu ją wypożycz.</span></p>
+    <a class="btn btn--lg" href="#rezerwacja">Zarezerwuj teraz →</a>
+  </div>
   <div class="wrap foot__in">
-    <div>
-      <a class="logo logo--l" href="#top"><span class="logo__a">Wypożyczalnia</span><span class="logo__b">Przyjaciółek</span></a>
-      <p class="foot__tag">Nie masz z kim wyjść? Nie czekaj. Po prostu ją wypożycz.</p>
-    </div>
-    <div class="foot__links">
-      <a href="mailto:kontakt@twojadomena.pl">kontakt@twojadomena.pl</a>
-      <a href="tel:+48000000000">+48 000 000 000</a>
-      <div class="social">
-        <a href="https://instagram.com/TWOJ_PROFIL" aria-label="Instagram"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" class="fill"/></svg></a>
-        <a href="https://facebook.com/TWOJ_PROFIL" aria-label="Facebook"><svg viewBox="0 0 24 24"><path d="M14 8h3V4h-3a4 4 0 0 0-4 4v3H7v4h3v6h4v-6h3l1-4h-4V8z"/></svg></a>
-        <a href="https://tiktok.com/@TWOJ_PROFIL" aria-label="TikTok"><svg viewBox="0 0 24 24"><path d="M14 3v11.5a3.5 3.5 0 1 1-3-3.46M14 3c.5 2.5 2.5 4.5 5 5"/></svg></a>
-      </div>
+    <a class="logo logo--l" href="#top"><span class="logo__mark">♥</span><span class="logo__txt">Wypożyczalnia<b>Przyjaciółek</b></span></a>
+    <nav class="foot__nav"><a href="#okazje">Okazje</a><a href="#przyjaciolki">Przyjaciółki</a><a href="#cennik">Cennik</a><a href="#faq">FAQ</a><a href="#">Regulamin</a><a href="#">Prywatność</a></nav>
+    <div class="social">
+      <a href="https://instagram.com/TWOJ_PROFIL" aria-label="Instagram"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" class="fill"/></svg></a>
+      <a href="https://facebook.com/TWOJ_PROFIL" aria-label="Facebook"><svg viewBox="0 0 24 24"><path d="M14 8h3V4h-3a4 4 0 0 0-4 4v3H7v4h3v6h4v-6h3l1-4h-4V8z"/></svg></a>
+      <a href="https://tiktok.com/@TWOJ_PROFIL" aria-label="TikTok"><svg viewBox="0 0 24 24"><path d="M14 3v11.5a3.5 3.5 0 1 1-3-3.46M14 3c.5 2.5 2.5 4.5 5 5"/></svg></a>
     </div>
   </div>
   <div class="wrap foot__fine">
-    <p>Przyjaciółki nie zastępują profesjonalnej pomocy psychologicznej, medycznej ani prawnej. Usługa ma charakter wyłącznie towarzyski i rozrywkowy, bez jakichkolwiek usług o charakterze intymnym. Tylko dla osób pełnoletnich.</p>
-    <p>© <span id="year">2026</span> Wypożyczalnia Przyjaciółek · <a href="#">Regulamin</a> · <a href="#">Polityka prywatności</a></p>
+    <p>Przyjaciółki nie zastępują profesjonalnej pomocy psychologicznej, medycznej ani prawnej. Usługa ma charakter wyłącznie towarzyski i rozrywkowy. Tylko dla osób pełnoletnich.</p>
+    <p>© <span id="year">2026</span> Wypożyczalnia Przyjaciółek</p>
   </div>
 </footer>
+
+<a class="sticky-cta" href="#rezerwacja">Zarezerwuj przyjaciółkę 💗</a>
 
 <script src="script.js"></script>
 </body>
