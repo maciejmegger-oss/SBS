@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wypożyczalnia Przyjaciółek – przyjaciółka na każdą okazję</title>
+<meta name="description" content="Przyjaciółka na zakupy, kawę, koncert lub wyjazd. Zweryfikowane dziewczyny, jasne zasady, ceny od 149 zł. Zarezerwuj w 2 minuty!">
+<meta name="theme-color" content="#f6f2f0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT@0,9..144,300..600,100;1,9..144,300..600,100&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ===== Wersja B: spokojna, jasna, jeden kolor przewodni =====
+   Kolory zmieniasz tutaj. */
+:root {
+  --bg: #f6f2f0;
+  --surface: #fffdfc;
+  --ink: #2b2428;
+  --muted: #7b6f74;
+  --line: #e4dadb;
+  --rose: #b24f6d;
+  --rose-d: #973c59;
+  --rose-soft: #f2e4e7;
+  --sage: #e3e9e3;
+  --serif: "Fraunces", Georgia, "Times New Roman", serif;
+  --sans: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --r: 20px;
+  color-scheme: light;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 80px; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.65 var(--sans); -webkit-font-smoothing: antialiased; }
+img { max-width: 100%; display: block; }
+a { color: inherit; }
+h1, h2, h3 { font-family: var(--serif); font-weight: 400; font-variation-settings: "SOFT" 100; line-height: 1.08; letter-spacing: -.015em; margin: 0 0 .45em; text-wrap: balance; }
+h1 { font-size: clamp(2.6rem, 6.4vw, 5rem); }
+h2 { font-size: clamp(2rem, 4.2vw, 3.2rem); }
+h3 { font-size: 1.35rem; }
+em { font-style: italic; color: var(--rose); }
+p { margin: 0 0 1em; }
+.wrap { width: min(1140px, 100% - 32px); margin-inline: auto; }
+.label { font-size: .78rem; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; color: var(--rose); margin-bottom: 14px; display: block; }
+.lead { font-size: 1.15rem; color: var(--muted); max-width: 46ch; }
+.sec { padding-block: clamp(72px, 10vw, 120px); }
+.sec-head { max-width: 640px; margin-bottom: 48px; }
+.sec-head p { color: var(--muted); }
+
+/* buttons */
+.btn { display: inline-flex; align-items: center; gap: .6em; padding: .95em 1.6em; border-radius: 999px; background: var(--ink); color: var(--surface); text-decoration: none; font: 600 .98rem var(--sans); border: 1.5px solid var(--ink); cursor: pointer; transition: background .25s, color .25s, transform .25s; }
+.btn:hover { background: var(--rose); border-color: var(--rose); transform: translateY(-1px); }
+.btn--line { background: transparent; color: var(--ink); }
+.btn--line:hover { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.btn--rose { background: var(--rose); border-color: var(--rose); }
+.btn--rose:hover { background: var(--rose-d); border-color: var(--rose-d); }
+.btn:focus-visible, a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--rose); outline-offset: 3px; }
+
+/* nav */
+.nav { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 50; background: rgba(246, 242, 240, .9); backdrop-filter: blur(12px); border-bottom: 1px solid transparent; transition: border-color .3s; }
+.nav.scrolled { border-bottom-color: var(--line); }
+.nav__in { display: flex; align-items: center; justify-content: space-between; height: 76px; }
+.logo { text-decoration: none; display: flex; align-items: baseline; gap: .35em; font-family: var(--serif); font-size: 1.35rem; }
+.logo i { color: var(--rose); }
+.logo svg { width: 18px; height: 18px; fill: var(--rose); align-self: center; }
+.nav__menu { display: flex; align-items: center; gap: 30px; font-size: .95rem; }
+.nav__menu a:not(.btn) { text-decoration: none; color: var(--muted); transition: color .2s; }
+.nav__menu a:not(.btn):hover { color: var(--ink); }
+.nav__menu .btn { padding: .65em 1.3em; }
+.nav__toggle { display: none; background: none; border: 0; padding: 8px; cursor: pointer; }
+.nav__toggle span { display: block; width: 24px; height: 1.5px; background: var(--ink); margin: 6px 0; transition: transform .2s, opacity .2s; }
+
+/* hero */
+.hero { padding-block: clamp(40px, 7vw, 96px) clamp(56px, 8vw, 110px); }
+.hero__in { display: grid; grid-template-columns: 1.05fr .95fr; gap: clamp(36px, 6vw, 88px); align-items: center; }
+.hero h1 .u { position: relative; white-space: nowrap; }
+.hero h1 .u svg { position: absolute; left: 0; right: 0; bottom: -.12em; width: 100%; height: .3em; overflow: visible; }
+.hero h1 .u path { fill: none; stroke: var(--rose); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 400; stroke-dashoffset: 0; animation: draw 1.4s .4s ease-out backwards; }
+@keyframes draw { from { stroke-dashoffset: 400; } }
+.hero__cta { display: flex; flex-wrap: wrap; gap: 12px; margin: 32px 0 36px; }
+.facts { display: flex; flex-wrap: wrap; gap: 10px 28px; list-style: none; padding: 0; margin: 0; font-size: .93rem; color: var(--muted); }
+.facts li { display: flex; align-items: center; gap: 8px; }
+.facts li::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--rose); }
+.hero__img { position: relative; }
+.arch { border-radius: 999px 999px var(--r) var(--r); overflow: hidden; aspect-ratio: 4/5; background: var(--rose-soft); }
+.arch img { width: 100%; height: 100%; object-fit: cover; object-position: 52% 20%; filter: saturate(.72) contrast(.96); }
+.note { position: absolute; left: -28px; bottom: 36px; background: var(--surface); border-radius: 16px; padding: 16px 20px; box-shadow: 0 18px 40px -22px rgba(60, 30, 45, .35); max-width: 250px; }
+.note b { display: block; font-family: var(--serif); font-weight: 500; font-size: 1.1rem; }
+.note span { font-size: .88rem; color: var(--muted); }
+
+/* manifesto band */
+.band { background: var(--sage); padding-block: clamp(56px, 8vw, 96px); text-align: center; }
+.band p { font-family: var(--serif); font-size: clamp(1.7rem, 3.8vw, 2.8rem); line-height: 1.2; margin: 0 auto; max-width: 22ch; font-weight: 300; text-wrap: balance; }
+.band small { display: block; margin-top: 18px; font-family: var(--sans); font-size: .9rem; color: var(--muted); letter-spacing: .06em; }
+
+/* occasions */
+.occ { display: grid; grid-template-columns: 1fr 1fr; column-gap: 64px; border-top: 1px solid var(--line); }
+.occ__i { display: grid; grid-template-columns: 44px 1fr; gap: 18px; align-items: start; padding: 26px 0; border-bottom: 1px solid var(--line); }
+.occ__i svg { width: 36px; height: 36px; fill: none; stroke: var(--rose); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; margin-top: 2px; }
+.occ__i h3 { font-size: 1.3rem; margin-bottom: .15em; }
+.occ__i p { margin: 0; color: var(--muted); font-size: .98rem; }
+
+/* friends */
+.friends { display: grid; grid-template-columns: repeat(5, 1fr); gap: 20px; }
+.fr { text-decoration: none; display: flex; flex-direction: column; gap: 14px; }
+.fr__img { border-radius: 999px 999px 16px 16px; overflow: hidden; aspect-ratio: 3/4; background: var(--rose-soft); }
+.fr__img img { width: 100%; height: 100%; object-fit: cover; filter: saturate(.72); transition: transform .6s ease, filter .6s ease; }
+.fr:hover .fr__img img { transform: scale(1.04); filter: saturate(.95); }
+.fr h3 { font-style: italic; margin: 0; font-size: 1.4rem; }
+.fr p { margin: 0; color: var(--muted); font-size: .93rem; line-height: 1.5; }
+.fr span { font-size: .85rem; font-weight: 600; color: var(--rose); }
+.fr:hover span { text-decoration: underline; }
+.hint { margin-top: 36px; color: var(--muted); }
+.hint a { color: var(--rose); font-weight: 600; }
+
+/* steps */
+.steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; }
+.steps li { border-top: 1px solid var(--ink); padding-top: 22px; }
+.steps b { font-family: var(--serif); font-weight: 300; font-size: 1rem; color: var(--rose); display: block; margin-bottom: 8px; }
+.steps p { color: var(--muted); margin: 0; }
+
+/* price menu */
+.menu-wrap { display: grid; grid-template-columns: .9fr 1.1fr; gap: clamp(36px, 6vw, 88px); align-items: start; }
+.menu { background: var(--surface); border-radius: var(--r); padding: clamp(28px, 4vw, 48px); border: 1px solid var(--line); }
+.menu__row { display: grid; grid-template-columns: auto 1fr auto; align-items: baseline; gap: 12px; padding: 18px 0; border-bottom: 1px solid var(--line); }
+.menu__row:last-of-type { border-bottom: 0; }
+.menu__row .n { font-family: var(--serif); font-size: 1.35rem; }
+.menu__row .dots { border-bottom: 1.5px dotted var(--line); transform: translateY(-5px); }
+.menu__row .p { font-family: var(--serif); font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+.menu__row .d { grid-column: 1 / -1; font-size: .92rem; color: var(--muted); margin-top: -6px; }
+.menu__row.fav .n::after { content: "najczęściej wybierany"; font-family: var(--sans); font-size: .72rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--rose); background: var(--rose-soft); padding: 3px 9px; border-radius: 999px; margin-left: 10px; vertical-align: middle; }
+.menu__foot { font-size: .88rem; color: var(--muted); margin: 18px 0 0; }
+.gift { margin-top: 28px; padding: 26px; border-radius: var(--r); background: var(--rose-soft); }
+.gift h3 { margin-bottom: .3em; }
+.gift p { color: var(--muted); margin-bottom: 16px; }
+
+/* rules */
+.rules { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+.rule { padding: 26px 24px; background: var(--surface); border-radius: var(--r); border: 1px solid var(--line); }
+.rule svg { width: 30px; height: 30px; fill: none; stroke: var(--rose); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; margin-bottom: 14px; }
+.rule h3 { font-size: 1.15rem; }
+.rule p { margin: 0; color: var(--muted); font-size: .95rem; }
+
+/* faq */
+.faq-wrap { display: grid; grid-template-columns: .8fr 1.2fr; gap: clamp(36px, 6vw, 88px); }
+.faq details { border-bottom: 1px solid var(--line); }
+.faq details:first-child { border-top: 1px solid var(--line); }
+.faq summary { list-style: none; cursor: pointer; padding: 22px 36px 22px 0; font-family: var(--serif); font-size: 1.2rem; position: relative; }
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after { content: ""; position: absolute; right: 6px; top: 50%; width: 11px; height: 11px; border-right: 1.5px solid var(--rose); border-bottom: 1.5px solid var(--rose); transform: translateY(-70%) rotate(45deg); transition: transform .25s; }
+.faq details[open] summary::after { transform: translateY(-30%) rotate(225deg); }
+.faq details p { color: var(--muted); padding-bottom: 12px; }
+
+/* booking */
+.book { background: var(--surface); border-radius: 28px; padding: clamp(28px, 5vw, 64px); display: grid; grid-template-columns: .85fr 1.15fr; gap: clamp(32px, 5vw, 72px); border: 1px solid var(--line); }
+.book p { color: var(--muted); }
+.contact { list-style: none; padding: 0; margin: 24px 0 0; display: grid; gap: 12px; font-size: .95rem; }
+.contact li { display: grid; gap: 2px; }
+.contact b { font-weight: 600; }
+.contact span { color: var(--muted); user-select: all; }
+.form { display: grid; gap: 18px; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form label { display: grid; gap: 6px; font-size: .88rem; font-weight: 600; }
+.form .opt { font-weight: 400; color: var(--muted); }
+.form input, .form select, .form textarea { width: 100%; font: 500 1rem var(--sans); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 13px 14px; transition: border-color .2s, background .2s; }
+.form input:focus, .form select:focus, .form textarea:focus { outline: none; border-color: var(--rose); background: var(--surface); }
+.form .invalid { border-color: var(--rose); background: var(--rose-soft); }
+.check { grid-template-columns: auto 1fr !important; align-items: start; font-weight: 400 !important; color: var(--muted); }
+.check input { width: 18px; height: 18px; margin-top: 3px; accent-color: var(--rose); }
+.form .btn { justify-content: center; width: 100%; padding: 1.05em; }
+.msg { margin: 0; min-height: 1.5em; text-align: center; font-weight: 600; color: var(--rose); }
+
+/* footer */
+.foot { padding-block: 64px 40px; }
+.foot__top { display: flex; justify-content: space-between; align-items: flex-end; gap: 32px; flex-wrap: wrap; padding-bottom: 36px; border-bottom: 1px solid var(--line); }
+.foot__top p { font-family: var(--serif); font-size: clamp(1.6rem, 3.4vw, 2.4rem); line-height: 1.15; margin: 0; max-width: 18ch; }
+.foot__links { display: flex; flex-wrap: wrap; gap: 8px 26px; padding-top: 28px; font-size: .92rem; }
+.foot__links a { color: var(--muted); text-decoration: none; }
+.foot__links a:hover { color: var(--ink); }
+.foot__fine { margin-top: 24px; font-size: .8rem; color: var(--muted); max-width: 80ch; }
+
+/* gentle fade-in (content stays visible without JS) */
+.js .fade { opacity: 0; transform: translateY(18px); transition: opacity .9s ease, transform .9s ease; }
+.js .fade.on { opacity: 1; transform: none; }
+
+@media (max-width: 1000px) {
+  .friends { grid-template-columns: repeat(3, 1fr); }
+  .rules { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 860px) {
+  .nav__toggle { display: block; }
+  .nav__menu { position: absolute; top: 76px; left: 0; right: 0; flex-direction: column; align-items: stretch; gap: 0; background: var(--bg); padding: 4px 16px 20px; border-bottom: 1px solid var(--line); display: none; }
+  .nav__menu.open { display: flex; }
+  .nav__menu a:not(.btn) { padding: 14px 0; border-bottom: 1px solid var(--line); color: var(--ink); }
+  .nav__menu .btn { margin-top: 14px; justify-content: center; }
+  .nav__toggle[aria-expanded="true"] span:nth-child(1) { transform: translateY(7.5px) rotate(45deg); }
+  .nav__toggle[aria-expanded="true"] span:nth-child(2) { opacity: 0; }
+  .nav__toggle[aria-expanded="true"] span:nth-child(3) { transform: translateY(-7.5px) rotate(-45deg); }
+  .hero__in, .menu-wrap, .faq-wrap, .book { grid-template-columns: 1fr; }
+  .hero__img { max-width: 440px; width: 100%; margin-inline: auto; }
+  .note { left: 0; }
+  .occ { grid-template-columns: 1fr; }
+  .steps { grid-template-columns: 1fr; gap: 28px; }
+}
+@media (max-width: 560px) {
+  body { font-size: 16px; }
+  .friends { grid-template-columns: 1fr 1fr; gap: 16px; }
+  .fr:last-child { grid-column: span 2; }
+  .fr:last-child .fr__img { aspect-ratio: 16/11; border-radius: 16px; }
+  .rules, .row2 { grid-template-columns: 1fr; }
+  .hero__cta .btn { width: 100%; justify-content: center; }
+  .menu__row.fav .n::after { display: block; width: fit-content; margin: 6px 0 0; }
+  .note { position: static; margin-top: -40px; margin-inline: 16px; position: relative; max-width: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .js .fade { opacity: 1; transform: none; }
+}
+</style>
+</head>
+<body>
+<script>document.documentElement.classList.add('js')</script>
+
+<header class="nav">
+  <div class="wrap nav__in">
+    <a class="logo" href="#top" id="top-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21.2s-7.6-4.6-9.7-9.4C.8 8.3 3 4.4 6.8 4.4c2.2 0 3.7 1.2 5.2 3 1.5-1.8 3-3 5.2-3 3.8 0 6 3.9 4.5 7.4-2.1 4.8-9.7 9.4-9.7 9.4z"/></svg>Wypożyczalnia <i>Przyjaciółek</i></a>
+    <nav class="nav__menu" id="menu">
+      <a href="#okazje">Okazje</a>
+      <a href="#przyjaciolki">Przyjaciółki</a>
+      <a href="#cennik">Cennik</a>
+      <a href="#faq">Pytania</a>
+      <a class="btn" href="#rezerwacja">Zarezerwuj</a>
+    </nav>
+    <button class="nav__toggle" aria-label="Menu" aria-expanded="false" aria-controls="menu"><span></span><span></span><span></span></button>
+  </div>
+</header>
+
+<main id="top">
+
+<section class="hero">
+  <div class="wrap hero__in">
+    <div>
+      <span class="label">Warszawa · od 149 zł</span>
+      <h1>Nie masz z kim wyjść? <em>Mamy <span class="u">przyjaciółkę<svg viewBox="0 0 300 20" preserveAspectRatio="none" aria-hidden="true"><path d="M4 14 C 80 4, 200 4, 296 12"/></svg></span>.</em></h1>
+      <p class="lead">Zakupy, kawa, koncert albo wyjazd. Zarezerwuj pozytywną, sprawdzoną dziewczynę, z którą spędzisz dobry czas i wrócisz do domu z uśmiechem.</p>
+      <div class="hero__cta">
+        <a class="btn btn--rose" href="#rezerwacja">Zarezerwuj przyjaciółkę</a>
+        <a class="btn btn--line" href="#przyjaciolki">Poznaj nas</a>
+      </div>
+      <ul class="facts">
+        <li>Zweryfikowane przyjaciółki</li>
+        <li>Spotkania w miejscach publicznych</li>
+        <li>Odpowiedź w 24 h</li>
+      </ul>
+    </div>
+    <div class="hero__img">
+      <div class="arch"><img src="../img/hero-grupa.jpg" alt="Roześmiane przyjaciółki spędzają razem wieczór"></div>
+      <div class="note"><b>Bo życie smakuje lepiej</b><span>w dobrym towarzystwie</span></div>
+    </div>
+  </div>
+</section>
+
+<div class="band">
+  <p>Nie każdą chwilę trzeba przeżywać sama.</p>
+  <small>WYPOŻYCZALNIA PRZYJACIÓŁEK</small>
+</div>
+
+<section class="sec" id="okazje">
+  <div class="wrap">
+    <div class="sec-head fade">
+      <span class="label">Okazje</span>
+      <h2>Wszystko, co fajniej robić <em>we dwie</em></h2>
+    </div>
+    <div class="occ fade">
+      <div class="occ__i"><svg viewBox="0 0 24 24"><path d="M8 3h4l-.5 6a2.5 2.5 0 0 1-3 0L8 3zM10 11v8M7.5 19h5M14 5h4l-.5 6a2.5 2.5 0 0 1-3 0L14 5zM16 13v6M13.5 19h5"/></svg><div><h3>Na imprezę</h3><p>Koncert, klub albo festiwal. Żeby nie iść samej.</p></div></div>
+      <div class="occ__i"><svg viewBox="0 0 24 24"><path d="M4 5h16v10H9l-5 4V5z"/></svg><div><h3>Do pogadania</h3><p>Bez oceniania i bez „a nie mówiłam”.</p></div></div>
+      <div class="occ__i"><svg viewBox="0 0 24 24"><path d="M5 8h14l-1 12H6L5 8zM9 8V6a3 3 0 0 1 6 0v2"/></svg><div><h3>Na zakupy</h3><p>Szczera opinia w przymierzalni, gwarantowana.</p></div></div>
+      <div class="occ__i"><svg viewBox="0 0 24 24"><path d="M3 13l18-7-5 14-4-6-9-1zM12 14l4-4"/></svg><div><h3>Na wyjazd</h3><p>City break, spa, wycieczka. Podróż z kimś smakuje lepiej.</p></div></div>
+      <div class="occ__i"><svg viewBox="0 0 24 24"><path d="M12 20s-7-4.3-8.8-8.6C2 8.3 4 5 7.3 5c2 0 3.4 1.1 4.7 2.7C13.3 6.1 14.7 5 16.7 5 20 5 22 8.3 20.8 11.4 19 15.7 12 20 12 20zM12 8l-1.5 4 3 1-1.5 4"/></svg><div><h3>Po rozstaniu</h3><p>Pakiet „nie pisz do niego”: lody, spacer i trzymanie telefonu.</p></div></div>
+      <div class="occ__i"><svg viewBox="0 0 24 24"><path d="M4 20h16v-7H4v7zM4 16h16M8 13v-3M12 13v-3M16 13v-3M8 7v.5M12 6v.5M16 7v.5"/></svg><div><h3>Na urodziny</h3><p>Ktoś musi zrobić zdjęcia i wznieść toast.</p></div></div>
+      <div class="occ__i"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 14.5a4.5 4.5 0 0 0 8 0M9 9.5v.5M15 9.5v.5"/></svg><div><h3>Na poprawę humoru</h3><p>Śmiech wliczony w cenę.</p></div></div>
+      <div class="occ__i"><svg viewBox="0 0 24 24"><path d="M12 21s6-5.7 6-11a6 6 0 0 0-12 0c0 5.3 6 11 6 11z"/><circle cx="12" cy="10" r="2.2"/></svg><div><h3>Nowa w mieście</h3><p>Pokażemy najlepsze kawiarnie i miejsca, żebyś szybciej poczuła się jak u siebie.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="przyjaciolki" style="padding-top:0">
+  <div class="wrap">
+    <div class="sec-head fade">
+      <span class="label">Przyjaciółki</span>
+      <h2>Każda ma inną <em>supermoc</em></h2>
+      <p>Wybierz tę, która pasuje do Twojego dnia.</p>
+    </div>
+    <div class="friends fade">
+      <a class="fr" href="#rezerwacja" data-pick="Dama"><div class="fr__img"><img src="../img/dama.jpg" alt="Dama"></div><h3>Dama</h3><p>Klasa, elegancja i rozmowy o życiu. Na kolację i do teatru.</p><span>Wybieram</span></a>
+      <a class="fr" href="#rezerwacja" data-pick="Wariatka"><div class="fr__img"><img src="../img/wariatka.jpg" alt="Wariatka"></div><h3>Wariatka</h3><p>Spontaniczna i energiczna. Karaoke, escape room, szybki wypad.</p><span>Wybieram</span></a>
+      <a class="fr" href="#rezerwacja" data-pick="Powierniczka"><div class="fr__img"><img src="../img/powierniczka.jpg" alt="Powierniczka"></div><h3>Powierniczka</h3><p>Wysłucha, przytuli i powie: „On na Ciebie nie zasługiwał”.</p><span>Wybieram</span></a>
+      <a class="fr" href="#rezerwacja" data-pick="Imprezowiczka"><div class="fr__img"><img src="../img/imprezowiczka.jpg" alt="Imprezowiczka"></div><h3>Imprezowiczka</h3><p>Wie, gdzie gra najlepsza muzyka. Koncerty i festiwale.</p><span>Wybieram</span></a>
+      <a class="fr" href="#rezerwacja" data-pick="Instagramerka"><div class="fr__img"><img src="../img/instagramerka.jpg" alt="Instagramerka"></div><h3>Instagramerka</h3><p>Wie, z której strony światło jest najlepsze. Zdjęcia gwarantowane.</p><span>Wybieram</span></a>
+    </div>
+    <p class="hint">Nie wiesz, którą wybrać? <a href="#rezerwacja" data-pick="Dobierzcie za mnie">Dobierzemy za Ciebie</a>.</p>
+  </div>
+</section>
+
+<section class="sec" style="padding-top:0">
+  <div class="wrap">
+    <div class="sec-head fade">
+      <span class="label">Jak to działa</span>
+      <h2>Trzy proste kroki</h2>
+    </div>
+    <ol class="steps fade">
+      <li><b>Krok 1</b><h3>Wybierasz</h3><p>Okazję, przyjaciółkę i pakiet.</p></li>
+      <li><b>Krok 2</b><h3>Rezerwujesz termin</h3><p>Wysyłasz formularz, a my w ciągu 24 h potwierdzamy szczegóły.</p></li>
+      <li><b>Krok 3</b><h3>Spędzasz wspaniały czas</h3><p>Rozmowy, śmiech, zdjęcia. I pewnie ochota na kolejne spotkanie.</p></li>
+    </ol>
+  </div>
+</section>
+
+<section class="sec" id="cennik" style="background:var(--surface)">
+  <div class="wrap menu-wrap">
+    <div class="fade">
+      <span class="label">Cennik</span>
+      <h2>Proste ceny, <em>bez niespodzianek</em></h2>
+      <p class="lead">Płacisz za czas przyjaciółki. Zadatek przy rezerwacji, reszta po spotkaniu.</p>
+      <div class="gift">
+        <h3>Przyjaciółka w prezencie</h3>
+        <p>Voucher na dowolny pakiet, ważny 6 miesięcy. Ładnie przygotowany do wręczenia.</p>
+        <a class="btn btn--line" href="#rezerwacja" data-pkg="Karta podarunkowa">Zamów voucher</a>
+      </div>
+    </div>
+    <div class="menu fade">
+      <div class="menu__row"><span class="n">2 godziny</span><span class="dots"></span><span class="p">149 zł</span><span class="d">Kawa, spacer albo szybkie zakupy.</span></div>
+      <div class="menu__row fav"><span class="n">4 godziny</span><span class="dots"></span><span class="p">249 zł</span><span class="d">Zakupy z obiadem, kino albo wystawa.</span></div>
+      <div class="menu__row"><span class="n">Cały wieczór</span><span class="dots"></span><span class="p">399 zł</span><span class="d">Kolacja, koncert, impreza lub wesele. Do 7 godzin.</span></div>
+      <div class="menu__row"><span class="n">Weekend</span><span class="dots"></span><span class="p">wycena</span><span class="d">City break, spa albo wycieczka. Plan ustalamy razem.</span></div>
+      <p class="menu__foot">Bilety, posiłki i dojazd poza miasto pokrywa osoba rezerwująca.</p>
+    </div>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="wrap">
+    <div class="sec-head fade">
+      <span class="label">Zasady</span>
+      <h2>Dobra zabawa na <em>jasnych zasadach</em></h2>
+    </div>
+    <div class="rules fade">
+      <div class="rule"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg><h3>Weryfikacja</h3><p>Każda przyjaciółka przechodzi rozmowę i weryfikację tożsamości.</p></div>
+      <div class="rule"><svg viewBox="0 0 24 24"><path d="M12 21s6-5.7 6-11a6 6 0 0 0-12 0c0 5.3 6 11 6 11z"/><circle cx="12" cy="10" r="2.2"/></svg><h3>Miejsca publiczne</h3><p>Kawiarnie, galerie, restauracje i koncerty.</p></div>
+      <div class="rule"><svg viewBox="0 0 24 24"><circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/><path d="M3 20c0-3 2.2-5 5-5s5 2 5 5M11 20c0-3 2.2-5 5-5s5 2 5 5"/></svg><h3>Wyłącznie platonicznie</h3><p>Towarzystwo, rozmowa i wspólny czas.</p></div>
+      <div class="rule"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><h3>Dyskrecja</h3><p>Twoje dane i zdjęcia zostają między nami.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="faq" style="padding-top:0">
+  <div class="wrap faq-wrap">
+    <div class="fade">
+      <span class="label">Pytania</span>
+      <h2>Warto <em>wiedzieć</em></h2>
+    </div>
+    <div class="faq fade">
+      <details><summary>Jak szybko potwierdzacie rezerwację?</summary><p>Zwykle w ciągu kilku godzin, najpóźniej w 24 h.</p></details>
+      <details><summary>Czy mogę kupić przyjaciółkę w prezencie?</summary><p>Tak. Mamy vouchery na każdy pakiet, ważne 6 miesięcy.</p></details>
+      <details><summary>Jak wygląda płatność?</summary><p>Zadatek 30% (BLIK lub przelew) przy rezerwacji, reszta po spotkaniu.</p></details>
+      <details><summary>A jeśli muszę odwołać spotkanie?</summary><p>Do 24 h przed spotkaniem zwracamy cały zadatek.</p></details>
+      <details><summary>Czy to usługa randkowa?</summary><p>Nie. To usługa wyłącznie towarzyska: rozmowa, wspólne wyjścia i dobra zabawa.</p></details>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="rezerwacja" style="padding-top:0">
+  <div class="wrap">
+    <div class="book fade">
+      <div>
+        <span class="label">Rezerwacja</span>
+        <h2>Umówmy się <em>na dobry dzień</em></h2>
+        <p>Wypełnij formularz, a odezwiemy się w ciągu 24 godzin. Możesz też napisać bezpośrednio:</p>
+        <ul class="contact">
+          <li><b>Instagram</b><span>@twoj_profil</span></li>
+          <li><b>WhatsApp</b><span>+48 000 000 000</span></li>
+          <li><b>E-mail</b><span>kontakt@twojadomena.pl</span></li>
+        </ul>
+      </div>
+      <form class="form" id="form" action="#" novalidate>
+        <div class="row2">
+          <label for="f-typ">Przyjaciółka
+            <select id="f-typ" name="przyjaciolka"><option>Dobierzcie za mnie</option><option>Dama</option><option>Wariatka</option><option>Powierniczka</option><option>Imprezowiczka</option><option>Instagramerka</option></select>
+          </label>
+          <label for="f-pkg">Pakiet
+            <select id="f-pkg" name="pakiet"><option>2 godziny, 149 zł</option><option selected>4 godziny, 249 zł</option><option>Cały wieczór, 399 zł</option><option>Weekend, wycena</option><option>Karta podarunkowa</option></select>
+          </label>
+        </div>
+        <div class="row2">
+          <label for="f-date">Data<input id="f-date" type="date" name="data" required></label>
+          <label for="f-name">Imię<input id="f-name" type="text" name="imie" autocomplete="given-name" required></label>
+        </div>
+        <label for="f-contact">Telefon lub e-mail<input id="f-contact" type="text" name="kontakt" autocomplete="email" required></label>
+        <label for="f-msg">Kilka słów o spotkaniu <span class="opt">(opcjonalnie)</span><textarea id="f-msg" name="opis" rows="3"></textarea></label>
+        <label class="check" for="f-ok"><input id="f-ok" type="checkbox" name="zgoda" required><span>Mam 18+ lat i akceptuję regulamin oraz kontakt w sprawie rezerwacji.</span></label>
+        <button class="btn btn--rose" type="submit">Wyślij rezerwację</button>
+        <p class="msg" id="msg" role="status" aria-live="polite"></p>
+      </form>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot__top">
+      <p>Nie masz z kim wyjść? <em>Po prostu ją wypożycz.</em></p>
+      <a class="btn" href="#rezerwacja">Zarezerwuj</a>
+    </div>
+    <div class="foot__links">
+      <a href="https://instagram.com/TWOJ_PROFIL">Instagram</a>
+      <a href="https://facebook.com/TWOJ_PROFIL">Facebook</a>
+      <a href="https://tiktok.com/@TWOJ_PROFIL">TikTok</a>
+      <a href="#">Regulamin</a>
+      <a href="#">Polityka prywatności</a>
+    </div>
+    <p class="foot__fine">Przyjaciółki nie zastępują profesjonalnej pomocy psychologicznej, medycznej ani prawnej. Usługa ma charakter wyłącznie towarzyski i rozrywkowy. Tylko dla osób pełnoletnich. © Wypożyczalnia Przyjaciółek</p>
+  </div>
+</footer>
+
+<script>
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const toggle = $('.nav__toggle'), menu = $('#menu');
+toggle.addEventListener('click', () => toggle.setAttribute('aria-expanded', menu.classList.toggle('open')));
+menu.addEventListener('click', e => { if (e.target.closest('a')) { menu.classList.remove('open'); toggle.setAttribute('aria-expanded', 'false'); } });
+addEventListener('scroll', () => $('.nav').classList.toggle('scrolled', scrollY > 8), { passive: true });
+
+const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.add('on'); io.unobserve(e.target); } }), { threshold: .1 });
+$$('.fade').forEach(el => io.observe(el));
+
+const setSel = (id, v) => { const s = document.getElementById(id); const o = [...s.options].find(o => o.text === v); if (o) s.value = o.value; };
+document.addEventListener('click', e => {
+  const a = e.target.closest('[data-pick],[data-pkg]'); if (!a) return;
+  if (a.dataset.pick) setSel('f-typ', a.dataset.pick);
+  if (a.dataset.pkg) setSel('f-pkg', a.dataset.pkg);
+});
+
+$('#f-date').min = new Date().toISOString().slice(0, 10);
+const form = $('#form'), msg = $('#msg');
+form.addEventListener('input', e => e.target.classList.remove('invalid'));
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+  let ok = true;
+  form.querySelectorAll('[required]').forEach(el => { const bad = el.type === 'checkbox' ? !el.checked : !el.value.trim(); el.classList.toggle('invalid', bad); if (bad) ok = false; });
+  if (!ok) { msg.textContent = 'Uzupełnij zaznaczone pola i zaakceptuj regulamin.'; return; }
+  // Ustaw action formularza (np. Formspree), a dane zostaną wysłane.
+  const action = form.getAttribute('action');
+  if (action && action !== '#') {
+    try { const r = await fetch(action, { method: 'POST', body: new FormData(form), headers: { Accept: 'application/json' } }); if (!r.ok) throw 0; }
+    catch { msg.textContent = 'Nie udało się wysłać. Napisz do nas: kontakt@twojadomena.pl'; return; }
+  }
+  form.reset();
+  msg.textContent = 'Dziękujemy! Odezwiemy się w ciągu 24 godzin.';
+});
+</script>
+</body>
+</html>
