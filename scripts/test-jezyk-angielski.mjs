@@ -56,10 +56,15 @@ const app = fs.readFileSync('app.html', 'utf8');
 const dom = fs.readFileSync('src/i18n/dom.ts', 'utf8');
 sprawdz('tłumaczenie uruchamiane przy starcie', /import \{ uruchomTlumaczenie, odswiezPrzelacznikJezyka \} from "\.\/i18n\/dom";\s*uruchomTlumaczenie\(\);/.test(zrodlo));
 sprawdz('przycisk odświeżany razem z panelem bocznym', /odswiezPrzelacznikMotywu\(\);\s*odswiezPrzelacznikJezyka\(\);/.test(zrodlo));
-sprawdz('przycisk w app.html, sam nie jest tłumaczony', /<button id="lang-toggle"[^>]*data-bez-tlumaczenia/.test(app));
+// Przełącznik to już nie jeden przycisk, tylko grupa flag (PL / EN / DE) budowana w dom.ts.
+sprawdz('przełącznik w app.html, sam nie jest tłumaczony', /id="lang-toggle"[^>]*data-bez-tlumaczenia/.test(app));
 sprawdz('pola do pisania i kod są pomijane', /const POMIN = 'script, style, textarea, code, pre, \[data-bez-tlumaczenia\]/.test(dom));
 sprawdz('nowe fragmenty strony tłumaczone obserwatorem zmian', /new MutationObserver/.test(dom) && /childList: true, subtree: true, characterData: true/.test(dom));
-sprawdz('powrót na polski przywraca oryginały', /else przywrocPoddrzewo\(document\.body\);/.test(dom));
+// Przy trzech językach każda zmiana zaczyna od przywrócenia polskich oryginałów — inaczej
+// przejście z angielskiego na niemiecki tłumaczyłoby tekst już przetłumaczony, a słownik zna
+// wyłącznie polskie klucze.
+sprawdz('zmiana języka zaczyna od przywrócenia oryginałów',
+  /przywrocPoddrzewo\(document\.body\);\s*\n\s*if \(nowy !== 'pl'\) przetlumaczPoddrzewo\(document\.body\);/.test(dom));
 sprawdz('okienka alert/confirm też tłumaczone', /window\.alert = /.test(dom) && /window\.confirm = /.test(dom));
 sprawdz('wybór zapamiętany w przeglądarce', /localStorage\.setItem\(KLUCZ, nowy\)/.test(dom));
 

@@ -59,7 +59,9 @@ console.log('\n2. „⭐ Dodaj do listy Talent" w profilu — tak wraca Gaj');
 console.log('\n3. Podpięcie');
 sprawdz('przycisk w profilu tylko, gdy zawodnika nie ma na liście', /\$\{talentZawodnika\(p\) \? '' : `<button class="secondary" data-action="dodaj-do-talentow"/.test(zrodlo));
 sprawdz('kliknięcie dopisuje, a nieudany zapis cofa wpis',
-  /querySelectorAll\('\[data-action="dodaj-do-talentow"\]'\)[\s\S]{0,500}DB\.talents\.push\(t\);\s*const ok = await saveTalents\(\);\s*if\(ok === false\)\{\s*DB\.talents = DB\.talents\.filter\(x=> x\.id !== t\.id\);/.test(zrodlo));
+  // Wpis idzie do bazy podpisany kontem (podpiszKontem) — liczy się to, że po nieudanym zapisie
+  // wraca stan sprzed kliknięcia, a nie sam kształt wywołania push.
+  /querySelectorAll\('\[data-action="dodaj-do-talentow"\]'\)[\s\S]{0,500}DB\.talents\.push\([^;]*\);\s*const ok = await saveTalents\(\);\s*if\(ok === false\)\{\s*DB\.talents = DB\.talents\.filter\(x=> x\.id !== t\.id\);/.test(zrodlo));
 
 console.log(bledy ? `\n${bledy} BŁĘDÓW` : '\nWszystko przeszło.');
 process.exit(bledy ? 1 : 0);

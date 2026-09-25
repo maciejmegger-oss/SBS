@@ -181,8 +181,11 @@ console.log("\nSklad musi dac sie poprawic");
   spr("klik nie przełącza przy okazji wyróżnienia",
     /obs-usun[\s\S]{0,200}stopPropagation\(\)/.test(app));
   spr("każda zmiana zapisuje się od razu",
-    (app.match(/zapisz\(\);\n    \}\);/g) || []).length >= 3, "zapisow: "
-      + (app.match(/zapisz\(\);\n    \}\);/g) || []).length);
+    // Bez sztywnych wciec: liczy sie, ze obsluga konczy sie zapisem, a nie ile spacji stoi przed
+    // klamra. Poprzedni wzorzec pilnowal akurat czterech spacji i przewrocil sie przy pierwszym
+    // przeformatowaniu tego fragmentu, choc kod dzialal poprawnie.
+    (app.match(/zapisz\(\);\s*\n\s*\}\);/g) || []).length >= 3, "zapisow: "
+      + (app.match(/zapisz\(\);\s*\n\s*\}\);/g) || []).length);
 }
 
 {
