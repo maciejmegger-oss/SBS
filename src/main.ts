@@ -10704,7 +10704,10 @@ function viewTalent(){
     talentKadra === wartosc, 'talent-kadra', {val: wartosc}, ikona);
   // ZNACZKI W PRZYCISKACH — żeby rodzaje zakładek nie zlewały się w jeden pas jednakowych pigułek:
   // kadra = biało-czerwone kółko z wiekiem, talent klubowy = tarcza z gwiazdą, rocznik = „’13".
-  const znaczekKadry = (k)=> `<span aria-hidden="true" class="znaczek-kadry">${esc(String(k).replace(/^U-?/i, ''))}</span>`;
+  // ZNAK PZPN PRZY KADRACH — to PZPN powołuje, więc jego logo mówi o tych przyciskach więcej niż
+  // biało-czerwone kółko z liczbą. Wiek i tak stoi w etykiecie obok („U-17"), nic więc nie ginie.
+  const znaczekKadry = (k)=> `<img src="/logo-pzpn.png" alt="" class="znaczek-kadry-pzpn${talentKadra === k ? ' na-ciemnym' : ''}"
+    title="Kadra ${esc(String(k))} — powołania PZPN">`;
   const tarczaTalentu = `<svg aria-hidden="true" class="znaczek-klubowy" viewBox="0 0 44 44" width="20" height="22">
       <path d="M22 3 L38 8 L38 21 C38 30.5 31 37.5 22 40.5 C13 37.5 6 30.5 6 21 L6 8 Z" fill="var(--pitch)" stroke="var(--gold)" stroke-width="2.6"/>
       <path d="M22 11.5 l3.1 6.3 6.9 1 -5 4.9 1.2 6.9 -6.2 -3.3 -6.2 3.3 1.2 -6.9 -5 -4.9 6.9 -1 z" fill="var(--gold)"/>
@@ -12779,10 +12782,19 @@ function viewRadarMlodziezy(){
       Przejrzanych do tej pory: <strong>${Object.keys(radarPrzejrzane).length}</strong>.</div></div>`;
   }
 
-  // Najpierw ci, którzy dopiero usiedli na ławce — to najwcześniejszy sygnał, więc nie może
-  // utonąć pod nazwiskami z setkami minut.
-  nowi.sort((a,b)=> (b.tylkoKadra ? 1 : 0) - (a.tylkoKadra ? 1 : 0)
-    || kolejnosc(a.poziom) - kolejnosc(b.poziom) || b.minuty - a.minuty);
+  // NA GÓRZE CI, KTÓRZY GRALI — I TO OD NAJWIĘKSZEJ LICZBY MINUT.
+  //
+  // Wcześniej pierwsi szli ci „w kadrze, bez minut", a po nich lista układała się ligami. Wychodziło
+  // z tego coś odwrotnego do pracy skauta: na pierwszym ekranie stały same zera, a dalej rezerwowy
+  // z II ligi z dwiema minutami wyprzedzał bramkarza z III ligi z pięcioma pełnymi meczami. Minuta
+  // młodzieżowca to decyzja trenera, więc to ona rządzi kolejnością. Przy równej liczbie minut
+  // wyżej stoi wyższy poziom rozgrywek, a obecność w kadrze bez minut schodzi na koniec listy —
+  // nie znika, bo to najwcześniejszy sygnał, jaki mamy, ale nie zasłania już ogranych.
+  nowi.sort((a,b)=> (b.minuty > 0 ? 1 : 0) - (a.minuty > 0 ? 1 : 0)
+    || b.minuty - a.minuty
+    || kolejnosc(a.poziom) - kolejnosc(b.poziom)
+    || b.wystapien - a.wystapien
+    || String((a.p.lastName||'') + a.p.firstName).localeCompare(String((b.p.lastName||'') + b.p.firstName), 'pl'));
 
   // NAJBARDZIEJ OGRANI RZUCAJĄ SIĘ W OCZY.
   //
