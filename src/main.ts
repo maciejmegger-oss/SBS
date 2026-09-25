@@ -18,6 +18,15 @@ import { podepnijOczko } from "./ui/oko";
 import { wyslijHerb, herbJestPlikiem, przeniesHerby } from "./data/herby";
 // Kod zbieracza ŁNP — ten sam plik, który serwujemy pod /zakladka-lnp-v2.js.
 import LNP_ZBIERACZ from "../public/zakladka-lnp-v2.js?raw";
+// Kod zakładek leży w public/zakladki/ — ten sam plik idzie na serwer (skąd zakładka pobiera go
+// przy każdym kliknięciu) i tutaj, jako kopia awaryjna na wypadek braku sieci.
+import LNP_PROTOKOL_KOD from "../public/zakladki/lnp-protokol.js?raw";
+import TM_PROFIL_KOD from "../public/zakladki/tm-profil.js?raw";
+import TM_KLUBY_KOD from "../public/zakladki/tm-kluby.js?raw";
+import TM_AGENT_KOD from "../public/zakladki/tm-agent.js?raw";
+import TM_AGENCJE_KOD from "../public/zakladki/tm-agencje.js?raw";
+import TM_AGENCJA_LUDZIE_KOD from "../public/zakladki/tm-agencja-ludzie.js?raw";
+import TM_AGENCJA_ZAWODNICY_KOD from "../public/zakladki/tm-agencja-zawodnicy.js?raw";
 import type { Database } from "./types";
 // Skala bramkarza — jedno źródło dla systemu i dla panelu, patrz src/domain/bramkarz.ts.
 import { PROFILE, WSZYSTKIE_FAZY, grupaZOpisu, grupaZFaz } from "./domain/pozycje";
@@ -18110,10 +18119,17 @@ const SBS_ADRES_JS = JSON.stringify(location.origin);
 // nie zostanie przy okazji przekręcone.
 const zakladkaHref = (kod) => String(kod).split(String.fromCharCode(13)).join('').split(String.fromCharCode(10)).join('%0A');
 
-const LNP_HURT_BOOKMARKLET = `javascript:(function(){
+// WSPÓLNY MECHANIZM SAMOAKTUALIZACJI — dla WSZYSTKICH zakładek, nie tylko tej do kolejki.
+//
+// Zakładka wciągnięta na pasek zostaje tam w postaci, w jakiej ją przeciągnięto. Zakładka do ŁNP
+// pobiera więc swój kod z serwera przy każdym kliknięciu; pozostałe (Transfermarkt, pojedynczy
+// protokół) siedziały w pasku w wersji sprzed miesięcy i każda poprawka wymagała przeciągnięcia
+// ich na nowo. Teraz wszystkie idą tą samą drogą: kod z serwera, a wbudowana kopia tylko wtedy,
+// gdy pobranie się nie uda (brak sieci, wyłączony serwis).
+const zakladkaSamoaktualizujaca = (sciezka, kodAwaryjny) => `javascript:(function(){
 var A=${SBS_ADRES_JS};
 try{window.__SBS_ADRES=A;}catch(e){}
-function awaryjnie(){${LNP_ZBIERACZ}}
+function awaryjnie(){${kodAwaryjny}}
 var ruszyl=false, budzik=null;
 function odpal(co){ if(ruszyl) return; ruszyl=true; if(budzik) clearTimeout(budzik); try{ co(); }catch(e){ alert('SBS: '+e.message); } }
 budzik=setTimeout(function(){ odpal(function(){ try{window.__SBS_STARA=1;}catch(e){} awaryjnie(); }); },12000);
@@ -18131,13 +18147,16 @@ var ADRESY=[A];
 try{ var u=new URL(A); ADRESY.push(/^www\\./.test(u.hostname) ? u.protocol+'//'+u.hostname.replace(/^www\\./,'') : u.protocol+'//www.'+u.hostname); }catch(e){}
 function pobierz(n){
  if(n>=ADRESY.length){ odpal(function(){ try{window.__SBS_STARA=1;}catch(e){} awaryjnie(); }); return; }
- fetch(ADRESY[n]+'/zakladka-lnp-v2.js?t='+Date.now(),{cache:'no-store'})
+ fetch(ADRESY[n]+'${sciezka}?t='+Date.now(),{cache:'no-store'})
   .then(function(r){ if(!r.ok) throw 0; return r.text(); })
-  .then(function(t){ if(t.indexOf('SBS_ZBIERACZ')<0) throw 0; odpal(function(){ (new Function(t))(); }); })
+  /* Strona błędu też ma status 200 — pusta albo zaczynająca się od „<" na pewno nie jest zakładką. */
+  .then(function(t){ if(t.length<120 || /^\\s*</.test(t)) throw 0; odpal(function(){ (new Function(t))(); }); })
   .catch(function(){ pobierz(n+1); });
 }
 try{ pobierz(0); }catch(e){ odpal(awaryjnie); }
 })();`;
+
+const LNP_HURT_BOOKMARKLET = zakladkaSamoaktualizujaca('/zakladka-lnp-v2.js', LNP_ZBIERACZ);
 
 // ZAKŁADKA DO ŁNP — zbieranie protokołów meczowych jednym kliknięciem.
 //
@@ -18148,24 +18167,7 @@ try{ pobierz(0); }catch(e){ odpal(awaryjnie); }
 // meczów kolejki to dziewięć kliknięć i JEDNO wklejenie w aplikacji.
 //
 // Shift + kliknięcie czyści zebrane protokoły (na początek nowej kolejki).
-const LNP_BOOKMARKLET = `javascript:(function(){try{
-${LNP_ZDARZENIA}
-var K='sbs_protokoly';
-if(window.event&&window.event.shiftKey){localStorage.removeItem(K);alert('SBS: wyczyszczono zebrane protokoly.');return;}
-if(!/laczynaspilka\\.pl/.test(location.host)){alert('SBS: to nie jest strona Laczy nas pilka.');return;}
-var t=document.body.innerText||'';
-var i=t.search(/^\\s*Sk\\u0142ady\\s*$/m);
-if(i<0){alert('SBS: na tej stronie nie widze sekcji \\u201eSklady\\u201d.\\n\\nOtworz strone MECZU (nie tabele) i poczekaj, az sie zaladuje.');return;}
-var naglowek=(document.title||'mecz').replace(/\\s+/g,' ').trim();
-var protokol='### PROTOKOL: '+naglowek+'\\n'+t.slice(Math.max(0,i-400))+zdarzenia(document);
-var zebrane=[];try{zebrane=JSON.parse(localStorage.getItem(K)||'[]');}catch(e){}
-if(zebrane.indexOf(protokol)<0)zebrane.push(protokol);
-localStorage.setItem(K,JSON.stringify(zebrane));
-var calosc=zebrane.join('\\n\\n');
-var p=document.createElement('textarea');p.value=calosc;document.body.appendChild(p);p.select();
-document.execCommand('copy');document.body.removeChild(p);
-alert('SBS: zebrano '+zebrane.length+' protokolow i skopiowano do schowka.\\n\\nWklej je w aplikacji w oknie \\u201eWklej protokol meczu\\u201d.\\n\\nShift+klikniecie czysci liste.');
-}catch(e){alert('SBS: '+e.message);}})();`;
+const LNP_BOOKMARKLET = zakladkaSamoaktualizujaca('/zakladki/lnp-protokol.js', LNP_PROTOKOL_KOD);
 
 // ZAKŁADKA DO PROFILU ZAWODNIKA NA TRANSFERMARKCIE.
 //
@@ -18179,55 +18181,9 @@ if(import.meta.env && import.meta.env.DEV){
   sprawdzZakladke('Zbierz protokół', LNP_BOOKMARKLET);
 }
 
-const TM_PROFIL_BOOKMARKLET = `javascript:(function(){try{
-if(!/transfermarkt\\./.test(location.host)){alert('SBS: to nie jest strona Transfermarktu.');return;}
-var T=document.body.innerText||'';
-function po(et){var re=new RegExp(et+'\\\\s*:?\\\\s*\\\\n?\\\\s*([^\\\\n]+)','i');var m=T.match(re);return m?m[1].trim():'';}
-var nazwa=(document.querySelector('h1')||{}).innerText||document.title.split(' - ')[0];
-nazwa=nazwa.replace(/#\\d+\\s*/,'').replace(/\\s+/g,' ').trim();
-var data=po('Date of birth|Data urodzenia|Geburtsdatum').replace(/\\(.*?\\)/,'').trim();
-var poz=po('Position|Pozycja|Hauptposition');
-var noga=po('Foot|Noga|Fu\\u00df');
-var wzrost=po('Height|Wzrost|Gr\\u00f6\\u00dfe');
-var kraj=po('Citizenship|Obywatelstwo|Nationalit\\u00e4t');
-var klub=po('Current club|Obecny klub|Aktueller Verein');
-var kontrakt=po('Contract expires|Kontrakt do|Vertrag bis');
-var out=['SBS-PROFIL','Zawodnik: '+nazwa,'Data urodzenia: '+data,'Pozycja: '+poz,'Noga: '+noga,
-'Wzrost: '+wzrost,'Narodowosc: '+kraj,'Klub: '+klub,'Kontrakt do: '+kontrakt,'Adres: '+location.href];
-var wiersz=null,ts=document.querySelectorAll('table tbody tr');
-for(var i=0;i<ts.length;i++){var t=ts[i].innerText.replace(/\\s+/g,' ');
-if(/(26\\/27|2026\\/2027|Total|Suma|Gesamt)/i.test(t)&&/\\d/.test(t)){wiersz=ts[i];}}
-if(wiersz){var k=[].map.call(wiersz.cells,function(c){return c.innerText.replace(/\\s+/g,' ').trim();});
-out.push('Wiersz sezonu: '+k.join(' | '));}
-var p=document.createElement('textarea');p.value=out.join('\\n');document.body.appendChild(p);p.select();
-document.execCommand('copy');document.body.removeChild(p);
-alert('SBS: skopiowano profil '+nazwa+'.\\n\\nWklej go w oknie edycji zawodnika i kliknij \\u201eWczytaj z wklejonego tekstu\\u201d.');
-}catch(e){alert('SBS: '+e.message);}})();`;
+const TM_PROFIL_BOOKMARKLET = zakladkaSamoaktualizujaca('/zakladki/tm-profil.js', TM_PROFIL_KOD);
 
-const TM_BOOKMARKLET = `javascript:(function(){try{
-var K='sbs_zebrane';
-if(window.event&&window.event.shiftKey){localStorage.removeItem(K);alert('SBS: wyczyszczono zebrane kluby.');return;}
-var u=location.href;
-if(/\\/verein\\/\\d+/.test(u)&&!/\\/leistungsdaten\\//.test(u)){
-location.href=u.replace(/\\/(startseite|kader|spielplan|leistungsdaten)\\/verein\\//,'/leistungsdaten/verein/').replace(/\\/verein\\//,'/leistungsdaten/verein/').replace(/\\/leistungsdaten\\/leistungsdaten\\//,'/leistungsdaten/');
-return;}
-if(!/\\/leistungsdaten\\//.test(u)){alert('SBS: to nie jest strona klubu na Transfermarkcie.\\n\\nOtworz klub, a potem kliknij te zakladke ponownie.');return;}
-var best=null,n=0;var ts=document.querySelectorAll('table');
-for(var i=0;i<ts.length;i++){var r=ts[i].rows.length;if(r>n){n=r;best=ts[i];}}
-var t=(best&&n>4)?best.innerText:document.body.innerText;
-if(!/\\d\\s*['’]/.test(t)){alert('SBS: na tej stronie nie ma minut.\\n\\nUpewnij sie, ze u gory wybrales sezon i rozgrywki (np. \\u201eLacznie 26/27\\u201d).');return;}
-var nazwa=(document.title||'klub').split(' - ')[0];
-var stare=localStorage.getItem(K)||'';
-if(stare.indexOf('### '+nazwa+' ###')>=0){alert('SBS: '+nazwa+' jest juz zebrany — pomijam, zeby nie dublowac.');return;}
-var caly=stare+(stare?'\\n\\n':'')+'### '+nazwa+' ###\\n'+t;
-localStorage.setItem(K,caly);
-var ile=(caly.match(/### /g)||[]).length;
-navigator.clipboard.writeText(caly).then(function(){
-var d=document.createElement('div');
-d.innerHTML='<b>SBS: dodano '+nazwa+'</b><br>zebrane kluby: '+ile+' — schowek gotowy do wklejenia<br><span style="opacity:.75;font-weight:400">Shift+klik = wyczysc zebrane</span>';
-d.style.cssText='position:fixed;top:16px;right:16px;z-index:999999;background:#16302A;color:#C69B3C;padding:12px 18px;border-radius:8px;font:600 13px sans-serif;line-height:1.5;box-shadow:0 4px 16px rgba(0,0,0,.3)';
-document.body.appendChild(d);setTimeout(function(){d.remove()},3200);
-}).catch(function(e){alert('Nie udało się skopiować: '+e.message)})}catch(e){alert('Błąd: '+e.message)}})();`;
+const TM_BOOKMARKLET = zakladkaSamoaktualizujaca('/zakladki/tm-kluby.js', TM_KLUBY_KOD);
 
 // Zakładka do zbierania MENEDŻERÓW z profili zawodników na Transfermarkcie.
 //
@@ -18246,47 +18202,7 @@ document.body.appendChild(d);setTimeout(function(){d.remove()},3200);
 // że zawodnik nie ma menedżera. To pole bywa tam nieuzupełnione, zwłaszcza u młodzieży. Dlatego
 // skrypt zapisuje „AGENT: -", a aplikacja odnotowuje wtedy tylko fakt sprawdzenia — nigdy nie
 // ustawia „nie ma agenta" na tej podstawie.
-const TM_AGENT_BOOKMARKLET = `javascript:(function(){try{
-var K='sbs_agenci';
-if(window.event&&window.event.shiftKey){localStorage.removeItem(K);alert('SBS: wyczyszczono zebranych zawodnikow.');return;}
-var u=location.href;
-if(!/\\/profil\\/spieler\\/\\d+/.test(u)){alert('SBS: to nie jest profil zawodnika na Transfermarkcie.\\n\\nOtworz profil zawodnika (adres z \\u201e/profil/spieler/\\u201d) i kliknij ponownie.');return;}
-var imie=(document.title||'').split(' - ')[0].replace(/\\s+/g,' ').trim();
-if(!imie){alert('SBS: nie odczytalem nazwiska z tej strony.');return;}
-function pole(ok){
-var n=document.querySelectorAll('span,th,td,dt,div');
-for(var i=0;i<n.length;i++){var e=n[i];
-if(e.children.length)continue;
-var t=(e.textContent||'').replace(/\\u00a0/g,' ').trim();
-if(!t||t.length>34||t.charAt(t.length-1)!==':')continue;
-var k=t.toLowerCase().replace(/\\u0142/g,'l').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').replace(/[^a-z]/g,'');
-if(!ok(k))continue;
-var v=e.nextElementSibling;if(!v)continue;
-var a=v.querySelector('a')||(v.tagName==='A'?v:null);
-var nazwa=a?((a.getAttribute('title')||a.textContent||'').trim()):((v.textContent||'').replace(/\\u00a0/g,' ').trim());
-nazwa=nazwa.replace(/[\\s.\\u2026]+$/,'').trim();
-if(nazwa)return{nazwa:nazwa,link:(a&&a.href)?a.href:''};}
-return null;}
-var ETYKIETY=['menadzerowie','menedzerowie','menadzer','menedzer','doradca','doradcy','berater','spielerberater','playeragent','agent','agents','advisor'];
-var ag=pole(function(k){return ETYKIETY.indexOf(k)>=0;});
-var agent=ag?ag.nazwa:'';var agLink=ag?ag.link:'';
-if(/^(brak|-|\\u2013|\\u2014|unknown|k\\.A\\.)$/i.test(agent)){agent='';agLink='';}
-var ur=pole(function(k){return k.indexOf('urodz')===0||k.indexOf('dataurodzenia')===0||k.indexOf('geb')===0||k.indexOf('dateofbirth')===0;});
-var rok='';
-if(ur){var mu=ur.nazwa.match(/(\\d{4})/);if(mu)rok=mu[1];}
-if(!rok){var mt=document.body.innerText.replace(/\\u00a0/g,' ').match(/(?:Urodz|Data urodzenia|Geb\\.|Date of birth)[^\\n]*?(\\d{4})/i);if(mt)rok=mt[1];}
-var wpis='### '+imie+' ###\\nROK: '+rok+'\\nAGENT: '+(agent||'-')+(agLink?'\\nLINK: '+agLink:'');
-var stare=localStorage.getItem(K)||'';
-if(stare.indexOf('### '+imie+' ###')>=0){alert('SBS: '+imie+' jest juz zebrany — pomijam, zeby nie dublowac.');return;}
-var caly=stare+(stare?'\\n\\n':'')+wpis;
-localStorage.setItem(K,caly);
-var ile=(caly.match(/### /g)||[]).length;
-navigator.clipboard.writeText(caly).then(function(){
-var d=document.createElement('div');
-d.innerHTML='<b>SBS: '+imie+'</b><br>menedzer: '+(agent||'Transfermarkt nie podaje')+'<br>zebranych: '+ile+' — schowek gotowy<br><span style="opacity:.75;font-weight:400">Shift+klik = wyczysc zebrane</span>';
-d.style.cssText='position:fixed;top:16px;right:16px;z-index:999999;background:#16302A;color:#C69B3C;padding:12px 18px;border-radius:8px;font:600 13px sans-serif;line-height:1.5;box-shadow:0 4px 16px rgba(0,0,0,.3)';
-document.body.appendChild(d);setTimeout(function(){d.remove()},3200);
-}).catch(function(e){alert('Nie udalo sie skopiowac: '+e.message)})}catch(e){alert('Blad: '+e.message)}})();`;
+const TM_AGENT_BOOKMARKLET = zakladkaSamoaktualizujaca('/zakladki/tm-agent.js', TM_AGENT_KOD);
 
 // Zakładka do zbierania CAŁEJ LISTY AGENCJI z Transfermarktu (Zapoznaj się → Agencje, wybór kraju).
 // Lista jest podzielona na strony — bufor sumuje się między nimi, więc przechodzisz stronę po
@@ -18307,117 +18223,12 @@ document.body.appendChild(d);setTimeout(function(){d.remove()},3200);
 // pierwsza wersja zbierała przez to same nazwy z pustym krajem, liczbą zawodników i wartością.
 // Dlatego wspinamy się do NAJBARDZIEJ ZEWNĘTRZNEGO wiersza, a przy czytaniu liczb pomijamy
 // komórki zawierające zagnieżdżoną tabelę — inaczej wpadłby nam tekst z tamtej tabelki.
-const TM_AGENCIES_BOOKMARKLET = `javascript:(function(){try{
-var K='sbs_agencje';
-if(window.event&&window.event.shiftKey){localStorage.removeItem(K);alert('SBS: wyczyszczono zebrane agencje.');return;}
-var linki=document.querySelectorAll('a[href*="/beraterfirma/berater/"]');
-if(!linki.length){alert('SBS: nie widze tu listy agencji.\\n\\nOtworz Transfermarkt \\u2192 Zapoznaj sie \\u2192 Agencje, wybierz kraj i kliknij ponownie.');return;}
-var widziane={},wiersze=[];
-for(var i=0;i<linki.length;i++){
-var a=linki[i];
-var nazwa=(a.getAttribute('title')||a.textContent||'').replace(/\\s+/g,' ').trim();
-if(!nazwa||nazwa.length<2)continue;
-var href=a.href;
-if(widziane[href])continue;
-var tr=a.closest('tr');if(!tr)continue;
-var wyzej;
-while((wyzej=tr.parentElement&&tr.parentElement.closest('tr')))tr=wyzej;
-widziane[href]=1;
-var kraj='';
-var flaga=tr.querySelector('img.flaggenrahmen,img[class*="flagge"]');
-if(flaga)kraj=(flaga.getAttribute('title')||flaga.getAttribute('alt')||'').trim();
-var lic=/licensed/i.test(tr.textContent||'')?'tak':'nie';
-var logo='';
-var im=tr.querySelectorAll('img');
-for(var q=0;q<im.length;q++){
-var s=im[q].getAttribute('src')||'';
-if(!/^https?:/i.test(s))continue;
-if(/flagge|flaggen|\\/verifiziert|default|platzhalter|blank|nologo|dummy/i.test(s))continue;
-logo=s;break;}
-var td=tr.querySelectorAll('td'),zaw='',wart='';
-for(var j=0;j<td.length;j++){
-if(td[j].querySelector('table,td'))continue;
-var t=(td[j].textContent||'').replace(/\\u00a0/g,' ').trim();
-if(!zaw&&/^\\d{1,5}$/.test(t))zaw=t;
-if(!wart&&t.indexOf('\\u20ac')>=0)wart=t;}
-wiersze.push(nazwa+' | '+href+' | '+kraj+' | '+zaw+' | '+wart+' | '+lic+' | '+logo);}
-if(!wiersze.length){alert('SBS: znalazlem odnosniki, ale nie umialem odczytac wierszy tabeli.');return;}
-var stare=(localStorage.getItem(K)||'').split('\\n').filter(function(x){return x.trim()});
-var poAdresie={},kolejnosc=[];
-for(var s=0;s<stare.length;s++){var ad=stare[s].split(' | ')[1];if(!ad)continue;if(!poAdresie[ad])kolejnosc.push(ad);poAdresie[ad]=stare[s];}
-var nowe=0,odswiezone=0;
-for(var k=0;k<wiersze.length;k++){
-var adres=wiersze[k].split(' | ')[1];
-if(poAdresie[adres]){if(poAdresie[adres]!==wiersze[k])odswiezone++;}
-else{kolejnosc.push(adres);nowe++;}
-poAdresie[adres]=wiersze[k];}
-var lista=[];for(var m=0;m<kolejnosc.length;m++)lista.push(poAdresie[kolejnosc[m]]);
-var caly=lista.join('\\n');
-if(!nowe&&!odswiezone){alert('SBS: wszystkie '+wiersze.length+' agencji z tej strony mam juz w buforze, i to z tymi samymi danymi.');return;}
-localStorage.setItem(K,caly);
-var ile=lista.length;
-navigator.clipboard.writeText(caly).then(function(){
-var d=document.createElement('div');
-d.innerHTML='<b>SBS: nowych '+nowe+' agencji</b>'+(odswiezone?'<br>odswiezono danych: '+odswiezone:'')+'<br>w buforze: '+ile+' \\u2014 schowek gotowy<br><span style="opacity:.75;font-weight:400">Przejdz na kolejna strone i kliknij ponownie<br>Shift+klik = wyczysc bufor</span>';
-d.style.cssText='position:fixed;top:16px;right:16px;z-index:999999;background:#16302A;color:#C69B3C;padding:12px 18px;border-radius:8px;font:600 13px sans-serif;line-height:1.5;box-shadow:0 4px 16px rgba(0,0,0,.3)';
-document.body.appendChild(d);setTimeout(function(){d.remove()},3600);
-}).catch(function(e){alert('Nie udalo sie skopiowac: '+e.message)})}catch(e){alert('Blad: '+e.message)}})();`;
+const TM_AGENCIES_BOOKMARKLET = zakladkaSamoaktualizujaca('/zakladki/tm-agencje.js', TM_AGENCJE_KOD);
 
 // Zakładka do zbierania PRACOWNIKÓW agencji — sekcja „Pracownicy" na profilu agencji wymienia
 // osoby, z którymi faktycznie się rozmawia. To jedyne miejsce, gdzie Transfermarkt podaje ludzi,
 // a nie samą firmę; wszystko inne (telefon, mail, licencja) i tak dopisujesz sam.
-const TM_AGENCY_STAFF_BOOKMARKLET = `javascript:(function(){try{
-var u=location.href;
-if(!/\\/berater\\/\\d+/.test(u)){alert('SBS: to nie jest profil agencji.\\n\\nOtworz strone agencji na Transfermarkcie i kliknij ponownie.');return;}
-var agencja=(document.title||'').split(/ - |\\|/)[0].replace(/\\s+/g,' ').trim();
-var osoby=[],widziane={};
-var linki=document.querySelectorAll('a[href*="/beraterberater/"],a[href*="/mitarbeiter/"],a[href*="/berater/mitarbeiter/"]');
-for(var i=0;i<linki.length;i++){
-var n=(linki[i].getAttribute('title')||linki[i].textContent||'').replace(/\\s+/g,' ').trim();
-if(!n||n.length<4||n.length>50)continue;
-if(widziane[n.toLowerCase()])continue;widziane[n.toLowerCase()]=1;
-osoby.push(n);}
-if(!osoby.length){
-// Zapasowo: sekcja „Pracownicy" bywa zwyklym blokiem bez odnosnikow — bierzemy z niej wiersze,
-// ktore wygladaja na imie i nazwisko (dwa lub trzy slowa z wielkiej litery, bez cyfr).
-var bloki=document.querySelectorAll('div,section,aside,table');
-for(var b=0;b<bloki.length;b++){
-var nag=(bloki[b].textContent||'').slice(0,40);
-if(!/pracownic|mitarbeiter|staff/i.test(nag))continue;
-var linie=(bloki[b].innerText||'').split('\\n').map(function(x){return x.trim()}).filter(Boolean);
-for(var l=0;l<linie.length;l++){
-var t=linie[l];
-if(/pracownic|mitarbeiter|staff/i.test(t))continue;
-if(t.length<4||t.length>50||/\\d|@|\\u20ac/.test(t))continue;
-if(!/^[A-Z\\u0104\\u0106\\u0118\\u0141\\u0143\\u00d3\\u015a\\u0179\\u017b][^ ]+( [A-Z\\u0104\\u0106\\u0118\\u0141\\u0143\\u00d3\\u015a\\u0179\\u017b][^ ]+){1,2}$/.test(t))continue;
-if(widziane[t.toLowerCase()])continue;widziane[t.toLowerCase()]=1;
-osoby.push(t);}
-if(osoby.length)break;}}
-if(!osoby.length){alert('SBS: nie znalazlem sekcji Pracownicy na tej stronie.\\n\\nMozesz wpisac nazwiska recznie w oknie w SBS — po jednym w linijce.');return;}
-// Numer i mail z bloku CONTACT to jedyne dane kontaktowe, jakie Transfermarkt podaje — i sa
-// wspolne dla calej agencji, nie dla poszczegolnych osob. Dopisujemy je do naglowka, zeby SBS
-// mogl nimi podstawic puste pola przy menedzerach.
-var tel='',mail='';
-var wszystkie=document.querySelectorAll('td,span,div,dt,th');
-for(var t2=0;t2<wszystkie.length;t2++){
-var e2=wszystkie[t2];
-if(e2.children.length)continue;
-var et=(e2.textContent||'').replace(/\\u00a0/g,' ').trim();
-if(!et||et.length>20)continue;
-var kk=et.toLowerCase().replace(/[^a-z]/g,'');
-if(kk!=='telefon'&&kk!=='email'&&kk!=='emailadres')continue;
-var v2=e2.nextElementSibling;if(!v2)continue;
-var vt=(v2.textContent||'').replace(/\\u00a0/g,' ').trim();
-if(!vt||vt==='-')continue;
-if(kk==='telefon'&&!tel)tel=vt;
-if(kk!=='telefon'&&!mail&&vt.indexOf('@')>=0)mail=vt;}
-var caly='### PRACOWNICY: '+agencja+' | '+u+(tel?' | TEL:'+tel:'')+(mail?' | MAIL:'+mail:'')+' ###\\n'+osoby.join('\\n');
-navigator.clipboard.writeText(caly).then(function(){
-var d=document.createElement('div');
-d.innerHTML='<b>SBS: '+agencja+'</b><br>pracownikow: '+osoby.length+' \\u2014 schowek gotowy<br><span style="opacity:.75;font-weight:400">Wklej w oknie „Wgraj menedzerow" w SBS</span>';
-d.style.cssText='position:fixed;top:16px;right:16px;z-index:999999;background:#16302A;color:#C69B3C;padding:12px 18px;border-radius:8px;font:600 13px sans-serif;line-height:1.5;box-shadow:0 4px 16px rgba(0,0,0,.3)';
-document.body.appendChild(d);setTimeout(function(){d.remove()},3600);
-}).catch(function(e){alert('Nie udalo sie skopiowac: '+e.message)})}catch(e){alert('Blad: '+e.message)}})();`;
+const TM_AGENCY_STAFF_BOOKMARKLET = zakladkaSamoaktualizujaca('/zakladki/tm-agencja-ludzie.js', TM_AGENCJA_LUDZIE_KOD);
 
 // Rozbiór listy menedżerów. Przyjmuje i wklejkę z zakładki, i zwykłą listę nazwisk wpisaną ręcznie
 // — po jednym w linijce, opcjonalnie z e-mailem i telefonem po pionowej kresce.
@@ -18484,76 +18295,7 @@ function parseMenedzerowieWklejka(text){
 // jego profilu (/profil/spieler/…), tak samo jak agencję rozpoznajemy po /beraterfirma/berater/.
 // Nazwę agencji bierzemy z tytułu strony, a jej adres wprost z paska — dzięki temu wklejka wie,
 // do której agencji należy, i nie trzeba tego wybierać ręcznie.
-const TM_AGENCY_SQUAD_BOOKMARKLET = `javascript:(function(){try{
-var K='sbs_sklad_agencji';
-if(window.event&&window.event.shiftKey){localStorage.removeItem(K);alert('SBS: wyczyszczono zebrany sklad.');return;}
-var u=location.href;
-if(!/\\/beraterfirma\\/berater\\/\\d+/.test(u)&&!/\\/berater\\/\\d+/.test(u)){alert('SBS: to nie jest profil agencji.\\n\\nOtworz strone agencji na Transfermarkcie (adres z \\u201e/beraterfirma/berater/\\u201d) i kliknij ponownie.');return;}
-var idAg=((u.match(/\\/berater\\/(\\d+)/)||[])[1])||'';
-var agencja=(document.title||'').split(/ - |\\|/)[0].replace(/\\s+/g,' ').trim();
-var linki=document.querySelectorAll('a[href*="/profil/spieler/"]');
-if(!linki.length){alert('SBS: nie widze tabeli reprezentowanych zawodnikow na tej stronie.');return;}
-var widziane={},wiersze=[];
-for(var i=0;i<linki.length;i++){
-var a=linki[i];
-var nazwa=(a.getAttribute('title')||a.textContent||'').replace(/\\s+/g,' ').trim();
-if(!nazwa||nazwa.length<3||nazwa.length>60)continue;
-var href=a.href.split('?')[0];
-if(widziane[href])continue;
-widziane[href]=1;
-var tr=a.closest('tr');
-var wiek='',klub='',wart='',poz='';
-if(tr){
-var wyzej;
-while((wyzej=tr.parentElement&&tr.parentElement.closest('tr')))tr=wyzej;
-var kl=tr.querySelector('a[href*="/verein/"]');
-if(kl){
-klub=(kl.getAttribute('title')||'').replace(/\\s+/g,' ').trim();
-if(!klub){var im2=kl.querySelector('img');if(im2)klub=(im2.getAttribute('title')||im2.getAttribute('alt')||'').replace(/\\s+/g,' ').trim();}
-if(!klub)klub=(kl.textContent||'').replace(/\\s+/g,' ').trim();}
-if(!klub){var ki=tr.querySelector('img[class*="wappen"],img[src*="wappen"],img[src*="vereinslogo"]');
-if(ki)klub=(ki.getAttribute('title')||ki.getAttribute('alt')||'').replace(/\\s+/g,' ').trim();}
-var kom=a.closest('td');
-if(kom){
-var wyzejK;
-while((wyzejK=kom.parentElement&&kom.parentElement.closest('td')))kom=wyzejK;
-var lisc=kom.querySelectorAll('*');
-for(var z=0;z<lisc.length;z++){
-if(lisc[z].children.length)continue;
-var tx=(lisc[z].textContent||'').replace(/\\s+/g,' ').trim();
-if(!tx||tx===nazwa)continue;
-if(tx.length<3||tx.length>32)continue;
-if(/\\d|@|\\u20ac/.test(tx))continue;
-poz=tx;break;}}
-var td=tr.querySelectorAll('td');
-for(var j=0;j<td.length;j++){
-if(td[j].querySelector('table,td'))continue;
-var t=(td[j].textContent||'').replace(/\\u00a0/g,' ').trim();
-if(!wiek&&/^\\d{2}$/.test(t))wiek=t;
-if(!wart&&t.indexOf('\\u20ac')>=0)wart=t;}}
-wiersze.push(nazwa+' | '+wiek+' | '+klub+' | '+poz+' | '+wart);}
-if(!wiersze.length){alert('SBS: znalazlem odnosniki do zawodnikow, ale nie umialem odczytac wierszy.');return;}
-var naglowek='### AGENCJA: '+agencja+' | '+u+' | ID:'+idAg+' ###';
-var stare=(localStorage.getItem(K)||'').split('\\n').filter(function(x){return x.trim()});
-if(stare.length&&stare[0].indexOf('ID:'+idAg+' ')<0){
-if(!confirm('SBS: w buforze masz sklad innej agencji ('+stare[0].replace(/^### AGENCJA: /,'').split(' | ')[0]+').\\n\\nOK = zaczynam zbierac te agencje od nowa.\\nAnuluj = nie ruszam bufora.'))return;
-stare=[];}
-var poNazwie={},kolejnosc=[];
-for(var s=1;s<stare.length;s++){var kl2=stare[s].split(' | ')[0];if(!kl2)continue;if(!poNazwie[kl2])kolejnosc.push(kl2);poNazwie[kl2]=stare[s];}
-var nowych=0;
-for(var k=0;k<wiersze.length;k++){var kl3=wiersze[k].split(' | ')[0];
-if(!poNazwie[kl3]){kolejnosc.push(kl3);nowych++;}
-poNazwie[kl3]=wiersze[k];}
-var lista=[];for(var m=0;m<kolejnosc.length;m++)lista.push(poNazwie[kolejnosc[m]]);
-var caly=naglowek+'\\n'+lista.join('\\n');
-localStorage.setItem(K,caly);
-var ile=lista.length;
-navigator.clipboard.writeText(caly).then(function(){
-var d=document.createElement('div');
-d.innerHTML='<b>SBS: '+agencja+'</b><br>z tej strony nowych: '+nowych+'<br>w buforze: '+ile+' \\u2014 schowek gotowy<br><span style="opacity:.75;font-weight:400">Przejdz na kolejna strone i kliknij ponownie<br>Shift+klik = wyczysc bufor</span>';
-d.style.cssText='position:fixed;top:16px;right:16px;z-index:999999;background:#16302A;color:#C69B3C;padding:12px 18px;border-radius:8px;font:600 13px sans-serif;line-height:1.5;box-shadow:0 4px 16px rgba(0,0,0,.3)';
-document.body.appendChild(d);setTimeout(function(){d.remove()},3600);
-}).catch(function(e){alert('Nie udalo sie skopiowac: '+e.message)})}catch(e){alert('Blad: '+e.message)}})();`;
+const TM_AGENCY_SQUAD_BOOKMARKLET = zakladkaSamoaktualizujaca('/zakladki/tm-agencja-zawodnicy.js', TM_AGENCJA_ZAWODNICY_KOD);
 
 // Klub z Transfermarktu -> klub w naszej bazie. To jednocześnie nasz sprawdzian „czy gra w Polsce":
 // baza zawiera wyłącznie polskie rozgrywki, więc trafienie w klub oznacza polską ligę. Nazwy bywają
