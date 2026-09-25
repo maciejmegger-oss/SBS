@@ -18,6 +18,7 @@ import { podepnijOczko } from "./ui/oko";
 import { wyslijHerb, herbJestPlikiem, przeniesHerby } from "./data/herby";
 // Kod zbieracza ŁNP — ten sam plik, który serwujemy pod /zakladka-lnp-v2.js.
 import LNP_ZBIERACZ from "../public/zakladka-lnp-v2.js?raw";
+import { PZPN, ZWIAZKI_WOJEWODZKIE } from "./data/federacja";
 // Kod zakładek leży w public/zakladki/ — ten sam plik idzie na serwer (skąd zakładka pobiera go
 // przy każdym kliknięciu) i tutaj, jako kopia awaryjna na wypadek braku sieci.
 import LNP_PROTOKOL_KOD from "../public/zakladki/lnp-protokol.js?raw";
@@ -4012,6 +4013,7 @@ const NAV_ITEMS = [
   {id:"ranking", label:"Ranking"},
   {id:"talent", label:"Talent"},
   {id:"committee", label:"Scout Transfer"},
+  {id:"federacja", label:"Federacja"},
   {id:"agencies", label:"Menedżerowie"},
   {id:"contacts", label:"Kontakty"},
   {id:"settings", label:"Ustawienia"},
@@ -4303,6 +4305,7 @@ function render(){
   else if(currentView==="ranking") main.innerHTML = viewRanking();
   else if(currentView==="reports") main.innerHTML = viewReports();
   else if(currentView==="talent") main.innerHTML = viewTalent();
+  else if(currentView==="federacja") main.innerHTML = viewFederacja();
   else if(currentView==="agencies") main.innerHTML = viewAgencies();
   else if(currentView==="contacts") main.innerHTML = viewContacts();
   else if(currentView==="settings") main.innerHTML = viewSettings();
@@ -12744,6 +12747,49 @@ function radarKandydaci(){
     })
     .filter(x=>(x.minuty > 0 || x.wystapien > 0) && radarMlodziezowiec(x.p) && radarPoziom(x.liga))
     .map(x=>({ ...x, poziom: radarPoziom(x.liga) }));
+}
+
+// ZAKŁADKA FEDERACJA — spis związków z danymi kontaktowymi.
+//
+// Po co osobna zakładka: telefon do wojewódzkiego związku bywa potrzebny w środku pracy nad
+// klubem (licencje, terminarze, powołania), a dotąd trzeba go było szukać w przeglądarce.
+// Dane stoją w src/data/federacja.ts, spisane ze stron PZPN — nie z pamięci.
+//
+// Numer i adres są odnośnikami (tel:, mailto:), więc na telefonie dzwoni się jednym stuknięciem.
+function viewFederacja(){
+  const kafel = (z, glowny)=>{
+    const telefonCzysty = String(z.telefon || '').replace(/[^\d+]/g, '');
+    return `<div class="card" style="display:flex;gap:14px;align-items:flex-start;${
+      glowny ? 'border:2px solid var(--gold);' : ''}">
+      <img src="${esc(z.herb)}" alt="" style="width:${glowny ? 64 : 52}px;height:${glowny ? 64 : 52}px;flex-shrink:0;object-fit:contain;">
+      <div style="min-width:0;flex:1;">
+        <div style="font-weight:800;color:var(--heading);font-size:${glowny ? 17 : 15}px;">${esc(z.nazwa)}</div>
+        <div class="note" style="margin:2px 0 6px;">${esc(z.adres)} &middot; ${esc(z.miasto)}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;">
+          <span>📞 <a class="ext-link" href="tel:${esc(telefonCzysty)}">${esc(z.telefon)}</a></span>
+          <span>✉️ <a class="ext-link" href="mailto:${esc(z.email)}">${esc(z.email)}</a></span>
+          <span>🌐 <a class="ext-link" href="https://${esc(z.www.replace(/^https?:\/\//, ''))}" target="_blank" rel="noopener">${esc(z.www)} ↗</a></span>
+        </div>
+      </div>
+    </div>`;
+  };
+
+  // Ile klubów z naszej bazy podlega temu związkowi — liczba mówi, czy to dla nas związek
+  // pierwszego kontaktu, czy egzotyka.
+  const ileKlubow = (zpn)=> DB.clubs.filter(c=> String(c.region || '') === zpn).length;
+
+  return `
+  <h2 class="view-title">Federacja</h2>
+  <p class="view-sub">Polski Związek Piłki Nożnej i szesnaście związków wojewódzkich — adres, telefon,
+    e-mail i strona. Dane spisane ze stron PZPN; przy każdym związku liczba klubów z Twojej bazy.</p>
+  ${kafel(PZPN, true)}
+  <div class="note" style="margin:16px 0 6px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;opacity:.75;">Związki wojewódzkie</div>
+  <div class="grid grid-2">
+    ${ZWIAZKI_WOJEWODZKIE.map(z=>{
+      const n = ileKlubow(z.zpn);
+      return kafel({ ...z, nazwa: z.nazwa + (n ? ` — ${n} ${n === 1 ? 'klub' : 'klubów'} w bazie` : '') }, false);
+    }).join('')}
+  </div>`;
 }
 
 function viewRadarMlodziezy(){
