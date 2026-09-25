@@ -5622,18 +5622,23 @@ const LOGO_WBUDOWANE = { 'IV liga': '/logo-iv-liga.jpg' };
 // Pliki leżą w public/zpn/. Czego tu nie ma, to po prostu jeszcze nie wgrany herb — pigułka
 // zostaje wtedy z numerem i nic się nie psuje.
 const LOGO_ZPN = {
+  'Dolnośląski ZPN':         '/zpn/dolnoslaski.png',
   'Kujawsko-Pomorski ZPN':   '/zpn/kujawsko-pomorski.jpg',
   'Lubelski ZPN':            '/zpn/lubelski.png',
+  'Lubuski ZPN':             '/zpn/lubuski.png',
   'Łódzki ZPN':              '/zpn/lodzki.jpg',
   'Małopolski ZPN':          '/zpn/malopolski.png',
   'Mazowiecki ZPN':          '/zpn/mazowiecki.jpg',
   'Opolski ZPN':             '/zpn/opolski.png',
   'Podkarpacki ZPN':         '/zpn/podkarpacki.png',
+  'Podlaski ZPN':            '/zpn/podlaski.jpg',
   'Pomorski ZPN':            '/zpn/pomorski.png',
+  'Śląski ZPN':              '/zpn/slaski.jpg',
+  'Świętokrzyski ZPN':       '/zpn/swietokrzyski.webp',
   'Warmińsko-Mazurski ZPN':  '/zpn/warminsko-mazurski.png',
+  'Wielkopolski ZPN':        '/zpn/wielkopolski.png',
   'Zachodniopomorski ZPN':   '/zpn/zachodniopomorski.jpg',
-  // Brakuje jeszcze sześciu: dolnośląski, lubuski, podlaski, śląski, świętokrzyski, wielkopolski.
-  // Ich grupy zostają z numerem, dopóki herby nie dojdą.
+  // Komplet: szesnaście związków, szesnaście grup IV ligi.
 };
 
 // Grupa IV ligi → wojewódzki ZPN. Odwrotność IV_LIGA_WG_ZPN, żeby przypisanie stało w JEDNYM
