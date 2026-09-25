@@ -23,6 +23,7 @@ const wytnij = (nazwa, wzor) => {
 const kod = [
   wytnij('BARWY_RODZIN', /const BARWY_RODZIN = \[[\s\S]*?\n\];/),
   wytnij('LOGO_JUNIORSKIE', /const LOGO_JUNIORSKIE = \[[^\]]*\];/),
+  wytnij('LOGO_WBUDOWANE', /const LOGO_WBUDOWANE = \{[^}]*\};/),
   wytnij('leagueLogoImg', /function leagueLogoImg\(topLevel, size, naCiemnym, proporcja = 0\.62\)\{[\s\S]*?\n\}/),
   wytnij('rodzinaCLJ', /function rodzinaCLJ\(nazwaGrupy\)\{[\s\S]*?\n\}/),
   wytnij('znaczekGrupy', /function znaczekGrupy\(nazwaGrupy, nr, aktywny\)\{[\s\S]*?\n\}/),
@@ -72,10 +73,21 @@ console.log('\n4. Pigułka „Kategorie juniorskie" — własnego kafla nie ma, 
   sprawdz('bez żadnego logo CLJ zostaje zastępka „MŁ"',
     bezLogo.leagueLogoImg('Kategorie juniorskie', 30, false, 0.9).includes('MŁ'));
   sprawdz('ligi seniorskie nie podbierają logo juniorom',
-    zLogo.leagueLogoImg('IV liga', 30, false, 0.9).includes('>4<'));
+    !zLogo.leagueLogoImg('IV liga', 30, false, 0.9).includes('base64,U15'));
 }
 
-console.log('\n5. Podpięcie');
+console.log('\n5. IV liga — znak wgrany do programu na stałe');
+{
+  const pig = bezLogo.leagueLogoImg('IV liga', 30, false, 0.9);
+  sprawdz('pigułka pokazuje logo, nie cyfrę „4"', pig.startsWith('<img') && pig.includes('/logo-iv-liga.jpg'), pig.slice(0, 80));
+  sprawdz('plik leży w public i pojedzie z wdrożeniem', fs.existsSync('public/logo-iv-liga.jpg'));
+  sprawdz('własne logo z Ustawień ma pierwszeństwo',
+    zbuduj({ 'IV liga': 'data:image/png;base64,MOJE' }).leagueLogoImg('IV liga', 30, false, 0.9).includes('base64,MOJE'));
+  sprawdz('III liga dalej bierze swoje wgrane logo albo zastępkę',
+    bezLogo.leagueLogoImg('III liga', 30, false, 0.9).includes('>3<'));
+}
+
+console.log('\n6. Podpięcie');
 sprawdz('pigułki grup nadal biorą znaczek z znaczekGrupy',
   /nr \? znaczekGrupy\(g, nr, clubBrowse\.group===val\) : ''/.test(zrodlo));
 sprawdz('logo bierzemy z tych samych ustawień, co kafle Dashboardu',

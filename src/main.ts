@@ -5602,10 +5602,17 @@ function pill(label, active, action, dataAttrs, ikona){
 // czyli ten, który widnieje na materiałach ligi.
 const LOGO_JUNIORSKIE = ['CLJ U15','CLJ U17','CLJ U19'];
 
+// Znaki wgrane do programu na stałe — dla rozgrywek, których logo nie zmienia się co sezon razem
+// ze sponsorem tytularnym (Betclic przy I–III lidze wymienia się co kilka lat, IV liga ma swój
+// własny znak). Wgrane w Ustawieniach zawsze ma pierwszeństwo: to tam poprawia się takie rzeczy
+// bez czekania na nową wersję programu.
+const LOGO_WBUDOWANE = { 'IV liga': '/logo-iv-liga.jpg' };
+
 function leagueLogoImg(topLevel, size, naCiemnym, proporcja = 0.62){
   const wgrane = DB.settings.leagueLogos || {};
   const logo = wgrane[topLevel]
-    || (topLevel === 'Kategorie juniorskie' ? LOGO_JUNIORSKIE.map(k=>wgrane[k]).find(Boolean) : '');
+    || (topLevel === 'Kategorie juniorskie' ? LOGO_JUNIORSKIE.map(k=>wgrane[k]).find(Boolean) : '')
+    || LOGO_WBUDOWANE[topLevel];
   // max-width/max-height (nie width/height sztywne) — logo dowolnych proporcji mieści się w jednolitym
   // "gabarycie" bez rozciągania/spłaszczania.
   // Na ciemnym tle (wybrana pigułka) wgrane logo dostaje jasną podkładkę: znaki lig są zwykle
