@@ -5596,8 +5596,16 @@ function pill(label, active, action, dataAttrs, ikona){
 // Do czasu wgrania pokazuje się schludny placeholder z inicjałami poziomu.
 // proporcja: wysokość wgranego logo względem szerokości. 0,62 pasuje do kafelków na Dashboardzie; w małych
 // przyciskach logo przy tej proporcji miało ledwie kilkanaście pikseli wysokości i było nieczytelne.
+// Pigułka „Kategorie juniorskie" nie ma własnego kafla na Dashboardzie, więc nie ma jak wgrać jej
+// logo — i stała z zastępką „MŁ", choć znak Centralnej Ligi Juniorów jest w ustawieniach wgrany
+// trzy razy. Bierzemy ten, którego rozgrywki zaczynają się najniżej (U15): to czerwony znak CLJ,
+// czyli ten, który widnieje na materiałach ligi.
+const LOGO_JUNIORSKIE = ['CLJ U15','CLJ U17','CLJ U19'];
+
 function leagueLogoImg(topLevel, size, naCiemnym, proporcja = 0.62){
-  const logo = DB.settings.leagueLogos && DB.settings.leagueLogos[topLevel];
+  const wgrane = DB.settings.leagueLogos || {};
+  const logo = wgrane[topLevel]
+    || (topLevel === 'Kategorie juniorskie' ? LOGO_JUNIORSKIE.map(k=>wgrane[k]).find(Boolean) : '');
   // max-width/max-height (nie width/height sztywne) — logo dowolnych proporcji mieści się w jednolitym
   // "gabarycie" bez rozciągania/spłaszczania.
   // Na ciemnym tle (wybrana pigułka) wgrane logo dostaje jasną podkładkę: znaki lig są zwykle

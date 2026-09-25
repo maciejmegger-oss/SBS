@@ -22,13 +22,14 @@ const wytnij = (nazwa, wzor) => {
 
 const kod = [
   wytnij('BARWY_RODZIN', /const BARWY_RODZIN = \[[\s\S]*?\n\];/),
+  wytnij('LOGO_JUNIORSKIE', /const LOGO_JUNIORSKIE = \[[^\]]*\];/),
   wytnij('leagueLogoImg', /function leagueLogoImg\(topLevel, size, naCiemnym, proporcja = 0\.62\)\{[\s\S]*?\n\}/),
   wytnij('rodzinaCLJ', /function rodzinaCLJ\(nazwaGrupy\)\{[\s\S]*?\n\}/),
   wytnij('znaczekGrupy', /function znaczekGrupy\(nazwaGrupy, nr, aktywny\)\{[\s\S]*?\n\}/),
 ].join('\n');
 
 const zbuduj = (logos) => new Function('DB', 'esc',
-  `${kod}\n return { znaczekGrupy, rodzinaCLJ };`)({ settings: { leagueLogos: logos } }, (s) => String(s));
+  `${kod}\n return { znaczekGrupy, rodzinaCLJ, leagueLogoImg };`)({ settings: { leagueLogos: logos } }, (s) => String(s));
 
 const LOGO = { 'CLJ U19': 'data:image/png;base64,U19', 'CLJ U17': 'data:image/png;base64,U17', 'CLJ U15': 'data:image/png;base64,U15' };
 const zLogo = zbuduj(LOGO);
@@ -61,7 +62,20 @@ console.log('\n3. Bez wgranego logo zostaje numerek — nic nie znika z ekranu')
   sprawdz('makroregionalna U16 zawsze numerkiem', zLogo.znaczekGrupy('Liga makroregionalna U16', 8, false).includes('border-radius:50%'));
 }
 
-console.log('\n4. Podpięcie');
+console.log('\n4. Pigułka „Kategorie juniorskie" — własnego kafla nie ma, bierze znak CLJ');
+{
+  const pig = zLogo.leagueLogoImg('Kategorie juniorskie', 30, false, 0.9);
+  sprawdz('zamiast zastępki „MŁ" jest logo', pig.startsWith('<img'), pig.slice(0, 70));
+  sprawdz('to znak CLJ (czerwony, spod U15)', pig.includes('base64,U15'), pig.slice(0, 70));
+  sprawdz('gdy U15 nie ma, wchodzi U17',
+    zbuduj({ 'CLJ U17': 'x17', 'CLJ U19': 'x19' }).leagueLogoImg('Kategorie juniorskie', 30, false, 0.9).includes('x17'));
+  sprawdz('bez żadnego logo CLJ zostaje zastępka „MŁ"',
+    bezLogo.leagueLogoImg('Kategorie juniorskie', 30, false, 0.9).includes('MŁ'));
+  sprawdz('ligi seniorskie nie podbierają logo juniorom',
+    zLogo.leagueLogoImg('IV liga', 30, false, 0.9).includes('>4<'));
+}
+
+console.log('\n5. Podpięcie');
 sprawdz('pigułki grup nadal biorą znaczek z znaczekGrupy',
   /nr \? znaczekGrupy\(g, nr, clubBrowse\.group===val\) : ''/.test(zrodlo));
 sprawdz('logo bierzemy z tych samych ustawień, co kafle Dashboardu',
