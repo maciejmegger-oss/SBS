@@ -24,13 +24,16 @@ const kod = [
   wytnij('BARWY_RODZIN', /const BARWY_RODZIN = \[[\s\S]*?\n\];/),
   wytnij('LOGO_JUNIORSKIE', /const LOGO_JUNIORSKIE = \[[^\]]*\];/),
   wytnij('LOGO_WBUDOWANE', /const LOGO_WBUDOWANE = \{[^}]*\};/),
+  wytnij('LOGO_ZPN', /const LOGO_ZPN = \{[\s\S]*?\n?\};/),
+  wytnij('IV_LIGA_WG_ZPN', /const IV_LIGA_WG_ZPN = \{[\s\S]*?\n\};/),
+  wytnij('zpnGrupy', /const zpnGrupy = \(nazwaGrupy\)=>\{[\s\S]*?\n\};/),
   wytnij('leagueLogoImg', /function leagueLogoImg\(topLevel, size, naCiemnym, proporcja = 0\.62\)\{[\s\S]*?\n\}/),
   wytnij('rodzinaCLJ', /function rodzinaCLJ\(nazwaGrupy\)\{[\s\S]*?\n\}/),
   wytnij('znaczekGrupy', /function znaczekGrupy\(nazwaGrupy, nr, aktywny\)\{[\s\S]*?\n\}/),
 ].join('\n');
 
 const zbuduj = (logos) => new Function('DB', 'esc',
-  `${kod}\n return { znaczekGrupy, rodzinaCLJ, leagueLogoImg };`)({ settings: { leagueLogos: logos } }, (s) => String(s));
+  `${kod}\n return { znaczekGrupy, rodzinaCLJ, leagueLogoImg, zpnGrupy };`)({ settings: { leagueLogos: logos } }, (s) => String(s));
 
 const LOGO = { 'CLJ U19': 'data:image/png;base64,U19', 'CLJ U17': 'data:image/png;base64,U17', 'CLJ U15': 'data:image/png;base64,U15' };
 const zLogo = zbuduj(LOGO);
@@ -87,7 +90,29 @@ console.log('\n5. IV liga — znak wgrany do programu na stałe');
     bezLogo.leagueLogoImg('III liga', 30, false, 0.9).includes('>3<'));
 }
 
-console.log('\n6. Podpięcie');
+console.log('\n6. Grupy IV ligi — herb wojewódzkiego ZPN');
+{
+  sprawdz('„IV liga (kujawsko-pomorska)" → Kujawsko-Pomorski ZPN',
+    zLogo.zpnGrupy('IV liga (kujawsko-pomorska)') === 'Kujawsko-Pomorski ZPN', String(zLogo.zpnGrupy('IV liga (kujawsko-pomorska)')));
+  sprawdz('„IV liga (śląska)" → Śląski ZPN', zLogo.zpnGrupy('IV liga (śląska)') === 'Śląski ZPN');
+  sprawdz('wszystkie szesnaście grup ma swój związek',
+    ['dolnośląska','kujawsko-pomorska','lubelska','lubuska','łódzka','małopolska','mazowiecka','opolska','podkarpacka',
+     'podlaska','pomorska','śląska','świętokrzyska','warmińsko-mazurska','wielkopolska','zachodniopomorska']
+      .every(g => zLogo.zpnGrupy(`IV liga (${g})`)));
+  sprawdz('CLJ to nie IV liga', zLogo.zpnGrupy('CLJ U17 gr. I') === '');
+
+  const zHerbem = zbuduj({ 'Kujawsko-Pomorski ZPN': 'data:image/png;base64,KPZPN' });
+  const pig = zHerbem.znaczekGrupy('IV liga (kujawsko-pomorska)', 6, false);
+  sprawdz('pigułka pokazuje herb związku', pig.startsWith('<img') && pig.includes('base64,KPZPN'), pig.slice(0, 80));
+  sprawdz('herb ma rozmiar znaczka (22 px)', /width:22px;height:22px/.test(pig), pig.slice(0, 120));
+  sprawdz('na wybranej pigułce jasna podkładka', zHerbem.znaczekGrupy('IV liga (kujawsko-pomorska)', 6, true).includes('background:#fff'));
+  sprawdz('grupa bez wgranego herbu zostaje z numerem',
+    zHerbem.znaczekGrupy('IV liga (śląska)', 4, false).includes('border-radius:50%'));
+  sprawdz('herb ZPN nie wchodzi do pigułek CLJ',
+    zHerbem.znaczekGrupy('CLJ U15 gr. A', 4, false).includes('border-radius:50%'));
+}
+
+console.log('\n7. Podpięcie');
 sprawdz('pigułki grup nadal biorą znaczek z znaczekGrupy',
   /nr \? znaczekGrupy\(g, nr, clubBrowse\.group===val\) : ''/.test(zrodlo));
 sprawdz('logo bierzemy z tych samych ustawień, co kafle Dashboardu',

@@ -5608,6 +5608,20 @@ const LOGO_JUNIORSKIE = ['CLJ U15','CLJ U17','CLJ U19'];
 // bez czekania na nową wersję programu.
 const LOGO_WBUDOWANE = { 'IV liga': '/logo-iv-liga.jpg' };
 
+// HERBY WOJEWÓDZKICH ZWIĄZKÓW — po jednym na każdą grupę IV ligi. Klucz to nazwa ZPN dokładnie
+// taka, jak w kartotece klubu (pole „ZPN / Region"), więc ta sama nazwa wiąże klub, grupę i herb.
+// Pliki leżą w public/zpn/. Czego tu nie ma, to po prostu jeszcze nie wgrany herb — pigułka
+// zostaje wtedy z numerem i nic się nie psuje.
+const LOGO_ZPN = {};
+
+// Grupa IV ligi → wojewódzki ZPN. Odwrotność IV_LIGA_WG_ZPN, żeby przypisanie stało w JEDNYM
+// miejscu: dopisanie tam nowego województwa działa od razu w obie strony.
+const zpnGrupy = (nazwaGrupy)=>{
+  const t = String(nazwaGrupy || '');
+  if(!/^IV liga/.test(t)) return '';
+  return Object.keys(IV_LIGA_WG_ZPN).find(z=> IV_LIGA_WG_ZPN[z] === t) || '';
+};
+
 function leagueLogoImg(topLevel, size, naCiemnym, proporcja = 0.62){
   const wgrane = DB.settings.leagueLogos || {};
   const logo = wgrane[topLevel]
@@ -5674,6 +5688,15 @@ function znaczekGrupy(nazwaGrupy, nr, aktywny){
   const rodzina = rodzinaCLJ(nazwaGrupy);
   if(rodzina && DB.settings.leagueLogos && DB.settings.leagueLogos[rodzina]){
     return leagueLogoImg(rodzina, 22, aktywny, 1.1);
+  }
+  // HERB WOJEWÓDZKIEGO ZPN przy grupach IV ligi — szesnaście grup różni się samą nazwą
+  // województwa, a herb związku rozpoznaje się szybciej niż czyta „kujawsko-pomorska".
+  // Herbu, którego nie mamy, nie udajemy: zostaje kolorowe kółko z numerem, jak dotąd.
+  const zpn = zpnGrupy(nazwaGrupy);
+  const herbZpn = zpn && ((DB.settings.leagueLogos || {})[zpn] || LOGO_ZPN[zpn]);
+  if(herbZpn){
+    return `<img src="${esc(herbZpn)}" alt="" style="width:22px;height:22px;flex-shrink:0;object-fit:contain;${
+      aktywny ? 'background:#fff;border-radius:5px;padding:1px;' : ''}">`;
   }
   const trafienie = BARWY_RODZIN.find(x=>x.test.test(String(nazwaGrupy||'')));
   const tlo = aktywny ? 'var(--gold)' : (trafienie ? trafienie.kolor : 'var(--pitch)');
