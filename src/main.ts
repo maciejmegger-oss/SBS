@@ -5637,7 +5637,29 @@ const BARWY_RODZIN = [
   {test:/^IV liga/i,                         kolor:'var(--gold-dark)'},
   {test:/^Rocznik/i,                         kolor:'var(--ink-soft)'},
 ];
+// Rodzina CLJ, po której poznajemy, KTÓRE logo należy się grupie: „CLJ U17 gr. II" i „CLJ U17 gr. I"
+// dzielą jedno logo, tak samo cztery grupy U15. Klucze są te same, co kafle na Dashboardzie —
+// stamtąd bierze się wgrane logo (DB.settings.leagueLogos).
+function rodzinaCLJ(nazwaGrupy){
+  const t = String(nazwaGrupy || '');
+  if(/^CLJ\s*U\s*-?19/i.test(t)) return 'CLJ U19';
+  if(/^CLJ\s*U\s*-?17/i.test(t)) return 'CLJ U17';
+  if(/^CLJ\s*U\s*-?16/i.test(t)) return 'CLJ U16';
+  if(/^CLJ\s*U\s*-?15/i.test(t)) return 'CLJ U15';
+  return '';
+}
+
 function znaczekGrupy(nazwaGrupy, nr, aktywny){
+  // LOGO CLJ ZAMIAST NUMERKA — tam, gdzie jest wgrane.
+  //
+  // Ligi seniorskie mają w pigułkach swoje znaki (Betclic, Ekstraklasa), a rozgrywki juniorskie
+  // stały z samymi kółkami, choć logo Centralnej Ligi Juniorów jest wgrane na Dashboardzie.
+  // Trzy barwy CLJ (granat U19, granat-zieleń U17, czerwień U15) rozdzielają rodziny tak samo
+  // jak dotychczasowe kolorowe kółka, tylko od razu widać, jakie to rozgrywki.
+  const rodzina = rodzinaCLJ(nazwaGrupy);
+  if(rodzina && DB.settings.leagueLogos && DB.settings.leagueLogos[rodzina]){
+    return leagueLogoImg(rodzina, 22, aktywny, 1.1);
+  }
   const trafienie = BARWY_RODZIN.find(x=>x.test.test(String(nazwaGrupy||'')));
   const tlo = aktywny ? 'var(--gold)' : (trafienie ? trafienie.kolor : 'var(--pitch)');
   const tekst = aktywny ? 'var(--pitch)' : 'var(--on-pitch)';
@@ -11716,16 +11738,41 @@ function wierszZTabeli(klub){
   const tab = tabeleLig[String(klub.league || '')];
   if(!tab || !Array.isArray(tab.wiersze)) return null;
   const szukany = importNorm(klub.name);
-  const wiersz = tab.wiersze.find(w=>importNorm(w.nazwa) === szukany)
-    // Nazwy w tabeli bywają krótsze niż w kartotece („Widzew Łódź" kontra „Widzew Łódź SA"),
-    // więc gdy dokładne trafienie zawiedzie, sięgamy po dopasowanie po członach nazwy.
-    || tab.wiersze.find(w=>{
-      const a = rozbijNazweKlubu(w.nazwa).rdzen, b = rozbijNazweKlubu(klub.name).rdzen;
-      if(!a.length || !b.length) return false;
-      const wspolne = a.filter(x=>b.some(y=>tenSamCzlon(x,y)));
-      return wspolne.length >= Math.min(a.length, b.length) && wspolne.some(x=>x.length >= 4);
-    });
-  return wiersz || null;
+  const dokladny = tab.wiersze.find(w=>importNorm(w.nazwa) === szukany);
+  if(dokladny) return dokladny;
+
+  // Nazwy w tabeli bywają krótsze niż w kartotece („Widzew Łódź" kontra „Widzew Łódź SA"),
+  // więc gdy dokładne trafienie zawiedzie, sięgamy po dopasowanie po członach nazwy.
+  //
+  // DWIE RZECZY, KTÓRE MUSZĄ SIĘ TU ZGADZAĆ — NAUCZKA Z IV LIGI ŚLĄSKIEJ (25.09.2026).
+  //
+  // 1. NUMER ZESPOŁU. Wiersz „GKS II Katowice" ma rdzeń „katowice" (skrót i numer odpadają), więc
+  //    pokrywał się z KAŻDYM klubem z Katowic: „KS Rozwój Katowice" i „Lgks 38 Podlesianka
+  //    Katowice" brały punkty i mecze rezerw GKS-u. Rozwój pokazywał 19 punktów i czwarte miejsce
+  //    zamiast 7 punktów i piętnastego, a przy meczach świecił „9/8" i wołał o kolejkę, której
+  //    nigdy nie rozegrał (pierwsza kolejka przełożona na 21 listopada). Rezerwy to osobny wiersz
+  //    tabeli, więc numer musi się zgadzać po obu stronach.
+  // 2. NAJLEPSZY, A NIE PIERWSZY Z BRZEGU. Dotąd wygrywał wiersz stojący WYŻEJ w tabeli, bo
+  //    szukanie kończyło się na pierwszym pasującym. Dlatego Rozwój dostawał wiersz z czwartego
+  //    miejsca, choć jego własny stał na piętnastym. Teraz wybieramy wiersz najlepiej pokryty
+  //    nazwą, a przy remisie nie wybieramy żadnego: lepszy brak statystyk niż cudze.
+  const nasz = rozbijNazweKlubu(klub.name);
+  if(!nasz.rdzen.length) return null;
+  const kandydaci = [];
+  tab.wiersze.forEach(w=>{
+    const ich = rozbijNazweKlubu(w.nazwa);
+    if(!ich.rdzen.length || ich.numer !== nasz.numer) return;
+    const wspolne = ich.rdzen.filter(x=>nasz.rdzen.some(y=>tenSamCzlon(x,y)));
+    if(wspolne.length < Math.min(ich.rdzen.length, nasz.rdzen.length)) return;
+    if(!wspolne.some(x=>x.length >= 4)) return;
+    kandydaci.push({ w, trafione: wspolne.length, roznica: Math.abs(ich.rdzen.length - nasz.rdzen.length) });
+  });
+  if(!kandydaci.length) return null;
+  kandydaci.sort((a,b)=> b.trafione - a.trafione || a.roznica - b.roznica);
+  if(kandydaci.length > 1
+    && kandydaci[0].trafione === kandydaci[1].trafione
+    && kandydaci[0].roznica === kandydaci[1].roznica) return null;
+  return kandydaci[0].w;
 }
 // Ile kolejek da się realnie zebrać: tyle, ile ma opublikowane protokoły. Zwraca null, gdy tabeli
 // nie pobrano — wtedy nie wiemy i nie udajemy, że wiemy.
