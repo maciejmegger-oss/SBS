@@ -18117,12 +18117,26 @@ function awaryjnie(){${LNP_ZBIERACZ}}
 var ruszyl=false, budzik=null;
 function odpal(co){ if(ruszyl) return; ruszyl=true; if(budzik) clearTimeout(budzik); try{ co(); }catch(e){ alert('SBS: '+e.message); } }
 budzik=setTimeout(function(){ odpal(function(){ try{window.__SBS_STARA=1;}catch(e){} awaryjnie(); }); },12000);
-try{
- fetch(A+'/zakladka-lnp-v2.js?t='+Date.now(),{cache:'no-store'})
+/* ADRES Z „www" I BEZ — BO NA JEDNYM Z NICH POBRANIE JEST NIEMOŻLIWE.
+   Sprawdzone 25.09.2026 na żywej stronie ŁNP: pobranie z „scoutbasesystem.com" kończy się
+   błędem „Failed to fetch", a z „www.scoutbasesystem.com" wchodzi bez zarzutu. Powód:
+   adres bez „www" odpowiada przekierowaniem 308, a takiej odpowiedzi przeglądarka nie
+   przepuszcza przy pobieraniu z obcej strony (brak nagłówka Access-Control-Allow-Origin).
+   Skutek był cichy i kosztowny: zakładka co prawda próbowała pobrać świeży zbieracz, ale
+   za każdym razem wracała do kopii sprzed miesięcy — więc żadna poprawka nie docierała,
+   choć w SBS stała już nowa wersja. Dlatego próbujemy obu postaci adresu po kolei.
+   __SBS_ADRES zostaje TEN, z którego otwarto SBS: to on ma zalogowaną sesję i to do niego
+   zbieracz odsyła protokoły. */
+var ADRESY=[A];
+try{ var u=new URL(A); ADRESY.push(/^www\\./.test(u.hostname) ? u.protocol+'//'+u.hostname.replace(/^www\\./,'') : u.protocol+'//www.'+u.hostname); }catch(e){}
+function pobierz(n){
+ if(n>=ADRESY.length){ odpal(function(){ try{window.__SBS_STARA=1;}catch(e){} awaryjnie(); }); return; }
+ fetch(ADRESY[n]+'/zakladka-lnp-v2.js?t='+Date.now(),{cache:'no-store'})
   .then(function(r){ if(!r.ok) throw 0; return r.text(); })
   .then(function(t){ if(t.indexOf('SBS_ZBIERACZ')<0) throw 0; odpal(function(){ (new Function(t))(); }); })
-  .catch(function(){ odpal(function(){ try{window.__SBS_STARA=1;}catch(e){} awaryjnie(); }); });
-}catch(e){ odpal(awaryjnie); }
+  .catch(function(){ pobierz(n+1); });
+}
+try{ pobierz(0); }catch(e){ odpal(awaryjnie); }
 })();`;
 
 // ZAKŁADKA DO ŁNP — zbieranie protokołów meczowych jednym kliknięciem.

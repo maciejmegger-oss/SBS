@@ -140,14 +140,30 @@ console.log('\n6. Panel mówi, czy to komplet');
   sprawdz('na stronie jednego meczu nie straszy brakiem kolejki', /if\(!widzianeMecze\.length \|\| trybJedenMecz\) return '';/.test(zbieracz));
 }
 
-console.log('\n7. Wersja zakładki zgodna z aplikacją');
+console.log('\n7. Zakładka naprawdę pobiera świeży zbieracz');
+{
+  // Sprawdzone 25.09.2026 z poziomu strony ŁNP: fetch z „scoutbasesystem.com" pada („Failed to
+  // fetch"), bo adres bez „www" odpowiada przekierowaniem 308 bez nagłówka CORS. Zakładka cicho
+  // wracała wtedy do kopii wbudowanej sprzed miesięcy — i żadna poprawka nie docierała.
+  const bm = (glowny.match(/const LNP_HURT_BOOKMARKLET = `[\s\S]*?`;/) || [])[0] || '';
+  sprawdz('próbuje obu postaci adresu (z „www" i bez)', /ADRESY\.push\(\/\^www/.test(bm), bm ? 'jest kod, brak fallbacku' : 'nie znalazłem zakładki');
+  sprawdz('nieudane pobranie przechodzi do następnego adresu, nie od razu do starej kopii',
+    /\.catch\(function\(\)\{ pobierz\(n\+1\); \}\);/.test(bm));
+  sprawdz('dopiero po wyczerpaniu adresów wchodzi kopia awaryjna',
+    /if\(n>=ADRESY\.length\)\{ odpal\(function\(\)\{ try\{window\.__SBS_STARA=1;\}catch\(e\)\{\} awaryjnie\(\); \}\); return; \}/.test(bm));
+  sprawdz('adres do odsyłania protokołów zostaje ten, z którego otwarto SBS',
+    /var A=[^\n]*\n\s*try\{window\.__SBS_ADRES=A;\}catch\(e\)\{\}/.test(bm));
+  sprawdz('zbieracz sprawdza, czy pobrany plik to na pewno on', /t\.indexOf\('SBS_ZBIERACZ'\)<0/.test(bm));
+}
+
+console.log('\n8. Wersja zakładki zgodna z aplikacją');
 {
   const wZbieraczu = (zbieracz.match(/var SBS_ZBIERACZ="([^"]+)"/) || [])[1];
   const wAplikacji = (glowny.match(/const ZAKLADKA_WERSJA = '([^']+)'/) || [])[1];
   sprawdz(`ta sama wersja po obu stronach (${wZbieraczu})`, !!wZbieraczu && wZbieraczu === wAplikacji,
     `zbieracz: ${wZbieraczu}, aplikacja: ${wAplikacji}`);
   sprawdz('zakładka pobiera świeży zbieracz z serwera (bez wymiany na pasku)',
-    /fetch\(A\+'\/zakladka-lnp-v2\.js\?t='\+Date\.now\(\)/.test(glowny));
+    /fetch\(ADRESY\[n\]\+'\/zakladka-lnp-v2\.js\?t='\+Date\.now\(\)/.test(glowny));
 }
 
 console.log(bledy ? `\n${bledy} BŁĘDÓW` : '\nWszystko przeszło.');
