@@ -59,7 +59,46 @@ console.log('\n3. Niepełne protokoły wracają do ponowienia');
   sprawdz('tura, która nic nie odzyskała, kończy ponawianie', /koniec\.bezSensu = true;/.test(zbieracz));
 }
 
-console.log('\n4. Przewijanie listy meczów — do końca, nie do pierwszych dwóch');
+console.log('\n4. Lista meczów prosto z danych ŁNP');
+{
+  // Sprawdzone na żywej stronie CLJ U-19 (25.09.2026): w dokumencie nie ma ANI JEDNEGO odnośnika
+  // do meczu, więc klikanie w wiersze było jedyną drogą — i gubiło mecze po każdym powrocie.
+  // API tej samej strony oddaje komplet terminarza (120 pozycji, w tym 56 rozegranych).
+  const kod = [
+    (zbieracz.match(/function rozegraneZApi\(lista, origin\)\{[\s\S]*?\n\}/) || [])[0],
+  ].join('\n');
+  if (!kod.trim()) { console.error('Nie znalazłem rozegraneZApi w zbieraczu.'); process.exit(1); }
+  const { rozegraneZApi } = new Function(`${kod}\n return { rozegraneZApi };`)();
+  const ODP = [
+    { matchId: 'a1', state: 'Rozegrany',    queue: 7, host: { name: 'UKS Talent Warszawa' } },
+    { matchId: 'b2', state: 'Nierozegrany', queue: 8, host: { name: 'Legia Warszawa S.A.' } },
+    { matchId: 'c3', state: 'rozegrany',    queue: 6 },
+    { matchId: 'd4', state: 'Odwołany',     queue: 5 },
+    { state: 'Rozegrany', queue: 4 },                       // bez identyfikatora — nie ma czego otworzyć
+    null,
+  ];
+  const adresy = rozegraneZApi(ODP, 'https://www.laczynaspilka.pl');
+  sprawdz('bierzemy tylko rozegrane', adresy.length === 2, adresy.join(' '));
+  sprawdz('„Nierozegrany" nie przechodzi, choć zawiera słowo „rozegran"',
+    !adresy.some(a => a.includes('b2')), adresy.join(' '));
+  sprawdz('adres zbudowany jak w przeglądarce',
+    adresy[0] === 'https://www.laczynaspilka.pl/rozgrywki/mecz/a1', adresy[0]);
+  sprawdz('mecz bez identyfikatora pomijany', !adresy.some(a => a.endsWith('/mecz/undefined')));
+  sprawdz('pusta odpowiedź nie wywraca zbieracza', rozegraneZApi(null, 'x').length === 0);
+}
+
+console.log('\n5. Podpięcie API do przebiegu zbierania');
+{
+  sprawdz('API pytamy PRZED przewijaniem i klikaniem', /if\(!probowanoApi\)\{[\s\S]{0,400}adresyZApi\(function\(adresy, opis\)\{/.test(zbieracz));
+  sprawdz('gdy API oddało mecze — zbieramy je od razu', /linki=adresy; i=0;[\s\S]{0,200}nastepny\(\);/.test(zbieracz));
+  sprawdz('gdy API milczy — wracamy do starej drogi', /start\(\);\s*\n\s*\}\);\s*\n\s*return;\s*\n\s*\}\s*\n\s*if\(!rozwiniete\)\{/.test(zbieracz));
+  sprawdz('token bierzemy z ukrytej ramki tej samej strony', /f\.src = location\.href;/.test(zbieracz) && /authorization/i.test(zbieracz));
+  sprawdz('grupa z adresu strony (parametr „group")', /searchParams\.get\('group'\)/.test(zbieracz));
+  sprawdz('lista z API trafia do pamięci na wypadek 404', /zapamietajListe\(adresy\);/.test(zbieracz));
+  sprawdz('zapytanie ma własny limit czasu', /setTimeout\(function\(\)\{ gotowe\(\[\], ''\); \}, 20000\)/.test(zbieracz));
+}
+
+console.log('\n6. Przewijanie listy meczów — do końca, nie do pierwszych dwóch');
 {
   // Sprawdzone na żywej stronie IV ligi warmińsko-mazurskiej (24.09.2026): pierwsze 40 wierszy to
   // spotkania NIEROZEGRANE (kolejki 15…9), a 64 rozegrane doczytują się dopiero po kilkunastu

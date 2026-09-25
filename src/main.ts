@@ -18077,7 +18077,7 @@ function sprawdzZakladke(nazwa, kod){
 
 // Wersja zakładki. Widnieje w każdym jej komunikacie i w oknie SBS, żeby dało się jednym
 // spojrzeniem stwierdzić, czy w pasku siedzi kod sprzed poprawek.
-const ZAKLADKA_WERSJA = 'v52 z 24.09.2026';
+const ZAKLADKA_WERSJA = 'v53 z 25.09.2026';
 const SBS_ADRES_JS = JSON.stringify(location.origin);
 // ZAKŁADKA W PASKU NIE AKTUALIZUJE SIĘ SAMA — I TO BYŁ PRAWDZIWY PROBLEM.
 //

@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v52 z 24.09.2026";
+var SBS_ZBIERACZ="v53 z 25.09.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -498,6 +498,83 @@ function listaZPamieci(){
  }catch(e){ return []; }
 }
 
+// LISTA MECZOW PROSTO Z DANYCH LNP — bez klikania w wiersze.
+//
+// Sprawdzone na zywej stronie CLJ U-19 (25.09.2026): w calym dokumencie NIE MA ani jednego
+// odnosnika do meczu — ani <a href="/mecz/...">, ani routerlink, ani identyfikatora w kodzie
+// strony (__ngContext__ to w tej wersji Angulara sama liczba, nie dane). Zbieraczowi zostawalo
+// klikanie w wiersze, a po kazdym powrocie lista wczytuje sie od nowa i konczy na pierwszych
+// czterdziestu — z 56 rozegranych meczow wchodzila garstka. Stad "7/4" i "7/5" przy polowie CLJ.
+//
+// Strona bierze te dane z wlasnego API (competition-api-pro2.laczynaspilka.pl), ktore wymaga
+// naglowka Authorization. Token nalezy do serwisu, nie do zadnego konta — LNP wydaje go anonimowo
+// przy wejsciu na strone. Bierzemy go tak, jak robi to sama strona: otwieramy ja w ukrytej ramce
+// (ta sama domena, wiec wolno) i podsluchujemy naglowek, ktory jej wlasny kod wysyla. Potem
+// pytamy o mecze grupy — te same dane, ktore i tak widac na ekranie, tyle ze w komplecie.
+var API_LNP = 'https://competition-api-pro2.laczynaspilka.pl/api/bus/competition/v1';
+var probowanoApi = false;
+
+// Rozegrane mecze z odpowiedzi API. „Nierozegrany" zawiera w sobie slowo „rozegran", wiec
+// odsiewamy po calym slowie, nie po fragmencie — inaczej wpadlaby tu cala runda wiosenna.
+function rozegraneZApi(lista, origin){
+ var out = [];
+ (lista || []).forEach(function(m){
+  if(!m || !m.matchId) return;
+  var stan = String(m.state || '').toLowerCase();
+  if(stan.indexOf('nierozegran') >= 0 || stan.indexOf('rozegran') < 0) return;
+  out.push((origin || '') + '/rozgrywki/mecz/' + m.matchId);
+ });
+ return out;
+}
+
+function tokenLnp(gotowe){
+ if(tokenLnp.token){ gotowe(tokenLnp.token); return; }
+ var f = document.createElement('iframe');
+ f.style.cssText = 'position:fixed;left:-9999px;top:0;width:1000px;height:1200px';
+ var token = '', n = 0;
+ var t = setInterval(function(){
+  n++;
+  try{
+   var W = f.contentWindow;
+   if(W && W.XMLHttpRequest && !W.__sbsHak){
+    W.__sbsHak = 1;
+    var sh = W.XMLHttpRequest.prototype.setRequestHeader;
+    W.XMLHttpRequest.prototype.setRequestHeader = function(nazwa, wartosc){
+     if(/^authorization$/i.test(nazwa) && !token) token = String(wartosc || '');
+     return sh.apply(this, arguments);
+    };
+   }
+  }catch(e){}
+  if(token || n > 60){
+   clearInterval(t);
+   try{ f.remove(); }catch(e){}
+   tokenLnp.token = token;
+   gotowe(token);
+  }
+ }, 250);
+ document.body.appendChild(f);
+ f.src = location.href;
+}
+
+function adresyZApi(gotowe){
+ var grupa = '';
+ try{ grupa = new URL(location.href).searchParams.get('group') || ''; }catch(e){}
+ if(!grupa){ gotowe([], ''); return; }
+ tokenLnp(function(token){
+  if(!token){ gotowe([], ''); return; }
+  var przerwij = setTimeout(function(){ gotowe([], ''); }, 20000);
+  fetch(API_LNP + '/plays/' + grupa + '/matches', { headers: { Authorization: token } })
+   .then(function(r){ return r.ok ? r.json() : []; })
+   .then(function(lista){
+    clearTimeout(przerwij);
+    var wszystkie = Array.isArray(lista) ? lista : (lista && (lista.items || lista.data || lista.matches)) || [];
+    var adresy = rozegraneZApi(wszystkie, location.origin);
+    gotowe(adresy, adresy.length ? ('z ' + wszystkie.length + ' w terminarzu') : '');
+   })
+   .catch(function(){ clearTimeout(przerwij); gotowe([], ''); });
+ });
+}
+
 var pominietych=0;
 var zebrane=[];try{zebrane=JSON.parse(localStorage.getItem(KLUCZ)||'[]');}catch(e){zebrane=[];}
 var bylo=zebrane.length, linki=[], i=0, kolejek=1, czekam=0, doliczen=0, rozwiniete=false, probowanoKlikac=false, wierszyNaEkranie=0, zakladkaNr=0;
@@ -990,6 +1067,23 @@ function start(){
   trybJedenMecz = true;
   linia.textContent='SBS '+SBS_ZBIERACZ+': jestes na stronie meczu - zbieram ten jeden';
   linki=[location.href];nastepny();return;
+ }
+ // NAJKROTSZA DROGA: LISTA MECZOW PROSTO Z DANYCH LNP (patrz adresyZApi).
+ // Dopiero gdy jej nie ma, zostaje przewijanie strony i klikanie w wiersze.
+ if(!probowanoApi){
+  probowanoApi=true;
+  linia.textContent='SBS '+SBS_ZBIERACZ+': pytam LNP o liste meczow tej grupy...';
+  adresyZApi(function(adresy, opis){
+   if(adresy.length){
+    zapamietajListe(adresy);
+    linki=adresy; i=0;
+    linia.textContent='SBS '+SBS_ZBIERACZ+': mam z LNP '+adresy.length+' rozegranych meczow'+(opis?' ('+opis+')':'')+' - zbieram protokoly';
+    nastepny();
+    return;
+   }
+   start();
+  });
+  return;
  }
  if(!rozwiniete){
   rozwiniete=true;
