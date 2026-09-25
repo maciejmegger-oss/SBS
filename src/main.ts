@@ -5612,7 +5612,20 @@ const LOGO_WBUDOWANE = { 'IV liga': '/logo-iv-liga.jpg' };
 // taka, jak w kartotece klubu (pole „ZPN / Region"), więc ta sama nazwa wiąże klub, grupę i herb.
 // Pliki leżą w public/zpn/. Czego tu nie ma, to po prostu jeszcze nie wgrany herb — pigułka
 // zostaje wtedy z numerem i nic się nie psuje.
-const LOGO_ZPN = {};
+const LOGO_ZPN = {
+  'Kujawsko-Pomorski ZPN':   '/zpn/kujawsko-pomorski.jpg',
+  'Lubelski ZPN':            '/zpn/lubelski.png',
+  'Łódzki ZPN':              '/zpn/lodzki.jpg',
+  'Małopolski ZPN':          '/zpn/malopolski.png',
+  'Mazowiecki ZPN':          '/zpn/mazowiecki.jpg',
+  'Opolski ZPN':             '/zpn/opolski.png',
+  'Podkarpacki ZPN':         '/zpn/podkarpacki.png',
+  'Pomorski ZPN':            '/zpn/pomorski.png',
+  'Warmińsko-Mazurski ZPN':  '/zpn/warminsko-mazurski.png',
+  'Zachodniopomorski ZPN':   '/zpn/zachodniopomorski.jpg',
+  // Brakuje jeszcze sześciu: dolnośląski, lubuski, podlaski, śląski, świętokrzyski, wielkopolski.
+  // Ich grupy zostają z numerem, dopóki herby nie dojdą.
+};
 
 // Grupa IV ligi → wojewódzki ZPN. Odwrotność IV_LIGA_WG_ZPN, żeby przypisanie stało w JEDNYM
 // miejscu: dopisanie tam nowego województwa działa od razu w obie strony.

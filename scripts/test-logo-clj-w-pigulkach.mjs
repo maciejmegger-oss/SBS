@@ -106,10 +106,26 @@ console.log('\n6. Grupy IV ligi — herb wojewódzkiego ZPN');
   sprawdz('pigułka pokazuje herb związku', pig.startsWith('<img') && pig.includes('base64,KPZPN'), pig.slice(0, 80));
   sprawdz('herb ma rozmiar znaczka (22 px)', /width:22px;height:22px/.test(pig), pig.slice(0, 120));
   sprawdz('na wybranej pigułce jasna podkładka', zHerbem.znaczekGrupy('IV liga (kujawsko-pomorska)', 6, true).includes('background:#fff'));
-  sprawdz('grupa bez wgranego herbu zostaje z numerem',
-    zHerbem.znaczekGrupy('IV liga (śląska)', 4, false).includes('border-radius:50%'));
+  sprawdz('grupa bez żadnego herbu zostaje z numerem',
+    zHerbem.znaczekGrupy('IV liga (dolnośląska)', 3, false).includes('border-radius:50%'));
   sprawdz('herb ZPN nie wchodzi do pigułek CLJ',
     zHerbem.znaczekGrupy('CLJ U15 gr. A', 4, false).includes('border-radius:50%'));
+}
+{
+  // Herby wgrane do programu — każdy wpis musi wskazywać PLIK, KTÓRY ISTNIEJE. Zła ścieżka daje
+  // w pigułce pusty kwadrat, a to gorsze niż numerek, bo wygląda na zepsutą stronę.
+  const wpisy = [...zrodlo.matchAll(/'([^']*ZPN)':\s*'(\/zpn\/[^']+)'/g)].map(m => ({ zpn: m[1], plik: m[2] }));
+  sprawdz(`dziesięć herbów wgranych do programu (${wpisy.length})`, wpisy.length === 10, String(wpisy.length));
+  const WOJEWODZTWA = ['dolnośląska','kujawsko-pomorska','lubelska','lubuska','łódzka','małopolska','mazowiecka','opolska',
+    'podkarpacka','podlaska','pomorska','śląska','świętokrzyska','warmińsko-mazurska','wielkopolska','zachodniopomorska'];
+  wpisy.forEach(({ zpn, plik }) => {
+    sprawdz(`${zpn} → ${plik}`,
+      fs.existsSync('public' + plik) && WOJEWODZTWA.some(g => zLogo.zpnGrupy(`IV liga (${g})`) === zpn),
+      fs.existsSync('public' + plik) ? 'nazwa związku nie pasuje do żadnej grupy IV ligi' : 'brak pliku');
+    // Pigułka tego związku ma faktycznie pokazać herb, a nie numer.
+    const grupa = WOJEWODZTWA.map(g => `IV liga (${g})`).find(g => zLogo.zpnGrupy(g) === zpn);
+    sprawdz(`  pigułka „${grupa}" pokazuje herb`, bezLogo.znaczekGrupy(grupa, 1, false).includes(plik));
+  });
 }
 
 console.log('\n7. Podpięcie');
