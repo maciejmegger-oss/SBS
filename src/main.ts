@@ -18,7 +18,7 @@ import { podepnijOczko } from "./ui/oko";
 import { wyslijHerb, herbJestPlikiem, przeniesHerby } from "./data/herby";
 // Kod zbieracza ŁNP — ten sam plik, który serwujemy pod /zakladka-lnp-v2.js.
 import LNP_ZBIERACZ from "../public/zakladka-lnp-v2.js?raw";
-import { PZPN, ZWIAZKI_WOJEWODZKIE } from "./data/federacja";
+import { PZPN, ZWIAZKI_WOJEWODZKIE, adresPocztowy } from "./data/federacja";
 // Kod zakładek leży w public/zakladki/ — ten sam plik idzie na serwer (skąd zakładka pobiera go
 // przy każdym kliknięciu) i tutaj, jako kopia awaryjna na wypadek braku sieci.
 import LNP_PROTOKOL_KOD from "../public/zakladki/lnp-protokol.js?raw";
@@ -12759,12 +12759,20 @@ function radarKandydaci(){
 function viewFederacja(){
   const kafel = (z, glowny)=>{
     const telefonCzysty = String(z.telefon || '').replace(/[^\d+]/g, '');
+    // ADRES JAK NA KOPERCIE — w osobnych liniach, ze skrytką pocztową tam, gdzie związek ją podaje
+    // (Lubuski, Opolski). Bez skrytki list do nich wraca. Przycisk kopiuje cały blok razem z nazwą,
+    // więc wkleja się go prosto w adresata przesyłki.
+    const adres = [z.adres, z.skrytka, z.miasto].filter(Boolean);
     return `<div class="card" style="display:flex;gap:14px;align-items:flex-start;${
       glowny ? 'border:2px solid var(--gold);' : ''}">
       <img src="${esc(z.herb)}" alt="" style="width:${glowny ? 64 : 52}px;height:${glowny ? 64 : 52}px;flex-shrink:0;object-fit:contain;">
       <div style="min-width:0;flex:1;">
         <div style="font-weight:800;color:var(--heading);font-size:${glowny ? 17 : 15}px;">${esc(z.nazwa)}</div>
-        <div class="note" style="margin:2px 0 6px;">${esc(z.adres)} &middot; ${esc(z.miasto)}</div>
+        <div style="margin:4px 0 7px;display:flex;align-items:flex-start;gap:8px;">
+          <div style="font-style:normal;line-height:1.4;">${adres.map(l=>`<div>${esc(l)}</div>`).join('')}</div>
+          <button class="link-btn" data-action="kopiuj-adres" data-adres="${esc(adresPocztowy(z))}"
+            title="Skopiuj adres pocztowy razem z nazwą związku">📋</button>
+        </div>
         <div style="display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;">
           <span>📞 <a class="ext-link" href="tel:${esc(telefonCzysty)}">${esc(z.telefon)}</a></span>
           <span>✉️ <a class="ext-link" href="mailto:${esc(z.email)}">${esc(z.email)}</a></span>
@@ -14540,6 +14548,21 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="league-stats"]').forEach(b=>b.onclick=()=>openLeagueStatsModal(b.dataset.league));
   main.querySelectorAll('[data-action="merge-duplicates"]').forEach(b=>b.onclick=()=>{ if(!tylkoAdmin('Scalanie klubów wpisanych dwa razy.')) return; openMergeDuplicatesModal(); });
   main.querySelectorAll('[data-action="analyze-player"]').forEach(b=>b.onclick=()=>openPlayerAnalysisModal(b.dataset.id));
+  // Adres związku do schowka — gotowy do wklejenia w adresata przesyłki.
+  main.querySelectorAll('[data-action="kopiuj-adres"]').forEach(b=>b.onclick=async()=>{
+    const adres = (b as HTMLElement).dataset.adres || '';
+    try{
+      await navigator.clipboard.writeText(adres);
+      pokazPotwierdzenie('Adres skopiowany: ' + adres.split('\n')[0], 'ok');
+    }catch(e){
+      // Schowek bywa zablokowany (starsza przeglądarka, brak zgody) — wtedy pole do ręcznego skopiowania.
+      const pole = document.createElement('textarea');
+      pole.value = adres; document.body.appendChild(pole); pole.select();
+      const ok = document.execCommand('copy');
+      pole.remove();
+      pokazPotwierdzenie(ok ? 'Adres skopiowany.' : 'Nie udało się skopiować — zaznacz adres myszą.', ok ? 'ok' : 'blad');
+    }
+  });
   main.querySelectorAll('[data-action="contacts-fill-clubs"]').forEach(b=>b.onclick=async()=>{
     let filled = 0, noMatch = 0;
     DB.contacts.forEach(c=>{
