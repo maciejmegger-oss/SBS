@@ -19,6 +19,7 @@ import { wyslijHerb, herbJestPlikiem, przeniesHerby } from "./data/herby";
 // Kod zbieracza ŁNP — ten sam plik, który serwujemy pod /zakladka-lnp-v2.js.
 import LNP_ZBIERACZ from "../public/zakladka-lnp-v2.js?raw";
 import { PZPN, ZWIAZKI_WOJEWODZKIE } from "./data/federacja";
+import { AKADEMIE, AKADEMIE_STAN, RANKINGI_CIES } from "./data/akademie";
 // Kod zakładek leży w public/zakladki/ — ten sam plik idzie na serwer (skąd zakładka pobiera go
 // przy każdym kliknięciu) i tutaj, jako kopia awaryjna na wypadek braku sieci.
 import LNP_PROTOKOL_KOD from "../public/zakladki/lnp-protokol.js?raw";
@@ -4015,6 +4016,7 @@ const NAV_ITEMS = [
   {id:"committee", label:"Scout Transfer"},
   {id:"federacja", label:"Federacja"},
   {id:"agencies", label:"Menedżerowie"},
+  {id:"akademie", label:"Akademie"},
   {id:"contacts", label:"Kontakty"},
   {id:"settings", label:"Ustawienia"},
 ];
@@ -4306,6 +4308,7 @@ function render(){
   else if(currentView==="reports") main.innerHTML = viewReports();
   else if(currentView==="talent") main.innerHTML = viewTalent();
   else if(currentView==="federacja") main.innerHTML = viewFederacja();
+  else if(currentView==="akademie") main.innerHTML = viewAkademie();
   else if(currentView==="agencies") main.innerHTML = viewAgencies();
   else if(currentView==="contacts") main.innerHTML = viewContacts();
   else if(currentView==="settings") main.innerHTML = viewSettings();
@@ -12792,6 +12795,67 @@ function viewFederacja(){
   </div>`;
 }
 
+// ZAKŁADKA AKADEMIE — kontakty do scoutingu i akademii klubów europejskich.
+//
+// Po co: przy ofercie zawodnika za granicę trzeba szybko znaleźć, do kogo w danym klubie pisać
+// (szef scoutingu akademii, rekrutacja U14–U19) i czy klub w ogóle przyjmuje zgłoszenia.
+// Dane stoją w src/data/akademie.ts — spisane ze stron klubów i rankingów CIES, z linkiem do źródła.
+// Filtry trzymamy w pamięci widoku (nie w bazie), bo to tylko sposób patrzenia na listę.
+let akademieFiltr = { kraj: '', szukaj: '', priorytet: '' };
+
+function viewAkademie(){
+  const kraje = [...new Set(AKADEMIE.map(a=>a.kraj))].sort((a, b)=>a.localeCompare(b, 'pl'));
+  const q = akademieFiltr.szukaj.trim().toLowerCase();
+  const lista = AKADEMIE.filter(a=>
+    (!akademieFiltr.kraj || a.kraj === akademieFiltr.kraj)
+    && (!akademieFiltr.priorytet || String(a.priorytet) === akademieFiltr.priorytet)
+    && (!q || [a.klub, a.osoba, a.stanowisko, a.obszar, a.email, a.kontakt, a.uwagi].join(' ').toLowerCase().includes(q)))
+    .sort((a, b)=> a.priorytet - b.priorytet || a.kraj.localeCompare(b.kraj, 'pl') || a.klub.localeCompare(b.klub, 'pl'));
+
+  // Mail osoby jest odnośnikiem tylko wtedy, gdy to naprawdę adres — „ukryty na stronie" zostaje tekstem.
+  const mailLink = (m)=> `<a class="ext-link" href="mailto:${esc(m)}">${esc(m)}</a>`;
+  const podlinkuj = (t)=> esc(t)
+    .replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, m=> mailLink(m))
+    .replace(/(https?:\/\/[^\s;]+)/g, u=> `<a class="ext-link" href="${u}" target="_blank" rel="noopener">link ↗</a>`);
+  const kolorStatusu = (st)=> st.startsWith('Zweryf') ? 'var(--good)' : st.startsWith('Do potw') ? 'var(--clay)' : 'var(--gold-dark)';
+
+  const kafel = (a)=>`<div class="card" style="display:flex;flex-direction:column;gap:6px;${a.priorytet === 1 ? 'border-left:4px solid var(--gold);' : ''}">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;">
+        <div style="font-weight:800;color:var(--heading);font-size:15px;">${esc(a.klub)}</div>
+        <div class="note" style="white-space:nowrap;">${esc(a.kraj)} · prio ${a.priorytet}</div>
+      </div>
+      <div style="font-size:13px;"><b>${esc(a.osoba && a.osoba !== '—' ? a.osoba : 'Dział akademii')}</b>${a.stanowisko && a.stanowisko !== '—' ? ' — ' + esc(a.stanowisko) : ''}</div>
+      ${a.obszar ? `<div class="note">${esc(a.obszar)}</div>` : ''}
+      <div style="display:flex;flex-direction:column;gap:3px;font-size:13px;">
+        ${a.email ? `<span>✉️ ${/@/.test(a.email) && !/ukryty/.test(a.email) ? mailLink(a.email) : `<i>${esc(a.email)}</i>`}</span>` : ''}
+        ${a.kontakt ? `<span>🏢 ${podlinkuj(a.kontakt)}</span>` : ''}
+        ${a.zrodlo ? `<span>🌐 <a class="ext-link" href="${esc(a.zrodlo)}" target="_blank" rel="noopener">źródło ↗</a></span>` : ''}
+      </div>
+      <div style="font-size:11px;font-weight:700;color:${kolorStatusu(a.status)};">${esc(a.status)}</div>
+      ${a.uwagi ? `<div class="note" style="font-size:12px;">${esc(a.uwagi)}</div>` : ''}
+    </div>`;
+
+  const zMailem = AKADEMIE.filter(a=> /@/.test(a.email) && !/ukryty/.test(a.email)).length;
+  return `
+  <h2 class="view-title">Akademie</h2>
+  <p class="view-sub">Kontakty do scoutingu, rekrutacji i akademii w ${AKADEMIE.length} wpisach z ${kraje.length} krajów
+    (${zMailem} z bezpośrednim mailem osoby). Stan na ${esc(AKADEMIE_STAN)}; przy każdym wpisie link do strony klubu,
+    z której pochodzi. Najpierw priorytet 1 — akademie, które najmocniej scoutują i sprzedają wychowanków.</p>
+  <div style="display:flex;flex-wrap:wrap;gap:8px;margin:10px 0;">
+    <select id="ak-kraj" style="width:auto;"><option value="">Wszystkie kraje</option>${kraje.map(k=>`<option ${k === akademieFiltr.kraj ? 'selected' : ''}>${esc(k)}</option>`).join('')}</select>
+    <select id="ak-prio" style="width:auto;"><option value="">Każdy priorytet</option>${['1','2','3'].map(p=>`<option value="${p}" ${p === akademieFiltr.priorytet ? 'selected' : ''}>Priorytet ${p}</option>`).join('')}</select>
+    <input id="ak-szukaj" type="search" placeholder="Szukaj: klub, osoba, e-mail…" value="${esc(akademieFiltr.szukaj)}" style="flex:1;min-width:200px;">
+  </div>
+  <div class="note" style="margin-bottom:8px;">Pokazano ${lista.length} z ${AKADEMIE.length}</div>
+  <div class="grid grid-2">${lista.map(kafel).join('') || '<div class="note">Brak wpisów dla tych filtrów.</div>'}</div>
+  <details style="margin-top:18px;">
+    <summary style="cursor:pointer;font-weight:700;">Rankingi CIES Football Observatory (skąd priorytety)</summary>
+    <div class="tabela-przewijana" style="margin-top:8px;"><table><thead><tr><th>Ranking</th><th>Miejsce</th><th>Kluby</th><th>Wynik</th></tr></thead><tbody>
+      ${RANKINGI_CIES.map(r=>`<tr><td>${esc(r.ranking)}</td><td>${esc(r.miejsce)}</td><td>${esc(r.klub)}</td><td>${esc(r.wynik)}</td></tr>`).join('')}
+    </tbody></table></div>
+  </details>`;
+}
+
 function viewRadarMlodziezy(){
   const wszyscy = radarKandydaci();
   const nowi = wszyscy.filter(x=>!radarPrzejrzane[x.p.id]);
@@ -15246,6 +15310,10 @@ function attachHandlers(){
   const fby = document.getElementById('f-birthyear'); if(fby) fby.oninput=()=>{playerFilters.birthYear=fby.value.replace(/\D/g,''); render();};
   const fag = document.getElementById('f-agent'); if(fag) fag.onchange=()=>{playerFilters.agent=fag.value; render();};
   const fq = document.getElementById('f-search'); if(fq) fq.oninput=()=>{playerFilters.search=fq.value; render();};
+  // Zakładka Akademie — filtry listy kontaktów.
+  const akk = document.getElementById('ak-kraj') as HTMLSelectElement | null; if(akk) akk.onchange=()=>{ akademieFiltr.kraj=akk.value; render(); };
+  const akp = document.getElementById('ak-prio') as HTMLSelectElement | null; if(akp) akp.onchange=()=>{ akademieFiltr.priorytet=akp.value; render(); };
+  const aks = document.getElementById('ak-szukaj') as HTMLInputElement | null; if(aks) aks.oninput=()=>{ akademieFiltr.szukaj=aks.value; render(); };
   // Przerysowanie zabiera ognisko z pola, więc po każdej literze trzeba by w nie klikać na nowo.
   const fcl = document.getElementById('f-club');
   if(fcl) fcl.oninput=()=>{ playerFilters.club=fcl.value; zachowajKursorPoPrzerysowaniu(document, '#f-club', render); };
