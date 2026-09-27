@@ -15,10 +15,10 @@ const sprawdz = (opis, warunek, dodatek = '') => {
 };
 
 const { outputFiles } = buildSync({
-  stdin: { contents: "export { PZPN, ZWIAZKI_WOJEWODZKIE } from './src/data/federacja.ts';", resolveDir: process.cwd(), loader: 'ts' },
+  stdin: { contents: "export { PZPN, ZWIAZKI_WOJEWODZKIE, adresPocztowy } from './src/data/federacja.ts';", resolveDir: process.cwd(), loader: 'ts' },
   bundle: true, format: "esm", write: false,
 });
-const { PZPN, ZWIAZKI_WOJEWODZKIE } = await import("data:text/javascript;base64," + Buffer.from(outputFiles[0].text).toString("base64"));
+const { PZPN, ZWIAZKI_WOJEWODZKIE, adresPocztowy } = await import("data:text/javascript;base64," + Buffer.from(outputFiles[0].text).toString("base64"));
 const zrodlo = fs.readFileSync("src/main.ts", "utf8");
 
 console.log('\n1. Komplet związków');
@@ -48,11 +48,31 @@ console.log('\n3. Nazwy związków wiążą się z kartoteką klubów');
   });
 }
 
-console.log('\n4. Podpięcie zakładki');
+console.log('\n4. Adres pocztowy — gotowy do koperty');
+{
+  const lubuski = ZWIAZKI_WOJEWODZKIE.find(z => z.zpn === 'Lubuski ZPN');
+  const opolski = ZWIAZKI_WOJEWODZKIE.find(z => z.zpn === 'Opolski ZPN');
+  sprawdz('Lubuski ma skrytkę pocztową (PZPN ją podaje)', lubuski.skrytka === 'skr. poczt. 7', String(lubuski.skrytka));
+  sprawdz('Opolski ma skrytkę pocztową', opolski.skrytka === 'skr. poczt. 223', String(opolski.skrytka));
+  sprawdz('adres do koperty: nazwa, ulica, skrytka, kod i miasto — każde w swojej linii',
+    adresPocztowy(lubuski) === 'Lubuski Związek Piłki Nożnej\nul. Ptasia 2a\nskr. poczt. 7\n65-514 Zielona Góra',
+    JSON.stringify(adresPocztowy(lubuski)));
+  sprawdz('związek bez skrytki nie dostaje pustej linii',
+    adresPocztowy(PZPN).split('\n').length === 3, JSON.stringify(adresPocztowy(PZPN)));
+  sprawdz('każdy adres ma kod pocztowy',
+    [PZPN, ...ZWIAZKI_WOJEWODZKIE].every(z => /^\d{2}-\d{3} /.test(z.miasto)));
+  sprawdz('adres w kafelku rozpisany liniami, nie kropką',
+    /adres\.map\(l=>`<div>\$\{esc\(l\)\}<\/div>`\)\.join\(''\)/.test(zrodlo));
+  sprawdz('przycisk kopiuje cały adres razem z nazwą', /data-action="kopiuj-adres" data-adres="\$\{esc\(adresPocztowy\(z\)\)\}"/.test(zrodlo));
+  sprawdz('kopiowanie obsłużone, z zapasem gdy schowek zablokowany',
+    /\[data-action="kopiuj-adres"\]/.test(zrodlo) && /document\.execCommand\('copy'\)/.test(zrodlo));
+}
+
+console.log('\n5. Podpięcie zakładki');
 sprawdz('„Federacja" stoi nad „Menedżerowie"',
   /\{id:"federacja", label:"Federacja"\},\s*\n\s*\{id:"agencies", label:"Menedżerowie"\},/.test(zrodlo));
 sprawdz('zakładka ma swój widok', /else if\(currentView==="federacja"\) main\.innerHTML = viewFederacja\(\);/.test(zrodlo));
-sprawdz('widok czyta dane z src/data/federacja.ts', /import \{ PZPN, ZWIAZKI_WOJEWODZKIE \} from "\.\/data\/federacja";/.test(zrodlo));
+sprawdz('widok czyta dane z src/data/federacja.ts', /import \{ PZPN, ZWIAZKI_WOJEWODZKIE, adresPocztowy \} from "\.\/data\/federacja";/.test(zrodlo));
 sprawdz('telefon i e-mail są odnośnikami (jedno stuknięcie na telefonie)',
   /href="tel:\$\{esc\(telefonCzysty\)\}"/.test(zrodlo) && /href="mailto:\$\{esc\(z\.email\)\}"/.test(zrodlo));
 sprawdz('strona związku otwiera się w nowej karcie', /target="_blank" rel="noopener"/.test(zrodlo));

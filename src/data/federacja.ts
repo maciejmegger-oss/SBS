@@ -12,11 +12,16 @@ export type Zwiazek = {
   nazwa: string;        // pełna nazwa do wyświetlenia
   herb: string;         // plik herbu na serwerze
   adres: string;        // ulica
+  skrytka?: string;     // skrzynka pocztowa, gdy związek ją podaje — bez niej list wraca
   miasto: string;       // kod pocztowy i miasto
   telefon: string;
   email: string;
   www: string;
 };
+
+// Adres gotowy do koperty: nazwa, ulica (ze skrytką, jeśli jest), kod i miasto — każdy w osobnej linii.
+export const adresPocztowy = (z: Zwiazek): string =>
+  [z.nazwa, z.adres, z.skrytka, z.miasto].filter(Boolean).join('\n');
 
 export const PZPN: Zwiazek = {
   zpn: '',
@@ -40,7 +45,7 @@ export const ZWIAZKI_WOJEWODZKIE: Zwiazek[] = [
     adres: 'ul. Rzeckiego 21', miasto: '20-637 Lublin',
     telefon: '(81) 528-05-68', email: 'lubelski@zpn.pl', www: 'www.lzpn.pl' },
   { zpn: 'Lubuski ZPN', nazwa: 'Lubuski Związek Piłki Nożnej', herb: '/zpn/lubuski.png',
-    adres: 'ul. Ptasia 2a', miasto: '65-514 Zielona Góra',
+    adres: 'ul. Ptasia 2a', skrytka: 'skr. poczt. 7', miasto: '65-514 Zielona Góra',
     telefon: '(68) 452-82-00', email: 'biuro@lubuskizpn.pl', www: 'www.lubuskizpn.pl' },
   { zpn: 'Łódzki ZPN', nazwa: 'Łódzki Związek Piłki Nożnej', herb: '/zpn/lodzki.jpg',
     adres: 'Al. Unii Lubelskiej 2', miasto: '94-020 Łódź',
@@ -52,7 +57,7 @@ export const ZWIAZKI_WOJEWODZKIE: Zwiazek[] = [
     adres: 'ul. Puławska 111A lok. 50', miasto: '02-707 Warszawa',
     telefon: '(22) 827-58-74', email: 'mazowiecki@zpn.pl', www: 'www.mzpn.pl' },
   { zpn: 'Opolski ZPN', nazwa: 'Opolski Związek Piłki Nożnej', herb: '/zpn/opolski.png',
-    adres: 'ul. Damrota 6', miasto: '45-064 Opole',
+    adres: 'ul. Damrota 6', skrytka: 'skr. poczt. 223', miasto: '45-064 Opole',
     telefon: '(77) 454-37-34', email: 'sekretariat@opolskizpn.pl', www: 'www.pilkaopolska.pl' },
   { zpn: 'Podkarpacki ZPN', nazwa: 'Podkarpacki Związek Piłki Nożnej', herb: '/zpn/podkarpacki.png',
     adres: 'ul. Okulickiego 18', miasto: '35-206 Rzeszów',
