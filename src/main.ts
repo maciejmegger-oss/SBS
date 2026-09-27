@@ -19,6 +19,7 @@ import { wyslijHerb, herbJestPlikiem, przeniesHerby } from "./data/herby";
 // Kod zbieracza ŁNP — ten sam plik, który serwujemy pod /zakladka-lnp-v2.js.
 import LNP_ZBIERACZ from "../public/zakladka-lnp-v2.js?raw";
 import { PZPN, ZWIAZKI_WOJEWODZKIE, adresPocztowy } from "./data/federacja";
+import { KONTAKTY_EUROPA } from "./data/kontakty-europa";
 // Kod zakładek leży w public/zakladki/ — ten sam plik idzie na serwer (skąd zakładka pobiera go
 // przy każdym kliknięciu) i tutaj, jako kopia awaryjna na wypadek braku sieci.
 import LNP_PROTOKOL_KOD from "../public/zakladki/lnp-protokol.js?raw";
@@ -10076,7 +10077,17 @@ function klubyToSamo(a, b){
   if(!ra.length || !rb.length) return false;
   const [krotszy, dluzszy] = ra.length <= rb.length ? [ra, rb] : [rb, ra];
   const wspolne = krotszy.filter(x=>dluzszy.some(y=>tenSamCzlon(x,y)));
-  return wspolne.length >= krotszy.length && wspolne.some(x=>x.length >= 4);
+  if(wspolne.length < krotszy.length || !wspolne.some(x=>x.length >= 4)) return false;
+  // SAMO MIASTO TO ZA MAŁO.
+  //
+  // Po zdjęciu skrótu formy prawnej część nazw zostaje z jednym członem — i wtedy „ŁKS Łódź"
+  // („lodz") pokrywało się z „Widzew Łódź", a „TSV 1860 Monachium" („munchen", bo rok odpada)
+  // z „Bayern Monachium". Miasto stoi w nazwie na końcu, więc gdy krótsza nazwa to dokładnie
+  // ostatni człon dłuższej, a dłuższa ma własny człon rozróżniający — to dwa różne kluby.
+  // Odwrotny układ zostaje dozwolony: „KS Cracovia" („cracovia") wobec „Cracovia Kraków" pokrywa
+  // się z PIERWSZYM członem, czyli nazwą własną, i to naprawdę ten sam klub.
+  if(krotszy.length === 1 && dluzszy.length > 1 && tenSamCzlon(krotszy[0], dluzszy[dluzszy.length - 1])) return false;
+  return true;
 }
 
 async function dociagnijZTransfermarktu(t){
@@ -10904,7 +10915,103 @@ function clubFromEmail(email){
   return null;
 }
 
+// DWIE BAZY KONTAKTÓW POD JEDNĄ ZAKŁADKĄ.
+//
+// Polskie kontakty rosną w aplikacji (import z arkusza, uzupełnianie w wierszach), a europejskie
+// powstają poza nią — w arkuszu, gdzie każdy wpis jest sprawdzany przy źródle. To dwie różne
+// rzeczy i nie mogą stać na jednej liście: w polskiej szuka się klubu, w europejskiej — człowieka
+// od scoutingu i tego, czy jego adres naprawdę jest publiczny.
+let kontaktyZakladka: 'polska' | 'europa' = 'polska';
+
+const FLAGI_KRAJOW = {
+  'Szwecja':'🇸🇪', 'Dania':'🇩🇰', 'Norwegia':'🇳🇴', 'Finlandia':'🇫🇮', 'Włochy':'🇮🇹', 'Francja':'🇫🇷',
+  'Belgia':'🇧🇪', 'Holandia':'🇳🇱', 'Austria':'🇦🇹', 'Szwajcaria':'🇨🇭', 'Niemcy':'🇩🇪', 'Turcja':'🇹🇷',
+  'Hiszpania':'🇪🇸', 'Portugalia':'🇵🇹', 'Czechy':'🇨🇿', 'Anglia':'🏴󠁧󠁢󠁥󠁮󠁧󠁿',
+};
+const flagaKraju = (kraj)=> FLAGI_KRAJOW[String(kraj||'').trim()] || '🏳️';
+
+// Barwa statusu mówi to samo, co legenda w arkuszu: zielony = adres opublikowany przez klub,
+// bursztyn = osoba potwierdzona, ale mail nie jest publiczny, czerwony = do sprawdzenia przed wysyłką.
+function barwaStatusuKontaktu(status){
+  const s = String(status || '').toLowerCase();
+  if(s.startsWith('zweryfikowan')) return 'var(--good)';
+  if(s.startsWith('częściowo') || s.startsWith('czesciowo')) return 'var(--gold-dark)';
+  return 'var(--clay-dark)';
+}
+
+function viewKontaktyEuropa(){
+  const q = szukajNorm(contactSearchQuery);
+  const pasuje = (k)=>{
+    if(!q) return true;
+    const stog = szukajNorm([k.kraj, k.klub, k.osoba, k.stanowisko, k.obszar, k.email, k.emailKlubu, k.uwagi].join(' '));
+    return q.split(/\s+/).filter(Boolean).every(s=> stog.includes(s));
+  };
+  const widoczne = KONTAKTY_EUROPA.filter(pasuje);
+  // Kraje w kolejności z arkusza (Szwecja pierwsza — kraj priorytetowy), kluby alfabetycznie,
+  // a w klubie najpierw ci z priorytetem 1.
+  const kraje = [...new Set(KONTAKTY_EUROPA.map(k=> k.kraj))].filter(kr=> widoczne.some(k=> k.kraj === kr));
+  const bezKraju = widoczne.filter(k=> !k.kraj);
+
+  const wiersz = (k)=>`<tr>
+    <td><strong>${esc(k.klub)}</strong></td>
+    <td>${esc(k.osoba)}${k.priorytet === 1 ? ' <span class="badge new" title="Priorytet 1 — kontaktować w pierwszej kolejności">1</span>' : ''}</td>
+    <td>${esc(k.stanowisko)}<div class="note">${esc(k.obszar)}</div></td>
+    <td>${(()=>{
+      // W kolumnie maila arkusz trzyma czasem NIE adres, tylko powód jego braku („ukryty na
+      // stronie — skopiuj ze strony"). Takiego tekstu nie wolno zrobić odnośnikiem: mailto do
+      // zdania otwiera pustego maila i wygląda jak usterka. Pokazujemy to jako notatkę,
+      // a do wysyłki zostaje adres klubu.
+      const maAdres = /@/.test(k.email);
+      const klub = k.emailKlubu
+        ? `<a class="ext-link" href="mailto:${esc(k.emailKlubu)}">${esc(k.emailKlubu)}</a>` : '';
+      if(maAdres){
+        return `<a class="ext-link" href="mailto:${esc(k.email)}">${esc(k.email)}</a>`
+          + (klub ? `<div class="note">klub: ${klub}</div>` : '');
+      }
+      const powod = k.email ? `<div class="note">${esc(k.email)}</div>` : '';
+      if(klub) return `<span class="note">osoby brak &middot; </span>${klub}${powod}`;
+      return powod || '<span class="meta">—</span>';
+    })()}</td>
+    <td><span style="color:${barwaStatusuKontaktu(k.status)};font-weight:700;font-size:12px;">${esc(k.status || '—')}</span>
+      ${k.uwagi ? `<div class="note">${esc(k.uwagi)}</div>` : ''}</td>
+    <td>${k.zrodlo ? `<a class="ext-link" href="${esc(k.zrodlo)}" target="_blank" rel="noopener">źródło ↗</a>` : '<span class="meta">—</span>'}</td>
+  </tr>`;
+
+  const sekcja = (kraj, lista)=>`
+    <h4 style="margin:18px 0 6px;color:var(--heading);">${flagaKraju(kraj)} ${esc(kraj || 'Pozostałe')}
+      <span class="reports-count">${lista.length}</span></h4>
+    <div class="card" style="padding:0;overflow:auto;">
+      <table>
+        <thead><tr><th>Klub</th><th>Osoba</th><th>Stanowisko / obszar</th><th>E-mail</th><th>Weryfikacja</th><th></th></tr></thead>
+        <tbody>${lista.slice().sort((a,b)=>
+          (a.klub||'').localeCompare(b.klub||'', 'pl') || (a.priorytet||9) - (b.priorytet||9)
+        ).map(wiersz).join('')}</tbody>
+      </table>
+    </div>`;
+
+  return `
+  <p class="view-sub">Kontakty do ludzi od scoutingu w klubach europejskich — zebrane i sprawdzone przy źródle
+    w arkuszu <strong>Kluby_Europa_Kontakty_Scouting.xlsx</strong>. Adresów z komercyjnych baz ani zgadywanych
+    z domeny tu nie ma: każdy wiersz ma odnośnik do strony, z której pochodzi.</p>
+  <div class="toolbar" style="margin-top:12px;">
+    <input id="contact-search" placeholder="Szukaj po kraju, klubie, nazwisku, stanowisku…" value="${esc(contactSearchQuery)}" style="max-width:360px;">
+    <div class="note">${widoczne.length} ${widoczne.length === 1 ? 'kontakt' : 'kontaktów'}
+      ${contactSearchQuery ? `z ${KONTAKTY_EUROPA.length}` : `&middot; ${kraje.length} ${kraje.length === 1 ? 'kraj' : 'krajów'}`}</div>
+  </div>
+  ${widoczne.length
+    ? kraje.map(kr=> sekcja(kr, widoczne.filter(k=> k.kraj === kr))).join('')
+      + (bezKraju.length ? sekcja('', bezKraju) : '')
+    : `<div class="card"><div class="empty">Nikt nie pasuje do „${esc(contactSearchQuery)}".</div></div>`}`;
+}
+
 function viewContacts(){
+  const zakladki = `<div class="filters" style="margin-bottom:4px;">
+    ${pill('Polska', kontaktyZakladka === 'polska', 'kontakty-zakladka', {val:'polska'}, '🇵🇱')}
+    ${pill(`Europa (${KONTAKTY_EUROPA.length})`, kontaktyZakladka === 'europa', 'kontakty-zakladka', {val:'europa'}, '🌍')}
+  </div>`;
+  if(kontaktyZakladka === 'europa'){
+    return `<h2 class="view-title">Kontakty</h2>${zakladki}${viewKontaktyEuropa()}`;
+  }
   const q = contactSearchQuery.toLowerCase();
   let list = DB.contacts.slice();
   if(q){
@@ -10928,6 +11035,7 @@ function viewContacts(){
 
   return `
   <h2 class="view-title">Kontakty</h2>
+  ${zakladki}
   <p class="view-sub">Baza kontaktów — zaimportuj z arkusza (klub + email), a resztę uzupełnij ręcznie bezpośrednio na liście.
     Adres obiektu zapisuje się sam, gdy wpiszesz go w Planie Obserwacji: trafia do klubu-gospodarza i pokazuje się tutaj.</p>
 
@@ -14449,6 +14557,13 @@ function attachHandlers(){
   });
   const contactSearchInput = main.querySelector('#contact-search');
   if(contactSearchInput) contactSearchInput.oninput = ()=>{ contactSearchQuery = contactSearchInput.value; render(); };
+  // Przełączenie Polska / Europa zeruje wyszukiwanie: fraza z jednej bazy w drugiej zwykle nic
+  // nie znajduje, a pusta lista po zmianie zakładki wygląda jak brak danych.
+  main.querySelectorAll('[data-action="kontakty-zakladka"]').forEach(b=>b.onclick=()=>{
+    kontaktyZakladka = (b as HTMLElement).dataset.val === 'europa' ? 'europa' : 'polska';
+    contactSearchQuery = '';
+    render();
+  });
   const monitoringSearchInput = main.querySelector('#monitoring-search');
   if(monitoringSearchInput) monitoringSearchInput.oninput = ()=>{ monitoringSearchQuery = monitoringSearchInput.value; render(); };
   const skanerL = document.getElementById('skaner-liga');
@@ -17351,12 +17466,34 @@ const SKROTY_NAZWY = {
   // UWAGA przy dopisywaniu: tu wolno wpisywać wyłącznie skróty, których nikt nie używa jako
   // nazwy klubu. „Mazur" (Ełk, Karczew) i „Śląsk" (Wrocław) wyglądają na skróty od „mazurski"
   // i „śląski", ale są nazwami własnymi — zamiana rozjechałaby te kluby zamiast je połączyć.
+
+  // POLSKIE NAZWY MIAST ZAGRANICZNYCH.
+  //
+  // W kadrach młodzieżowych coraz więcej chłopców gra za granicą i komunikat PZPN podaje klub po
+  // polsku: „Werder Brema", „Bayern Monachium". Transfermarkt zna je pod nazwą oryginalną
+  // („SV Werder Bremen"), a „brema" i „bremen" to dla dopasowania dwa różne słowa — herb nie
+  // wchodził więc do listy talentów, choć serwis oddawał właściwy klub na pierwszym miejscu.
+  brema: 'bremen', monachium: 'munchen', kolonia: 'koln', norymberga: 'nurnberg',
+  hanower: 'hannover', drezno: 'dresden', lipsk: 'leipzig', moguncja: 'mainz',
+  akwizgran: 'aachen', ratyzbona: 'regensburg', brunszwik: 'braunschweig',
+  wieden: 'wien', salzburg: 'salzburg', kopenhaga: 'kobenhavn', sztokholm: 'stockholm',
+  praga: 'praha', bratyslawa: 'bratislava', budapeszt: 'budapest', bukareszt: 'bucuresti',
+  belgrad: 'beograd', zagrzeb: 'zagreb', lublana: 'ljubljana', ateny: 'athina',
+  rzym: 'roma', mediolan: 'milano', turyn: 'torino', neapol: 'napoli', florencja: 'firenze',
+  genua: 'genova', wenecja: 'venezia', bolonia: 'bologna',
+  lizbona: 'lisboa', sewilla: 'sevilla', saragossa: 'zaragoza', walencja: 'valencia',
+  marsylia: 'marseille', nicea: 'nice', bruksela: 'brussel', antwerpia: 'antwerpen',
+  moskwa: 'moskva', kijow: 'kyiv', lwow: 'lviv', charkow: 'kharkiv', odessa: 'odesa',
 };
 
 // „w" to przyimek z nazw typu „MKS Limanovia w Limanowej", nie człon nazwy klubu.
 // „sp z o o" i „sa" to forma prawna spółki, doklejana na ŁNP do nazw klubów zawodowych
 // („SS HUTNIK W-WA SP. Z O.O."), a nie część nazwy, pod którą klub gra.
-const SZUM_NAZWY_KLUBU = /^(ks|mks|gks|lks|mlks|uks|kp|ts|rks|wks|zks|mkp|oks|sks|cks|mzks|ss|lzs|kks|pks|muks|mgks|tkkf|klub|sportowy|gminny|miejski|ludowy|akademia|ap|as|fc|kkp|of|w|z|o|oo|sp|sa)$/;
+// Zagraniczne skróty formy klubu (SV, RC, AFC…) dopisane z tego samego powodu co polskie: przy
+// „RS Strasbourg" z komunikatu PZPN Transfermarkt ma „RC Strasbourg Alsace" — różnica jest
+// w samym skrócie, a miasto się zgadza. Dopisujemy TYLKO skróty, które nigdzie nie są całą nazwą
+// klubu: „PSV", „AIK", „GAIS" czy „Ajax" zostają nietknięte, bo to nazwy własne.
+const SZUM_NAZWY_KLUBU = /^(ks|mks|gks|lks|mlks|uks|kp|ts|rks|wks|zks|mkp|oks|sks|cks|mzks|ss|lzs|kks|pks|muks|mgks|tkkf|klub|sportowy|gminny|miejski|ludowy|akademia|ap|as|fc|kkp|of|w|z|o|oo|sp|sa|sv|sc|rc|rs|ac|acf|afc|cf|cd|ud|sd|sk|bk|if|ff|fk|fsv|tsv|vfb|vfl|kv|kaa|rsc|rfc|kfc|nk|hnk|ogc|rcd)$/;
 const NUMER_ZESPOLU = { ii:'2', iii:'3', iv:'4', '2':'2', '3':'3', '4':'4' };
 
 // NAZWA Z TABELI ŁNP DO POSTACI NADAJĄCEJ SIĘ DO KARTOTEKI.
