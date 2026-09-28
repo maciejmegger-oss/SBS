@@ -7784,10 +7784,22 @@ function hostFromMatch(matchText){
 // (w ustawieniach) i pokazujemy go w Kontaktach. Gdyby siedział w wierszu kontaktu, klub z kilkoma
 // osobami miałby kilka kopii adresu, które od razu zaczęłyby się rozjeżdżać.
 function contactClubName(c){ return String((c && (c.club || c.name)) || '').trim(); }
+// Adres obiektu w Kontaktach: najpierw ten zapisany przy klubie (z Planu Obserwacji albo wpisany
+// ręcznie), a gdy go nie ma — adres z wbudowanej bazy klubów (Kluby_Polska_Adresy.xlsx), tak jak
+// w Kontakty → Europa i Federacji dane są od razu, bez żadnego klikania. Nazwę porównujemy bez
+// wielkości liter i ogonków, więc „AVIA ŚWIDNIK" z importu trafia w „Avia Świdnik".
+let adresyKlubowWgNazwy = null;
+function adresKlubuZBazy(nazwa){
+  if(!adresyKlubowWgNazwy) adresyKlubowWgNazwy = new Map(ADRESY_KLUBOW.filter(a=> a.adres).map(a=> [importNorm(a.klub), a.adres]));
+  return adresyKlubowWgNazwy.get(importNorm(nazwa)) || '';
+}
 function contactAddress(c){
-  const id = clubIdByName(contactClubName(c));
-  if(!id) return '';
-  return (DB.settings.stadiumAddresses || {})[id] || '';
+  const nazwa = contactClubName(c);
+  const id = clubIdByName(nazwa);
+  const zapisany = id ? (DB.settings.stadiumAddresses || {})[id] : '';
+  if(zapisany) return zapisany;
+  const klub = id ? DB.clubs.find(k=> k.id === id) : null;
+  return adresKlubuZBazy(nazwa) || (klub ? adresKlubuZBazy(klub.name) : '');
 }
 // ADRESY I E-MAILE Z ARKUSZA „Kluby_Polska_Adresy.xlsx".
 //

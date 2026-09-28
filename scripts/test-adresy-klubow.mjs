@@ -76,5 +76,20 @@ console.log('\n4. Uzupełnia tylko puste pola');
   sprawdz('klub z bazy bez wiersza na liście czeka na dopisanie', plan.brakujace.map(x => x.c.id).join() === 'K4', plan.brakujace.map(x => x.c.id).join());
 }
 
+console.log('\n5. Adres w Kontakty → Polska widać od razu, bez klikania');
+{
+  const fn = zrodlo.match(/let adresyKlubowWgNazwy = null;[\s\S]*?\nfunction contactAddress\(c\)\{[\s\S]*?\n\}/)[0];
+  const importNorm = (s) => String(s || '').toLowerCase().replace(/ł/g, 'l').normalize('NFD').replace(/\p{M}/gu, '').replace(/[^a-z0-9]/g, '');
+  const DB = { clubs: [{ id: 'K2', name: 'Stal Stalowa Wola' }], settings: { stadiumAddresses: { K2: 'adres z planu obserwacji' } } };
+  const contactClubName = (c) => String((c && (c.club || c.name)) || '').trim();
+  const clubIdByName = (n) => (DB.clubs.find(c => importNorm(c.name) === importNorm(n)) || {}).id || null;
+  const contactAddress = new Function('ADRESY_KLUBOW', 'DB', 'importNorm', 'contactClubName', 'clubIdByName', `${fn}; return contactAddress;`)(
+    ADRESY_KLUBOW, DB, importNorm, contactClubName, clubIdByName);
+  sprawdz('kontakt „AVIA ŚWIDNIK" z importu dostaje adres z bazy, choć klubu nie ma w kartotece',
+    /Sportowa 2, 21-040 Świdnik/.test(contactAddress({ club: 'AVIA ŚWIDNIK' })), contactAddress({ club: 'AVIA ŚWIDNIK' }));
+  sprawdz('adres zapisany przy klubie ma pierwszeństwo', contactAddress({ club: 'Stal Stalowa Wola' }) === 'adres z planu obserwacji');
+  sprawdz('klub spoza bazy zostaje z pustym polem', contactAddress({ club: 'Akademia Piątek' }) === '');
+}
+
 console.log(bledy ? `\n${bledy} błąd(ów).` : '\nWszystko działa.');
 process.exit(bledy ? 1 : 0);
