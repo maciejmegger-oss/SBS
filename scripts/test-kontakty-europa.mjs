@@ -47,9 +47,9 @@ console.log('\n2. Przełącznik Polska / Europa');
 sprawdz('dwie pigułki z ikonami — flaga i glob',
   /pill\('Polska', kontaktyZakladka === 'polska', 'kontakty-zakladka', \{val:'polska'\}, '🇵🇱'\)/.test(zrodlo)
   && /pill\(`Europa \(\$\{KONTAKTY_EUROPA\.length\}\)`, kontaktyZakladka === 'europa', 'kontakty-zakladka', \{val:'europa'\}, '🌍'\)/.test(zrodlo));
-sprawdz('domyślnie otwiera się Polska', /let kontaktyZakladka: 'polska' \| 'europa' = 'polska';/.test(zrodlo));
+sprawdz('domyślnie otwiera się Polska', /let kontaktyZakladka: 'polska' \| 'kluby' \| 'europa' = 'polska';/.test(zrodlo));
 sprawdz('kliknięcie przełącza zakładkę', /\[data-action="kontakty-zakladka"\]/.test(zrodlo));
-sprawdz('przełączenie zeruje wyszukiwanie', /kontaktyZakladka = \(b as HTMLElement\)\.dataset\.val === 'europa' \? 'europa' : 'polska';\s*\n\s*contactSearchQuery = '';/.test(zrodlo));
+sprawdz('przełączenie zeruje wyszukiwanie', /kontaktyZakladka = wybrana === 'europa' \|\| wybrana === 'kluby' \? wybrana : 'polska';\s*\n\s*contactSearchQuery = '';/.test(zrodlo));
 sprawdz('pigułki widać w obu zakładkach', (zrodlo.match(/\$\{zakladki\}/g) || []).length >= 2);
 sprawdz('polska lista została nietknięta (import z arkusza, kolumny jak były)',
   /<thead><tr><th>#<\/th><th>Klub<\/th><th>Adres obiektu<\/th><th>Email<\/th>/.test(zrodlo));
@@ -68,7 +68,23 @@ sprawdz('szukanie działa po kraju, klubie i stanowisku', /const stog = szukajNo
 console.log('\n4. Skąd się biorą dane');
 sprawdz('plik danych wygenerowany, nie pisany ręcznie', /NIE POPRAWIAJ RĘCZNIE/.test(fs.readFileSync('src/data/kontakty-europa.ts', 'utf8')));
 sprawdz('skrypt przenoszący arkusz jest w repozytorium', fs.existsSync('scripts/wczytaj-kontakty-europa.mjs'));
-sprawdz('widok czyta dane z pliku', /import \{ KONTAKTY_EUROPA \} from "\.\/data\/kontakty-europa";/.test(zrodlo));
+sprawdz('widok czyta dane z pliku', /import \{ KONTAKTY_EUROPA, RANKINGI_CIES \} from "\.\/data\/kontakty-europa";/.test(zrodlo));
+
+console.log('\n5. Rankingi CIES pod listą');
+{
+  const { outputFiles: r } = buildSync({
+    stdin: { contents: "export { RANKINGI_CIES } from './src/data/kontakty-europa.ts';", resolveDir: process.cwd(), loader: 'ts' },
+    bundle: true, format: "esm", write: false,
+  });
+  const { RANKINGI_CIES } = await import("data:text/javascript;base64," + Buffer.from(r[0].text).toString("base64"));
+  sprawdz(`rankingi przeniesione z arkusza (${RANKINGI_CIES.length})`, RANKINGI_CIES.length >= 20, String(RANKINGI_CIES.length));
+  sprawdz('saldo transferów 2015–2024 (Benfica +816)', RANKINGI_CIES.some(x => /Saldo transferów/.test(x.ranking) && /Benfica \+816/.test(x.klub)));
+  sprawdz('pressing 2023/24 (Man. City 15,2)', RANKINGI_CIES.some(x => /Pressing/.test(x.ranking) && /Man\. City 15,2/.test(x.klub)));
+  sprawdz('widok pokazuje rankingi w zwijanej sekcji', /Rankingi akademii CIES Football Observatory/.test(zrodlo));
+  const kraje = [...new Set(KONTAKTY_EUROPA.map(k => k.kraj))].filter(Boolean);
+  const bezFlagi = kraje.filter(k => !new RegExp(`'${k}':'`).test(zrodlo));
+  sprawdz('każdy kraj z arkusza ma flagę', !bezFlagi.length, bezFlagi.join(', '));
+}
 
 console.log(bledy ? `\n${bledy} BŁĘDÓW` : '\nWszystko przeszło.');
 process.exit(bledy ? 1 : 0);

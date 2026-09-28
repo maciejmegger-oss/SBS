@@ -19,7 +19,8 @@ import { wyslijHerb, herbJestPlikiem, przeniesHerby } from "./data/herby";
 // Kod zbieracza ŁNP — ten sam plik, który serwujemy pod /zakladka-lnp-v2.js.
 import LNP_ZBIERACZ from "../public/zakladka-lnp-v2.js?raw";
 import { PZPN, ZWIAZKI_WOJEWODZKIE, adresPocztowy } from "./data/federacja";
-import { KONTAKTY_EUROPA } from "./data/kontakty-europa";
+import { KONTAKTY_EUROPA, RANKINGI_CIES } from "./data/kontakty-europa";
+import { ADRESY_KLUBOW } from "./data/adresy-klubow";
 // Kod zakładek leży w public/zakladki/ — ten sam plik idzie na serwer (skąd zakładka pobiera go
 // przy każdym kliknięciu) i tutaj, jako kopia awaryjna na wypadek braku sieci.
 import LNP_PROTOKOL_KOD from "../public/zakladki/lnp-protokol.js?raw";
@@ -7783,10 +7784,44 @@ function hostFromMatch(matchText){
 // (w ustawieniach) i pokazujemy go w Kontaktach. Gdyby siedział w wierszu kontaktu, klub z kilkoma
 // osobami miałby kilka kopii adresu, które od razu zaczęłyby się rozjeżdżać.
 function contactClubName(c){ return String((c && (c.club || c.name)) || '').trim(); }
+// Adres obiektu w Kontaktach: najpierw ten zapisany przy klubie (z Planu Obserwacji albo wpisany
+// ręcznie), a gdy go nie ma — adres z wbudowanej bazy klubów (Kluby_Polska_Adresy.xlsx), tak jak
+// w Kontakty → Europa i Federacji dane są od razu, bez żadnego klikania. Nazwę porównujemy bez
+// wielkości liter i ogonków, więc „AVIA ŚWIDNIK" z importu trafia w „Avia Świdnik".
+let adresyKlubowWgNazwy = null;
+function adresKlubuZBazy(nazwa){
+  if(!adresyKlubowWgNazwy) adresyKlubowWgNazwy = new Map(ADRESY_KLUBOW.filter(a=> a.adres).map(a=> [importNorm(a.klub), a.adres]));
+  return adresyKlubowWgNazwy.get(importNorm(nazwa)) || '';
+}
 function contactAddress(c){
-  const id = clubIdByName(contactClubName(c));
-  if(!id) return '';
-  return (DB.settings.stadiumAddresses || {})[id] || '';
+  const nazwa = contactClubName(c);
+  const id = clubIdByName(nazwa);
+  const zapisany = id ? (DB.settings.stadiumAddresses || {})[id] : '';
+  if(zapisany) return zapisany;
+  const klub = id ? DB.clubs.find(k=> k.id === id) : null;
+  return adresKlubuZBazy(nazwa) || (klub ? adresKlubuZBazy(klub.name) : '');
+}
+// ADRESY I E-MAILE Z ARKUSZA „Kluby_Polska_Adresy.xlsx".
+//
+// Arkusz zbiera adres obiektu i oficjalny e-mail każdego klubu z bazy SBS, z odnośnikiem do źródła.
+// Wolno nim wypełniać wyłącznie PUSTE pola: adres wpisany w Planie Obserwacji albo e-mail wklejony
+// ręcznie jest pewniejszy niż wpis z arkusza i nie może zniknąć po jednym kliknięciu.
+// Nazwy w arkuszu są dokładnie takie jak w bazie klubów; kontakt z inaczej zapisanym klubem
+// („GKS Tychy S.A.") dopasowujemy przez klub z bazy, tą samą drogą co adres w wierszu.
+function planUzupelnieniaAdresow(){
+  const wgNazwy = new Map(ADRESY_KLUBOW.map(a=> [importNorm(a.klub), a]));
+  const dlaKlubu = (c)=> (c && wgNazwy.get(importNorm(c.name))) || null;
+  const dlaKontaktu = (k)=> wgNazwy.get(importNorm(contactClubName(k)))
+    || dlaKlubu(DB.clubs.find(c=> c.id === clubIdByName(contactClubName(k))));
+  const adresy = DB.settings.stadiumAddresses || {};
+  const kluby = DB.clubs.map(c=> ({c, a: dlaKlubu(c)})).filter(x=> x.a && (x.a.adres || x.a.email));
+  const zKontaktem = new Set(DB.contacts.map(k=> clubIdByName(contactClubName(k))).filter(Boolean));
+  return {
+    adresy: kluby.filter(x=> x.a.adres && !String(adresy[x.c.id] || '').trim()),
+    emaile: DB.contacts.map(k=> ({k, a: dlaKontaktu(k)}))
+      .filter(x=> x.a && x.a.email && !String(x.k.email || '').trim()),
+    brakujace: kluby.filter(x=> !zKontaktem.has(x.c.id)),
+  };
 }
 // Zapis adresu wpisanego wprost w Kontaktach. Bez klubu w bazie nie ma do czego go przypiąć —
 // zgłaszamy to, zamiast po cichu gubić wpisaną treść.
@@ -10939,12 +10974,13 @@ function clubFromEmail(email){
 // powstają poza nią — w arkuszu, gdzie każdy wpis jest sprawdzany przy źródle. To dwie różne
 // rzeczy i nie mogą stać na jednej liście: w polskiej szuka się klubu, w europejskiej — człowieka
 // od scoutingu i tego, czy jego adres naprawdę jest publiczny.
-let kontaktyZakladka: 'polska' | 'europa' = 'polska';
+let kontaktyZakladka: 'polska' | 'kluby' | 'europa' = 'polska';
 
 const FLAGI_KRAJOW = {
   'Szwecja':'🇸🇪', 'Dania':'🇩🇰', 'Norwegia':'🇳🇴', 'Finlandia':'🇫🇮', 'Włochy':'🇮🇹', 'Francja':'🇫🇷',
   'Belgia':'🇧🇪', 'Holandia':'🇳🇱', 'Austria':'🇦🇹', 'Szwajcaria':'🇨🇭', 'Niemcy':'🇩🇪', 'Turcja':'🇹🇷',
   'Hiszpania':'🇪🇸', 'Portugalia':'🇵🇹', 'Czechy':'🇨🇿', 'Anglia':'🏴󠁧󠁢󠁥󠁮󠁧󠁿',
+  'Szkocja':'🏴󠁧󠁢󠁳󠁣󠁴󠁿', 'Chorwacja':'🇭🇷', 'Serbia':'🇷🇸', 'Słowacja':'🇸🇰', 'Słowenia':'🇸🇮', 'Ukraina':'🇺🇦',
 };
 const flagaKraju = (kraj)=> FLAGI_KRAJOW[String(kraj||'').trim()] || '🏳️';
 
@@ -11019,14 +11055,85 @@ function viewKontaktyEuropa(){
   ${widoczne.length
     ? kraje.map(kr=> sekcja(kr, widoczne.filter(k=> k.kraj === kr))).join('')
       + (bezKraju.length ? sekcja('', bezKraju) : '')
-    : `<div class="card"><div class="empty">Nikt nie pasuje do „${esc(contactSearchQuery)}".</div></div>`}`;
+    : `<div class="card"><div class="empty">Nikt nie pasuje do „${esc(contactSearchQuery)}".</div></div>`}
+  ${RANKINGI_CIES.length ? `<details style="margin-top:18px;">
+    <summary style="cursor:pointer;font-weight:700;color:var(--heading);">Rankingi akademii CIES Football Observatory — skąd priorytety</summary>
+    <div class="card" style="padding:0;overflow:auto;margin-top:8px;"><table>
+      <thead><tr><th>Ranking</th><th>Miejsce</th><th>Kluby</th><th>Wynik</th></tr></thead>
+      <tbody>${RANKINGI_CIES.map(r=>`<tr><td>${esc(r.ranking)}</td><td>${esc(r.miejsce)}</td><td>${esc(r.klub)}</td><td>${esc(r.wynik)}</td></tr>`).join('')}</tbody>
+    </table></div>
+  </details>` : ''}`;
+}
+
+// KLUBY W POLSCE — spis adresów obiektów i oficjalnych e-maili klubów z bazy SBS.
+//
+// Zbudowany tak samo jak Kontakty → Europa i zakładka Federacja: dane jadą z aplikacją
+// (src/data/adresy-klubow.ts, z arkusza Kluby_Polska_Adresy.xlsx), więc lista jest kompletna od
+// pierwszego wejścia i nie zależy od tego, co ktoś zaimportował do bazy. Każdy wiersz ma źródło
+// i status — przed wysyłką widać, który adres jest sprawdzony, a który trzeba jeszcze potwierdzić.
+const KOLEJNOSC_LIG_PL = ['I liga', 'II liga', 'III liga', 'IV liga', 'CLJ'];
+function viewKontaktyKlubyPL(){
+  const q = szukajNorm(contactSearchQuery);
+  const pasuje = (a)=>{
+    if(!q) return true;
+    const stog = szukajNorm([a.liga, a.klub, a.miasto, a.adres, a.email, a.uwagi].join(' '));
+    return q.split(/\s+/).filter(Boolean).every(s=> stog.includes(s));
+  };
+  const widoczne = ADRESY_KLUBOW.filter(pasuje);
+  const pozycjaLigi = (liga)=>{
+    const i = KOLEJNOSC_LIG_PL.findIndex(p=> String(liga || '').startsWith(p));
+    return i < 0 ? KOLEJNOSC_LIG_PL.length : i;
+  };
+  const ligi = [...new Set(widoczne.map(a=> a.liga || ''))]
+    .sort((x, y)=> pozycjaLigi(x) - pozycjaLigi(y) || x.localeCompare(y, 'pl'));
+
+  const wiersz = (a)=>`<tr>
+    <td><strong>${esc(a.klub)}</strong>${a.miasto ? `<div class="note">${esc(a.miasto)}</div>` : ''}</td>
+    <td>${a.adres ? `<div style="display:flex;gap:6px;align-items:flex-start;">
+        <span>${esc(a.adres)}</span>
+        <button class="link-btn" data-action="kopiuj-adres" data-adres="${esc(a.klub + '\n' + a.adres)}" title="Skopiuj adres razem z nazwą klubu">📋</button>
+      </div>` : '<span class="meta">—</span>'}</td>
+    <td>${a.email ? `<a class="ext-link" href="mailto:${esc(a.email)}">${esc(a.email)}</a>` : '<span class="meta">—</span>'}</td>
+    <td><span style="color:${barwaStatusuKontaktu(a.status)};font-weight:700;font-size:12px;">${esc(a.status || '—')}</span>
+      ${a.uwagi ? `<div class="note">${esc(a.uwagi)}</div>` : ''}</td>
+    <td>${a.zrodlo ? `<a class="ext-link" href="${esc(a.zrodlo)}" target="_blank" rel="noopener">źródło ↗</a>` : '<span class="meta">—</span>'}</td>
+  </tr>`;
+
+  const sekcja = (liga, lista)=>`
+    <h4 style="margin:18px 0 6px;color:var(--heading);">${esc(liga && liga !== '—' ? liga : 'Pozostałe')}
+      <span class="reports-count">${lista.length}</span></h4>
+    <div class="card" style="padding:0;overflow:auto;">
+      <table>
+        <thead><tr><th>Klub</th><th>Adres obiektu</th><th>E-mail</th><th>Weryfikacja</th><th></th></tr></thead>
+        <tbody>${lista.slice().sort((x, y)=> x.klub.localeCompare(y.klub, 'pl')).map(wiersz).join('')}</tbody>
+      </table>
+    </div>`;
+
+  const zAdresem = ADRESY_KLUBOW.filter(a=> a.adres).length;
+  const zMailem = ADRESY_KLUBOW.filter(a=> a.email).length;
+  return `
+  <p class="view-sub">Adresy obiektów i oficjalne e-maile klubów z bazy SBS — zebrane i sprawdzone przy źródle
+    w arkuszu <strong>Kluby_Polska_Adresy.xlsx</strong>. Adresów z komercyjnych baz ani zgadywanych z domeny
+    tu nie ma: każdy wiersz ma odnośnik do strony, z której pochodzi.</p>
+  <div class="toolbar" style="margin-top:12px;">
+    <input id="contact-search" placeholder="Szukaj po klubie, mieście, lidze, adresie…" value="${esc(contactSearchQuery)}" style="max-width:360px;">
+    <div class="note">${widoczne.length} ${widoczne.length === 1 ? 'klub' : 'klubów'}
+      ${contactSearchQuery ? `z ${ADRESY_KLUBOW.length}` : `&middot; ${zAdresem} z adresem &middot; ${zMailem} z e-mailem`}</div>
+  </div>
+  ${widoczne.length
+    ? ligi.map(l=> sekcja(l, widoczne.filter(a=> (a.liga || '') === l))).join('')
+    : `<div class="card"><div class="empty">Żaden klub nie pasuje do „${esc(contactSearchQuery)}".</div></div>`}`;
 }
 
 function viewContacts(){
   const zakladki = `<div class="filters" style="margin-bottom:4px;">
     ${pill('Polska', kontaktyZakladka === 'polska', 'kontakty-zakladka', {val:'polska'}, '🇵🇱')}
+    ${pill(`Kluby w Polsce (${ADRESY_KLUBOW.length})`, kontaktyZakladka === 'kluby', 'kontakty-zakladka', {val:'kluby'}, '🏟️')}
     ${pill(`Europa (${KONTAKTY_EUROPA.length})`, kontaktyZakladka === 'europa', 'kontakty-zakladka', {val:'europa'}, '🌍')}
   </div>`;
+  if(kontaktyZakladka === 'kluby'){
+    return `<h2 class="view-title">Kontakty</h2>${zakladki}${viewKontaktyKlubyPL()}`;
+  }
   if(kontaktyZakladka === 'europa'){
     return `<h2 class="view-title">Kontakty</h2>${zakladki}${viewKontaktyEuropa()}`;
   }
@@ -11073,6 +11180,7 @@ function viewContacts(){
     <input id="contact-search" placeholder="Szukaj po nazwie klubu, imieniu, nazwisku, emailu..." value="${esc(contactSearchQuery)}" style="max-width:340px;">
     <span>
       <button class="secondary" data-action="contacts-fill-clubs">🔗 Uzupełnij kluby z e-maili</button>
+      <button class="secondary" data-action="contacts-fill-addresses" title="Wpisuje adres obiektu i oficjalny e-mail z arkusza Kluby_Polska_Adresy.xlsx — tylko tam, gdzie pole jest puste">📍 Uzupełnij adresy klubów</button>
       <button class="secondary" data-action="contacts-export-excel">📊 Pobierz Excel</button>
       <button class="secondary" data-action="contacts-export-pdf">📄 Pobierz PDF</button>
     </span>
@@ -14578,7 +14686,8 @@ function attachHandlers(){
   // Przełączenie Polska / Europa zeruje wyszukiwanie: fraza z jednej bazy w drugiej zwykle nic
   // nie znajduje, a pusta lista po zmianie zakładki wygląda jak brak danych.
   main.querySelectorAll('[data-action="kontakty-zakladka"]').forEach(b=>b.onclick=()=>{
-    kontaktyZakladka = (b as HTMLElement).dataset.val === 'europa' ? 'europa' : 'polska';
+    const wybrana = (b as HTMLElement).dataset.val;
+    kontaktyZakladka = wybrana === 'europa' || wybrana === 'kluby' ? wybrana : 'polska';
     contactSearchQuery = '';
     render();
   });
@@ -14695,6 +14804,39 @@ function attachHandlers(){
       pole.remove();
       pokazPotwierdzenie(ok ? 'Adres skopiowany.' : 'Nie udało się skopiować — zaznacz adres myszą.', ok ? 'ok' : 'blad');
     }
+  });
+  main.querySelectorAll('[data-action="contacts-fill-addresses"]').forEach(b=>(b as HTMLElement).onclick=async()=>{
+    const plan = planUzupelnieniaAdresow();
+    if(!plan.adresy.length && !plan.emaile.length && !plan.brakujace.length){
+      alert('Nie ma czego uzupełniać — wszystkie kluby z arkusza mają już adres i e-mail albo nie ma ich w bazie klubów.');
+      return;
+    }
+    if((plan.adresy.length || plan.emaile.length) && !confirm(
+      `Uzupełnię puste pola z arkusza Kluby_Polska_Adresy.xlsx:\n`
+      + `• adres obiektu: ${plan.adresy.length} klubów\n`
+      + `• e-mail: ${plan.emaile.length} kontaktów\n\n`
+      + `Wpisanych wcześniej adresów i maili nie zmieniam.`)) return;
+    const dopisz = plan.brakujace.length > 0 && confirm(
+      `${plan.brakujace.length} klubów z bazy nie ma jeszcze na liście kontaktów.\n\n`
+      + `Dopisać je (klub + oficjalny e-mail, adres pokaże się sam)?`);
+    if(!plan.adresy.length && !plan.emaile.length && !dopisz) return;
+
+    if(!DB.settings.stadiumAddresses) DB.settings.stadiumAddresses = {};
+    plan.adresy.forEach(({c, a})=>{ DB.settings.stadiumAddresses[c.id] = a.adres; });
+    plan.emaile.forEach(({k, a})=>{ k.email = a.email; });
+    const dzis = new Date().toISOString().slice(0,10);
+    if(dopisz) plan.brakujace.forEach(({c, a})=> DB.contacts.push({
+      id: uid('C'), club: c.name, email: a.email, firstName: '', lastName: '', phone: '',
+      // Status z arkusza trafia do notatki, żeby przed wysyłką było widać, co jeszcze sprawdzić.
+      note: a.status === 'Zweryfikowany' ? '' : [a.status, a.uwagi].filter(Boolean).join(' – '),
+      dateAdded: dzis,
+    }));
+    const okAdresy = plan.adresy.length ? await saveSettings() : true;
+    const okKontakty = (plan.emaile.length || dopisz) ? await saveContacts() : true;
+    render();
+    if(!okAdresy || !okKontakty){ alert('Nie udało się zapisać.' + powodNieudanegoZapisu()); return; }
+    alert(`Uzupełniono adres obiektu dla ${plan.adresy.length} klubów i e-mail dla ${plan.emaile.length} kontaktów.`
+      + (dopisz ? `\nDopisano ${plan.brakujace.length} klubów do listy.` : ''));
   });
   main.querySelectorAll('[data-action="contacts-fill-clubs"]').forEach(b=>b.onclick=async()=>{
     let filled = 0, noMatch = 0;
@@ -23860,7 +24002,7 @@ const AKCJE_BEZ_KLIENTA = new Set([
   // wyniesienia jednym kliknięciem — bo wtedy kwartalny abonament wystarczy, żeby zabrać
   // ze sobą to, co najcenniejsze, i nie wrócić.
   'contacts-export-excel','contacts-export-pdf',
-  'talent-rocznik-zbiorczo','contacts-fill-clubs','contacts-download-template','download-match-template',
+  'talent-rocznik-zbiorczo','contacts-fill-clubs','contacts-fill-addresses','contacts-download-template','download-match-template',
   'manage-tabs','wagi-poziomu-zapisz','wagi-poziomu-domyslne','radar-punkt-odniesienia',
 ]);
 

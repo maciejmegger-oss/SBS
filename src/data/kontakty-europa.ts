@@ -2,7 +2,7 @@
 //
 // Źródło: Kluby_Europa_Kontakty_Scouting.xlsx (arkusz „Kontakty" + arkusze korekt).
 // Po zmianie w arkuszu uruchom: node scripts/wczytaj-kontakty-europa.mjs "<ścieżka do pliku>"
-// Stan na dzień przeniesienia: 2026-09-27 · 52 kontaktów, 8 krajów.
+// Stan na dzień przeniesienia: 2026-09-27 · 159 kontaktów, 21 krajów.
 
 export type KontaktEuropa = {
   kraj: string;
@@ -126,28 +126,28 @@ export const KONTAKTY_EUROPA: KontaktEuropa[] = [
   {
     "kraj": "Szwecja",
     "klub": "Malmö FF",
-    "osoba": "—",
-    "stanowisko": "—",
-    "obszar": "Kontakt ogólny",
+    "osoba": "Lars Hallengreen",
+    "stanowisko": "Scoutingansvarig MFF Ungdom",
+    "obszar": "Scouting akademii",
     "email": "",
-    "emailKlubu": "info@mff.se",
-    "zrodlo": "https://www.mff.se/om-malmo-ff/kontakt/",
-    "priorytet": 2,
-    "status": "Częściowo – brak maila osoby",
-    "uwagi": "Brak publicznego maila do rekrutacji akademii"
+    "emailKlubu": "Per Ågren (dyr. sportowy MFF Ungdom): per.agren@mff.se; info@mff.se",
+    "zrodlo": "https://www.mff.se/nyheter/mot-lars-hallengreen-ny-scoutingansvarig-for-mff-ungdom/",
+    "priorytet": 1,
+    "status": "Zweryfikowany",
+    "uwagi": "Szef scoutingu klubu: Jeffrey Aubynn"
   },
   {
     "kraj": "Szwecja",
     "klub": "IF Elfsborg",
-    "osoba": "—",
-    "stanowisko": "—",
-    "obszar": "Kontakt ogólny",
+    "osoba": "Tony Lundqvist",
+    "stanowisko": "Akademichef",
+    "obszar": "Akademia / scouting",
     "email": "",
-    "emailKlubu": "info@elfsborg.se; 033-13 91 91",
+    "emailKlubu": "scouting@elfsborg.se; info@elfsborg.se",
     "zrodlo": "https://elfsborg.se/for-foretag/kontakta-oss/",
-    "priorytet": 2,
-    "status": "Częściowo – brak maila osoby",
-    "uwagi": "Brak publicznego maila do rekrutacji akademii"
+    "priorytet": 1,
+    "status": "Zweryfikowany",
+    "uwagi": "Ungdomsansvarig: Andreas Klarström, 072-401 72 75"
   },
   {
     "kraj": "Dania",
@@ -160,7 +160,7 @@ export const KONTAKTY_EUROPA: KontaktEuropa[] = [
     "zrodlo": "https://fcn.dk/akademi/kontakt",
     "priorytet": 1,
     "status": "Częściowo – brak maila osoby",
-    "uwagi": "Mail widoczny na stronie, ukryty przed botami"
+    "uwagi": "Superliga. Najlepsza akademia w DK 2026 (DBU 5★, 97,0/100)"
   },
   {
     "kraj": "Dania",
@@ -173,33 +173,7 @@ export const KONTAKTY_EUROPA: KontaktEuropa[] = [
     "zrodlo": "https://fcn.dk/akademi/kontakt",
     "priorytet": 1,
     "status": "Częściowo – brak maila osoby",
-    "uwagi": ""
-  },
-  {
-    "kraj": "Dania",
-    "klub": "F.C. København",
-    "osoba": "Christian Wilkens",
-    "stanowisko": "Head of Recruitment (FCK Talent)",
-    "obszar": "Rekrutacja akademii (starsze roczniki)",
-    "email": "",
-    "emailKlubu": "",
-    "zrodlo": "https://www.fck.dk/en/content/fck-talent-department-staff-and-officials",
-    "priorytet": 1,
-    "status": "Częściowo – brak maila osoby",
-    "uwagi": "Zakres roczników do potwierdzenia na stronie (U14–U17 wg strony FCK)"
-  },
-  {
-    "kraj": "Dania",
-    "klub": "F.C. København",
-    "osoba": "Rasmus Anker",
-    "stanowisko": "Head Scout & Recruitment Manager U12–U13",
-    "obszar": "Scouting/rekrutacja U12–U13",
-    "email": "rsa@fck.dk",
-    "emailKlubu": "",
-    "zrodlo": "https://www.fck.dk/indhold/procedurer-rekruttering-i-talentafdelingen",
-    "priorytet": 1,
-    "status": "Zweryfikowany",
-    "uwagi": ""
+    "uwagi": "Superliga"
   },
   {
     "kraj": "Dania",
@@ -212,7 +186,150 @@ export const KONTAKTY_EUROPA: KontaktEuropa[] = [
     "zrodlo": "https://www.fcm.dk/drengeakademiet/",
     "priorytet": 1,
     "status": "Zweryfikowany",
-    "uwagi": "Head of Academy Recruitment: Mads Agner Veng (mail niepubliczny)"
+    "uwagi": "Superliga. DBU 5★. Head of Academy Recruitment: Mads Agner Veng (mail niepubliczny)"
+  },
+  {
+    "kraj": "Dania",
+    "klub": "F.C. København",
+    "osoba": "Christian Wilkens",
+    "stanowisko": "Head of Recruitment (FCK Talent)",
+    "obszar": "Rekrutacja akademii (starsze roczniki)",
+    "email": "",
+    "emailKlubu": "",
+    "zrodlo": "https://www.fck.dk/en/content/fck-talent-department-staff-and-officials",
+    "priorytet": 1,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Superliga. DBU 5★. Stanowisko U12–U13 wolne po odejściu R. Ankera do Lyngby (VIII 2026)"
+  },
+  {
+    "kraj": "Dania",
+    "klub": "Brøndby IF",
+    "osoba": "Christian Morsing",
+    "stanowisko": "Head of Recruitment U9–U15, Brøndby Masterclass",
+    "obszar": "Kontakt z klubami ws. rekrutacji do akademii",
+    "email": "ukryty na stronie (ochrona antyspamowa) – skopiuj ze strony",
+    "emailKlubu": "tel. +45 40 93 52 46; scouting.brondby.com",
+    "zrodlo": "https://brondby.com/masterclass/om-masterclass/rekrutteringsprocedure-i-brondby-masterclass",
+    "priorytet": 1,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Superliga. DBU 4,5★ (89,39). Academy Director: Bjørn Holm; Head of Development: Jonas Bliksted"
+  },
+  {
+    "kraj": "Dania",
+    "klub": "Lyngby Boldklub",
+    "osoba": "Karsten Stiig Alnor",
+    "stanowisko": "Akademichef",
+    "obszar": "Akademia",
+    "email": "ks@lyngby-boldklub.dk",
+    "emailKlubu": "",
+    "zrodlo": "https://lyngby-boldklub.dk/kontakt/",
+    "priorytet": 1,
+    "status": "Zweryfikowany",
+    "uwagi": "Superliga (beniaminek). DBU 4★"
+  },
+  {
+    "kraj": "Dania",
+    "klub": "Lyngby Boldklub",
+    "osoba": "Rasmus Anker",
+    "stanowisko": "Chef for rekruttering og scouting",
+    "obszar": "Scouting/rekrutacja akademia → 1. zespół",
+    "email": "",
+    "emailKlubu": "",
+    "zrodlo": "https://lyngby-boldklub.dk/2026/06/25/rasmus-anker-bliver-ny-chef-for-rekruttering-og-scouting/",
+    "priorytet": 1,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Od 01.08.2026 (wcześniej FCK). Nowy mail niepubliczny – stary rsa@fck.dk nieaktualny"
+  },
+  {
+    "kraj": "Dania",
+    "klub": "AGF",
+    "osoba": "Marc Søballe Pedersen",
+    "stanowisko": "Talentchef (AGF Talent)",
+    "obszar": "Akademia",
+    "email": "",
+    "emailKlubu": "",
+    "zrodlo": "https://agf.dk/agf-talent",
+    "priorytet": 1,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Superliga. Rekrutacja U13–U17: Kenneth Djoeneri; U10–U12: René Klok"
+  },
+  {
+    "kraj": "Dania",
+    "klub": "OB (Odense Boldklub)",
+    "osoba": "Ulrik Bredegaard",
+    "stanowisko": "Akademichef",
+    "obszar": "Akademia",
+    "email": "ulrik.bredegaard@ob.dk",
+    "emailKlubu": "",
+    "zrodlo": "https://ob.dk/hold/akademi/akademiets-personale",
+    "priorytet": 1,
+    "status": "Zweryfikowany",
+    "uwagi": "Superliga. Talentchef: Benjamin Ajslev"
+  },
+  {
+    "kraj": "Dania",
+    "klub": "Silkeborg IF",
+    "osoba": "Nicolaj Bækgaard",
+    "stanowisko": "Rekrutteringsansvarlig",
+    "obszar": "Zapytania ws. młodych zawodników",
+    "email": "nb@silkeborgif.com",
+    "emailKlubu": "tel. 22 98 96 10",
+    "zrodlo": "https://www.silkeborgif.com/talent/kontakt/",
+    "priorytet": 1,
+    "status": "Zweryfikowany",
+    "uwagi": "Superliga"
+  },
+  {
+    "kraj": "Dania",
+    "klub": "Silkeborg IF",
+    "osoba": "Peter Christian Hansen",
+    "stanowisko": "Talentchef",
+    "obszar": "Akademia",
+    "email": "pc@silkeborgif.com",
+    "emailKlubu": "+45 20 27 58 35",
+    "zrodlo": "https://www.silkeborgif.com/talent/kontakt/",
+    "priorytet": 1,
+    "status": "Zweryfikowany",
+    "uwagi": "Superliga"
+  },
+  {
+    "kraj": "Dania",
+    "klub": "Randers FC",
+    "osoba": "Peter Elstrup",
+    "stanowisko": "Talentchef & Head of Coaching",
+    "obszar": "Akademia",
+    "email": "pe@randersfc.dk",
+    "emailKlubu": "+45 25 60 21 51; randersfc@randersfc.dk",
+    "zrodlo": "https://randersfc.dk/talent/kontakt/",
+    "priorytet": 1,
+    "status": "Zweryfikowany",
+    "uwagi": "Superliga"
+  },
+  {
+    "kraj": "Dania",
+    "klub": "AaB (Aalborg)",
+    "osoba": "Jakob Ahlmann",
+    "stanowisko": "Ansvarlig for kontraktspillere og rekruttering U15–U19",
+    "obszar": "Rekrutacja do akademii",
+    "email": "jah@aab-as.dk",
+    "emailKlubu": "tel. 28 40 15 89",
+    "zrodlo": "https://aabsport.dk/akademiet/om-aab-akademiet/",
+    "priorytet": 1,
+    "status": "Zweryfikowany",
+    "uwagi": "1. Division. Rola od 01.02.2026"
+  },
+  {
+    "kraj": "Dania",
+    "klub": "AaB (Aalborg)",
+    "osoba": "Mathias Krogh",
+    "stanowisko": "Akademichef",
+    "obszar": "Akademia",
+    "email": "mak@aab-as.dk",
+    "emailKlubu": "",
+    "zrodlo": "https://aabsport.dk/akademiet/om-aab-akademiet/",
+    "priorytet": 1,
+    "status": "Zweryfikowany",
+    "uwagi": "1. Division"
   },
   {
     "kraj": "Dania",
@@ -225,7 +342,7 @@ export const KONTAKTY_EUROPA: KontaktEuropa[] = [
     "zrodlo": "https://fcn.dk/akademi/kontakt",
     "priorytet": 2,
     "status": "Częściowo – brak maila osoby",
-    "uwagi": ""
+    "uwagi": "Superliga"
   },
   {
     "kraj": "Dania",
@@ -238,20 +355,98 @@ export const KONTAKTY_EUROPA: KontaktEuropa[] = [
     "zrodlo": "https://www.fck.dk/indhold/procedurer-rekruttering-i-talentafdelingen",
     "priorytet": 2,
     "status": "Zweryfikowany",
-    "uwagi": ""
+    "uwagi": "Superliga"
   },
   {
     "kraj": "Dania",
-    "klub": "Brøndby IF",
-    "osoba": "—",
-    "stanowisko": "—",
-    "obszar": "Portal dla scoutów/agentów",
-    "email": "",
-    "emailKlubu": "scouting.brondby.com; tel. +45 43 63 08 10",
-    "zrodlo": "https://scouting.brondby.com/",
+    "klub": "Viborg FF",
+    "osoba": "Mads Holm",
+    "stanowisko": "Talentchef",
+    "obszar": "Akademia",
+    "email": "ukryty na stronie (ochrona antyspamowa) – skopiuj ze strony",
+    "emailKlubu": "kundeservice@vff.dk",
+    "zrodlo": "https://www.vff.dk/viborg-f-f/kontaktinfo",
     "priorytet": 2,
     "status": "Częściowo – brak maila osoby",
-    "uwagi": "Brak publicznego maila do działu talentów"
+    "uwagi": "Superliga"
+  },
+  {
+    "kraj": "Dania",
+    "klub": "Sønderjyske Fodbold",
+    "osoba": "Joshua Karesch",
+    "stanowisko": "Scout & Recruitment Manager",
+    "obszar": "Scouting/rekrutacja akademii",
+    "email": "jk@soenderjyskefodbold.dk",
+    "emailKlubu": "",
+    "zrodlo": "https://soenderjyskefodbold.dk/scouting-rekruttering/",
+    "priorytet": 2,
+    "status": "Zweryfikowany",
+    "uwagi": "Superliga. Scout: Steffen Dam – dam@soenderjyskefodbold.dk"
+  },
+  {
+    "kraj": "Dania",
+    "klub": "AC Horsens",
+    "osoba": "Martin Bloch",
+    "stanowisko": "Talentchef",
+    "obszar": "Akademia",
+    "email": "ukryty na stronie (ochrona antyspamowa) – skopiuj ze strony",
+    "emailKlubu": "tel. 75 62 60 20",
+    "zrodlo": "https://achorsens.dk/ansatte/akademiet",
+    "priorytet": 2,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Superliga (beniaminek)"
+  },
+  {
+    "kraj": "Dania",
+    "klub": "Vejle Boldklub",
+    "osoba": "Steen Thychosen",
+    "stanowisko": "Talentchef",
+    "obszar": "VB Akademiet",
+    "email": "st@vejle-boldklub.dk",
+    "emailKlubu": "+45 24 97 70 10",
+    "zrodlo": "https://vejle-boldklub.dk/vb-akademiet/staben",
+    "priorytet": 2,
+    "status": "Zweryfikowany",
+    "uwagi": "1. Division"
+  },
+  {
+    "kraj": "Dania",
+    "klub": "Esbjerg fB",
+    "osoba": "Anders Brynaa",
+    "stanowisko": "Talentchef",
+    "obszar": "EfB Akademi",
+    "email": "ukryty na stronie (ochrona antyspamowa) – skopiuj ze strony",
+    "emailKlubu": "",
+    "zrodlo": "https://efb.dk/efb-akademi/stab/",
+    "priorytet": 2,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "1. Division"
+  },
+  {
+    "kraj": "Dania",
+    "klub": "HB Køge",
+    "osoba": "Steen Knudsen",
+    "stanowisko": "Talentchef",
+    "obszar": "Akademia",
+    "email": "sk@hbkoge.dk",
+    "emailKlubu": "+45 40 42 45 59",
+    "zrodlo": "https://www.hbkoge.dk/talentudvikling/",
+    "priorytet": 2,
+    "status": "Zweryfikowany",
+    "uwagi": "1. Division. Klub stawia na wychowanków"
+  },
+  {
+    "kraj": "Dania",
+    "klub": "Hvidovre IF",
+    "osoba": "Christian Grønbæk",
+    "stanowisko": "Talentchef",
+    "obszar": "Talentakademi",
+    "email": "cg@hif.dk",
+    "emailKlubu": "hif@hif.dk; 36 78 17 72",
+    "zrodlo": "https://bredde.hif.dk/talentakademi/",
+    "priorytet": 2,
+    "status": "Zweryfikowany",
+    "uwagi": "1. Division"
   },
   {
     "kraj": "Dania",
@@ -264,7 +459,7 @@ export const KONTAKTY_EUROPA: KontaktEuropa[] = [
     "zrodlo": "https://fcn.dk/akademi/kontakt",
     "priorytet": 3,
     "status": "Częściowo – brak maila osoby",
-    "uwagi": ""
+    "uwagi": "Superliga"
   },
   {
     "kraj": "Dania",
@@ -277,7 +472,7 @@ export const KONTAKTY_EUROPA: KontaktEuropa[] = [
     "zrodlo": "https://www.fck.dk/indhold/procedurer-rekruttering-i-talentafdelingen",
     "priorytet": 3,
     "status": "Zweryfikowany",
-    "uwagi": ""
+    "uwagi": "Superliga"
   },
   {
     "kraj": "Dania",
@@ -290,7 +485,98 @@ export const KONTAKTY_EUROPA: KontaktEuropa[] = [
     "zrodlo": "https://www.fck.dk/indhold/procedurer-rekruttering-i-talentafdelingen",
     "priorytet": 3,
     "status": "Zweryfikowany",
-    "uwagi": ""
+    "uwagi": "Superliga"
+  },
+  {
+    "kraj": "Dania",
+    "klub": "Akademisk Boldklub",
+    "osoba": "Simon Andresen",
+    "stanowisko": "Rekrutacja U17/U19",
+    "obszar": "Rekrutacja i testy U17–U19",
+    "email": "ukryty na stronie (ochrona antyspamowa) – skopiuj ze strony",
+    "emailKlubu": "formularz „Spillerhenvendelse” na stronie",
+    "zrodlo": "https://www.akademiskboldklub.dk/klub/akademisk-boldklub--4/sider/spillerhenvendelser",
+    "priorytet": 3,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "1. Division"
+  },
+  {
+    "kraj": "Dania",
+    "klub": "Kolding IF",
+    "osoba": "Jonas Illum",
+    "stanowisko": "Talentchef (akademia chłopców i dziewcząt)",
+    "obszar": "Akademia",
+    "email": "",
+    "emailKlubu": "",
+    "zrodlo": "https://kolding-if.dk/sport/akademiet/kontakt-akademi/",
+    "priorytet": 3,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "1. Division. Starszy kontakt jj@kolding-if.dk (Jacob Jensen, 2024) – nieaktualny"
+  },
+  {
+    "kraj": "Dania",
+    "klub": "Hillerød Fodbold",
+    "osoba": "Peter Sørensen",
+    "stanowisko": "Talentchef",
+    "obszar": "Akademia",
+    "email": "",
+    "emailKlubu": "info@hilleroedfodbold.dk",
+    "zrodlo": "https://www.hilleroedfodbold.dk/klubnyt/hilleroed-fodbold-ansaetter-peter-soerensen-som-ny-talentchef/",
+    "priorytet": 3,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "1. Division. Od 01.01.2026"
+  },
+  {
+    "kraj": "Dania",
+    "klub": "Hobro IK",
+    "osoba": "Peter Bøcher Christiansen",
+    "stanowisko": "Rekrutteringsansvarlig",
+    "obszar": "Rekrutacja do talentu",
+    "email": "pbc@hikfodbold.dk",
+    "emailKlubu": "",
+    "zrodlo": "https://hobroik.dk/forening/ungdom/talent/rekruttering-til-talent/",
+    "priorytet": 3,
+    "status": "Zweryfikowany",
+    "uwagi": "1. Division. Od 01.07.2026. Talentchef: Martin Ingvorsen; testy U13–U19: NH@hikfodbold.dk"
+  },
+  {
+    "kraj": "Dania",
+    "klub": "Vendsyssel FF",
+    "osoba": "Riccardo Averini",
+    "stanowisko": "Head of Coaching & Talentchef",
+    "obszar": "Dział talentów, U17–U19",
+    "email": "ukryty na stronie (ochrona antyspamowa) – skopiuj ze strony",
+    "emailKlubu": "tel. 30 49 66 71",
+    "zrodlo": "https://vendsysselff.dk/talent/stab/",
+    "priorytet": 3,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "1. Division"
+  },
+  {
+    "kraj": "Dania",
+    "klub": "FC Fredericia",
+    "osoba": "—",
+    "stanowisko": "FC Fredericia Akademi – stab",
+    "obszar": "Akademia",
+    "email": "",
+    "emailKlubu": "https://www.fcfredericia.org/Staben/",
+    "zrodlo": "https://www.fcfredericia.org/Rekruttering/",
+    "priorytet": 3,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "1. Division. Na stronie lista maili sztabu bez przypisanych ról – sprawdzić"
+  },
+  {
+    "kraj": "Dania",
+    "klub": "Aarhus Fremad",
+    "osoba": "—",
+    "stanowisko": "—",
+    "obszar": "Formularz kontaktowy",
+    "email": "",
+    "emailKlubu": "https://www.aarhus-fremad.dk/kontakt/",
+    "zrodlo": "https://www.aarhus-fremad.dk/kontakt/",
+    "priorytet": 3,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "1. Division. Brak publicznego kontaktu do akademii"
   },
   {
     "kraj": "Włochy",
@@ -347,15 +633,28 @@ export const KONTAKTY_EUROPA: KontaktEuropa[] = [
   {
     "kraj": "Włochy",
     "klub": "Atalanta",
-    "osoba": "Gian Paolo Manighetti",
-    "stanowisko": "Responsabile Scouting (settore giovanile)",
-    "obszar": "Scouting sektora młodzieżowego",
+    "osoba": "Roberto Samaden",
+    "stanowisko": "Responsabile Settore Giovanile (2026/27)",
+    "obszar": "Sektor młodzieżowy",
     "email": "",
     "emailKlubu": "settoregiovanile@atalanta.it",
-    "zrodlo": "https://www.calcioatalanta.it/category/news/approfondimenti/primavera-settore-giovanile-atalanta/",
-    "priorytet": 2,
-    "status": "Do potwierdzenia",
-    "uwagi": "Dane z 2024/25 – sprawdzić aktualność"
+    "zrodlo": "https://www.zonacalciofaidate.it/news-dai-campi-e-sedi-settori-giovanili/settore-giovanile-atalanta-2026-2027-tutti-gli-allenatori-e-la-nuova-squadra-di-roberto-samaden",
+    "priorytet": 1,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "CIES MR99: 94 wychowanków w Big-5 w 20 lat, top 10 wg minut. Wcześniejszy szef scoutingu młodzieży: Gian Paolo Manighetti (2024/25)"
+  },
+  {
+    "kraj": "Włochy",
+    "klub": "Udinese Calcio (sektor młodzieżowy)",
+    "osoba": "José Ramón Rodríguez",
+    "stanowisko": "Responsabile Settore Giovanile (od V 2026)",
+    "obszar": "Sektor młodzieżowy",
+    "email": "",
+    "emailKlubu": "udinese@udinesespa.it; 0432 544911",
+    "zrodlo": "https://www.udinese.it/club/organigramma",
+    "priorytet": 1,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "CIES: +208 mln € salda transferów 2015–2024"
   },
   {
     "kraj": "Włochy",
@@ -372,6 +671,19 @@ export const KONTAKTY_EUROPA: KontaktEuropa[] = [
   },
   {
     "kraj": "Włochy",
+    "klub": "Juventus",
+    "osoba": "Michele Sbravati",
+    "stanowisko": "Youth Football Director",
+    "obszar": "Sektor młodzieżowy",
+    "email": "",
+    "emailKlubu": "tel. 011 656 3629; Via Druento 175, Torino",
+    "zrodlo": "https://www.juventus.com/it/news/articoli/assetto-organizzativo-2024-2025-area-sportiva-juventus",
+    "priorytet": 2,
+    "status": "Do potwierdzenia",
+    "uwagi": "CIES MR98: Kenan Yıldız w top skrzydłowych U21. Scouting Director: Stefano Stefanelli. Dane z 2024/25 – potwierdzić"
+  },
+  {
+    "kraj": "Włochy",
     "klub": "Parma Calcio 1913",
     "osoba": "Gianluca Baschieri",
     "stanowisko": "Head of Grassroot",
@@ -382,6 +694,32 @@ export const KONTAKTY_EUROPA: KontaktEuropa[] = [
     "priorytet": 3,
     "status": "Częściowo – brak maila osoby",
     "uwagi": ""
+  },
+  {
+    "kraj": "Francja",
+    "klub": "Stade Rennais",
+    "osoba": "Denis Arnaud",
+    "stanowisko": "Directeur de l'académie",
+    "obszar": "Centre de formation",
+    "email": "",
+    "emailKlubu": "",
+    "zrodlo": "https://fr.wikipedia.org/wiki/Centre_de_formation_du_Stade_rennais_FC",
+    "priorytet": 1,
+    "status": "Do potwierdzenia",
+    "uwagi": "CIES 2026: 4. miejsce w Europie – 29 wychowanków w lidze Big-5. Nazwisko dyrektora do potwierdzenia. Koordynacja rekrutacji: Philippe Barraud"
+  },
+  {
+    "kraj": "Francja",
+    "klub": "AS Monaco (CIES)",
+    "osoba": "—",
+    "stanowisko": "Cellule recrutement Academy (La Diagonale)",
+    "obszar": "Rekrutacja do centrum szkoleniowego",
+    "email": "",
+    "emailKlubu": "https://www.asmonaco.com/encadrement/",
+    "zrodlo": "https://www.asmonaco.com/en/academy/la-diagonale-centre-de-formation-de-las-monaco",
+    "priorytet": 1,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "CIES: top 10 najbardziej dochodowych akademii (10 lat). Nie przyjmują zgłoszeń spontanicznych"
   },
   {
     "kraj": "Francja",
@@ -407,33 +745,72 @@ export const KONTAKTY_EUROPA: KontaktEuropa[] = [
     "zrodlo": "https://www.ol.fr/fr/academy/centre-de-formation/recrutement",
     "priorytet": 1,
     "status": "Do potwierdzenia",
-    "uwagi": "Zastępca ds. technicznych/rekrutacji: Mathieu Seckinger"
-  },
-  {
-    "kraj": "Francja",
-    "klub": "Stade Rennais",
-    "osoba": "Philippe Barraud",
-    "stanowisko": "Chargé de coordination du recrutement",
-    "obszar": "Rekrutacja centrum szkoleniowego",
-    "email": "",
-    "emailKlubu": "",
-    "zrodlo": "https://fr.wikipedia.org/wiki/Centre_de_formation_du_Stade_rennais_FC",
-    "priorytet": 2,
-    "status": "Do potwierdzenia",
-    "uwagi": "Źródło nieoficjalne – potwierdzić na staderennais.com"
+    "uwagi": "CIES: top 10 dochodów ze sprzedaży wychowanków; 34 wychowanków w Big-5. Zastępca ds. technicznych/rekrutacji: Mathieu Seckinger"
   },
   {
     "kraj": "Francja",
     "klub": "LOSC Lille",
-    "osoba": "—",
-    "stanowisko": "—",
-    "obszar": "Formularz kontaktowy",
+    "osoba": "Philippe Liard",
+    "stanowisko": "Responsable cellule recrutement – centre de formation",
+    "obszar": "Rekrutacja do akademii (Domaine de Luchin)",
     "email": "",
-    "emailKlubu": "https://www.losc.fr/contact",
-    "zrodlo": "https://www.losc.fr/formation",
-    "priorytet": 2,
+    "emailKlubu": "formularz: https://www.losc.fr/contact",
+    "zrodlo": "https://lepetitlillois.com/2024/07/27/philippe-liard-a-succede-a-mathieu-frison-a-la-cellule-de-recrutement-du-centre-de-formation-du-losc/",
+    "priorytet": 1,
     "status": "Częściowo – brak maila osoby",
-    "uwagi": "Brak publicznego maila do rekrutacji młodzieży"
+    "uwagi": "CIES: 4. w Europie wg salda transferów 2015–2024 (+391 mln €), 1. w Big-5. Dyrektor centrum: Jean-Michel Vandamme"
+  },
+  {
+    "kraj": "Francja",
+    "klub": "Paris Saint-Germain",
+    "osoba": "—",
+    "stanowisko": "Centre de formation – cellule recrutement",
+    "obszar": "Rekrutacja tylko przez obserwacje scoutów",
+    "email": "",
+    "emailKlubu": "https://www.psg.fr/en/youth-football",
+    "zrodlo": "https://www.psg.fr/en/youth-football",
+    "priorytet": 3,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "CIES MR99: 3. miejsce – 111 wychowanków w Big-5 (20 lat). Klub nie przyjmuje zgłoszeń spontanicznych"
+  },
+  {
+    "kraj": "Belgia",
+    "klub": "Club Brugge",
+    "osoba": "Jesper van Aarnhem",
+    "stanowisko": "Head Scout Club NXT",
+    "obszar": "Kontakt akademii",
+    "email": "",
+    "emailKlubu": "info@clubbrugge.be; formularz: clubbrugge.be/en/nxt-contact",
+    "zrodlo": "https://www.clubbrugge.be/en/nxt-contact",
+    "priorytet": 1,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Pro League. Club NXT – najlepsza akademia w Belgii 2 lata z rzędu"
+  },
+  {
+    "kraj": "Belgia",
+    "klub": "RSC Anderlecht",
+    "osoba": "Afrim Salievski",
+    "stanowisko": "Academy Talent Director",
+    "obszar": "Rekrutacja i scouting wszystkich kategorii młodzieżowych",
+    "email": "",
+    "emailKlubu": "formularz na rsca.be (FAQ Neerpede)",
+    "zrodlo": "https://www.rsca.be/en/afrim-salievski",
+    "priorytet": 1,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Pro League. Scouting, rekrutacja i retencja młodzieży: Peter Verbeke (zespół). Chief Academy: Tim Borguet"
+  },
+  {
+    "kraj": "Belgia",
+    "klub": "KRC Genk",
+    "osoba": "Wouter Vanbussel",
+    "stanowisko": "Jeugdscouting",
+    "obszar": "Akademia",
+    "email": "wouter.vanbussel@krcgenk.be",
+    "emailKlubu": "jeugdsecretariaat@krcgenk.be; scouting@krcgenk.be (scouting ogólny)",
+    "zrodlo": "https://www.krcgenk.be/nl/contact/locatie/jeugdscouting",
+    "priorytet": 1,
+    "status": "Zweryfikowany",
+    "uwagi": "Pro League. Dyrektor techniczny akademii: Koen Daerden"
   },
   {
     "kraj": "Belgia",
@@ -446,20 +823,85 @@ export const KONTAKTY_EUROPA: KontaktEuropa[] = [
     "zrodlo": "https://www.kaagent.be/nl/jeugd/jeugdscouting",
     "priorytet": 1,
     "status": "Częściowo – brak maila osoby",
-    "uwagi": "Brak otwartych testów – tylko zaproszenia"
+    "uwagi": "Pro League. Brak otwartych testów – tylko zaproszenia"
   },
   {
     "kraj": "Belgia",
-    "klub": "KRC Genk",
-    "osoba": "Koen Daerden",
-    "stanowisko": "Technical Director Youth Academy",
-    "obszar": "Akademia",
+    "klub": "Union Saint-Gilloise",
+    "osoba": "—",
+    "stanowisko": "Union Academy – scouting",
+    "obszar": "Scouting akademii",
     "email": "",
-    "emailKlubu": "https://www.krcgenk.be/en/contact",
-    "zrodlo": "https://www.krcgenk.be/en/contact",
+    "emailKlubu": "scouting@rusgacademy.be; tel. 02 332 04 73",
+    "zrodlo": "https://rusg.brussels/en/union-academy/contact-union-academy",
     "priorytet": 1,
-    "status": "Do potwierdzenia",
-    "uwagi": "Mail osoby tylko w bazach komercyjnych – nie podajemy"
+    "status": "Zweryfikowany",
+    "uwagi": "Pro League"
+  },
+  {
+    "kraj": "Belgia",
+    "klub": "Standard de Liège",
+    "osoba": "Christophe Lonnoy",
+    "stanowisko": "Directeur Recrutement ARLD",
+    "obszar": "Rekrutacja Académie Robert Louis-Dreyfus",
+    "email": "",
+    "emailKlubu": "i.vanherle@standard.be (Ingrid Vanherle, manager adm.); tel. +32 4 385 94 00",
+    "zrodlo": "https://standard.be/fr/news/academie-robert-louis-dreyfus",
+    "priorytet": 1,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Pro League"
+  },
+  {
+    "kraj": "Belgia",
+    "klub": "Royal Antwerp FC",
+    "osoba": "Ralph Rust",
+    "stanowisko": "Head of Scouting & Recruitment U13–U18",
+    "obszar": "Scouting/rekrutacja U13–U18",
+    "email": "ralph.rust@rafc.be",
+    "emailKlubu": "formularz: form.jotformeu.com/RoyalAntwerpFC/scouting-request-rafc",
+    "zrodlo": "https://jeugd.royalantwerpfc.be/contact/",
+    "priorytet": 1,
+    "status": "Zweryfikowany",
+    "uwagi": "Pro League"
+  },
+  {
+    "kraj": "Belgia",
+    "klub": "KV Mechelen",
+    "osoba": "—",
+    "stanowisko": "Scouting jeugdacademie",
+    "obszar": "Rekrutacja do akademii",
+    "email": "",
+    "emailKlubu": "scouting@kvmechelen.be; info@kvmechelenjeugd.be",
+    "zrodlo": "https://kvmechelen.be/academie/contact/",
+    "priorytet": 1,
+    "status": "Zweryfikowany",
+    "uwagi": "Pro League"
+  },
+  {
+    "kraj": "Belgia",
+    "klub": "Royal Antwerp FC",
+    "osoba": "Vincent Verbrugghe",
+    "stanowisko": "Head of Scouting & Recruitment U10–U12",
+    "obszar": "Scouting/rekrutacja U10–U12",
+    "email": "vincent.verbrugghe@rafc.be",
+    "emailKlubu": "",
+    "zrodlo": "https://jeugd.royalantwerpfc.be/contact/",
+    "priorytet": 2,
+    "status": "Zweryfikowany",
+    "uwagi": "Pro League"
+  },
+  {
+    "kraj": "Belgia",
+    "klub": "OH Leuven",
+    "osoba": "—",
+    "stanowisko": "Academy",
+    "obszar": "Akademia / scouting",
+    "email": "",
+    "emailKlubu": "jeugd@ohl.be",
+    "zrodlo": "https://www.ohleuven.com/academy/scouting",
+    "priorytet": 2,
+    "status": "Zweryfikowany",
+    "uwagi": "Pro League"
   },
   {
     "kraj": "Belgia",
@@ -472,46 +914,137 @@ export const KONTAKTY_EUROPA: KontaktEuropa[] = [
     "zrodlo": "https://cerclebrugge.be/en/teams/youth/jeugdacademie-scouting",
     "priorytet": 2,
     "status": "Zweryfikowany",
-    "uwagi": ""
+    "uwagi": "Pro League"
   },
   {
     "kraj": "Belgia",
-    "klub": "RSC Anderlecht",
-    "osoba": "—",
-    "stanowisko": "Neerpede Academy – scouting",
-    "obszar": "Zgłoszenia zawodników",
-    "email": "",
-    "emailKlubu": "formularz na rsca.be (FAQ Neerpede)",
-    "zrodlo": "https://www.rsca.be/en/faqs/neerpede-academy",
+    "klub": "KV Kortrijk",
+    "osoba": "Niels Bulcaen",
+    "stanowisko": "KVK Scouting (jeugdacademie)",
+    "obszar": "Scouting akademii",
+    "email": "niels.bulcaen@kvk.be",
+    "emailKlubu": "+32 56 96 01 90",
+    "zrodlo": "https://www.kvk.be/club/jeugdacademie/kvk-scouting/",
     "priorytet": 2,
-    "status": "Częściowo – brak maila osoby",
-    "uwagi": ""
+    "status": "Zweryfikowany",
+    "uwagi": "Pro League (beniaminek)"
   },
   {
     "kraj": "Belgia",
-    "klub": "Club Brugge",
-    "osoba": "—",
-    "stanowisko": "Club NXT",
-    "obszar": "Kontakt akademii",
+    "klub": "Lommel SK",
+    "osoba": "Kevin Wielockx",
+    "stanowisko": "Head of Youth Scouting",
+    "obszar": "Scouting młodzieżowy",
     "email": "",
-    "emailKlubu": "https://www.clubbrugge.be/en/nxt-contact",
-    "zrodlo": "https://www.clubbrugge.be/en/nxt-contact",
+    "emailKlubu": "https://www.lommelsk.be/nl/talent-scouting.php",
+    "zrodlo": "https://www.lommelsk.be/nl/talent-scouting.php",
     "priorytet": 2,
     "status": "Częściowo – brak maila osoby",
-    "uwagi": ""
+    "uwagi": "Pro League (beniaminek). Klub City Football Group"
+  },
+  {
+    "kraj": "Belgia",
+    "klub": "SK Beveren",
+    "osoba": "—",
+    "stanowisko": "Jeugdwerking",
+    "obszar": "Akademia (tylko e-mail)",
+    "email": "",
+    "emailKlubu": "jeugd@skbeveren.be",
+    "zrodlo": "https://www.skbeveren.be/contact/",
+    "priorytet": 2,
+    "status": "Zweryfikowany",
+    "uwagi": "Pro League (beniaminek, mistrz CPL)"
+  },
+  {
+    "kraj": "Belgia",
+    "klub": "Sporting Charleroi",
+    "osoba": "—",
+    "stanowisko": "Zebra Academy",
+    "obszar": "Akademia U15–U23",
+    "email": "",
+    "emailKlubu": "info@sporting-charleroi.be; 071 23 97 50",
+    "zrodlo": "https://www.sporting-charleroi.be/contact/",
+    "priorytet": 2,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Pro League. Brak publicznego maila akademii"
+  },
+  {
+    "kraj": "Belgia",
+    "klub": "Royal Antwerp FC",
+    "osoba": "Matthias De Ridder",
+    "stanowisko": "Head of Scouting & Recruitment U7–U9",
+    "obszar": "Scouting U7–U9",
+    "email": "matthias.deridder@rafcjeugd.be",
+    "emailKlubu": "",
+    "zrodlo": "https://jeugd.royalantwerpfc.be/contact/",
+    "priorytet": 3,
+    "status": "Zweryfikowany",
+    "uwagi": "Pro League"
+  },
+  {
+    "kraj": "Belgia",
+    "klub": "KVC Westerlo",
+    "osoba": "—",
+    "stanowisko": "—",
+    "obszar": "Kontakt ogólny",
+    "email": "",
+    "emailKlubu": "info@kvcwesterlo.be; +32 14 54 52 88",
+    "zrodlo": "https://kvcwesterlo.be/nl/contact/",
+    "priorytet": 3,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Pro League. Brak publicznego maila scoutingu młodzieży"
+  },
+  {
+    "kraj": "Belgia",
+    "klub": "Sint-Truidense VV",
+    "osoba": "Luc Bormans",
+    "stanowisko": "Hoofd jeugdopleiding",
+    "obszar": "Akademia",
+    "email": "",
+    "emailKlubu": "info@stvv.com; 011 71 38 19",
+    "zrodlo": "https://stvv.com/en/contact",
+    "priorytet": 3,
+    "status": "Do potwierdzenia",
+    "uwagi": "Pro League. Dane osoby z nieoficjalnej strony – potwierdzić"
+  },
+  {
+    "kraj": "Belgia",
+    "klub": "SV Zulte Waregem",
+    "osoba": "—",
+    "stanowisko": "Essevee Academie",
+    "obszar": "Akademia",
+    "email": "",
+    "emailKlubu": "formularz: essevee.be/nl/team-essevee/contact",
+    "zrodlo": "https://www.essevee.be/nl/team-essevee/contact",
+    "priorytet": 3,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Pro League. Brak publicznego maila akademii"
+  },
+  {
+    "kraj": "Belgia",
+    "klub": "RAAL La Louvière",
+    "osoba": "—",
+    "stanowisko": "Wolves Academy",
+    "obszar": "Rekrutacja młodzieży",
+    "email": "",
+    "emailKlubu": "jeunes@raal.be; zgłoszenia: raal.be/recrutement-2/",
+    "zrodlo": "https://www.raal.be/ufaq/jaimerais-realiser-un-test-pour-integrer-lecole-des-jeunes-comment-faire/",
+    "priorytet": 3,
+    "status": "Zweryfikowany",
+    "uwagi": "Pro League"
   },
   {
     "kraj": "Austria",
-    "klub": "LASK",
-    "osoba": "Philipp Leeb",
-    "stanowisko": "Nachwuchsleiter (Youth Director)",
-    "obszar": "Przyjęcia do akademii",
-    "email": "p.leeb@lask.at",
-    "emailKlubu": "scouting@lask.at; 0699 111 879 00",
-    "zrodlo": "https://www.lask.at/en/m/ansprechpersonen",
+    "klub": "FC Red Bull Salzburg",
+    "osoba": "Manfred Pamminger",
+    "stanowisko": "Gesamtleiter Nachwuchs (w tym scouting)",
+    "obszar": "Akademia, FC Liefering, scouting, współpraca międzynarodowa",
+    "email": "",
+    "emailKlubu": "academy@redbulls.com; akademie.verwaltung@redbullsalzburg.at; +43 662 433332 4603",
+    "zrodlo": "https://www.redbullsalzburg.at/de/jungbullen-und-akademie",
     "priorytet": 1,
     "status": "Zweryfikowany",
-    "uwagi": ""
+    "uwagi": "Bundesliga. Sportlicher Leiter Akademie: Raphael Ikache"
   },
   {
     "kraj": "Austria",
@@ -524,7 +1057,7 @@ export const KONTAKTY_EUROPA: KontaktEuropa[] = [
     "zrodlo": "http://www.akastmk-sturm.at/aufnahme.htm",
     "priorytet": 1,
     "status": "Zweryfikowany",
-    "uwagi": ""
+    "uwagi": "Bundesliga"
   },
   {
     "kraj": "Austria",
@@ -537,20 +1070,33 @@ export const KONTAKTY_EUROPA: KontaktEuropa[] = [
     "zrodlo": "https://www.skrapid.at/verein/gremien/sport-management/",
     "priorytet": 1,
     "status": "Częściowo – brak maila osoby",
-    "uwagi": ""
+    "uwagi": "Bundesliga"
   },
   {
     "kraj": "Austria",
-    "klub": "FC Red Bull Salzburg",
-    "osoba": "—",
-    "stanowisko": "Akademie – Verwaltung",
-    "obszar": "Administracja akademii",
+    "klub": "FK Austria Wien",
+    "osoba": "Manuel Takacs",
+    "stanowisko": "Leiter Akademie",
+    "obszar": "Akademia",
     "email": "",
-    "emailKlubu": "akademie.verwaltung@redbullsalzburg.at; 0662 433332 4603",
-    "zrodlo": "https://www.redbullsalzburg.at/de/jungbullen/organisation-scouting.html",
+    "emailKlubu": "https://fk-austria.at/en/akademie-2/kontakt-2",
+    "zrodlo": "https://fk-austria.at/en/news/die-sportdirektion-von-austria-wien",
     "priorytet": 1,
     "status": "Częściowo – brak maila osoby",
-    "uwagi": "Brak publicznego maila do szefa scoutingu"
+    "uwagi": "Bundesliga. Technical Director: Robert Urbanek"
+  },
+  {
+    "kraj": "Austria",
+    "klub": "LASK",
+    "osoba": "Philipp Leeb",
+    "stanowisko": "Nachwuchsleiter",
+    "obszar": "Przyjęcia do akademii",
+    "email": "p.leeb@lask.at",
+    "emailKlubu": "scouting@lask.at; 0699 111 879 00",
+    "zrodlo": "https://www.lask.at/en/m/ansprechpersonen",
+    "priorytet": 1,
+    "status": "Zweryfikowany",
+    "uwagi": "Bundesliga"
   },
   {
     "kraj": "Austria",
@@ -563,7 +1109,7 @@ export const KONTAKTY_EUROPA: KontaktEuropa[] = [
     "zrodlo": "https://sksturm.at/en/c/geschaeftsstelle",
     "priorytet": 2,
     "status": "Zweryfikowany",
-    "uwagi": ""
+    "uwagi": "Bundesliga"
   },
   {
     "kraj": "Austria",
@@ -576,7 +1122,7 @@ export const KONTAKTY_EUROPA: KontaktEuropa[] = [
     "zrodlo": "https://sksturm.at/en/c/geschaeftsstelle",
     "priorytet": 2,
     "status": "Zweryfikowany",
-    "uwagi": ""
+    "uwagi": "Bundesliga"
   },
   {
     "kraj": "Austria",
@@ -589,7 +1135,124 @@ export const KONTAKTY_EUROPA: KontaktEuropa[] = [
     "zrodlo": "https://sksturm.at/en/c/geschaeftsstelle",
     "priorytet": 2,
     "status": "Zweryfikowany",
-    "uwagi": ""
+    "uwagi": "Bundesliga"
+  },
+  {
+    "kraj": "Austria",
+    "klub": "Grazer AK",
+    "osoba": "Christian Zach",
+    "stanowisko": "Sportlicher Leiter Akademie",
+    "obszar": "Akademia",
+    "email": "christian.zach@grazerak.at",
+    "emailKlubu": "office@grazerak.at",
+    "zrodlo": "https://grazerak.at/verein/ansprechpartner-nachwuchs",
+    "priorytet": 2,
+    "status": "Zweryfikowany",
+    "uwagi": "Bundesliga. Jugend & Schulkoop.: Philipp Albrecht – philipp.albrecht@grazerak.at"
+  },
+  {
+    "kraj": "Austria",
+    "klub": "Wolfsberger AC",
+    "osoba": "—",
+    "stanowisko": "—",
+    "obszar": "Kontakt ogólny",
+    "email": "",
+    "emailKlubu": "office@rzpelletswac.at; +43 4352 30688",
+    "zrodlo": "https://rzpelletswac.at/kontakt/",
+    "priorytet": 2,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Bundesliga. Brak publicznego maila akademii"
+  },
+  {
+    "kraj": "Austria",
+    "klub": "TSV Hartberg",
+    "osoba": "—",
+    "stanowisko": "Hartberg Fußball Akademie",
+    "obszar": "Akademia",
+    "email": "",
+    "emailKlubu": "akademie@tsv-hartberg-fussball.at",
+    "zrodlo": "https://tsv-hartberg-fussball.at/nachwuchs/kontakt-nachwuchs/",
+    "priorytet": 2,
+    "status": "Zweryfikowany",
+    "uwagi": "Bundesliga"
+  },
+  {
+    "kraj": "Austria",
+    "klub": "SV Ried",
+    "osoba": "—",
+    "stanowisko": "AKA-Geschäftsstelle",
+    "obszar": "Akademia Ried",
+    "email": "",
+    "emailKlubu": "office@akaried.at; +43 7752 88164",
+    "zrodlo": "https://www.svried.at/aka-geschaeftsstelle/",
+    "priorytet": 2,
+    "status": "Zweryfikowany",
+    "uwagi": "Bundesliga"
+  },
+  {
+    "kraj": "Austria",
+    "klub": "WSG Tirol",
+    "osoba": "—",
+    "stanowisko": "Nachwuchs",
+    "obszar": "Młodzież, testy",
+    "email": "",
+    "emailKlubu": "jugendfussball@wsg-fussball.at; 0699 108 619 35",
+    "zrodlo": "https://www.wsg-fussball.at/de/nachwuchs/infos/",
+    "priorytet": 3,
+    "status": "Zweryfikowany",
+    "uwagi": "Bundesliga"
+  },
+  {
+    "kraj": "Austria",
+    "klub": "SCR Altach",
+    "osoba": "—",
+    "stanowisko": "SCRA Nachwuchs",
+    "obszar": "Młodzież (największa w Vorarlbergu)",
+    "email": "",
+    "emailKlubu": "https://www.scra.at/teams/nachwuchs/scra-nachwuchs",
+    "zrodlo": "https://www.scra.at/teams/nachwuchs/scra-nachwuchs",
+    "priorytet": 3,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Bundesliga. Brak publicznego maila"
+  },
+  {
+    "kraj": "Austria",
+    "klub": "SC Austria Lustenau",
+    "osoba": "Mike Urschitz",
+    "stanowisko": "Sportlicher Nachwuchsleiter",
+    "obszar": "Młodzież",
+    "email": "",
+    "emailKlubu": "info@austria-lustenau.at; +43 5577 86250",
+    "zrodlo": "https://www.austria-lustenau.at/kontakt",
+    "priorytet": 3,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Bundesliga (beniaminek). Tel. do osoby: +43 699 19202012"
+  },
+  {
+    "kraj": "Szwajcaria",
+    "klub": "BSC Young Boys",
+    "osoba": "Christian Franke",
+    "stanowisko": "Technischer Direktor Youth Base",
+    "obszar": "Akademia (U15–U21)",
+    "email": "",
+    "emailKlubu": "info@bscyb.ch; +41 31 344 88 88",
+    "zrodlo": "https://www.bscyb.ch/youth-base-staff",
+    "priorytet": 1,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Super League"
+  },
+  {
+    "kraj": "Szwajcaria",
+    "klub": "FC Basel",
+    "osoba": "Timo Jankowski",
+    "stanowisko": "Leiter Nachwuchs",
+    "obszar": "Nachwuchs-Campus",
+    "email": "",
+    "emailKlubu": "info@fcb.ch; 061 375 10 10",
+    "zrodlo": "https://www.fcb.ch/aktuell/news/nachwuchs/veraenderungen-auf-dem-campus-januar-2026",
+    "priorytet": 1,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Super League. Technischer Direktor (scouting/rekrutacja): Andreas Herrmann; Chief Scout: Marko Filipovic. Administracja Campusu: danique.stein@nachwuchs-campus.ch"
   },
   {
     "kraj": "Szwajcaria",
@@ -602,33 +1265,111 @@ export const KONTAKTY_EUROPA: KontaktEuropa[] = [
     "zrodlo": "https://www.fcz.ch/pages/leitung-und-staff",
     "priorytet": 1,
     "status": "Zweryfikowany",
-    "uwagi": "Ausbildungschef: Sascha Milicevic; Techn. Leiter: Claudio Calvi"
+    "uwagi": "Super League. Ausbildungschef: Sascha Milicevic; Techn. Leiter: Claudio Calvi"
   },
   {
     "kraj": "Szwajcaria",
-    "klub": "FC Basel",
-    "osoba": "Danique Stein",
-    "stanowisko": "Stiftung Nachwuchs-Campus Basel",
-    "obszar": "Campus młodzieżowy (administracja)",
-    "email": "danique.stein@nachwuchs-campus.ch",
-    "emailKlubu": "info@fcb.ch; 061 375 10 10",
-    "zrodlo": "https://www.nachwuchs-campus.ch/impressum",
+    "klub": "FC Thun",
+    "osoba": "Jürg Frey",
+    "stanowisko": "Leiter Nachwuchs",
+    "obszar": "Młodzież",
+    "email": "juerg.frey@fcthun.ch",
+    "emailKlubu": "033 225 18 98; info@fcthun.ch",
+    "zrodlo": "https://www.fcthun.ch/de/teams/nachwuchs",
+    "priorytet": 1,
+    "status": "Zweryfikowany",
+    "uwagi": "Super League – aktualny mistrz Szwajcarii"
+  },
+  {
+    "kraj": "Szwajcaria",
+    "klub": "FC Lugano",
+    "osoba": "Roman Hangarter",
+    "stanowisko": "Direttore Academy",
+    "obszar": "Akademia + Partenariato Ticino (od 26/27)",
+    "email": "",
+    "emailKlubu": "+41 91 922 86 72",
+    "zrodlo": "https://fclugano.com/en/academy/",
+    "priorytet": 1,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Super League. Chief Sports Officer: Sebastian Pelzer"
+  },
+  {
+    "kraj": "Szwajcaria",
+    "klub": "FC Lausanne-Sport",
+    "osoba": "Massimo Ceccaroni",
+    "stanowisko": "Directeur Technique Académie",
+    "obszar": "Akademia",
+    "email": "",
+    "emailKlubu": "+41 21 641 05 30",
+    "zrodlo": "https://www.lausanne-sport.ch/contact/",
+    "priorytet": 1,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Super League"
+  },
+  {
+    "kraj": "Szwajcaria",
+    "klub": "FC Vaduz",
+    "osoba": "Lorenz Gassner",
+    "stanowisko": "Leiter Nachwuchs",
+    "obszar": "Młodzież",
+    "email": "lorenz.gassner@fcvaduz.li",
+    "emailKlubu": "+41 78 773 76 13; info@fcvaduz.li",
+    "zrodlo": "https://www.fcvaduz.li/kontakt",
     "priorytet": 2,
     "status": "Zweryfikowany",
-    "uwagi": "Rola administracyjna, nie scouting"
+    "uwagi": "Super League (beniaminek)"
   },
   {
     "kraj": "Szwajcaria",
-    "klub": "BSC Young Boys",
-    "osoba": "—",
-    "stanowisko": "Nachwuchsförderung",
-    "obszar": "Kontakt ogólny",
+    "klub": "FC St. Gallen",
+    "osoba": "David Garcia",
+    "stanowisko": "Academy Director – Future Champs Ostschweiz",
+    "obszar": "Akademia regionu Ostschweiz",
     "email": "",
-    "emailKlubu": "info@bscyb.ch; +41 31 344 88 88",
-    "zrodlo": "https://www.bscyb.ch/nachwuchsfoerderung",
+    "emailKlubu": "info@futurechamps.ch; +41 71 314 14 14",
+    "zrodlo": "https://www.fcsg.ch/future-champs/organisation/kontakt/",
     "priorytet": 2,
     "status": "Częściowo – brak maila osoby",
-    "uwagi": ""
+    "uwagi": "Super League"
+  },
+  {
+    "kraj": "Szwajcaria",
+    "klub": "Servette FC",
+    "osoba": "—",
+    "stanowisko": "Académie SFC",
+    "obszar": "Akademia",
+    "email": "",
+    "emailKlubu": "tel. +41 22 340 54 74",
+    "zrodlo": "https://servettefc.ch/academie/je-veux-jouer-au-sfc/",
+    "priorytet": 2,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Super League"
+  },
+  {
+    "kraj": "Szwajcaria",
+    "klub": "FC Sion",
+    "osoba": "Xavier Henriques",
+    "stanowisko": "Coordinateur Académie/Formation",
+    "obszar": "Akademia",
+    "email": "",
+    "emailKlubu": "secretariat@fcsion.ch; 027 747 13 13",
+    "zrodlo": "https://www.fcsion.ch/fr/administration/",
+    "priorytet": 2,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Super League"
+  },
+  {
+    "kraj": "Szwajcaria",
+    "klub": "FC Luzern",
+    "osoba": "—",
+    "stanowisko": "Nachwuchs",
+    "obszar": "Młodzież",
+    "email": "",
+    "emailKlubu": "kontakt@fcl-verein.ch; 0848 317 000",
+    "zrodlo": "https://fcl.ch/role/nachwuchs/",
+    "priorytet": 2,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Super League. Brak publicznego maila akademii"
   },
   {
     "kraj": "Szwajcaria",
@@ -641,7 +1382,657 @@ export const KONTAKTY_EUROPA: KontaktEuropa[] = [
     "zrodlo": "https://www.gcz.ch/kontakt/",
     "priorytet": 2,
     "status": "Częściowo – brak maila osoby",
+    "uwagi": "Super League"
+  },
+  {
+    "kraj": "Portugalia",
+    "klub": "SL Benfica",
+    "osoba": "—",
+    "stanowisko": "Departamento de Scouting e Avaliação de Jogadores",
+    "obszar": "Scouting U10–U19 (bez otwartych testów)",
+    "email": "",
+    "emailKlubu": "formularz: slbenfica.pt/en-us/apoio/contactos",
+    "zrodlo": "https://www.slbenfica.pt/en-us/futebol-formacao/formacao/prospecao/recrutamento-jogadores",
+    "priorytet": 1,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "CIES 2026: nr 1 na świecie wg przychodów ze sprzedaży wychowanków (589 mln € / 10 lat); 73 wychowanków w 31 ligach UEFA (2. miejsce)"
+  },
+  {
+    "kraj": "Portugalia",
+    "klub": "Sporting CP",
+    "osoba": "—",
+    "stanowisko": "Academia Cristiano Ronaldo",
+    "obszar": "Scouting akademii (Alcochete)",
+    "email": "",
+    "emailKlubu": "https://escolasacademia.sporting.pt",
+    "zrodlo": "https://en.wikipedia.org/wiki/Academia_Cristiano_Ronaldo",
+    "priorytet": 1,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "CIES 2026: 3. miejsce w Training Index; najlepsza akademia spoza Big-5 wg wychowanków w Big-5 (24); top 10 dochodów ze sprzedaży"
+  },
+  {
+    "kraj": "Portugalia",
+    "klub": "FC Porto",
+    "osoba": "Nelson Oliveira",
+    "stanowisko": "Head of Recruitment",
+    "obszar": "Scouting – zgłaszanie zawodników",
+    "email": "",
+    "emailKlubu": "geral.scouting@fcporto.pt",
+    "zrodlo": "https://www.fcporto.pt/pt/contactos",
+    "priorytet": 1,
+    "status": "Zweryfikowany",
+    "uwagi": "Oficjalny adres działu scoutingu do przesyłania informacji o zawodnikach. Uznana akademia sprzedażowa (poza top 10 CIES)"
+  },
+  {
+    "kraj": "Portugalia",
+    "klub": "SC Braga",
+    "osoba": "—",
+    "stanowisko": "Formação – scouting",
+    "obszar": "Akademia (Cidade Desportiva)",
+    "email": "",
+    "emailKlubu": "mail@scbraga.pt; tel. 253 261 259 (formação)",
+    "zrodlo": "https://scbraga.pt/formacao/",
+    "priorytet": 2,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "CIES 2025: 95. miejsce w globalnym rankingu akademii"
+  },
+  {
+    "kraj": "Holandia",
+    "klub": "AFC Ajax",
+    "osoba": "Kelvin de Lang",
+    "stanowisko": "Head of Scouting & Recruitment, Academy De Toekomst",
+    "obszar": "Scouting akademii",
+    "email": "",
+    "emailKlubu": "scouting@ajax.nl (dział scoutingu młodzieży)",
+    "zrodlo": "https://www.ajax.nl/artikelen/ajax-doc-scouten-voor-de-toekomst",
+    "priorytet": 1,
+    "status": "Zweryfikowany",
+    "uwagi": "CIES 2026: nr 1 w Europie – 85 wychowanków w 31 ligach UEFA, 1. miejsce Training Index; 2. na świecie w sprzedaży wychowanków (454 mln €)"
+  },
+  {
+    "kraj": "Holandia",
+    "klub": "FC Twente / Heracles Academie",
+    "osoba": "Koen Fleer",
+    "stanowisko": "Head of Youth Scouting",
+    "obszar": "Scouting akademii",
+    "email": "",
+    "emailKlubu": "info@fctwenteheraclesacademie.nl; +31 53 852 5679",
+    "zrodlo": "https://fctwenteheraclesacademie.nl/over-de-academie/organisatie/",
+    "priorytet": 1,
+    "status": "Zweryfikowany",
+    "uwagi": "Koordynator scoutingu: Jorn Nijhof"
+  },
+  {
+    "kraj": "Holandia",
+    "klub": "PSV Eindhoven",
+    "osoba": "Rini de Groot",
+    "stanowisko": "Hoofd jeugdscouting",
+    "obszar": "Scouting akademii (De Herdgang)",
+    "email": "",
+    "emailKlubu": "fandesk@psv.nl; brak zgłoszeń – tylko scouting i otwarte treningi na De Herdgang",
+    "zrodlo": "https://fandesk.psv.nl/support/solutions/articles/80000304421-ik-wil-bij-psv-voetballen-kan-ik-mij-aanmelden-",
+    "priorytet": 2,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Head of Scouting klubu: Jan Vennegoor of Hesselink. Uznana akademia (poza top 10 CIES)"
+  },
+  {
+    "kraj": "Holandia",
+    "klub": "Feyenoord",
+    "osoba": "Ricardo Kern",
+    "stanowisko": "Coördinator wedstrijdzaken Feyenoord Academy",
+    "obszar": "Scouting / sprawy drużyn akademii",
+    "email": "ukryty na stronie (ochrona antyspamowa) – skopiuj ze strony",
+    "emailKlubu": "Olympiaweg 280, 3078 HT Rotterdam",
+    "zrodlo": "https://www.feyenoord.com/nl/academy/contact",
+    "priorytet": 2,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Uznana akademia (poza top 10 CIES)"
+  },
+  {
+    "kraj": "Holandia",
+    "klub": "AZ Alkmaar",
+    "osoba": "Aloys Wijnker",
+    "stanowisko": "Hoofd Jeugdopleiding",
+    "obszar": "Akademia, dni selekcji U8–U13",
+    "email": "",
+    "emailKlubu": "https://www.az.nl/jeugdopleiding",
+    "zrodlo": "https://www.az.nl/jeugdopleiding/az-voetbalschool",
+    "priorytet": 2,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Uznana akademia (poza top 10 CIES)"
+  },
+  {
+    "kraj": "Holandia",
+    "klub": "sc Heerenveen",
+    "osoba": "—",
+    "stanowisko": "Jeugdopleiding / Akademy",
+    "obszar": "Akademia",
+    "email": "",
+    "emailKlubu": "tel. 0513 612 100; https://www.sc-heerenveen.nl/contact",
+    "zrodlo": "https://www.sc-heerenveen.nl/teams/akademy",
+    "priorytet": 2,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "CIES MR98: Oliver Braude w top 10 bocznych obrońców U21"
+  },
+  {
+    "kraj": "Holandia",
+    "klub": "FC Utrecht",
+    "osoba": "Rudy Jansen",
+    "stanowisko": "Head of Scouting Youth Academy",
+    "obszar": "Scouting akademii (sieć klubów RAC)",
+    "email": "",
+    "emailKlubu": "fcutrecht.nl",
+    "zrodlo": "https://www.voetbaltrainer.nl/coachvak/talentherkenning-en-scouting-bij-fc-utrecht/",
+    "priorytet": 2,
+    "status": "Do potwierdzenia",
+    "uwagi": "Nazwisko ze źródła branżowego – potwierdzić"
+  },
+  {
+    "kraj": "Hiszpania",
+    "klub": "Real Sociedad",
+    "osoba": "—",
+    "stanowisko": "Zubieta (cantera)",
+    "obszar": "Akademia – głównie talenty z Gipuzkoa",
+    "email": "",
+    "emailKlubu": "realsociedad.eus",
+    "zrodlo": "https://en.wikipedia.org/wiki/Real_Sociedad_Cantera",
+    "priorytet": 2,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "CIES 2026: top 10 w Europie wg wychowanków w Big-5"
+  },
+  {
+    "kraj": "Hiszpania",
+    "klub": "Villarreal CF",
+    "osoba": "—",
+    "stanowisko": "Cantera Grogueta",
+    "obszar": "Akademia (36 drużyn, ~650 zawodników)",
+    "email": "",
+    "emailKlubu": "formularz: villarrealcf.es/en/formulario-contacto/",
+    "zrodlo": "https://villarrealcf.es/es/cantera-grogueta/",
+    "priorytet": 2,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Bez otwartych testów dla chłopców. Uznana akademia (poza top 10 CIES)"
+  },
+  {
+    "kraj": "Hiszpania",
+    "klub": "Valencia CF",
+    "osoba": "—",
+    "stanowisko": "Academia VCF (Paterna)",
+    "obszar": "Akademia",
+    "email": "",
+    "emailKlubu": "https://formacion.valenciacf.com/en/contacto/",
+    "zrodlo": "https://www.valenciacf.com/vcf-academy",
+    "priorytet": 2,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Wg klubu: 4. najlepsza akademia w Europie (ranking CIES)"
+  },
+  {
+    "kraj": "Hiszpania",
+    "klub": "Athletic Club",
+    "osoba": "—",
+    "stanowisko": "Lezama (cantera)",
+    "obszar": "Akademia – tylko zawodnicy z korzeniami baskijskimi",
+    "email": "",
+    "emailKlubu": "Barrio Garaioltza 147, 48196 Lezama; https://www.athletic-club.eus/en/contact/",
+    "zrodlo": "https://www.athletic-club.eus/en/teams/lezama/",
+    "priorytet": 3,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "CIES MR99: 7. miejsce wg minut wychowanków w Big-5 (20 lat). Rekrutacja ograniczona do Kraju Basków"
+  },
+  {
+    "kraj": "Hiszpania",
+    "klub": "FC Barcelona",
+    "osoba": "—",
+    "stanowisko": "La Masia",
+    "obszar": "Akademia",
+    "email": "",
+    "emailKlubu": "oab@fcbarcelona.cat (informacja ogólna)",
+    "zrodlo": "https://www.fcbarcelona.com/en/club/identity/la-masia",
+    "priorytet": 3,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "CIES MR99: 2. miejsce – 156 wychowanków w Big-5 (20 lat). barcaescola@fcbarcelona.cat to szkółka FCBEscola, nie scouting"
+  },
+  {
+    "kraj": "Hiszpania",
+    "klub": "Real Madrid",
+    "osoba": "Juni Calafat",
+    "stanowisko": "Chief Scout",
+    "obszar": "Scouting (głównie 1. zespół)",
+    "email": "",
+    "emailKlubu": "realmadrid.com – sekcja cantera",
+    "zrodlo": "https://en.wikipedia.org/wiki/Juni_Calafat",
+    "priorytet": 3,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "CIES MR99: 1. miejsce – 166 wychowanków w Big-5 (20 lat), 103 w 55 ligach. Brak publicznego kontaktu scoutingu"
+  },
+  {
+    "kraj": "Niemcy",
+    "klub": "Bayer 04 Leverkusen",
+    "osoba": "Jennifer Weber",
+    "stanowisko": "Geschäftsstelle Nachwuchsabteilung (NLZ)",
+    "obszar": "Biuro akademii, testy tylko przez e-mail",
+    "email": "Jennifer.Weber@bayer04.de",
+    "emailKlubu": "tel. 0214 866 03 43",
+    "zrodlo": "https://www.bayer04.de/en-us/page/youth/trial-sessions",
+    "priorytet": 1,
+    "status": "Do potwierdzenia",
+    "uwagi": "CIES: top 10 dochodów ze sprzedaży wychowanków (10 lat). Mail z organigramu NLZ – sprawdzić aktualność"
+  },
+  {
+    "kraj": "Niemcy",
+    "klub": "TSG Hoffenheim",
+    "osoba": "Jonathan Hader",
+    "stanowisko": "Leiter Scouting & Kadermanagement (Akademie)",
+    "obszar": "Scouting akademii",
+    "email": "",
+    "emailKlubu": "https://www.tsg-hoffenheim.de/akademie/services/kontakt-akademie",
+    "zrodlo": "https://www.tsg-hoffenheim.de/aktuelles/news/2025/08/kurzpass-kw32",
+    "priorytet": 1,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Od VIII 2025. Jedna z czołowych akademii w Niemczech"
+  },
+  {
+    "kraj": "Niemcy",
+    "klub": "Eintracht Frankfurt",
+    "osoba": "Ramtin Mehdibehesht",
+    "stanowisko": "Leiter Scouting (NLZ)",
+    "obszar": "Scouting akademii, region Rhein-Main",
+    "email": "m.ramtin@eintrachtfrankfurt.de",
+    "emailKlubu": "info@eintracht-frankfurt.de; nachwuchs.eintracht.de",
+    "zrodlo": "https://nachwuchs.eintracht.de/leistungszentrum/team/",
+    "priorytet": 2,
+    "status": "Do potwierdzenia",
+    "uwagi": "CIES MR98: Hugo Larsson wśród najlepszych defensywnych pomocników U21. Mail do potwierdzenia na stronie NLZ"
+  },
+  {
+    "kraj": "Niemcy",
+    "klub": "Borussia Mönchengladbach",
+    "osoba": "Markus Hausweiler",
+    "stanowisko": "Bereichsleiter Scouting NLZ (od U14)",
+    "obszar": "Scouting akademii",
+    "email": "",
+    "emailKlubu": "https://www.borussia.de/de/allgemeines/kontakt",
+    "zrodlo": "https://www.borussia.de/nlz-scouting",
+    "priorytet": 2,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Scouting najmłodszych: Christian Wagner"
+  },
+  {
+    "kraj": "Niemcy",
+    "klub": "1. FSV Mainz 05",
+    "osoba": "Volker Kersting",
+    "stanowisko": "Direktor Nachwuchs",
+    "obszar": "Akademia",
+    "email": "",
+    "emailKlubu": "https://www.mainz05.de/mitarbeiter",
+    "zrodlo": "https://www.mainz05.de/mitarbeiter",
+    "priorytet": 2,
+    "status": "Częściowo – brak maila osoby",
     "uwagi": ""
+  },
+  {
+    "kraj": "Niemcy",
+    "klub": "VfB Stuttgart",
+    "osoba": "—",
+    "stanowisko": "NLZ – Scouting",
+    "obszar": "Rocznik 2009 i młodsi tylko przez scouting; młodsi przez zapisy na Talentsichtung",
+    "email": "",
+    "emailKlubu": "Mercedesstraße 109, 70372 Stuttgart",
+    "zrodlo": "https://www.vfb.de/de/1893/junge-wilde/jugendkonzept/seite/leistungszentrum/",
+    "priorytet": 2,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "12 scoutów młodzieżowych w regionie"
+  },
+  {
+    "kraj": "Niemcy",
+    "klub": "FC Bayern München",
+    "osoba": "—",
+    "stanowisko": "FC Bayern Campus",
+    "obszar": "Akademia – tylko własny scouting, brak testów",
+    "email": "",
+    "emailKlubu": "https://fcbayern.com/de/teams/fc-bayern-campus/info-und-kontakt",
+    "zrodlo": "https://fcbayern.com/de/teams/fc-bayern-campus/info-und-kontakt",
+    "priorytet": 3,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "CIES MR98: Aleksandar Pavlović w top pomocników U21"
+  },
+  {
+    "kraj": "Niemcy",
+    "klub": "SC Freiburg",
+    "osoba": "Jochen Saier",
+    "stanowisko": "Sportvorstand / szef scoutingu",
+    "obszar": "Fußballschule (akademia)",
+    "email": "",
+    "emailKlubu": "formularz: scfreiburg.com/en/specials/service/contact/",
+    "zrodlo": "https://www.scfreiburg.com/fussballschule/fussballschule/leitungsteam/",
+    "priorytet": 3,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Klasyczny klub szkolący"
+  },
+  {
+    "kraj": "Chorwacja",
+    "klub": "GNK Dinamo Zagreb",
+    "osoba": "Luka Smiljanić",
+    "stanowisko": "Voditelj skautinga (akademija)",
+    "obszar": "Scouting akademii",
+    "email": "",
+    "emailKlubu": "dinamo@gnkdinamo.hr; 01 238 6111",
+    "zrodlo": "https://gnkdinamo.hr/hr/dinamo-akademija/organizacija",
+    "priorytet": 1,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Scouci: Ivan Đurić, Igor Gabrijelić, Matej Žirović. Czołowa akademia sprzedażowa; CIES VI 2025: top 10 wg wychowanków w 55 ligach"
+  },
+  {
+    "kraj": "Chorwacja",
+    "klub": "HNK Hajduk Split",
+    "osoba": "—",
+    "stanowisko": "Akademija",
+    "obszar": "Akademia",
+    "email": "",
+    "emailKlubu": "info@hajduk.hr; 021 323 650",
+    "zrodlo": "https://hajduk.hr/akademija/struktura",
+    "priorytet": 2,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": ""
+  },
+  {
+    "kraj": "Chorwacja",
+    "klub": "HNK Rijeka",
+    "osoba": "—",
+    "stanowisko": "Škola nogometa",
+    "obszar": "Akademia",
+    "email": "",
+    "emailKlubu": "skolanogometa@nk-rijeka.hr; +385 51 612 041",
+    "zrodlo": "https://nk-rijeka.hr/skola/kontakt/",
+    "priorytet": 2,
+    "status": "Zweryfikowany",
+    "uwagi": ""
+  },
+  {
+    "kraj": "Chorwacja",
+    "klub": "NK Osijek",
+    "osoba": "—",
+    "stanowisko": "Škola nogometa",
+    "obszar": "Akademia",
+    "email": "",
+    "emailKlubu": "skola.nogometa@nk-osijek.hr; +385 31 586 462",
+    "zrodlo": "https://nk-osijek.hr/kontakt/",
+    "priorytet": 2,
+    "status": "Zweryfikowany",
+    "uwagi": ""
+  },
+  {
+    "kraj": "Serbia",
+    "klub": "FK Partizan",
+    "osoba": "—",
+    "stanowisko": "Omladinska škola",
+    "obszar": "Akademia",
+    "email": "",
+    "emailKlubu": "https://partizan.rs/en",
+    "zrodlo": "http://www.en.partizan.rs/omladinska-skola-fudbala/",
+    "priorytet": 2,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "CIES: wcześniej nr 1 rocznego rankingu akademii (przed Ajaxem)"
+  },
+  {
+    "kraj": "Serbia",
+    "klub": "FK Crvena zvezda",
+    "osoba": "—",
+    "stanowisko": "Omladinska škola",
+    "obszar": "Akademia",
+    "email": "",
+    "emailKlubu": "https://www.crvenazvezdafk.com/en/klub/kontakt-i-lokacija",
+    "zrodlo": "https://www.crvenazvezdafk.com/en/vesti-kategorija/omladinska-shkola",
+    "priorytet": 2,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Uznana akademia (poza top 10 CIES)"
+  },
+  {
+    "kraj": "Ukraina",
+    "klub": "Dynamo Kijów",
+    "osoba": "—",
+    "stanowisko": "Dział scoutingu",
+    "obszar": "Scouting",
+    "email": "",
+    "emailKlubu": "tel. +38 044 278 06 28",
+    "zrodlo": "https://fcdynamo.com/en/pages/contacts",
+    "priorytet": 3,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "CIES 2026: 3. miejsce w Europie – 72 wychowanków w 31 ligach UEFA. Uwaga: sytuacja wojenna"
+  },
+  {
+    "kraj": "Ukraina",
+    "klub": "Szachtar Donieck",
+    "osoba": "—",
+    "stanowisko": "Shakhtar Football Academy",
+    "obszar": "Akademia i szkółki",
+    "email": "",
+    "emailKlubu": "school@shakhtar.com; +380 800 300 314",
+    "zrodlo": "https://shakhtar.com/en/club/academy/",
+    "priorytet": 3,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "CIES: +190 mln € salda transferów 2015–2024. Uwaga: sytuacja wojenna"
+  },
+  {
+    "kraj": "Anglia",
+    "klub": "Southampton FC",
+    "osoba": "—",
+    "stanowisko": "Academy Recruitment – trials",
+    "obszar": "Zgłoszenia zawodników na testy",
+    "email": "",
+    "emailKlubu": "trials@saintsfc.co.uk",
+    "zrodlo": "https://www.southamptonfc.com/en/academy-trials",
+    "priorytet": 1,
+    "status": "Zweryfikowany",
+    "uwagi": "Klub przyjmuje zgłoszenia (dane zawodnika + terminarz). CIES: czołówka pressingu"
+  },
+  {
+    "kraj": "Anglia",
+    "klub": "Tottenham Hotspur",
+    "osoba": "—",
+    "stanowisko": "Academy Trials team",
+    "obszar": "Zgłoszenia zawodników",
+    "email": "",
+    "emailKlubu": "academy.trials@tottenhamhotspur.com; academy@tottenhamhotspur.com",
+    "zrodlo": "http://m.tottenhamhotspur.com/academy/trials/",
+    "priorytet": 2,
+    "status": "Do potwierdzenia",
+    "uwagi": "Adres ze starszej strony klubu – sprawdzić. Brak otwartych testów"
+  },
+  {
+    "kraj": "Anglia",
+    "klub": "Sunderland AFC",
+    "osoba": "—",
+    "stanowisko": "Academy of Light",
+    "obszar": "Zgłoszenia zawodników",
+    "email": "",
+    "emailKlubu": "academy.feedback@safc.com",
+    "zrodlo": "https://www.safc.com/club/academy-of-light",
+    "priorytet": 2,
+    "status": "Do potwierdzenia",
+    "uwagi": "Adres z przewodnika branżowego – potwierdzić"
+  },
+  {
+    "kraj": "Anglia",
+    "klub": "Manchester United",
+    "osoba": "David Harrison",
+    "stanowisko": "Head of Academy Recruitment",
+    "obszar": "Rekrutacja akademii",
+    "email": "",
+    "emailKlubu": "Carrington Training Complex, Birch Road, Manchester M31 4BH",
+    "zrodlo": "https://www.manutd.com/en/help/faqs/club-information2",
+    "priorytet": 3,
+    "status": "Do potwierdzenia",
+    "uwagi": "CIES MR99: 103 wychowanków w Big-5 (20 lat), top 10 wg minut. Nazwisko ze źródła nieoficjalnego – potwierdzić"
+  },
+  {
+    "kraj": "Anglia",
+    "klub": "Leeds United",
+    "osoba": "—",
+    "stanowisko": "Academy (Thorp Arch)",
+    "obszar": "Akademia",
+    "email": "",
+    "emailKlubu": "tel. 01937 884400",
+    "zrodlo": "https://www.leedsunited.com/en/club/careers",
+    "priorytet": 3,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": ""
+  },
+  {
+    "kraj": "Anglia",
+    "klub": "Manchester City",
+    "osoba": "—",
+    "stanowisko": "Academy – tylko własny scouting",
+    "obszar": "Brak otwartych testów i zgłoszeń",
+    "email": "",
+    "emailKlubu": "https://www.mancity.com/club/safeguarding/scouts-and-scouting",
+    "zrodlo": "https://www.mancity.com/club/safeguarding/scouts-and-scouting",
+    "priorytet": 3,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "CIES: nr 1 pressingu (15,2/mecz); top 5 sprzedaży wychowanków (5 lat)"
+  },
+  {
+    "kraj": "Anglia",
+    "klub": "Chelsea FC",
+    "osoba": "—",
+    "stanowisko": "Academy Player Recruitment Team",
+    "obszar": "Formularz zgłoszeniowy na stronie",
+    "email": "",
+    "emailKlubu": "formularz: chelseafc.com/en/about-the-academy",
+    "zrodlo": "https://www.chelseafc.com/en/about-the-academy",
+    "priorytet": 3,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "CIES: nr 1 sprzedaży wychowanków w 5 lat (366 mln €)"
+  },
+  {
+    "kraj": "Czechy",
+    "klub": "SK Slavia Praha",
+    "osoba": "—",
+    "stanowisko": "Slávistická akademie – vedení mládeže",
+    "obszar": "Akademia (Eden, Horní Měcholupy, Xaverov)",
+    "email": "",
+    "emailKlubu": "https://www.slavia.cz/text/vedeni-mladeze",
+    "zrodlo": "https://www.slavia.cz/text/vedeni-mladeze",
+    "priorytet": 2,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "CIES MR98: El Hadji Malick Diouf w top 10 bocznych obrońców U21"
+  },
+  {
+    "kraj": "Czechy",
+    "klub": "AC Sparta Praha",
+    "osoba": "—",
+    "stanowisko": "Akademie – nábory",
+    "obszar": "Nabory roczników 2014–2020",
+    "email": "",
+    "emailKlubu": "WhatsApp +420 704 847 471",
+    "zrodlo": "https://ac.sparta.cz/nabory",
+    "priorytet": 3,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": ""
+  },
+  {
+    "kraj": "Czechy",
+    "klub": "FC Viktoria Plzeň",
+    "osoba": "—",
+    "stanowisko": "Mládež",
+    "obszar": "Akademia",
+    "email": "",
+    "emailKlubu": "fcviktoria@fcviktoria.cz; https://www.fcviktoria.cz/zobraz.asp?t=mladez-kontakty",
+    "zrodlo": "https://www.fcviktoria.cz/zobraz.asp?t=mladez-kontakty",
+    "priorytet": 3,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": ""
+  },
+  {
+    "kraj": "Norwegia",
+    "klub": "Rosenborg BK",
+    "osoba": "John Vik",
+    "stanowisko": "Head of Scouting & Recruitment",
+    "obszar": "Scouting i rekrutacja",
+    "email": "john.vik@rbk.no",
+    "emailKlubu": "Scout: Trond Henriksen – trond.henriksen@rbk.no, 915 91 031",
+    "zrodlo": "https://www.rbk.no/om-rbk/ansatte/sport",
+    "priorytet": 1,
+    "status": "Zweryfikowany",
+    "uwagi": "Klub współpracuje z SciSports (scouting oparty na danych)"
+  },
+  {
+    "kraj": "Norwegia",
+    "klub": "Strømsgodset IF",
+    "osoba": "Jan Vidar Haugstulen",
+    "stanowisko": "Rekrutteringsansvarlig, Eliteakademiet",
+    "obszar": "Rekrutacja do akademii",
+    "email": "ukryty na stronie (ochrona antyspamowa) – skopiuj ze strony",
+    "emailKlubu": "tel. 913 32 753",
+    "zrodlo": "https://www.godset.no/utvikling/eliteakademiet",
+    "priorytet": 2,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Znana akademia wprowadzająca młodzież do 1. zespołu"
+  },
+  {
+    "kraj": "Norwegia",
+    "klub": "FK Bodø/Glimt",
+    "osoba": "—",
+    "stanowisko": "—",
+    "obszar": "Kontakt ogólny",
+    "email": "",
+    "emailKlubu": "bg@glimt.no",
+    "zrodlo": "https://x.com/Glimt",
+    "priorytet": 2,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": "Brak publicznego maila akademii"
+  },
+  {
+    "kraj": "Norwegia",
+    "klub": "SK Brann",
+    "osoba": "—",
+    "stanowisko": "Akademiet",
+    "obszar": "Akademia",
+    "email": "ukryty na stronie (ochrona antyspamowa) – skopiuj ze strony",
+    "emailKlubu": "tel. +47 55 59 85 00",
+    "zrodlo": "https://www.brann.no/lag/akademiet/ansatte",
+    "priorytet": 2,
+    "status": "Częściowo – brak maila osoby",
+    "uwagi": ""
+  },
+  {
+    "kraj": "Słowacja",
+    "klub": "MŠK Žilina",
+    "osoba": "Viktor Miko",
+    "stanowisko": "Skauting U7–U12",
+    "obszar": "Nabór i scouting najmłodszych",
+    "email": "Viktor.Miko@mskzilina.sk",
+    "emailKlubu": "mskzilina@mskzilina.sk; +421 41 54 24 958",
+    "zrodlo": "http://mskzilina.sk/nabor",
+    "priorytet": 2,
+    "status": "Zweryfikowany",
+    "uwagi": "Jedna z najbardziej znanych akademii w Europie Środkowej"
+  },
+  {
+    "kraj": "Słowenia",
+    "klub": "NK Maribor",
+    "osoba": "Danijel Širec",
+    "stanowisko": "Vodja skavtske službe (szef scoutingu)",
+    "obszar": "Scouting akademii",
+    "email": "",
+    "emailKlubu": "nogometna.sola@nkmaribor.com; 02 620 97 05",
+    "zrodlo": "https://www.nkmaribor.com/footballSchool/basic/contact",
+    "priorytet": 2,
+    "status": "Zweryfikowany",
+    "uwagi": "Dyrektor szkółki: Sebastijan Harc; dyr. sportowy: Boštjan Kreft"
+  },
+  {
+    "kraj": "Szkocja",
+    "klub": "Celtic FC",
+    "osoba": "—",
+    "stanowisko": "Celtic FC Academy – trials",
+    "obszar": "Zgłoszenia zawodników",
+    "email": "",
+    "emailKlubu": "youthtrials@celticfc.co.uk",
+    "zrodlo": "https://www.celticfc.com/academy/academy-faqs",
+    "priorytet": 2,
+    "status": "Do potwierdzenia",
+    "uwagi": "CIES: czołówka pressingu (12,4). Adres z FAQ akademii – potwierdzić"
   },
   {
     "kraj": "Turcja",
@@ -694,5 +2085,238 @@ export const KONTAKTY_EUROPA: KontaktEuropa[] = [
     "priorytet": null,
     "status": "Częściowo – brak maila osoby",
     "uwagi": "Zespół akademii wymieniony na stronie kontaktowej klubu"
+  }
+];
+
+export type RankingCies = { ranking: string; miejsce: string; klub: string; wynik: string };
+
+export const RANKINGI_CIES: RankingCies[] = [
+  {
+    "ranking": "Wychowankowie w ligach Big-5 (WP529, 2026)",
+    "miejsce": "1",
+    "klub": "FC Barcelona",
+    "wynik": "40 zawodników"
+  },
+  {
+    "ranking": "Wychowankowie w ligach Big-5 (WP529, 2026)",
+    "miejsce": "2",
+    "klub": "Real Madrid",
+    "wynik": "35 zawodników"
+  },
+  {
+    "ranking": "Wychowankowie w ligach Big-5 (WP529, 2026)",
+    "miejsce": "3",
+    "klub": "Paris Saint-Germain",
+    "wynik": "31 zawodników"
+  },
+  {
+    "ranking": "Wychowankowie w ligach Big-5 (WP529, 2026)",
+    "miejsce": "4",
+    "klub": "Stade Rennais",
+    "wynik": "29 zawodników"
+  },
+  {
+    "ranking": "Wychowankowie w ligach Big-5 (WP529, 2026)",
+    "miejsce": "5",
+    "klub": "AFC Ajax",
+    "wynik": "27 zawodników (1. spoza Big-5)"
+  },
+  {
+    "ranking": "Wychowankowie w ligach Big-5 (WP529, 2026)",
+    "miejsce": "6–10",
+    "klub": "Chelsea, Real Sociedad, Man. United, Man. City, Arsenal",
+    "wynik": "—"
+  },
+  {
+    "ranking": "Wychowankowie w 31 ligach UEFA (2026)",
+    "miejsce": "1",
+    "klub": "AFC Ajax",
+    "wynik": "85 zawodników"
+  },
+  {
+    "ranking": "Wychowankowie w 31 ligach UEFA (2026)",
+    "miejsce": "2",
+    "klub": "SL Benfica",
+    "wynik": "73 zawodników"
+  },
+  {
+    "ranking": "Wychowankowie w 31 ligach UEFA (2026)",
+    "miejsce": "3",
+    "klub": "Dynamo Kijów",
+    "wynik": "72 zawodników"
+  },
+  {
+    "ranking": "Training Index (ważony poziomem)",
+    "miejsce": "3",
+    "klub": "Sporting CP",
+    "wynik": "3. miejsce w obu tabelach"
+  },
+  {
+    "ranking": "Przychody ze sprzedaży wychowanków – 10 lat (WP540, 2026)",
+    "miejsce": "1",
+    "klub": "SL Benfica",
+    "wynik": "589 mln €"
+  },
+  {
+    "ranking": "Przychody ze sprzedaży wychowanków – 10 lat (WP540, 2026)",
+    "miejsce": "2",
+    "klub": "AFC Ajax",
+    "wynik": "454 mln €"
+  },
+  {
+    "ranking": "Przychody ze sprzedaży wychowanków – 10 lat (WP540, 2026)",
+    "miejsce": "3",
+    "klub": "Chelsea FC",
+    "wynik": "442 mln €"
+  },
+  {
+    "ranking": "Przychody ze sprzedaży wychowanków – 10 lat (WP540, 2026)",
+    "miejsce": "4–10",
+    "klub": "Olympique Lyonnais, AS Monaco, Sporting CP, Man. City, Real Madrid, Palmeiras, Bayer Leverkusen",
+    "wynik": "—"
+  },
+  {
+    "ranking": "Przychody ze sprzedaży wychowanków – 5 lat (WP540, 2026)",
+    "miejsce": "1",
+    "klub": "Chelsea FC",
+    "wynik": "366 mln €"
+  },
+  {
+    "ranking": "Przychody ze sprzedaży wychowanków – 5 lat (WP540, 2026)",
+    "miejsce": "2",
+    "klub": "Manchester City",
+    "wynik": "318 mln €"
+  },
+  {
+    "ranking": "MR99 (II 2025): wychowankowie w Big-5, 20 lat",
+    "miejsce": "1",
+    "klub": "Real Madrid",
+    "wynik": "166 zawodników"
+  },
+  {
+    "ranking": "MR99 (II 2025): wychowankowie w Big-5, 20 lat",
+    "miejsce": "2",
+    "klub": "FC Barcelona",
+    "wynik": "156"
+  },
+  {
+    "ranking": "MR99 (II 2025): wychowankowie w Big-5, 20 lat",
+    "miejsce": "3",
+    "klub": "Paris Saint-Germain",
+    "wynik": "111"
+  },
+  {
+    "ranking": "MR99 (II 2025): wychowankowie w Big-5, 20 lat",
+    "miejsce": "4–5",
+    "klub": "Olympique Lyonnais, Manchester United",
+    "wynik": "po 103"
+  },
+  {
+    "ranking": "MR99 (II 2025): wychowankowie w Big-5, 20 lat",
+    "miejsce": "6–7",
+    "klub": "Stade Rennais, Atalanta",
+    "wynik": "po 94"
+  },
+  {
+    "ranking": "MR99 (II 2025): minuty wychowanków w Big-5, 20 lat",
+    "miejsce": "top 10",
+    "klub": "Real Madrid (1), Barcelona (2), Lyon, PSG, Rennes, Man. United, Athletic Club (7), Atalanta, Real Sociedad (9), Valencia (10)",
+    "wynik": "—"
+  },
+  {
+    "ranking": "Wychowankowie w 55 ligach (VI 2025)",
+    "miejsce": "1–3",
+    "klub": "Real Madrid 103, Benfica 102, Barcelona 94",
+    "wynik": "—"
+  },
+  {
+    "ranking": "Wychowankowie w 55 ligach (VI 2025)",
+    "miejsce": "4–10",
+    "klub": "Ajax, Sporting CP, River Plate, Defensor, Crvena zvezda, Dinamo Zagreb, Boca Juniors",
+    "wynik": "—"
+  },
+  {
+    "ranking": "MR98 (XII 2024): najlepsi U21 wg pozycji – kluby",
+    "miejsce": "ŚO",
+    "klub": "Barcelona (Cubarsí 90,2 – nr 1), Club Brugge (Ordóñez), Anderlecht (Simić)",
+    "wynik": "—"
+  },
+  {
+    "ranking": "MR98 (XII 2024): najlepsi U21 wg pozycji – kluby",
+    "miejsce": "BO",
+    "klub": "Ajax (Hato), Slavia Praha (Diouf), Heerenveen (Braude), Porto (M. Fernandes), Sporting (Quenda)",
+    "wynik": "—"
+  },
+  {
+    "ranking": "MR98 (XII 2024): najlepsi U21 wg pozycji – kluby",
+    "miejsce": "ŚP",
+    "klub": "PSG (Zaïre-Emery, J. Neves), Bayern (Pavlović), Independiente del Valle (Páez), Lokomotiw Moskwa (Batrakow)",
+    "wynik": "—"
+  },
+  {
+    "ranking": "MR98 (XII 2024): najlepsi U21 wg pozycji – kluby",
+    "miejsce": "DP",
+    "klub": "Benfica/PSG (J. Neves), Chelsea (Lavia), Eintracht Frankfurt (Larsson)",
+    "wynik": "—"
+  },
+  {
+    "ranking": "MR98 (XII 2024): najlepsi U21 wg pozycji – kluby",
+    "miejsce": "SKR",
+    "klub": "Juventus (Yıldız), Vélez Sarsfield (Th. Fernández), Barcelona (Yamal), Real Madrid (Güler), Brøndby (Bischoff), Man. United (Garnacho)",
+    "wynik": "—"
+  },
+  {
+    "ranking": "MR98 (XII 2024): najlepsi U21 wg pozycji – kluby",
+    "miejsce": "N",
+    "klub": "Porto (Samu Aghehowa), Fluminense (Kauã Elias)",
+    "wynik": "—"
+  },
+  {
+    "ranking": "MR98 (XII 2024): najlepsi U21 spoza Europy",
+    "miejsce": "1–3",
+    "klub": "LDU Quito (D. de la Cruz), Defensor (Agazzi), Junior FC (Y. Moreno)",
+    "wynik": "—"
+  },
+  {
+    "ranking": "Saldo transferów netto 2015–2024 (mln €)",
+    "miejsce": "1–5",
+    "klub": "Benfica +816, Ajax +473, RB Salzburg +401, LOSC Lille +391, Sporting +345",
+    "wynik": "—"
+  },
+  {
+    "ranking": "Saldo transferów netto 2015–2024 (mln €)",
+    "miejsce": "6–10",
+    "klub": "Monaco +305, Porto +296, Braga +279, Dinamo Zagrzeb +255, PSV +250",
+    "wynik": "—"
+  },
+  {
+    "ranking": "Saldo transferów netto 2015–2024 (mln €)",
+    "miejsce": "11–15",
+    "klub": "AZ +224, FC Nordsjælland +219, KRC Genk +211, Udinese +208, Atalanta +206",
+    "wynik": "—"
+  },
+  {
+    "ranking": "Saldo transferów netto 2015–2024 (mln €)",
+    "miejsce": "16–20",
+    "klub": "Athletico Paranaense +200, Lyon +196, Palmeiras +194, Szachtar +190, Fluminense +186",
+    "wynik": "—"
+  },
+  {
+    "ranking": "Pressing wysokiej intensywności na mecz (28 lig, 2023/24)",
+    "miejsce": "1–5",
+    "klub": "Man. City 15,2; Leverkusen 13,9; Columbus Crew 13,5; PSG 12,6; Malmö FF 12,4",
+    "wynik": "—"
+  },
+  {
+    "ranking": "Pressing wysokiej intensywności na mecz (28 lig, 2023/24)",
+    "miejsce": "5–10",
+    "klub": "Southampton 12,4; Celtic 12,4; Barcelona 12,3; PSV 12,3; Dinamo Zagrzeb 12,3",
+    "wynik": "—"
+  },
+  {
+    "ranking": "Pressing wysokiej intensywności na mecz (28 lig, 2023/24)",
+    "miejsce": "11–19",
+    "klub": "Tottenham 12,2; Czornomoreć 12,2; Bayern 12,1; Chelsea 12,1; Ajax 12,0; Leeds 11,9; Sunderland 11,9; Monaco 11,8; Gent 11,7; Häcken 11,7",
+    "wynik": "—"
   }
 ];

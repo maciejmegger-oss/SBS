@@ -82,5 +82,23 @@ export type KontaktEuropa = {
 
 export const KONTAKTY_EUROPA: KontaktEuropa[] = `;
 
-fs.writeFileSync("src/data/kontakty-europa.ts", naglowek + JSON.stringify(wszystkie, null, 2) + ";\n", "utf8");
-console.log(`src/data/kontakty-europa.ts: ${wszystkie.length} kontaktów, kraje: ${kraje.join(", ")}`);
+// Arkusz „Ranking CIES" — rankingi akademii (wychowankowie, saldo transferów, pressing), z których
+// wynikają priorytety w arkuszu. Pokazujemy je pod listą, żeby było widać, skąd „priorytet 1".
+const rankingi = arkusz("Ranking CIES")
+  .map((w) => ({
+    ranking: tekst(w["Ranking CIES"]),
+    miejsce: tekst(w["Miejsce"]),
+    klub: tekst(w["Klub"]),
+    wynik: tekst(w["Wynik"]),
+  }))
+  .filter((r) => r.ranking && r.klub);
+
+const typRankingu = `
+
+export type RankingCies = { ranking: string; miejsce: string; klub: string; wynik: string };
+
+export const RANKINGI_CIES: RankingCies[] = `;
+
+fs.writeFileSync("src/data/kontakty-europa.ts",
+  naglowek + JSON.stringify(wszystkie, null, 2) + ";" + typRankingu + JSON.stringify(rankingi, null, 2) + ";\n", "utf8");
+console.log(`src/data/kontakty-europa.ts: ${wszystkie.length} kontaktów, ${rankingi.length} wierszy rankingów, kraje: ${kraje.join(", ")}`);
