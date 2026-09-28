@@ -11244,6 +11244,73 @@ function viewKontaktyEuropa(){
 // pierwszego wejścia i nie zależy od tego, co ktoś zaimportował do bazy. Każdy wiersz ma źródło
 // i status — przed wysyłką widać, który adres jest sprawdzony, a który trzeba jeszcze potwierdzić.
 const KOLEJNOSC_LIG_PL = ['I liga', 'II liga', 'III liga', 'IV liga', 'CLJ'];
+
+// JEDNA LISTA KLUBÓW W POLSCE — Z TRZECH ŹRÓDEŁ, BEZ POWTÓRZEŃ.
+//
+// Dotąd to samo stało w dwóch miejscach: wgrany arkusz w tej zakładce i Twoja lista kontaktów
+// w zakładce obok. Klub dopisany po obserwacji był w jednej, a nie było go w drugiej — więc nie
+// dało się powiedzieć, gdzie jest komplet. Teraz komplet jest tutaj, a sklejamy odciskiem nazwy
+// klubu (tym samym, którym dopasowujemy kluby w całym programie):
+//   1. arkusz Kluby_Polska_Adresy.xlsx — podkład ze źródłem i statusem weryfikacji,
+//   2. Twoje kontakty (DB.contacts) — dopisują kluby spoza arkusza i BIORĄ GÓRĘ tam, gdzie
+//      wpisałeś adres albo e-mail ręcznie: Twoja poprawka jest świeższa niż arkusz,
+//   3. kluby z kartoteki, które mają adres zapisany z Planu Obserwacji — tak klub dopisany przy
+//      obserwacji pojawia się tu sam, bez niczyjego udziału.
+function zestawienieKlubowPL(){
+  const wiersze = new Map();       // odcisk nazwy → wiersz
+  const dodaj = (nazwa, dane)=>{
+    const czysta = String(nazwa || '').trim();
+    if(!czysta) return null;
+    const klucz = odciskKlubu(czysta);
+    if(!klucz) return null;
+    const teraz = wiersze.get(klucz) || { klub: czysta, miasto: '', liga: '', adres: '', email: '',
+      status: '', zrodlo: '', uwagi: '', skad: [], kontaktId: '' };
+    Object.entries(dane || {}).forEach(([pole, wartosc])=>{
+      const w = String(wartosc ?? '').trim();
+      if(w && !String(teraz[pole] || '').trim()) teraz[pole] = w;
+    });
+    wiersze.set(klucz, teraz);
+    return teraz;
+  };
+
+  ADRESY_KLUBOW.forEach(a=>{
+    const w = dodaj(a.klub, a);
+    if(w && !w.skad.includes('arkusz')) w.skad.push('arkusz');
+  });
+
+  DB.contacts.forEach(c=>{
+    const nazwa = contactClubName(c);
+    if(!nazwa) return;
+    const w = dodaj(nazwa, {});
+    if(!w) return;
+    // Wpisane ręcznie ma pierwszeństwo przed arkuszem — dlatego nadpisujemy, a nie uzupełniamy.
+    const adres = contactAddress(c);
+    if(adres) w.adres = adres;
+    if(c.email) w.email = String(c.email).trim();
+    if(c.note && !w.uwagi) w.uwagi = String(c.note).trim();
+    if(!w.kontaktId) w.kontaktId = c.id;
+    if(!w.skad.includes('kontakty')) w.skad.push('kontakty');
+  });
+
+  // Klub z kartoteki wchodzi na listę, gdy ma adres z obserwacji albo gdy w ogóle go tu nie ma —
+  // wtedy widać, że o kontakt trzeba się dopiero postarać, zamiast wierzyć, że go nie potrzeba.
+  const adresyZObserwacji = DB.settings.stadiumAddresses || {};
+  DB.clubs.forEach(k=>{
+    const zObserwacji = adresyZObserwacji[k.id];
+    const w = dodaj(k.name, { liga: k.league || '', miasto: k.city || '' });
+    if(!w) return;
+    if(zObserwacji){
+      w.adres = String(zObserwacji).trim();
+      if(!w.skad.includes('obserwacje')) w.skad.push('obserwacje');
+    }
+    if(!w.liga) w.liga = k.league || '';
+    if(!w.miasto) w.miasto = k.city || '';
+    if(!w.klubId) w.klubId = k.id;
+  });
+
+  return [...wiersze.values()];
+}
+
 function viewKontaktyKlubyPL(){
   const q = szukajNorm(contactSearchQuery);
   const pasuje = (a)=>{
@@ -11251,7 +11318,8 @@ function viewKontaktyKlubyPL(){
     const stog = szukajNorm([a.liga, a.klub, a.miasto, a.adres, a.email, a.uwagi].join(' '));
     return q.split(/\s+/).filter(Boolean).every(s=> stog.includes(s));
   };
-  const widoczne = ADRESY_KLUBOW.filter(pasuje);
+  const WSZYSTKIE = zestawienieKlubowPL();
+  const widoczne = WSZYSTKIE.filter(pasuje);
   const pozycjaLigi = (liga)=>{
     const i = KOLEJNOSC_LIG_PL.findIndex(p=> String(liga || '').startsWith(p));
     return i < 0 ? KOLEJNOSC_LIG_PL.length : i;
@@ -11266,9 +11334,13 @@ function viewKontaktyKlubyPL(){
         <button class="link-btn" data-action="kopiuj-adres" data-adres="${esc(a.klub + '\n' + a.adres)}" title="Skopiuj adres razem z nazwą klubu">📋</button>
       </div>` : '<span class="meta">—</span>'}</td>
     <td>${a.email ? `<a class="ext-link" href="mailto:${esc(a.email)}">${esc(a.email)}</a>` : '<span class="meta">—</span>'}</td>
-    <td><span style="color:${barwaStatusuKontaktu(a.status)};font-weight:700;font-size:12px;">${esc(a.status || '—')}</span>
-      ${a.uwagi ? `<div class="note">${esc(a.uwagi)}</div>` : ''}</td>
+    <td><span style="color:${barwaStatusuKontaktu(a.status)};font-weight:700;font-size:12px;">${esc(a.status || (a.skad && a.skad.includes('arkusz') ? '—' : 'Do uzupełnienia'))}</span>
+      ${a.uwagi ? `<div class="note">${esc(a.uwagi)}</div>` : ''}
+      ${a.skad && a.skad.length && !a.skad.includes('arkusz')
+        ? `<div class="note">${a.skad.includes('obserwacje') ? 'z Planu Obserwacji' : 'z Twoich kontaktów'}</div>` : ''}</td>
     <td>${a.zrodlo ? `<a class="ext-link" href="${esc(a.zrodlo)}" target="_blank" rel="noopener">źródło ↗</a>` : '<span class="meta">—</span>'}</td>
+    <td><button class="link-btn" data-action="klub-pl-edytuj" data-klub="${esc(a.klub)}"
+      title="Popraw adres obiektu, e-mail i notatkę — zapisuje się w Twojej bazie">Edytuj</button></td>
   </tr>`;
 
   const sekcja = (liga, lista)=>`
@@ -11276,31 +11348,87 @@ function viewKontaktyKlubyPL(){
       <span class="reports-count">${lista.length}</span></h4>
     <div class="card" style="padding:0;overflow:auto;">
       <table>
-        <thead><tr><th>Klub</th><th>Adres obiektu</th><th>E-mail</th><th>Weryfikacja</th><th></th></tr></thead>
+        <thead><tr><th>Klub</th><th>Adres obiektu</th><th>E-mail</th><th>Weryfikacja</th><th>Źródło</th><th></th></tr></thead>
         <tbody>${lista.slice().sort((x, y)=> x.klub.localeCompare(y.klub, 'pl')).map(wiersz).join('')}</tbody>
       </table>
     </div>`;
 
-  const zAdresem = ADRESY_KLUBOW.filter(a=> a.adres).length;
-  const zMailem = ADRESY_KLUBOW.filter(a=> a.email).length;
+  const zAdresem = WSZYSTKIE.filter(a=> a.adres).length;
+  const zMailem = WSZYSTKIE.filter(a=> a.email).length;
+  const zArkusza = WSZYSTKIE.filter(a=> a.skad.includes('arkusz')).length;
   return `
-  <p class="view-sub">Adresy obiektów i oficjalne e-maile klubów z bazy SBS — zebrane i sprawdzone przy źródle
-    w arkuszu <strong>Kluby_Polska_Adresy.xlsx</strong>. Adresów z komercyjnych baz ani zgadywanych z domeny
-    tu nie ma: każdy wiersz ma odnośnik do strony, z której pochodzi.</p>
+  <p class="view-sub">Wszystkie kluby w jednym miejscu: sprawdzony przy źródle arkusz
+    <strong>Kluby_Polska_Adresy.xlsx</strong> (${zArkusza}), Twoje kontakty i kluby dopisane przy obserwacjach.
+    Adresów z komercyjnych baz ani zgadywanych z domeny tu nie ma — wiersz z arkusza ma odnośnik do strony,
+    z której pochodzi. <strong>Edytuj</strong> przy wierszu zapisuje poprawkę w Twojej bazie i to ona
+    od tej pory obowiązuje.</p>
   <div class="toolbar" style="margin-top:12px;">
     <input id="contact-search" placeholder="Szukaj po klubie, mieście, lidze, adresie…" value="${esc(contactSearchQuery)}" style="max-width:360px;">
     <div class="note">${widoczne.length} ${widoczne.length === 1 ? 'klub' : 'klubów'}
-      ${contactSearchQuery ? `z ${ADRESY_KLUBOW.length}` : `&middot; ${zAdresem} z adresem &middot; ${zMailem} z e-mailem`}</div>
+      ${contactSearchQuery ? `z ${WSZYSTKIE.length}` : `&middot; ${zAdresem} z adresem &middot; ${zMailem} z e-mailem`}</div>
   </div>
   ${widoczne.length
     ? ligi.map(l=> sekcja(l, widoczne.filter(a=> (a.liga || '') === l))).join('')
     : `<div class="card"><div class="empty">Żaden klub nie pasuje do „${esc(contactSearchQuery)}".</div></div>`}`;
 }
 
+// EDYCJA WIERSZA W „KLUBY W POLSCE".
+//
+// Arkusz zostaje nietknięty — poprawka idzie do Twojej bazy i od tej pory to ona obowiązuje
+// (patrz zestawienieKlubowPL: kontakty biorą górę nad arkuszem). Adres obiektu zapisuje się przy
+// klubie w kartotece, bo stamtąd bierze go Plan Obserwacji; e-mail i notatka — w kontakcie.
+// Klubu spoza kartoteki nie zakładamy po cichu: mówimy wprost, że adres nie ma się gdzie zapisać.
+function openKlubPLEdycja(nazwaKlubu){
+  const wiersz = zestawienieKlubowPL().find(w=> odciskKlubu(w.klub) === odciskKlubu(nazwaKlubu));
+  if(!wiersz) return;
+  const klubId = clubIdByName(wiersz.klub);
+  const kontakt = DB.contacts.find(c=> odciskKlubu(contactClubName(c)) === odciskKlubu(wiersz.klub));
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal" style="max-width:560px;">
+    <h3 style="margin-top:0;color:var(--heading);">${esc(wiersz.klub)}</h3>
+    <p class="note" style="margin-top:-6px;">${esc([wiersz.liga, wiersz.miasto].filter(Boolean).join(' &middot; ') || 'bez ligi i miasta w kartotece')}</p>
+    <label class="field">Adres obiektu</label>
+    <input id="kpl-adres" value="${esc(wiersz.adres || '')}" placeholder="Stadion Miejski, ul. …, 00-000 Miasto">
+    ${klubId ? '' : '<div class="note" style="color:var(--clay-dark);">Tego klubu nie ma w kartotece, więc adres nie ma się gdzie zapisać — najpierw dodaj klub w zakładce Kluby.</div>'}
+    <label class="field" style="margin-top:10px;">E-mail</label>
+    <input id="kpl-email" value="${esc(wiersz.email || '')}" placeholder="biuro@klub.pl">
+    <label class="field" style="margin-top:10px;">Notatka</label>
+    <input id="kpl-uwagi" value="${esc(wiersz.uwagi || '')}" placeholder="np. kontakt przez akademię">
+    <div class="modal-actions">
+      <button class="secondary" data-x="anuluj">Anuluj</button>
+      <button class="gold" data-x="zapisz">Zapisz</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  const zamknij = ()=> overlay.remove();
+  overlay.onclick = (e)=>{ if(e.target === overlay) zamknij(); };
+  (overlay.querySelector('[data-x="anuluj"]') as HTMLElement).onclick = zamknij;
+  (overlay.querySelector('[data-x="zapisz"]') as HTMLElement).onclick = async ()=>{
+    const adres = (overlay.querySelector('#kpl-adres') as HTMLInputElement).value.trim();
+    const email = (overlay.querySelector('#kpl-email') as HTMLInputElement).value.trim();
+    const uwagi = (overlay.querySelector('#kpl-uwagi') as HTMLInputElement).value.trim();
+    if(klubId && adres !== String(wiersz.adres || '')) await setClubAddressByName(wiersz.klub, adres);
+    if(kontakt){
+      kontakt.email = email;
+      kontakt.note = uwagi;
+      await saveContacts();
+    } else if(email || uwagi){
+      DB.contacts.push(podpiszKontem({ id: uid('C'), club: wiersz.klub, email, firstName: '', lastName: '',
+        phone: '', note: uwagi, dateAdded: new Date().toISOString().slice(0,10) }));
+      await saveContacts();
+    }
+    zamknij();
+    render();
+    pokazPotwierdzenie(`Zapisane: ${wiersz.klub}.`, 'ok');
+  };
+}
+
 function viewContacts(){
   const zakladki = `<div class="filters" style="margin-bottom:4px;">
     ${pill('Polska', kontaktyZakladka === 'polska', 'kontakty-zakladka', {val:'polska'}, '🇵🇱')}
-    ${pill(`Kluby w Polsce (${ADRESY_KLUBOW.length})`, kontaktyZakladka === 'kluby', 'kontakty-zakladka', {val:'kluby'}, '🏟️')}
+    ${pill(`Kluby w Polsce (${zestawienieKlubowPL().length})`, kontaktyZakladka === 'kluby', 'kontakty-zakladka', {val:'kluby'}, '🏟️')}
     ${pill(`Europa (${KONTAKTY_EUROPA.length})`, kontaktyZakladka === 'europa', 'kontakty-zakladka', {val:'europa'}, '🌍')}
   </div>`;
   if(kontaktyZakladka === 'kluby'){
@@ -14883,6 +15011,7 @@ function attachHandlers(){
   if(contactSearchInput) contactSearchInput.oninput = ()=>{ contactSearchQuery = contactSearchInput.value; render(); };
   // Przełączenie Polska / Europa zeruje wyszukiwanie: fraza z jednej bazy w drugiej zwykle nic
   // nie znajduje, a pusta lista po zmianie zakładki wygląda jak brak danych.
+  main.querySelectorAll('[data-action="klub-pl-edytuj"]').forEach(b=>b.onclick=()=>openKlubPLEdycja((b as HTMLElement).dataset.klub));
   main.querySelectorAll('[data-action="kontakty-zakladka"]').forEach(b=>b.onclick=()=>{
     const wybrana = (b as HTMLElement).dataset.val;
     kontaktyZakladka = wybrana === 'europa' || wybrana === 'kluby' ? wybrana : 'polska';
