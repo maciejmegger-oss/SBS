@@ -64,7 +64,38 @@ console.log('\n1. Komplet z trzech źródeł');
     lista.filter(w => /zawisza/i.test(w.klub)).length === 1, JSON.stringify(nazwy));
 }
 
-console.log('\n2. Twoja poprawka bierze górę nad arkuszem');
+console.log('\n2. Klub z kilkoma kontaktami — żaden nie ginie');
+{
+  const DB = {
+    contacts: [
+      { id: 'C1', club: 'Cartuzia Kartuzy', email: 'joanna.szulc@cartusia1923.pl', firstName: 'Joanna', lastName: 'Szulc', note: 'dyrektor sportowy' },
+      { id: 'C2', club: 'Cartuzia Kartuzy', email: 'biuro@cartusia1923.pl', note: 'sekretariat' },
+      { id: 'C3', club: 'Cartuzia Kartuzy', email: 'cartusia.kartuzy@pomorski-zpn.pl', note: '' },
+      { id: 'C4', club: 'CARTUZIA kARTUZY', email: 'biuro@cartusia1923.pl', note: '' },
+    ],
+    clubs: [], settings: {},
+  };
+  const w = zbuduj(DB, [])().find(x => /cartuzia/i.test(x.klub));
+  sprawdz('cztery wiersze kontaktów, jeden klub', !!w && (w.kontakty || []).length === 4,
+    JSON.stringify((w && w.kontakty) || []));
+  sprawdz('każdy e-mail zachowany',
+    ['joanna.szulc@cartusia1923.pl', 'biuro@cartusia1923.pl', 'cartusia.kartuzy@pomorski-zpn.pl']
+      .every(m => w.kontakty.some(k => k.email === m)));
+  sprawdz('osoba przy e-mailu zachowana', w.kontakty.some(k => k.osoba === 'Joanna Szulc'));
+  // Przy klubie bywa i sekretariat, i dyrektor — to dwa różne kontakty i oba są istotne.
+  sprawdz('rola z notatki zachowana przy każdym kontakcie',
+    w.kontakty.some(k => k.rola === 'sekretariat') && w.kontakty.some(k => k.rola === 'dyrektor sportowy'),
+    JSON.stringify(w.kontakty.map(k => k.rola)));
+  sprawdz('wiersz pokazuje osobę, rolę i telefon pod adresem',
+    /\[k\.osoba, k\.rola, k\.telefon\]\.filter\(Boolean\)\.join\(' &middot; '\)/.test(zrodlo));
+  sprawdz('wiersz pokazuje wszystkie e-maile, nie jeden',
+    /const zBazy = \(a\.kontakty \|\| \[\]\)\.filter/.test(zrodlo) && /zBazy\.map\(k=>`<div/.test(zrodlo));
+  sprawdz('okno edycji pokazuje KAŻDY kontakt klubu osobno, z rolą',
+    /const robocze = DB\.contacts\s*\n\s*\.filter\(c=> odciskKlubu\(contactClubName\(c\)\) === odciskKlubu\(wiersz\.klub\)\)/.test(zrodlo)
+    && /placeholder="rola, np\. sekretariat \/ dyrektor"/.test(zrodlo));
+}
+
+console.log('\n3. Twoja poprawka bierze górę nad arkuszem');
 {
   const DB = {
     contacts: [{ id: 'C2', club: 'Zawisza Bydgoszcz', email: 'moj@zawisza.pl', adresObiektu: 'ul. Moja 1, Bydgoszcz', note: 'moja notatka' }],
@@ -79,7 +110,7 @@ console.log('\n2. Twoja poprawka bierze górę nad arkuszem');
     w.skad.includes('arkusz') && w.skad.includes('kontakty'), JSON.stringify(w.skad));
 }
 
-console.log('\n3. Adres z Planu Obserwacji');
+console.log('\n4. Adres z Planu Obserwacji');
 {
   const DB = { contacts: [], clubs: [{ id: 'K9', name: 'Olimpia Grudziądz', league: 'II liga', city: 'Grudziądz' }],
     settings: { stadiumAddresses: { K9: 'Stadion przy ul. Piłsudskiego 14' } } };
@@ -89,9 +120,9 @@ console.log('\n3. Adres z Planu Obserwacji');
   sprawdz('liga i miasto z kartoteki', w.liga === 'II liga' && w.miasto === 'Grudziądz');
 }
 
-console.log('\n4. Podpięcie w zakładce');
+console.log('\n5. Podpięcie w zakładce');
 sprawdz('lista w zakładce to zestawienie, nie sam arkusz', /const WSZYSTKIE = zestawienieKlubowPL\(\);/.test(zrodlo));
-sprawdz('licznik na pigułce liczy komplet', /Kluby w Polsce \(\$\{zestawienieKlubowPL\(\)\.length\}\)/.test(zrodlo));
+sprawdz('licznik na pigułce liczy komplet', /Polska \(\$\{zestawienieKlubowPL\(\)\.length\}\)/.test(zrodlo));
 sprawdz('każdy wiersz ma przycisk edycji', /data-action="klub-pl-edytuj" data-klub="\$\{esc\(a\.klub\)\}"/.test(zrodlo));
 sprawdz('edycja otwiera okno', /data-action="klub-pl-edytuj"[\s\S]{0,120}openKlubPLEdycja/.test(zrodlo));
 sprawdz('adres zapisuje się przy klubie (stamtąd bierze go Plan Obserwacji)',

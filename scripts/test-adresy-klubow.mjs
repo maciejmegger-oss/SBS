@@ -44,9 +44,10 @@ sprawdz('klient go nie widzi (akcja pracowni)', /'contacts-fill-addresses'/.test
 console.log('\n3. Zakładka „Kluby w Polsce" — jak Europa i Federacja');
 // Licznik na pigułce liczy KOMPLET (arkusz + Twoje kontakty + kluby z obserwacji), a nie sam
 // arkusz — patrz zestawienieKlubowPL w src/main.ts i test-kluby-polska-zestawienie.mjs.
-sprawdz('pigułka z ikoną i liczbą klubów',
-  /pill\(`Kluby w Polsce \(\$\{zestawienieKlubowPL\(\)\.length\}\)`, kontaktyZakladka === 'kluby', 'kontakty-zakladka', \{val:'kluby'\}, '🏟️'\)/.test(zrodlo));
-sprawdz('pigułka otwiera widok z arkusza', /if\(kontaktyZakladka === 'kluby'\)\{\s*\n\s*return `[^`]*viewKontaktyKlubyPL\(\)/.test(zrodlo));
+// Po scaleniu obu polskich zakładek w jedną pigułka nazywa się „Polska" i ma flagę.
+sprawdz('pigułka „Polska" z flagą i liczbą klubów',
+  /pill\(`Polska \(\$\{zestawienieKlubowPL\(\)\.length\}\)`, kontaktyZakladka !== 'europa', 'kontakty-zakladka', \{val:'polska'\}, '🇵🇱'\)/.test(zrodlo));
+sprawdz('polska zakładka pokazuje zestawienie klubów', /\$\{viewKontaktyKlubyPL\(\)\}`;/.test(zrodlo));
 sprawdz('grupowanie po ligach, I liga przed IV ligą i CLJ', /const KOLEJNOSC_LIG_PL = \['I liga', 'II liga', 'III liga', 'IV liga', 'CLJ'\];/.test(zrodlo));
 sprawdz('adres do skopiowania, e-mail jako mailto, źródło przy wierszu',
   /function viewKontaktyKlubyPL\(\)\{[\s\S]*data-action="kopiuj-adres"[\s\S]*href="mailto:\$\{esc\(a\.email\)\}"[\s\S]*źródło ↗/.test(zrodlo));

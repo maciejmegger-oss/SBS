@@ -11146,7 +11146,7 @@ function clubFromEmail(email){
 // powstają poza nią — w arkuszu, gdzie każdy wpis jest sprawdzany przy źródle. To dwie różne
 // rzeczy i nie mogą stać na jednej liście: w polskiej szuka się klubu, w europejskiej — człowieka
 // od scoutingu i tego, czy jego adres naprawdę jest publiczny.
-let kontaktyZakladka: 'polska' | 'kluby' | 'europa' = 'polska';
+let kontaktyZakladka: 'polska' | 'europa' = 'polska';
 
 const FLAGI_KRAJOW = {
   'Szwecja':'🇸🇪', 'Dania':'🇩🇰', 'Norwegia':'🇳🇴', 'Finlandia':'🇫🇮', 'Włochy':'🇮🇹', 'Francja':'🇫🇷',
@@ -11278,6 +11278,12 @@ function zestawienieKlubowPL(){
     if(w && !w.skad.includes('arkusz')) w.skad.push('arkusz');
   });
 
+  // WSZYSTKIE KONTAKTY KLUBU, NIE JEDEN.
+  //
+  // Cartuzia Kartuzy ma w bazie cztery wiersze (sekretariat, biuro, adres związkowy i osoba),
+  // Cracovia dwa. Pokazanie jednego wyglądałoby jak zgubienie reszty — a to są właśnie te dane,
+  // które zbierałeś. Wiersz klubu niesie więc CAŁĄ listę; nic z bazy nie znika i nic nie jest
+  // nadpisywane — zestawienie tylko czyta.
   DB.contacts.forEach(c=>{
     const nazwa = contactClubName(c);
     if(!nazwa) return;
@@ -11286,9 +11292,17 @@ function zestawienieKlubowPL(){
     // Wpisane ręcznie ma pierwszeństwo przed arkuszem — dlatego nadpisujemy, a nie uzupełniamy.
     const adres = contactAddress(c);
     if(adres) w.adres = adres;
-    if(c.email) w.email = String(c.email).trim();
+    const email = String(c.email || '').trim();
+    if(email) w.email = email;
     if(c.note && !w.uwagi) w.uwagi = String(c.note).trim();
     if(!w.kontaktId) w.kontaktId = c.id;
+    if(!w.kontakty) w.kontakty = [];
+    const osoba = [c.firstName, c.lastName].filter(Boolean).join(' ').trim();
+    // Notatka niesie zwykle rolę („sekretariat", „dyrektor sportowy", „akademia") — a to ona mówi,
+    // do kogo właściwie piszesz. Bez niej lista czterech adresów jednego klubu jest nie do użytku.
+    const rola = String(c.note || '').trim();
+    if(email || osoba || c.phone || rola) w.kontakty.push({ id: c.id, email, osoba, rola,
+      telefon: String(c.phone || '').trim() });
     if(!w.skad.includes('kontakty')) w.skad.push('kontakty');
   });
 
@@ -11333,7 +11347,21 @@ function viewKontaktyKlubyPL(){
         <span>${esc(a.adres)}</span>
         <button class="link-btn" data-action="kopiuj-adres" data-adres="${esc(a.klub + '\n' + a.adres)}" title="Skopiuj adres razem z nazwą klubu">📋</button>
       </div>` : '<span class="meta">—</span>'}</td>
-    <td>${a.email ? `<a class="ext-link" href="mailto:${esc(a.email)}">${esc(a.email)}</a>` : '<span class="meta">—</span>'}</td>
+    <td>${(()=>{
+      // Najpierw e-maile z Twojej bazy (każdy osobno, z osobą i telefonem, jeśli są), a gdy klubu
+      // tam nie ma — adres z arkusza. Nic się nie chowa: cztery kontakty Cartuzii to cztery wiersze.
+      const zBazy = (a.kontakty || []).filter(k=> k.email || k.osoba || k.telefon);
+      if(zBazy.length){
+        return zBazy.map(k=>`<div style="margin-bottom:3px;">${k.email
+          ? `<a class="ext-link" href="mailto:${esc(k.email)}">${esc(k.email)}</a>`
+          : '<span class="meta">bez e-maila</span>'}${
+          k.osoba || k.rola || k.telefon
+            ? `<div class="note">${esc([k.osoba, k.rola, k.telefon].filter(Boolean).join(' &middot; '))}</div>` : ''}</div>`).join('')
+          + (a.email && !zBazy.some(k=> k.email === a.email)
+            ? `<div class="note">z arkusza: <a class="ext-link" href="mailto:${esc(a.email)}">${esc(a.email)}</a></div>` : '');
+      }
+      return a.email ? `<a class="ext-link" href="mailto:${esc(a.email)}">${esc(a.email)}</a>` : '<span class="meta">—</span>';
+    })()}</td>
     <td><span style="color:${barwaStatusuKontaktu(a.status)};font-weight:700;font-size:12px;">${esc(a.status || (a.skad && a.skad.includes('arkusz') ? '—' : 'Do uzupełnienia'))}</span>
       ${a.uwagi ? `<div class="note">${esc(a.uwagi)}</div>` : ''}
       ${a.skad && a.skad.length && !a.skad.includes('arkusz')
@@ -11392,10 +11420,11 @@ function openKlubPLEdycja(nazwaKlubu){
     <label class="field">Adres obiektu</label>
     <input id="kpl-adres" value="${esc(wiersz.adres || '')}" placeholder="Stadion Miejski, ul. …, 00-000 Miasto">
     ${klubId ? '' : '<div class="note" style="color:var(--clay-dark);">Tego klubu nie ma w kartotece, więc adres nie ma się gdzie zapisać — najpierw dodaj klub w zakładce Kluby.</div>'}
-    <label class="field" style="margin-top:10px;">E-mail</label>
-    <input id="kpl-email" value="${esc(wiersz.email || '')}" placeholder="biuro@klub.pl">
-    <label class="field" style="margin-top:10px;">Notatka</label>
-    <input id="kpl-uwagi" value="${esc(wiersz.uwagi || '')}" placeholder="np. kontakt przez akademię">
+    <div class="note" style="margin:12px 0 4px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;opacity:.75;">Kontakty klubu</div>
+    <p class="note" style="margin-top:0;">Sekretariat, dyrektor, akademia — każdy osobno. Pustego wiersza nie zapisujemy,
+      a skasowanie czyści go z bazy.</p>
+    <div id="kpl-kontakty"></div>
+    <button class="secondary" data-x="dodaj" style="margin-top:6px;">+ Dodaj kontakt</button>
     <div class="modal-actions">
       <button class="secondary" data-x="anuluj">Anuluj</button>
       <button class="gold" data-x="zapisz">Zapisz</button>
@@ -11405,66 +11434,94 @@ function openKlubPLEdycja(nazwaKlubu){
   const zamknij = ()=> overlay.remove();
   overlay.onclick = (e)=>{ if(e.target === overlay) zamknij(); };
   (overlay.querySelector('[data-x="anuluj"]') as HTMLElement).onclick = zamknij;
+  // Wiersze kontaktów rysujemy tu, a nie w szablonie okna: dochodzą i znikają bez przerysowania
+  // całej strony, więc to, co właśnie wpisujesz, nie ucieka spod kursora.
+  const miejsce = overlay.querySelector('#kpl-kontakty') as HTMLElement;
+  const robocze = DB.contacts
+    .filter(c=> odciskKlubu(contactClubName(c)) === odciskKlubu(wiersz.klub))
+    .map(c=>({ id: c.id, email: c.email || '', imie: c.firstName || '', nazwisko: c.lastName || '',
+      telefon: c.phone || '', notatka: c.note || '', usunac: false }));
+  if(!robocze.length) robocze.push({ id: '', email: wiersz.email || '', imie: '', nazwisko: '',
+    telefon: '', notatka: wiersz.uwagi || '', usunac: false });
+
+  const rysujKontakty = ()=>{
+    miejsce.innerHTML = robocze.map((k, i)=> k.usunac ? '' : `
+      <div class="card" style="padding:8px 10px;margin-bottom:8px;" data-i="${i}">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <input data-p="email" value="${esc(k.email)}" placeholder="e-mail" style="flex:2;min-width:180px;">
+          <input data-p="notatka" value="${esc(k.notatka)}" placeholder="rola, np. sekretariat / dyrektor" style="flex:2;min-width:180px;">
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;align-items:center;">
+          <input data-p="imie" value="${esc(k.imie)}" placeholder="imię" style="flex:1;min-width:110px;">
+          <input data-p="nazwisko" value="${esc(k.nazwisko)}" placeholder="nazwisko" style="flex:1;min-width:110px;">
+          <input data-p="telefon" value="${esc(k.telefon)}" placeholder="telefon" style="flex:1;min-width:120px;">
+          <button class="link-btn" data-x="usun" style="color:var(--clay-dark);">usuń</button>
+        </div>
+      </div>`).join('') || '<div class="note">Wszystkie kontakty skasowane — zapis usunie je z bazy.</div>';
+    miejsce.querySelectorAll('[data-i]').forEach(karta=>{
+      const i = Number((karta as HTMLElement).dataset.i);
+      karta.querySelectorAll('input').forEach(pole=>{
+        (pole as HTMLInputElement).oninput = ()=>{ robocze[i][(pole as HTMLElement).dataset.p] = (pole as HTMLInputElement).value; };
+      });
+      (karta.querySelector('[data-x="usun"]') as HTMLElement).onclick = ()=>{ robocze[i].usunac = true; rysujKontakty(); };
+    });
+  };
+  rysujKontakty();
+  (overlay.querySelector('[data-x="dodaj"]') as HTMLElement).onclick = ()=>{
+    robocze.push({ id: '', email: '', imie: '', nazwisko: '', telefon: '', notatka: '', usunac: false });
+    rysujKontakty();
+  };
+
   (overlay.querySelector('[data-x="zapisz"]') as HTMLElement).onclick = async ()=>{
     const adres = (overlay.querySelector('#kpl-adres') as HTMLInputElement).value.trim();
-    const email = (overlay.querySelector('#kpl-email') as HTMLInputElement).value.trim();
-    const uwagi = (overlay.querySelector('#kpl-uwagi') as HTMLInputElement).value.trim();
     if(klubId && adres !== String(wiersz.adres || '')) await setClubAddressByName(wiersz.klub, adres);
-    if(kontakt){
-      kontakt.email = email;
-      kontakt.note = uwagi;
-      await saveContacts();
-    } else if(email || uwagi){
-      DB.contacts.push(podpiszKontem({ id: uid('C'), club: wiersz.klub, email, firstName: '', lastName: '',
-        phone: '', note: uwagi, dateAdded: new Date().toISOString().slice(0,10) }));
-      await saveContacts();
-    }
+
+    let zmian = 0;
+    robocze.forEach(k=>{
+      const istniejacy = k.id ? DB.contacts.find(c=> c.id === k.id) : null;
+      const pusty = !k.email.trim() && !k.imie.trim() && !k.nazwisko.trim() && !k.telefon.trim() && !k.notatka.trim();
+      if(k.usunac || (istniejacy && pusty)){
+        if(istniejacy){ DB.contacts = DB.contacts.filter(c=> c.id !== k.id); zmian++; }
+        return;
+      }
+      if(pusty) return;                                   // nowy, ale niewypełniony — nie zapisujemy
+      if(istniejacy){
+        istniejacy.email = k.email.trim(); istniejacy.firstName = k.imie.trim();
+        istniejacy.lastName = k.nazwisko.trim(); istniejacy.phone = k.telefon.trim();
+        istniejacy.note = k.notatka.trim();
+        zmian++;
+      } else {
+        DB.contacts.push(podpiszKontem({ id: uid('C'), club: wiersz.klub, email: k.email.trim(),
+          firstName: k.imie.trim(), lastName: k.nazwisko.trim(), phone: k.telefon.trim(),
+          note: k.notatka.trim(), dateAdded: new Date().toISOString().slice(0,10) }));
+        zmian++;
+      }
+    });
+    if(zmian) await saveContacts();
     zamknij();
     render();
     pokazPotwierdzenie(`Zapisane: ${wiersz.klub}.`, 'ok');
   };
 }
 
+// JEDNA POLSKA ZAKŁADKA ZAMIAST DWÓCH.
+//
+// Dotąd to samo stało w dwóch miejscach: surowa lista kontaktów i zestawienie klubów. Ta sama
+// Cartuzia w obu, w każdym innym układzie — i nie dało się powiedzieć, gdzie jest komplet.
+// Teraz jest jedna lista klubów (arkusz + Twoje kontakty + kluby z obserwacji), a wszystko,
+// co dotąd robiła tamta zakładka — import z arkusza, scalanie duplikatów, uzupełnianie adresów,
+// eksport i edycja każdego kontaktu — jest tutaj. Żaden wiersz z bazy nie został usunięty:
+// zestawienie tylko czyta, a kontakty klubu widać co do jednego (patrz zestawienieKlubowPL).
 function viewContacts(){
   const zakladki = `<div class="filters" style="margin-bottom:4px;">
-    ${pill('Polska', kontaktyZakladka === 'polska', 'kontakty-zakladka', {val:'polska'}, '🇵🇱')}
-    ${pill(`Kluby w Polsce (${zestawienieKlubowPL().length})`, kontaktyZakladka === 'kluby', 'kontakty-zakladka', {val:'kluby'}, '🏟️')}
+    ${pill(`Polska (${zestawienieKlubowPL().length})`, kontaktyZakladka !== 'europa', 'kontakty-zakladka', {val:'polska'}, '🇵🇱')}
     ${pill(`Europa (${KONTAKTY_EUROPA.length})`, kontaktyZakladka === 'europa', 'kontakty-zakladka', {val:'europa'}, '🌍')}
   </div>`;
-  if(kontaktyZakladka === 'kluby'){
-    return `<h2 class="view-title">Kontakty</h2>${zakladki}${viewKontaktyKlubyPL()}`;
-  }
   if(kontaktyZakladka === 'europa'){
     return `<h2 class="view-title">Kontakty</h2>${zakladki}${viewKontaktyEuropa()}`;
   }
-  const q = contactSearchQuery.toLowerCase();
-  let list = DB.contacts.slice();
-  if(q){
-    list = list.filter(c =>
-      (c.club||'').toLowerCase().includes(q) ||
-      (c.firstName||'').toLowerCase().includes(q) ||
-      (c.lastName||'').toLowerCase().includes(q) ||
-      (c.name||'').toLowerCase().includes(q) ||
-      (c.email||'').toLowerCase().includes(q) ||
-      contactAddress(c).toLowerCase().includes(q)
-    );
-  }
-  // Sortuj alfabetycznie wg nazwy klubu; kontakty BEZ nazwy klubu lądują na końcu listy.
-  list.sort((a,b)=>{
-    const ca = (a.club||a.name||'').trim(), cb = (b.club||b.name||'').trim();
-    if(!ca && !cb) return (a.email||'').localeCompare(b.email||'');
-    if(!ca) return 1;   // a bez klubu -> niżej
-    if(!cb) return -1;  // b bez klubu -> niżej
-    return ca.localeCompare(cb, 'pl');
-  });
-
-  return `
-  <h2 class="view-title">Kontakty</h2>
-  ${zakladki}
-  <p class="view-sub">Baza kontaktów — zaimportuj z arkusza (klub + email), a resztę uzupełnij ręcznie bezpośrednio na liście.
-    Adres obiektu zapisuje się sam, gdy wpiszesz go w Planie Obserwacji: trafia do klubu-gospodarza i pokazuje się tutaj.</p>
-
-  <div class="card" style="max-width:640px;">
+  return `<h2 class="view-title">Kontakty</h2>${zakladki}
+  <div class="card" style="max-width:640px;margin-top:10px;">
     <h4 style="margin-top:0;color:var(--heading);">Import z Excela / CSV</h4>
     <p class="note" style="margin-top:-4px;">Oczekiwane kolumny: <strong>Klub, Email</strong> (dodatkowo rozpoznawane: Adres, Imię, Nazwisko, Telefon, Notatka — jeśli są w arkuszu).</p>
     <div class="modal-actions" style="justify-content:flex-start;margin-top:0;margin-bottom:12px;">
@@ -11475,9 +11532,7 @@ function viewContacts(){
       <div id="contacts-import-status" class="note" style="margin-top:6px;"></div>
     </div>
   </div>
-
-  <div class="toolbar" style="margin-top:20px;flex-wrap:wrap;gap:10px;">
-    <input id="contact-search" placeholder="Szukaj po nazwie klubu, imieniu, nazwisku, emailu..." value="${esc(contactSearchQuery)}" style="max-width:340px;">
+  <div class="toolbar" style="margin-top:14px;flex-wrap:wrap;gap:10px;">
     <span>
       <button class="secondary" data-action="contacts-fill-clubs">🔗 Uzupełnij kluby z e-maili</button>
       <button class="secondary" data-action="contacts-merge-duplicates" title="Jeden wiersz na klub — osoby z imieniem zostają osobno, dodatkowe e-maile trafiają do notatki">🧹 Scal duplikaty</button>
@@ -11486,13 +11541,7 @@ function viewContacts(){
       <button class="secondary" data-action="contacts-export-pdf">📄 Pobierz PDF</button>
     </span>
   </div>
-
-  <div class="card" style="padding:0;overflow:auto;margin-top:12px;">
-    <table>
-      <thead><tr><th>#</th><th>Klub</th><th>Adres obiektu</th><th>Email</th><th>Imię</th><th>Nazwisko</th><th>Telefon</th><th>Notatka</th><th></th></tr></thead>
-      <tbody>${list.length ? list.map((c,i)=>contactRow(c,i+1)).join('') : `<tr><td colspan="9"><div class="empty">${contactSearchQuery? 'Brak kontaktów pasujących do wyszukiwania.' : 'Brak kontaktów — zaimportuj arkusz powyżej.'}</div></td></tr>`}</tbody>
-    </table>
-  </div>`;
+  ${viewKontaktyKlubyPL()}`;
 }
 
 function downloadContactsExcel(){
@@ -15014,7 +15063,7 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="klub-pl-edytuj"]').forEach(b=>b.onclick=()=>openKlubPLEdycja((b as HTMLElement).dataset.klub));
   main.querySelectorAll('[data-action="kontakty-zakladka"]').forEach(b=>b.onclick=()=>{
     const wybrana = (b as HTMLElement).dataset.val;
-    kontaktyZakladka = wybrana === 'europa' || wybrana === 'kluby' ? wybrana : 'polska';
+    kontaktyZakladka = wybrana === 'europa' ? 'europa' : 'polska';
     contactSearchQuery = '';
     render();
   });

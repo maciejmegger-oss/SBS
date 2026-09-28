@@ -45,11 +45,11 @@ sprawdz(`kontakty przeniesione (${KONTAKTY_EUROPA.length})`, KONTAKTY_EUROPA.len
 
 console.log('\n2. Przełącznik Polska / Europa');
 sprawdz('dwie pigułki z ikonami — flaga i glob',
-  /pill\('Polska', kontaktyZakladka === 'polska', 'kontakty-zakladka', \{val:'polska'\}, '🇵🇱'\)/.test(zrodlo)
+  /pill\(`Polska \(\$\{zestawienieKlubowPL\(\)\.length\}\)`, kontaktyZakladka !== 'europa', 'kontakty-zakladka', \{val:'polska'\}, '🇵🇱'\)/.test(zrodlo)
   && /pill\(`Europa \(\$\{KONTAKTY_EUROPA\.length\}\)`, kontaktyZakladka === 'europa', 'kontakty-zakladka', \{val:'europa'\}, '🌍'\)/.test(zrodlo));
-sprawdz('domyślnie otwiera się Polska', /let kontaktyZakladka: 'polska' \| 'kluby' \| 'europa' = 'polska';/.test(zrodlo));
+sprawdz('domyślnie otwiera się Polska', /let kontaktyZakladka: 'polska' \| 'europa' = 'polska';/.test(zrodlo));
 sprawdz('kliknięcie przełącza zakładkę', /\[data-action="kontakty-zakladka"\]/.test(zrodlo));
-sprawdz('przełączenie zeruje wyszukiwanie', /kontaktyZakladka = wybrana === 'europa' \|\| wybrana === 'kluby' \? wybrana : 'polska';\s*\n\s*contactSearchQuery = '';/.test(zrodlo));
+sprawdz('przełączenie zeruje wyszukiwanie', /kontaktyZakladka = wybrana === 'europa' \? 'europa' : 'polska';\s*\n\s*contactSearchQuery = '';/.test(zrodlo));
 sprawdz('pigułki widać w obu zakładkach', (zrodlo.match(/\$\{zakladki\}/g) || []).length >= 2);
 sprawdz('polska lista została nietknięta (import z arkusza, kolumny jak były)',
   /<thead><tr><th>#<\/th><th>Klub<\/th><th>Adres obiektu<\/th><th>Email<\/th>/.test(zrodlo));
