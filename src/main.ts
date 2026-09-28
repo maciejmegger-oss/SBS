@@ -7664,6 +7664,24 @@ function openObsPodgladModal(obsId){
   overlay.addEventListener('click', e=>{ if(e.target===overlay){ overlay.remove(); render(); } });
   document.body.appendChild(overlay);
   draw();
+
+  // SKŁAD WCHODZI SAM — BEZ KLIKANIA, ALE TYLKO TAM, GDZIE MA SKĄD.
+  //
+  // Warunki są cztery i każdy z nich ma powód:
+  //   • skład jeszcze pusty — nie podmieniamy tego, co scout wpisał albo wkleił;
+  //   • znamy datę i obie drużyny — bez nich dostawca nie rozpozna meczu;
+  //   • rozgrywki objęte przez dostawcę — patrz objeteDostawca; przy CLJ i niższych ligach
+  //     zapytanie i tak wróciłoby z „nie znam tej drużyny", a zużyłoby dzienny limit;
+  //   • raz na otwarcie okna — pobieranie w kółko przy każdym przerysowaniu byłoby
+  //     marnowaniem tego samego limitu.
+  //
+  // Gdy któryś warunek nie jest spełniony, NIE dzieje się nic i okno wygląda jak dotąd: zostają
+  // przyciski i wklejka. Automat ma oszczędzać ruchy, a nie zabierać drogi, które działają.
+  if(objeteDostawca(obs.rozgrywki) && obs.date && para
+     && !(((obs.skladMeczu||{}).gospodarze||{}).zawodnicy||[]).length
+     && !(((obs.skladMeczu||{}).goscie||{}).zawodnicy||[]).length){
+    void wczytajOdDostawcy(true);
+  }
 }
 
 // ROZGRYWKI I KATEGORIA NA LIŚCIE OBSERWACJI.
@@ -18784,6 +18802,24 @@ function openAddPlayersToAgencyModal(agencyId){
   overlay.addEventListener('click', e=>{ if(e.target===overlay){ overlay.remove(); render(); } });
   document.body.appendChild(overlay);
   draw();
+
+  // SKŁAD WCHODZI SAM — BEZ KLIKANIA, ALE TYLKO TAM, GDZIE MA SKĄD.
+  //
+  // Warunki są cztery i każdy z nich ma powód:
+  //   • skład jeszcze pusty — nie podmieniamy tego, co scout wpisał albo wkleił;
+  //   • znamy datę i obie drużyny — bez nich dostawca nie rozpozna meczu;
+  //   • rozgrywki objęte przez dostawcę — patrz objeteDostawca; przy CLJ i niższych ligach
+  //     zapytanie i tak wróciłoby z „nie znam tej drużyny", a zużyłoby dzienny limit;
+  //   • raz na otwarcie okna — pobieranie w kółko przy każdym przerysowaniu byłoby
+  //     marnowaniem tego samego limitu.
+  //
+  // Gdy któryś warunek nie jest spełniony, NIE dzieje się nic i okno wygląda jak dotąd: zostają
+  // przyciski i wklejka. Automat ma oszczędzać ruchy, a nie zabierać drogi, które działają.
+  if(objeteDostawca(obs.rozgrywki) && obs.date && para
+     && !(((obs.skladMeczu||{}).gospodarze||{}).zawodnicy||[]).length
+     && !(((obs.skladMeczu||{}).goscie||{}).zawodnicy||[]).length){
+    void wczytajOdDostawcy(true);
+  }
 }
 
 // Wgranie składu jednej agencji. Zawodników NIE zakładamy — wiążemy tylko tych, którzy już są
@@ -18926,6 +18962,24 @@ function openAgencyStaffModal(agencyId){
   overlay.addEventListener('click', e=>{ if(e.target===overlay){ overlay.remove(); render(); } });
   document.body.appendChild(overlay);
   draw();
+
+  // SKŁAD WCHODZI SAM — BEZ KLIKANIA, ALE TYLKO TAM, GDZIE MA SKĄD.
+  //
+  // Warunki są cztery i każdy z nich ma powód:
+  //   • skład jeszcze pusty — nie podmieniamy tego, co scout wpisał albo wkleił;
+  //   • znamy datę i obie drużyny — bez nich dostawca nie rozpozna meczu;
+  //   • rozgrywki objęte przez dostawcę — patrz objeteDostawca; przy CLJ i niższych ligach
+  //     zapytanie i tak wróciłoby z „nie znam tej drużyny", a zużyłoby dzienny limit;
+  //   • raz na otwarcie okna — pobieranie w kółko przy każdym przerysowaniu byłoby
+  //     marnowaniem tego samego limitu.
+  //
+  // Gdy któryś warunek nie jest spełniony, NIE dzieje się nic i okno wygląda jak dotąd: zostają
+  // przyciski i wklejka. Automat ma oszczędzać ruchy, a nie zabierać drogi, które działają.
+  if(objeteDostawca(obs.rozgrywki) && obs.date && para
+     && !(((obs.skladMeczu||{}).gospodarze||{}).zawodnicy||[]).length
+     && !(((obs.skladMeczu||{}).goscie||{}).zawodnicy||[]).length){
+    void wczytajOdDostawcy(true);
+  }
 }
 
 function openAgencySquadModal(agencyId){
@@ -19161,6 +19215,24 @@ function openAgencySquadModal(agencyId){
   overlay.addEventListener('click', e=>{ if(e.target===overlay){ overlay.remove(); render(); } });
   document.body.appendChild(overlay);
   draw();
+
+  // SKŁAD WCHODZI SAM — BEZ KLIKANIA, ALE TYLKO TAM, GDZIE MA SKĄD.
+  //
+  // Warunki są cztery i każdy z nich ma powód:
+  //   • skład jeszcze pusty — nie podmieniamy tego, co scout wpisał albo wkleił;
+  //   • znamy datę i obie drużyny — bez nich dostawca nie rozpozna meczu;
+  //   • rozgrywki objęte przez dostawcę — patrz objeteDostawca; przy CLJ i niższych ligach
+  //     zapytanie i tak wróciłoby z „nie znam tej drużyny", a zużyłoby dzienny limit;
+  //   • raz na otwarcie okna — pobieranie w kółko przy każdym przerysowaniu byłoby
+  //     marnowaniem tego samego limitu.
+  //
+  // Gdy któryś warunek nie jest spełniony, NIE dzieje się nic i okno wygląda jak dotąd: zostają
+  // przyciski i wklejka. Automat ma oszczędzać ruchy, a nie zabierać drogi, które działają.
+  if(objeteDostawca(obs.rozgrywki) && obs.date && para
+     && !(((obs.skladMeczu||{}).gospodarze||{}).zawodnicy||[]).length
+     && !(((obs.skladMeczu||{}).goscie||{}).zawodnicy||[]).length){
+    void wczytajOdDostawcy(true);
+  }
 }
 
 function openAgenciesImportModal(){
@@ -19330,6 +19402,24 @@ function openAgenciesImportModal(){
   overlay.addEventListener('click', e=>{ if(e.target===overlay){ overlay.remove(); render(); } });
   document.body.appendChild(overlay);
   draw();
+
+  // SKŁAD WCHODZI SAM — BEZ KLIKANIA, ALE TYLKO TAM, GDZIE MA SKĄD.
+  //
+  // Warunki są cztery i każdy z nich ma powód:
+  //   • skład jeszcze pusty — nie podmieniamy tego, co scout wpisał albo wkleił;
+  //   • znamy datę i obie drużyny — bez nich dostawca nie rozpozna meczu;
+  //   • rozgrywki objęte przez dostawcę — patrz objeteDostawca; przy CLJ i niższych ligach
+  //     zapytanie i tak wróciłoby z „nie znam tej drużyny", a zużyłoby dzienny limit;
+  //   • raz na otwarcie okna — pobieranie w kółko przy każdym przerysowaniu byłoby
+  //     marnowaniem tego samego limitu.
+  //
+  // Gdy któryś warunek nie jest spełniony, NIE dzieje się nic i okno wygląda jak dotąd: zostają
+  // przyciski i wklejka. Automat ma oszczędzać ruchy, a nie zabierać drogi, które działają.
+  if(objeteDostawca(obs.rozgrywki) && obs.date && para
+     && !(((obs.skladMeczu||{}).gospodarze||{}).zawodnicy||[]).length
+     && !(((obs.skladMeczu||{}).goscie||{}).zawodnicy||[]).length){
+    void wczytajOdDostawcy(true);
+  }
 }
 
 function openAgencyModal(id){
@@ -19556,6 +19646,24 @@ function openAgentImportModal(){
   overlay.addEventListener('click', e=>{ if(e.target===overlay){ overlay.remove(); render(); } });
   document.body.appendChild(overlay);
   draw();
+
+  // SKŁAD WCHODZI SAM — BEZ KLIKANIA, ALE TYLKO TAM, GDZIE MA SKĄD.
+  //
+  // Warunki są cztery i każdy z nich ma powód:
+  //   • skład jeszcze pusty — nie podmieniamy tego, co scout wpisał albo wkleił;
+  //   • znamy datę i obie drużyny — bez nich dostawca nie rozpozna meczu;
+  //   • rozgrywki objęte przez dostawcę — patrz objeteDostawca; przy CLJ i niższych ligach
+  //     zapytanie i tak wróciłoby z „nie znam tej drużyny", a zużyłoby dzienny limit;
+  //   • raz na otwarcie okna — pobieranie w kółko przy każdym przerysowaniu byłoby
+  //     marnowaniem tego samego limitu.
+  //
+  // Gdy któryś warunek nie jest spełniony, NIE dzieje się nic i okno wygląda jak dotąd: zostają
+  // przyciski i wklejka. Automat ma oszczędzać ruchy, a nie zabierać drogi, które działają.
+  if(objeteDostawca(obs.rozgrywki) && obs.date && para
+     && !(((obs.skladMeczu||{}).gospodarze||{}).zawodnicy||[]).length
+     && !(((obs.skladMeczu||{}).goscie||{}).zawodnicy||[]).length){
+    void wczytajOdDostawcy(true);
+  }
 }
 
 // Scalanie klubów wpisanych dwa razy pod różnymi nazwami („Zagłębie II Lubin" i „Zagłębie Lubin II").
@@ -20000,6 +20108,26 @@ function ustawWyroznienie(obs, strona, i, zaznaczony){
 }
 
 
+// KTÓRE ROZGRYWKI DOSTAWCA W OGÓLE SPRZEDAJE.
+//
+// Licencjonowani dostawcy danych obejmują rozgrywki, na których da się zarobić: w Polsce
+// Ekstraklasę i I ligę, czasem II. CLJ, III ligi, klas okręgowych i roczników nie sprzedaje
+// NIKT — bo nikt na nich nie zarabia. To nie jest brak w naszym systemie, tylko stan rynku.
+//
+// Sprawdzamy to PRZED zapytaniem, z dwóch powodów. Po pierwsze darmowy próg u dostawcy to sto
+// zapytań dziennie, a mecz młodzieżowy zużyłby je na pewne „nie znam tej drużyny". Po drugie
+// odpowiedź „dostawca nie zna drużyny" przy meczu CLJ brzmi jak usterka, choć jest oczekiwana —
+// i wysyła skauta na szukanie błędu tam, gdzie błędu nie ma.
+const OBJETE_PRZEZ_DOSTAWCE = /(ekstraklasa|\bi\s*liga\b|\b1\s*liga\b|\bii\s*liga\b|\b2\s*liga\b|pierwsza\s+liga|druga\s+liga|puchar\s+polski)/i;
+const POZA_DOSTAWCA = /(clj|junior|\bu-?\d{1,2}\b|\b[abcd][12]\b|m[łl]odzik|trampkarz|orlik|rocznik|okr[eę]gow|\biii\s*liga\b|\biv\s*liga\b|\b[34]\s*liga\b|klasa\s+[abc])/i;
+
+function objeteDostawca(rozgrywki){
+  const n = String(rozgrywki || '');
+  if(!n.trim()) return false;                 // nie wiemy, w czym gra — nie zgadujemy
+  if(POZA_DOSTAWCA.test(n)) return false;     // młodzież i niższe ligi mają pierwszeństwo przed
+  return OBJETE_PRZEZ_DOSTAWCE.test(n);       // dopasowaniem „I liga" wewnątrz „III liga"
+}
+
 function openObsSkladModal(obsId){
   const obs = DB.observations.find(o=>o.id===obsId);
   if(!obs) return;
@@ -20098,9 +20226,12 @@ function openObsSkladModal(obsId){
   // Skład od licencjonowanego dostawcy — patrz api/sklady-api-football.js. Jedyna droga, która
   // daje skład PRZED meczem bez przepisywania: strony budują się w przeglądarce i serwerowi nie
   // oddają niczego, co sprawdziliśmy pomiarem, a nie przypuszczeniem.
-  async function wczytajOdDostawcy(){
-    if(!para){ bladPobrania = 'Pole „Mecz" nie zawiera dwóch drużyn rozdzielonych myślnikiem.'; draw(); return; }
-    if(!obs.date){ bladPobrania = 'Obserwacja nie ma daty — bez niej dostawca nie rozpozna meczu.'; draw(); return; }
+  // `samoczynnie` = wywołanie z otwarcia okna, nie z przycisku. Różnica jest w tonie: przy próbie
+  // samoczynnej niepowodzenie to informacja („składu jeszcze nie ogłoszono"), a nie błąd na
+  // czerwono — scout o nic nie prosił, więc nie ma się czym niepokoić.
+  async function wczytajOdDostawcy(samoczynnie){
+    if(!para){ if(!samoczynnie){ bladPobrania = 'Pole „Mecz" nie zawiera dwóch drużyn rozdzielonych myślnikiem.'; draw(); } return; }
+    if(!obs.date){ if(!samoczynnie){ bladPobrania = 'Obserwacja nie ma daty — bez niej dostawca nie rozpozna meczu.'; draw(); } return; }
     pracuje = true; bladPobrania = ''; komunikat = ''; draw();
     try{
       const res = await fetch('/api/sklady-api-football?home=' + encodeURIComponent(para.gospodarz)
@@ -20109,7 +20240,8 @@ function openObsSkladModal(obsId){
       if(!dane || (!dane.gospodarze && !dane.goscie)){
         // Powód od dostawcy rozróżnia brak pokrycia od składu jeszcze nieogłoszonego — i to
         // rozróżnienie jest tu najważniejsze, bo wymaga od scouta czego innego.
-        bladPobrania = (dane && (dane.powod || dane.error)) || ('Serwer odpowiedział kodem ' + res.status + '.');
+        const powod = (dane && (dane.powod || dane.error)) || ('Serwer odpowiedział kodem ' + res.status + '.');
+        if(samoczynnie) komunikat = powod; else bladPobrania = powod;
         pracuje = false; draw(); return;
       }
       const zawodnicy = (g) => (g && g.zawodnicy ? g.zawodnicy : [])
@@ -20126,7 +20258,8 @@ function openObsSkladModal(obsId){
       zapisz();
     }catch(e){
       pracuje = false;
-      bladPobrania = 'Nie udało się zapytać dostawcy: ' + ((e && e.message) || e);
+      const powod = 'Nie udało się zapytać dostawcy: ' + ((e && e.message) || e);
+      if(samoczynnie) komunikat = powod; else bladPobrania = powod;
       draw();
     }
   }
@@ -20279,8 +20412,18 @@ function openObsSkladModal(obsId){
         <!-- Dostawca statystyk to jedyne źródło, które oddaje skład PRZED meczem maszynowo.
              Obejmuje tylko rozgrywki z wykupionego planu — CLJ i niższych lig nie — więc brak
              pokrycia jest nazwany po imieniu, a nie mylony z „nie znalazłem meczu". -->
-        <button class="secondary" data-x="dostawca" ${pracuje?'disabled':''}>🛰️ Skład od dostawcy</button>
+        ${objeteDostawca(obs.rozgrywki)
+          ? `<button class="secondary" data-x="dostawca" ${pracuje?'disabled':''}>🛰️ ${pracuje?'Pobieram…':'Skład od dostawcy'}</button>`
+          : ''}
       </div>
+      ${objeteDostawca(obs.rozgrywki)
+        ? `<p class="note" style="font-size:11.5px;margin:-4px 0 10px;color:var(--heading);">
+             Te rozgrywki są objęte przez dostawcę — skład wchodzi <strong>sam</strong> przy
+             otwarciu tego okna, o ile został już ogłoszony.</p>`
+        : `<p class="note" style="font-size:11.5px;margin:-4px 0 10px;">
+             <strong>${esc(obs.rozgrywki || 'Te rozgrywki')}</strong> — składów stąd nie sprzedaje
+             żaden dostawca (dotyczy CLJ, III ligi i niżej). Zostaje wklejenie ze strony albo kadra
+             z bazy. To stan rynku, nie brak w systemie.</p>`}
 
       <!-- WKLEJKA STOI PIERWSZA POD PRZYCISKAMI, bo to jedyna droga dająca skład PRZED meczem —
            a obserwacja dzieje się w trakcie. Czytanie tych stron po stronie serwera sprawdziliśmy
@@ -20341,7 +20484,10 @@ function openObsSkladModal(obsId){
     const przyciskWklejki = overlay.querySelector('[data-x="wklejka-wczytaj"]') as HTMLElement | null;
     if(przyciskWklejki) przyciskWklejki.onclick = wczytajZWklejki;
     const przyciskDostawcy = overlay.querySelector('[data-x="dostawca"]') as HTMLElement | null;
-    if(przyciskDostawcy) przyciskDostawcy.onclick = wczytajOdDostawcy;
+    // Jawne opakowanie, NIE `onclick = wczytajOdDostawcy`: przeglądarka podałaby wtedy zdarzenie
+    // myszy jako pierwszy argument, a ono jest prawdziwe — więc dotknięcie przycisku uchodziłoby
+    // za próbę samoczynną i milczałoby przy niepowodzeniu, zamiast powiedzieć, co poszło nie tak.
+    if(przyciskDostawcy) przyciskDostawcy.onclick = ()=>wczytajOdDostawcy(false);
     overlay.querySelectorAll('.obs-wyroz').forEach(inp=>inp.onchange = ()=>{
       const wynik = ustawWyroznienie(obs, inp.dataset.strona, Number(inp.dataset.i), inp.checked);
       if(wynik && wynik.blad) komunikat = wynik.blad;
@@ -20418,6 +20564,24 @@ function openObsSkladModal(obsId){
   overlay.addEventListener('click', e=>{ if(e.target===overlay){ overlay.remove(); render(); } });
   document.body.appendChild(overlay);
   draw();
+
+  // SKŁAD WCHODZI SAM — BEZ KLIKANIA, ALE TYLKO TAM, GDZIE MA SKĄD.
+  //
+  // Warunki są cztery i każdy z nich ma powód:
+  //   • skład jeszcze pusty — nie podmieniamy tego, co scout wpisał albo wkleił;
+  //   • znamy datę i obie drużyny — bez nich dostawca nie rozpozna meczu;
+  //   • rozgrywki objęte przez dostawcę — patrz objeteDostawca; przy CLJ i niższych ligach
+  //     zapytanie i tak wróciłoby z „nie znam tej drużyny", a zużyłoby dzienny limit;
+  //   • raz na otwarcie okna — pobieranie w kółko przy każdym przerysowaniu byłoby
+  //     marnowaniem tego samego limitu.
+  //
+  // Gdy któryś warunek nie jest spełniony, NIE dzieje się nic i okno wygląda jak dotąd: zostają
+  // przyciski i wklejka. Automat ma oszczędzać ruchy, a nie zabierać drogi, które działają.
+  if(objeteDostawca(obs.rozgrywki) && obs.date && para
+     && !(((obs.skladMeczu||{}).gospodarze||{}).zawodnicy||[]).length
+     && !(((obs.skladMeczu||{}).goscie||{}).zawodnicy||[]).length){
+    void wczytajOdDostawcy(true);
+  }
 }
 
 // Pobranie statystyk całego składu z 90minut — bez kopiowania czegokolwiek.
@@ -20678,6 +20842,24 @@ function open90minutStatsModal(clubId){
   overlay.addEventListener('click', e=>{ if(e.target===overlay){ overlay.remove(); render(); } });
   document.body.appendChild(overlay);
   draw();
+
+  // SKŁAD WCHODZI SAM — BEZ KLIKANIA, ALE TYLKO TAM, GDZIE MA SKĄD.
+  //
+  // Warunki są cztery i każdy z nich ma powód:
+  //   • skład jeszcze pusty — nie podmieniamy tego, co scout wpisał albo wkleił;
+  //   • znamy datę i obie drużyny — bez nich dostawca nie rozpozna meczu;
+  //   • rozgrywki objęte przez dostawcę — patrz objeteDostawca; przy CLJ i niższych ligach
+  //     zapytanie i tak wróciłoby z „nie znam tej drużyny", a zużyłoby dzienny limit;
+  //   • raz na otwarcie okna — pobieranie w kółko przy każdym przerysowaniu byłoby
+  //     marnowaniem tego samego limitu.
+  //
+  // Gdy któryś warunek nie jest spełniony, NIE dzieje się nic i okno wygląda jak dotąd: zostają
+  // przyciski i wklejka. Automat ma oszczędzać ruchy, a nie zabierać drogi, które działają.
+  if(objeteDostawca(obs.rozgrywki) && obs.date && para
+     && !(((obs.skladMeczu||{}).gospodarze||{}).zawodnicy||[]).length
+     && !(((obs.skladMeczu||{}).goscie||{}).zawodnicy||[]).length){
+    void wczytajOdDostawcy(true);
+  }
 }
 
 function openSquadStatsModal(clubId){
