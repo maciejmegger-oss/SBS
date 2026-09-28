@@ -7802,7 +7802,7 @@ function planUzupelnieniaAdresow(){
   const dlaKontaktu = (k)=> wgNazwy.get(importNorm(contactClubName(k)))
     || dlaKlubu(DB.clubs.find(c=> c.id === clubIdByName(contactClubName(k))));
   const adresy = DB.settings.stadiumAddresses || {};
-  const kluby = DB.clubs.map(c=> ({c, a: dlaKlubu(c)})).filter(x=> x.a);
+  const kluby = DB.clubs.map(c=> ({c, a: dlaKlubu(c)})).filter(x=> x.a && (x.a.adres || x.a.email));
   const zKontaktem = new Set(DB.contacts.map(k=> clubIdByName(contactClubName(k))).filter(Boolean));
   return {
     adresy: kluby.filter(x=> x.a.adres && !String(adresy[x.c.id] || '').trim()),
@@ -10962,7 +10962,7 @@ function clubFromEmail(email){
 // powstają poza nią — w arkuszu, gdzie każdy wpis jest sprawdzany przy źródle. To dwie różne
 // rzeczy i nie mogą stać na jednej liście: w polskiej szuka się klubu, w europejskiej — człowieka
 // od scoutingu i tego, czy jego adres naprawdę jest publiczny.
-let kontaktyZakladka: 'polska' | 'europa' = 'polska';
+let kontaktyZakladka: 'polska' | 'kluby' | 'europa' = 'polska';
 
 const FLAGI_KRAJOW = {
   'Szwecja':'🇸🇪', 'Dania':'🇩🇰', 'Norwegia':'🇳🇴', 'Finlandia':'🇫🇮', 'Włochy':'🇮🇹', 'Francja':'🇫🇷',
@@ -11053,11 +11053,75 @@ function viewKontaktyEuropa(){
   </details>` : ''}`;
 }
 
+// KLUBY W POLSCE — spis adresów obiektów i oficjalnych e-maili klubów z bazy SBS.
+//
+// Zbudowany tak samo jak Kontakty → Europa i zakładka Federacja: dane jadą z aplikacją
+// (src/data/adresy-klubow.ts, z arkusza Kluby_Polska_Adresy.xlsx), więc lista jest kompletna od
+// pierwszego wejścia i nie zależy od tego, co ktoś zaimportował do bazy. Każdy wiersz ma źródło
+// i status — przed wysyłką widać, który adres jest sprawdzony, a który trzeba jeszcze potwierdzić.
+const KOLEJNOSC_LIG_PL = ['I liga', 'II liga', 'III liga', 'IV liga', 'CLJ'];
+function viewKontaktyKlubyPL(){
+  const q = szukajNorm(contactSearchQuery);
+  const pasuje = (a)=>{
+    if(!q) return true;
+    const stog = szukajNorm([a.liga, a.klub, a.miasto, a.adres, a.email, a.uwagi].join(' '));
+    return q.split(/\s+/).filter(Boolean).every(s=> stog.includes(s));
+  };
+  const widoczne = ADRESY_KLUBOW.filter(pasuje);
+  const pozycjaLigi = (liga)=>{
+    const i = KOLEJNOSC_LIG_PL.findIndex(p=> String(liga || '').startsWith(p));
+    return i < 0 ? KOLEJNOSC_LIG_PL.length : i;
+  };
+  const ligi = [...new Set(widoczne.map(a=> a.liga || ''))]
+    .sort((x, y)=> pozycjaLigi(x) - pozycjaLigi(y) || x.localeCompare(y, 'pl'));
+
+  const wiersz = (a)=>`<tr>
+    <td><strong>${esc(a.klub)}</strong>${a.miasto ? `<div class="note">${esc(a.miasto)}</div>` : ''}</td>
+    <td>${a.adres ? `<div style="display:flex;gap:6px;align-items:flex-start;">
+        <span>${esc(a.adres)}</span>
+        <button class="link-btn" data-action="kopiuj-adres" data-adres="${esc(a.klub + '\n' + a.adres)}" title="Skopiuj adres razem z nazwą klubu">📋</button>
+      </div>` : '<span class="meta">—</span>'}</td>
+    <td>${a.email ? `<a class="ext-link" href="mailto:${esc(a.email)}">${esc(a.email)}</a>` : '<span class="meta">—</span>'}</td>
+    <td><span style="color:${barwaStatusuKontaktu(a.status)};font-weight:700;font-size:12px;">${esc(a.status || '—')}</span>
+      ${a.uwagi ? `<div class="note">${esc(a.uwagi)}</div>` : ''}</td>
+    <td>${a.zrodlo ? `<a class="ext-link" href="${esc(a.zrodlo)}" target="_blank" rel="noopener">źródło ↗</a>` : '<span class="meta">—</span>'}</td>
+  </tr>`;
+
+  const sekcja = (liga, lista)=>`
+    <h4 style="margin:18px 0 6px;color:var(--heading);">${esc(liga && liga !== '—' ? liga : 'Pozostałe')}
+      <span class="reports-count">${lista.length}</span></h4>
+    <div class="card" style="padding:0;overflow:auto;">
+      <table>
+        <thead><tr><th>Klub</th><th>Adres obiektu</th><th>E-mail</th><th>Weryfikacja</th><th></th></tr></thead>
+        <tbody>${lista.slice().sort((x, y)=> x.klub.localeCompare(y.klub, 'pl')).map(wiersz).join('')}</tbody>
+      </table>
+    </div>`;
+
+  const zAdresem = ADRESY_KLUBOW.filter(a=> a.adres).length;
+  const zMailem = ADRESY_KLUBOW.filter(a=> a.email).length;
+  return `
+  <p class="view-sub">Adresy obiektów i oficjalne e-maile klubów z bazy SBS — zebrane i sprawdzone przy źródle
+    w arkuszu <strong>Kluby_Polska_Adresy.xlsx</strong>. Adresów z komercyjnych baz ani zgadywanych z domeny
+    tu nie ma: każdy wiersz ma odnośnik do strony, z której pochodzi.</p>
+  <div class="toolbar" style="margin-top:12px;">
+    <input id="contact-search" placeholder="Szukaj po klubie, mieście, lidze, adresie…" value="${esc(contactSearchQuery)}" style="max-width:360px;">
+    <div class="note">${widoczne.length} ${widoczne.length === 1 ? 'klub' : 'klubów'}
+      ${contactSearchQuery ? `z ${ADRESY_KLUBOW.length}` : `&middot; ${zAdresem} z adresem &middot; ${zMailem} z e-mailem`}</div>
+  </div>
+  ${widoczne.length
+    ? ligi.map(l=> sekcja(l, widoczne.filter(a=> (a.liga || '') === l))).join('')
+    : `<div class="card"><div class="empty">Żaden klub nie pasuje do „${esc(contactSearchQuery)}".</div></div>`}`;
+}
+
 function viewContacts(){
   const zakladki = `<div class="filters" style="margin-bottom:4px;">
     ${pill('Polska', kontaktyZakladka === 'polska', 'kontakty-zakladka', {val:'polska'}, '🇵🇱')}
+    ${pill(`Kluby w Polsce (${ADRESY_KLUBOW.length})`, kontaktyZakladka === 'kluby', 'kontakty-zakladka', {val:'kluby'}, '🏟️')}
     ${pill(`Europa (${KONTAKTY_EUROPA.length})`, kontaktyZakladka === 'europa', 'kontakty-zakladka', {val:'europa'}, '🌍')}
   </div>`;
+  if(kontaktyZakladka === 'kluby'){
+    return `<h2 class="view-title">Kontakty</h2>${zakladki}${viewKontaktyKlubyPL()}`;
+  }
   if(kontaktyZakladka === 'europa'){
     return `<h2 class="view-title">Kontakty</h2>${zakladki}${viewKontaktyEuropa()}`;
   }
@@ -14610,7 +14674,8 @@ function attachHandlers(){
   // Przełączenie Polska / Europa zeruje wyszukiwanie: fraza z jednej bazy w drugiej zwykle nic
   // nie znajduje, a pusta lista po zmianie zakładki wygląda jak brak danych.
   main.querySelectorAll('[data-action="kontakty-zakladka"]').forEach(b=>b.onclick=()=>{
-    kontaktyZakladka = (b as HTMLElement).dataset.val === 'europa' ? 'europa' : 'polska';
+    const wybrana = (b as HTMLElement).dataset.val;
+    kontaktyZakladka = wybrana === 'europa' || wybrana === 'kluby' ? wybrana : 'polska';
     contactSearchQuery = '';
     render();
   });

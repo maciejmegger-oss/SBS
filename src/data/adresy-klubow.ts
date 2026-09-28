@@ -2,20 +2,22 @@
 //
 // Źródło: Kluby_Polska_Adresy.xlsx (arkusz „Adresy").
 // Po zmianie w arkuszu uruchom: node scripts/wczytaj-adresy-klubow.mjs "<ścieżka do pliku>"
-// Stan na dzień przeniesienia: 2026-09-28 · 246 klubów.
+// Stan na dzień przeniesienia: 2026-09-28 · 270 klubów.
 
 export type AdresKlubu = {
+  liga: string;    // rozgrywki, w których klub jest w bazie SBS (pierwsze, jeśli jest w dwóch)
   klub: string;    // nazwa dokładnie jak w bazie klubów SBS
   miasto: string;
   adres: string;   // adres obiektu, na którym klub gra mecze
   email: string;   // oficjalny kontakt klubu — pusty, gdy klub go nie publikuje
   zrodlo: string;  // strona, z której wzięto dane
-  status: string;  // Zweryfikowany / Częściowo / Do potwierdzenia
+  status: string;  // Zweryfikowany / Częściowo / Do potwierdzenia / Do uzupełnienia
   uwagi: string;
 };
 
 export const ADRESY_KLUBOW: AdresKlubu[] = [
   {
+    "liga": "III liga, gr. I",
     "klub": "Olimpia Elbląg",
     "miasto": "Elbląg",
     "adres": "Stadion Miejski, ul. Agrykola 8, 82-300 Elbląg",
@@ -25,6 +27,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "akademia: akademia@zksolimpia.pl"
   },
   {
+    "liga": "III liga, gr. I",
     "klub": "Polonia Lidzbark Warmiński",
     "miasto": "Lidzbark Warmiński",
     "adres": "Stadion Miejski im. H. Wobalisa, ul. Bartoszycka 24, 11-100 Lidzbark Warmiński",
@@ -34,6 +37,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "tel. 89 767 20 87; e-maila nie znalazłem"
   },
   {
+    "liga": "III liga, gr. I",
     "klub": "Olimpia Zambrów",
     "miasto": "Zambrów",
     "adres": "Stadion Miejski, ul. Prymasa Stefana Wyszyńskiego 8, 18-300 Zambrów",
@@ -43,6 +47,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. I",
     "klub": "Widzew II Łódź",
     "miasto": "Łódź",
     "adres": "Stadion Widzewa, al. Piłsudskiego 138, 92-300 Łódź",
@@ -52,6 +57,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "rezerwy – obiekt meczowy do potwierdzenia w terminarzu; e-mail jak Widzew Łódź"
   },
   {
+    "liga": "III liga, gr. I",
     "klub": "Mazovia Mińsk Mazowiecki",
     "miasto": "Mińsk Mazowiecki",
     "adres": "Stadion Miejski MOSiR, ul. Sportowa 1, 05-300 Mińsk Mazowiecki",
@@ -61,6 +67,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "e-mail klubu nie pojawił się w wynikach – skopiuj ze strony"
   },
   {
+    "liga": "III liga, gr. I",
     "klub": "Wigry Suwałki",
     "miasto": "Suwałki",
     "adres": "Stadion Miejski OSiR, ul. Zarzecze 26, 16-400 Suwałki",
@@ -70,6 +77,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "na stronie formularz kontaktowy; tel. stadionu 87 566 57 08"
   },
   {
+    "liga": "III liga, gr. I",
     "klub": "Warta Sieradz",
     "miasto": "Sieradz",
     "adres": "Stadion MOSiR, ul. Sportowa 1, 98-200 Sieradz",
@@ -79,6 +87,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "prezes: prezes@wartasieradz.com"
   },
   {
+    "liga": "III liga, gr. I",
     "klub": "Pelikan Łowicz",
     "miasto": "Łowicz",
     "adres": "Stadion Miejski, ul. Starzyńskiego 6/8, 99-400 Łowicz",
@@ -88,6 +97,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "tel. 46 837 62 08; mukspelikan@onet.eu to osobny klub młodzieżowy MUKS"
   },
   {
+    "liga": "III liga, gr. I",
     "klub": "KTS Weszło Warszawa",
     "miasto": "Warszawa",
     "adres": "Stadion Hutnika, ul. Marymoncka 42, 01-813 Warszawa",
@@ -97,6 +107,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "e-maila nie znalazłem; kontakt przez FB/IG @KTSWeszlo"
   },
   {
+    "liga": "III liga, gr. I",
     "klub": "Lechia Tomaszów Mazowiecki",
     "miasto": "Tomaszów Mazowiecki",
     "adres": "Stadion Miejski im. Braci Gadajów, ul. Nowowiejska 9/27, 97-200 Tomaszów Mazowiecki",
@@ -106,6 +117,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "biuro@kslechia.pl należy do KS Lechia (Barlickiego 30) – możliwe, że to inna sekcja; mail RKS Lechia 1923 skopiuj ze strony"
   },
   {
+    "liga": "III liga, gr. I",
     "klub": "ŁKS Łomża",
     "miasto": "Łomża",
     "adres": "Stadion Miejski, ul. Zjazd 18, 18-400 Łomża",
@@ -115,6 +127,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. I",
     "klub": "Mławianka Mława",
     "miasto": "Mława",
     "adres": "Stadion Miejski im. Ireny Szewińskiej, ul. Kopernika 38, 06-500 Mława",
@@ -124,6 +137,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. I",
     "klub": "ŁKS II Łódź",
     "miasto": "Łódź",
     "adres": "Ośrodek Akademii ŁKS, ul. Krańcowa 19, Łódź",
@@ -133,6 +147,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "rezerwy – e-mail jak ŁKS Łódź"
   },
   {
+    "liga": "III liga, gr. I",
     "klub": "Jagiellonia II Białystok",
     "miasto": "Białystok",
     "adres": "Boisko boczne Stadionu Miejskiego, ul. Słoneczna 1, 15-323 Białystok",
@@ -142,6 +157,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "rezerwy – e-mail jak Jagiellonia"
   },
   {
+    "liga": "III liga, gr. I",
     "klub": "KS CK Troszyn",
     "miasto": "Troszyn",
     "adres": "Stadion gminny, 07-405 Troszyn",
@@ -151,6 +167,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "ulicy i e-maila nie znalazłem; kontakt przez FB"
   },
   {
+    "liga": "III liga, gr. I",
     "klub": "Ząbkovia Ząbki",
     "miasto": "Ząbki",
     "adres": "Dozbud Arena (Stadion Miejski), ul. Słowackiego 21, 05-091 Ząbki",
@@ -160,6 +177,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "tel. 514 344 388; e-maila nie znalazłem w wynikach"
   },
   {
+    "liga": "III liga, gr. I",
     "klub": "Świt Nowy Dwór Mazowiecki",
     "miasto": "Nowy Dwór Mazowiecki",
     "adres": "Stadion Miejski, ul. Sportowa 66, 05-100 Nowy Dwór Mazowiecki",
@@ -169,6 +187,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "także switndm1@wp.pl"
   },
   {
+    "liga": "III liga, gr. I",
     "klub": "Wisła II Płock",
     "miasto": "Płock",
     "adres": "ORLEN Stadion im. K. Górskiego, ul. Łukasiewicza 34, 09-400 Płock",
@@ -178,6 +197,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "rezerwy – boisko meczowe potwierdź w terminarzu; e-mail jak Wisła Płock"
   },
   {
+    "liga": "II liga",
     "klub": "GKS Tychy",
     "miasto": "Tychy",
     "adres": "Stadion Miejski, ul. Edukacji 7, 43-100 Tychy",
@@ -187,6 +207,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "II liga",
     "klub": "Górnik Łęczna",
     "miasto": "Łęczna",
     "adres": "Stadion Górnika, al. Jana Pawła II 13, 21-010 Łęczna",
@@ -196,6 +217,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "II liga",
     "klub": "Znicz Pruszków",
     "miasto": "Pruszków",
     "adres": "Stadion MZOS, ul. Bohaterów Warszawy 4, 05-800 Pruszków",
@@ -205,6 +227,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "akademia: akademia@zniczpruszkow.com.pl"
   },
   {
+    "liga": "II liga",
     "klub": "Chojniczanka Chojnice",
     "miasto": "Chojnice",
     "adres": "Stadion Miejski Chojniczanka 1930, ul. Mickiewicza 12, 89-600 Chojnice",
@@ -214,6 +237,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "na stronie podany adres akademii; biuro klubu tel. 692 351 869"
   },
   {
+    "liga": "II liga",
     "klub": "Hutnik Kraków",
     "miasto": "Kraków",
     "adres": "Stadion Suche Stawy, ul. Ptaszyckiego 4, 31-979 Kraków",
@@ -223,6 +247,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "II liga",
     "klub": "Olimpia Grudziądz",
     "miasto": "Grudziądz",
     "adres": "Stadion Miejski, ul. Piłsudskiego 14, 86-300 Grudziądz",
@@ -232,6 +257,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "gks.olimpia@onet.pl należy do stowarzyszenia GKS Olimpia (młodzież), nie do spółki – mail spółki skopiuj ze strony"
   },
   {
+    "liga": "II liga",
     "klub": "Podhale Nowy Targ",
     "miasto": "Nowy Targ",
     "adres": "Stadion Miejski im. J. Piłsudskiego, ul. Kolejowa 161, 34-400 Nowy Targ",
@@ -241,6 +267,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "na stronie tylko biuro prasowe i kierownik drużyny"
   },
   {
+    "liga": "II liga",
     "klub": "Rekord Bielsko-Biała",
     "miasto": "Bielsko-Biała",
     "adres": "Centrum Sportu Rekord, ul. Startowa 13, 43-300 Bielsko-Biała",
@@ -250,6 +277,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "II liga",
     "klub": "Resovia",
     "miasto": "Rzeszów",
     "adres": "Stadion Miejski, ul. Hetmańska 69, 35-078 Rzeszów",
@@ -259,6 +287,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "biuro: ul. Wyspiańskiego 22, Rzeszów; na stronie tylko marketing@ i rzecznik@"
   },
   {
+    "liga": "II liga",
     "klub": "Sandecja Nowy Sącz",
     "miasto": "Nowy Sącz",
     "adres": "Stadion im. o. Władysława Augustynka, ul. Kilińskiego 47, 33-300 Nowy Sącz",
@@ -268,6 +297,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "II liga",
     "klub": "Sokół Kleczew",
     "miasto": "Kleczew",
     "adres": "Stadion Miejski, al. 600-lecia 21, 62-540 Kleczew",
@@ -277,6 +307,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "II liga",
     "klub": "Stal Stalowa Wola",
     "miasto": "Stalowa Wola",
     "adres": "Stadion Stali, ul. Hutnicza 10a, 37-450 Stalowa Wola",
@@ -286,6 +317,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "II liga",
     "klub": "Śląsk II Wrocław",
     "miasto": "Wrocław",
     "adres": "Stadion przy Oporowskiej, ul. Oporowska 62, 53-434 Wrocław",
@@ -295,6 +327,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "rezerwy – e-mail jak Śląsk Wrocław"
   },
   {
+    "liga": "II liga",
     "klub": "Świt Szczecin",
     "miasto": "Szczecin",
     "adres": "Obiekt Sportowy Skolwin, ul. Stołczyńska 100, 71-871 Szczecin",
@@ -304,6 +337,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "II liga",
     "klub": "Legia II Warszawa",
     "miasto": "Warszawa",
     "adres": "Legia Training Center, ul. Legionistów 3, 05-825 Książenice",
@@ -313,6 +347,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "rezerwy – e-mail jak Legia Warszawa"
   },
   {
+    "liga": "II liga",
     "klub": "Zawisza Bydgoszcz",
     "miasto": "Bydgoszcz",
     "adres": "Stadion Miejski im. Z. Krzyszkowiaka, ul. Gdańska 163, 85-915 Bydgoszcz",
@@ -322,6 +357,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "II liga",
     "klub": "Avia Świdnik",
     "miasto": "Świdnik",
     "adres": "Stadion Miejski im. Cz. Krygiera, ul. Sportowa 2, 21-040 Świdnik",
@@ -331,6 +367,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "II liga",
     "klub": "Lechia Zielona Góra",
     "miasto": "Zielona Góra",
     "adres": "Stadion MOSiR „Dołek”, ul. Sulechowska 37, 65-147 Zielona Góra",
@@ -340,6 +377,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "e-maila nie znalazłem w wynikach – skopiuj ze strony klubu"
   },
   {
+    "liga": "III liga, gr. II",
     "klub": "Flota Świnoujście",
     "miasto": "Świnoujście",
     "adres": "Stadion Miejski, ul. Matejki 22, 72-600 Świnoujście",
@@ -349,6 +387,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. II",
     "klub": "Kotwica Kórnik",
     "miasto": "Kórnik",
     "adres": "Stadion KSS Kotwica, ul. Leśna 6, 62-035 Kórnik",
@@ -358,6 +397,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. II",
     "klub": "Bałtyk Koszalin",
     "miasto": "Koszalin",
     "adres": "Stadion ZOS Bałtyk, ul. Andersa 16, 75-015 Koszalin",
@@ -367,6 +407,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "biuro@zos.koszalin.pl to zarządca stadionu, nie klub"
   },
   {
+    "liga": "III liga, gr. II",
     "klub": "Victoria Września",
     "miasto": "Września",
     "adres": "Stadion Miejski, ul. Kosynierów 1, 62-300 Września",
@@ -376,6 +417,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "e-maila nie znalazłem – formularz na stronie"
   },
   {
+    "liga": "III liga, gr. II",
     "klub": "Chemik Bydgoszcz",
     "miasto": "Bydgoszcz",
     "adres": "Stadion Chemik, ul. Glinki 79, 85-861 Bydgoszcz",
@@ -385,6 +427,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "piłka: pilka.nozna@chemikbydgoszcz.pl"
   },
   {
+    "liga": "III liga, gr. II",
     "klub": "Błękitni Stargard",
     "miasto": "Stargard",
     "adres": "Piłkarski Stadion Miejski, ul. Ceglana 1, 73-110 Stargard",
@@ -394,6 +437,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. II",
     "klub": "Lipno Stęszew",
     "miasto": "Stęszew",
     "adres": "Stadion KS Lipno, ul. Trzebawska 15, 62-060 Stęszew",
@@ -403,6 +447,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. II",
     "klub": "Gedania Gdańsk",
     "miasto": "Gdańsk",
     "adres": "Stadion KS Gedania, al. gen. J. Hallera 201, 80-416 Gdańsk",
@@ -412,6 +457,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. II",
     "klub": "Grom Nowy Staw",
     "miasto": "Nowy Staw",
     "adres": "Stadion Miejski, ul. Sportowa 5, 82-230 Nowy Staw",
@@ -421,6 +467,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "e-maila klubu nie znalazłem"
   },
   {
+    "liga": "III liga, gr. II",
     "klub": "Unia Swarzędz",
     "miasto": "Swarzędz",
     "adres": "Stadion Miejski, ul. Kosynierów 3, 62-020 Swarzędz",
@@ -430,6 +477,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "biuro: ul. Św. Marcina 1"
   },
   {
+    "liga": "III liga, gr. II",
     "klub": "Noteć Czarnków",
     "miasto": "Czarnków",
     "adres": "Stadion MKS Noteć, ul. Nowa 8, 64-700 Czarnków",
@@ -439,6 +487,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. II",
     "klub": "Elana Toruń",
     "miasto": "Toruń",
     "adres": "Stadion Miejski im. G. Duneckiego, ul. gen. J. Bema 23/29, 87-100 Toruń",
@@ -448,6 +497,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "akademia: akademia@elanatorun.com"
   },
   {
+    "liga": "III liga, gr. II",
     "klub": "Wda Świecie",
     "miasto": "Świecie",
     "adres": "Stadion KS Wda, ul. Sienkiewicza 18, 86-100 Świecie",
@@ -457,6 +507,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. II",
     "klub": "Kluczevia Stargard",
     "miasto": "Stargard",
     "adres": "Stadion ZKS Kluczevia, ul. Niemcewicza 23, 73-102 Stargard",
@@ -466,6 +517,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "biuro: ul. Broniewskiego 23"
   },
   {
+    "liga": "III liga, gr. II",
     "klub": "Lech II Poznań",
     "miasto": "Poznań",
     "adres": "Stadion Akademii Lecha, ul. Leśna 15a, 64-510 Wronki",
@@ -475,6 +527,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "rezerwy – e-mail jak Lech Poznań"
   },
   {
+    "liga": "III liga, gr. II",
     "klub": "Polonia Środa Wielkopolska",
     "miasto": "Środa Wielkopolska",
     "adres": "Stadion Średzki, ul. Sportowa 12, 63-000 Środa Wielkopolska",
@@ -484,6 +537,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "tel. 61 287 01 77; e-maila nie znalazłem; adres nowego stadionu potwierdź"
   },
   {
+    "liga": "III liga, gr. II",
     "klub": "Wikęd Luzino",
     "miasto": "Luzino",
     "adres": "Stadion Gminny, ul. Mickiewicza 22, 84-242 Luzino",
@@ -493,6 +547,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. II",
     "klub": "KKS 1925 Kalisz",
     "miasto": "Kalisz",
     "adres": "Stadion Miejski, ul. Łódzka 19-29, 62-800 Kalisz",
@@ -502,6 +557,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. III",
     "klub": "Karkonosze Jelenia Góra",
     "miasto": "Jelenia Góra",
     "adres": "Stadion Miejski, ul. Złotnicza 12, 58-500 Jelenia Góra",
@@ -511,6 +567,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. III",
     "klub": "ROW 1964 Rybnik",
     "miasto": "Rybnik",
     "adres": "Stadion MOSiR, ul. Gliwicka 72, 44-200 Rybnik",
@@ -520,6 +577,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. III",
     "klub": "Carina Gubin",
     "miasto": "Gubin",
     "adres": "Stadion Miejski, ul. Sikorskiego, 66-620 Gubin",
@@ -529,6 +587,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "numer posesji stadionu nie podany; biuro: ul. Kresowa 257D"
   },
   {
+    "liga": "III liga, gr. III",
     "klub": "Barycz Sułów",
     "miasto": "Sułów",
     "adres": "Stadion w Sułowie, ul. Polna 2D, 56-300 Sułów",
@@ -538,6 +597,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "w wynikach tylko mail akademii: trenerzyakademia@baryczsulow.com"
   },
   {
+    "liga": "III liga, gr. III",
     "klub": "Górnik Polkowice",
     "miasto": "Polkowice",
     "adres": "Stadion Miejski, ul. Kopalniana 4, 59-100 Polkowice",
@@ -547,6 +607,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. III",
     "klub": "Odra Bytom Odrzański",
     "miasto": "Bytom Odrzański",
     "adres": "Stadion Miejski, ul. Sportowa 1, 67-115 Bytom Odrzański",
@@ -556,6 +617,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "tel. 68 388 41 20; e-maila nie znalazłem"
   },
   {
+    "liga": "III liga, gr. III",
     "klub": "Zagłębie Lubin II",
     "miasto": "Lubin",
     "adres": "KGHM Zagłębie Arena, ul. M. Skłodowskiej-Curie 98, 59-300 Lubin",
@@ -565,6 +627,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "rezerwy – część meczów na bocznych boiskach; e-mail jak Zagłębie Lubin"
   },
   {
+    "liga": "III liga, gr. III",
     "klub": "Stilon Gorzów",
     "miasto": "Gorzów Wielkopolski",
     "adres": "Stadion OSiR, ul. Olimpijska 29, 66-400 Gorzów Wielkopolski",
@@ -574,6 +637,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. III",
     "klub": "Stal Brzeg",
     "miasto": "Brzeg",
     "adres": "Stadion Miejski, ul. Sportowa 1, 49-304 Brzeg",
@@ -583,6 +647,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. III",
     "klub": "Goczałkowice-Zdrój",
     "miasto": "Goczałkowice-Zdrój",
     "adres": "Stadion Gminny (Panattoni Arena), ul. Krzyżanowskiego 1A, 43-230 Goczałkowice-Zdrój",
@@ -592,6 +657,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. III",
     "klub": "Ślęza Wrocław",
     "miasto": "Wrocław",
     "adres": "KGHM Ślęza Arena, ul. Kłokoczycka 5, 51-376 Wrocław",
@@ -601,6 +667,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. III",
     "klub": "Sparta Katowice",
     "miasto": "Katowice",
     "adres": "Stadion BKS Sparta, ul. Rolna 43, 40-555 Katowice",
@@ -610,6 +677,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "adres obiektu ze starszego wpisu; biuro: ul. Żeromskiego 4"
   },
   {
+    "liga": "III liga, gr. III",
     "klub": "Polonia Nysa",
     "miasto": "Nysa",
     "adres": "Stadion Polonii, ul. Sudecka 28, 48-300 Nysa",
@@ -619,6 +687,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "e-mail dyrektora ukryty na stronie (ochrona antyspamowa) – skopiuj ze strony; tel. 600 390 817"
   },
   {
+    "liga": "III liga, gr. III",
     "klub": "Raków Częstochowa II",
     "miasto": "Częstochowa",
     "adres": "Stadion Rakowa, ul. Limanowskiego 83, 42-200 Częstochowa",
@@ -628,6 +697,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "rezerwy – obiekt meczowy potwierdź; e-mail jak Raków"
   },
   {
+    "liga": "III liga, gr. III",
     "klub": "MKS Kluczbork",
     "miasto": "Kluczbork",
     "adres": "Stadion Miejski, ul. Sportowa 7, 46-200 Kluczbork",
@@ -637,6 +707,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. III",
     "klub": "Miedź II Legnica",
     "miasto": "Legnica",
     "adres": "Stadion im. Orła Białego, ul. Hetmańska 2, 59-220 Legnica",
@@ -646,6 +717,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "rezerwy – mail klubu"
   },
   {
+    "liga": "III liga, gr. III",
     "klub": "Warta Gorzów Wielkopolski",
     "miasto": "Gorzów Wielkopolski",
     "adres": "Stadion OSiR, ul. Olimpijska 29, 66-400 Gorzów Wielkopolski",
@@ -655,6 +727,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "obiekt meczowy potwierdź (klub ma też Warta Arena, ul. Żwirowa 6)"
   },
   {
+    "liga": "III liga, gr. III",
     "klub": "Zagłębie Sosnowiec",
     "miasto": "Sosnowiec",
     "adres": "ArcelorMittal Park, pl. Zagłębia 1, 41-219 Sosnowiec",
@@ -664,6 +737,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "e-mail ukryty na stronie (ochrona antyspamowa) – skopiuj ze strony"
   },
   {
+    "liga": "III liga, gr. IV",
     "klub": "Pogoń-Sokół Lubaczów",
     "miasto": "Lubaczów",
     "adres": "Stadion MOS, ul. Sportowa 1, 37-600 Lubaczów",
@@ -673,6 +747,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "e-mail nie jest publiczny; tel. 603 888 524"
   },
   {
+    "liga": "III liga, gr. IV",
     "klub": "Moravia Morawica",
     "miasto": "Morawica",
     "adres": "Stadion Miejsko-Gminny, ul. Na Stadion 1, Brzeziny, 26-026 Morawica",
@@ -682,6 +757,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. IV",
     "klub": "Naprzód Jędrzejów",
     "miasto": "Jędrzejów",
     "adres": "Stadion KS Naprzód im. P. Świerkowskiego, ul. Sportowa 1, 28-300 Jędrzejów",
@@ -691,6 +767,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. IV",
     "klub": "Wisła II Kraków",
     "miasto": "Kraków",
     "adres": "Obiekt Prądniczanki Kraków (mecze rezerw od 2024/25)",
@@ -700,6 +777,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "rezerwy – obiekt i ulicę potwierdź w terminarzu; e-mail jak Wisła Kraków"
   },
   {
+    "liga": "III liga, gr. IV",
     "klub": "KSZO 1929 Ostrowiec Świętokrzyski",
     "miasto": "Ostrowiec Świętokrzyski",
     "adres": "Miejski Stadion Sportowy KSZO, ul. Świętokrzyska 11, 27-400 Ostrowiec Świętokrzyski",
@@ -709,6 +787,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. IV",
     "klub": "Hetman Zamość",
     "miasto": "Zamość",
     "adres": "Stadion OSiR, ul. Królowej Jadwigi 8, 22-400 Zamość",
@@ -718,6 +797,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. IV",
     "klub": "Czarni Połaniec",
     "miasto": "Połaniec",
     "adres": "Stadion Miejski OSiR, ul. Sportowa 1, 28-230 Połaniec",
@@ -727,6 +807,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. IV",
     "klub": "AKS 1947 Busko Zdrój",
     "miasto": "Busko-Zdrój",
     "adres": "Stadion AKS, ul. Kusocińskiego 1, 28-100 Busko-Zdrój",
@@ -736,6 +817,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. IV",
     "klub": "JKS Jarosław",
     "miasto": "Jarosław",
     "adres": "Stadion Miejski MOSiR, ul. Bandurskiego 2, 37-500 Jarosław",
@@ -745,6 +827,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "e-maila klubu nie znalazłem; stadion: stadion@mosir.jaroslaw.pl"
   },
   {
+    "liga": "III liga, gr. IV",
     "klub": "Sokół Kolbuszowa Dolna",
     "miasto": "Kolbuszowa Dolna",
     "adres": "Stadion Nad Nilem, ul. Nad Nilem 6, 36-100 Kolbuszowa Dolna",
@@ -754,6 +837,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "w wynikach tylko prywatne adresy działaczy – nie wpisuję; tel. klubu 603 645 015"
   },
   {
+    "liga": "III liga, gr. IV",
     "klub": "Wisłoka Dębica",
     "miasto": "Dębica",
     "adres": "Stadion Miejski, ul. Parkowa 1, 39-200 Dębica",
@@ -763,6 +847,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. IV",
     "klub": "Wieczysta II Kraków",
     "miasto": "Kraków",
     "adres": "Stadion Wieczystej, ul. K. Chałupnika 16, 31-464 Kraków",
@@ -772,6 +857,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "rezerwy; e-maila nie znalazłem w wynikach – skopiuj ze strony"
   },
   {
+    "liga": "III liga, gr. IV",
     "klub": "Siarka Tarnobrzeg",
     "miasto": "Tarnobrzeg",
     "adres": "Stadion Miejski, al. Niepodległości 2, 39-400 Tarnobrzeg",
@@ -781,6 +867,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. IV",
     "klub": "Podlasie Biała Podlaska",
     "miasto": "Biała Podlaska",
     "adres": "Stadion Miejski, ul. Piłsudskiego 38, 21-500 Biała Podlaska",
@@ -790,6 +877,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. IV",
     "klub": "Star Starachowice",
     "miasto": "Starachowice",
     "adres": "Stadion Miejski, ul. Szkolna 14, 27-200 Starachowice",
@@ -799,6 +887,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. IV",
     "klub": "Korona II Kielce",
     "miasto": "Kielce",
     "adres": "Stary stadion Korony, ul. Szczepaniaka, Kielce",
@@ -808,6 +897,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "rezerwy – numer posesji potwierdź; e-mail jak Korona Kielce"
   },
   {
+    "liga": "III liga, gr. IV",
     "klub": "Wiślanie Skawina",
     "miasto": "Skawina",
     "adres": "Stadion Miejski, ul. Mickiewicza 27, 32-050 Skawina",
@@ -817,6 +907,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "III liga, gr. IV",
     "klub": "Chełmianka Chełm",
     "miasto": "Chełm",
     "adres": "Stadion Miejski MOSiR, ul. 1 Pułku Szwoleżerów 15, 22-100 Chełm",
@@ -826,6 +917,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "e-maila klubu nie znalazłem w wynikach – skopiuj ze strony"
   },
   {
+    "liga": "IV liga (pomorska)",
     "klub": "Radunia Stężyca",
     "miasto": "Stężyca",
     "adres": "Arena Radunia, ul. Abrahama 11, 83-322 Stężyca",
@@ -835,6 +927,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (pomorska)",
     "klub": "Anioły Garczegorze",
     "miasto": "Garczegorze",
     "adres": "Stadion KS Anioły, Garczegorze 38, 84-351 Nowa Wieś Lęborska",
@@ -844,6 +937,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "tel. 605 564 696; e-maila nie znalazłem"
   },
   {
+    "liga": "IV liga (pomorska)",
     "klub": "Gryf Słupsk",
     "miasto": "Słupsk",
     "adres": "Stadion Gryf, ul. Zielona 9, 76-200 Słupsk",
@@ -853,6 +947,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "media: media@gryf-slupsk.pl"
   },
   {
+    "liga": "IV liga (pomorska)",
     "klub": "Dolina Speranda Niepoględzie",
     "miasto": "Niepoględzie",
     "adres": "Boisko w Niepoględziu, ul. Puttkamerów 3, 76-248 Niepoględzie",
@@ -862,6 +957,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "adres to siedziba klubu – boisko potwierdź"
   },
   {
+    "liga": "IV liga (pomorska)",
     "klub": "Powiśle Dzierzgoń",
     "miasto": "Dzierzgoń",
     "adres": "Stadion DKS Powiśle, ul. Krzywa 19, 82-440 Dzierzgoń",
@@ -871,6 +967,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "tel. 784 959 252; e-maila nie znalazłem"
   },
   {
+    "liga": "IV liga (pomorska)",
     "klub": "Chojniczanka II Chojnice",
     "miasto": "Chojnice",
     "adres": "Stadion Miejski Chojniczanka 1930, ul. Mickiewicza 12, 89-600 Chojnice",
@@ -880,6 +977,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "rezerwy – obiekt i mail jak Chojniczanka"
   },
   {
+    "liga": "IV liga (pomorska)",
     "klub": "Sparta Sycewice",
     "miasto": "Sycewice",
     "adres": "Stadion KS Sparta, ul. Szkolna 1, 76-200 Sycewice",
@@ -889,6 +987,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "prywatny adres działacza podany jako kontakt klubu"
   },
   {
+    "liga": "IV liga (pomorska)",
     "klub": "Stoczniowiec Gdańsk",
     "miasto": "Gdańsk",
     "adres": "Stadion przy ul. Marynarki Polskiej, Gdańsk",
@@ -898,6 +997,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "numer posesji boiska potwierdź; sekretariat@stoczniowiec.org.pl to inny klub (GKS – hokej/siatkówka)"
   },
   {
+    "liga": "IV liga (pomorska)",
     "klub": "Stolem Gniewino",
     "miasto": "Gniewino",
     "adres": "Arena Mistrzów, ul. Sportowa 1, 84-250 Gniewino",
@@ -907,6 +1007,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "mail gminnego centrum sportowego podany jako kontakt klubu"
   },
   {
+    "liga": "IV liga (pomorska)",
     "klub": "KP Starogard Gdański",
     "miasto": "Starogard Gdański",
     "adres": "Stadion Miejski im. K. Deyny, ul. Olimpijczyków Starogardzkich 1, 83-200 Starogard Gdański",
@@ -916,6 +1017,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (pomorska)",
     "klub": "Wierzyca Pelplin",
     "miasto": "Pelplin",
     "adres": "Stadion Miejski, ul. Czarnieckiego 8, 83-130 Pelplin",
@@ -925,6 +1027,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (pomorska)",
     "klub": "Jaguar Gdańsk",
     "miasto": "Gdańsk",
     "adres": "Stadion – do potwierdzenia (biuro: ul. Budowlanych 49/5, 80-298 Gdańsk)",
@@ -934,6 +1037,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "obiekt meczowy seniorów potwierdź w terminarzu"
   },
   {
+    "liga": "IV liga (pomorska)",
     "klub": "Pogoń Lębork",
     "miasto": "Lębork",
     "adres": "Stadion Miejski, 84-300 Lębork",
@@ -943,6 +1047,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "ulicę stadionu potwierdź; biuro: ul. Krzywoustego 1, pok. 201"
   },
   {
+    "liga": "IV liga (pomorska)",
     "klub": "Arka II Gdynia",
     "miasto": "Gdynia",
     "adres": "Stadion Miejski, ul. Olimpijska 5, 81-538 Gdynia",
@@ -952,6 +1057,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "rezerwy – część meczów na boiskach bocznych; e-mail jak Arka Gdynia"
   },
   {
+    "liga": "IV liga (pomorska)",
     "klub": "Czarni Pruszcz Gdański",
     "miasto": "Pruszcz Gdański",
     "adres": "Stadion MOSiR, ul. Chopina 34, 83-000 Pruszcz Gdański",
@@ -961,6 +1067,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "tel. 501 836 917; e-maila nie znalazłem"
   },
   {
+    "liga": "IV liga (pomorska)",
     "klub": "Sokół Bożepole Wielkie",
     "miasto": "Bożepole Wielkie",
     "adres": "Stadion, ul. Sportowa 2, 84-214 Bożepole Wielkie",
@@ -970,6 +1077,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "ogólnego e-maila brak; kontakt przez FB"
   },
   {
+    "liga": "IV liga (pomorska)",
     "klub": "Cartusia Kartuzy",
     "miasto": "Kartuzy",
     "adres": "Stadion Cartusii, ul. 3 Maja 24, 83-300 Kartuzy",
@@ -979,6 +1087,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "w wynikach adres „biuro@cartusia123.pl” – wygląda na literówkę, sprawdź na stronie przed wysyłką"
   },
   {
+    "liga": "IV liga (pomorska)",
     "klub": "Gryf Wejherowo",
     "miasto": "Wejherowo",
     "adres": "Stadion WKS Gryf, ul. Wzgórze Wolności 1, 84-200 Wejherowo",
@@ -988,6 +1097,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (zachodniopomorska)",
     "klub": "Orzeł Wałcz",
     "miasto": "Wałcz",
     "adres": "Stadion Miejski, ul. Wojska Polskiego 25a, 78-600 Wałcz",
@@ -997,6 +1107,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "inny wpis podaje al. Tysiąclecia; tel. 67 258 04 58; e-maila nie znalazłem"
   },
   {
+    "liga": "IV liga (zachodniopomorska)",
     "klub": "Pogoń II Szczecin",
     "miasto": "Szczecin",
     "adres": "Boiska treningowe Pogoni (B1), ul. Twardowskiego, Szczecin",
@@ -1006,6 +1117,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "rezerwy; stadion główny: ul. Karłowicza 28, 71-102 Szczecin; e-mail jak Pogoń Szczecin"
   },
   {
+    "liga": "IV liga (zachodniopomorska)",
     "klub": "Astra Ustronie Morskie",
     "miasto": "Ustronie Morskie",
     "adres": "Stadion NKS Astra, ul. Wojska Polskiego 24b, 78-111 Ustronie Morskie",
@@ -1015,6 +1127,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "tel. 94 351 55 35; e-maila nie znalazłem"
   },
   {
+    "liga": "IV liga (zachodniopomorska)",
     "klub": "Świt II Szczecin",
     "miasto": "Szczecin",
     "adres": "Obiekt Sportowy Skolwin, ul. Stołczyńska 100, 71-871 Szczecin",
@@ -1024,6 +1137,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "rezerwy – boisko meczowe potwierdź"
   },
   {
+    "liga": "IV liga (zachodniopomorska)",
     "klub": "Iskierka Śmierdnica",
     "miasto": "Szczecin",
     "adres": "Stadion przy ul. Topolowej, Szczecin-Śmierdnica",
@@ -1033,6 +1147,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "biuro: ul. Pyrzycka 28, 70-892 Szczecin"
   },
   {
+    "liga": "IV liga (zachodniopomorska)",
     "klub": "CRS Barlinek",
     "miasto": "Barlinek",
     "adres": "Stadion Miejski, ul. Sportowa 2, 74-320 Barlinek",
@@ -1042,6 +1157,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "klub występuje jako CRS Pogoń Barlinek"
   },
   {
+    "liga": "IV liga (zachodniopomorska)",
     "klub": "GKS Manowo",
     "miasto": "Manowo",
     "adres": "Stadion Gminny, Manowo 75, 76-015 Manowo",
@@ -1051,6 +1167,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "tel. 94 318 32 91; e-maila nie znalazłem"
   },
   {
+    "liga": "IV liga (zachodniopomorska)",
     "klub": "MKS Kotwica Kołobrzeg",
     "miasto": "Kołobrzeg",
     "adres": "Stadion Miejski im. S. Karpiniuka, ul. Śliwińskiego 10, 78-100 Kołobrzeg",
@@ -1060,6 +1177,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "sekretariat@kotwicakolobrzeg.com należał do MKP Kotwica (w likwidacji od 2025) – mail MKS skopiuj ze strony mkskotwica.kolobrzeg.pl"
   },
   {
+    "liga": "IV liga (zachodniopomorska)",
     "klub": "Sparta Gryfice",
     "miasto": "Gryfice",
     "adres": "Stadion Miejski, ul. Sportowa 1, 72-300 Gryfice",
@@ -1069,6 +1187,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (zachodniopomorska)",
     "klub": "Chemik Police",
     "miasto": "Police",
     "adres": "Stadion OSiR, ul. Siedlecka 2b, 72-010 Police",
@@ -1078,6 +1197,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (zachodniopomorska)",
     "klub": "Dąb Dębno",
     "miasto": "Dębno",
     "adres": "Stadion im. H. Witkowskiego, ul. Gorzowska 7, 74-400 Dębno",
@@ -1087,6 +1207,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "prywatny adres działacza podany jako kontakt klubu"
   },
   {
+    "liga": "IV liga (zachodniopomorska)",
     "klub": "Arkonia Szczecin",
     "miasto": "Szczecin",
     "adres": "Stadion Arkonii, ul. Arkońska, 71-245 Szczecin",
@@ -1096,6 +1217,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "numer posesji stadionu nie podany"
   },
   {
+    "liga": "IV liga (zachodniopomorska)",
     "klub": "Ina Ińsko",
     "miasto": "Ińsko",
     "adres": "Stadion Miejski, ul. Armii Krajowej 26, 73-140 Ińsko",
@@ -1105,6 +1227,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (zachodniopomorska)",
     "klub": "Wybrzeże Rewalskie Rewal",
     "miasto": "Rewal",
     "adres": "Stadion LKS, ul. Kamieńska 102, 72-344 Rewal",
@@ -1114,6 +1237,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "tel. 91 384 52 79; e-maila nie znalazłem"
   },
   {
+    "liga": "IV liga (zachodniopomorska)",
     "klub": "Gwardia Koszalin",
     "miasto": "Koszalin",
     "adres": "Stadion im. S. Figasa, ul. Fałata 34, 75-434 Koszalin",
@@ -1123,6 +1247,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (zachodniopomorska)",
     "klub": "Biali Sądów",
     "miasto": "Sądów",
     "adres": "Boisko w Sądowie, Sądów 6, 73-115 Dolice",
@@ -1132,6 +1257,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (dolnośląska)",
     "klub": "WKS Wierzbice",
     "miasto": "Wierzbice",
     "adres": "Boisko WKS, ul. Lipowa, 55-040 Wierzbice",
@@ -1141,6 +1267,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "drugi wpis podaje ul. Tarnopolską 15 – boisko meczowe potwierdź"
   },
   {
+    "liga": "IV liga (dolnośląska)",
     "klub": "GKS Raciborowice",
     "miasto": "Raciborowice",
     "adres": "Stadion, Raciborowice Górne 196, 59-720 Raciborowice Górne",
@@ -1150,6 +1277,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "stadion przejmuje nowe stowarzyszenie GKS „Podgrodzie” – kontakt może się zmienić"
   },
   {
+    "liga": "IV liga (dolnośląska)",
     "klub": "Odra Ścinawa",
     "miasto": "Ścinawa",
     "adres": "Stadion Miejski, ul. Sportowa 16, 59-330 Ścinawa",
@@ -1159,6 +1287,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (dolnośląska)",
     "klub": "Polonia-Stal Świdnica",
     "miasto": "Świdnica",
     "adres": "Stadion OSiR im. J. Kusocińskiego, ul. Śląska 35a, 58-100 Świdnica",
@@ -1168,6 +1297,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "prywatny adres działacza podany na stronie klubu"
   },
   {
+    "liga": "IV liga (dolnośląska)",
     "klub": "Polonia Bielany Wrocławskie",
     "miasto": "Bielany Wrocławskie",
     "adres": "Boisko Polonii, ul. Przystankowa 4, 55-040 Ślęza",
@@ -1177,6 +1307,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (dolnośląska)",
     "klub": "Błyskawica Gać",
     "miasto": "Gać",
     "adres": "Stadion w Gaci, Gać 10, 55-200 Oława",
@@ -1186,6 +1317,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "źródło: katalog firm, nie strona klubu"
   },
   {
+    "liga": "IV liga (dolnośląska)",
     "klub": "AKS Strzegom",
     "miasto": "Strzegom",
     "adres": "Stadion Miejski OSiR, ul. Mickiewicza 2, 58-150 Strzegom",
@@ -1195,6 +1327,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (dolnośląska)",
     "klub": "Moto Jelcz Oława",
     "miasto": "Jelcz-Laskowice",
     "adres": "Stadion Miejski, ul. Sportowa 1, 55-200 Oława",
@@ -1204,6 +1337,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (dolnośląska)",
     "klub": "Chrobry II Głogów",
     "miasto": "Głogów",
     "adres": "Stadion Chrobrego, ul. Wita Stwosza 3, 67-200 Głogów",
@@ -1213,6 +1347,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "rezerwy – mail sekcji piłkarskiej klubu"
   },
   {
+    "liga": "IV liga (dolnośląska)",
     "klub": "Górnik Złotoryja",
     "miasto": "Złotoryja",
     "adres": "Stadion Miejski, ul. Sportowa 7, 59-500 Złotoryja",
@@ -1222,6 +1357,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (dolnośląska)",
     "klub": "Lechia Dzierżoniów",
     "miasto": "Dzierżoniów",
     "adres": "Stadion Miejski OSiR, ul. Wrocławska 49, 58-200 Dzierżoniów",
@@ -1231,6 +1367,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "w katalogu podany prywatny adres – nie wpisuję; tel. 74 831 35 29"
   },
   {
+    "liga": "IV liga (dolnośląska)",
     "klub": "Polonia Środa Śląska",
     "miasto": "Środa Śląska",
     "adres": "Stadion Polonii, al. Janusza Korczaka, 55-300 Środa Śląska",
@@ -1240,6 +1377,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (dolnośląska)",
     "klub": "Orzeł Ząbkowice Śląskie",
     "miasto": "Ząbkowice Śląskie",
     "adres": "Stadion OSiR, ul. Kusocińskiego 17, 57-200 Ząbkowice Śląskie",
@@ -1249,6 +1387,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "tel. 74 815 45 19; e-maila nie znalazłem"
   },
   {
+    "liga": "IV liga (dolnośląska)",
     "klub": "Prochowiczanka Prochowice",
     "miasto": "Prochowice",
     "adres": "Stadion Miejski, ul. Wojska Polskiego 21, 59-230 Prochowice",
@@ -1258,6 +1397,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (dolnośląska)",
     "klub": "Piast Śmigród",
     "miasto": "Śmigród",
     "adres": "Stadion Miejski, 55-140 Żmigród",
@@ -1267,6 +1407,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "w SBS nazwa „Śmigród” – to MKS Piast Żmigród; ulicę stadionu potwierdź"
   },
   {
+    "liga": "IV liga (dolnośląska)",
     "klub": "Iskra Księginice",
     "miasto": "Księginice",
     "adres": "Stadion LKS Iskra, ul. Sportowa 8, Księginice, 59-300 Lubin",
@@ -1276,6 +1417,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "adres działu mediów klubu; kod pocztowy potwierdź"
   },
   {
+    "liga": "IV liga (dolnośląska)",
     "klub": "Piast Nowa Ruda",
     "miasto": "Nowa Ruda",
     "adres": "Stadion CTS, ul. Sportowa 1, 57-400 Nowa Ruda",
@@ -1285,6 +1427,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "e-mail ukryty na stronie (ochrona antyspamowa) – skopiuj ze strony"
   },
   {
+    "liga": "IV liga (dolnośląska)",
     "klub": "GKS Mirków/Długołęka",
     "miasto": "Długołęka",
     "adres": "Stadion GKS, ul. Kiełczowska, Mirków, 55-095 Długołęka",
@@ -1294,6 +1437,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "tel. 71 315 10 53; e-maila nie znalazłem"
   },
   {
+    "liga": "IV liga (śląska)",
     "klub": "Unia Turza Śląska",
     "miasto": "Turza Śląska",
     "adres": "Stadion KS Unia, ul. Bogumińska 17, 44-351 Turza Śląska",
@@ -1303,6 +1447,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (śląska)",
     "klub": "Rozwój Katowice",
     "miasto": "Katowice",
     "adres": "Stadion Rozwoju, ul. Zgody 28, 40-573 Katowice",
@@ -1312,6 +1457,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (śląska)",
     "klub": "Victoria Częstochowa",
     "miasto": "Częstochowa",
     "adres": "Stadion Victorii, ul. Krakowska 80, 42-202 Częstochowa",
@@ -1321,6 +1467,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (śląska)",
     "klub": "Polonia Łaziska Górne",
     "miasto": "Łaziska Górne",
     "adres": "Stadion Miejski, ul. Sportowa 3, 43-170 Łaziska Górne",
@@ -1330,6 +1477,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "e-mail ukryty na stronie (ochrona antyspamowa) – skopiuj ze strony"
   },
   {
+    "liga": "IV liga (śląska)",
     "klub": "Kuźnia Ustroń",
     "miasto": "Ustroń",
     "adres": "Stadion Kuźni, ul. Sportowa 5, 43-450 Ustroń",
@@ -1339,6 +1487,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (śląska)",
     "klub": "Podbeskidzie II Bielsko-Biała",
     "miasto": "Bielsko-Biała",
     "adres": "Stadion Miejski, ul. Rychlińskiego 21, 43-300 Bielsko-Biała",
@@ -1348,6 +1497,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "rezerwy – boisko meczowe potwierdź; mail klubu"
   },
   {
+    "liga": "IV liga (śląska)",
     "klub": "Ruch Radzionków",
     "miasto": "Radzionków",
     "adres": "Boisko SMS Radzionków (siedziba: ul. Św. Wojciecha 15, 41-922 Radzionków)",
@@ -1357,6 +1507,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "ulicę boiska meczowego potwierdź"
   },
   {
+    "liga": "IV liga (śląska)",
     "klub": "MRKS Czechowice-Dziedzice",
     "miasto": "Czechowice-Dziedzice",
     "adres": "Stadion MRKS, ul. Legionów 145, 43-502 Czechowice-Dziedzice",
@@ -1366,6 +1517,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (śląska)",
     "klub": "Podlesianka Katowice",
     "miasto": "Katowice",
     "adres": "Stadion LGKS 38 Podlesianka, ul. Sołtysia 25, 40-748 Katowice",
@@ -1375,6 +1527,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "e-mail ukryty na stronie – skopiuj ze strony; tel. 789 666 707"
   },
   {
+    "liga": "IV liga (śląska)",
     "klub": "Przemsza Siewierz",
     "miasto": "Siewierz",
     "adres": "Stadion LKS Przemsza, ul. Sportowa 1, 42-470 Siewierz",
@@ -1384,6 +1537,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (śląska)",
     "klub": "Drama Zbrosławice",
     "miasto": "Zbrosławice",
     "adres": "Boisko LKS Drama, ul. Reptowska, 42-674 Ptakowice",
@@ -1393,6 +1547,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "e-maila nie znalazłem; kontakt przez FB"
   },
   {
+    "liga": "IV liga (śląska)",
     "klub": "Piast II Gliwice",
     "miasto": "Gliwice",
     "adres": "Boiska Piasta, ul. Okrzei 20, 44-100 Gliwice",
@@ -1402,6 +1557,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "rezerwy – boisko meczowe potwierdź; mail spółki"
   },
   {
+    "liga": "IV liga (śląska)",
     "klub": "Gwarek Tarnowskie Góry",
     "miasto": "Tarnowskie Góry",
     "adres": "Stadion Gwarka, ul. Wojska Polskiego 2, 42-600 Tarnowskie Góry",
@@ -1411,6 +1567,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (śląska)",
     "klub": "Ruch II Chorzów",
     "miasto": "Chorzów",
     "adres": "Boisko przy ul. Cichej 6, 41-506 Chorzów",
@@ -1420,6 +1577,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "rezerwy – boisko meczowe potwierdź; mail spółki"
   },
   {
+    "liga": "IV liga (śląska)",
     "klub": "LKS Bełk",
     "miasto": "Bełk",
     "adres": "Stadion LKS Bełk, ul. Główna 28, 44-230 Bełk",
@@ -1429,6 +1587,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (śląska)",
     "klub": "Raków II Częstochowa",
     "miasto": "Częstochowa",
     "adres": "Stadion Rakowa, ul. Limanowskiego 83, 42-200 Częstochowa",
@@ -1438,6 +1597,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "rezerwy – obiekt meczowy potwierdź"
   },
   {
+    "liga": "IV liga (śląska)",
     "klub": "Szombierki Bytom",
     "miasto": "Bytom",
     "adres": "Stadion Szombierek, ul. Frycza-Modrzewskiego 3, 41-907 Bytom",
@@ -1447,6 +1607,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "źródło: katalog firm – sprawdź na szombierkibytom.com"
   },
   {
+    "liga": "IV liga (śląska)",
     "klub": "Spójnia Landek",
     "miasto": "Landek",
     "adres": "Boisko KS Spójnia, Landek 32, 43-394 Landek",
@@ -1456,6 +1617,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (wielkopolska)",
     "klub": "Huragan Pobiedziska",
     "miasto": "Pobiedziska",
     "adres": "Stadion Miejski, ul. Kiszkowska 7, 62-010 Pobiedziska",
@@ -1465,6 +1627,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (wielkopolska)",
     "klub": "Obra Kościan",
     "miasto": "Kościan",
     "adres": "Stadion Miejski im. H. Tomkiewicza, ul. Wojciecha Maya 26, 64-000 Kościan",
@@ -1474,6 +1637,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (wielkopolska)",
     "klub": "Warta Śrem",
     "miasto": "Śrem",
     "adres": "Stadion Miejski, ul. Poznańska 15, 63-100 Śrem",
@@ -1483,6 +1647,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (wielkopolska)",
     "klub": "Górnik Konin",
     "miasto": "Konin",
     "adres": "Stadion im. M. Paska, ul. Dmowskiego 4, 62-500 Konin",
@@ -1492,6 +1657,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "klub gra też na stadionie im. Złotej Jedenastki"
   },
   {
+    "liga": "IV liga (wielkopolska)",
     "klub": "Meblorz Swarzędz",
     "miasto": "Swarzędz",
     "adres": "Boisko Meblorza, os. Raczyńskiego 10, 62-020 Swarzędz",
@@ -1501,6 +1667,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "adres to siedziba; boisko meczowe i e-mail skopiuj ze strony"
   },
   {
+    "liga": "IV liga (wielkopolska)",
     "klub": "Astra Krotoszyn",
     "miasto": "Krotoszyn",
     "adres": "Stadion Miejski, ul. Sportowa 1, 63-700 Krotoszyn",
@@ -1510,6 +1677,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "tel. 62 725 46 55; e-maila nie znalazłem"
   },
   {
+    "liga": "IV liga (wielkopolska)",
     "klub": "Avia Kamionki",
     "miasto": "Kamionki",
     "adres": "Stadion KS Avia, ul. Mieczewska 2, 62-023 Kamionki",
@@ -1519,6 +1687,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (wielkopolska)",
     "klub": "Ostrovia 1909 Ostrów Wielkopolski",
     "miasto": "Ostrów Wielkopolski",
     "adres": "Stadion Miejski, ul. Piłsudskiego, 63-400 Ostrów Wielkopolski",
@@ -1528,6 +1697,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "numer posesji stadionu nie podany; e-mail skopiuj ze strony kontaktowej"
   },
   {
+    "liga": "IV liga (wielkopolska)",
     "klub": "Kłos Budzyń",
     "miasto": "Budzyń",
     "adres": "Boisko BKS Kłos, ul. Lipowa 6, 64-840 Budzyń",
@@ -1537,6 +1707,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "adres to siedziba klubu; tel. 607 911 907"
   },
   {
+    "liga": "IV liga (wielkopolska)",
     "klub": "Pogoń Nowe Skalmierzyce",
     "miasto": "Nowe Skalmierzyce",
     "adres": "Stadion Miejsko-Gminny, ul. Mostowa 1a, 63-460 Nowe Skalmierzyce",
@@ -1546,6 +1717,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (wielkopolska)",
     "klub": "Polonia Chodzież",
     "miasto": "Chodzież",
     "adres": "Stadion im. S. Kitkowskiego, ul. Staszica 12, 64-800 Chodzież",
@@ -1555,6 +1727,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "tel. 67 281 25 10; e-maila nie znalazłem; stadion w przebudowie"
   },
   {
+    "liga": "IV liga (wielkopolska)",
     "klub": "Piast Kobylnica",
     "miasto": "Kobylnica",
     "adres": "Stadion w Kobylnicy, ul. Poznańska 50, 62-006 Kobylnica",
@@ -1564,6 +1737,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (wielkopolska)",
     "klub": "Nielba Wągrowiec",
     "miasto": "Wągrowiec",
     "adres": "Stadion OSiR im. S. Bąka, ul. Kościuszki 59, 62-100 Wągrowiec",
@@ -1573,6 +1747,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (wielkopolska)",
     "klub": "Polonia 1912 Leszno",
     "miasto": "Leszno",
     "adres": "Stadion lekkoatletyczny, ul. Strzelecka 8, 64-100 Leszno",
@@ -1582,6 +1757,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "biuro: ul. Górowska 49"
   },
   {
+    "liga": "IV liga (wielkopolska)",
     "klub": "Polonia Golina",
     "miasto": "Golina",
     "adres": "Stadion Miejski, 62-590 Golina",
@@ -1591,6 +1767,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "ulicy stadionu nie znalazłem"
   },
   {
+    "liga": "IV liga (wielkopolska)",
     "klub": "Kania Gostyń",
     "miasto": "Gostyń",
     "adres": "Stadion Miejski, ul. Sportowa 1, 63-800 Gostyń",
@@ -1600,6 +1777,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (wielkopolska)",
     "klub": "Mieszko Gniezno",
     "miasto": "Gniezno",
     "adres": "Stadion Miejski GOSiR, ul. Strumykowa 8, 62-200 Gniezno",
@@ -1609,6 +1787,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "akademia: akademia@mieszkogniezno.eu"
   },
   {
+    "liga": "IV liga (wielkopolska)",
     "klub": "LKS Gołuchów",
     "miasto": "Gołuchów",
     "adres": "Boisko LKS, ul. Słowackiego (wjazd od ul. Czartoryskich 53), 63-322 Gołuchów",
@@ -1618,6 +1797,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "CLJ U15",
     "klub": "POLONIA WARSZAWA S.A.",
     "miasto": "Warszawa",
     "adres": "Stadion Polonii, ul. Konwiktorska 6, 00-206 Warszawa",
@@ -1627,6 +1807,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "na stronie formularz; kks@poloniawarszawa.com to KKS Polonia (inny podmiot)"
   },
   {
+    "liga": "CLJ U15",
     "klub": "Legia Warszawa S.A.",
     "miasto": "Warszawa",
     "adres": "Stadion Legii, ul. Łazienkowska 3, 00-449 Warszawa",
@@ -1636,6 +1817,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "akademia trenuje w Legia Training Center (Książenice)"
   },
   {
+    "liga": "CLJ U15",
     "klub": "Widzew Łódź SA",
     "miasto": "Łódź",
     "adres": "Stadion Widzewa, al. Piłsudskiego 138, 92-230 Łódź",
@@ -1645,6 +1827,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "akademia: tel. 728 402 235"
   },
   {
+    "liga": "CLJ U15",
     "klub": "Escola Varsovia",
     "miasto": "Warszawa",
     "adres": "Ośrodek Escola Varsovia, ul. Fleminga 2, 03-176 Warszawa",
@@ -1654,6 +1837,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "CLJ U15",
     "klub": "UKS TORPEDO MOKOTÓW",
     "miasto": "Warszawa",
     "adres": "Siedziba: ul. Puławska 25A lok. 1, 02-515 Warszawa",
@@ -1663,6 +1847,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "boisko i e-mail skopiuj ze strony torpedo.waw.pl"
   },
   {
+    "liga": "CLJ U15",
     "klub": "RADOMIAK S.A.",
     "miasto": "Radom",
     "adres": "Stadion im. Braci Czachorów, ul. Struga 63, 26-600 Radom",
@@ -1672,6 +1857,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "akademia: akademia@rksradomiak.pl"
   },
   {
+    "liga": "CLJ U15",
     "klub": "Jagiellonia Białystok SSA",
     "miasto": "Białystok",
     "adres": "Stadion Miejski (Chorten Arena), ul. Słoneczna 1, 15-323 Białystok",
@@ -1681,6 +1867,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "CLJ U15",
     "klub": "S.S.M. WISŁA PŁOCK",
     "miasto": "Płock",
     "adres": "ORLEN Stadion im. K. Górskiego, ul. Łukasiewicza 34, 09-400 Płock",
@@ -1690,6 +1877,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "akademia – boisko treningowe i e-mail do uzupełnienia"
   },
   {
+    "liga": "CLJ U15",
     "klub": "MKS Znicz Pruszków",
     "miasto": "Pruszków",
     "adres": "Stadion MZOS, ul. Bohaterów Warszawy 4, 05-800 Pruszków",
@@ -1699,6 +1887,17 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "CLJ U15",
+    "klub": "MUKS STAL NIEWIADÓW",
+    "miasto": "Niewiadów",
+    "adres": "",
+    "email": "",
+    "zrodlo": "",
+    "status": "Do uzupełnienia",
+    "uwagi": "Do uzupełnienia"
+  },
+  {
+    "liga": "CLJ U15",
     "klub": "ZKS Olimpia Elbląg",
     "miasto": "Elbląg",
     "adres": "Stadion Miejski, ul. Agrykola 8, 82-300 Elbląg",
@@ -1708,6 +1907,17 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "CLJ U15",
+    "klub": "AP TALENT BIAŁYSTOK",
+    "miasto": "Białystok",
+    "adres": "",
+    "email": "",
+    "zrodlo": "",
+    "status": "Do uzupełnienia",
+    "uwagi": "Do uzupełnienia"
+  },
+  {
+    "liga": "CLJ U15",
     "klub": "ŁKS Łódź S.A.",
     "miasto": "Łódź",
     "adres": "Stadion Miejski im. W. Króla, al. Unii Lubelskiej 2, 94-020 Łódź",
@@ -1717,6 +1927,17 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "CLJ U15",
+    "klub": "UKS VARSOVIA",
+    "miasto": "Warszawa",
+    "adres": "",
+    "email": "",
+    "zrodlo": "",
+    "status": "Do uzupełnienia",
+    "uwagi": "Do uzupełnienia"
+  },
+  {
+    "liga": "CLJ U15",
     "klub": "Lechia Gdańsk AP",
     "miasto": "Gdańsk",
     "adres": "Polsat Plus Arena Gdańsk, ul. Pokoleń Lechii Gdańsk 1, 80-560 Gdańsk",
@@ -1726,6 +1947,17 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "adres stadionu z wiedzy ogólnej, nie sprawdzony w sieci; e-mail do uzupełnienia"
   },
   {
+    "liga": "CLJ U15",
+    "klub": "FASE Szczecin",
+    "miasto": "Szczecin",
+    "adres": "",
+    "email": "",
+    "zrodlo": "",
+    "status": "Do uzupełnienia",
+    "uwagi": "Do uzupełnienia"
+  },
+  {
+    "liga": "CLJ U15",
     "klub": "MIESZKO Gniezno",
     "miasto": "Gniezno",
     "adres": "Stadion Miejski GOSiR, ul. Strumykowa 8, 62-200 Gniezno",
@@ -1735,6 +1967,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "CLJ U15",
     "klub": "KKS LECH Poznań",
     "miasto": "Poznań",
     "adres": "Enea Stadion, ul. Bułgarska 17, 60-320 Poznań",
@@ -1744,6 +1977,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "adres z wiedzy ogólnej; akademia gra we Wronkach (ul. Leśna 15a); e-mail do uzupełnienia"
   },
   {
+    "liga": "CLJ U15",
     "klub": "Akademia Piłkarska Chemik Bydgoszcz",
     "miasto": "Bydgoszcz",
     "adres": "Stadion Chemik, ul. Glinki 79, 85-861 Bydgoszcz",
@@ -1753,6 +1987,17 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "CLJ U15",
+    "klub": "WARTA POZNAŃ SA",
+    "miasto": "Poznań",
+    "adres": "",
+    "email": "",
+    "zrodlo": "",
+    "status": "Do uzupełnienia",
+    "uwagi": "Do uzupełnienia"
+  },
+  {
+    "liga": "CLJ U15",
     "klub": "ARKONIA Szczecin",
     "miasto": "Szczecin",
     "adres": "Stadion Arkonii, ul. Arkońska, 71-245 Szczecin",
@@ -1762,6 +2007,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "CLJ U15",
     "klub": "Pogoń Szczecin",
     "miasto": "Szczecin",
     "adres": "Stadion im. F. Krygiera, ul. Karłowicza 28, 71-102 Szczecin",
@@ -1771,6 +2017,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "e-mail do uzupełnienia"
   },
   {
+    "liga": "CLJ U15",
     "klub": "Arka Gdynia SI",
     "miasto": "Gdynia",
     "adres": "Stadion Miejski, ul. Olimpijska 5, 81-538 Gdynia",
@@ -1780,6 +2027,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "e-mail do uzupełnienia"
   },
   {
+    "liga": "CLJ U15",
     "klub": "Jaguar Gdańsk AP",
     "miasto": "Gdańsk",
     "adres": "Siedziba: ul. Budowlanych 49/5, 80-298 Gdańsk",
@@ -1789,6 +2037,37 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "boisko akademii potwierdź"
   },
   {
+    "liga": "CLJ U15",
+    "klub": "Salos Szczecin",
+    "miasto": "Szczecin",
+    "adres": "",
+    "email": "",
+    "zrodlo": "",
+    "status": "Do uzupełnienia",
+    "uwagi": "Do uzupełnienia"
+  },
+  {
+    "liga": "CLJ U15",
+    "klub": "APR Lampart Poznań",
+    "miasto": "Poznań",
+    "adres": "",
+    "email": "",
+    "zrodlo": "",
+    "status": "Do uzupełnienia",
+    "uwagi": "Do uzupełnienia"
+  },
+  {
+    "liga": "CLJ U15",
+    "klub": "FOOTBALL ARENA Szczecin",
+    "miasto": "Szczecin",
+    "adres": "",
+    "email": "",
+    "zrodlo": "",
+    "status": "Do uzupełnienia",
+    "uwagi": "Do uzupełnienia"
+  },
+  {
+    "liga": "CLJ U15",
     "klub": "GÓRNIK ZABRZE S.A.",
     "miasto": "Zabrze",
     "adres": "Arena Zabrze, ul. Roosevelta 81, 41-800 Zabrze",
@@ -1798,6 +2077,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "adres z wiedzy ogólnej; e-mail do uzupełnienia"
   },
   {
+    "liga": "CLJ U15",
     "klub": "ŚLĄSK WROCŁAW",
     "miasto": "Wrocław",
     "adres": "Tarczyński Arena, al. Śląska 1, 54-118 Wrocław",
@@ -1807,6 +2087,27 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "adres z wiedzy ogólnej; akademia gra przy ul. Oporowskiej 62; e-mail do uzupełnienia"
   },
   {
+    "liga": "CLJ U15",
+    "klub": "GKS GIEKSA KATOWICE S.A.",
+    "miasto": "Katowice",
+    "adres": "",
+    "email": "",
+    "zrodlo": "",
+    "status": "Do uzupełnienia",
+    "uwagi": "Do uzupełnienia"
+  },
+  {
+    "liga": "CLJ U15",
+    "klub": "FC Wrocław Academy U.K.S.",
+    "miasto": "Wrocław",
+    "adres": "",
+    "email": "",
+    "zrodlo": "",
+    "status": "Do uzupełnienia",
+    "uwagi": "Do uzupełnienia"
+  },
+  {
+    "liga": "CLJ U15",
     "klub": "CHROBRY GŁOGÓW S.A.",
     "miasto": "Głogów",
     "adres": "Stadion Chrobrego, ul. Wita Stwosza 3, 67-200 Głogów",
@@ -1816,6 +2117,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "CLJ U15",
     "klub": "ZAGŁĘBIE LUBIN",
     "miasto": "Lubin",
     "adres": "KGHM Zagłębie Arena, ul. M. Skłodowskiej-Curie 98, 59-300 Lubin",
@@ -1825,6 +2127,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "e-mail do uzupełnienia"
   },
   {
+    "liga": "CLJ U15",
     "klub": "GKS PIAST GLIWICE S.A.",
     "miasto": "Gliwice",
     "adres": "Stadion Miejski im. P. Wieczorka, ul. Okrzei 20, 44-100 Gliwice",
@@ -1834,6 +2137,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "sekcje młodzieżowe stowarzyszenia: sekretariat@piast.gliwice.pl"
   },
   {
+    "liga": "CLJ U15",
     "klub": "MIEDŹ LEGNICA",
     "miasto": "Legnica",
     "adres": "Stadion im. Orła Białego, ul. Hetmańska 2, 59-220 Legnica",
@@ -1843,6 +2147,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "CLJ U15",
     "klub": "RKS RAKÓW CZĘSTOCHOWA S.A.",
     "miasto": "Częstochowa",
     "adres": "Stadion Rakowa, ul. Limanowskiego 83, 42-200 Częstochowa",
@@ -1852,6 +2157,17 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "e-mail do uzupełnienia"
   },
   {
+    "liga": "CLJ U15",
+    "klub": "OKS ODRA OPOLE",
+    "miasto": "Opole",
+    "adres": "",
+    "email": "",
+    "zrodlo": "",
+    "status": "Do uzupełnienia",
+    "uwagi": "Do uzupełnienia"
+  },
+  {
+    "liga": "CLJ U15",
     "klub": "STILON GORZÓW WLKP.",
     "miasto": "Gorzów Wielkopolski",
     "adres": "Stadion OSiR, ul. Olimpijska 29, 66-400 Gorzów Wielkopolski",
@@ -1861,6 +2177,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "CLJ U15",
     "klub": "BTS REKORD BIELSKO-BIAŁA",
     "miasto": "Bielsko-Biała",
     "adres": "Centrum Sportu Rekord, ul. Startowa 13, 43-300 Bielsko-Biała",
@@ -1870,6 +2187,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "CLJ U15",
     "klub": "LECHIA ZIELONA GÓRA",
     "miasto": "Zielona Góra",
     "adres": "Stadion MOSiR „Dołek”, ul. Sulechowska 37, 65-147 Zielona Góra",
@@ -1879,6 +2197,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "e-mail do uzupełnienia"
   },
   {
+    "liga": "CLJ U15",
     "klub": "MKS KLUCZBORK",
     "miasto": "Kluczbork",
     "adres": "Stadion Miejski, ul. Sportowa 7, 46-200 Kluczbork",
@@ -1888,6 +2207,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "CLJ U15",
     "klub": "Resovia Rzeszów S.A.",
     "miasto": "Rzeszów",
     "adres": "Stadion Miejski, ul. Hetmańska 69, 35-078 Rzeszów",
@@ -1897,6 +2217,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "CLJ U15",
     "klub": "Wisła Kraków",
     "miasto": "Kraków",
     "adres": "Stadion Wisły, ul. Reymonta 22, 30-059 Kraków",
@@ -1906,6 +2227,17 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "adres z wiedzy ogólnej; e-mail do uzupełnienia"
   },
   {
+    "liga": "CLJ U15",
+    "klub": "Beniaminek PROFBUD Krosno",
+    "miasto": "Krosno",
+    "adres": "",
+    "email": "",
+    "zrodlo": "",
+    "status": "Do uzupełnienia",
+    "uwagi": "Do uzupełnienia"
+  },
+  {
+    "liga": "CLJ U15",
     "klub": "Górnik Łęczna S.A.",
     "miasto": "Łęczna",
     "adres": "Stadion Górnika, al. Jana Pawła II 13, 21-010 Łęczna",
@@ -1915,6 +2247,17 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "CLJ U15",
+    "klub": "Garbarnia Kraków",
+    "miasto": "Kraków",
+    "adres": "",
+    "email": "",
+    "zrodlo": "",
+    "status": "Do uzupełnienia",
+    "uwagi": "Do uzupełnienia"
+  },
+  {
+    "liga": "CLJ U15",
     "klub": "KORONA S.A. Kielce",
     "miasto": "Kielce",
     "adres": "Exbud Arena, ul. Ściegiennego 8, 25-033 Kielce",
@@ -1924,6 +2267,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "e-mail do uzupełnienia"
   },
   {
+    "liga": "CLJ U15",
     "klub": "Akademia Mistrzów Cracovia Kraków",
     "miasto": "Kraków",
     "adres": "Stadion Cracovii, ul. Kałuży 1, 30-111 Kraków",
@@ -1933,6 +2277,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "adres z wiedzy ogólnej; boisko akademii i e-mail do uzupełnienia"
   },
   {
+    "liga": "CLJ U15",
     "klub": "KS Cracovia SA Kraków",
     "miasto": "Kraków",
     "adres": "Stadion Cracovii, ul. Kałuży 1, 30-111 Kraków",
@@ -1942,6 +2287,37 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "adres z wiedzy ogólnej; e-mail do uzupełnienia"
   },
   {
+    "liga": "CLJ U15",
+    "klub": "MKS Limanovia w Limanowej",
+    "miasto": "Limanowa",
+    "adres": "",
+    "email": "",
+    "zrodlo": "",
+    "status": "Do uzupełnienia",
+    "uwagi": "Do uzupełnienia"
+  },
+  {
+    "liga": "CLJ U15",
+    "klub": "DAP Dębica",
+    "miasto": "Dębica",
+    "adres": "",
+    "email": "",
+    "zrodlo": "",
+    "status": "Do uzupełnienia",
+    "uwagi": "Do uzupełnienia"
+  },
+  {
+    "liga": "CLJ U15",
+    "klub": "LKS ORLĘTA Kielce",
+    "miasto": "Kielce",
+    "adres": "",
+    "email": "",
+    "zrodlo": "",
+    "status": "Do uzupełnienia",
+    "uwagi": "Do uzupełnienia"
+  },
+  {
+    "liga": "CLJ U15",
     "klub": "Stal Rzeszów S.A.",
     "miasto": "Rzeszów",
     "adres": "Stadion Miejski, ul. Hetmańska 69, 35-078 Rzeszów",
@@ -1951,6 +2327,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "e-mail do uzupełnienia"
   },
   {
+    "liga": "CLJ U15",
     "klub": "FA Sandecja Nowy Sącz",
     "miasto": "Nowy Sącz",
     "adres": "Stadion im. o. Władysława Augustynka, ul. Kilińskiego 47, 33-300 Nowy Sącz",
@@ -1960,6 +2337,17 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "akademia to osobny podmiot – boisko i e-mail do uzupełnienia"
   },
   {
+    "liga": "CLJ U15",
+    "klub": "KKP KORONA Kielce",
+    "miasto": "Kielce",
+    "adres": "",
+    "email": "",
+    "zrodlo": "",
+    "status": "Do uzupełnienia",
+    "uwagi": "Do uzupełnienia"
+  },
+  {
+    "liga": "IV liga (łódzka)",
     "klub": "Boruta Zgierz",
     "miasto": "Zgierz",
     "adres": "Stadion Miejski MOSiR, ul. Wschodnia 2, 95-100 Zgierz",
@@ -1969,6 +2357,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "e-maila klubu nie znalazłem (mosir-zgierz@wp.pl to zarządca stadionu)"
   },
   {
+    "liga": "IV liga (łódzka)",
     "klub": "Zjednoczeni Stryków",
     "miasto": "Stryków",
     "adres": "Stadion im. M. Koprowskiego, ul. Brzezińska 24, 95-010 Stryków",
@@ -1978,6 +2367,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (łódzka)",
     "klub": "Polonia Piotrków Trybunalski",
     "miasto": "Piotrków Trybunalski",
     "adres": "Stadion Miejski „Polonia”, ul. Ronalda Reagana 18, 97-300 Piotrków Trybunalski",
@@ -1987,6 +2377,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "tel. 605 741 034; e-mail skopiuj ze strony kontaktowej"
   },
   {
+    "liga": "IV liga (łódzka)",
     "klub": "ŁKS III Łódź",
     "miasto": "Łódź",
     "adres": "Ośrodek Akademii ŁKS, ul. Krańcowa 19, Łódź",
@@ -1996,6 +2387,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "trzecia drużyna – boisko potwierdź; mail klubu"
   },
   {
+    "liga": "IV liga (łódzka)",
     "klub": "RKS Radomsko",
     "miasto": "Radomsko",
     "adres": "Stadion Miejski, ul. Brzeźnicka 26, 97-500 Radomsko",
@@ -2005,6 +2397,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "e-mail skopiuj ze strony „Dane kontaktowe”"
   },
   {
+    "liga": "IV liga (łódzka)",
     "klub": "Orzeł Parzęczew",
     "miasto": "Parzęczew",
     "adres": "Stadion LKS Orzeł, ul. Południowa 1a, 95-045 Parzęczew",
@@ -2014,6 +2407,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "tel. 606 311 188; e-maila nie znalazłem"
   },
   {
+    "liga": "IV liga (łódzka)",
     "klub": "Ekolog Wojsławice",
     "miasto": "Wojsławice",
     "adres": "Boisko LKS Ekolog, Wojsławice 105, 98-220 Zduńska Wola",
@@ -2023,6 +2417,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "tel. 667 547 864; e-maila nie znalazłem"
   },
   {
+    "liga": "IV liga (łódzka)",
     "klub": "Orkan Buczek",
     "miasto": "Buczek",
     "adres": "Stadion gminny, ul. Spółdzielcza 1, 98-113 Buczek",
@@ -2032,6 +2427,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "adres to siedziba klubu; e-maila nie znalazłem"
   },
   {
+    "liga": "IV liga (łódzka)",
     "klub": "Concordia Piotrków Trybunalski",
     "miasto": "Piotrków Trybunalski",
     "adres": "Stadion Miejski „Concordia”, ul. Żwirki 6, 97-300 Piotrków Trybunalski",
@@ -2041,6 +2437,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "mail UKS Concordia 1909 – sprawdź, czy prowadzi drużynę seniorów"
   },
   {
+    "liga": "IV liga (łódzka)",
     "klub": "Włókniarz Pabianice",
     "miasto": "Pabianice",
     "adres": "Stadion MOSiR, ul. Grota Roweckiego 3, 95-200 Pabianice",
@@ -2050,6 +2447,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "e-maila klubu nie znalazłem"
   },
   {
+    "liga": "IV liga (łódzka)",
     "klub": "Stal Głowno",
     "miasto": "Głowno",
     "adres": "Stadion Miejski, ul. Kopernika 37, 95-015 Głowno",
@@ -2059,6 +2457,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "e-mail ukryty na stronie (ochrona antyspamowa) – skopiuj ze strony"
   },
   {
+    "liga": "IV liga (łódzka)",
     "klub": "AKS SMS Łódź",
     "miasto": "Łódź",
     "adres": "Ośrodek SMS im. K. Górskiego, ul. Milionowa 12, 93-193 Łódź",
@@ -2068,6 +2467,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (łódzka)",
     "klub": "Zryw Wygoda",
     "miasto": "Wygoda",
     "adres": "Boisko SKF Zryw, Wygoda 55, 99-400 Łowicz",
@@ -2077,6 +2477,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "prywatny adres kierownika podany jako kontakt klubu"
   },
   {
+    "liga": "IV liga (łódzka)",
     "klub": "GKS Bełchatów",
     "miasto": "Bełchatów",
     "adres": "GIEKSA Arena, ul. Sportowa 3, 97-400 Bełchatów",
@@ -2086,6 +2487,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (łódzka)",
     "klub": "LZS Justynów",
     "miasto": "Justynów",
     "adres": "Stadion LZS, ul. Główna 86, 95-020 Justynów",
@@ -2095,6 +2497,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (łódzka)",
     "klub": "KS Kutno",
     "miasto": "Kutno",
     "adres": "Stadion Miejski, ul. Kościuszki 26, 99-300 Kutno",
@@ -2104,6 +2507,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "adres siedziby = obiekt; potwierdź boisko"
   },
   {
+    "liga": "IV liga (łódzka)",
     "klub": "Ceramika Opoczno",
     "miasto": "Opoczno",
     "adres": "Stadion Ceramiki, al. Sportowa 1, 26-300 Opoczno",
@@ -2113,6 +2517,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "IV liga (łódzka)",
     "klub": "Sokół Aleksandrów Łódzki",
     "miasto": "Aleksandrów Łódzki",
     "adres": "Stadion MOSiR, ul. 11 Listopada 98, 95-070 Aleksandrów Łódzki",
@@ -2122,6 +2527,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "I liga",
     "klub": "Lechia Gdańsk",
     "miasto": "",
     "adres": "Polsat Plus Arena Gdańsk, ul. Pokoleń Lechii Gdańsk 1, 80-560 Gdańsk",
@@ -2131,6 +2537,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "adres stadionu z wiedzy ogólnej, nie sprawdzony w sieci; e-mail do uzupełnienia"
   },
   {
+    "liga": "I liga",
     "klub": "Arka Gdynia",
     "miasto": "",
     "adres": "Stadion Miejski, ul. Olimpijska 5, 81-538 Gdynia",
@@ -2140,6 +2547,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "e-mail do uzupełnienia"
   },
   {
+    "liga": "I liga",
     "klub": "Polonia Warszawa",
     "miasto": "",
     "adres": "Stadion Polonii, ul. Konwiktorska 6, 00-206 Warszawa",
@@ -2149,6 +2557,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "na stronie formularz; kks@poloniawarszawa.com to KKS Polonia (inny podmiot)"
   },
   {
+    "liga": "I liga",
     "klub": "Miedź Legnica",
     "miasto": "",
     "adres": "Stadion im. Orła Białego, ul. Hetmańska 2, 59-220 Legnica",
@@ -2158,6 +2567,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "I liga",
     "klub": "ŁKS Łódź",
     "miasto": "",
     "adres": "Stadion Miejski im. W. Króla, al. Unii Lubelskiej 2, 94-020 Łódź",
@@ -2167,6 +2577,27 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "I liga",
+    "klub": "Odra Opole",
+    "miasto": "",
+    "adres": "",
+    "email": "",
+    "zrodlo": "",
+    "status": "Do uzupełnienia",
+    "uwagi": "Do uzupełnienia"
+  },
+  {
+    "liga": "I liga",
+    "klub": "Bruk-Bet Termalica Nieciecza",
+    "miasto": "",
+    "adres": "",
+    "email": "",
+    "zrodlo": "",
+    "status": "Do uzupełnienia",
+    "uwagi": "Do uzupełnienia"
+  },
+  {
+    "liga": "I liga",
     "klub": "Ruch Chorzów",
     "miasto": "",
     "adres": "Stadion Śląski, ul. Katowicka 10, 41-500 Chorzów",
@@ -2176,6 +2607,17 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "obiekt meczowy potwierdź (stadion przy ul. Cichej 6 w przebudowie); mail sekretariatu spółki"
   },
   {
+    "liga": "I liga",
+    "klub": "Puszcza Niepołomice",
+    "miasto": "",
+    "adres": "",
+    "email": "",
+    "zrodlo": "",
+    "status": "Do uzupełnienia",
+    "uwagi": "Do uzupełnienia"
+  },
+  {
+    "liga": "I liga",
     "klub": "Polonia Bytom",
     "miasto": "",
     "adres": "Stadion im. E. Szymkowiaka, ul. Olimpijska 2, 41-902 Bytom",
@@ -2185,6 +2627,17 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "adres z wiedzy ogólnej; e-mail do uzupełnienia"
   },
   {
+    "liga": "I liga",
+    "klub": "Pogoń Grodzisk Mazowiecki",
+    "miasto": "",
+    "adres": "",
+    "email": "",
+    "zrodlo": "",
+    "status": "Do uzupełnienia",
+    "uwagi": "Do uzupełnienia"
+  },
+  {
+    "liga": "I liga",
     "klub": "Chrobry Głogów",
     "miasto": "",
     "adres": "Stadion Chrobrego, ul. Wita Stwosza 3, 67-200 Głogów",
@@ -2194,6 +2647,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "sekretariat spółki: sekretariat@chrobry-glogow.pl"
   },
   {
+    "liga": "I liga",
     "klub": "Stal Rzeszów",
     "miasto": "",
     "adres": "Stadion Miejski, ul. Hetmańska 69, 35-078 Rzeszów",
@@ -2203,6 +2657,17 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "e-mail do uzupełnienia"
   },
   {
+    "liga": "I liga",
+    "klub": "Pogoń Siedlce",
+    "miasto": "",
+    "adres": "",
+    "email": "",
+    "zrodlo": "",
+    "status": "Do uzupełnienia",
+    "uwagi": "Do uzupełnienia"
+  },
+  {
+    "liga": "I liga",
     "klub": "Stal Mielec",
     "miasto": "",
     "adres": "Stadion Miejski, ul. Solskiego 1, 39-300 Mielec",
@@ -2212,6 +2677,17 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": "adres z wiedzy ogólnej; e-mail do uzupełnienia"
   },
   {
+    "liga": "I liga",
+    "klub": "Warta Poznań",
+    "miasto": "",
+    "adres": "",
+    "email": "",
+    "zrodlo": "",
+    "status": "Do uzupełnienia",
+    "uwagi": "Do uzupełnienia"
+  },
+  {
+    "liga": "I liga",
     "klub": "Podbeskidzie Bielsko-Biała",
     "miasto": "",
     "adres": "Stadion Miejski, ul. Rychlińskiego 21, 43-300 Bielsko-Biała",
@@ -2221,6 +2697,17 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "uwagi": ""
   },
   {
+    "liga": "I liga",
+    "klub": "Unia Skierniewice",
+    "miasto": "",
+    "adres": "",
+    "email": "",
+    "zrodlo": "",
+    "status": "Do uzupełnienia",
+    "uwagi": "Do uzupełnienia"
+  },
+  {
+    "liga": "—",
     "klub": "Piast Gliwice",
     "miasto": "",
     "adres": "Stadion Miejski im. P. Wieczorka, ul. Okrzei 20, 44-100 Gliwice",

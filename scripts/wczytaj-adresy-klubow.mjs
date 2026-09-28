@@ -23,6 +23,7 @@ const tekst = (v) => String(v ?? "").replace(/\s+/g, " ").trim();
 const widziane = new Set();
 const adresy = XLSX.utils.sheet_to_json(arkusz, { defval: "" })
   .map((w) => ({
+    liga: tekst(w["Liga / grupa"]),
     klub: tekst(w["Klub"]),
     miasto: tekst(w["Miasto"]),
     adres: tekst(w["Adres obiektu"]),
@@ -31,7 +32,8 @@ const adresy = XLSX.utils.sheet_to_json(arkusz, { defval: "" })
     status: tekst(w["Status"]),
     uwagi: tekst(w["Uwagi"]),
   }))
-  .filter((a) => a.klub && (a.adres || a.email))
+  // Kluby bez adresu i e-maila też zostają — lista ma pokazywać, czego jeszcze brakuje.
+  .filter((a) => a.klub)
   .filter((a) => !widziane.has(a.klub) && widziane.add(a.klub));
 
 const naglowek = `// ADRESY OBIEKTÓW I E-MAILE POLSKICH KLUBÓW — wygenerowane z arkusza, NIE POPRAWIAJ RĘCZNIE.
@@ -41,12 +43,13 @@ const naglowek = `// ADRESY OBIEKTÓW I E-MAILE POLSKICH KLUBÓW — wygenerowan
 // Stan na dzień przeniesienia: ${new Date().toISOString().slice(0, 10)} · ${adresy.length} klubów.
 
 export type AdresKlubu = {
+  liga: string;    // rozgrywki, w których klub jest w bazie SBS (pierwsze, jeśli jest w dwóch)
   klub: string;    // nazwa dokładnie jak w bazie klubów SBS
   miasto: string;
   adres: string;   // adres obiektu, na którym klub gra mecze
   email: string;   // oficjalny kontakt klubu — pusty, gdy klub go nie publikuje
   zrodlo: string;  // strona, z której wzięto dane
-  status: string;  // Zweryfikowany / Częściowo / Do potwierdzenia
+  status: string;  // Zweryfikowany / Częściowo / Do potwierdzenia / Do uzupełnienia
   uwagi: string;
 };
 `;

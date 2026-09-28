@@ -20,9 +20,9 @@ const { ADRESY_KLUBOW } = await import("data:text/javascript;base64," + Buffer.f
 const zrodlo = fs.readFileSync("src/main.ts", "utf8");
 
 console.log('\n1. Dane z arkusza');
-sprawdz(`klubów z adresem lub e-mailem: ${ADRESY_KLUBOW.length}`, ADRESY_KLUBOW.length >= 200, String(ADRESY_KLUBOW.length));
+sprawdz(`klubów w spisie: ${ADRESY_KLUBOW.length}`, ADRESY_KLUBOW.length >= 250, String(ADRESY_KLUBOW.length));
 sprawdz('każdy wpis ma status i źródło albo status „Do potwierdzenia"',
-  ADRESY_KLUBOW.every(a => a.status && (a.zrodlo || a.status === 'Do potwierdzenia' || a.status === 'Częściowo')),
+  ADRESY_KLUBOW.every(a => a.status && (a.zrodlo || a.status === 'Do potwierdzenia' || a.status === 'Częściowo' || a.status === 'Do uzupełnienia')),
   ADRESY_KLUBOW.filter(a => !a.status).map(a => a.klub).join(', '));
 sprawdz('każdy e-mail wygląda jak adres',
   ADRESY_KLUBOW.every(a => !a.email || /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(a.email)),
@@ -41,7 +41,17 @@ sprawdz('przycisk jest na liście polskiej', /data-action="contacts-fill-address
 sprawdz('przycisk ma obsługę', /\[data-action="contacts-fill-addresses"\]/.test(zrodlo));
 sprawdz('klient go nie widzi (akcja pracowni)', /'contacts-fill-addresses'/.test(zrodlo.slice(zrodlo.indexOf('const AKCJE_BEZ_KLIENTA'))));
 
-console.log('\n3. Uzupełnia tylko puste pola');
+console.log('\n3. Zakładka „Kluby w Polsce" — jak Europa i Federacja');
+sprawdz('pigułka z ikoną i liczbą klubów',
+  /pill\(`Kluby w Polsce \(\$\{ADRESY_KLUBOW\.length\}\)`, kontaktyZakladka === 'kluby', 'kontakty-zakladka', \{val:'kluby'\}, '🏟️'\)/.test(zrodlo));
+sprawdz('pigułka otwiera widok z arkusza', /if\(kontaktyZakladka === 'kluby'\)\{\s*\n\s*return `[^`]*viewKontaktyKlubyPL\(\)/.test(zrodlo));
+sprawdz('grupowanie po ligach, I liga przed IV ligą i CLJ', /const KOLEJNOSC_LIG_PL = \['I liga', 'II liga', 'III liga', 'IV liga', 'CLJ'\];/.test(zrodlo));
+sprawdz('adres do skopiowania, e-mail jako mailto, źródło przy wierszu',
+  /function viewKontaktyKlubyPL\(\)\{[\s\S]*data-action="kopiuj-adres"[\s\S]*href="mailto:\$\{esc\(a\.email\)\}"[\s\S]*źródło ↗/.test(zrodlo));
+sprawdz('lista pokazuje też kluby bez danych (widać, czego brakuje)', ADRESY_KLUBOW.some(a => !a.adres && !a.email));
+sprawdz('każdy wpis ma ligę', ADRESY_KLUBOW.every(a => a.liga), ADRESY_KLUBOW.filter(a => !a.liga).map(a => a.klub).join(', '));
+
+console.log('\n4. Uzupełnia tylko puste pola');
 {
   const fn = zrodlo.match(/function planUzupelnieniaAdresow\(\)\{[\s\S]*?\n\}/)[0];
   const importNorm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').replace(/ł/g, 'l').replace(/[^a-z0-9]/g, '');
