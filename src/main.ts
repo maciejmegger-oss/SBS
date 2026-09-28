@@ -2976,14 +2976,24 @@ async function deleteContactRecords(ids){
   catch(e){ console.error('Zbiorcze usuwanie kontaktów nie powiodło się:', e); return false; }
 }
 
-function clubName(id){ const c = DB.clubs.find(x=>x.id===id); return c? c.name : "—"; }
-function clubRegion(id){ const c = DB.clubs.find(x=>x.id===id); return c? c.region : ""; }
-function clubLeague(id){ const c = DB.clubs.find(x=>x.id===id); return c? c.league : ""; }
+// KLUB PO IDENTYFIKATORZE — Z INDEKSU, GDY JEST.
+//
+// Te cztery funkcje wołane są RAZ NA WIERSZ, a wierszy w kartotece jest szesnaście tysięcy. Każda
+// przechodziła sześćset klubów, żeby znaleźć jeden — czyli kilkadziesiąt milionów porównań na
+// jedno wejście w zakładkę. Stąd wrażenie, że system zamiera po kliknięciu.
+//
+// Indeks (DB.klubyWgId) powstaje raz na przerysowanie — patrz odswiezIndeksy(). Gdy go nie ma
+// (pierwsze wywołanie, testy jednostkowe), zostaje stare przeszukiwanie: wynik jest ten sam,
+// tylko wolniejszy. Dzięki temu każda z tych funkcji działa samodzielnie.
+const klubZIndeksu = (id)=> (DB.klubyWgId ? DB.klubyWgId.get(id) : DB.clubs.find(x=>x.id===id)) || null;
+function clubName(id){ const c = (DB.klubyWgId ? DB.klubyWgId.get(id) : DB.clubs.find(x=>x.id===id)); return c? c.name : "—"; }
+function clubRegion(id){ const c = (DB.klubyWgId ? DB.klubyWgId.get(id) : DB.clubs.find(x=>x.id===id)); return c? c.region : ""; }
+function clubLeague(id){ const c = (DB.klubyWgId ? DB.klubyWgId.get(id) : DB.clubs.find(x=>x.id===id)); return c? c.league : ""; }
 // LIGA ZAWODNIKA, NIE KLUBU. Chłopiec z rocznika 2011 w Zawiszy Bydgoszcz należy do klubu (herb, kartoteka),
 // ale nie gra w II lidze — bez tego stawał na mapie i w rankingu seniorów. „Sam klub, bez ligi" (klubBezLigi)
 // zostawia klub i herb, a z map, rankingów i filtrów ligi go wyłącza.
 function ligaZawodnika(p){ return p && p.klubBezLigi ? '' : clubLeague(p && p.clubId); }
-function clubCrest(id){ if(DB.clubCrests[id]) return DB.clubCrests[id]; const c = DB.clubs.find(x=>x.id===id); return c && c.crestUrl ? c.crestUrl : null; }
+function clubCrest(id){ if(DB.clubCrests[id]) return DB.clubCrests[id]; const c = (DB.klubyWgId ? DB.klubyWgId.get(id) : DB.clubs.find(x=>x.id===id)); return c && c.crestUrl ? c.crestUrl : null; }
 
 // HERB IDZIE DO PLIKÓW, NIE DO BAZY.
 //
@@ -4288,8 +4298,34 @@ function scrollViewTop(){
   if(m){ m.scrollTop = 0; let el = m.parentElement; while(el){ el.scrollTop = 0; el = el.parentElement; } }
 }
 let lastRenderedPageKey = null; // wykrywa zmianę "strony" (zakładka / otwarty profil / otwarty klub), żeby przewinąć na górę tylko wtedy, a nie przy każdym re-renderze (np. po zapisie pola)
+// INDEKSY NA CZAS JEDNEGO PRZERYSOWANIA.
+//
+// Widoki sięgają po klub po identyfikatorze i po zawodników klubu dziesiątki tysięcy razy przy
+// jednym otwarciu zakładki. Zamiast przeszukiwać listy za każdym razem, budujemy indeksy raz —
+// i zaraz po tym je porzucamy, żeby nigdy nie pokazać nieaktualnych danych.
+function odswiezIndeksy(){
+  DB.klubyWgId = new Map((DB.clubs || []).map(c=>[c.id, c]));
+  meczeKlubu.pamiec = null;
+  meczeKlubu.wgKlubu = null;
+  zawodnicyKlubu.indeks = null;
+}
+// Zawodnicy jednego klubu — z indeksu zbudowanego przy pierwszym pytaniu. Bez indeksu (testy,
+// wywołanie spoza rysowania) po prostu przeszukuje listę: ten sam wynik, tylko wolniej.
+function zawodnicyKlubu(clubId){
+  if(!zawodnicyKlubu.indeks){
+    zawodnicyKlubu.indeks = new Map();
+    (DB.players || []).forEach(p=>{
+      if(!p.clubId) return;
+      const lista = zawodnicyKlubu.indeks.get(p.clubId);
+      if(lista) lista.push(p); else zawodnicyKlubu.indeks.set(p.clubId, [p]);
+    });
+  }
+  return zawodnicyKlubu.indeks.get(clubId) || [];
+}
+
 function render(){
   const main = document.getElementById('main');
+  odswiezIndeksy();
   const pageKey = currentView + '|' + (viewingPlayerId||'') + '|' + (viewingClubId||'');
   const pageChanged = pageKey !== lastRenderedPageKey;
   lastRenderedPageKey = pageKey;
@@ -4515,7 +4551,7 @@ function panelWojewodztwa(){
     const naglowek = liga !== ostatnia
       ? `<div class="note" style="margin:8px 0 3px;font-weight:700;color:var(--heading);">${esc(liga)}</div>` : '';
     ostatnia = liga;
-    const ilu = DB.players.filter(p=>p.clubId===c.id).length;
+    const ilu = zawodnicyKlubu(c.id).length;
     return naglowek + `<div class="obs-item" data-action="dash-woj-klub" data-id="${esc(c.id)}"
         style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:4px 6px;">
       ${crestImg(clubCrest(c.id),'xs',c.name)}
@@ -4702,7 +4738,7 @@ function leagueQuickAccessPanel(){
       if(dashboardGroupSelected){
         const clubs = DB.clubs.filter(c=>c.league===dashboardGroupSelected).sort((a,b)=>a.name.localeCompare(b.name,'pl'));
         const cards = clubs.map(c=>{
-          const n = DB.players.filter(p=>p.clubId===c.id).length;
+          const n = zawodnicyKlubu(c.id).length;
           return `<div class="club-crest-card" data-action="dash-goto-club" data-id="${esc(c.id)}" title="Przejdź do zawodników klubu ${esc(c.name)}">
             ${crestImg(clubCrest(c.id), null, c.name)}
             <div style="min-width:0;">
@@ -4725,7 +4761,7 @@ function leagueQuickAccessPanel(){
       const spec = DASHBOARD_QUICK_LEAGUES.find(l=>l.key===dashboardLeagueSelected);
       const clubs = spec ? DB.clubs.filter(spec.match).sort((a,b)=>a.name.localeCompare(b.name,'pl')) : [];
       const cards = clubs.map(c=>{
-        const n = DB.players.filter(p=>p.clubId===c.id).length;
+        const n = zawodnicyKlubu(c.id).length;
         return `<div class="club-crest-card" data-action="dash-goto-club" data-id="${esc(c.id)}" title="Przejdź do zawodników klubu ${esc(c.name)}">
           ${crestImg(clubCrest(c.id), null, c.name)}
           <div style="min-width:0;">
@@ -5895,7 +5931,7 @@ function viewClubs(){
   const najwiecejMeczow = Math.max(0, ...[...dorobekKlubow.values()].map(x=>x.rozegrane));
 
   const rows = list.map(c=>{
-    const count = DB.players.filter(p=>p.clubId===c.id).length;
+    const count = zawodnicyKlubu(c.id).length;
     const d = dorobekKlubow.get(c.id) || { rozegrane: 0, wgrane: 0, punkty: null };
     // Brakiem jest tylko to, co DA SIĘ zebrać. Kolejka bez opublikowanych protokołów nie jest
     // niczyim zaniedbaniem i nie może świecić na czerwono przy osiemnastu klubach naraz.
@@ -6255,7 +6291,7 @@ function scalDuplikatyPoNazwie(nazwy, docelowaLiga){
       }
       return;
     }
-    const liczbaZawodnikow = (c)=> DB.players.filter(p=>p.clubId===c.id).length;
+    const liczbaZawodnikow = (c)=> zawodnicyKlubu(c.id).length;
     const zostaje = kandydaci.slice().sort((a,b)=> liczbaZawodnikow(b) - liczbaZawodnikow(a))[0];
     if(zostaje.league !== docelowaLiga){
       przeniesione.push({ klub: zostaje.name, z: zostaje.league, na: docelowaLiga });
@@ -7664,7 +7700,9 @@ function mapaZespoluHtml(klub, squad){
 function viewClubDetail(id){
   const c = DB.clubs.find(x=>x.id===id);
   if(!c){ viewingClubId=null; return viewClubs(); }
-  const squad = DB.players.filter(p=>p.clubId===id).sort((a,b)=>(a.lastName||a.firstName||'').localeCompare(b.lastName||b.firstName||'','pl'));
+  // slice() przed sort(): zawodnicyKlubu oddaje listę z indeksu, a sortowanie w miejscu
+  // przestawiłoby ją wszystkim, którzy z niej korzystają w tym samym przerysowaniu.
+  const squad = zawodnicyKlubu(id).slice().sort((a,b)=>(a.lastName||a.firstName||'').localeCompare(b.lastName||b.firstName||'','pl'));
   const squadRows = squad.map(p=>{
     const a = playerAvg(p.id);
     // Wiersz otwiera profil — tak samo jak na liście Zawodników, żeby podgląd działał wszędzie
@@ -12228,10 +12266,35 @@ function meczeZTabeli(klub){
   const n = w ? Number(w.mecze) : NaN;
   return Number.isFinite(n) ? n : null;
 }
+// DOROBEK KLUBU — LICZONY RAZ NA PRZERYSOWANIE, Z INDEKSU.
+//
+// Lista klubów woła to dla każdego z sześciuset klubów, a każde liczenie przechodziło po
+// WSZYSTKICH szesnastu tysiącach kartotek, żeby wyłowić zawodników jednego klubu — dziesięć
+// milionów porównań na jedno kliknięcie, do tego rozbiór nazw rywali. Teraz zawodnicy leżą
+// w indeksie po klubie, a policzony dorobek zostaje zapamiętany do końca rysowania widoku.
+// Jedno i drugie czyści odswiezIndeksy() przy każdym przerysowaniu, więc świeżość danych
+// nie zależy od niczyjej pamięci.
 function meczeKlubu(clubId){
-  const klub = DB.clubs.find(c=>c.id === clubId);
+  if(!meczeKlubu.pamiec) meczeKlubu.pamiec = new Map();
+  const zPamieci = meczeKlubu.pamiec.get(clubId);
+  if(zPamieci) return zPamieci;
+
+  if(!meczeKlubu.wgKlubu){
+    meczeKlubu.wgKlubu = new Map();
+    (DB.players || []).forEach(p=>{
+      if(!p.clubId) return;
+      const lista = meczeKlubu.wgKlubu.get(p.clubId);
+      if(lista) lista.push(p); else meczeKlubu.wgKlubu.set(p.clubId, [p]);
+    });
+  }
+  const wynik = policzMeczeKlubu(clubId, meczeKlubu.wgKlubu.get(clubId) || []);
+  meczeKlubu.pamiec.set(clubId, wynik);
+  return wynik;
+}
+function policzMeczeKlubu(clubId, zawodnicy){
+  const klub = (DB.klubyWgId ? DB.klubyWgId.get(clubId) : DB.clubs.find(c=>c.id === clubId));
   const sezonKlubu = String((klub && klub.season) || '').trim();
-  const nasi = DB.players.filter(p=>p.clubId === clubId);
+  const nasi = zawodnicy || DB.players.filter(p=>p.clubId === clubId);
   const spotkania = new Map();     // "rywal|D" -> wynik (albo '')
   const nazwyRywali = new Map();   // "rywal|D" -> czytelna nazwa rywala do pokazania w podpowiedzi
   nasi.forEach(p=>{
@@ -12533,7 +12596,7 @@ function planZeSkladow(kluby){
   kluby.forEach(c=>{
     const sklad = skladDlaKlubu(c);
     if(!sklad) return;
-    const kadra = DB.players.filter(p=>p.clubId === c.id);
+    const kadra = zawodnicyKlubu(c.id);
     const zmiany = [], bezZmian = [], nieznalezieni = [];
     [...sklad.pierwsi, ...sklad.zmiennicy].forEach(wpis=>{
       const traf = zawodnikZeSkladu(kadra, wpis);
@@ -17832,6 +17895,14 @@ function czytelnaNazwa(nazwa){
 const rozwinSkroty = (nazwa)=> String(nazwa||'').replace(/\bw[-–—.\s]?\s?wa\b/gi, ' Warszawa ');
 
 function rozbijNazweKlubu(nazwa){
+  // PAMIĘĆ NA ROZEBRANE NAZWY. Rozbiór to kilkanaście operacji na tekście, a te same nazwy wracają
+  // tysiącami przy jednym przerysowaniu: dorobek każdego z 600 klubów rozbiera nazwy rywali
+  // z przebiegu wszystkich swoich zawodników. Wynik zależy WYŁĄCZNIE od tekstu wejściowego, więc
+  // wolno go zapamiętać — a pamięć trzymamy przy samej funkcji, żeby działała też w oderwaniu.
+  const kluczPamieci = String(nazwa || '');
+  if(!rozbijNazweKlubu.pamiec) rozbijNazweKlubu.pamiec = new Map();
+  const zPamieci = rozbijNazweKlubu.pamiec.get(kluczPamieci);
+  if(zPamieci) return zPamieci;
   // MYŚLNIK ROZDZIELA CZŁONY NAZWY, NIE SKLEJA ICH. „SPÓJNIA LANDEK-JASIENICA" bez tego dawała
   // rdzeń „landekjasienica", który nie ma nic wspólnego z naszym „Spójnia Landek" — klub zostawał
   // bez statystyk, choć chodzi o ten sam zespół.
@@ -17862,7 +17933,9 @@ function rozbijNazweKlubu(nazwa){
     if(SZUM_NAZWY_KLUBU.test(czysty)) continue;
     rdzen.push(SKROTY_NAZWY[czysty] || czysty);
   }
-  return { numer, rdzen };
+  const wynikRozbioru = { numer, rdzen };
+  if(rozbijNazweKlubu.pamiec.size < 20000) rozbijNazweKlubu.pamiec.set(kluczPamieci, wynikRozbioru);
+  return wynikRozbioru;
 }
 
 // Zwraca klub albo null. Gdy nazwa pasuje do kilku klubów naraz (samo „Gryf" pasuje i do
@@ -17891,7 +17964,7 @@ const tenSamCzlon = (x, y)=>{
 };
 
 const odciskKlubu = (nazwa)=>{ const b = rozbijNazweKlubu(nazwa); return b.numer + '|' + b.rdzen.slice().sort().join('-'); };
-const wielkoscKartoteki = (klub)=> DB.players.filter(p=>p.clubId === klub.id).length;
+const wielkoscKartoteki = (klub)=> zawodnicyKlubu(klub.id).length;
 
 function dopasujKlubDoNazwy(nazwa, podpowiedzGrupa, poziom){
   const n = importNorm(nazwa);
@@ -20588,7 +20661,7 @@ function znajdzDuplikatyKlubow(){
   return grupy.filter(g=>g.kluby.length>1).map(g=>g.kluby).map(grupa=>{
     // Zostaje wpis z NAJWIĘKSZĄ liczbą zawodników; przy remisie ten, który ma herb —
     // herb jest przypisany do identyfikatora klubu i przepada, gdyby usunąć właśnie ten wpis.
-    const zLiczba = grupa.map(c=>({c, ile: DB.players.filter(p=>p.clubId===c.id).length, herb: !!DB.clubCrests[c.id]}));
+    const zLiczba = grupa.map(c=>({c, ile: zawodnicyKlubu(c.id).length, herb: !!DB.clubCrests[c.id]}));
     zLiczba.sort((a,b)=> b.ile-a.ile || (b.herb?1:0)-(a.herb?1:0) || a.c.name.localeCompare(b.c.name,'pl'));
     return { zostaje: zLiczba[0], doScalenia: zLiczba.slice(1) };
   });
@@ -20635,7 +20708,7 @@ function openMergeDuplicatesModal(){
 
     grupy.forEach(({zostaje, doScalenia})=>{
       const docelowy = zostaje.c;
-      const juzTam = new Set(DB.players.filter(p=>p.clubId===docelowy.id).map(nkey));
+      const juzTam = new Set(zawodnicyKlubu(docelowy.id).map(nkey));
       doScalenia.forEach(({c})=>{
         // Herb przenosimy, jeśli docelowy go nie ma — inaczej przepadłby razem z wpisem.
         if(!DB.clubCrests[docelowy.id] && DB.clubCrests[c.id]) DB.clubCrests[docelowy.id] = DB.clubCrests[c.id];
@@ -20700,7 +20773,7 @@ function openLeagueStatsModal(league){
         ${clubs.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'','pl')).map(c=>{
           const f = clubFreshness(c);
           return `<tr><td>${esc(c.name)}</td>
-            <td style="text-align:right;">${DB.players.filter(p=>p.clubId===c.id).length}</td>
+            <td style="text-align:right;">${zawodnicyKlubu(c.id).length}</td>
             <td style="text-align:right;color:${f.stale?'var(--clay-dark)':'var(--ink-soft)'};">${esc(f.label)}</td></tr>`;
         }).join('')}
       </table>
@@ -21015,7 +21088,7 @@ function openObsSkladModal(obsId){
         return a.length>=5 && b.length>=5 && (a.includes(b) || b.includes(a));
       });
     if(!klub) return null;
-    const kadra = DB.players.filter(p=>p.clubId===klub.id)
+    const kadra = zawodnicyKlubu(klub.id)
       .sort((a,b)=>(a.lastName||'').localeCompare(b.lastName||'','pl'));
     return {nazwa: klub.name, zawodnicy: kadra.map(p=>({
       playerId: p.id, nazwa: `${p.firstName||''} ${p.lastName||''}`.trim(),
@@ -21735,7 +21808,7 @@ function open90minutStatsModal(clubId){
 function openSquadStatsModal(clubId){
   const club = DB.clubs.find(c=>c.id===clubId);
   if(!club) return;
-  const squad = DB.players.filter(p=>p.clubId===clubId);
+  const squad = zawodnicyKlubu(clubId);
 
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';

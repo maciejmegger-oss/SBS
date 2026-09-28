@@ -4,7 +4,12 @@
 import fs from "node:fs";
 
 const zrodlo = fs.readFileSync("src/main.ts", "utf8");
-const ciało = zrodlo.match(/function meczeKlubu\(clubId\)\{[\s\S]*?\n\}/);
+// meczeKlubu zapamiętuje policzony dorobek i wyławia zawodników z indeksu (patrz komentarz przy
+// nim w src/main.ts), a samo liczenie siedzi w policzMeczeKlubu — bierzemy obie części.
+const ciało = [
+  (zrodlo.match(/function meczeKlubu\(clubId\)\{[\s\S]*?\n\}/) || [])[0]
+  + '\n' + (zrodlo.match(/function policzMeczeKlubu\(clubId, zawodnicy\)\{[\s\S]*?\n\}/) || [])[0],
+];
 if (!ciało) { console.error("Nie znalazłem meczeKlubu w src/main.ts."); process.exit(1); }
 const mTabeli = zrodlo.match(/function wierszZTabeli\(klub\)\{[\s\S]*?\n\}/);
 if (!mTabeli) { console.error("Nie znalazłem wierszZTabeli w src/main.ts."); process.exit(1); }
