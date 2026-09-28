@@ -78,16 +78,26 @@ console.log('\n4. Uzupełnia tylko puste pola');
 
 console.log('\n5. Adres w Kontakty → Polska widać od razu, bez klikania');
 {
-  const fn = zrodlo.match(/let adresyKlubowWgNazwy = null;[\s\S]*?\nfunction contactAddress\(c\)\{[\s\S]*?\n\}/)[0];
+  const fn = zrodlo.match(/function odlegloscEdycyjna\(a, b\)\{[\s\S]*?\n\}/)[0] + ';'
+    + zrodlo.match(/const DOPISKI_KONTAKTU[\s\S]*?\nfunction wpisZBazyKlubow\([\s\S]*?\n\}/)[0] + ';'
+    + zrodlo.match(/function contactAddress\(c\)\{[\s\S]*?\n\}/)[0];
   const importNorm = (s) => String(s || '').toLowerCase().replace(/ł/g, 'l').normalize('NFD').replace(/\p{M}/gu, '').replace(/[^a-z0-9]/g, '');
   const DB = { clubs: [{ id: 'K2', name: 'Stal Stalowa Wola' }], settings: { stadiumAddresses: { K2: 'adres z planu obserwacji' } } };
   const contactClubName = (c) => String((c && (c.club || c.name)) || '').trim();
   const clubIdByName = (n) => (DB.clubs.find(c => importNorm(c.name) === importNorm(n)) || {}).id || null;
-  const contactAddress = new Function('ADRESY_KLUBOW', 'DB', 'importNorm', 'contactClubName', 'clubIdByName', `${fn}; return contactAddress;`)(
-    ADRESY_KLUBOW, DB, importNorm, contactClubName, clubIdByName);
+  const PZPN = { nazwa: 'Polski Związek Piłki Nożnej', adres: 'ul. Bitwy Warszawskiej 1920 r. 7', miasto: '02-366 Warszawa' };
+  const ZWIAZKI_WOJEWODZKIE = [{ zpn: 'Pomorski ZPN', nazwa: 'Pomorski Związek Piłki Nożnej', adres: 'ul. Jaśkowa Dolina 4', miasto: '80-252 Gdańsk' }];
+  const contactAddress = new Function('ADRESY_KLUBOW', 'DB', 'importNorm', 'contactClubName', 'clubIdByName', 'PZPN', 'ZWIAZKI_WOJEWODZKIE', `${fn}; return contactAddress;`)(
+    ADRESY_KLUBOW, DB, importNorm, contactClubName, clubIdByName, PZPN, ZWIAZKI_WOJEWODZKIE);
   sprawdz('kontakt „AVIA ŚWIDNIK" z importu dostaje adres z bazy, choć klubu nie ma w kartotece',
     /Sportowa 2, 21-040 Świdnik/.test(contactAddress({ club: 'AVIA ŚWIDNIK' })), contactAddress({ club: 'AVIA ŚWIDNIK' }));
   sprawdz('adres zapisany przy klubie ma pierwszeństwo', contactAddress({ club: 'Stal Stalowa Wola' }) === 'adres z planu obserwacji');
+  sprawdz('„Legia Warszawa" dostaje adres wpisu „Legia Warszawa S.A."', /Łazienkowska 3/.test(contactAddress({ club: 'Legia Warszawa' })));
+  sprawdz('„Cracovia" dostaje adres wpisu „KS Cracovia SA Kraków"', /Kałuży 1/.test(contactAddress({ club: 'Cracovia' })));
+  sprawdz('„Sparta" bez miasta nie zgaduje, która to Sparta', contactAddress({ club: 'Sparta' }) === '', contactAddress({ club: 'Sparta' }));
+  sprawdz('„KSZO Ostrowiec Świętokrzyski" trafia w „KSZO 1929 …" mimo roku w nazwie', /Świętokrzyska 11/.test(contactAddress({ club: 'KSZO Ostrowiec Świętokrzyski' })));
+  sprawdz('„PZPN" i „Pomorski Związek Piłki Nożnej" biorą adres z Federacji',
+    /Bitwy Warszawskiej/.test(contactAddress({ club: 'PZPN' })) && /Gdańsk/.test(contactAddress({ club: 'Pomorski Związek Piłki Nożnej' })));
   sprawdz('klub spoza bazy zostaje z pustym polem', contactAddress({ club: 'Akademia Piątek' }) === '');
 }
 

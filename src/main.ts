@@ -2970,6 +2970,11 @@ async function deleteTalentRecords(ids){
   catch(e){ console.error('Zbiorcze usuwanie talentów nie powiodło się:', e); return false; }
 }
 async function deleteContactRecord(id){ return robustStorageDelete('scouting:contacts', id); }
+async function deleteContactRecords(ids){
+  if(!ids || !ids.length) return true;
+  try{ await storage.deleteItems('scouting:contacts', ids); return true; }
+  catch(e){ console.error('Zbiorcze usuwanie kontaktów nie powiodło się:', e); return false; }
+}
 
 function clubName(id){ const c = DB.clubs.find(x=>x.id===id); return c? c.name : "—"; }
 function clubRegion(id){ const c = DB.clubs.find(x=>x.id===id); return c? c.region : ""; }
@@ -7786,20 +7791,24 @@ function hostFromMatch(matchText){
 function contactClubName(c){ return String((c && (c.club || c.name)) || '').trim(); }
 // Adres obiektu w Kontaktach: najpierw ten zapisany przy klubie (z Planu Obserwacji albo wpisany
 // ręcznie), a gdy go nie ma — adres z wbudowanej bazy klubów (Kluby_Polska_Adresy.xlsx), tak jak
-// w Kontakty → Europa i Federacji dane są od razu, bez żadnego klikania. Nazwę porównujemy bez
-// wielkości liter i ogonków, więc „AVIA ŚWIDNIK" z importu trafia w „Avia Świdnik".
-let adresyKlubowWgNazwy = null;
-function adresKlubuZBazy(nazwa){
-  if(!adresyKlubowWgNazwy) adresyKlubowWgNazwy = new Map(ADRESY_KLUBOW.filter(a=> a.adres).map(a=> [importNorm(a.klub), a.adres]));
-  return adresyKlubowWgNazwy.get(importNorm(nazwa)) || '';
-}
+// w Kontakty → Europa i Federacji dane są od razu, bez żadnego klikania. Nazwy dopasowujemy tak jak
+// przy scalaniu duplikatów (wpisZBazyKlubow), więc „Legia Warszawa" trafia w „Legia Warszawa S.A.",
+// „Cracovia" w „KS Cracovia SA Kraków", a „AVIA ŚWIDNIK" w „Avia Świdnik".
 function contactAddress(c){
   const nazwa = contactClubName(c);
   const id = clubIdByName(nazwa);
   const zapisany = id ? (DB.settings.stadiumAddresses || {})[id] : '';
   if(zapisany) return zapisany;
+  const wpis = wpisZBazyKlubow(nazwa, true);
+  if(wpis) return wpis.adres;
   const klub = id ? DB.clubs.find(k=> k.id === id) : null;
-  return adresKlubuZBazy(nazwa) || (klub ? adresKlubuZBazy(klub.name) : '');
+  const zKartoteki = klub ? wpisZBazyKlubow(klub.name, true) : null;
+  if(zKartoteki) return zKartoteki.adres;
+  // Związki (PZPN, wojewódzkie ZPN) mają adres w zakładce Federacja — ten sam, żeby nie dublować.
+  const n = importNorm(nazwa);
+  const zwiazek = /^pzpn/.test(n) || n === importNorm(PZPN.nazwa) ? PZPN
+    : ZWIAZKI_WOJEWODZKIE.find(z=> n === importNorm(z.nazwa) || n === importNorm(z.zpn));
+  return zwiazek ? [zwiazek.adres, zwiazek.miasto].filter(Boolean).join(', ') : '';
 }
 // ADRESY I E-MAILE Z ARKUSZA „Kluby_Polska_Adresy.xlsx".
 //
@@ -7822,6 +7831,131 @@ function planUzupelnieniaAdresow(){
       .filter(x=> x.a && x.a.email && !String(x.k.email || '').trim()),
     brakujace: kluby.filter(x=> !zKontaktem.has(x.c.id)),
   };
+}
+// SCALANIE DUPLIKATÓW W KONTAKTACH — jeden wiersz na klub.
+//
+// Lista rosła z importów, więc ten sam klub stoi po kilka razy: „Avia Świdnik" i „AVIA ŚWIDNIK",
+// „Lech Poznań", „Lech Poznań Akademia" i „Lech Poznań Biuro", literówki („Cartuzia", „Lechia Gdańk").
+// Za ten sam klub uznajemy nazwy, które po zdjęciu dopisków (Akademia, Biuro, S.A., „ - dyrektor")
+// i skrótów formy (MKS, KS, TS, AP) są równe, różnią się literówką albo jedna jest jedyną dłuższą
+// wersją drugiej („Resovia" → „Resovia Rzeszów"). Rezerwy („II") nie łączą się z pierwszą drużyną.
+//
+// Nic nie ginie: osoby z imieniem albo nazwiskiem zostają osobnymi wierszami (to różni ludzie),
+// a z wierszy bez osoby zostaje jeden — pozostałe adresy e-mail i telefony trafiają do jego notatki.
+// Nazwę klubu bierzemy z bazy adresów, gdy da się ją dopasować (poprawia literówki), a inaczej
+// najczęstszy zapis nie wersalikami.
+const DOPISKI_KONTAKTU = /\s+-\s+.*$|\b(akademia|biuro|s\.?\s?a\.?|ssa|sp\.? z o\.?o\.?)\s*$/i;
+const FORMY_KLUBU = /^(mks|ks|kks|nkp|ts|ap|uks|muks|lks|rks|zks|oks|bts|kp)\s+/i;
+function kluczKlubuKontaktu(nazwa){
+  let n = String(nazwa || '').trim();
+  for(let i = 0; i < 3; i++) n = n.replace(DOPISKI_KONTAKTU, '').trim();
+  // Rok założenia w nazwie („KSZO 1929", „KKS 1925 Kalisz") nie odróżnia klubów — pomijamy go.
+  n = n.replace(FORMY_KLUBU, '').replace(/(^|\s)(S\.?\s?A\.?|SSA)(?=\s|$)/gi, ' ').replace(/\b(18|19|20)\d\d\b/g, ' ');
+  return importNorm(n);
+}
+// „KSZO OSTROWIEC ŚWIĘTOKRZYSKI" → „KSZO Ostrowiec Świętokrzyski": krótkie skróty zostają wersalikami.
+const bezWersalikow = (n)=> n !== n.toUpperCase() ? n
+  : n.split(/(\s+|-)/).map(w=> w.length <= 4 ? w : w.charAt(0) + w.slice(1).toLocaleLowerCase('pl')).join('');
+const najdluzszaNazwa = (nazwy)=> nazwy.slice().sort((a, b)=> kluczKlubuKontaktu(b).length - kluczKlubuKontaktu(a).length)[0];
+const toRezerwy = (nazwa)=> /\b(II|III)\b/.test(String(nazwa || ''));
+function podobneKlucze(a, b){
+  if(!a || !b) return false;
+  if(a === b) return true;
+  const dl = Math.min(a.length, b.length);
+  const d = odlegloscEdycyjna(a, b);
+  return (dl >= 6 && d <= 1) || (dl >= 10 && d <= 2);
+}
+// Wpis z bazy klubów dla nazwy z Kontaktów: ten sam klucz, potem literówka, potem JEDYNA dłuższa
+// nazwa zaczynająca się od podanej („Escola" → „Escola Varsovia"). Rezerwy tylko z rezerwami.
+// Wynik zapamiętujemy — lista kontaktów przerysowuje się przy każdym wpisanym znaku.
+let kluczeBazyKlubow = null;
+const pamiecWpisowBazy = new Map();
+function wpisZBazyKlubow(nazwa, tylkoZAdresem = false){
+  const pamiec = (tylkoZAdresem ? 'A|' : 'W|') + nazwa;
+  if(pamiecWpisowBazy.has(pamiec)) return pamiecWpisowBazy.get(pamiec);
+  if(!kluczeBazyKlubow) kluczeBazyKlubow = ADRESY_KLUBOW.map(a=> ({ a, klucz: kluczKlubuKontaktu(a.klub), rezerwy: toRezerwy(a.klub) }));
+  const klucz = kluczKlubuKontaktu(nazwa);
+  const rez = toRezerwy(nazwa);
+  const baza = kluczeBazyKlubow.filter(x=> x.rezerwy === rez && (!tylkoZAdresem || x.a.adres));
+  const jedyny = (lista)=> lista.length === 1 ? lista[0].a : null;
+  const wynik = !klucz ? null
+    : (baza.find(x=> x.klucz === klucz) || {}).a
+      || jedyny(baza.filter(x=> podobneKlucze(x.klucz, klucz)))
+      || (klucz.length >= 6 ? jedyny(baza.filter(x=> x.klucz.startsWith(klucz))) : null)
+      || null;
+  pamiecWpisowBazy.set(pamiec, wynik);
+  return wynik;
+}
+function planScaleniaKontaktow(kontakty){
+  const lista = (kontakty || []).filter(k=> contactClubName(k));
+  // 1. Klucze i grupy: równe albo z literówką.
+  const grupy = [];
+  lista.forEach(k=>{
+    const klucz = kluczKlubuKontaktu(contactClubName(k));
+    const rez = toRezerwy(contactClubName(k));
+    const g = grupy.find(g=> g.rezerwy === rez && podobneKlucze(g.klucz, klucz));
+    if(g) g.kontakty.push(k); else grupy.push({ klucz, rezerwy: rez, kontakty: [k] });
+  });
+  // 2. Krótsza nazwa bez miasta dołącza do JEDYNEJ dłuższej, która od niej się zaczyna.
+  grupy.slice().sort((x, y)=> x.klucz.length - y.klucz.length).forEach(g=>{
+    if(g.klucz.length < 6 || !grupy.includes(g)) return;
+    const dluzsze = grupy.filter(h=> h !== g && h.rezerwy === g.rezerwy && h.klucz.length > g.klucz.length && h.klucz.startsWith(g.klucz));
+    if(dluzsze.length !== 1) return;
+    dluzsze[0].kontakty.push(...g.kontakty);
+    grupy.splice(grupy.indexOf(g), 1);
+  });
+  // 3. Nazwa klubu i scalenie wierszy w każdej grupie.
+  const zmiany = [], doUsuniecia = [];
+  grupy.forEach(g=>{
+    const nazwy = g.kontakty.map(k=> contactClubName(k));
+    const zBazy = wpisZBazyKlubow(najdluzszaNazwa(nazwy));
+    // Nazwa: Twój zapis, najpełniejszy (z miastem), bez dopisków i nie wersalikami. Bazy adresów
+    // używamy tylko do poprawienia literówki — gdy żaden zapis nie pokrywa się z nią co do litery.
+    const policz = (n)=> nazwy.filter(x=> x === n).length;
+    const zDopiskiem = (n)=> DOPISKI_KONTAKTU.test(n) ? 1 : 0;
+    const wersaliki = (n)=> n === n.toUpperCase() ? 1 : 0;
+    const najlepsza = [...new Set(nazwy)].sort((a, b)=>
+      kluczKlubuKontaktu(b).length - kluczKlubuKontaktu(a).length
+      || zDopiskiem(a) - zDopiskiem(b) || wersaliki(a) - wersaliki(b) || policz(b) - policz(a))[0];
+    // Tylko prawdziwa literówka zmienia nazwę; dopasowanie po początku („Cracovia" → „KS Cracovia SA
+    // Kraków") służy wyłącznie do adresu i nazwy nie rusza.
+    const literowka = zBazy && !nazwy.some(n=> kluczKlubuKontaktu(n) === kluczKlubuKontaktu(zBazy.klub))
+      && podobneKlucze(kluczKlubuKontaktu(zBazy.klub), g.klucz);
+    const nazwa = literowka ? zBazy.klub.replace(DOPISKI_KONTAKTU, '').trim() : bezWersalikow(najlepsza);
+    const osoby = g.kontakty.filter(k=> String(k.firstName || '').trim() || String(k.lastName || '').trim());
+    const bezOsoby = g.kontakty.filter(k=> !osoby.includes(k));
+    // Osoba z tym samym mailem dwa razy — to jeden człowiek.
+    const osobyWgMaila = new Map();
+    osoby.forEach(k=>{
+      const m = String(k.email || '').trim().toLowerCase();
+      if(m && osobyWgMaila.has(m)) doUsuniecia.push(k); else { osobyWgMaila.set(m || k.id, k); }
+    });
+    const zostajaOsoby = [...osobyWgMaila.values()];
+    const wiersze = [];
+    if(bezOsoby.length){
+      // Na główny adres wybieramy ogólny (biuro/sekretariat/klub/kontakt), a nie czyjś imienny.
+      const ogolny = (m)=> /^(biuro|sekretariat|klub|kontakt|info|office)[@.]/i.test(m);
+      const maile = [...new Set(bezOsoby.map(k=> String(k.email || '').trim()).filter(Boolean))];
+      maile.sort((a, b)=> (ogolny(b) ? 1 : 0) - (ogolny(a) ? 1 : 0));
+      const glowny = bezOsoby[0];
+      const telefony = [...new Set(bezOsoby.map(k=> String(k.phone || '').trim()).filter(Boolean))];
+      const notatki = [...new Set(bezOsoby.map(k=> String(k.note || '').trim())
+        .filter(n=> n && !/^Zaimportowano bez nazwy klubu/.test(n)))];
+      const inne = maile.slice(1);
+      if(inne.length) notatki.push('Inne e-maile: ' + inne.join(', '));
+      if(telefony.length > 1) notatki.push('Inne telefony: ' + telefony.slice(1).join(', '));
+      wiersze.push({ k: glowny, nowe: { club: nazwa, email: maile[0] || '', phone: telefony[0] || '', note: notatki.join(' · ') } });
+      bezOsoby.slice(1).forEach(k=> doUsuniecia.push(k));
+    }
+    zostajaOsoby.forEach(k=>{
+      const notatka = String(k.note || '').trim();
+      wiersze.push({ k, nowe: { club: nazwa, note: /^Zaimportowano bez nazwy klubu/.test(notatka) ? '' : notatka } });
+    });
+    wiersze.forEach(({k, nowe})=>{
+      if(Object.keys(nowe).some(p=> String(k[p] ?? '') !== String(nowe[p] ?? ''))) zmiany.push({ k, nowe });
+    });
+  });
+  return { grupy: grupy.length, zmiany, doUsuniecia };
 }
 // Zapis adresu wpisanego wprost w Kontaktach. Bez klubu w bazie nie ma do czego go przypiąć —
 // zgłaszamy to, zamiast po cichu gubić wpisaną treść.
@@ -11180,6 +11314,7 @@ function viewContacts(){
     <input id="contact-search" placeholder="Szukaj po nazwie klubu, imieniu, nazwisku, emailu..." value="${esc(contactSearchQuery)}" style="max-width:340px;">
     <span>
       <button class="secondary" data-action="contacts-fill-clubs">🔗 Uzupełnij kluby z e-maili</button>
+      <button class="secondary" data-action="contacts-merge-duplicates" title="Jeden wiersz na klub — osoby z imieniem zostają osobno, dodatkowe e-maile trafiają do notatki">🧹 Scal duplikaty</button>
       <button class="secondary" data-action="contacts-fill-addresses" title="Wpisuje adres obiektu i oficjalny e-mail z arkusza Kluby_Polska_Adresy.xlsx — tylko tam, gdzie pole jest puste">📍 Uzupełnij adresy klubów</button>
       <button class="secondary" data-action="contacts-export-excel">📊 Pobierz Excel</button>
       <button class="secondary" data-action="contacts-export-pdf">📄 Pobierz PDF</button>
@@ -14804,6 +14939,25 @@ function attachHandlers(){
       pole.remove();
       pokazPotwierdzenie(ok ? 'Adres skopiowany.' : 'Nie udało się skopiować — zaznacz adres myszą.', ok ? 'ok' : 'blad');
     }
+  });
+  main.querySelectorAll('[data-action="contacts-merge-duplicates"]').forEach(b=>(b as HTMLElement).onclick=async()=>{
+    const plan = planScaleniaKontaktow(DB.contacts);
+    if(!plan.doUsuniecia.length && !plan.zmiany.length){ alert('Nie ma duplikatów — każdy klub stoi na liście raz.'); return; }
+    if(!confirm(`Scalę listę: ${DB.contacts.length} → ${DB.contacts.length - plan.doUsuniecia.length} wierszy.\n\n`
+      + `• jeden wiersz na klub, z poprawioną nazwą (np. „Cartuzia" → „Cartusia")\n`
+      + `• osoby z imieniem lub nazwiskiem zostają osobnymi wierszami\n`
+      + `• dodatkowe e-maile i telefony trafią do notatki — żaden adres nie zginie\n\n`
+      + `Kontynuować?`)) return;
+    plan.zmiany.forEach(({k, nowe})=> Object.assign(k, nowe));
+    const usuwane = new Set(plan.doUsuniecia.map(k=> k.id));
+    const zapisano = await saveContacts();
+    if(!zapisano){ render(); alert('Nie udało się zapisać.' + powodNieudanegoZapisu() + ' Nic nie usunięto.'); return; }
+    const usunieto = await deleteContactRecords([...usuwane]);
+    if(usunieto) DB.contacts = DB.contacts.filter(k=> !usuwane.has(k.id));
+    render();
+    alert(usunieto
+      ? `Gotowe: usunięto ${usuwane.size} powtórzonych wierszy, poprawiono ${plan.zmiany.length}.`
+      : 'Nazwy i notatki zapisane, ale usunięcie powtórzeń się nie powiodło.' + powodNieudanegoZapisu() + ' Kliknij jeszcze raz.');
   });
   main.querySelectorAll('[data-action="contacts-fill-addresses"]').forEach(b=>(b as HTMLElement).onclick=async()=>{
     const plan = planUzupelnieniaAdresow();
@@ -24002,7 +24156,7 @@ const AKCJE_BEZ_KLIENTA = new Set([
   // wyniesienia jednym kliknięciem — bo wtedy kwartalny abonament wystarczy, żeby zabrać
   // ze sobą to, co najcenniejsze, i nie wrócić.
   'contacts-export-excel','contacts-export-pdf',
-  'talent-rocznik-zbiorczo','contacts-fill-clubs','contacts-fill-addresses','contacts-download-template','download-match-template',
+  'talent-rocznik-zbiorczo','contacts-fill-clubs','contacts-fill-addresses','contacts-merge-duplicates','contacts-download-template','download-match-template',
   'manage-tabs','wagi-poziomu-zapisz','wagi-poziomu-domyslne','radar-punkt-odniesienia',
 ]);
 
