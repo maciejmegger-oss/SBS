@@ -119,7 +119,10 @@ console.log("\nWpiecie w obie aplikacje");
 
   const app = fs.readFileSync("src/main.ts", "utf8");
   spr("okno na komputerze ma przycisk", /data-x="dostawca"/.test(app));
-  spr("przycisk jest podpięty", /przyciskDostawcy\.onclick = wczytajOdDostawcy/.test(app));
+  // Opakowane jawnie, bo onclick podaje zdarzenie myszy jako pierwszy argument — a ono jest
+  // prawdziwe, wiec przycisk uchodzilby za probe samoczynna i milczalby przy niepowodzeniu.
+  spr("przycisk jest podpięty jako wybór człowieka",
+    /przyciskDostawcy\.onclick = \(\)=>wczytajOdDostawcy\(false\)/.test(app));
   spr("skład od dostawcy ma własne źródło", /zrodlo: 'dostawca'/.test(app));
   spr("bez daty nie pytamy", /bez niej dostawca nie rozpozna meczu/.test(app));
 }
