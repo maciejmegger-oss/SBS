@@ -12479,6 +12479,9 @@ async function pobierzOpinieAI(playerId, przycisk, miejsce, poZapisie?){
       miejsce.innerHTML = `<div class="obs-item" style="border-left:3px solid var(--clay-dark);">
         <strong>${esc(dane.error || 'Nie udało się pobrać opinii.')}</strong>
         ${dane.jakNaprawic ? `<div class="note" style="margin-top:4px;">${esc(dane.jakNaprawic)}</div>` : ''}
+        ${/* Szczegóły od dostawcy (powód zakończenia, treść odmowy) — bez nich każda awaria
+              wygląda tak samo i diagnoza wymaga zaglądania do kodu funkcji. */''}
+        ${dane.szczegoly ? `<div class="note" style="margin-top:4px;font-family:ui-monospace,monospace;font-size:11px;">${esc(String(dane.szczegoly))}</div>` : ''}
       </div>`;
       return;
     }
