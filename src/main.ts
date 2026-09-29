@@ -12513,21 +12513,63 @@ async function generateAnalysisPDF(playerId){
     ? `<ul style="margin:4px 0;padding-left:18px;">${tab.map(s=>`<li>${esc(s.etykieta||RATING_LABELS[s.k]||s.k)} (${fmt1(s.v)})</li>`).join('')}</ul>`
     : '<div style="color:#5B6560;">Brak danych</div>';
 
+  // Logo bierzemy z paska bocznego, a nie z osobnego pliku: w aplikacji siedzi ono jako obrazek
+  // wbudowany w kod (data URI), więc html2canvas rysuje je bez pobierania czegokolwiek z sieci.
+  // Gdyby go w drzewie nie było (wydruk z widoku bez paska), nagłówek zostaje bez znaczka.
+  const logoSbs = (document.querySelector('.brand-logo') as HTMLImageElement | null)?.src || '';
+  const dzis = new Date().toLocaleDateString('pl-PL', { day:'2-digit', month:'long', year:'numeric' });
+
   const html = `<!doctype html><html lang="pl"><head><meta charset="utf-8"><title>Analiza</title><style>
-    body{font:13px/1.55 Arial,Helvetica,sans-serif;color:#1b2420;background:#fff;margin:0;padding:26px 30px;width:794px;box-sizing:border-box;}
-    h1{font-size:20px;margin:0 0 2px;color:#16302a;} h2{font-size:14px;margin:18px 0 6px;color:#16302a;
-      border-bottom:1px solid #e3decd;padding-bottom:3px;}
-    .pod{color:#5B6560;font-size:11.5px;margin:0 0 14px;}
-    .wskaznik{display:flex;align-items:center;gap:18px;border:1px solid #e3decd;border-radius:8px;padding:12px 16px;background:#FBF8F0;}
-    .liczba{font-size:38px;font-weight:800;line-height:1;color:#8C6C21;}
+    body{font:13px/1.55 Arial,Helvetica,sans-serif;color:#1b2420;background:#fff;margin:0;padding:0 0 26px;width:794px;box-sizing:border-box;}
+    .tresc{padding:0 34px;}
+    /* Belka firmowa — ciemna zieleń SBS ze złotą krawędzią, taka sama jak pasek boczny aplikacji. */
+    .belka{background:#16302a;color:#f4efe2;padding:16px 34px 14px;display:flex;align-items:center;
+      justify-content:space-between;border-bottom:3px solid #C6A04A;}
+    .belka .marka{display:flex;align-items:center;gap:12px;}
+    .belka img{height:34px;width:auto;display:block;}
+    .belka .nazwa{font-size:15px;font-weight:800;letter-spacing:.14em;line-height:1.1;}
+    .belka .podnazwa{font-size:9.5px;letter-spacing:.2em;color:#C6A04A;margin-top:2px;}
+    .belka .rodzaj{text-align:right;font-size:11px;letter-spacing:.16em;color:#C6A04A;}
+    .belka .data{font-size:10.5px;color:#cfd8d2;margin-top:3px;letter-spacing:.02em;}
+
+    .naglowek{padding:20px 0 14px;border-bottom:1px solid #e3decd;margin-bottom:16px;}
+    h1{font-size:23px;margin:0 0 4px;color:#16302a;letter-spacing:-.01em;}
+    .pod{color:#5B6560;font-size:11.5px;margin:0;}
+    .pod strong{color:#1b2420;}
+
+    h2{font-size:11px;margin:20px 0 8px;color:#8C6C21;letter-spacing:.14em;text-transform:uppercase;
+      border-bottom:1px solid #e3decd;padding-bottom:4px;}
+
+    .wskaznik{display:flex;align-items:center;gap:20px;border:1px solid #e3decd;border-left:4px solid #C6A04A;
+      border-radius:8px;padding:14px 18px;background:#FBF8F0;}
+    .liczba{font-size:42px;font-weight:800;line-height:1;color:#8C6C21;}
     table{border-collapse:collapse;} td{vertical-align:top;}
-    .dwie{display:flex;gap:26px;} .dwie>div{flex:1;}
-    .rap{border-bottom:1px solid #efeade;padding:6px 0;}
-    .stopka{margin-top:22px;border-top:1px solid #e3decd;padding-top:8px;color:#8a857a;font-size:10.5px;}
+    .dwie{display:flex;gap:18px;}
+    .dwie>div{flex:1;border:1px solid #e9e3d4;border-radius:8px;padding:10px 12px;background:#FCFAF4;}
+    .dwie strong{display:block;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#5B6560;margin-bottom:2px;}
+    .rap{border-left:3px solid #C6A04A;background:#FCFAF4;padding:8px 12px;margin:8px 0;border-radius:0 6px 6px 0;}
+    .werdykt{border:1px solid #e3decd;border-left:4px solid #2F6B4F;border-radius:8px;padding:12px 16px;background:#F7FAF7;}
+    .stopka{margin:24px 34px 0;border-top:1px solid #e3decd;padding-top:8px;color:#8a857a;font-size:10px;
+      display:flex;justify-content:space-between;gap:16px;}
   </style></head><body>
-  <h1>Analiza zawodnika — ${esc(p.firstName||'')} ${esc(p.lastName||'')}</h1>
-  <p class="pod">${esc(clubName(p.clubId)||'—')} &middot; ${esc(p.position||'—')}${p.birthYear?` &middot; rocznik ${esc(String(p.birthYear))}`:''}
-    &middot; ${esc(ligaZawodnika(p)||'')}</p>
+
+  <div class="belka">
+    <div class="marka">
+      ${logoSbs ? `<img src="${esc(logoSbs)}" alt="">` : ''}
+      <div>
+        <div class="nazwa">SCOUT BASE SYSTEM</div>
+        <div class="podnazwa">FUTURE &amp; INTELLIGENT</div>
+      </div>
+    </div>
+    <div class="rodzaj">ANALIZA ZAWODNIKA<div class="data">${esc(dzis)}</div></div>
+  </div>
+
+  <div class="tresc">
+  <div class="naglowek">
+    <h1>${esc(p.firstName||'')} ${esc(p.lastName||'')}</h1>
+    <p class="pod"><strong>${esc(clubName(p.clubId)||'—')}</strong> &middot; ${esc(p.position||'—')}${p.birthYear?` &middot; rocznik ${esc(String(p.birthYear))}`:''}
+      &middot; ${esc(ligaZawodnika(p)||'')}</p>
+  </div>
 
   <div class="wskaznik">
     <div style="text-align:center;"><div class="liczba">${an.score!=null?an.score:'—'}</div>
@@ -12548,9 +12590,9 @@ async function generateAnalysisPDF(playerId){
   ${an.nData<3?'<p style="color:#8C3A2E;font-size:11.5px;margin-top:8px;">Mała próba — decyzji nie należy opierać wyłącznie na tym dokumencie.</p>':''}
 
   <h2>Decyzja końcowa${dk.werdykt ? ` — z ${dk.glosy.length} ${slowoGlosy(dk.glosy.length)}` : ''}</h2>
-  ${dk.werdykt ? `<div style="font-size:16px;font-weight:800;color:#16302a;">${esc(dk.werdykt)}</div>
+  ${dk.werdykt ? `<div class="werdykt"><div style="font-size:18px;font-weight:800;color:#16302a;letter-spacing:.01em;">${esc(dk.werdykt)}</div>
     <div style="color:#5B6560;font-size:11.5px;margin-top:2px;">${dk.zgodne ? 'Głosy zgodne.' : 'Głosy rozbieżne — rozstrzyga komitet.'}${dk.ograniczenie ? ' ' + esc(dk.ograniczenie) : ''}</div>
-    <ul style="margin:6px 0;padding-left:18px;">${dk.glosy.map(g=>`<li>${esc(g.kto)}: <strong>${esc(werdyktZWyniku(g.wynik))}</strong></li>`).join('')}</ul>`
+    <ul style="margin:6px 0 0;padding-left:18px;">${dk.glosy.map(g=>`<li>${esc(g.kto)}: <strong>${esc(werdyktZWyniku(g.wynik))}</strong></li>`).join('')}</ul></div>`
     : '<div style="color:#5B6560;">Brak głosów — brak raportów z ocenami.</div>'}
   <table>
     ${wiersz('Poziom (szacunek systemu)', szacunek.tekst)}
@@ -12576,8 +12618,11 @@ async function generateAnalysisPDF(playerId){
     <div style="white-space:pre-wrap;">${esc(opinia.tekst)}</div>
     <p style="color:#8a857a;font-size:10.5px;margin-top:6px;">Opinia wygenerowana automatycznie na podstawie danych z systemu i publicznych źródeł piłkarskich. Nie zastępuje obserwacji na żywo.</p>` : ''}
 
-  <div class="stopka">Scout Base System &middot; ${new Date().toLocaleString('pl-PL')} &middot;
-    Dokument roboczy komitetu transferowego. Zawiera dane osobowe — nie rozpowszechniaj poza klubem.</div>
+  </div>
+  <div class="stopka">
+    <span>Scout Base System &middot; ${new Date().toLocaleString('pl-PL')}</span>
+    <span>Dokument roboczy komitetu transferowego. Zawiera dane osobowe — nie rozpowszechniaj poza klubem.</span>
+  </div>
   </body></html>`;
 
   const nazwa = ((p.firstName||'')+'_'+(p.lastName||'')).trim().replace(/\s+/g,'_').replace(/[^\w\-]/g,'') || 'zawodnik';
