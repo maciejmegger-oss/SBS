@@ -1,6 +1,7 @@
 import "./style.css";
 import { storage } from "./data/storage";
 import { pobierzSkrzynke, oznaczWpisSkrzynki } from "./data/skrzynka";
+import { zlecAnalize, pobierzOtwarteZlecenia } from "./data/zlecenia";
 import { currentUser, signIn, signOut, requestPasswordReset, setNewPassword, isPasswordRecoveryLink,
          mojeKonto, listaKont, ustawStatusKonta, ustawRoleKonta, ustawPakietyKonta,
          zapiszZdarzenie, listaZdarzen, tokenSesji } from "./data/auth";
@@ -5310,6 +5311,8 @@ function viewPlayerDetail(id){
       ${has90minutLink(p) ? `<button class="secondary" data-action="refresh-stats" data-id="${p.id}" title="Pobierz mecze i bramki z 90minut.pl">🔄 Odśwież statystyki</button>` : ''}
       ${/transfermarkt\./i.test(String(p.profileTm||'')) ? `<button class="gold" data-action="tm-odswiez" data-id="${p.id}" title="Pobiera z Transfermarktu wzrost, nogę, pozycję, narodowość, agenta, datę końca umowy, wartość rynkową i zdjęcie">⟳ Aktualizuj dane</button>` : ''}
       <button class="gold" data-action="paste-stats" data-id="${p.id}">📊 Wklej statystyki</button>
+      <button class="${zlecenieZawodnika(p.id) ? 'gold' : 'secondary'}" data-action="zlec-analize" data-id="${p.id}" title="Zamów obserwację z nagrania: wskaż mecz i źródło wideo, gotowy raport wróci do skrzynki">${
+        zlecenieZawodnika(p.id) ? '🎬 Analiza zlecona' : '🎬 Zleć analizę wideo'}</button>
       <button class="secondary" data-action="scal-zawodnikow" data-id="${p.id}" title="Ten sam zawodnik ma dwie kartoteki? Wchłoń duplikat do tej karty">⇄ Scal duplikat</button>
       <button class="danger" data-action="delete-player" data-id="${p.id}">Usuń</button>
     </div>
@@ -9149,6 +9152,12 @@ function czyRaportZawodnika(r){ return !!(r && r.playerId && r.kind !== 'mecz');
 // i wstawienie treści do pól. Zapis do kartoteki idzie zwykłą drogą — przez „Zapisz raport".
 let skrzynkaWpisy = [];
 let skrzynkaStan = 'nieznany';   // 'nieznany' | 'pobieram' | 'gotowa'
+
+// Zlecenia analiz wideo (src/data/zlecenia.ts) — trzymane w pamięci, żeby profil zawodnika mógł
+// pokazać, że analiza jest już zamówiona, bez odpytywania bazy przy każdym przerysowaniu widoku.
+let zleceniaOtwarte = [];
+let zleceniaStan = 'nieznany';
+const zlecenieZawodnika = (playerId)=> zleceniaOtwarte.find(z=>z.playerId===playerId) || null;
 let prefillRaportu = null;       // treść wczytana ze skrzynki, wstawiana po najbliższym render()
 
 function skrzynkaPanelHtml(){
@@ -14343,6 +14352,17 @@ function attachHandlers(){
     pokazPotwierdzenie(`${`${p.firstName || ''} ${p.lastName || ''}`.trim()} — dopisany do listy Talent.`, 'ok');
   });
   main.querySelectorAll('[data-action="paste-stats"]').forEach(b=>b.onclick=()=>openPasteStatsModal(b.dataset.id));
+  // Zlecenia analiz: lista otwartych zamówień ciągnięta raz na sesję — profil zawodnika pokazuje
+  // z niej, że analiza już czeka w kolejce.
+  if(zleceniaStan === 'nieznany'){
+    zleceniaStan = 'pobieram';
+    pobierzOtwarteZlecenia().then(z=>{
+      zleceniaOtwarte = z;
+      zleceniaStan = 'gotowe';
+      if(z.length) render();
+    });
+  }
+  main.querySelectorAll('[data-action="zlec-analize"]').forEach(b=>b.onclick=()=>openZlecAnalizeModal(b.dataset.id));
   main.querySelectorAll('[data-action="tm-odswiez"]').forEach(b=>b.onclick=()=>odswiezZTransfermarktu(b.dataset.id, b));
   main.querySelectorAll('[data-action="refresh-stats"]').forEach(b=>b.onclick=async()=>{
     const p = DB.players.find(x=>x.id===b.dataset.id);
@@ -22221,6 +22241,89 @@ function openSquadStatsModal(clubId){
     const ok = await savePlayers();
     alert(ok ? `Zapisano statystyki dla ${parsed.results.length} zawodników.` : 'Nie udało się zapisać.');
     if(ok) close();
+  };
+
+  document.body.appendChild(overlay);
+}
+
+// ZLECENIE ANALIZY WIDEO — zamówienie obserwacji z nagrania przy konkretnym zawodniku.
+// Zlecenie tylko CZEKA w bazie: nagrania mają po kilka gigabajtów i leżą na dysku skauta, więc
+// analityk pobiera je u siebie. Gotowy raport wraca do skrzynki (panel w zakładce Raporty).
+function openZlecAnalizeModal(playerId){
+  const p = DB.players.find(x=>x.id===playerId);
+  if(!p) return;
+  const podpis = `${p.lastName||''} ${p.firstName||''}`.trim() + (p.clubId ? ' — '+clubName(p.clubId) : '');
+  const otwarte = zleceniaOtwarte.filter(z=>z.playerId===playerId);
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal">
+      <h3>Zleć analizę wideo — ${esc(podpis)}</h3>
+      ${otwarte.length ? `<p class="note" style="margin-top:0;">W kolejce: ${otwarte.map(z=>esc(z.mecz||'—')+' ('+esc(z.status||'nowe')+')').join(', ')}.</p>` : ''}
+      <div class="field-wrap">
+        <label class="field">Mecz</label>
+        <input id="zl-mecz" placeholder="np. Ruch Chorzów – Miedź Legnica, 02.08.2026">
+      </div>
+      <div class="field-wrap">
+        <label class="field">Link do nagrania</label>
+        <input id="zl-link" placeholder="adres transmisji albo archiwum">
+      </div>
+      <div class="field-wrap">
+        <label class="field">albo plik na dysku</label>
+        <input id="zl-plik" placeholder="nazwa pliku w F:\\Scouting\\Mecze">
+        <p class="note" style="margin:4px 0 0;">Wystarczy jedno z dwóch. Nagrania z archiwum PZPN wymagają logowania, więc plik pobiera skaut.</p>
+      </div>
+      <div class="field-wrap">
+        <label class="field">Oceniaj na pozycji</label>
+        <select id="zl-pozycja">
+          <option value="">— jak w kartotece (${esc(p.position||'brak')}) —</option>
+          ${[...POSITION_NUMBERS].sort((a,b)=>a.number-b.number).map(pn=>`<option value="${pn.number}">${pn.number} &middot; ${esc(pn.label)}</option>`).join('')}
+        </select>
+        <p class="note" style="margin:4px 0 0;">Rozstrzyga, którą skalę 1–6 dostanie raport, gdy zawodnik zagrał gdzie indziej niż zwykle.</p>
+      </div>
+      <div class="field-wrap">
+        <label class="field">Na co zwrócić uwagę</label>
+        <textarea id="zl-uwagi" rows="3" placeholder="np. gra w powietrzu przy stałych fragmentach, zachowanie po stracie piłki"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button class="secondary" id="zl-anuluj">Anuluj</button>
+        <button class="gold" id="zl-zapisz">Zleć analizę</button>
+      </div>
+    </div>`;
+
+  const zamknij = ()=> overlay.remove();
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) zamknij(); });
+  overlay.querySelector('#zl-anuluj').onclick = zamknij;
+
+  overlay.querySelector('#zl-zapisz').onclick = async (e)=>{
+    const btn = e.currentTarget as HTMLButtonElement;
+    const wartosc = (id)=> (overlay.querySelector('#'+id) as HTMLInputElement).value.trim();
+    const mecz = wartosc('zl-mecz');
+    const link = wartosc('zl-link');
+    const plik = wartosc('zl-plik');
+    if(!mecz){ alert('Napisz, o który mecz chodzi.'); return; }
+    if(!link && !plik){ alert('Podaj link do nagrania albo nazwę pliku.'); return; }
+
+    btn.disabled = true; btn.textContent = 'Zlecam…';
+    const blad = await zlecAnalize({
+      id: uid('ZA'),
+      playerId,
+      zawodnik: podpis,
+      mecz, link, plik,
+      pozycja: Number(wartosc('zl-pozycja')) || null,
+      uwagi: (overlay.querySelector('#zl-uwagi') as HTMLTextAreaElement).value.trim(),
+      zlecil: currentScout || '',
+    });
+    if(blad){
+      btn.disabled = false; btn.textContent = 'Zleć analizę';
+      alert('Nie udało się zapisać zlecenia: ' + blad);
+      return;
+    }
+    zleceniaOtwarte = await pobierzOtwarteZlecenia();
+    zamknij();
+    render();
+    pokazPotwierdzenie('Zlecenie zapisane. Gotowy raport pojawi się w zakładce Raporty, w panelu „Przygotowane raporty".', 'ok');
   };
 
   document.body.appendChild(overlay);
