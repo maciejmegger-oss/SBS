@@ -12630,7 +12630,10 @@ async function generateAnalysisPDF(playerId){
     : '<div style="color:#5B6560;">Brak raportów — analiza opiera się wyłącznie na danych z kartoteki.</div>'}
 
   ${opinia && opinia.tekst ? `<h2>Druga opinia (AI) — ${esc(String(opinia.data||'').slice(0,10))}</h2>
-    <div class="opinia">${esc(opinia.tekst)}</div>
+    ${/* Akapit po akapicie, a nie jeden blok: dzielenie na strony szuka miejsc cięcia po dolnych
+          krawędziach elementów, więc z jednego wysokiego bloku nie miało czego wybrać. */''}
+    <div class="opinia">${String(opinia.tekst).split(/\n{2,}/).map(akapit=>
+      `<p style="margin:0 0 5px;">${esc(akapit.trim())}</p>`).join('')}</div>
     <p style="color:#8a857a;font-size:8.5px;margin:5px 0 0;">Opinia wygenerowana automatycznie na podstawie danych z systemu i publicznych źródeł piłkarskich. Nie zastępuje obserwacji na żywo.</p>` : ''}
 
   </div>
@@ -24122,7 +24125,19 @@ async function htmlNaPdf(html, nazwaPliku){
         // jego górna połowa kończyła jedną stronę, dolna zaczynała następną. Teraz w takiej
         // sytuacji cofamy się do ostatniego dozwolonego miejsca — strona wychodzi krótsza, ale
         // sekcja zaczyna się w całości na następnej kartce.
-        ciecie = najlepsze || awaryjne || koniecIdealny;
+        ciecie = najlepsze || 0;
+        if(!ciecie){
+          // BRAK KRAWĘDZI W DOLNEJ POŁOWIE STRONY. Tak wygląda jeden wysoki blok tekstu — opinia
+          // AI albo długi opis raportu: między jego początkiem a końcem nie ma żadnego elementu,
+          // więc nie ma czego wskazać jako miejsce cięcia. Wcześniej strona kończyła się wtedy na
+          // ostatniej krawędzi sprzed bloku, czyli zwykle tuż pod nagłówkiem, i zostawała ćwierć
+          // pustej kartki. Tniemy więc w pustym rzędzie pikseli przy samej krawędzi strony —
+          // to przerwa MIĘDZY wierszami tekstu, więc nie rozdziera ani liter, ani ramek.
+          const bezpieczne = bezDruku(koniecIdealny);
+          ciecie = (bezpieczne > y + stronaPx * 0.45 && wolnoCiac(bezpieczne))
+            ? bezpieczne
+            : (awaryjne || koniecIdealny);
+        }
 
         // BIAŁA PRZERWA NA DOLE KARTKI. Nierozdzielny blok (ramka radaru, wykres minut) potrafi
         // nie zmieścić się o kilka procent — i wtedy schodzi na następną stronę, zostawiając po
