@@ -9196,10 +9196,16 @@ function zastosujPrefillRaportu(){
 
   // Zawodnik: ukryte pole trzyma identyfikator, widoczne — podpis. Bez podpisu skaut nie widzi,
   // kogo właśnie ocenia, a bez identyfikatora zapis odbije się komunikatem „Wybierz zawodnika".
-  const zawodnik = dane.playerId && DB.players.find(p=>p.id===dane.playerId);
+  // Identyfikator bywa nieznany po stronie, która przygotowała raport (nie czyta kartoteki), więc
+  // w zapasie dopasowujemy po nazwisku i imieniu. Gdy i to nie trafi, pole zostaje puste i skaut
+  // wybiera zawodnika sam — lepsze niż podstawienie kogoś podobnego.
+  const podpis = szukajNorm(String(dane.zawodnikNazwa || '').split('—')[0].trim());
+  const zawodnik = (dane.playerId && DB.players.find(p=>p.id===dane.playerId))
+    || (podpis && DB.players.find(p=> szukajNorm(`${p.lastName||''} ${p.firstName||''}`) === podpis))
+    || null;
   if(zawodnik){
-    ustaw('rep-player', dane.playerId);
-    ustaw('rep-player-search', playerLabelFor(dane.playerId));
+    ustaw('rep-player', zawodnik.id);
+    ustaw('rep-player-search', playerLabelFor(zawodnik.id));
   }
 
   ustaw('rep-date', dane.date);
@@ -15953,6 +15959,7 @@ function attachHandlers(){
     if(!wpis) return;
     prefillRaportu = Object.assign({}, wpis.dane);
     if(!prefillRaportu.playerId) prefillRaportu.playerId = wpis.playerId;
+    if(!prefillRaportu.zawodnikNazwa) prefillRaportu.zawodnikNazwa = wpis.zawodnik;
     skrzynkaWpisy = skrzynkaWpisy.filter(x=>x.id!==wpis.id);
     // Oznaczenie w bazie nie może wstrzymywać wczytania: nawet gdy zapis statusu się nie uda,
     // skaut ma raport w formularzu i może go zapisać.
