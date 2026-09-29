@@ -2472,14 +2472,25 @@ async function loadAllInner(){
 // kończy pracę w tle i wyrenderuje ponownie, gdy skończy (bez ryzyka, że użytkownik zobaczy pustą stronę).
 async function loadAll(){
   let settled = false;
+  // USTAWIENIA MUSZĄ ISTNIEĆ, ZANIM COKOLWIEK SIĘ WYRYSUJE.
+  //
+  // DB.settings startuje jako null i dostawał wartość dopiero na końcu loadAllInner(). Gdy ładowanie
+  // przekraczało limit czasu, awaryjne render() sięgało po DB.settings.scouts i wywracało się na
+  // „can't access property scouts, DB.settings is null" — użytkownik zostawał z samym menu i pustą
+  // stroną, czyli dokładnie w sytuacji, przed którą ten limit miał go chronić. Domyślne ustawienia
+  // wstawiamy więc PRZED wyścigiem; wczytane z bazy i tak je za chwilę nadpiszą.
+  if(!DB.settings) DB.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
   const timeoutGuard = new Promise(resolve=>{
     setTimeout(()=>{
       if(!settled){
-        console.error('loadAll() przekroczyło limit czasu (15s) - prawdopodobnie zapis do pamięci ma poważne problemy. Renderuję natychmiast z tym, co już wczytane; ładowanie kontynuuje się w tle.');
-        try{ render(); }catch(e){ console.error('Awaryjne render() po przekroczeniu limitu czasu też się nie powiodło:', e); }
+        console.warn('loadAll() przekroczyło limit czasu (8s) — pokazuję aplikację z tym, co już wczytane; reszta dochodzi w tle.');
+        try{
+          render();
+          pokazPotwierdzenie('Dane wciąż się wczytują — widok uzupełni się sam, gdy baza odpowie.', 'ok');
+        }catch(e){ console.error('Awaryjne render() po przekroczeniu limitu czasu też się nie powiodło:', e); }
       }
       resolve();
-    }, 15000);
+    }, 8000);
   });
   const loadPromise = (async ()=>{
     try{
@@ -12317,7 +12328,14 @@ function analyzePlayer(p){
   // Niezależny wskaźnik 0-100.
   let score = null;
   if(overall!=null){
-    let s = (overall/10)*72;                                   // baza z ocen (0-72)
+    // BAZA Z OCEN LICZONA W SKALI PROTOKOŁU, CZYLI 1-6.
+    //
+    // Wcześniej stało tu dzielenie przez 10, jakby oceny szły do dziesięciu. Skutek był systemowy,
+    // a nie kosmetyczny: maksimum z ocen wynosiło (6/10)*72 = 43 punkty, więc próg „TRANSFER" (75)
+    // był nieosiągalny dla KAŻDEGO zawodnika, a większość lądowała poniżej 45, czyli w „niższym
+    // priorytecie". Wskaźnik głosował wtedy „NIE TRANSFEROWAŁBYM" nawet wtedy, gdy oba raporty
+    // skautów mówiły coś przeciwnego — i to on przeważał decyzję końcową.
+    let s = (overall/6)*72;                                    // baza z ocen (0-72)
     if(trend!=null) s += Math.max(-8, Math.min(8, trend*8));   // trend +/-8
     s += devBonus;                                             // okno rozwoju (0-12)
     s *= confPenalty;                                          // kara za niepewność danych
@@ -16828,9 +16846,17 @@ function matchKnownStatus(raw){
 // Bez ich ręcznego zmapowania wpisanie „holuj" nie znajdowało „Hołuj", a „glowinski" nie znajdowało
 // „Głowińskiego": zawodnik po prostu nie pojawiał się na liście, choć jest w bazie. Spacje
 // zostawiamy, żeby dało się szukać dwoma słowami („kowalski legia").
+// SPACJE TEŻ TRZEBA ZNORMALIZOWAĆ.
+//
+// Bez tego jedna spacja na końcu frazy wywracała wyszukiwanie: „Ruch Chorzów " nie zawiera się
+// w „Ruch Chorzów", ale zawiera się w „Ruch Chorzów II" — więc przy wpisaniu nazwy pierwszego
+// zespołu podpowiadały się WYŁĄCZNIE rezerwy, a skaut nie miał jak przypisać zawodnika do
+// pierwszej drużyny. Spację na końcu zostawia zresztą sam system: po wybraniu klubu z listy
+// i dopisaniu znaku, a także dyktowanie głosowe.
 const szukajNorm = (s)=> String(s||'').toLowerCase()
   .replace(/[łøđ]/g, c=>({'ł':'l','ø':'o','đ':'d'}[c]))
-  .normalize('NFD').replace(/\p{M}/gu,'');
+  .normalize('NFD').replace(/\p{M}/gu,'')
+  .replace(/\s+/g, ' ').trim();
 
 // Odległość edycyjna (Levenshtein) — ile liter trzeba zmienić, żeby jedno słowo stało się drugim.
 // Służy do podpowiedzi przy literówce w nazwisku: „Jedliński" wpisane zamiast „Jeleński" to
@@ -24106,7 +24132,14 @@ function wireLastModal(){
     // „Zawisza Bydgoszcz" z II ligi i z CLJ nie trzeba było rozróżniać po samym dopisku.
     function renderList(q){
       const nq = norm(q);
-      const matches = (nq ? clubs.filter(c=>norm(c.name).includes(nq)) : clubs).slice(0,80);
+      // Każde słowo z osobna, a nie cały ciąg: „chorzow ruch" i „ruch  chorzow" też mają trafić.
+      const slowa = nq ? nq.split(' ') : [];
+      const pasuje = c => { const h = norm(c.name); return slowa.every(w=>h.includes(w)); };
+      // Dokładna nazwa na górze listy — przy „Ruch Chorzów" pierwszy zespół ma być przed rezerwami.
+      const matches = (nq ? clubs.filter(pasuje) : clubs)
+        .sort((a,b)=> (norm(b.name)===nq ? 1:0) - (norm(a.name)===nq ? 1:0)
+                   || (norm(a.name).startsWith(nq) ? 0:1) - (norm(b.name).startsWith(nq) ? 0:1))
+        .slice(0,80);
       clubList.innerHTML = matches.length ? matches.map(c=>{
         const reg = (c.region||'').replace(' ZPN','');
         const sub = [c.league, reg].filter(Boolean).join(' · ');
