@@ -88,44 +88,71 @@ zamiast zgadywać. Nie szukaj kont w mediach społecznościowych ani informacji 
 
 Odpowiedz w strukturze podanej w poleceniu systemowym.`;
 
-  try {
-    const odp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": klucz,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 2000,
-        system: POLECENIE,
-        // Wyszukiwanie w sieci daje dostęp do dwóch poprzednich sezonów i wzmianek medialnych —
-        // tego, czego w naszej bazie nie ma. Limit pięciu zapytań trzyma czas odpowiedzi w ryzach.
-        tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }],
-        messages: [{ role: "user", content: wiadomosc }],
-      }),
-    });
+  // ROZMOWA, A NIE JEDNO ZAPYTANIE — BO MODEL SZUKA W SIECI.
+  //
+  // Gdy model sięga po wyszukiwarkę, odpowiedź wraca ze stop_reason "pause_turn": są w niej wyniki
+  // wyszukiwania, ale NIE MA jeszcze tekstu opinii. Wcześniej kod czytał wtedy pustkę i zgłaszał
+  // „Usługa AI zwróciła pustą odpowiedź", choć zapytanie się udało i zostało naliczone. Trzeba
+  // odesłać to, co przyszło, i poprosić o dokończenie — tyle razy, ile model potrzebuje.
+  //
+  // Pętla ma twardy limit obrotów: przy pięciu dozwolonych wyszukiwaniach cztery przebiegi
+  // wystarczają z zapasem, a przy awarii nie zapętlimy się na koszt klubu.
+  const wiadomosci = [{ role: "user", content: wiadomosc }];
+  const MAX_OBROTOW = 4;
+  let tekst = "";
+  let powodZakonczenia = null;
 
-    if (!odp.ok) {
-      const tresc = await odp.text();
-      // Komunikat od dostawcy podajemy dalej PRZYCIĘTY — pełna odpowiedź potrafi zawierać
-      // fragmenty żądania, a te nie mają po co trafiać do przeglądarki.
-      return res.status(502).json({
-        error: "Usługa AI odmówiła odpowiedzi (HTTP " + odp.status + ").",
-        szczegoly: String(tresc).slice(0, 300),
+  try {
+    for (let obrot = 0; obrot < MAX_OBROTOW; obrot++) {
+      const odp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": klucz,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          // Wyszukiwanie zjada część limitu, a opinia ma siedem sekcji — przy 2000 tokenów
+          // potrafiła urwać się w pół zdania albo nie zostawić miejsca na tekst w ogóle.
+          max_tokens: 4000,
+          system: POLECENIE,
+          // Wyszukiwanie w sieci daje dostęp do dwóch poprzednich sezonów i wzmianek medialnych —
+          // tego, czego w naszej bazie nie ma. Limit pięciu zapytań trzyma czas odpowiedzi w ryzach.
+          tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }],
+          messages: wiadomosci,
+        }),
       });
+
+      if (!odp.ok) {
+        const tresc = await odp.text();
+        // Komunikat od dostawcy podajemy dalej PRZYCIĘTY — pełna odpowiedź potrafi zawierać
+        // fragmenty żądania, a te nie mają po co trafiać do przeglądarki.
+        return res.status(502).json({
+          error: "Usługa AI odmówiła odpowiedzi (HTTP " + odp.status + ").",
+          szczegoly: String(tresc).slice(0, 300),
+        });
+      }
+
+      const wynik = await odp.json();
+      powodZakonczenia = wynik.stop_reason;
+      tekst += (wynik.content || [])
+        .filter((b) => b.type === "text")
+        .map((b) => b.text)
+        .join("\n");
+
+      // "pause_turn" znaczy: model przerwał na czas pracy narzędzia i czeka, aż oddamy mu jego
+      // własną wypowiedź z wynikami. Każdy inny powód zakończenia oznacza, że skończył.
+      if (powodZakonczenia !== "pause_turn") break;
+      wiadomosci.push({ role: "assistant", content: wynik.content });
     }
 
-    const wynik = await odp.json();
-    const tekst = (wynik.content || [])
-      .filter((b) => b.type === "text")
-      .map((b) => b.text)
-      .join("\n")
-      .trim();
-
+    tekst = tekst.trim();
     if (!tekst) {
-      return res.status(502).json({ error: "Usługa AI zwróciła pustą odpowiedź." });
+      return res.status(502).json({
+        error: "Usługa AI zwróciła pustą odpowiedź.",
+        szczegoly: "Powód zakończenia: " + String(powodZakonczenia),
+      });
     }
     return res.status(200).json({ tekst, model: MODEL });
   } catch (e) {
