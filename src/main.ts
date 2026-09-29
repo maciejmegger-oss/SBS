@@ -9209,8 +9209,15 @@ function zastosujPrefillRaportu(){
   // w zapasie dopasowujemy po nazwisku i imieniu. Gdy i to nie trafi, pole zostaje puste i skaut
   // wybiera zawodnika sam — lepsze niż podstawienie kogoś podobnego.
   const podpis = szukajNorm(String(dane.zawodnikNazwa || '').split('—')[0].trim());
+  const kandydaci = podpis
+    ? DB.players.filter(p=> szukajNorm(`${p.lastName||''} ${p.firstName||''}`) === podpis)
+    : [];
+  // Ten sam zawodnik bywa w kartotece dwa razy (osobna karta dla drugiej drużyny klubu). Przy
+  // kilku trafieniach rozstrzyga klub z podpisu — inaczej raport ląduje na przypadkowej karcie.
+  const klubSzukany = szukajNorm(String(dane.zawodnikNazwa || '').split('—')[1] || '');
   const zawodnik = (dane.playerId && DB.players.find(p=>p.id===dane.playerId))
-    || (podpis && DB.players.find(p=> szukajNorm(`${p.lastName||''} ${p.firstName||''}`) === podpis))
+    || (kandydaci.length > 1 && klubSzukany && kandydaci.find(p=> szukajNorm(clubName(p.clubId)) === klubSzukany))
+    || kandydaci[0]
     || null;
   if(zawodnik){
     ustaw('rep-player', zawodnik.id);
