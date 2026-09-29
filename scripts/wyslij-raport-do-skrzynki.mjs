@@ -21,6 +21,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const plik = process.argv[2];
 if (!plik) {
@@ -28,7 +29,7 @@ if (!plik) {
   process.exit(1);
 }
 
-const korzen = path.resolve(new URL(".", import.meta.url).pathname, "..");
+const korzen = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const env = Object.fromEntries(
   fs.readFileSync(path.join(korzen, ".env"), "utf8")
     .split(/\r?\n/)
@@ -74,4 +75,4 @@ if (!odp.ok) {
 }
 
 console.log(`Wysłano do skrzynki: ${wiersz.zawodnik || wiersz.id} (${wiersz.tytul})`);
-console.log("W SBS: zakładka Raporty → panel „Przygotowane raporty" → Wczytaj do formularza.");
+console.log('W SBS: zakładka Raporty → panel „Przygotowane raporty” → Wczytaj do formularza.');
