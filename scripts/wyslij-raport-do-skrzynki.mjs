@@ -61,7 +61,9 @@ const odp = await fetch(`${URL_BAZY}/rest/v1/sbs_raport_inbox`, {
     apikey: KLUCZ,
     Authorization: `Bearer ${KLUCZ}`,
     "Content-Type": "application/json",
-    Prefer: "return=representation",
+    // return=minimal, nie representation: klucz publiczny ma prawo TYLKO dopisać wpis, a zwrot
+    // wstawionego wiersza wymagałby odczytu — i cały zapis odbijał się regułą RLS.
+    Prefer: "return=minimal",
   },
   body: JSON.stringify(wiersz),
 });
