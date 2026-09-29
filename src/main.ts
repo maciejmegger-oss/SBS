@@ -1,5 +1,6 @@
 import "./style.css";
 import { storage } from "./data/storage";
+import { pobierzSkrzynke, oznaczWpisSkrzynki } from "./data/skrzynka";
 import { currentUser, signIn, signOut, requestPasswordReset, setNewPassword, isPasswordRecoveryLink,
          mojeKonto, listaKont, ustawStatusKonta, ustawRoleKonta, ustawPakietyKonta,
          zapiszZdarzenie, listaZdarzen, tokenSesji } from "./data/auth";
@@ -9143,6 +9144,97 @@ let pamiecFazFormularza = {};
 // Raport zawodnika = ma zawodnika i nie jest raportem całego meczu.
 function czyRaportZawodnika(r){ return !!(r && r.playerId && r.kind !== 'mecz'); }
 
+// SKRZYNKA RAPORTÓW — raporty przygotowane poza aplikacją (analiza wideo), czekające na skauta.
+// Szczegóły i uzasadnienie osobnej tabeli: src/data/skrzynka.ts. Tutaj tylko panel nad formularzem
+// i wstawienie treści do pól. Zapis do kartoteki idzie zwykłą drogą — przez „Zapisz raport".
+let skrzynkaWpisy = [];
+let skrzynkaStan = 'nieznany';   // 'nieznany' | 'pobieram' | 'gotowa'
+let prefillRaportu = null;       // treść wczytana ze skrzynki, wstawiana po najbliższym render()
+
+function skrzynkaPanelHtml(){
+  if(!skrzynkaWpisy.length) return '';
+  const wiersze = skrzynkaWpisy.map(w=>`
+    <div class="report-row">
+      <div class="report-row-body">
+        <div class="report-row-glowa"><strong>${esc(w.zawodnik || 'Raport bez zawodnika')}</strong></div>
+        <span class="meta">${esc(w.tytul||'')}${w.zrodlo?' · '+esc(w.zrodlo):''}</span>
+      </div>
+      <div class="report-row-actions">
+        <button class="gold" data-action="skrzynka-wczytaj" data-id="${esc(w.id)}">Wczytaj do formularza</button>
+        <button class="danger-btn" data-action="skrzynka-odrzuc" data-id="${esc(w.id)}" title="Odłóż wpis">✕</button>
+      </div>
+    </div>`).join('');
+  return `<div class="card" style="border:1px solid var(--gold);margin-bottom:14px;">
+    <h3 class="reports-aside-title" style="margin-top:0;">Przygotowane raporty <span class="reports-count">${skrzynkaWpisy.length}</span></h3>
+    <p class="view-sub" style="margin:0 0 8px;">Czekają na sprawdzenie. „Wczytaj" wstawia treść do formularza poniżej — do kartoteki trafia dopiero po „Zapisz raport".</p>
+    ${wiersze}
+  </div>`;
+}
+
+// Ustawienie oceny punktowej 1–6 poza kliknięciem myszą: wartość idzie do ukrytego pola, a kropka
+// dostaje podświetlenie. Bez drugiej części skaut widziałby pustą skalę przy wypełnionym raporcie.
+function ustawOcenePunktowa(id, wartosc){
+  const el = document.getElementById(id) as HTMLInputElement | null;
+  if(!el || wartosc == null) return;
+  el.value = String(wartosc);
+  const grupa = el.parentElement;
+  if(!grupa) return;
+  grupa.querySelectorAll('.rp-dot').forEach(d=>
+    d.classList.toggle('active', Number((d as HTMLElement).dataset.val) === Number(wartosc)));
+}
+
+// Wstawienie treści ze skrzynki do formularza. Wołane PO render(), bo dopiero wtedy pola istnieją.
+function zastosujPrefillRaportu(){
+  const dane = prefillRaportu;
+  if(!dane) return;
+  prefillRaportu = null;
+
+  const ustaw = (id, wartosc)=>{
+    const el = document.getElementById(id) as HTMLInputElement | null;
+    if(el && wartosc != null && wartosc !== '') el.value = String(wartosc);
+  };
+
+  // Zawodnik: ukryte pole trzyma identyfikator, widoczne — podpis. Bez podpisu skaut nie widzi,
+  // kogo właśnie ocenia, a bez identyfikatora zapis odbije się komunikatem „Wybierz zawodnika".
+  const zawodnik = dane.playerId && DB.players.find(p=>p.id===dane.playerId);
+  if(zawodnik){
+    ustaw('rep-player', dane.playerId);
+    ustaw('rep-player-search', playerLabelFor(dane.playerId));
+  }
+
+  ustaw('rep-date', dane.date);
+  ustaw('rep-scout', dane.scout);
+  ustaw('rep-rywal', dane.rywal);
+  ustaw('rep-wynik', dane.wynik);
+  ustaw('rep-minuty', dane.minutyObejrzane);
+  ustaw('rep-pozycja-w-meczu', dane.pozycjaWMeczu);
+  ustaw('rep-mocne', dane.mocne);
+  ustaw('rep-do-poprawy', dane.doPoprawy);
+  ustaw('rep-technika', dane.technika);
+  ustaw('rep-taktyka', dane.taktyka);
+  ustaw('rep-motoryka', dane.motoryka);
+  ustaw('rep-mentalnosc-opis', dane.mentalnoscOpis);
+  ustaw('rep-potencjal-opis', dane.potencjalOpis);
+  ustaw('rep-setpiece-comment', dane.setPieceComment);
+  ustaw('rep-description', dane.description);
+
+  // Pickery trzymają wybór w zmiennych modułu, nie w DOM — stąd przejście przez select*().
+  reportObsTypeValue = ''; if(dane.obsType) selectObsType(dane.obsType);
+  reportPerspektywaValue = ''; if(dane.perspektywa) selectPerspektywa(dane.perspektywa);
+  reportStatusValue = ''; if(dane.status) selectReportStatus(dane.status);
+
+  // Protokół 1–6: skala zależy od pozycji zawodnika, więc blok stawiamy od nowa i dopiero w nim
+  // zaznaczamy oceny. Klucze spoza tej skali (raport przygotowany dla innej pozycji) po prostu
+  // nie znajdą swoich rubryk — lepsze to niż oceny wstawione pod cudzymi podpisami.
+  const blok = document.getElementById('rep-fazy-blok');
+  if(blok){
+    pamiecFazFormularza = Object.assign({}, dane.phases || {});
+    blok.innerHTML = blokFazHtml(fazyDlaZawodnika(zawodnik), pamiecFazFormularza);
+    podepnijOcenyPunktowe(blok);
+  }
+  if(dane.setPieces) REPORT_SET_PIECES.forEach(f=> ustawOcenePunktowa('rep-'+f.key, dane.setPieces[f.key]));
+}
+
 function viewReports(){
   const editing = editingReportId ? DB.reports.find(r=>r.id===editingReportId) : null;
   pamiecFazFormularza = Object.assign({}, editing && editing.phases);
@@ -9198,6 +9290,7 @@ function viewReports(){
   </section>
 
   <section class="reports-nowy" id="rep-formularz">
+    ${skrzynkaPanelHtml()}
     <h3 class="reports-aside-title">${editing? 'Edytujesz raport' : 'Nowy raport'}</h3>
     <p class="view-sub" style="margin:0 0 8px;">${editing
       ? 'Zmiany nadpiszą raport zaznaczony na liście wyżej.'
@@ -15841,6 +15934,37 @@ function attachHandlers(){
       pokazPotwierdzenie(String((e && (e as Error).message) || e), 'blad');
       (b as HTMLButtonElement).disabled = false; b.textContent = napis;
     }
+  });
+  // SKRZYNKA RAPORTÓW — pobranie przy pierwszym wejściu w widok i obsługa dwóch przycisków.
+  // Pobieramy raz na sesję: panel ma pokazać, co czeka, a nie odpytywać bazę przy każdym render().
+  if(document.getElementById('rep-formularz')){
+    if(skrzynkaStan === 'nieznany'){
+      skrzynkaStan = 'pobieram';
+      pobierzSkrzynke().then(w=>{
+        skrzynkaWpisy = w;
+        skrzynkaStan = 'gotowa';
+        if(w.length) render();
+      });
+    }
+    zastosujPrefillRaportu();
+  }
+  main.querySelectorAll('[data-action="skrzynka-wczytaj"]').forEach(b=>b.onclick=async()=>{
+    const wpis = skrzynkaWpisy.find(x=>x.id===b.dataset.id);
+    if(!wpis) return;
+    prefillRaportu = Object.assign({}, wpis.dane);
+    if(!prefillRaportu.playerId) prefillRaportu.playerId = wpis.playerId;
+    skrzynkaWpisy = skrzynkaWpisy.filter(x=>x.id!==wpis.id);
+    // Oznaczenie w bazie nie może wstrzymywać wczytania: nawet gdy zapis statusu się nie uda,
+    // skaut ma raport w formularzu i może go zapisać.
+    oznaczWpisSkrzynki(wpis.id, 'wczytany');
+    render();
+    pokazPotwierdzenie('Raport wczytany do formularza — sprawdź treść i kliknij „Zapisz raport".', 'ok');
+  });
+  main.querySelectorAll('[data-action="skrzynka-odrzuc"]').forEach(b=>b.onclick=async()=>{
+    const id = b.dataset.id;
+    skrzynkaWpisy = skrzynkaWpisy.filter(x=>x.id!==id);
+    oznaczWpisSkrzynki(id, 'odrzucony');
+    render();
   });
   main.querySelectorAll('[data-action="save-report"]').forEach(b=>b.onclick=async()=>{
     const playerId = document.getElementById('rep-player').value;
