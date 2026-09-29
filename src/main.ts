@@ -12523,36 +12523,45 @@ async function generateAnalysisPDF(playerId){
   const dzis = new Date().toLocaleDateString('pl-PL', { day:'2-digit', month:'long', year:'numeric' });
 
   const html = `<!doctype html><html lang="pl"><head><meta charset="utf-8"><title>Analiza</title><style>
-    body{font:13px/1.55 Arial,Helvetica,sans-serif;color:#1b2420;background:#fff;margin:0;padding:0 0 26px;width:794px;box-sizing:border-box;}
-    .tresc{padding:0 34px;}
+    /* GĘSTO, ALE CZYTELNIE. Dokument idzie na posiedzenie komitetu w kilku egzemplarzach, więc
+       cztery kartki na jednego zawodnika to dużo papieru i dużo przewracania. Typografia jest
+       ciasna, a powietrze zostaje tam, gdzie pomaga czytać: przy nagłówkach sekcji i wokół liczb. */
+    body{font:10.5px/1.4 Arial,Helvetica,sans-serif;color:#1b2420;background:#fff;margin:0;padding:0 0 14px;width:794px;box-sizing:border-box;}
+    .tresc{padding:0 30px;}
     /* Belka firmowa — ciemna zieleń SBS ze złotą krawędzią, taka sama jak pasek boczny aplikacji. */
-    .belka{background:#16302a;color:#f4efe2;padding:16px 34px 14px;display:flex;align-items:center;
+    .belka{background:#16302a;color:#f4efe2;padding:10px 30px 9px;display:flex;align-items:center;
       justify-content:space-between;border-bottom:3px solid #C6A04A;}
-    .belka .marka{display:flex;align-items:center;gap:12px;}
-    .belka img{height:34px;width:auto;display:block;}
-    .belka .nazwa{font-size:15px;font-weight:800;letter-spacing:.14em;line-height:1.1;}
-    .belka .podnazwa{font-size:9.5px;letter-spacing:.2em;color:#C6A04A;margin-top:2px;}
-    .belka .rodzaj{text-align:right;font-size:11px;letter-spacing:.16em;color:#C6A04A;}
-    .belka .data{font-size:10.5px;color:#cfd8d2;margin-top:3px;letter-spacing:.02em;}
+    .belka .marka{display:flex;align-items:center;gap:10px;}
+    .belka img{height:26px;width:auto;display:block;}
+    .belka .nazwa{font-size:13px;font-weight:800;letter-spacing:.14em;line-height:1.1;}
+    .belka .podnazwa{font-size:8px;letter-spacing:.2em;color:#C6A04A;margin-top:1px;}
+    .belka .rodzaj{text-align:right;font-size:9.5px;letter-spacing:.16em;color:#C6A04A;}
+    .belka .data{font-size:9px;color:#cfd8d2;margin-top:2px;letter-spacing:.02em;}
 
-    .naglowek{padding:20px 0 14px;border-bottom:1px solid #e3decd;margin-bottom:16px;}
-    h1{font-size:23px;margin:0 0 4px;color:#16302a;letter-spacing:-.01em;}
-    .pod{color:#5B6560;font-size:11.5px;margin:0;}
+    .naglowek{padding:11px 0 8px;border-bottom:1px solid #e3decd;margin-bottom:10px;}
+    h1{font-size:18px;margin:0 0 2px;color:#16302a;letter-spacing:-.01em;}
+    .pod{color:#5B6560;font-size:10px;margin:0;}
     .pod strong{color:#1b2420;}
 
-    h2{font-size:11px;margin:20px 0 8px;color:#8C6C21;letter-spacing:.14em;text-transform:uppercase;
-      border-bottom:1px solid #e3decd;padding-bottom:4px;}
+    h2{font-size:9px;margin:12px 0 5px;color:#8C6C21;letter-spacing:.14em;text-transform:uppercase;
+      border-bottom:1px solid #e3decd;padding-bottom:3px;}
 
-    .wskaznik{display:flex;align-items:center;gap:20px;border:1px solid #e3decd;border-left:4px solid #C6A04A;
-      border-radius:8px;padding:14px 18px;background:#FBF8F0;}
-    .liczba{font-size:42px;font-weight:800;line-height:1;color:#8C6C21;}
-    table{border-collapse:collapse;} td{vertical-align:top;}
-    .dwie{display:flex;gap:18px;}
-    .dwie>div{flex:1;border:1px solid #e9e3d4;border-radius:8px;padding:10px 12px;background:#FCFAF4;}
-    .dwie strong{display:block;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#5B6560;margin-bottom:2px;}
-    .rap{border-left:3px solid #C6A04A;background:#FCFAF4;padding:8px 12px;margin:8px 0;border-radius:0 6px 6px 0;}
-    .werdykt{border:1px solid #e3decd;border-left:4px solid #2F6B4F;border-radius:8px;padding:12px 16px;background:#F7FAF7;}
-    .stopka{margin:24px 34px 0;border-top:1px solid #e3decd;padding-top:8px;color:#8a857a;font-size:10px;
+    .wskaznik{display:flex;align-items:center;gap:14px;border:1px solid #e3decd;border-left:4px solid #C6A04A;
+      border-radius:6px;padding:9px 14px;background:#FBF8F0;}
+    .liczba{font-size:32px;font-weight:800;line-height:1;color:#8C6C21;}
+    table{border-collapse:collapse;} td{vertical-align:top;padding:1px 0;}
+    /* Podstawa oceny i decyzja końcowa stoją obok siebie — obie są krótkie, a osobno zjadały
+       pół strony na samo przewijanie wzroku w dół. */
+    .kolumny{display:flex;gap:16px;align-items:stretch;}
+    .kolumny>div{flex:1;min-width:0;}
+    .dwie{display:flex;gap:12px;}
+    .dwie>div{flex:1;border:1px solid #e9e3d4;border-radius:6px;padding:7px 10px;background:#FCFAF4;}
+    .dwie strong{display:block;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#5B6560;margin-bottom:1px;}
+    .dwie ul{margin:2px 0 0;padding-left:15px;}
+    .rap{border-left:3px solid #C6A04A;background:#FCFAF4;padding:6px 10px;margin:5px 0;border-radius:0 5px 5px 0;}
+    .werdykt{border:1px solid #e3decd;border-left:4px solid #2F6B4F;border-radius:6px;padding:8px 12px;background:#F7FAF7;height:100%;box-sizing:border-box;}
+    .opinia{font-size:9.8px;line-height:1.38;white-space:pre-wrap;}
+    .stopka{margin:14px 30px 0;border-top:1px solid #e3decd;padding-top:6px;color:#8a857a;font-size:8.5px;
       display:flex;justify-content:space-between;gap:16px;}
   </style></head><body>
 
@@ -12576,31 +12585,34 @@ async function generateAnalysisPDF(playerId){
 
   <div class="wskaznik">
     <div style="text-align:center;"><div class="liczba">${an.score!=null?an.score:'—'}</div>
-      <div style="font-size:10.5px;color:#5B6560;">Wskaźnik /100</div></div>
-    <div><div style="font-weight:800;font-size:14px;color:#8C6C21;">${esc(an.reco)}</div>
-      <div style="font-size:11.5px;color:#5B6560;margin-top:4px;">Śr. ocena z raportów:
+      <div style="font-size:8.5px;color:#5B6560;">Wskaźnik /100</div></div>
+    <div><div style="font-weight:800;font-size:12.5px;color:#8C6C21;">${esc(an.reco)}</div>
+      <div style="color:#5B6560;margin-top:2px;">Śr. ocena z raportów:
         <strong>${an.overall!=null?fmt1(an.overall):'—'}/6</strong> &middot;
         Pewność: <strong>${esc(an.confidence)}</strong> (granica błędu: ${esc(an.errorMargin)})</div></div>
   </div>
 
-  <h2>Podstawa oceny</h2>
-  <table>
-    ${wiersz('Obserwacji', an.a ? an.a.count : 0)}
-    ${wiersz('Raportów', an.reports.length)}
-    ${wiersz('Trend', an.trend==null ? 'brak — za mało obserwacji' : (an.trend>0.15?`poprawa (+${fmt1(an.trend)})`:an.trend<-0.15?`spadek (${fmt1(an.trend)})`:'stabilnie'))}
-    ${wiersz('Potencjał rozwoju', an.devNote)}
-  </table>
-  ${an.nData<3?'<p style="color:#8C3A2E;font-size:11.5px;margin-top:8px;">Mała próba — decyzji nie należy opierać wyłącznie na tym dokumencie.</p>':''}
-
-  <h2>Decyzja końcowa${dk.werdykt ? ` — z ${dk.glosy.length} ${slowoGlosy(dk.glosy.length)}` : ''}</h2>
-  ${dk.werdykt ? `<div class="werdykt"><div style="font-size:18px;font-weight:800;color:#16302a;letter-spacing:.01em;">${esc(dk.werdykt)}</div>
-    <div style="color:#5B6560;font-size:11.5px;margin-top:2px;">${dk.zgodne ? 'Głosy zgodne.' : 'Głosy rozbieżne — rozstrzyga komitet.'}${dk.ograniczenie ? ' ' + esc(dk.ograniczenie) : ''}</div>
-    <ul style="margin:6px 0 0;padding-left:18px;">${dk.glosy.map(g=>`<li>${esc(g.kto)}: <strong>${esc(werdyktZWyniku(g.wynik))}</strong></li>`).join('')}</ul></div>`
-    : '<div style="color:#5B6560;">Brak głosów — brak raportów z ocenami.</div>'}
-  <table>
-    ${wiersz('Poziom (szacunek systemu)', szacunek.tekst)}
-    ${dk.ai && dk.ai.poziom ? wiersz('Poziom wg opinii AI', dk.ai.poziom) : ''}
-  </table>
+  <div class="kolumny">
+    <div>
+      <h2>Podstawa oceny</h2>
+      <table>
+        ${wiersz('Obserwacji', an.a ? an.a.count : 0)}
+        ${wiersz('Raportów', an.reports.length)}
+        ${wiersz('Trend', an.trend==null ? 'brak — za mało obserwacji' : (an.trend>0.15?`poprawa (+${fmt1(an.trend)})`:an.trend<-0.15?`spadek (${fmt1(an.trend)})`:'stabilnie'))}
+        ${wiersz('Potencjał rozwoju', an.devNote)}
+        ${wiersz('Poziom (szacunek systemu)', szacunek.tekst)}
+        ${dk.ai && dk.ai.poziom ? wiersz('Poziom wg opinii AI', dk.ai.poziom) : ''}
+      </table>
+      ${an.nData<3?'<p style="color:#8C3A2E;margin:6px 0 0;">Mała próba — decyzji nie należy opierać wyłącznie na tym dokumencie.</p>':''}
+    </div>
+    <div>
+      <h2>Decyzja końcowa${dk.werdykt ? ` — z ${dk.glosy.length} ${slowoGlosy(dk.glosy.length)}` : ''}</h2>
+      ${dk.werdykt ? `<div class="werdykt"><div style="font-size:15px;font-weight:800;color:#16302a;letter-spacing:.01em;">${esc(dk.werdykt)}</div>
+        <div style="color:#5B6560;margin-top:2px;">${dk.zgodne ? 'Głosy zgodne.' : 'Głosy rozbieżne — rozstrzyga komitet.'}${dk.ograniczenie ? ' ' + esc(dk.ograniczenie) : ''}</div>
+        <ul style="margin:4px 0 0;padding-left:15px;">${dk.glosy.map(g=>`<li>${esc(g.kto)}: <strong>${esc(werdyktZWyniku(g.wynik))}</strong></li>`).join('')}</ul></div>`
+        : '<div style="color:#5B6560;">Brak głosów — brak raportów z ocenami.</div>'}
+    </div>
+  </div>
 
   <h2>Mocne strony i braki</h2>
   <div class="dwie">
@@ -12618,8 +12630,8 @@ async function generateAnalysisPDF(playerId){
     : '<div style="color:#5B6560;">Brak raportów — analiza opiera się wyłącznie na danych z kartoteki.</div>'}
 
   ${opinia && opinia.tekst ? `<h2>Druga opinia (AI) — ${esc(String(opinia.data||'').slice(0,10))}</h2>
-    <div style="white-space:pre-wrap;">${esc(opinia.tekst)}</div>
-    <p style="color:#8a857a;font-size:10.5px;margin-top:6px;">Opinia wygenerowana automatycznie na podstawie danych z systemu i publicznych źródeł piłkarskich. Nie zastępuje obserwacji na żywo.</p>` : ''}
+    <div class="opinia">${esc(opinia.tekst)}</div>
+    <p style="color:#8a857a;font-size:8.5px;margin:5px 0 0;">Opinia wygenerowana automatycznie na podstawie danych z systemu i publicznych źródeł piłkarskich. Nie zastępuje obserwacji na żywo.</p>` : ''}
 
   </div>
   <div class="stopka">
