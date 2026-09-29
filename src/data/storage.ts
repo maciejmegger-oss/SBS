@@ -128,6 +128,10 @@ export const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }>
       // „Sam klub, bez ligi": zawodnik należy do klubu (herb, kartoteka), ale nie gra w lidze
       // seniorów tego klubu — np. rocznik 2011 w Zawiszy z II ligi. Wyłącza go z map i rankingów ligi.
       "klubBezLigi",
+      // Inne drużyny tego samego sezonu: rezerwy, wypożyczenie. Młodzieżowiec bywa zgłoszony do
+      // pierwszego zespołu i do rezerw naraz — bez tego pola jego minuty z drugiej drużyny nie
+      // miały gdzie wejść i powstawała druga kartoteka, co rozdzielało raporty od statystyk.
+      "druzyny",
     ],
   },
   sbs_observations: {

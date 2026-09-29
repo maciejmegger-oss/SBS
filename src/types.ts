@@ -44,6 +44,10 @@ export interface Player {
   statsUpdatedAt?: string;
   statsSource?: string;
   statsSeason?: string;
+  // Inne drużyny w tym samym sezonie — rezerwy, wypożyczenie. Pola matches/minutes/goals dotyczą
+  // klubu z kartoteki (pierwszy zespół); tutaj leży reszta dorobku, a profil pokazuje sumę.
+  druzyny?: { klub: string; liga?: string; mecze?: number | null; minuty?: number | null;
+              gole?: number | null; asysty?: number | null }[];
   instagramLink?: string;
   facebookLink?: string;
   kadraWojewodzka?: boolean;

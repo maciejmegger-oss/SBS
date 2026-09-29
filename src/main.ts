@@ -5447,8 +5447,9 @@ function viewPlayerDetail(id){
       <div class="field-wrap" style="margin-bottom:8px;"><label class="field">Żółte kartki</label><input type="number" min="0" id="qs-yellow" value="${p.yellowCards!=null?p.yellowCards:''}"></div>
       <div class="field-wrap" style="margin-bottom:8px;"><label class="field">Czerwone kartki</label><input type="number" min="0" id="qs-red" value="${p.redCards!=null?p.redCards:''}"></div>
     </div>
-    <button class="gold" data-action="save-quick-stats" data-id="${p.id}">Zapisz statystyki</button>
-    <p class="note" style="margin-top:6px;">Szybka aktualizacja bez otwierania pełnej edycji — wpisz i zapisz.</p>
+    ${druzynyHtml(p)}
+    <button class="gold" data-action="save-quick-stats" data-id="${p.id}" style="margin-top:12px;">Zapisz statystyki</button>
+    <p class="note" style="margin-top:6px;">Szybka aktualizacja bez otwierania pełnej edycji — wpisz i zapisz. Jednym przyciskiem zapisują się też drużyny z tabeli wyżej.</p>
   </div>
   <div class="card">
     <h4 style="margin-top:0;color:var(--heading);">Profil ocen — radar</h4>
@@ -8735,6 +8736,79 @@ const REPORT_SET_PIECES = [
 
 // Młodzieżowiec — rocznik 2006 i młodszy, we wszystkich ligach. Odznaka w stylu "3D" (gradient +
 // warstwowy cień), spójna z kafelkami lig na dashboardzie, a nie zwykła płaska plakietka.
+// DWIE DRUŻYNY W TYM SAMYM SEZONIE — pierwszy zespół i rezerwy.
+//
+// Młodzieżowiec bywa zgłoszony do obu drużyn klubu i gra raz w jednej, raz w drugiej. Kartoteka
+// trzyma JEDEN klub, więc dorobek z rezerw nie miał gdzie wejść — skauci zakładali drugą kartotekę
+// i wtedy raporty zostawały przy jednej, a minuty przy drugiej. Tak rozjechał się Leśniak-Paduch:
+// raport z I ligi na jednej karcie, minuty rezerw z IV ligi na drugiej.
+//
+// Pola mecze/minuty/gole na zawodniku zostają dorobkiem KLUBU Z KARTOTEKI (pierwszy zespół, bo to
+// on decyduje o lidze, mapie pozycji i rankingu). Pozostałe drużyny dopisujemy tutaj, a profil
+// pokazuje rozbicie i sumę — bo to suma mówi, ile chłopak naprawdę gra.
+function dorobekRazem(p){
+  const l = v => Number.isFinite(Number(v)) ? Number(v) : 0;
+  const suma = { mecze: l(p.matches), minuty: l(p.minutes), gole: l(p.goals), asysty: l(p.assists) };
+  (p.druzyny || []).forEach(d=>{
+    suma.mecze += l(d.mecze); suma.minuty += l(d.minuty); suma.gole += l(d.gole); suma.asysty += l(d.asysty);
+  });
+  return suma;
+}
+
+// Wiersze „inne drużyny" w profilu. Zawsze dokładamy jeden pusty wiersz, żeby dopisanie rezerw nie
+// wymagało klikania „dodaj" — skaut wpisuje nazwę i liczby, i zapisuje tym samym przyciskiem.
+function druzynyHtml(p){
+  const puste = { klub:'', liga:'', mecze:'', minuty:'', gole:'', asysty:'' };
+  const wiersze = [...(p.druzyny || []), puste];
+  const pole = (i, k, ph, typ)=> `<input ${typ==='n'?'type="number" min="0"':'type="text"'} class="qs-dr-${k}" data-i="${i}"
+      value="${esc(String(wiersze[i][k] ?? ''))}" placeholder="${esc(ph)}" style="width:100%;">`;
+  const razem = dorobekRazem(p);
+  const klubGlowny = p.clubId ? clubName(p.clubId) : 'Klub z kartoteki';
+  const ligaGlowna = p.clubId ? clubLeague(p.clubId) : '';
+  return `
+  <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:10px;">
+    <label class="field" style="display:block;margin-bottom:6px;">Inne drużyny w tym sezonie — rezerwy, wypożyczenie</label>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;min-width:640px;border-collapse:collapse;font-size:13px;">
+        <tr>
+          <th style="text-align:left;padding:4px 6px 4px 0;color:var(--ink-soft);font-size:11px;">Drużyna</th>
+          <th style="text-align:left;padding:4px 6px;color:var(--ink-soft);font-size:11px;">Liga</th>
+          <th style="text-align:right;padding:4px 6px;color:var(--ink-soft);font-size:11px;">Mecze</th>
+          <th style="text-align:right;padding:4px 6px;color:var(--ink-soft);font-size:11px;">Minuty</th>
+          <th style="text-align:right;padding:4px 6px;color:var(--ink-soft);font-size:11px;">Gole</th>
+          <th style="text-align:right;padding:4px 0 4px 6px;color:var(--ink-soft);font-size:11px;">Asysty</th>
+        </tr>
+        <tr>
+          <td style="padding:4px 6px 4px 0;"><strong>${esc(klubGlowny)}</strong><div class="note" style="font-size:10.5px;">pierwszy zespół — liczby w polach wyżej</div></td>
+          <td style="padding:4px 6px;">${esc(ligaGlowna || '—')}</td>
+          <td style="padding:4px 6px;text-align:right;font-variant-numeric:tabular-nums;">${p.matches != null ? p.matches : '—'}</td>
+          <td style="padding:4px 6px;text-align:right;font-variant-numeric:tabular-nums;">${p.minutes != null ? p.minutes : '—'}</td>
+          <td style="padding:4px 6px;text-align:right;font-variant-numeric:tabular-nums;">${p.goals != null ? p.goals : '—'}</td>
+          <td style="padding:4px 0 4px 6px;text-align:right;font-variant-numeric:tabular-nums;">${p.assists != null ? p.assists : '—'}</td>
+        </tr>
+        ${wiersze.map((d, i)=>`
+        <tr>
+          <td style="padding:3px 6px 3px 0;">${pole(i,'klub','np. Ruch Chorzów II','t')}</td>
+          <td style="padding:3px 6px;">${pole(i,'liga','np. IV liga (śląska)','t')}</td>
+          <td style="padding:3px 6px;">${pole(i,'mecze','','n')}</td>
+          <td style="padding:3px 6px;">${pole(i,'minuty','','n')}</td>
+          <td style="padding:3px 6px;">${pole(i,'gole','','n')}</td>
+          <td style="padding:3px 0 3px 6px;">${pole(i,'asysty','','n')}</td>
+        </tr>`).join('')}
+        <tr style="border-top:1px solid var(--border);">
+          <td style="padding:6px 6px 0 0;"><strong>Razem</strong></td>
+          <td></td>
+          <td style="padding:6px 6px 0;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;">${razem.mecze}</td>
+          <td style="padding:6px 6px 0;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;">${razem.minuty}</td>
+          <td style="padding:6px 6px 0;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;">${razem.gole}</td>
+          <td style="padding:6px 0 0 6px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;">${razem.asysty}</td>
+        </tr>
+      </table>
+    </div>
+    <p class="note" style="margin-top:6px;">Wiersz bez nazwy drużyny jest pomijany przy zapisie. Liczby z pierwszego zespołu zostają w polach wyżej, bo to one idą do rankingu i mapy pozycji — tutaj zapisujesz resztę dorobku.</p>
+  </div>`;
+}
+
 // Dorobek z POPRZEDNICH sezonów. Pola mecze/minuty/gole na zawodniku dotyczą sezonu bieżącego —
 // odświeżenie z API je nadpisuje. Wcześniejsze sezony trafiają do archiwum i pokazujemy je tutaj,
 // żeby nadpisanie nie wyglądało jak utrata danych.
@@ -15689,6 +15763,25 @@ function attachHandlers(){
     const num = id=>{ const el=document.getElementById(id); const v=el?el.value:''; return v===''? null : Number(v); };
     pl.matches = num('qs-matches'); pl.minutes = num('qs-minutes'); pl.goals = num('qs-goals'); pl.assists = num('qs-assists');
     pl.yellowCards = num('qs-yellow'); pl.redCards = num('qs-red');
+    // Inne drużyny tego samego sezonu (rezerwy, wypożyczenie). Wiersz bez nazwy drużyny pomijamy —
+    // ostatni jest celowo pusty, żeby dopisanie kolejnej nie wymagało osobnego przycisku.
+    const liczbaZPola = el => { const v = el ? (el as HTMLInputElement).value.trim() : ''; return v === '' ? null : Number(v); };
+    const druzyny = [];
+    main.querySelectorAll('.qs-dr-klub').forEach(polKlub=>{
+      const i = (polKlub as HTMLElement).dataset.i;
+      const nazwa = (polKlub as HTMLInputElement).value.trim();
+      if(!nazwa) return;
+      const wPolu = (k)=> main.querySelector(`.qs-dr-${k}[data-i="${i}"]`);
+      druzyny.push({
+        klub: nazwa,
+        liga: ((wPolu('liga') as HTMLInputElement | null)?.value || '').trim(),
+        mecze: liczbaZPola(wPolu('mecze')),
+        minuty: liczbaZPola(wPolu('minuty')),
+        gole: liczbaZPola(wPolu('gole')),
+        asysty: liczbaZPola(wPolu('asysty')),
+      });
+    });
+    pl.druzyny = druzyny;
     const orig = b.textContent; b.textContent = 'Zapisywanie...'; b.disabled = true;
     const ok = await savePlayers();
     b.textContent = ok ? '✓ Zapisano' : 'Błąd zapisu — spróbuj ponownie';
