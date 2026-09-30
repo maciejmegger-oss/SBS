@@ -50,6 +50,9 @@ const btn = (sel: string) => document.querySelector(sel) as HTMLButtonElement;
 const div = (sel: string) => document.querySelector(sel) as HTMLDivElement;
 const sel_el = (sel: string) => document.querySelector(sel) as HTMLSelectElement;
 
+// KARTA ZAWODNIKA — skróty ocen na karcie. Pełne nazwy stoją obok, przy pierścieniach ocen;
+// na karcie muszą zmieścić się w kwadraciku, więc idą trzyliterowo.
+const SKROTY_OCEN = { technika:'TEC', taktyka:'TAK', motoryka:'MOT', mentalnosc:'MEN', potencjal:'POT' };
 const RATING_KEYS = ["technika","taktyka","motoryka","mentalnosc","potencjal"];
 const RATING_LABELS = {technika:"Technika",taktyka:"Taktyka",motoryka:"Motoryka",mentalnosc:"Mentalność",potencjal:"Potencjał"};
 const STATUS_CLASS = {"Nowy typ":"new","W obserwacji":"watching","Rekomendowany":"reco","Na testach":"trial","Podpisany":"signed","Odrzucony":"rejected","Wstrzymany":"hold","Do Obserwacji":"watching","Na Testy":"trial","Do transferu":"signed","Z polecenia":"reco"};
@@ -5283,6 +5286,86 @@ async function odswiezZTransfermarktu(playerId, przycisk){
   }
 }
 
+// KARTA ZAWODNIKA — graficzny profil na wejściu do kartoteki.
+//
+// Po co: wchodząc w zawodnika chce się najpierw zobaczyć, KTO to jest i ile jest wart, a nie
+// czytać tabelę. Karta pokazuje to jednym rzutem oka: ocena ogólna, pozycja, klub, rocznik
+// i pięć składowych oceny — dokładnie tych, które wypełniasz w raportach.
+//
+// Liczby są PRAWDZIWE, tylko przeskalowane. Oceny w raportach idą w skali 1–6, a na karcie
+// stoją w skali 1–99, bo tak czyta się je szybciej i tak wygląda to w serwisach, z których
+// korzystają kluby. Zawodnik bez raportu nie dostaje wymyślonej liczby: w miejscu oceny stoi
+// kreska i zdanie, skąd się ona weźmie.
+const na99 = (v)=> (v == null || !Number.isFinite(Number(v))) ? null
+  : Math.max(1, Math.min(99, Math.round(Number(v) / 6 * 99)));
+
+// Trzyliterowy skrót pozycji na karcie. Kolejność ma znaczenie: „Obrońca boczny" musi trafić
+// w skrót boczny, zanim złapie go ogólne „Obrońca".
+const SKROTY_POZYCJI: [RegExp, string][] = [
+  [/bramkarz/i, 'BR'],
+  [/obrońca (boczny|prawy|lewy)|wahadłowy/i, 'OB'],
+  [/obrońca/i, 'ŚO'],
+  [/pomocnik defensywny/i, 'DPŚ'],
+  [/pomocnik ofensywny/i, 'OPŚ'],
+  [/pomocnik/i, 'POM'],
+  [/skrzydłowy/i, 'SKR'],
+  [/napastnik/i, 'NAP'],
+];
+function skrotPozycji(pozycja){
+  const t = String(pozycja || '').trim();
+  if(!t) return '—';
+  const trafienie = SKROTY_POZYCJI.find(([w])=> w.test(t));
+  if(trafienie) return trafienie[1];
+  return t.slice(0, 3).toUpperCase();
+}
+
+function kartaZawodnikaHtml(p, a){
+  const ocena = a && a.overall != null ? na99(a.overall) : null;
+  // Wiek liczymy z rocznika — daty urodzenia w kartotece często nie ma, a rocznik jest prawie zawsze.
+  const rok = Number(rocznikZawodnika(p)) || null;
+  const wiek = rok ? new Date().getFullYear() - rok : null;
+  const herb = clubCrest(p.clubId);
+  const inicjaly = ((p.firstName||'')[0]||'') + ((p.lastName||'')[0]||'');
+  const kratka = (etykieta, wartosc)=>`<div class="kz-pole">
+    <span class="kz-pole-liczba">${wartosc == null ? '—' : wartosc}</span>
+    <span class="kz-pole-nazwa">${esc(etykieta)}</span>
+  </div>`;
+
+  return `<div class="karta-zawodnika-otoczka">
+    <div class="karta-zawodnika">
+      <div class="kz-lewa">
+        <div class="kz-ocena">${ocena == null ? '—' : ocena}</div>
+        <div class="kz-pozycja">${esc(skrotPozycji(p.position))}</div>
+        ${p.nationality ? `<div class="kz-flaga" title="${esc(p.nationality)}">${nationalityFlag(p.nationality)}</div>` : ''}
+        ${herb ? `<img class="kz-herb" src="${esc(herb)}" alt="">` : ''}
+      </div>
+      <div class="kz-prawa">
+        ${p.photoUrl
+          ? `<img class="kz-zdjecie" src="${esc(p.photoUrl)}" alt="">`
+          : `<div class="kz-zdjecie kz-zdjecie-brak">${esc(inicjaly.toUpperCase())}</div>`}
+      </div>
+      <div class="kz-nazwisko">
+        <div class="kz-imie">${esc(p.firstName || '')}</div>
+        <div class="kz-nazwa">${esc((p.lastName || '').toUpperCase())}</div>
+        <div class="kz-podpis">${esc([
+          p.birthYear ? `rocznik ${p.birthYear}${wiek ? ` (${wiek} l.)` : ''}` : '',
+          clubName(p.clubId) !== '—' ? clubName(p.clubId) : '',
+          p.klubBezLigi ? '' : clubLeague(p.clubId),
+        ].filter(Boolean).join(' · '))}</div>
+      </div>
+      <div class="kz-staty">
+        ${RATING_KEYS.map(k=> kratka(SKROTY_OCEN[k] || k, a && a.avgs ? na99(a.avgs[k]) : null)).join('')}
+        ${kratka('MECZ', p.matches != null ? p.matches : null)}
+      </div>
+    </div>
+    <div class="kz-opis note">
+      ${ocena == null
+        ? 'Ocen jeszcze nie ma — liczby pojawią się po pierwszym raporcie z zakładki „Raporty".'
+        : `Skala 1–99 przeliczona z ocen 1–6 &middot; średnia z ${a.reportCount} ${a.reportCount === 1 ? 'raportu' : 'raportów'}.`}
+    </div>
+  </div>`;
+}
+
 function viewPlayerDetail(id){
   const p = DB.players.find(x=>x.id===id);
   if(!p){ viewingPlayerId=null; return viewPlayers(); }
@@ -5303,6 +5386,7 @@ function viewPlayerDetail(id){
 
   return `
   <button class="secondary" data-action="back-players" style="margin-bottom:14px;">&larr; Wróć do listy</button>
+  ${kartaZawodnikaHtml(p, a)}
   <div class="toolbar">
     <div style="display:flex;align-items:center;gap:12px;">
       <label for="player-photo-input" style="cursor:pointer;display:inline-flex;" title="Kliknij, aby wgrać/zmienić zdjęcie">

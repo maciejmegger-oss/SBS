@@ -19,7 +19,7 @@ const wytnij = (nazwa, wzor) => {
 };
 
 const kod = [
-  wytnij('szukajNorm', /const szukajNorm = \(s\)=>[\s\S]*?\.replace\(\/\\p\{M\}\/gu,''\);/),
+  wytnij('szukajNorm', /const szukajNorm = [\s\S]*?\.trim\(\);/),
   wytnij('nazwiskoNorm', /const nazwiskoNorm = \(s\)=>.*;/),
   wytnij('importNorm', /const importNorm = [\s\S]*?\.replace\(\/\[\^a-z0-9\]\/g,''\);/),
   wytnij('SZUM_NAZWY_KLUBU', /const SZUM_NAZWY_KLUBU = \/\^\([\s\S]*?\)\$\/;/),

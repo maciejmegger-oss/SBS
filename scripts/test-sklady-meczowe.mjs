@@ -35,7 +35,7 @@ const kontekst = [
   wytnij('rozwinSkroty', /const rozwinSkroty = .*;/),
   wytnij('rozbijNazweKlubu', /function rozbijNazweKlubu\(nazwa\)\{[\s\S]*?\n\}/),
   wytnij('tenSamCzlon', /const tenSamCzlon = \(x, y\)=>\{[\s\S]*?\n\};/),
-  wytnij('szukajNorm', /const szukajNorm = \(s\)=>[\s\S]*?\.replace\(\/\\p\{M\}\/gu,''\);/),
+  wytnij('szukajNorm', /const szukajNorm = [\s\S]*?\.trim\(\);/),
   wytnij('skladDlaKlubu', /function skladDlaKlubu\(klub\)\{[\s\S]*?\n\}/),
   wytnij('nazwiskoNorm', /const nazwiskoNorm = .*;/),
   wytnij('zawodnikZeSkladu', /function zawodnikZeSkladu\(kadra, wpis\)\{[\s\S]*?\n\}/),

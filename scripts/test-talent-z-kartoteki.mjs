@@ -28,7 +28,7 @@ const kod = [
   wytnij('rozbijNazweKlubu', /function rozbijNazweKlubu\(nazwa\)\{[\s\S]*?\n\}/),
   wytnij('tenSamCzlon', /const tenSamCzlon = \(x, y\)=>\{[\s\S]*?\n\};/),
   wytnij('klubyToSamo', /function klubyToSamo\(a, b\)\{[\s\S]*?\n\}/),
-  wytnij('szukajNorm', /const szukajNorm = [\s\S]*?\.replace\(\/\\p\{M\}\/gu,''\);/),
+  wytnij('szukajNorm', /const szukajNorm = [\s\S]*?\.trim\(\);/),
   wytnij('nazwiskoNorm', /const nazwiskoNorm = .*;/),
   wytnij('clubName', /function clubName\(id\)\{.*\}/),
   wytnij('indeksZawodnikowPoNazwisku', /function indeksZawodnikowPoNazwisku\(\)\{[\s\S]*?\n\}/),

@@ -16,7 +16,7 @@ const wytnij = (nazwa, wzor) => {
 };
 
 const kod = [
-  wytnij('szukajNorm', /const szukajNorm = \(s\)=>[\s\S]*?\.replace\(\/\\p\{M\}\/gu,''\);/),
+  wytnij('szukajNorm', /const szukajNorm = [\s\S]*?\.trim\(\);/),
   wytnij('indeksSzukania', /let indeksSzukania = null;/),
   wytnij('zbudujIndeksSzukania', /function zbudujIndeksSzukania\(\)\{[\s\S]*?\n\}/),
   wytnij('wynikiSzukania', /function wynikiSzukania\(fraza\)\{[\s\S]*?\n\}/),

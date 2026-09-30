@@ -18,7 +18,7 @@ const wytnij = (nazwa, wzor) => {
 };
 
 const kod = [
-  wytnij('szukajNorm', /const szukajNorm = [\s\S]*?\.replace\(\/\\p\{M\}\/gu,''\);/),
+  wytnij('szukajNorm', /const szukajNorm = [\s\S]*?\.trim\(\);/),
   wytnij('nazwiskoNorm', /const nazwiskoNorm = .*;/),
   wytnij('talentPowiazanyZZawodnikiem', /function talentPowiazanyZZawodnikiem\(t, p\)\{[\s\S]*?\n\}/).replace('const zmiany: any = {};', 'const zmiany = {};'),
   wytnij('nowyTalentZZawodnika', /function nowyTalentZZawodnika\(p, noweId, dzis\)\{[\s\S]*?\n\}/),
