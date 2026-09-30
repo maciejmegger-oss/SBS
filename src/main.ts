@@ -22522,6 +22522,34 @@ function openSquadStatsModal(clubId){
 // ZLECENIE ANALIZY WIDEO — zamówienie obserwacji z nagrania przy konkretnym zawodniku.
 // Zlecenie tylko CZEKA w bazie: nagrania mają po kilka gigabajtów i leżą na dysku skauta, więc
 // analityk pobiera je u siebie. Gotowy raport wraca do skrzynki (panel w zakładce Raporty).
+// Rozmiar nagrania po ludzku: gigabajty dla całych meczów, megabajty dla wyciętych fragmentów.
+// Analityk po samej nazwie nie wie, czy dostał całość, czy pierwszą połowę.
+function opisRozmiaruPliku(bajty){
+  const gb = bajty / (1024 * 1024 * 1024);
+  if(gb >= 1) return gb.toFixed(2).replace('.', ',') + ' GB';
+  const mb = bajty / (1024 * 1024);
+  if(mb >= 1) return Math.round(mb) + ' MB';
+  return Math.max(1, Math.round(bajty / 1024)) + ' KB';
+}
+
+// DLACZEGO ZLECENIE SIĘ NIE ZAPISAŁO — po polsku, z jedną czynnością do wykonania.
+//
+// Zgłoszenie (30.09.2026): „nie można wgrać meczu z dysku". Okno pokazywało surowy komunikat
+// Postgresa: „Could not find the table 'public.sbs_analiza_zlecenia' in the schema cache".
+// Wyglądało to jak błąd wybierania pliku, a tabela zleceń po prostu nie była jeszcze założona
+// w bazie — migracji nikt nie uruchomił. Komunikat ma o tym mówić wprost.
+function komunikatBleduZlecenia(blad){
+  const brakTabeli = /schema cache|does not exist|relation .*sbs_analiza_zlecenia/i.test(String(blad));
+  if(brakTabeli) return 'Baza nie ma jeszcze tabeli zleceń, więc zlecenie nie ma gdzie się zapisać. '
+    + 'Plik i link są w porządku.\n\n'
+    + 'Do zrobienia raz, jedna minuta: Supabase → SQL Editor → New query → wklej całą treść pliku '
+    + 'supabase/migration_2026-09-29_zlecenia_analiz.sql → Run.\n\n'
+    + 'Potem „Zleć analizę" zapisuje się już normalnie.\n\nKomunikat bazy: ' + blad;
+  if(/row-level security|permission denied/i.test(String(blad))) return 'Baza odmówiła zapisu: Twoje konto nie jest '
+    + 'jeszcze zatwierdzone do zlecania analiz. Zlecenia zapisują tylko zatwierdzone konta.\n\nKomunikat bazy: ' + blad;
+  return 'Nie udało się zapisać zlecenia: ' + blad;
+}
+
 function openZlecAnalizeModal(playerId){
   const p = DB.players.find(x=>x.id===playerId);
   if(!p) return;
@@ -22540,12 +22568,21 @@ function openZlecAnalizeModal(playerId){
       </div>
       <div class="field-wrap">
         <label class="field">Link do nagrania</label>
-        <input id="zl-link" placeholder="adres transmisji albo archiwum">
+        <div style="display:flex;gap:6px;">
+          <input id="zl-link" placeholder="adres transmisji albo archiwum" style="flex:1;">
+          <button class="secondary" id="zl-wklej" type="button" title="Wklej adres ze schowka">📋 Wklej</button>
+        </div>
       </div>
       <div class="field-wrap">
         <label class="field">albo plik na dysku</label>
-        <input id="zl-plik" placeholder="nazwa pliku w F:\\Scouting\\Mecze">
-        <p class="note" style="margin:4px 0 0;">Wystarczy jedno z dwóch. Nagrania z archiwum PZPN wymagają logowania, więc plik pobiera skaut.</p>
+        <div style="display:flex;gap:6px;">
+          <input id="zl-plik" placeholder="nazwa pliku w F:\\Scouting\\Mecze" style="flex:1;">
+          <button class="secondary" id="zl-wybierz" type="button" title="Wskaż nagranie na dysku — wpiszę jego nazwę">📁 Wybierz plik</button>
+        </div>
+        <input type="file" id="zl-plik-wybor" accept="video/*,.mp4,.mkv,.mov,.avi,.ts,.m4v" style="display:none;">
+        <div id="zl-plik-opis" class="note" style="margin:4px 0 0;"></div>
+        <p class="note" style="margin:4px 0 0;">Wystarczy jedno z dwóch. Nagrania z archiwum PZPN wymagają logowania, więc plik pobiera skaut.
+          Nagranie zostaje na Twoim dysku — do zlecenia trafia sama nazwa, bo pliki mają po kilka gigabajtów.</p>
       </div>
       <div class="field-wrap">
         <label class="field">Oceniaj na pozycji</label>
@@ -22569,6 +22606,50 @@ function openZlecAnalizeModal(playerId){
   overlay.addEventListener('click', e=>{ if(e.target===overlay) zamknij(); });
   overlay.querySelector('#zl-anuluj').onclick = zamknij;
 
+  // WSKAZANIE PLIKU ZAMIAST PRZEPISYWANIA NAZWY.
+  //
+  // Nazwy nagrań to zwykle „2026-08-02_Ruch-Miedz_1080p.mp4" — przepisywana ręcznie myli się
+  // o jeden znak i analityk szuka pliku, którego nie ma. Okno wyboru pliku wpisuje ją samo.
+  // Samego nagrania nie wysyłamy nigdzie: przeglądarka i tak nie zdradza pełnej ścieżki, a plik
+  // ma kilka gigabajtów — do zlecenia trafia nazwa i rozmiar, żeby analityk wiedział, czego szukać
+  // i czy dostał całość.
+  const polePliku = overlay.querySelector('#zl-plik') as HTMLInputElement;
+  const wybor = overlay.querySelector('#zl-plik-wybor') as HTMLInputElement;
+  const opis = overlay.querySelector('#zl-plik-opis') as HTMLElement;
+  (overlay.querySelector('#zl-wybierz') as HTMLElement).onclick = ()=> wybor.click();
+  const wskazPlik = (f: File)=>{
+    polePliku.value = f.name;
+    opis.textContent = `Wskazane: ${f.name} · ${opisRozmiaruPliku(f.size)}`
+      + ' — plik zostaje u Ciebie, do zlecenia idzie sama nazwa.';
+  };
+  wybor.onchange = ()=>{
+    const f = wybor.files && wybor.files[0];
+    if(f) wskazPlik(f);
+  };
+  // Przeciągnięcie pliku na pole działa tak samo jak wybranie go z okna.
+  polePliku.addEventListener('dragover', (e)=>{ e.preventDefault(); polePliku.style.borderColor = 'var(--gold)'; });
+  polePliku.addEventListener('dragleave', ()=>{ polePliku.style.borderColor = ''; });
+  polePliku.addEventListener('drop', (e: DragEvent)=>{
+    e.preventDefault();
+    polePliku.style.borderColor = '';
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if(f) wskazPlik(f);
+  });
+
+  // Wklejenie adresu ze schowka — jednym kliknięciem, bo linki do transmisji bywają na pół ekranu.
+  (overlay.querySelector('#zl-wklej') as HTMLElement).onclick = async ()=>{
+    const pole = overlay.querySelector('#zl-link') as HTMLInputElement;
+    try{
+      const tekst = (await navigator.clipboard.readText()).trim();
+      if(tekst) pole.value = tekst;
+      pole.focus();
+    }catch(e){
+      // Przeglądarka potrafi odmówić dostępu do schowka — wtedy kursor w polu i Ctrl+V.
+      pole.focus();
+      opis.textContent = 'Przeglądarka nie dała dostępu do schowka — wklej adres skrótem Ctrl+V.';
+    }
+  };
+
   overlay.querySelector('#zl-zapisz').onclick = async (e)=>{
     const btn = e.currentTarget as HTMLButtonElement;
     const wartosc = (id)=> (overlay.querySelector('#'+id) as HTMLInputElement).value.trim();
@@ -22590,7 +22671,7 @@ function openZlecAnalizeModal(playerId){
     });
     if(blad){
       btn.disabled = false; btn.textContent = 'Zleć analizę';
-      alert('Nie udało się zapisać zlecenia: ' + blad);
+      alert(komunikatBleduZlecenia(blad));
       return;
     }
     zleceniaOtwarte = await pobierzOtwarteZlecenia();
