@@ -6050,17 +6050,17 @@ function viewPlayerDetail(id){
         </div>
         ${kontekstMeczuHtml(r)}
         ${mocneSlaboHtml(r)}
-        ${r.description? `<div style="font-size:12.5px;margin-top:4px;">${esc(r.description)}</div>`:''}
+        ${r.description? `<div style="font-size:12.5px;margin-top:4px;">${tekstRaportuHtml(r.description, {odstep:4})}</div>`:''}
         <div class="meta" style="margin-top:6px;font-size:11.5px;">
-          ${r.technika?`<div><strong>Technika:</strong> ${esc(r.technika)}</div>`:''}
-          ${r.taktyka?`<div><strong>Taktyka:</strong> ${esc(r.taktyka)}</div>`:''}
-          ${r.motoryka?`<div><strong>Motoryka:</strong> ${esc(r.motoryka)}</div>`:''}
-          ${r.mentalnoscOpis?`<div><strong>Mentalność:</strong> ${esc(r.mentalnoscOpis)}</div>`:''}
-          ${r.potencjalOpis?`<div><strong>Potencjał:</strong> ${esc(r.potencjalOpis)}</div>`:''}
+          ${r.technika?`<div style="margin-top:4px;"><strong>Technika:</strong>${tekstRaportuHtml(r.technika, {odstep:3})}</div>`:''}
+          ${r.taktyka?`<div style="margin-top:4px;"><strong>Taktyka:</strong>${tekstRaportuHtml(r.taktyka, {odstep:3})}</div>`:''}
+          ${r.motoryka?`<div style="margin-top:4px;"><strong>Motoryka:</strong>${tekstRaportuHtml(r.motoryka, {odstep:3})}</div>`:''}
+          ${r.mentalnoscOpis?`<div style="margin-top:4px;"><strong>Mentalność:</strong>${tekstRaportuHtml(r.mentalnoscOpis, {odstep:3})}</div>`:''}
+          ${r.potencjalOpis?`<div style="margin-top:4px;"><strong>Potencjał:</strong>${tekstRaportuHtml(r.potencjalOpis, {odstep:3})}</div>`:''}
         </div>
         <div class="meta" style="margin-top:4px;">${fazyR.map(f=>f.label+": "+r.phases[f.key]).join(' &middot; ')}</div>
         <div class="meta">${REPORT_SET_PIECES.map(f=>f.label+": "+r.setPieces[f.key]).join(' &middot; ')}</div>
-        ${r.setPieceComment? `<div style="font-size:12px;margin-top:4px;font-style:italic;color:var(--ink-soft);">Stałe fragmenty: ${esc(r.setPieceComment)}</div>`:''}
+        ${r.setPieceComment? `<div style="font-size:12px;margin-top:4px;font-style:italic;color:var(--ink-soft);">Stałe fragmenty:${tekstRaportuHtml(r.setPieceComment, {odstep:3})}</div>`:''}
       </div>`;
     }).join('') : `<div class="empty">Brak raportów taktycznych — dodaj w zakładce "Raporty".</div>`}
   </div>
@@ -9864,6 +9864,21 @@ function ustawOcenePunktowa(id, wartosc){
 }
 
 // Wstawienie treści ze skrzynki do formularza. Wołane PO render(), bo dopiero wtedy pola istnieją.
+// Zawodnik, którego dotyczy wpis ze skrzynki: po identyfikatorze, a w zapasie po „Nazwisko Imię"
+// z podpisu. Ten sam zawodnik bywa w kartotece dwa razy (osobna karta dla drugiej drużyny klubu) —
+// przy kilku trafieniach rozstrzyga klub z podpisu, inaczej raport ląduje na przypadkowej karcie.
+function zawodnikZeSkrzynki(dane){
+  const podpis = szukajNorm(String(dane.zawodnikNazwa || '').split('—')[0].trim());
+  const kandydaci = podpis
+    ? DB.players.filter(p=> szukajNorm(`${p.lastName||''} ${p.firstName||''}`) === podpis)
+    : [];
+  const klubSzukany = szukajNorm(String(dane.zawodnikNazwa || '').split('—')[1] || '');
+  return (dane.playerId && DB.players.find(p=>p.id===dane.playerId))
+    || (kandydaci.length > 1 && klubSzukany && kandydaci.find(p=> szukajNorm(clubName(p.clubId)) === klubSzukany))
+    || kandydaci[0]
+    || null;
+}
+
 function zastosujPrefillRaportu(){
   const dane = prefillRaportu;
   if(!dane) return;
@@ -9879,17 +9894,7 @@ function zastosujPrefillRaportu(){
   // Identyfikator bywa nieznany po stronie, która przygotowała raport (nie czyta kartoteki), więc
   // w zapasie dopasowujemy po nazwisku i imieniu. Gdy i to nie trafi, pole zostaje puste i skaut
   // wybiera zawodnika sam — lepsze niż podstawienie kogoś podobnego.
-  const podpis = szukajNorm(String(dane.zawodnikNazwa || '').split('—')[0].trim());
-  const kandydaci = podpis
-    ? DB.players.filter(p=> szukajNorm(`${p.lastName||''} ${p.firstName||''}`) === podpis)
-    : [];
-  // Ten sam zawodnik bywa w kartotece dwa razy (osobna karta dla drugiej drużyny klubu). Przy
-  // kilku trafieniach rozstrzyga klub z podpisu — inaczej raport ląduje na przypadkowej karcie.
-  const klubSzukany = szukajNorm(String(dane.zawodnikNazwa || '').split('—')[1] || '');
-  const zawodnik = (dane.playerId && DB.players.find(p=>p.id===dane.playerId))
-    || (kandydaci.length > 1 && klubSzukany && kandydaci.find(p=> szukajNorm(clubName(p.clubId)) === klubSzukany))
-    || kandydaci[0]
-    || null;
+  const zawodnik = zawodnikZeSkrzynki(dane);
   if(zawodnik){
     ustaw('rep-player', zawodnik.id);
     ustaw('rep-player-search', playerLabelFor(zawodnik.id));
@@ -16819,12 +16824,21 @@ function attachHandlers(){
     prefillRaportu = Object.assign({}, wpis.dane);
     if(!prefillRaportu.playerId) prefillRaportu.playerId = wpis.playerId;
     if(!prefillRaportu.zawodnikNazwa) prefillRaportu.zawodnikNazwa = wpis.zawodnik;
+    // POPRAWIONA WERSJA RAPORTU, KTÓRY JUŻ JEST W KARTOTECE. Gdy ten zawodnik ma raport z tego
+    // samego dnia meczu, wczytujemy wpis jako EDYCJĘ tamtego raportu — „Zapisz zmiany" nadpisze go,
+    // zamiast dopisywać drugi raport z tego samego meczu, który potem trzeba ręcznie kasować.
+    const zaw = zawodnikZeSkrzynki(prefillRaportu);
+    const istniejacy = zaw && prefillRaportu.date
+      ? DB.reports.find(r=> r.playerId===zaw.id && r.date===prefillRaportu.date && r.kind!=='mecz') : null;
+    editingReportId = istniejacy ? istniejacy.id : null;
     skrzynkaWpisy = skrzynkaWpisy.filter(x=>x.id!==wpis.id);
     // Oznaczenie w bazie nie może wstrzymywać wczytania: nawet gdy zapis statusu się nie uda,
     // skaut ma raport w formularzu i może go zapisać.
     oznaczWpisSkrzynki(wpis.id, 'wczytany');
     render();
-    pokazPotwierdzenie('Raport wczytany do formularza — sprawdź treść i kliknij „Zapisz raport".', 'ok');
+    pokazPotwierdzenie(editingReportId
+      ? 'Ten zawodnik ma już raport z tego meczu — wczytano poprawioną wersję jako edycję. „Zapisz zmiany" zastąpi stary raport.'
+      : 'Raport wczytany do formularza — sprawdź treść i kliknij „Zapisz raport".', 'ok');
   });
   main.querySelectorAll('[data-action="skrzynka-odswiez"]').forEach(b=>b.onclick=()=>{
     skrzynkaStan = 'nieznany';
@@ -24392,6 +24406,53 @@ function autorzyRaportu(p){
   return lista.join(', ');
 }
 
+// TEKST RAPORTU JAKO UKŁAD, NIE JEDEN AKAPIT.
+//
+// Skaut pisze w polach raportu linijkami: „Faza ataku – …", punkty „• …", bloki statystyk
+// z nagłówkiem „PODANIA". Wstawiony jako zwykły tekst wszystko to zlewało się w jedną linię —
+// cztery fazy gry czytało się jak jedno zdanie. Tu każda linijka zostaje osobno:
+//   • „Nagłówek – opis" / „Nagłówek: opis" → pogrubiony nagłówek i opis obok,
+//   • linia z samych wielkich liter albo zakończona dwukropkiem → śródtytuł,
+//   • „•", „-", „–", „*" na początku → lista punktowana,
+//   • pusta linia → odstęp między blokami.
+// Tekst przechodzi przez esc(), więc nic z treści nie staje się znacznikiem HTML.
+function pogrubionyNaglowekLinii(l){
+  const m = l.match(/^((?:\d+[).]\s*)?[^:–—.!?]{2,48}?)\s*(:|\s[–—-])\s+(.+)$/);
+  if(m && m[1].trim().split(/\s+/).length <= 7){
+    return `<strong>${esc(m[1].trim())}${m[2].trim()===':' ? ':' : ' –'}</strong> ${esc(m[3])}`;
+  }
+  return esc(l);
+}
+function tekstRaportuHtml(tekst, opcje: any = {}){
+  const odstep = opcje.odstep != null ? opcje.odstep : 6;
+  const linie = String(tekst||'').replace(/\r/g,'').split('\n');
+  let html = '';
+  let lista = [];
+  const zamknijListe = ()=>{
+    if(!lista.length) return;
+    html += `<ul style="margin:0 0 ${odstep}px;padding-left:18px;">${lista.map(x=>`<li style="margin:1px 0;">${x}</li>`).join('')}</ul>`;
+    lista = [];
+  };
+  for(const surowa of linie){
+    const l = surowa.trim();
+    if(!l){ zamknijListe(); continue; }
+    const punkt = l.match(/^[•\-–*]\s+(.+)$/);
+    if(punkt){ lista.push(pogrubionyNaglowekLinii(punkt[1])); continue; }
+    zamknijListe();
+    const bezEmoji = l.replace(/^[^\p{L}\d]+/u, '');
+    const srodtytul = (bezEmoji.length <= 60 && bezEmoji === bezEmoji.toUpperCase() && /\p{Lu}{3}/u.test(bezEmoji)) || /^[^:]{2,60}:$/.test(l);
+    if(srodtytul){
+      html += `<div style="font-weight:700;margin:${odstep+2}px 0 2px;letter-spacing:.02em;">${esc(l)}</div>`;
+    } else if(/^─+$/.test(l)){
+      html += `<div style="border-top:1px solid #E7E2D3;margin:${odstep}px 0;"></div>`;
+    } else {
+      html += `<div style="margin:0 0 ${odstep}px;">${pogrubionyNaglowekLinii(l)}</div>`;
+    }
+  }
+  zamknijListe();
+  return html;
+}
+
 async function generatePlayerPDF(playerId){
   const p = DB.players.find(x=>x.id===playerId);
   if(!p) return;
@@ -24563,12 +24624,12 @@ async function generatePlayerPDF(playerId){
       if(!bloki.length) return '';
       return `<div style="margin-bottom:10px;">${bloki.map(([etykieta, tresc])=>
         `<div style="margin-bottom:7px;"><div class="lbl" style="margin-bottom:2px;">${esc(etykieta)}</div>
-         <div class="notes-box" style="margin:0;">${esc(String(tresc).trim())}</div></div>`).join('')}</div>`;
+         <div class="notes-box" style="margin:0;">${tekstRaportuHtml(tresc)}</div></div>`).join('')}</div>`;
     })()}
-    ${latestReport.description?`<div class="lbl" style="margin-bottom:2px;">Opis raportu</div><div class="notes-box" style="margin-bottom:10px;">${esc(latestReport.description)}</div>`:''}
+    ${latestReport.description?`<div class="lbl" style="margin-bottom:2px;">Opis raportu</div><div class="notes-box" style="margin-bottom:10px;">${tekstRaportuHtml(latestReport.description)}</div>`:''}
     ${(latestReport.phases&&Object.keys(latestReport.phases).length)?`<div class="metric-section-label">${podpisProtokolu(fazyRaportu(latestReport))} (1-6)</div><div class="attr5-grid metric4">${fazyRaportu(latestReport).map(f=>`<div class="attr5-col"><div class="attr5-head"><span>${esc(f.label)}</span></div><div class="metric-num-body">${latestReport.phases[f.key]!=null?latestReport.phases[f.key]:'—'}</div></div>`).join('')}</div>`:''}
     ${(latestReport.setPieces&&Object.keys(latestReport.setPieces).length)?`<div class="metric-section-label">Stałe fragmenty (1-6)</div><div class="attr5-grid metric4">${REPORT_SET_PIECES.map(f=>`<div class="attr5-col"><div class="attr5-head"><span>${esc(f.label)}</span></div><div class="metric-num-body">${latestReport.setPieces[f.key]!=null?latestReport.setPieces[f.key]:'—'}</div></div>`).join('')}</div>`:''}
-    ${latestReport.setPieceComment?`<div class="notes-box" style="margin-top:10px;">${esc(latestReport.setPieceComment)}</div>`:''}
+    ${latestReport.setPieceComment?`<div class="notes-box" style="margin-top:10px;">${tekstRaportuHtml(latestReport.setPieceComment)}</div>`:''}
   </div>`:''}
 
   ${(()=>{
@@ -24661,7 +24722,7 @@ async function generatePlayerPDF(playerId){
     ${(a || latestReport) ? `<div class="attr5-grid">
       ${RATING_KEYS.map(k=>`<div class="attr5-col">
         <div class="attr5-head"><span>${esc(RATING_LABELS[k])}</span>${a&&a.avgs?`<span class="attr5-score">${fmt1(a.avgs[k])}</span>`:''}</div>
-        <div class="attr5-body">${reportTextByKey[k]?esc(reportTextByKey[k]):'<span class="attr5-empty">—</span>'}</div>
+        <div class="attr5-body">${reportTextByKey[k]?tekstRaportuHtml(reportTextByKey[k], {odstep:3}):'<span class="attr5-empty">—</span>'}</div>
       </div>`).join('')}
     </div>` : `<p class="empty-note">Brak obserwacji i raportu — oceny oraz opisy pojawią się po pierwszej wizycie scoutingowej.</p>`}
   </div>
