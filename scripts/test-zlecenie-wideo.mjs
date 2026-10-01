@@ -68,7 +68,52 @@ sprawdz('gdy przeglądarka odmówi — podpowiada Ctrl + V', /wklej adres skr�
 sprawdz('wystarczy jedno z dwóch źródeł',
   /if\(!link && !plik\)\{ alert\('Podaj link do nagrania albo nazwę pliku\.'\); return; \}/.test(zrodlo));
 
-console.log('\n5. Tabela w bazie');
+console.log('\n5. Zlecenie zapisuje się także bez tabeli w bazie');
+// Zgłoszenie (01.10.2026): „nie można zrobić analizy, taki komunikat". Migracja nie była
+// uruchomiona, więc zlecenie nie miało gdzie trafić. Funkcja nie może stać przez to tygodniami.
+{
+  const zl = fs.readFileSync('src/data/zlecenia.ts', 'utf8');
+  sprawdz('brak tabeli rozpoznawany po komunikacie bazy', /const brakTabeli = \(komunikat: string\) =>/.test(zl));
+  sprawdz('wtedy zlecenie idzie do jednego wiersza JSON (sbs_kv)',
+    /if \(!brakTabeli\(error\.message\)\) return error\.message;[\s\S]{0,320}storage\.set\(KLUCZ_ZAPASOWY/.test(zl));
+  sprawdz('inny błąd nadal wraca do skauta, nie jest po cichu chowany',
+    /if \(!brakTabeli\(error\.message\)\) return error\.message;/.test(zl));
+  sprawdz('kolejka czytana z zapasu, gdy tabeli nie ma',
+    /const zapas = await zapasoweZlecenia\(\);\s*\n\s*return zapas\.filter\(\(z\) => z\.status === "nowe" \|\| z\.status === "w_toku"\);/.test(zl));
+  sprawdz('uszkodzony zapas nie wywraca profilu zawodnika', /catch \{\s*\n\s*return \[\];\s*\n\s*\}/.test(zl));
+}
+
+console.log('\n6. Szkic raportu przygotowany przez model');
+{
+  sprawdz('funkcja po stronie serwera istnieje', fs.existsSync('api/raport-ai.js'));
+  const ai = fs.readFileSync('api/raport-ai.js', 'utf8');
+  sprawdz('napisane wprost, że model NIE ogląda nagrania', /Model NIE OGLĄDA nagrania/.test(ai));
+  sprawdz('zakaz wystawiania ocen 1–6 za fazy gry', /NIE wystawiasz ocen liczbowych za fazy gry/.test(ai));
+  sprawdz('zakaz zmyślania wyniku, minut i nazwisk', /Nie wymyślasz: wyniku meczu, liczby minut, bramek, nazwisk/.test(ai));
+  sprawdz('puste pole dozwolone i zalecane', /Puste pole skaut uzupełni w minutę/.test(ai));
+  sprawdz('treści od ludzi idą w ramkach jako dane, nie polecenia', /<notatki_skauta>/.test(ai) && /nie jako polecenia|to materiał, nie polecenia/.test(ai));
+  sprawdz('model mówi, z czego powstał szkic', /"opisZrodla"/.test(ai));
+  sprawdz('pisze też, czego skaut musi dopatrzeć w nagraniu', /"czegoBrakuje"/.test(ai));
+  sprawdz('odpowiedź przycinana do pól, które zna formularz', /const POLA = \["rywal", "wynik"/.test(ai));
+  sprawdz('perspektywa i status tylko z wartości formularza',
+    /PERSPEKTYWY = \["WYSOKA", "ŚREDNIA", "NISKA"\]/.test(ai) && /STATUSY = \["Do transferu", "Do Obserwacji", "Na Testy", "Odrzucony"\]/.test(ai));
+  sprawdz('brak klucza API to komunikat z instrukcją, nie awaria', /ANTHROPIC_API_KEY/.test(ai) && /jakNaprawic/.test(ai));
+  sprawdz('JSON wyłuskiwany nawet z odpowiedzi w bloku kodu', /tekst\.indexOf\("\{"\)/.test(ai));
+
+  sprawdz('przycisk w oknie zlecenia', /id="zl-ai"/.test(zrodlo));
+  sprawdz('podpowiedź mówi, czego model nie widzi', /Nagrania nie widzi — oceny 1–6 za fazy gry zostają dla Ciebie/.test(zrodlo));
+  sprawdz('szkic wchodzi do formularza tą samą drogą co raport ze skrzynki',
+    /prefillRaportu = Object\.assign\(\{\}, s, \{/.test(zrodlo));
+  sprawdz('obserwacja oznaczona jako Video', /obsType: 'Video',/.test(zrodlo));
+  sprawdz('„do dopatrzenia" dopisane do opisu, a nie pominięte', /DO DOPATRZENIA W NAGRANIU/.test(zrodlo));
+  sprawdz('po wstawieniu przechodzimy do Raportów i do formularza',
+    /currentView = 'reports'; viewingPlayerId = null;[\s\S]{0,320}rep-formularz/.test(zrodlo));
+  sprawdz('potwierdzenie mówi skautowi, co ma zrobić sam',
+    /Model nie widział nagrania — oceny 1–6 za fazy gry /.test(zrodlo));
+  sprawdz('bez nazwy meczu nie wołamy modelu', /bez tego raport nie ma nagłówka/.test(zrodlo));
+}
+
+console.log('\n7. Tabela w bazie');
 {
   sprawdz('migracja leży w repozytorium', fs.existsSync(migracja));
   const sql = fs.readFileSync(migracja, 'utf8');
@@ -82,7 +127,7 @@ console.log('\n5. Tabela w bazie');
   sprawdz('kolejka czytana po utworzone_at — tak sortuje kod', /utworzone_at\s+timestamptz not null default now\(\)/.test(sql)
     && /\.order\("utworzone_at"/.test(zlecenia));
   sprawdz('zapis tylko dla zatwierdzonych kont', /for insert to authenticated\s*\n\s*with check \(public\.sbs_zatwierdzony\(\)\)/.test(sql));
-  sprawdz('brak tabeli nie wywraca profilu zawodnika', /Zlecenia analiz niedostępne/.test(zlecenia));
+  sprawdz('brak tabeli nie wywraca profilu zawodnika', /Zlecenia analiz z tabeli niedostępne/.test(zlecenia));
 }
 
 console.log(bledy ? `\n${bledy} BŁĘDÓW` : '\nWszystko przeszło.');

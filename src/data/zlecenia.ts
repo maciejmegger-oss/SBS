@@ -6,7 +6,28 @@
 //
 // Tabela i reguły dostępu: supabase/migration_2026-09-29_zlecenia_analiz.sql.
 
-import { sb } from "./storage";
+import { sb, storage } from "./storage";
+
+// ZAPASOWA DROGA ZAPISU — gdy tabeli w bazie nie ma.
+//
+// Zgłoszenie (01.10.2026): „nie można zrobić analizy, taki komunikat". Zlecenie nie zapisywało się
+// wcale, bo migracja tworząca `sbs_analiza_zlecenia` nie została uruchomiona — a skaut nie ma jak
+// jej uruchomić w trakcie pracy. Funkcja nie może stać przez to tygodniami: gdy tabeli brakuje,
+// zlecenie ląduje w jednym wierszu JSON (sbs_kv), tak samo jak terminarz czy mapa pozycji.
+// Po uruchomieniu migracji nowe zlecenia idą znów do tabeli, a te z zapasu nadal są widoczne.
+const KLUCZ_ZAPASOWY = "scouting:zlecenia_analiz";
+const brakTabeli = (komunikat: string) =>
+  /schema cache|does not exist|relation .*sbs_analiza_zlecenia/i.test(String(komunikat || ""));
+
+async function zapasoweZlecenia(): Promise<ZlecenieAnalizy[]> {
+  try {
+    const wiersz = await storage.get(KLUCZ_ZAPASOWY, true);
+    const lista = wiersz && wiersz.value ? JSON.parse(wiersz.value) : [];
+    return Array.isArray(lista) ? lista : [];
+  } catch {
+    return [];
+  }
+}
 
 export interface ZlecenieAnalizy {
   id: string;
@@ -38,7 +59,17 @@ export async function zlecAnalize(z: ZlecenieAnalizy): Promise<string | null> {
     zlecil: z.zlecil || "",
     status: "nowe",
   });
-  return error ? error.message : null;
+  if (!error) return null;
+  if (!brakTabeli(error.message)) return error.message;
+
+  const lista = await zapasoweZlecenia();
+  lista.push({ ...z, status: "nowe", utworzoneAt: new Date().toISOString() });
+  try {
+    await storage.set(KLUCZ_ZAPASOWY, JSON.stringify(lista), true);
+    return null;
+  } catch (e) {
+    return (e as Error).message || String(e);
+  }
 }
 
 /** Zlecenia w toku i czekające — do odznaczenia w profilu zawodnika. */
@@ -50,9 +81,11 @@ export async function pobierzOtwarteZlecenia(): Promise<ZlecenieAnalizy[]> {
     .order("utworzone_at", { ascending: false })
     .limit(200);
   if (error) {
-    // Brak tabeli (migracja nieuruchomiona) nie może wywracać profilu zawodnika.
-    console.warn("Zlecenia analiz niedostępne:", error.message);
-    return [];
+    // Brak tabeli (migracja nieuruchomiona) nie może wywracać profilu zawodnika — czytamy wtedy
+    // zlecenia zapisane drogą zapasową.
+    console.warn("Zlecenia analiz z tabeli niedostępne:", error.message);
+    const zapas = await zapasoweZlecenia();
+    return zapas.filter((z) => z.status === "nowe" || z.status === "w_toku");
   }
   return (data || []).map((r: Record<string, unknown>) => ({
     id: String(r.id),

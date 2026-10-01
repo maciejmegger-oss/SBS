@@ -23221,8 +23221,10 @@ function openZlecAnalizeModal(playerId){
         <label class="field">Na co zwrócić uwagę</label>
         <textarea id="zl-uwagi" rows="3" placeholder="np. gra w powietrzu przy stałych fragmentach, zachowanie po stracie piłki"></textarea>
       </div>
+      <div id="zl-wynik-ai"></div>
       <div class="modal-actions">
         <button class="secondary" id="zl-anuluj">Anuluj</button>
+        <button class="secondary" id="zl-ai" title="Model ułoży szkic raportu z Twoich notatek, wcześniejszych raportów i dorobku zawodnika. Nagrania nie widzi — oceny 1–6 za fazy gry zostają dla Ciebie.">🤖 Przygotuj raport teraz</button>
         <button class="gold" id="zl-zapisz">Zleć analizę</button>
       </div>
     </div>`;
@@ -23272,6 +23274,87 @@ function openZlecAnalizeModal(playerId){
       // Przeglądarka potrafi odmówić dostępu do schowka — wtedy kursor w polu i Ctrl+V.
       pole.focus();
       opis.textContent = 'Przeglądarka nie dała dostępu do schowka — wklej adres skrótem Ctrl+V.';
+    }
+  };
+
+  // SZKIC RAPORTU OD RAZU, ZAMIAST CZEKANIA NA ANALITYKA.
+  //
+  // Zgłoszenie (01.10.2026): „popraw to, aby system sam AI robiło analizę zawodnika i generował
+  // raport". Model NIE OGLĄDA nagrania — plik meczu ma kilka gigabajtów i zostaje na dysku, a
+  // model nie przyjmuje wideo. Układa natomiast szkic z tego, co system ma: notatek skauta,
+  // wcześniejszych raportów i dorobku. Ocen 1–6 za fazy gry nie wystawia (patrz api/raport-ai.js),
+  // bo postawione bez obejrzenia meczu wyglądałyby w kartotece tak samo jak obejrzane.
+  (overlay.querySelector('#zl-ai') as HTMLElement).onclick = async (e)=>{
+    const btn = e.currentTarget as HTMLButtonElement;
+    const wartosc = (id)=> (overlay.querySelector('#'+id) as HTMLInputElement).value.trim();
+    const miejsce = overlay.querySelector('#zl-wynik-ai') as HTMLElement;
+    const mecz = wartosc('zl-mecz');
+    if(!mecz){ alert('Napisz, o który mecz chodzi — bez tego raport nie ma nagłówka.'); return; }
+
+    const uwagi = (overlay.querySelector('#zl-uwagi') as HTMLTextAreaElement).value.trim();
+    btn.disabled = true; btn.textContent = 'Piszę szkic…';
+    miejsce.innerHTML = `<p class="note" style="margin:10px 0 0;">Czytam notatki, wcześniejsze raporty i dorobek zawodnika. Kilkanaście sekund.</p>`;
+
+    const raporty = DB.reports.filter(r=>r.playerId===playerId).map(r=>({
+      data: r.date || '', scout: r.scout || '', perspektywa: r.perspektywa || '',
+      mocne: r.mocne || '', doPoprawy: r.doPoprawy || '',
+      technika: r.technika || '', taktyka: r.taktyka || '', motoryka: r.motoryka || '',
+      mentalnosc: r.mentalnoscOpis || '', potencjal: r.potencjalOpis || '', opis: r.description || '',
+    }));
+    try{
+      const odp = await fetch('/api/raport-ai', {
+        method: 'POST', headers: {'content-type':'application/json'},
+        body: JSON.stringify({
+          mecz, zrodlo: wartosc('zl-link') || wartosc('zl-plik'), uwagi,
+          pozycja: (overlay.querySelector('#zl-pozycja') as HTMLSelectElement).selectedOptions[0]?.textContent || '',
+          zawodnik: {
+            imie: p.firstName || '', nazwisko: p.lastName || '', rocznik: p.birthYear || '',
+            klub: clubName(p.clubId) || '', liga: ligaZawodnika(p) || '',
+            pozycja: p.position || '', pozycjaNmg: opisPozycjiNmg(p) || '',
+            noga: p.foot || '', wzrost: p.height || '', narodowosc: p.nationality || '',
+            mecze: p.matches, minuty: p.minutes, gole: p.goals, asysty: p.assists,
+          },
+          raporty,
+        }),
+      });
+      const dane = await odp.json().catch(()=>({}));
+      if(!odp.ok){
+        btn.disabled = false; btn.textContent = '🤖 Przygotuj raport teraz';
+        miejsce.innerHTML = `<div class="obs-item" style="border-left:3px solid var(--clay-dark);margin-top:10px;">
+          <strong>${esc(dane.error || 'Nie udało się przygotować szkicu.')}</strong>
+          ${dane.jakNaprawic ? `<div class="note" style="margin-top:4px;">${esc(dane.jakNaprawic)}</div>` : ''}
+          ${dane.szczegoly ? `<div class="note" style="margin-top:4px;font-family:ui-monospace,monospace;font-size:11px;">${esc(String(dane.szczegoly))}</div>` : ''}
+        </div>`;
+        return;
+      }
+
+      const s = dane.szkic || {};
+      // Szkic wchodzi do formularza raportu tą samą drogą co raport wczytany ze skrzynki — skaut
+      // go przegląda, dostawia oceny 1–6 i zapisuje. Nic nie trafia do kartoteki bez jego kliknięcia.
+      prefillRaportu = Object.assign({}, s, {
+        playerId,
+        zawodnikNazwa: podpis,
+        date: new Date().toISOString().slice(0,10),
+        scout: currentScout || '',
+        obsType: 'Video',
+        rywal: s.rywal || mecz,
+        description: [s.description, s.czegoBrakuje ? 'DO DOPATRZENIA W NAGRANIU:\n' + s.czegoBrakuje : '']
+          .filter(Boolean).join('\n\n'),
+      });
+      zamknij();
+      currentView = 'reports'; viewingPlayerId = null;
+      render();
+      // Formularz stoi pod listą raportów — bez zjechania do niego wyglądałoby to, jakby nic się
+      // nie wydarzyło.
+      const cel = document.getElementById('rep-formularz');
+      if(cel) cel.scrollIntoView({ behavior:'smooth', block:'start' });
+      pokazPotwierdzenie('Szkic raportu w formularzu. Model nie widział nagrania — oceny 1–6 za fazy gry '
+        + 'wystaw sam, resztę sprawdź i kliknij „Zapisz raport".', 'ok');
+    }catch(err){
+      btn.disabled = false; btn.textContent = '🤖 Przygotuj raport teraz';
+      miejsce.innerHTML = `<div class="obs-item" style="border-left:3px solid var(--clay-dark);margin-top:10px;">
+        <strong>Nie udało się połączyć z usługą.</strong>
+        <div class="note" style="margin-top:4px;">${esc(String((err as Error).message || err))}</div></div>`;
     }
   };
 
