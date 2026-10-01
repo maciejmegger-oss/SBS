@@ -1106,6 +1106,10 @@ th .th-sort + .th-sort.th-sort-czynna{opacity:1;}
 /* Monitoring — czytelny wskaźnik "ma agenta" (Tak/Nie). */
 .agent-yes{color:var(--good);font-weight:800;}
 .agent-no{color:var(--ink-soft);font-weight:600;}
+/* „Nie" sprawdzone (pełny druk) kontra „Nie ?" jeszcze niesprawdzone (przygaszone). Pierwsze to
+   wiedza: nikt zawodnika nie reprezentuje, czyli otwarte pole do kontaktu. Drugie to brak wiedzy —
+   i nie może wyglądać tak samo, bo agencja działa na podstawie jednego, a nie drugiego. */
+.agent-niesprawdzony{opacity:.5;font-weight:400;font-style:italic;}
 /* Tabela ligowa pod kafelkami lig na dashboardzie — zwarta, żeby 18 drużyn mieściło się bez
    przewijania w pionie; przewijanie w bok obsługuje kontener. */
 .tabela-ligowa{width:100%;border-collapse:collapse;font-size:12.5px;}

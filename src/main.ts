@@ -5230,6 +5230,7 @@ function viewPlayers(){
       <button class="gold" data-action="add-player">+ Nowy zawodnik</button>
       ${viewingRocznikGroup ? `<button class="gold" data-action="rocznik-excel-import">📋 Wgraj z Excela</button>` : ''}
       <button class="secondary" data-action="agent-import" title="Zbierz menedżerów z profili na Transfermarkcie">🕵 Menedżerowie</button>
+      <button class="secondary" data-action="agenci-hurt" title="Przejdź po zawodnikach z Ekstraklasy, I, II i III ligi bez wpisanego menedżera i odczytaj go z Transfermarktu — kolumna „Menedżer" wypełni się sama">⟳ Uzupełnij menedżerów</button>
       <button class="secondary" data-action="compare-open" title="Zaznacz do 3 zawodników na liście, aby porównać właśnie ich">⚖️ Porównaj zawodników</button>
     </div>
   </div>
@@ -5251,12 +5252,24 @@ function viewPlayers(){
 
 // Przełącznik „ma menedżera" wprost na liście — dla agencji to informacja pierwszego rzutu oka,
 // więc nie chowamy jej w profilu. Nazwę agencji (jeśli jest) pokazujemy w podpowiedzi.
+// DWA RÓŻNE „NIE" — i to jest tu cała rzecz.
+//
+// Zgłoszenie (01.10.2026): „jeśli ktoś faktycznie nie ma, to zostaje »nie« i to ważna, istotna
+// wiadomość odnośnie zawodników". Zgadza się: zawodnik, o którym WIEMY, że nikt go nie reprezentuje,
+// to otwarte pole do kontaktu. Ale dokładnie tak samo wyglądał zawodnik, którego nikt jeszcze nie
+// sprawdził — a to jest niewiedza, nie okazja. Teraz sprawdzone „Nie" stoi pełnym drukiem i mówi
+// w podpowiedzi, kiedy i skąd to wiadomo, a niesprawdzone jest przygaszone i ma znak zapytania.
 function agentToggleHtml(p){
   const tak = !!p.hasAgent;
+  const sprawdzone = !!p.agentCheckedAt;
   const tytul = tak
     ? 'Ma menedżera' + (p.agencyName ? ': ' + p.agencyName : '') + ' — kliknij, aby zmienić na „Nie"'
-    : 'Bez menedżera — kliknij, aby zmienić na „Tak"';
-  return `<button class="link-btn agent-toggle ${tak?'agent-yes':'agent-no'}" data-action="toggle-agent" data-id="${p.id}" title="${esc(tytul)}">${tak?'Tak':'Nie'}</button>`;
+    : sprawdzone
+      ? `Sprawdzone ${p.agentCheckedAt}${p.agentSource ? ' — ' + p.agentSource : ''}: nikt go nie reprezentuje. Kliknij, aby zmienić na „Tak".`
+      : 'Jeszcze nie sprawdzone — nie wiemy, czy ma menedżera. Kliknij, aby wpisać „Tak".';
+  const klasa = tak ? 'agent-yes' : (sprawdzone ? 'agent-no' : 'agent-no agent-niesprawdzony');
+  return `<button class="link-btn agent-toggle ${klasa}" data-action="toggle-agent" data-id="${p.id}" title="${esc(tytul)}">${
+    tak ? 'Tak' : (sprawdzone ? 'Nie' : 'Nie&#8239;?')}</button>`;
 }
 async function toggleHasAgent(id){
   const p = DB.players.find(x=>x.id===id);
@@ -15380,6 +15393,10 @@ function attachHandlers(){
   });
   main.querySelectorAll('[data-action="back-agencies"]').forEach(b=>b.onclick=()=>cofnijWidok(()=>{ viewingAgencyId = null; }));
   main.querySelectorAll('[data-action="add-agency"]').forEach(b=>b.onclick=()=>{ if(!tylkoAdmin('Zakładanie i zmiana agencji.')) return; openAgencyModal(null); });
+  main.querySelectorAll('[data-action="agenci-hurt"]').forEach(b=>b.onclick=()=>{
+    if(!tylkoAdmin('Zbiorcze uzupełnianie menedżerów.')) return;
+    uzupelnijMenedzerowHurt();
+  });
   main.querySelectorAll('[data-action="edit-agency"]').forEach(b=>b.onclick=()=>{ if(!tylkoAdmin('Zmiana danych agencji.')) return; openAgencyModal(b.dataset.id); });
   main.querySelectorAll('[data-action="add-agent"]').forEach(b=>b.onclick=()=>{ if(!tylkoAdmin('Dopisywanie menedżerów.')) return; openAgentModal(null, b.dataset.agency); });
   main.querySelectorAll('[data-action="edit-agent"]').forEach(b=>b.onclick=()=>{ if(!tylkoAdmin('Zmiana danych menedżera.')) return; openAgentModal(b.dataset.id, null); });
@@ -20795,6 +20812,7 @@ function viewAgencies(){
     </select>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <button class="gold" data-action="agencies-import" title="Wgraj całą listę agencji z Transfermarktu — strona po stronie">📋 Wgraj listę agencji</button>
+      <button class="gold" data-action="agenci-hurt" title="Przejdź po zawodnikach z Ekstraklasy, I, II i III ligi, którzy nie mają wpisanego menedżera, i odczytaj go z ich profili na Transfermarkcie">⟳ Uzupełnij menedżerów (Ekstraklasa–III liga)</button>
       <button class="secondary" data-action="agent-import" title="Zbierz agencje z profili zawodników na Transfermarkcie">🕵 Pobierz z profili zawodników</button>
       <button class="secondary" data-action="agency-migrate" title="Przenieś agencje wpisane wcześniej jako zwykły tekst przy zawodniku">🔗 Uporządkuj stare wpisy</button>
       <button class="gold" data-action="add-agency">+ Nowa agencja</button>
@@ -21636,6 +21654,157 @@ function openAgenciesImportModal(){
      && !(((obs.skladMeczu||{}).goscie||{}).zawodnicy||[]).length){
     void wczytajOdDostawcy(true);
   }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ZBIORCZE UZUPEŁNIENIE MENEDŻERÓW — Ekstraklasa, I, II i III liga.
+//
+// Zgłoszenie (01.10.2026): „prawie nikt w ekstraklasie nie ma menedżera, a w Transfermarkcie mają".
+// Dotąd menedżera dopisywało się zawodnik po zawodniku (zakładka 🕵 na profilu TM). Przy kilku
+// tysiącach kartotek to miesiące klikania, więc ta funkcja robi to samo po kolei, sama.
+//
+// CZEGO NIE ROBI:
+//   * nie zgaduje, kiedy nazwisko pasuje do kilku profili na TM — wtedy pomija i liczy osobno,
+//     bo wpisanie cudzego menedżera jest gorsze niż puste pole;
+//   * nie ustawia „nie ma menedżera", gdy TM nic nie podaje. To brak danych, nie potwierdzenie
+//     braku — a dla agencji to różnica zasadnicza. Zapisuje tylko DATĘ sprawdzenia;
+//   * nie dotyka zawodników, którzy menedżera już mają — ich wpisy są decyzją skauta.
+const LIGI_DO_MENEDZEROW = /^(Ekstraklasa|I liga|II liga|III liga)\b/i;
+
+function zawodnicyDoUzupelnieniaMenedzera(){
+  return DB.players.filter(p=> !p.hasAgent && LIGI_DO_MENEDZEROW.test(String(ligaZawodnika(p) || '')));
+}
+
+async function uzupelnijMenedzerowHurt(){
+  const lista = zawodnicyDoUzupelnieniaMenedzera();
+  if(!lista.length){ alert('Wszyscy zawodnicy z Ekstraklasy, I, II i III ligi mają już wpisanego menedżera.'); return; }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal">
+      <h3>Uzupełnianie menedżerów z Transfermarktu</h3>
+      <p class="note" style="margin-top:0;">Do sprawdzenia: <b>${lista.length}</b> ${lista.length===1?'zawodnik':'zawodników'}
+        z Ekstraklasy, I, II i III ligi, którzy nie mają wpisanego menedżera.
+        Każdy profil to osobne zapytanie do Transfermarktu, więc idzie to spokojnym tempem —
+        okno możesz zostawić otwarte i wrócić później. Wynik zapisuje się po drodze, więc
+        przerwanie niczego nie cofa.</p>
+      <div id="ah-postep" class="pk-podsumowanie" style="position:static;"></div>
+      <div id="ah-log" style="max-height:220px;overflow:auto;font-size:12px;line-height:1.5;margin-top:10px;"></div>
+      <div class="modal-actions">
+        <button class="secondary" id="ah-stop">Przerwij</button>
+        <button class="gold" id="ah-start">Zacznij</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const postep = overlay.querySelector('#ah-postep') as HTMLElement;
+  const log = overlay.querySelector('#ah-log') as HTMLElement;
+  const start = overlay.querySelector('#ah-start') as HTMLButtonElement;
+  const stop = overlay.querySelector('#ah-stop') as HTMLButtonElement;
+  let przerwane = false, idzie = false;
+
+  const licz = { sprawdzonych: 0, zMenedzerem: 0, bezWpisu: 0, niejednoznacznych: 0, bledow: 0 };
+  const odswiez = ()=>{
+    postep.innerHTML = `<span>Sprawdzone: <b>${licz.sprawdzonych}</b> z ${lista.length}</span>`
+      + `<span>Z menedżerem: <b style="color:var(--good);">${licz.zMenedzerem}</b></span>`
+      + `<span class="note">TM nic nie podaje: ${licz.bezWpisu}</span>`
+      + `<span class="note">niejednoznaczne: ${licz.niejednoznacznych}</span>`
+      + (licz.bledow ? `<span class="note" style="color:var(--clay-dark);">błędy: ${licz.bledow}</span>` : '');
+  };
+  const dopisz = (tekst, barwa)=>{
+    const w = document.createElement('div');
+    if(barwa) w.style.color = barwa;
+    w.textContent = tekst;
+    log.appendChild(w);
+    log.scrollTop = log.scrollHeight;
+  };
+  odswiez();
+
+  stop.onclick = ()=>{
+    if(!idzie){ overlay.remove(); render(); return; }
+    przerwane = true;
+    stop.textContent = 'Przerywam…';
+  };
+
+  start.onclick = async ()=>{
+    idzie = true;
+    start.disabled = true; start.textContent = 'Idzie…';
+    stop.textContent = 'Przerwij';
+    const dzis = new Date().toISOString().slice(0,10);
+    let odOstatniegoZapisu = 0;
+
+    const zapisz = async ()=>{
+      const okZaw = await savePlayers();
+      const okAg = await saveAgencies();
+      if(okZaw === false || okAg === false) dopisz('Zapis do bazy się nie udał — poprawione wpisy są na ekranie, ale nie w bazie.', 'var(--clay-dark)');
+      odOstatniegoZapisu = 0;
+    };
+
+    for(const p of lista){
+      if(przerwane) break;
+      const podpis = `${p.lastName||''} ${p.firstName||''}`.trim();
+      try{
+        // 1. Adres profilu: albo mamy go w kartotece, albo szukamy po nazwisku.
+        let adres = String(p.profileTm || '').trim();
+        if(!adres){
+          const odp = await fetch('/api/tm-szukaj?szukaj=' + encodeURIComponent(`${p.firstName||''} ${p.lastName||''}`.trim()));
+          const d = await odp.json().catch(()=>({}));
+          const kand = (d && d.kandydaci) || [];
+          if(kand.length !== 1){
+            licz.niejednoznacznych++; licz.sprawdzonych++; odswiez();
+            dopisz(`${podpis}: ${kand.length ? kand.length + ' profili o tym nazwisku — pomijam, żeby nie wpisać cudzego menedżera' : 'nie ma takiego profilu na TM'}`, 'var(--ink-soft)');
+            await new Promise(r=>setTimeout(r, 400));
+            continue;
+          }
+          adres = kand[0].url;
+          p.profileTm = adres;   // następnym razem nie trzeba już szukać
+        }
+
+        // 2. Odczyt profilu.
+        const odp2 = await fetch('/api/transfermarkt?url=' + encodeURIComponent(adres));
+        const prof = await odp2.json().catch(()=>({}));
+        if(!odp2.ok || prof.error){
+          licz.bledow++; licz.sprawdzonych++; odswiez();
+          dopisz(`${podpis}: nie dało się odczytać profilu (${String(prof.error || odp2.status)})`, 'var(--clay-dark)');
+          await new Promise(r=>setTimeout(r, 900));
+          continue;
+        }
+
+        p.agentCheckedAt = dzis;
+        p.agentSource = 'Transfermarkt (profil)';
+        const menedzer = String(prof.menadzer || '').trim();
+        if(menedzer){
+          p.hasAgent = true;
+          p.agencyName = menedzer;
+          const agencja = znajdzLubUtworzAgencje(menedzer, '');
+          if(agencja){
+            if(p.agencyId !== agencja.id) p.agentId = '';   // zmiana agencji unieważnia starego opiekuna
+            p.agencyId = agencja.id;
+          }
+          licz.zMenedzerem++;
+          dopisz(`${podpis}: ${menedzer}`, 'var(--good)');
+        } else {
+          licz.bezWpisu++;
+          dopisz(`${podpis}: Transfermarkt nie podaje menedżera`, 'var(--ink-soft)');
+        }
+        licz.sprawdzonych++; odOstatniegoZapisu++; odswiez();
+        if(odOstatniegoZapisu >= 20) await zapisz();
+      }catch(e){
+        licz.bledow++; licz.sprawdzonych++; odswiez();
+        dopisz(`${podpis}: ${String((e && e.message) || e)}`, 'var(--clay-dark)');
+      }
+      // Odstęp między zapytaniami — Transfermarkt odcina za zbyt gęsty ruch, a wtedy reszta
+      // kartoteki zostałaby nieuzupełniona.
+      await new Promise(r=>setTimeout(r, 500));
+    }
+
+    if(odOstatniegoZapisu) await zapisz();
+    idzie = false;
+    start.textContent = przerwane ? 'Przerwane' : 'Gotowe';
+    stop.textContent = 'Zamknij';
+    dopisz(`${przerwane ? 'Przerwane' : 'Skończone'}: sprawdzonych ${licz.sprawdzonych}, menedżera dopisano ${licz.zMenedzerem}.`, 'var(--heading)');
+  };
 }
 
 function openAgencyModal(id){
@@ -25817,7 +25986,7 @@ const AKCJE_BEZ_KLIENTA = new Set([
   'lnp-link-grupy','show-bookmarklet','fetch-schedule','fetch-from-link','schedule-url',
   'squad-parse','squad-apply','squad-import-confirm','squad-diag','staff-parse','staff-apply',
   'sklady-meczowe','systemy-gry','pozycje-z-tm','herby-z-pierwszych','herby-do-plikow','tm-odswiez','tm-zakladka',
-  'agencies-import','agencies-parse','agencies-apply','agent-import','agent-parse','agent-apply',
+  'agencies-import','agencies-parse','agencies-apply','agent-import','agent-parse','agent-apply','agenci-hurt',
   'agency-add-players','agency-squad','agency-staff','do-import','get-template',
   // 3. Narzędzia pracowni
   'reset-all','kopia-pobierz','rocznik-excel-import','rocznik-import-go','rocznik-paste-go',
