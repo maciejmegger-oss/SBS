@@ -32,6 +32,9 @@ export interface WpisSkrzynki {
 
 const TABELA = "sbs_raport_inbox";
 
+/** Powód ostatniego nieudanego odczytu — panel pokazuje go zamiast udawać pustą skrzynkę. */
+export let bladSkrzynki = "";
+
 /** Wpisy czekające na decyzję skauta, od najnowszego. Pusta tablica, gdy tabeli jeszcze nie ma. */
 export async function pobierzSkrzynke(): Promise<WpisSkrzynki[]> {
   const { data, error } = await sb
@@ -40,6 +43,7 @@ export async function pobierzSkrzynke(): Promise<WpisSkrzynki[]> {
     .eq("status", "nowy")
     .order("utworzone_at", { ascending: false })
     .limit(50);
+  bladSkrzynki = error ? error.message : "";
   if (error) {
     // Brak tabeli (migracja nieuruchomiona) nie może wywracać widoku raportów — skrzynka jest
     // dodatkiem, a nie warunkiem pracy. Każdy inny błąd też tylko gasi panel.

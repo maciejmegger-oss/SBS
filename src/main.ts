@@ -1,6 +1,6 @@
 import "./style.css";
 import { storage } from "./data/storage";
-import { pobierzSkrzynke, oznaczWpisSkrzynki } from "./data/skrzynka";
+import { pobierzSkrzynke, oznaczWpisSkrzynki, bladSkrzynki } from "./data/skrzynka";
 import { zlecAnalize, pobierzOtwarteZlecenia } from "./data/zlecenia";
 import { currentUser, signIn, signOut, requestPasswordReset, setNewPassword, isPasswordRecoveryLink,
          mojeKonto, listaKont, ustawStatusKonta, ustawRoleKonta, ustawPakietyKonta,
@@ -4370,6 +4370,9 @@ function render(){
   // Formularz raportu przeżywa przerysowanie w tle (odświeżenie statystyk, dopisanie młodzieżowców
   // do Monitoringu). Bez tego treść wczytana ze skrzynki albo wpisana ręcznie znikała w trakcie
   // pracy, a wpis w skrzynce był już oznaczony jako wczytany — raport przepadał bez śladu.
+  // Skrzynkę sprawdzamy przy KAŻDYM wejściu w Raporty, nie raz na sesję — raport wysłany do
+  // skrzynki, gdy aplikacja jest już otwarta, inaczej nie pojawiłby się aż do przeładowania strony.
+  if(pageChanged && currentView==='reports' && skrzynkaStan !== 'pobieram') skrzynkaStan = 'nieznany';
   const szkicRaportu = (currentView==='reports' && !pageChanged && !prefillRaportu && !wyczyscFormularzRaportu)
     ? zbierzSzkicRaportu() : null;
   wyczyscFormularzRaportu = false;
@@ -9814,7 +9817,18 @@ const zlecenieZawodnika = (playerId)=> zleceniaOtwarte.find(z=>z.playerId===play
 let prefillRaportu = null;       // treść wczytana ze skrzynki, wstawiana po najbliższym render()
 
 function skrzynkaPanelHtml(){
-  if(!skrzynkaWpisy.length) return '';
+  // PANEL WIDAĆ ZAWSZE. Gdy znikał przy pustej skrzynce, nie dało się odróżnić „nic nie czeka"
+  // od „aplikacja nie zapytała bazy" — a to drugie zdarzało się, gdy pierwsze pytanie poszło,
+  // zanim sesja logowania była gotowa. Teraz pusta skrzynka mówi to wprost i ma przycisk ponowienia.
+  const odswiez = `<button class="secondary" data-action="skrzynka-odswiez" title="Sprawdź skrzynkę jeszcze raz" style="margin-left:8px;">↻ Sprawdź</button>`;
+  if(!skrzynkaWpisy.length){
+    const stan = skrzynkaStan === 'pobieram' ? 'Sprawdzam skrzynkę…'
+      : bladSkrzynki ? 'Nie udało się sprawdzić skrzynki: ' + esc(bladSkrzynki)
+      : 'Brak raportów czekających na wczytanie.';
+    return `<div class="card" style="border:1px dashed var(--gold);margin-bottom:14px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;">
+      <span><strong>Przygotowane raporty</strong> <span class="reports-count">0</span> <span class="meta">${stan}</span></span>${odswiez}
+    </div>`;
+  }
   const wiersze = skrzynkaWpisy.map(w=>`
     <div class="report-row">
       <div class="report-row-body">
@@ -9827,7 +9841,7 @@ function skrzynkaPanelHtml(){
       </div>
     </div>`).join('');
   return `<div class="card" style="border:1px solid var(--gold);margin-bottom:14px;">
-    <h3 class="reports-aside-title" style="margin-top:0;">Przygotowane raporty <span class="reports-count">${skrzynkaWpisy.length}</span></h3>
+    <h3 class="reports-aside-title" style="margin-top:0;display:flex;align-items:center;">Przygotowane raporty <span class="reports-count" style="margin-left:6px;">${skrzynkaWpisy.length}</span>${odswiez}</h3>
     <p class="view-sub" style="margin:0 0 8px;">Czekają na sprawdzenie. „Wczytaj" wstawia treść do formularza poniżej — do kartoteki trafia dopiero po „Zapisz raport".</p>
     ${wiersze}
   </div>`;
@@ -16770,15 +16784,15 @@ function attachHandlers(){
       (b as HTMLButtonElement).disabled = false; b.textContent = napis;
     }
   });
-  // SKRZYNKA RAPORTÓW — pobranie przy pierwszym wejściu w widok i obsługa dwóch przycisków.
-  // Pobieramy raz na sesję: panel ma pokazać, co czeka, a nie odpytywać bazę przy każdym render().
+  // SKRZYNKA RAPORTÓW — pobranie przy wejściu w widok (i po „↻ Sprawdź”) oraz obsługa przycisków.
+  // Nie przy każdym render(): panel ma pokazać, co czeka, a nie odpytywać bazę przy każdym znaku.
   if(document.getElementById('rep-formularz')){
     if(skrzynkaStan === 'nieznany'){
       skrzynkaStan = 'pobieram';
       pobierzSkrzynke().then(w=>{
         skrzynkaWpisy = w;
         skrzynkaStan = 'gotowa';
-        if(w.length) render();
+        render();
       });
     }
     zastosujPrefillRaportu();
@@ -16800,6 +16814,10 @@ function attachHandlers(){
     oznaczWpisSkrzynki(wpis.id, 'wczytany');
     render();
     pokazPotwierdzenie('Raport wczytany do formularza — sprawdź treść i kliknij „Zapisz raport".', 'ok');
+  });
+  main.querySelectorAll('[data-action="skrzynka-odswiez"]').forEach(b=>b.onclick=()=>{
+    skrzynkaStan = 'nieznany';
+    render();
   });
   main.querySelectorAll('[data-action="skrzynka-odrzuc"]').forEach(b=>b.onclick=async()=>{
     const id = b.dataset.id;
