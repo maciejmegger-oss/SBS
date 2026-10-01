@@ -27,12 +27,16 @@ const kod = [
   wytnij('na99', /const na99 = \(v\)=>[\s\S]*?;\r?\n/),
   wytnij('SKROTY_POZYCJI', /const SKROTY_POZYCJI: \[RegExp, string\]\[\] = \[[\s\S]*?\n\];/),
   wytnij('skrotPozycji', /function skrotPozycji\(pozycja\)\{[\s\S]*?\n\}/),
+  wytnij('flagaZawodnika', /function flagaZawodnika\(p\)\{[\s\S]*?\n\}/),
+  wytnij('flagaZawodnikaHtml', /function flagaZawodnikaHtml\(p, klasa\)\{[\s\S]*?\n\}/),
   wytnij('kartaZawodnikaHtml', /function kartaZawodnikaHtml\(p, a\)\{[\s\S]*?\n\}/),
 ].join('\n').replace(/: \[RegExp, string\]\[\]/, '');
 
-const karta = new Function('esc', 'clubCrest', 'clubName', 'clubLeague', 'nationalityFlag', 'rocznikZawodnika',
-  `${kod}\n return { kartaZawodnikaHtml, skrotPozycji, na99 };`)(
-  (s) => String(s ?? ''), () => '/herb.png', () => 'Zawisza Bydgoszcz', () => 'II liga', () => '🇵🇱',
+const karta = new Function('esc', 'clubCrest', 'clubName', 'clubLeague', 'clubRegion', 'nationalityFlag', 'rocznikZawodnika',
+  `${kod}\n return { kartaZawodnikaHtml, skrotPozycji, na99, flagaZawodnika, flagaZawodnikaHtml };`)(
+  (s) => String(s ?? ''), () => '/herb.png', () => 'Zawisza Bydgoszcz', () => 'II liga',
+  (id) => id === 'ZAGR' ? 'Bundesliga' : (id ? 'Kujawsko-Pomorski ZPN' : ''),
+  (nat) => ({ polska: '🇵🇱', ukraina: '🇺🇦' })[String(nat).toLowerCase()] || '',
   (p) => p.birthYear || '');
 
 console.log('\n1. Skala ocen — z raportów, nie z powietrza');
@@ -80,8 +84,45 @@ console.log('\n4. Zawodnik bez ani jednego raportu');
     /Ocen jeszcze nie ma — liczby pojawią się po pierwszym raporcie/.test(html));
 }
 
+console.log('\n4a. Mała flaga narodowości przy każdym zawodniku');
+// Zgłoszenie (01.10.2026): „zrób jeszcze małą flagę narodowości każdego zawodnika".
+{
+  const wpisana = karta.flagaZawodnika({ nationality: 'Ukraina', clubId: 'K1' });
+  sprawdz('narodowość z kartoteki — flaga pewna', wpisana.flaga === '🇺🇦' && wpisana.pewna === true, JSON.stringify(wpisana));
+  const bezPola = karta.flagaZawodnika({ clubId: 'K1' });
+  sprawdz('bez narodowości, ale klub w polskim ZPN — biało-czerwona', bezPola.flaga === '🇵🇱' && bezPola.kraj === 'Polska');
+  sprawdz('i oznaczona jako przypuszczenie, nie fakt', bezPola.pewna === false);
+  sprawdz('klub spoza polskiego związku — bez zgadywania',
+    karta.flagaZawodnika({ clubId: 'ZAGR' }).flaga === '', JSON.stringify(karta.flagaZawodnika({ clubId: 'ZAGR' })));
+  sprawdz('zawodnik bez klubu i bez narodowości — flagi nie ma', karta.flagaZawodnika({}).flaga === '');
+  const html = karta.flagaZawodnikaHtml({ clubId: 'K1' });
+  sprawdz('podpowiedź mówi wprost, że to wniosek z ligi', /przypuszczalnie, po lidze klubu/.test(html), html);
+  sprawdz('przypuszczalna flaga ma własną klasę (przygaszenie + kropka)', /flaga-przypuszczalna/.test(html));
+  sprawdz('pewna flaga bez tej klasy', !/flaga-przypuszczalna/.test(karta.flagaZawodnikaHtml({ nationality: 'Ukraina' })));
+  sprawdz('flaga w karcie zawodnika', /kz-flaga/.test(karta.kartaZawodnikaHtml({ id:'Z3', firstName:'Jan', lastName:'Nowak', clubId:'K1' }, null)));
+  sprawdz('ta sama flaga na listach zawodników', (zrodlo.match(/flagaZawodnikaHtml\(p\)/g) || []).length >= 2);
+  sprawdz('przygaszona flaga opisana w arkuszu stylów', /Flaga wywnioskowana z ligi klubu/.test(style));
+}
+
 console.log('\n5. Wygląd i podpięcie');
 sprawdz('karta otwiera się od razu po wejściu w zawodnika', /\$\{kartaZawodnikaHtml\(p, a\)\}/.test(zrodlo));
+// Zgłoszenie (01.10.2026): „są skosy i poucinane treści". Nic nie może stać na sztywnej pozycji
+// w kwadracie o stałej wysokości — dziób tarczy wycinał wtedy dolne wiersze.
+sprawdz('karta nie ma sztywnej wysokości — rośnie z treścią',
+  !/\.karta-zawodnika\{[^}]*height:\s*\d+px/.test(style), (style.match(/\.karta-zawodnika\{[^}]*\}/) || [''])[0]);
+sprawdz('bloki płyną w kolumnie, nic nie stoi na top: Xpx',
+  /\.karta-zawodnika\{[^}]*display:flex;flex-direction:column/.test(style)
+  && !/\.kz-(staty|nazwisko|lewa|prawa)\{position:absolute/.test(style));
+sprawdz('dolny dziób to pusty margines, w który nic nie wchodzi',
+  /\.karta-zawodnika\{[^}]*padding:18px 20px 88px/.test(style)
+  && /clip-path:polygon\(0 0,100% 0,100% calc\(100% - 88px\),50% 100%,0 calc\(100% - 88px\)\)/.test(style));
+sprawdz('karta wygląda na wypukłą (światło z góry, cień przy dziobie)',
+  /\.karta-zawodnika::before\{[\s\S]*?radial-gradient\(135% 72% at 50% -12%/.test(style));
+sprawdz('cieniowanie leży POD treścią, nie przyciemnia liter',
+  /\.kz-gora,\.kz-nazwisko,\.kz-staty\{position:relative;z-index:1;\}/.test(style));
+sprawdz('długie nazwisko łamie się zamiast wychodzić poza tarczę', /\.kz-nazwa\{[\s\S]*?overflow-wrap:anywhere/.test(style));
+sprawdz('skróty ocen nie łamią się na dwie linie', /\.kz-pole-nazwa\{[^}]*white-space:nowrap/.test(style));
+sprawdz('zdjęcie i inicjały w jednym rzędzie z oceną', /<div class="kz-gora">/.test(zrodlo));
 sprawdz('kształt tarczy bez obrazka (skaluje się i drukuje)', /\.karta-zawodnika\{[\s\S]*?clip-path:polygon/.test(style));
 sprawdz('karta ciemna w obu motywach — barwy wpisane wprost, nie ze zmiennych',
   /\.karta-zawodnika\{[\s\S]*?background:linear-gradient\(160deg,#1E4A3C/.test(style));

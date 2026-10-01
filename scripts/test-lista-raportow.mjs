@@ -32,7 +32,10 @@ sprawdz('pusty wpis — nie', czyRaportZawodnika(null) === false && czyRaportZaw
 console.log('\n2. Lista, licznik i numery');
 const widok = wytnij('viewReports', /function viewReports\(\)\{[\s\S]*?\n\}/);
 sprawdz('lista i licznik tylko z raportów zawodników', /const widoczneRaporty = DB\.reports\.filter\(czyRaportZawodnika\);/.test(widok)
-  && /const allReports = widoczneRaporty\.slice\(\)/.test(widok) && widok.includes('<span class="reports-count">${allReports.length}</span>'));
+  // Licznik może mieć w środku dodatkowy znacznik (np. miejsce na wynik wyszukiwania) — liczy się,
+  // że pokazywana liczba bierze się z widoczneRaporty, a nie z całego DB.reports.
+  && /const allReports = widoczneRaporty\.slice\(\)/.test(widok)
+  && /<span class="reports-count">[\s\S]{0,80}\$\{allReports\.length\}<\/span>/.test(widok));
 sprawdz('żadnego wyjątku dla raportów meczów', !/raportMeczuMaRaportyZawodnikow/.test(zrodlo));
 sprawdz('numer porządkowy wśród pokazanych — bez dziur', /widoczneRaporty\.forEach\(\(r,i\)=> ordinalOf\[r\.id\] = i\+1\);/.test(widok));
 {

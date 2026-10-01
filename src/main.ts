@@ -6,6 +6,8 @@ import { currentUser, signIn, signOut, requestPasswordReset, setNewPassword, isP
          mojeKonto, listaKont, ustawStatusKonta, ustawRoleKonta, ustawPakietyKonta,
          zapiszZdarzenie, listaZdarzen, tokenSesji } from "./data/auth";
 import { VOIVODESHIP_PATHS } from "./data/voivodeships";
+// Flagi narodowości jako pliki SVG — emoji flag Windows pokazuje jako dwie litery.
+import { plikFlagi } from "./data/flagi";
 // Profil kompetencji — model oceny przeniesiony z arkusza klubowego (5 obszarów, 48 elementów,
 // 141 składowych) i przypisanie elementów do profili pozycyjnych.
 import { OBSZARY_PROFILU, LEGENDA_OCENY, DRABINA_NOTOWANIA } from "./data/profil-kompetencji";
@@ -5358,16 +5360,18 @@ function kartaZawodnikaHtml(p, a){
 
   return `<div class="karta-zawodnika-otoczka">
     <div class="karta-zawodnika">
-      <div class="kz-lewa">
-        <div class="kz-ocena">${ocena == null ? '—' : ocena}</div>
-        <div class="kz-pozycja">${esc(skrotPozycji(p.position))}</div>
-        ${p.nationality ? `<div class="kz-flaga" title="${esc(p.nationality)}">${nationalityFlag(p.nationality)}</div>` : ''}
-        ${herb ? `<img class="kz-herb" src="${esc(herb)}" alt="">` : ''}
-      </div>
-      <div class="kz-prawa">
-        ${p.photoUrl
-          ? `<img class="kz-zdjecie" src="${esc(p.photoUrl)}" alt="">`
-          : `<div class="kz-zdjecie kz-zdjecie-brak">${esc(inicjaly.toUpperCase())}</div>`}
+      <div class="kz-gora">
+        <div class="kz-lewa">
+          <div class="kz-ocena">${ocena == null ? '—' : ocena}</div>
+          <div class="kz-pozycja">${esc(skrotPozycji(p.position))}</div>
+          ${flagaZawodnikaHtml(p, 'kz-flaga')}
+          ${herb ? `<img class="kz-herb" src="${esc(herb)}" alt="">` : ''}
+        </div>
+        <div class="kz-prawa">
+          ${p.photoUrl
+            ? `<img class="kz-zdjecie" src="${esc(p.photoUrl)}" alt="">`
+            : `<div class="kz-zdjecie kz-zdjecie-brak">${esc(inicjaly.toUpperCase())}</div>`}
+        </div>
       </div>
       <div class="kz-nazwisko">
         <div class="kz-imie">${esc(p.firstName || '')}</div>
@@ -8297,7 +8301,7 @@ function viewClubDetail(id){
     return `<tr class="player-row${klasaMlodszego(p)}" data-action="row-open-player" data-id="${p.id}" style="cursor:pointer;" title="${
       oIleMlodszy(p)?'Młodszy rocznik w swojej kategorii — gra przeciwko starszym. ':''}Kliknij, aby otworzyć profil">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="squad-player-check" data-id="${p.id}"></td>
-      <td>${p.nationality?`<span title="${esc(p.nationality)}">${nationalityFlag(p.nationality)}</span> `:''}<strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</td>
+      <td>${flagaZawodnikaHtml(p)} <strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</td>
       <td>${rocznikHtml(p)}</td>
       <td>${chipPozycji(p)}</td>
       <td>${p.status? `<span class="badge ${STATUS_CLASS[p.status]||'new'}">${esc(p.status)}</span>` : '—'}</td>
@@ -9655,8 +9659,8 @@ function limitRocznikaKategorii(p){
 // („kto to jest"), a nie trzy. Złożone w jedną komórkę czytają się jak wizytówka i zwalniają
 // miejsce w poziomie, którego przy tej liczbie kolumn brakuje najbardziej.
 function komorkaZawodnika(p){
-  const flaga = p.nationality
-    ? `<span title="${esc(p.nationality)}">${nationalityFlag(p.nationality)}</span> ` : '';
+  const znacznik = flagaZawodnikaHtml(p);
+  const flaga = znacznik ? znacznik + ' ' : '';
   return `<div class="zaw-cell">
     <span class="zaw-nazwa"><strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</span>
     <span class="zaw-meta">${flaga}${rocznikHtml(p)}</span>
@@ -11990,7 +11994,14 @@ const FLAGI_KRAJOW = {
   'Hiszpania':'🇪🇸', 'Portugalia':'🇵🇹', 'Czechy':'🇨🇿', 'Anglia':'🏴󠁧󠁢󠁥󠁮󠁧󠁿',
   'Szkocja':'🏴󠁧󠁢󠁳󠁣󠁴󠁿', 'Chorwacja':'🇭🇷', 'Serbia':'🇷🇸', 'Słowacja':'🇸🇰', 'Słowenia':'🇸🇮', 'Ukraina':'🇺🇦',
 };
-const flagaKraju = (kraj)=> FLAGI_KRAJOW[String(kraj||'').trim()] || '🏳️';
+// Rysunek zamiast emoji — na Windowsie emoji flagi wyświetla się jako dwie litery („SE" zamiast
+// szwedzkiej). FLAGI_KRAJOW zostaje jako lista krajów z arkusza kontaktów; sam znak bierzemy
+// z plików w public/flagi.
+const flagaKraju = (kraj)=>{
+  const plik = plikFlagi(kraj);
+  return plik ? `<img class="flaga-img flaga-naglowek" src="${plik}" alt="" loading="lazy">`
+    : (FLAGI_KRAJOW[String(kraj||'').trim()] || '🏳️');
+};
 
 // Barwa statusu mówi to samo, co legenda w arkuszu: zielony = adres opublikowany przez klub,
 // bursztyn = osoba potwierdzona, ale mail nie jest publiczny, czerwony = do sprawdzenia przed wysyłką.
@@ -17270,9 +17281,41 @@ const COUNTRY_FLAGS = {
   'chiny':'🇨🇳','australia':'🇦🇺','nowa zelandia':'🇳🇿',
   'gwinea':'🇬🇳','gwinea bissau':'🇬🇼','komory':'🇰🇲','burkina faso':'🇧🇫','kongo':'🇨🇬','azerbejdżan':'🇦🇿',
 };
+// FLAGA JAKO MAŁY PLIK, NIE EMOJI.
+//
+// Windows nie ma w czcionce znaków flag: 🇵🇱 wyświetla się tam jako dwie litery „PL" — i tak to
+// wyglądało w całej aplikacji na komputerze, na którym z niej korzystamy. Rysunek SVG wygląda
+// tak samo w każdym systemie. COUNTRY_FLAGS zostaje, bo po jego kluczach rozpoznajemy nazwy
+// krajów we wklejanych tekstach (detectNationality).
 function nationalityFlag(nat){
-  if(!nat) return '';
-  return COUNTRY_FLAGS[nat.trim().toLowerCase()] || '';
+  const plik = plikFlagi(nat);
+  if(!plik) return '';
+  return `<img class="flaga-img" src="${plik}" alt="" loading="lazy">`;
+}
+// FLAGA PRZY KAŻDYM ZAWODNIKU.
+//
+// Zgłoszenie (01.10.2026): „zrób jeszcze małą flagę narodowości każdego zawodnika". Pole
+// „narodowość" jest w kartotece wypełnione u mniejszości (uzupełnia je import z Transfermarktu),
+// więc flaga wyłącznie z tego pola zostawiłaby większość kart pustych.
+//
+// Gdy pola nie ma, a klub gra w polskim związku (region „… ZPN"), pokazujemy biało-czerwoną —
+// ale OZNACZONĄ jako wniosek z ligi, nie wpis w kartotece. To ma znaczenie: w polskich klubach
+// grają obcokrajowcy i cicha podmiana „gra w Polsce" na „jest Polakiem" byłaby zmyślaniem
+// narodowości konkretnej osoby. Kropka przy fladze mówi wprost, że to przypuszczenie.
+function flagaZawodnika(p){
+  const wpisana = String((p && p.nationality) || '').trim();
+  if(wpisana) return { flaga: nationalityFlag(wpisana), kraj: wpisana, pewna: true };
+  const region = String((p && clubRegion(p.clubId)) || '');
+  if(/ZPN/i.test(region)) return { flaga: nationalityFlag('Polska'), kraj: 'Polska', pewna: false };
+  return { flaga: '', kraj: '', pewna: false };
+}
+/** Flaga gotowa do wstawienia w tekst — z podpowiedzią mówiącą, skąd się wzięła. */
+function flagaZawodnikaHtml(p, klasa){
+  const f = flagaZawodnika(p);
+  if(!f.flaga) return '';
+  return `<span class="${klasa || 'flaga-zaw'}${f.pewna ? '' : ' flaga-przypuszczalna'}" title="${esc(f.pewna
+    ? f.kraj
+    : f.kraj + ' — przypuszczalnie, po lidze klubu. W kartotece narodowości nie ma.')}">${f.flaga}</span>`;
 }
 // Literówki/warianty pisowni napotykane w realnych wklejeniach (np. "Stany Zjednaczone" zamiast
 // "Zjednoczone") — mapowane na klucz kanoniczny z COUNTRY_FLAGS, żeby flaga i nazwa zawsze się zgadzały.
