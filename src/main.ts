@@ -3066,7 +3066,38 @@ function crestImg(url, size, name){
     <text x="22" y="${size==='lg'?27:26}" text-anchor="middle" font-family="'Barlow Condensed',sans-serif" font-weight="700" font-size="${fs*2}" fill="var(--on-pitch)">${esc(initials)}</text>
   </svg>`;
 }
-function playerObs(playerId){ return DB.observations.filter(o=>o.playerId===playerId).sort((a,b)=> a.date.localeCompare(b.date)); }
+// OBSERWACJE I RAPORTY JEDNEGO ZAWODNIKA — z indeksu, nie przez przeszukanie całej bazy.
+//
+// Zgłoszenie (01.10.2026): „bardzo długo ładuje wszystkie strony po kliknięciu w zakładkę".
+// Lista zawodników liczyła dla KAŻDEGO wiersza średnią ocen, a ta przeszukiwała wszystkie
+// obserwacje i wszystkie raporty. Przy 5 000 zawodników, 10 000 obserwacji i 5 000 raportów to
+// 75 milionów porównań na jedno otwarcie zakładki — stąd kilkanaście sekund czekania.
+//
+// Indeks budujemy przy pierwszym pytaniu i kasujemy w odswiezIndeksy() na początku render(), więc
+// nie da się czytać nieaktualnych danych. Bez indeksu (testy, wywołanie spoza rysowania) funkcje
+// działają jak dawniej: ten sam wynik, tylko wolniej.
+function indeksWgZawodnika(lista, pole){
+  const idx = new Map();
+  (lista || []).forEach(x=>{
+    const id = x && x[pole];
+    if(!id) return;
+    const tu = idx.get(id);
+    if(tu) tu.push(x); else idx.set(id, [x]);
+  });
+  return idx;
+}
+function playerObs(playerId){
+  if(!playerObs.indeks){
+    playerObs.indeks = indeksWgZawodnika(DB.observations, 'playerId');
+    playerObs.indeks.forEach(l=> l.sort((a,b)=> String(a.date||'').localeCompare(String(b.date||''))));
+  }
+  return (playerObs.indeks.get(playerId) || []).slice();
+}
+/** Raporty jednego zawodnika — ta sama droga co obserwacje. */
+function raportyGracza(playerId){
+  if(!raportyGracza.indeks) raportyGracza.indeks = indeksWgZawodnika(DB.reports, 'playerId');
+  return raportyGracza.indeks.get(playerId) || [];
+}
 // Ocena zawodnika: obserwacje to już TYLKO plan/odbycie wizyty (bez suwaków ocen) — średnią
 // ("śr. ocena", skala 1-6) liczymy wyłącznie z WYPEŁNIONYCH RAPORTÓW (fazy gry + stałe fragmenty).
 // overall === null, dopóki zawodnik nie ma żadnego raportu z ocenami. Radar (avgs, 5 atrybutów 1-10)
@@ -3292,8 +3323,19 @@ function porownanieNaPozycjiHtml(p){
 }
 
 function playerAvg(playerId){
+  // Ta sama średnia bywa pytana kilka razy w jednym rysowaniu (wiersz listy, karta, analiza).
+  // Pamięć kasuje się razem z indeksami, na początku każdego render().
+  if(playerAvg.pamiec){
+    const gotowe = playerAvg.pamiec.get(playerId);
+    if(gotowe !== undefined) return gotowe;
+  }
+  const wynik = policzSredniaZawodnika(playerId);
+  if(playerAvg.pamiec) playerAvg.pamiec.set(playerId, wynik);
+  return wynik;
+}
+function policzSredniaZawodnika(playerId){
   const obs = playerObs(playerId);
-  const reps = DB.reports.filter(r=>r.playerId===playerId);
+  const reps = raportyGracza(playerId);
   const { overall, ratedReports } = sredniaZRaportow(reps);
   // Radar tylko z obserwacji z faktycznie wypełnioną (historycznie) statystyką.
   const rated = obs.filter(o=> o.statsFilledIn && o.ratings && RATING_KEYS.some(k=>Number(o.ratings[k])>0));
@@ -4341,6 +4383,9 @@ function odswiezIndeksy(){
   meczeKlubu.pamiec = null;
   meczeKlubu.wgKlubu = null;
   zawodnicyKlubu.indeks = null;
+  playerObs.indeks = null;
+  raportyGracza.indeks = null;
+  playerAvg.pamiec = new Map();
 }
 // Zawodnicy jednego klubu — z indeksu zbudowanego przy pierwszym pytaniu. Bez indeksu (testy,
 // wywołanie spoza rysowania) po prostu przeszukuje listę: ten sam wynik, tylko wolniej.
@@ -4357,6 +4402,7 @@ function zawodnicyKlubu(clubId){
 }
 
 function render(){
+  const startRysowania = performance.now();
   const main = document.getElementById('main');
   odswiezIndeksy();
   const pageKey = currentView + '|' + (viewingPlayerId||'') + '|' + (viewingClubId||'');
@@ -4397,7 +4443,13 @@ function render(){
   else if(currentView==="compare") main.innerHTML = viewCompare();
   else if(currentView==="access") main.innerHTML = viewAccess();
   else if(currentView==="pakiety") main.innerHTML = viewPakiety();
+  // ILE TO TRWAŁO — żeby „wolno się otwiera" dało się sprawdzić, a nie tylko odczuć.
+  // Wpis pojawia się w konsoli przeglądarki (F12) dopiero powyżej ćwierć sekundy, więc przy
+  // normalnej pracy nic nie zaśmieca, a przy zacięciu od razu widać, która zakładka i ile.
+  const czasWidoku = Math.round(performance.now() - startRysowania);
   attachHandlers();
+  const czasRazem = Math.round(performance.now() - startRysowania);
+  if(czasRazem > 250) console.warn(`Rysowanie „${currentView}": ${czasWidoku} ms treść + ${czasRazem - czasWidoku} ms podpięcie przycisków = ${czasRazem} ms.`);
   if(szkicRaportu) przywrocSzkicRaportu(szkicRaportu);
   schowajPrzyciskiPracowni();
   if(focusRestore){
@@ -5353,18 +5405,17 @@ function kartaZawodnikaHtml(p, a){
   const wiek = rok ? new Date().getFullYear() - rok : null;
   const herb = clubCrest(p.clubId);
   const inicjaly = ((p.firstName||'')[0]||'') + ((p.lastName||'')[0]||'');
-  const kratka = (etykieta, wartosc)=>`<div class="kz-pole">
-    <span class="kz-pole-liczba">${wartosc == null ? '—' : wartosc}</span>
-    <span class="kz-pole-nazwa">${esc(etykieta)}</span>
-  </div>`;
 
+  // UKŁAD KARTY (01.10.2026, wprost ze zgłoszenia): prostokąt zamiast tarczy z dziobem, bez
+  // tabelki ocen na spodzie, herb klubu większy — pod oceną po lewej, flaga pod nazwiskiem.
+  // Oceny składowe zostały wyrzucone świadomie: te same liczby stoją niżej w „Profilu ocen",
+  // a karta ma być wizytówką, nie drugim miejscem na te same dane.
   return `<div class="karta-zawodnika-otoczka">
     <div class="karta-zawodnika">
       <div class="kz-gora">
         <div class="kz-lewa">
           <div class="kz-ocena">${ocena == null ? '—' : ocena}</div>
           <div class="kz-pozycja">${esc(skrotPozycji(p.position))}</div>
-          ${flagaZawodnikaHtml(p, 'kz-flaga')}
           ${herb ? `<img class="kz-herb" src="${esc(herb)}" alt="">` : ''}
         </div>
         <div class="kz-prawa">
@@ -5376,21 +5427,13 @@ function kartaZawodnikaHtml(p, a){
       <div class="kz-nazwisko">
         <div class="kz-imie">${esc(p.firstName || '')}</div>
         <div class="kz-nazwa">${esc((p.lastName || '').toUpperCase())}</div>
+        ${flagaZawodnikaHtml(p, 'kz-flaga')}
         <div class="kz-podpis">${esc([
           p.birthYear ? `rocznik ${p.birthYear}${wiek ? ` (${wiek} l.)` : ''}` : '',
           clubName(p.clubId) !== '—' ? clubName(p.clubId) : '',
           p.klubBezLigi ? '' : clubLeague(p.clubId),
         ].filter(Boolean).join(' · '))}</div>
       </div>
-      <div class="kz-staty">
-        ${RATING_KEYS.map(k=> kratka(SKROTY_OCEN[k] || k, a && a.avgs ? na99(a.avgs[k]) : null)).join('')}
-        ${kratka('MECZ', p.matches != null ? p.matches : null)}
-      </div>
-    </div>
-    <div class="kz-opis note">
-      ${ocena == null
-        ? 'Ocen jeszcze nie ma — liczby pojawią się po pierwszym raporcie z zakładki „Raporty".'
-        : `Skala 1–99 przeliczona z ocen 1–6 &middot; średnia z ${a.reportCount} ${a.reportCount === 1 ? 'raportu' : 'raportów'}.`}
     </div>
   </div>`;
 }
@@ -9582,7 +9625,10 @@ function rocznikBazowyKategorii(liga, sezon){
 function oIleMlodszy(p){
   const rok = Number(rocznikZawodnika(p));
   if(!Number.isFinite(rok)) return 0;
-  const klub = DB.clubs.find(c=>c.id === (p && p.clubId));
+  // Klub z indeksu — ta funkcja woła się po trzy razy na każdy wiersz listy (podświetlenie,
+  // odznaka, podpowiedź), a przeszukiwanie całej listy klubów za każdym razem było jedną
+  // z dwóch głównych przyczyn wolnego otwierania zakładek.
+  const klub = DB.klubyWgId ? DB.klubyWgId.get(p && p.clubId) : DB.clubs.find(c=>c.id === (p && p.clubId));
   if(!klub) return 0;
   const baza = rocznikBazowyKategorii(klub.league, klub.season);
   if(!baza) return 0;
@@ -24588,6 +24634,11 @@ async function generatePlayerPDF(playerId){
     .title-bar{display:flex;align-items:center;gap:14px;padding:18px 20px;background:var(--pitch);margin:16px -14mm 0;}
     .pos-badge-lg{width:44px;height:44px;border-radius:50%;background:var(--gold);color:var(--heading);display:flex;align-items:center;justify-content:center;
       font-family:Arial,'Arial Narrow',sans-serif;font-weight:700;font-size:20px;flex-shrink:0;border:3px solid var(--chalk);}
+    .title-text{flex:1;min-width:0;}
+    /* Zdjęcie zawodnika po prawej w pasku tytułu — ten sam rozmiar niezależnie od proporcji pliku,
+       żeby wysokość paska nie skakała między raportami. */
+    .player-photo-pdf{width:74px;height:74px;object-fit:cover;object-position:top center;border-radius:10px;
+      border:2px solid var(--gold);background:#1E4A3C;flex-shrink:0;}
     .title-text h1{font-family:Arial,'Arial Narrow',sans-serif;font-weight:700;font-size:24px;color:var(--on-pitch);margin:0;}
     .title-text p{font-size:12px;color:#C6D9CE;margin:3px 0 0;text-transform:uppercase;letter-spacing:.03em;}
     .player-meta{display:flex;flex-wrap:wrap;padding:14px 0;background:var(--chalk);margin:0 -14mm;padding-left:14mm;padding-right:14mm;border-bottom:1px solid var(--chalk-dim);}
@@ -24675,6 +24726,13 @@ async function generatePlayerPDF(playerId){
       <h1>${esc(p.firstName)} ${esc(p.lastName)}</h1>
       <p>${esc(p.position)}${club?' &middot; '+esc(club.name):''}${club&&club.league?' &middot; '+esc(club.league):''}</p>
     </div>
+    ${/* ZDJĘCIE ZAWODNIKA W NAGŁÓWKU RAPORTU (zgłoszenie 01.10.2026: „w raporcie jak jest zdjęcie,
+         to można umieścić zdjęcie zawodnika"). Tylko gdy w kartotece faktycznie jest — pustej
+         ramki nie rysujemy, bo w raporcie wyglądałaby jak brak danych, a nie jak brak zdjęcia.
+         Zdjęcia wgrane do systemu siedzą jako data URI i rysują się zawsze; zdjęcie zaciągnięte
+         z adresu zewnętrznego zależy od zgody tamtego serwera (html2canvas pobiera je sam) —
+         gdy jej nie dostanie, zostaje samo miejsce, a reszta raportu wychodzi normalnie. */''}
+    ${p.photoUrl ? `<img class="player-photo-pdf" src="${esc(p.photoUrl)}" alt="" crossorigin="anonymous">` : ''}
   </div>
 
   <div class="player-meta">

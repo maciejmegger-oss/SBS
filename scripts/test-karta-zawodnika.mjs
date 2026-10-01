@@ -62,15 +62,18 @@ console.log('\n3. Karta zawodnika z ocenami');
   sprawdz('nazwisko wersalikami, imię nad nim', /kz-imie">Jan</.test(html) && /kz-nazwa">KOWALSKI</.test(html));
   sprawdz('rocznik z wiekiem, klub i liga pod nazwiskiem',
     /rocznik 2007 \(\d+ l\.\) · Zawisza Bydgoszcz · II liga/.test(html), (html.match(/kz-podpis">([^<]*)/) || [])[1]);
-  sprawdz('pięć składowych oceny na karcie',
-    ['TEC','TAK','MOT','MEN','POT'].every(s => html.includes(`>${s}<`)), html);
-  sprawdz('technika 5/6 pokazana jako 83', html.includes('>83<'));
-  sprawdz('potencjał 6/6 jako 99', html.includes('>99<'));
-  sprawdz('liczba meczów w szóstym polu', /kz-pole-liczba">14</.test(html));
+  // Zgłoszenie (01.10.2026): „te informacje na spodzie bym całkiem usunął, nie są potrzebne".
+  // Składowe ocen stoją niżej, w „Profilu ocen" — karta ma być wizytówką, nie drugim miejscem
+  // na te same liczby.
+  sprawdz('bez tabelki ocen na spodzie', !/kz-staty|kz-pole-liczba/.test(html), html.slice(-240));
+  sprawdz('bez podpisu pod kartą', !/kz-opis/.test(html));
+  sprawdz('flaga pod nazwiskiem, nie przy pozycji',
+    /kz-nazwa">KOWALSKI<\/div>\s*<span class="kz-flaga/.test(html));
+  sprawdz('herb klubu po lewej, pod oceną i pozycją',
+    /kz-pozycja">OPŚ<\/div>\s*<img class="kz-herb" src="\/herb.png"/.test(html));
   sprawdz('flaga narodowości', html.includes('🇵🇱'));
   sprawdz('herb klubu', html.includes('/herb.png'));
   sprawdz('bez zdjęcia — inicjały, nie pusty kwadrat', /kz-zdjecie-brak">JK</.test(html));
-  sprawdz('pod kartą skąd się wzięły liczby', /Skala 1–99 przeliczona z ocen 1–6 &middot; średnia z 3 raportów/.test(html));
 }
 
 console.log('\n4. Zawodnik bez ani jednego raportu');
@@ -78,10 +81,8 @@ console.log('\n4. Zawodnik bez ani jednego raportu');
   const p = { id: 'Z2', firstName: 'Piotr', lastName: 'Nowak', position: '', clubId: 'K1', matches: null };
   const html = karta.kartaZawodnikaHtml(p, null);
   sprawdz('zamiast oceny kreska, nie zmyślona liczba', /<div class="kz-ocena">—<\/div>/.test(html));
-  sprawdz('składowe też kreskami', (html.match(/kz-pole-liczba">—</g) || []).length === 6,
-    String((html.match(/kz-pole-liczba">—</g) || []).length));
-  sprawdz('podpis mówi, skąd wezmą się oceny',
-    /Ocen jeszcze nie ma — liczby pojawią się po pierwszym raporcie/.test(html));
+  sprawdz('reszta karty stoi jak zwykle — nazwisko i podpis na miejscu',
+    /kz-nazwa">NOWAK</.test(html) && /kz-podpis"/.test(html));
 }
 
 console.log('\n4a. Mała flaga narodowości przy każdym zawodniku');
@@ -112,22 +113,23 @@ sprawdz('karta nie ma sztywnej wysokości — rośnie z treścią',
   !/\.karta-zawodnika\{[^}]*height:\s*\d+px/.test(style), (style.match(/\.karta-zawodnika\{[^}]*\}/) || [''])[0]);
 sprawdz('bloki płyną w kolumnie, nic nie stoi na top: Xpx',
   /\.karta-zawodnika\{[^}]*display:flex;flex-direction:column/.test(style)
-  && !/\.kz-(staty|nazwisko|lewa|prawa)\{position:absolute/.test(style));
-sprawdz('dolny dziób to pusty margines, w który nic nie wchodzi',
-  /\.karta-zawodnika\{[^}]*padding:18px 20px 88px/.test(style)
-  && /clip-path:polygon\(0 0,100% 0,100% calc\(100% - 88px\),50% 100%,0 calc\(100% - 88px\)\)/.test(style));
-sprawdz('karta wygląda na wypukłą (światło z góry, cień przy dziobie)',
+  && !/\.kz-(nazwisko|lewa|prawa)\{position:absolute/.test(style));
+// Zgłoszenie (01.10.2026): „zostawiłbym w formie kwadratu" — dziób tarczy zjadał treść i miejsce.
+sprawdz('karta jest prostokątem, bez wycinania dziobem',
+  !/\.karta-zawodnika\{[^}]*clip-path/.test(style) && /\.karta-zawodnika\{[^}]*border-radius:12px/.test(style));
+sprawdz('herb klubu duży, nie znaczek obok flagi', /\.kz-herb\{width:62px;height:62px/.test(style));
+sprawdz('flaga w osobnym wierszu pod nazwiskiem', /\.kz-flaga\{display:block;margin:7px auto 0/.test(style));
+sprawdz('karta wygląda na wypukłą (światło z góry)',
   /\.karta-zawodnika::before\{[\s\S]*?radial-gradient\(135% 72% at 50% -12%/.test(style));
 sprawdz('cieniowanie leży POD treścią, nie przyciemnia liter',
-  /\.kz-gora,\.kz-nazwisko,\.kz-staty\{position:relative;z-index:1;\}/.test(style));
-sprawdz('długie nazwisko łamie się zamiast wychodzić poza tarczę', /\.kz-nazwa\{[\s\S]*?overflow-wrap:anywhere/.test(style));
-sprawdz('skróty ocen nie łamią się na dwie linie', /\.kz-pole-nazwa\{[^}]*white-space:nowrap/.test(style));
+  /\.kz-gora,\.kz-nazwisko\{position:relative;z-index:1;\}/.test(style));
+sprawdz('długie nazwisko łamie się zamiast wychodzić poza kartę', /\.kz-nazwa\{[\s\S]*?overflow-wrap:anywhere/.test(style));
 sprawdz('zdjęcie i inicjały w jednym rzędzie z oceną', /<div class="kz-gora">/.test(zrodlo));
-sprawdz('kształt tarczy bez obrazka (skaluje się i drukuje)', /\.karta-zawodnika\{[\s\S]*?clip-path:polygon/.test(style));
+sprawdz('kształt bez obrazka — skaluje się i drukuje tak samo', /\.karta-zawodnika\{[\s\S]*?border-radius:12px/.test(style));
 sprawdz('karta ciemna w obu motywach — barwy wpisane wprost, nie ze zmiennych',
   /\.karta-zawodnika\{[\s\S]*?background:linear-gradient\(160deg,#1E4A3C/.test(style));
 sprawdz('złote liczby na ciemnej zieleni (kontrast opisany w arkuszu)', /złoto #E3C15A na zieleni #16302A daje 8,9:1/.test(style));
-sprawdz('karta zwęża się na telefonie', /@media \(max-width:480px\)\{\s*\n\s*\.karta-zawodnika\{width:260px/.test(style));
+sprawdz('karta zwęża się na telefonie', /@media \(max-width:480px\)\{\s*\n\s*\.karta-zawodnika\{width:100%/.test(style));
 
 console.log(bledy ? `\n${bledy} BŁĘDÓW` : '\nWszystko przeszło.');
 process.exit(bledy ? 1 : 0);

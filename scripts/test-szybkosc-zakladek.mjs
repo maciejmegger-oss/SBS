@@ -29,6 +29,11 @@ const kod = [
   wytnij('rozbijNazweKlubu', /function rozbijNazweKlubu\(nazwa\)\{[\s\S]*?\n\}/),
   wytnij('odciskKlubu', /const odciskKlubu = \(nazwa\)=>\{[\s\S]*?\};/),
   wytnij('zawodnicyKlubu', /function zawodnicyKlubu\(clubId\)\{[\s\S]*?\n\}/),
+  // Indeksy obserwacji i raportów kasuje to samo odswiezIndeksy, więc muszą tu być — inaczej
+  // test mówiłby o kodzie, którego w aplikacji nie ma.
+  wytnij('indeksWgZawodnika', /function indeksWgZawodnika\(lista, pole\)\{[\s\S]*?\n\}/),
+  wytnij('playerObs', /function playerObs\(playerId\)\{[\s\S]*?\n\}/),
+  wytnij('raportyGracza', /function raportyGracza\(playerId\)\{[\s\S]*?\n\}/),
   wytnij('odswiezIndeksy', /function odswiezIndeksy\(\)\{[\s\S]*?\n\}/),
   wytnij('meczeKlubu', /function meczeKlubu\(clubId\)\{[\s\S]*?\n\}/),
   wytnij('policzMeczeKlubu', /function policzMeczeKlubu\(clubId, zawodnicy\)\{[\s\S]*?\n\}/),
@@ -46,9 +51,10 @@ const ZAWODNICY = Array.from({ length: 16650 }, (_, i) => ({
   })),
 }));
 
-const api = new Function('DB', 'tabeleLig', 'osiagalneKolejki', 'wierszZTabeli', `${kod}
-  return { meczeKlubu, odswiezIndeksy, zawodnicyKlubu };`)(
-  { clubs: KLUBY, players: ZAWODNICY, klubyWgId: new Map(KLUBY.map(c=>[c.id, c])) }, {}, () => null, () => null);
+const api = new Function('DB', 'tabeleLig', 'osiagalneKolejki', 'wierszZTabeli', 'playerAvg', `${kod}
+  return { meczeKlubu, odswiezIndeksy, zawodnicyKlubu, playerObs, raportyGracza };`)(
+  { clubs: KLUBY, players: ZAWODNICY, observations: [], reports: [],
+    klubyWgId: new Map(KLUBY.map(c=>[c.id, c])) }, {}, () => null, () => null, () => null);
 
 console.log('\n1. Lista klubów — 600 wierszy na bazie 16 650 zawodników');
 api.odswiezIndeksy();
@@ -94,6 +100,42 @@ console.log('\n3. Klub po identyfikatorze — z indeksu');
   sprawdz('nazwa, region, liga i herb czytają z indeksu, gdy jest',
     ['clubName','clubRegion','clubLeague'].every(f => new RegExp(`function ${f}\\(id\\)\\{ const c = \\(DB\\.klubyWgId`).test(zrodlo))
     && /function clubCrest\(id\)\{[^\n]*DB\.klubyWgId/.test(zrodlo));
+}
+
+console.log('\n3a. Oceny i obserwacje zawodnika — bez przeszukiwania całej bazy na każdy wiersz');
+// Zgłoszenie (01.10.2026): „bardzo długo ładuje wszystkie strony po kliknięciu w zakładkę".
+// Lista zawodników liczyła średnią dla każdego wiersza, a ta przeszukiwała WSZYSTKIE obserwacje
+// i WSZYSTKIE raporty — przy 5 000 zawodników to dziesiątki milionów porównań na jedno kliknięcie.
+{
+  const OBS = Array.from({ length: 10000 }, (_, i) => ({ id: 'O' + i, playerId: 'Z' + (i % 5000), date: '2026-0' + (1 + i % 9) + '-01' }));
+  const RAP = Array.from({ length: 5000 }, (_, i) => ({ id: 'R' + i, playerId: 'Z' + (i % 5000) }));
+  const baza = { clubs: KLUBY, players: ZAWODNICY.slice(0, 5000), observations: OBS, reports: RAP,
+    klubyWgId: new Map(KLUBY.map(c => [c.id, c])) };
+  const a2 = new Function('DB', 'tabeleLig', 'osiagalneKolejki', 'wierszZTabeli', 'playerAvg', `${kod}
+    return { odswiezIndeksy, playerObs, raportyGracza };`)(baza, {}, () => null, () => null, () => null);
+
+  a2.odswiezIndeksy();
+  const start2 = Date.now();
+  let suma2 = 0;
+  for (const p of baza.players) suma2 += a2.playerObs(p.id).length + a2.raportyGracza(p.id).length;
+  const czas2 = Date.now() - start2;
+  console.log(`      5 000 wierszy policzone w ${czas2} ms (odczytów: ${suma2})`);
+  sprawdz(`lista zawodników liczy się poniżej ćwierć sekundy (${czas2} ms)`, czas2 < 250, `${czas2} ms`);
+  sprawdz('wynik taki sam jak przy przeszukiwaniu',
+    a2.playerObs('Z7').length === OBS.filter(o => o.playerId === 'Z7').length
+    && a2.raportyGracza('Z7').length === RAP.filter(r => r.playerId === 'Z7').length);
+  sprawdz('obserwacje posortowane po dacie, tak jak dawniej',
+    a2.playerObs('Z7').every((o, i, l) => i === 0 || String(l[i - 1].date) <= String(o.date)));
+  sprawdz('zmiana danych nie zostaje w pamięci — indeks ginie przy przerysowaniu', (() => {
+    baza.observations.push({ id: 'NOWA', playerId: 'Z7', date: '2026-12-01' });
+    const przed = a2.playerObs('Z7').length;
+    a2.odswiezIndeksy();
+    return a2.playerObs('Z7').length === przed + 1;
+  })());
+  sprawdz('średnia zawodnika pamiętana w obrębie jednego przerysowania',
+    /if\(playerAvg\.pamiec\)\{[\s\S]{0,160}return gotowe;/.test(fs.readFileSync('src/main.ts', 'utf8')));
+  sprawdz('pomiar czasu rysowania zgłasza wolne zakładki w konsoli',
+    /Rysowanie „\$\{currentView\}": \$\{czasWidoku\} ms treść/.test(fs.readFileSync('src/main.ts', 'utf8')));
 }
 
 console.log('\n4. Gorące miejsca nie wracają do przeszukiwania całej bazy');
