@@ -4352,6 +4352,12 @@ function render(){
   if(active && main && main.contains(active) && (active.tagName==='INPUT' || active.tagName==='TEXTAREA') && active.id){
     focusRestore = {id: active.id, start: active.selectionStart, end: active.selectionEnd};
   }
+  // Formularz raportu przeżywa przerysowanie w tle (odświeżenie statystyk, dopisanie młodzieżowców
+  // do Monitoringu). Bez tego treść wczytana ze skrzynki albo wpisana ręcznie znikała w trakcie
+  // pracy, a wpis w skrzynce był już oznaczony jako wczytany — raport przepadał bez śladu.
+  const szkicRaportu = (currentView==='reports' && !pageChanged && !prefillRaportu && !wyczyscFormularzRaportu)
+    ? zbierzSzkicRaportu() : null;
+  wyczyscFormularzRaportu = false;
   renderNav();
   if(currentView==="dashboard") main.innerHTML = viewDashboard();
   else if(currentView==="players") main.innerHTML = viewPlayers();
@@ -4372,6 +4378,7 @@ function render(){
   else if(currentView==="access") main.innerHTML = viewAccess();
   else if(currentView==="pakiety") main.innerHTML = viewPakiety();
   attachHandlers();
+  if(szkicRaportu) przywrocSzkicRaportu(szkicRaportu);
   schowajPrzyciskiPracowni();
   if(focusRestore){
     const el = document.getElementById(focusRestore.id);
@@ -9426,6 +9433,56 @@ function zastosujPrefillRaportu(){
   if(dane.setPieces) REPORT_SET_PIECES.forEach(f=> ustawOcenePunktowa('rep-'+f.key, dane.setPieces[f.key]));
 }
 
+// SZKIC FORMULARZA RAPORTU — patrz render(). Zbieramy wartości wszystkich pól formularza razem
+// ze skalą protokołu 1–6, która stała na ekranie (pozycyjna albo dawne fazy gry), i oddajemy je
+// po przebudowie widoku. Tylko przy tym samym raporcie: zmiana edytowanego raportu to świadome
+// przejście do innej treści, a po udanym zapisie formularz ma się wyczyścić (wyczyscFormularzRaportu).
+let wyczyscFormularzRaportu = false;
+function zbierzSzkicRaportu(){
+  const f = document.getElementById('rep-formularz');
+  if(!f) return null;
+  const pola = {};
+  f.querySelectorAll('input[id], textarea[id], select[id]').forEach((el: any)=>{
+    if(el.type === 'file') return;
+    pola[el.id] = el.value;
+  });
+  const blok = f.querySelector('#rep-fazy-blok [data-klucze]') as HTMLElement | null;
+  return { editing: editingReportId, pola, klucze: blok ? blok.dataset.klucze : '' };
+}
+function przywrocSzkicRaportu(s){
+  if(!s || s.editing !== editingReportId) return;
+  const blok = document.getElementById('rep-fazy-blok');
+  const teraz = blok && blok.querySelector('[data-klucze]') as HTMLElement | null;
+  if(blok && s.klucze && teraz && teraz.dataset.klucze !== s.klucze){
+    const lista = [REPORT_PHASES, ...Object.values(PROFILE).map(pr=>pr.fazy)]
+      .find(l=> l.map(f=>f.key).join(',') === s.klucze);
+    if(lista){ blok.innerHTML = blokFazHtml(lista, {}); podepnijOcenyPunktowe(blok); }
+  }
+  for(const [id, v] of Object.entries(s.pola)){
+    const el = document.getElementById(id) as HTMLInputElement | null;
+    if(!el || el.type === 'file') continue;
+    if(el.type === 'hidden' && el.parentElement && el.parentElement.classList.contains('rating-points')) ustawOcenePunktowa(id, v);
+    else el.value = String(v);
+  }
+}
+
+// Wyszukiwarka nad listą zapisanych raportów — po nazwisku, imieniu albo klubie. Trzymana w module,
+// żeby przerysowanie widoku nie gubiło wpisanego słowa; filtr idzie po DOM, bez render().
+let raportySzukaj = '';
+function filtrujListeRaportow(){
+  const slowa = szukajNorm(raportySzukaj).split(' ').filter(Boolean);
+  let widac = 0;
+  document.querySelectorAll('.reports-list .report-row[data-szukaj]').forEach((w: any)=>{
+    const ok = slowa.every(x=> w.dataset.szukaj.includes(x));
+    w.style.display = ok ? '' : 'none';
+    if(ok) widac++;
+  });
+  const pusto = document.getElementById('rep-lista-brak');
+  if(pusto) pusto.style.display = (slowa.length && !widac) ? '' : 'none';
+  const licz = document.getElementById('rep-lista-licznik');
+  if(licz) licz.textContent = slowa.length ? `${widac} / ` : '';
+}
+
 function viewReports(){
   const editing = editingReportId ? DB.reports.find(r=>r.id===editingReportId) : null;
   pamiecFazFormularza = Object.assign({}, editing && editing.phases);
@@ -9452,7 +9509,8 @@ function viewReports(){
       : (r.kind==='mecz'
           ? `<span class="badge tab-chip" style="margin-right:6px;">MECZ</span>${esc(r.match||'Obserwacja meczu')}`
           : '<span style="color:var(--clay-dark);">(zawodnik usunięty)</span>');
-    return `<div class="report-row${editingReportId===r.id?' editing':''}">
+    const szukajTekst = szukajNorm(pl ? `${pl.lastName||''} ${pl.firstName||''} ${clubName(pl.clubId)}` : (r.match||''));
+    return `<div class="report-row${editingReportId===r.id?' editing':''}" data-szukaj="${esc(szukajTekst)}">
       <span class="report-num" title="Numer porządkowy (kolejność utworzenia)">${ordinalOf[r.id]}</span>
       <div class="report-row-body">
         <div class="report-row-glowa">${pl?`<strong data-action="view-player" data-id="${pl.id}">${name}</strong>`:`<strong>${name}</strong>`}${
@@ -9475,9 +9533,12 @@ function viewReports(){
   <div class="reports-layout">
 
   <section class="reports-aside">
-    <h3 class="reports-aside-title">Zapisane raporty <span class="reports-count">${allReports.length}</span></h3>
+    <h3 class="reports-aside-title">Zapisane raporty <span class="reports-count"><span id="rep-lista-licznik"></span>${allReports.length}</span></h3>
     <p class="view-sub" style="margin:0 0 8px;">Wg kolejności utworzenia. „✎" edytuj · „⭳" PDF · „✕" usuń.</p>
-    <div class="card reports-list">${listHtml}</div>
+    <input type="search" id="rep-lista-szukaj" class="rep-lista-szukaj" autocomplete="off"
+      placeholder="🔍 Szukaj raportu po nazwisku lub klubie…" value="${esc(raportySzukaj)}"
+      style="width:100%;margin:0 0 8px;">
+    <div class="card reports-list">${listHtml}<div class="empty" id="rep-lista-brak" style="display:none;">Brak raportu dla tego nazwiska.</div></div>
   </section>
 
   <section class="reports-nowy" id="rep-formularz">
@@ -16239,6 +16300,11 @@ function attachHandlers(){
     }
     zastosujPrefillRaportu();
   }
+  const poleSzukajRaportu = document.getElementById('rep-lista-szukaj') as HTMLInputElement | null;
+  if(poleSzukajRaportu){
+    poleSzukajRaportu.oninput = ()=>{ raportySzukaj = poleSzukajRaportu.value; filtrujListeRaportow(); };
+    filtrujListeRaportow();
+  }
   main.querySelectorAll('[data-action="skrzynka-wczytaj"]').forEach(b=>b.onclick=async()=>{
     const wpis = skrzynkaWpisy.find(x=>x.id===b.dataset.id);
     if(!wpis) return;
@@ -16336,6 +16402,7 @@ function attachHandlers(){
     // na ekranie, który o niej nic nie mówi. Trzeba było samemu wejść w Raporty, żeby zobaczyć,
     // czy raport w ogóle powstał.
     currentView = 'reports';
+    wyczyscFormularzRaportu = true;
     render();
     const zawodnik = DB.players.find(x=>x.id===playerId);
     const kto = zawodnik ? `${zawodnik.firstName || ''} ${zawodnik.lastName || ''}`.trim() : '';
