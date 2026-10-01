@@ -6,6 +6,10 @@ import { currentUser, signIn, signOut, requestPasswordReset, setNewPassword, isP
          mojeKonto, listaKont, ustawStatusKonta, ustawRoleKonta, ustawPakietyKonta,
          zapiszZdarzenie, listaZdarzen, tokenSesji } from "./data/auth";
 import { VOIVODESHIP_PATHS } from "./data/voivodeships";
+// Profil kompetencji — model oceny przeniesiony z arkusza klubowego (5 obszarów, 48 elementów,
+// 141 składowych) i przypisanie elementów do profili pozycyjnych.
+import { OBSZARY_PROFILU, LEGENDA_OCENY, DRABINA_NOTOWANIA } from "./data/profil-kompetencji";
+import { PROFILE_POZYCJI, profilDlaNumeru, profilPoKodzie } from "./data/profil-pozycje";
 import { parsujSklad, podzielNaDruzyny } from "./domain/sklad";
 import { SKLADY_MECZOWE } from "./data/sklady-meczowe";
 import { POWOLANIA_DO_PRZYWROCENIA } from "./data/powolania";
@@ -124,6 +128,12 @@ let systemyKlubow = {};
 // Tabele ligowe pobrane z 90minut: { 'III liga, gr. II': { pobrano, kolejek, wiersze:[...] } }.
 // Jedyne pewne zrodlo tego, ile kolejek naprawde rozegrano.
 let tabeleLig = {};
+// PROFILE KOMPETENCJI — pełne oceny zawodników wg modelu z arkusza klubowego, po jednej na rundę.
+//
+// Idą tą samą drogą co mapa pozycji i systemy klubów: jeden wiersz JSON w sbs_kv, BEZ migracji
+// bazy. To świadoma decyzja — zlecenia analiz wideo czekały na nieuruchomioną migrację i funkcja
+// przez ten czas nie działała wcale. Profil ma działać od pierwszego kliknięcia.
+let profileKompetencji = [];
 let editingClubId = null;
 let clubBrowse = {top:"", group:"", szukaj:""};
 let dashboardLeagueSelected = null;
@@ -1995,7 +2005,7 @@ async function loadAllInner(){
     }
   };
 
-  const [p, c, o, rp, tl, ct, mt, ag, agt, pmaRow, radarRow, systemyRow, tabeleRow, kadryRow, s,
+  const [p, c, o, rp, tl, ct, mt, ag, agt, pmaRow, radarRow, systemyRow, tabeleRow, kadryRow, profileRow, s,
     seedFlag, enrichFlag, enrichAviaFlag, enrichGornikFlag, enrichAviaV2Flag, recoMigrationFlag, statusMigrationFlag] = await Promise.all([
     czytaj('scouting:players'),
     czytaj('scouting:clubs'),
@@ -2016,6 +2026,8 @@ async function loadAllInner(){
     // Przynależność talentów do kadr (U-16, kraj klubu). Tabela sbs_talents nie ma na nią kolumny
     // ani pola JSON, więc zapis po cichu ją wycinał i po odświeżeniu cała kadra znikała.
     czytaj('scouting:talenty_kadry'),
+    // Profile kompetencji (arkusz klubowy w systemie) — jeden wiersz JSON, bez migracji bazy.
+    czytaj('scouting:profile_kompetencji'),
     // Ustawienia to jedyny wiersz, który zapis NADPISUJE w całości (logotypy lig, lista scoutów).
     // Nieudany odczyt musi być więc widoczny, inaczej pierwszy zapis ustawień skasowałby logotypy.
     czytaj('scouting:settings'),
@@ -2047,6 +2059,7 @@ async function loadAllInner(){
   try{ systemyKlubow = systemyRow ? JSON.parse(systemyRow.value) : {}; }catch(e){ systemyKlubow = {}; }
   try{ tabeleLig = tabeleRow ? JSON.parse(tabeleRow.value) : {}; }catch(e){ tabeleLig = {}; }
   try{ talentyKadry = kadryRow ? JSON.parse(kadryRow.value) : {}; }catch(e){ talentyKadry = {}; }
+  try{ profileKompetencji = profileRow ? JSON.parse(profileRow.value) : []; }catch(e){ profileKompetencji = []; }
   // Najpierw kadra z wiersza talentu (źródło główne), potem z zapasowej mapy — mapa uzupełnia
   // wyłącznie talenty, które po pierwszym kroku nadal są bez kadry.
   nalozKadreZPolaZrodla(DB.talents);
@@ -2783,6 +2796,7 @@ async function saveSettings(){ return robustStorageSet('scouting:settings', JSON
 async function savePositionMapAssignments(){ return robustStorageSet('scouting:position_map_assignments', JSON.stringify(positionMapAssignments)); }
 async function saveRadarPrzejrzane(){ return robustStorageSet('scouting:radar_przejrzane', JSON.stringify(radarPrzejrzane)); }
 async function saveSystemyKlubow(){ return robustStorageSet('scouting:systemy_klubow', JSON.stringify(systemyKlubow)); }
+async function saveProfileKompetencji(){ return robustStorageSet('scouting:profile_kompetencji', JSON.stringify(profileKompetencji)); }
 async function saveTabeleLig(){ return robustStorageSet('scouting:tabele_lig', JSON.stringify(tabeleLig)); }
 
 // POBRANIE TABEL LIGOWYCH Z 90MINUT.
@@ -4055,6 +4069,7 @@ const SAVE_FN_BY_KEY = {
   'scouting:players': ()=>savePlayers(), 'scouting:clubs': ()=>saveClubs(), 'scouting:observations': ()=>saveObservations(),
   'scouting:reports': ()=>saveReports(), 'scouting:talents': ()=>saveTalents(), 'scouting:contacts': ()=>saveContacts(),
   'scouting:settings': ()=>saveSettings(), 'scouting:position_map_assignments': ()=>savePositionMapAssignments(), 'scouting:radar_przejrzane': ()=>saveRadarPrzejrzane(), 'scouting:systemy_klubow': ()=>saveSystemyKlubow(), 'scouting:tabele_lig': ()=>saveTabeleLig(),
+  'scouting:profile_kompetencji': ()=>saveProfileKompetencji(),
   'scouting:agencies': ()=>saveAgencies(), 'scouting:agents': ()=>saveAgents(),
   'scouting:agency_logos': ()=>saveAgencyLogos(),
 };
@@ -5373,6 +5388,467 @@ function kartaZawodnikaHtml(p, a){
   </div>`;
 }
 
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// PROFIL KOMPETENCJI — pełna ocena zawodnika wg modelu z arkusza klubowego, wypełniana w systemie.
+//
+// MODEL (src/data/profil-kompetencji.ts, wczytany z arkusza „Nazwisko-U19.xlsx"):
+//   pięć obszarów → 42 oceniane elementy w skali 1–6 → 141 składowych oznaczanych
+//   WIODĄCA / NEUTRALNIE / DEFICYT. Ocena elementu mówi o poziomie, znak składowej — co ten
+//   poziom tworzy. Do tego notowanie 1–20: stan faktyczny i potencjał na jednej drabinie.
+//
+// PO CO DRUGA ŚREDNIA, „NA POZYCJI"
+// Arkusz ocenia wszystkich tym samym zestawem, więc stoper dostaje ocenę za finalizację, a
+// skrzydłowy za asekurację defensywną. Przy jednej wspólnej średniej obaj wyglądają tak samo
+// przeciętnie. Średnia z elementów KLUCZOWYCH dla jego pozycji (src/data/profil-pozycje.ts)
+// mówi to, co skauta interesuje: czy jest dobry w tym, co na tej pozycji rozstrzyga.
+const ZNAK_OPIS = { W:'WIODĄCA', N:'NEUTRALNIE', D:'DEFICYT' };
+const ZNAK_KOLEJNOSC = ['', 'W', 'N', 'D'];
+
+/** Sezon i runda z dzisiejszej daty — lipiec–grudzień to jesień sezonu rok/rok+1. */
+function sezonIRunda(dzis){
+  const d = dzis ? new Date(dzis) : new Date();
+  const rok = d.getFullYear(), miesiac = d.getMonth() + 1;
+  return miesiac >= 7
+    ? { sezon: rok + '/' + (rok + 1), runda: 'JESIENNA' }
+    : { sezon: (rok - 1) + '/' + rok, runda: 'WIOSENNA' };
+}
+
+/** Profile jednego zawodnika, najnowszy pierwszy (wiosna jest późniejsza niż jesień tego sezonu). */
+function profileZawodnika(playerId){
+  const waga = (z)=> String(z.sezon||'') + (String(z.runda||'').toUpperCase() === 'WIOSENNA' ? '-2' : '-1');
+  return profileKompetencji.filter(z=> z.playerId === playerId).slice().sort((a,b)=> waga(b).localeCompare(waga(a)));
+}
+
+/** Wszystkie oceniane elementy — testy motoryczne odpadają, bo to wyniki pomiarów, nie ocena 1–6. */
+function elementyOceniane(){
+  return OBSZARY_PROFILU.flatMap(o=> o.elementy.filter(e=> !e.testy).map(e=> ({ ...e, obszar: o.nazwa })));
+}
+
+function pustyProfilKompetencji(p, autor, dzis){
+  const sr = sezonIRunda(dzis);
+  const kod = (profilDlaNumeru(Number(p && p.pozycjaNmg) || 0) || {}).kod || '';
+  return {
+    id: uid('PK'), playerId: p.id, sezon: sr.sezon, runda: sr.runda,
+    zespol: '', poziomZespolu: '', profil: kod, alternatywaProfilu: '',
+    trener: autor || '', trenerWspomagajacy: '', data: (dzis || new Date().toISOString().slice(0,10)),
+    notowanieStan: null, notowaniePotencjal: null,
+    wzrost: (p && p.height) || null, masa: (p && p.weight) || null, noga: (p && p.foot) || '',
+    somatotyp: '', wiekBiologiczny: null,
+    jednostki: null, obecny: null, nieobecnyUspr: null, nieobecnyNieuspr: null, chory: null,
+    oceny: {}, znaki: {}, mocne: '', doPoprawy: '', uwagi: '',
+    autor: autor || '', utworzone: new Date().toISOString(),
+  };
+}
+
+/** Średnia obszaru i rozkład znaków — liczone tak jak w arkuszu: ze WYPEŁNIONYCH pól. */
+function podsumowanieObszaruProfilu(profil, nazwaObszaru){
+  const obszar = OBSZARY_PROFILU.find(o=> o.nazwa === nazwaObszaru);
+  const oceny = (profil && profil.oceny) || {}, znaki = (profil && profil.znaki) || {};
+  const wynik = { srednia: null, ocenionych: 0, wszystkich: 0, wiodacych: 0, neutralnych: 0, deficytow: 0 };
+  if(!obszar) return wynik;
+  let suma = 0;
+  for(const e of obszar.elementy){
+    if(e.testy) continue;
+    wynik.wszystkich++;
+    const v = Number(oceny[e.nazwa]);
+    if(v >= 1 && v <= 6){ suma += v; wynik.ocenionych++; }
+    for(const s of e.skladowe){
+      const znak = znaki[e.nazwa + '|' + s];
+      if(znak === 'W') wynik.wiodacych++;
+      else if(znak === 'N') wynik.neutralnych++;
+      else if(znak === 'D') wynik.deficytow++;
+    }
+  }
+  if(wynik.ocenionych) wynik.srednia = suma / wynik.ocenionych;
+  return wynik;
+}
+
+/** Średnia z elementów rozstrzygających o grze na pozycji z tego profilu. */
+function sredniaNaPozycjiProfilu(profil){
+  const poz = profilPoKodzie((profil && profil.profil) || '');
+  if(!poz) return null;
+  const oceny = (profil && profil.oceny) || {};
+  const wypelnione = poz.kluczowe.map(el=> Number(oceny[el])).filter(v=> v >= 1 && v <= 6);
+  return {
+    kod: poz.kod, nazwa: poz.nazwa, brakWArkuszu: poz.brakWArkuszu || '',
+    ile: wypelnione.length, wszystkich: poz.kluczowe.length,
+    srednia: wypelnione.length ? wypelnione.reduce((a,b)=>a+b,0) / wypelnione.length : null,
+    // Elementy kluczowe z najniższą oceną — od nich zaczyna się rozmowa o rozwoju.
+    najslabsze: poz.kluczowe.map(el=> ({ el, v: Number(oceny[el]) })).filter(x=> x.v >= 1 && x.v <= 6)
+      .sort((a,b)=> a.v - b.v).slice(0, 3),
+  };
+}
+
+/** Wszystkie składowe oznaczone jako deficyt — to lista do pracy, nie ozdoba. */
+function deficytyProfilu(profil){
+  const znaki = (profil && profil.znaki) || {};
+  const out = [];
+  for(const o of OBSZARY_PROFILU) for(const e of o.elementy) for(const s of e.skladowe){
+    if(znaki[e.nazwa + '|' + s] === 'D') out.push({ obszar: o.nazwa, element: e.nazwa, skladowa: s });
+  }
+  return out;
+}
+
+/** Panel w karcie zawodnika: najnowszy profil graficznie + przejście do starszych rund. */
+function profilKompetencjiPanelHtml(p){
+  const lista = profileZawodnika(p.id);
+  if(!lista.length) return `
+    <div class="card" style="margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div>
+          <h4 style="margin:0;color:var(--heading);">Profil kompetencji</h4>
+          <p class="note" style="margin:4px 0 0;">Pełna ocena: 5 obszarów, 42 elementy w skali 1–6 i 141 składowych
+            oznaczanych jako wiodące, neutralne albo deficyt. Do tego notowanie 1–20 — stan dziś i pułap.</p>
+        </div>
+        <button class="gold" data-action="profil-kompetencji" data-id="${p.id}">➕ Wypełnij profil</button>
+      </div>
+    </div>`;
+
+  const profil = lista[0];
+  const poz = sredniaNaPozycjiProfilu(profil);
+  const deficyty = deficytyProfilu(profil);
+  const stan = DRABINA_NOTOWANIA.find(d=> d.stopien === Number(profil.notowanieStan));
+  const pot = DRABINA_NOTOWANIA.find(d=> d.stopien === Number(profil.notowaniePotencjal));
+  const maxStopien = DRABINA_NOTOWANIA.length ? DRABINA_NOTOWANIA[0].stopien : 20;
+  const proc = (s)=> Math.max(0, Math.min(100, (Number(s) / maxStopien) * 100));
+
+  const obszary = OBSZARY_PROFILU.map(o=>{
+    const w = podsumowanieObszaruProfilu(profil, o.nazwa);
+    const szer = w.srednia != null ? (w.srednia / 6) * 100 : 0;
+    const barwa = w.srednia == null ? 'var(--border-strong)' : w.srednia >= 4.75 ? 'var(--good)' : w.srednia >= 3.75 ? 'var(--gold)' : 'var(--clay)';
+    return `<tr>
+      <td style="padding:5px 0;">${esc(o.nazwa)}</td>
+      <td style="padding:5px 8px;width:40%;"><span class="pk-slupek"><span style="width:${szer.toFixed(1)}%;background:${barwa};"></span></span></td>
+      <td style="padding:5px 0;text-align:right;font-weight:600;width:44px;">${w.srednia != null ? fmt1(w.srednia) : '—'}</td>
+      <td class="note" style="padding:5px 0 5px 10px;">${w.ocenionych}/${w.wszystkich} ocenionych${
+        w.wiodacych || w.deficytow ? ` &middot; ${w.wiodacych} wiodących${w.deficytow ? ` &middot; <b>${w.deficytow} deficytów</b>` : ''}` : ''}</td>
+    </tr>`;
+  }).join('');
+
+  return `
+  <div class="card" style="margin-bottom:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+      <div>
+        <h4 style="margin:0;color:var(--heading);">Profil kompetencji ${profil.profil ? `&middot; <span class="badge tab-chip">${esc(profil.profil)}</span>` : ''}</h4>
+        <p class="note" style="margin:4px 0 0;">${esc(profil.sezon||'')} ${esc((profil.runda||'').toLowerCase())}${
+          profil.zespol ? ' &middot; ' + esc(profil.zespol) : ''}${profil.trener ? ' &middot; ocenił: ' + esc(profil.trener) : ''}${
+          profil.alternatywaProfilu ? ' &middot; alternatywa: ' + esc(profil.alternatywaProfilu) : ''}</p>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        ${lista.length > 1 ? `<select data-action="profil-kompetencji-wybor" data-id="${p.id}" class="pk-wybor">
+          ${lista.map((z,i)=>`<option value="${esc(z.id)}"${i===0?' selected':''}>${esc(z.sezon||'?')} ${esc((z.runda||'').toLowerCase())}</option>`).join('')}
+        </select>` : ''}
+        <button class="secondary" data-action="profil-kompetencji" data-id="${p.id}" data-profil="${esc(profil.id)}">✎ Edytuj ocenę</button>
+        <button class="gold" data-action="profil-kompetencji" data-id="${p.id}">➕ Nowa runda</button>
+      </div>
+    </div>
+
+    ${poz ? `<div class="pk-pozycja">
+      <div>
+        <p class="note" style="margin:0;">Co decyduje na ${esc(poz.kod)} — ${esc(poz.nazwa.toLowerCase())}</p>
+        <p style="margin:2px 0 0;font-size:20px;font-weight:700;color:var(--heading);">${poz.srednia != null ? fmt1(poz.srednia) : '—'}
+          <span class="note" style="font-size:12px;font-weight:400;">z ${poz.ile}/${poz.wszystkich} elementów kluczowych</span></p>
+      </div>
+      ${poz.najslabsze.length ? `<div style="flex:1;min-width:220px;">
+        <p class="note" style="margin:0;">Najniżej z tego, co kluczowe</p>
+        <p style="margin:2px 0 0;font-size:13px;">${poz.najslabsze.map(x=>`${esc(x.el)} <b>${x.v}</b>`).join(' &middot; ')}</p>
+      </div>` : ''}
+      ${poz.brakWArkuszu ? `<p class="note" style="flex-basis:100%;margin:6px 0 0;color:var(--warn-ink);">⚠ ${esc(poz.brakWArkuszu)}</p>` : ''}
+    </div>` : `<p class="note" style="margin:10px 0 0;">Bez wskazanego profilu pozycyjnego nie da się policzyć średniej „na pozycji" — uzupełnij go w ocenie.</p>`}
+
+    ${stan || pot ? `<div class="pk-notowanie">
+      <div class="pk-drabina"><span class="pk-drabina-zakres" style="left:${proc(Math.min(profil.notowanieStan||0, profil.notowaniePotencjal||0))}%;width:${Math.abs(proc(profil.notowaniePotencjal||0)-proc(profil.notowanieStan||0)).toFixed(1)}%;"></span>
+        ${stan ? `<span class="pk-drabina-znacznik" style="left:${proc(stan.stopien)}%;"></span>` : ''}
+        ${pot ? `<span class="pk-drabina-znacznik pk-drabina-pot" style="left:${proc(pot.stopien)}%;"></span>` : ''}
+      </div>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:10px;">
+        <div style="flex:1;min-width:220px;"><p class="note" style="margin:0;">Stan faktyczny — <b>${stan ? stan.stopien : '—'}</b></p>
+          <p style="margin:2px 0 0;font-size:13px;">${esc(stan ? stan.opis : 'nie zaznaczono')}</p></div>
+        <div style="flex:1;min-width:220px;"><p class="note" style="margin:0;">Potencjał — <b>${pot ? pot.stopien : '—'}</b></p>
+          <p style="margin:2px 0 0;font-size:13px;">${esc(pot ? pot.opis : 'nie zaznaczono')}</p></div>
+      </div>
+    </div>` : ''}
+
+    <table class="pk-obszary"><tbody>${obszary}</tbody></table>
+
+    ${deficyty.length ? `<div class="pk-deficyty">
+      <p class="note" style="margin:0 0 4px;">Deficyty — ${deficyty.length} ${deficyty.length===1?'składowa':'składowych'} do pracy</p>
+      <p style="margin:0;font-size:13px;line-height:1.6;">${deficyty.map(d=>`<span class="pk-deficyt">${esc(d.element)}: ${esc(d.skladowa.toLowerCase())}</span>`).join(' ')}</p>
+    </div>` : ''}
+
+    ${profil.mocne || profil.doPoprawy ? `<div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;border-top:1px solid var(--border);padding-top:10px;">
+      ${profil.mocne ? `<div style="flex:1;min-width:240px;"><p class="note" style="margin:0 0 3px;color:var(--good);">Mocne strony</p>
+        <p style="margin:0;font-size:13px;line-height:1.6;">${esc(profil.mocne).replace(/\n/g,' &middot; ')}</p></div>` : ''}
+      ${profil.doPoprawy ? `<div style="flex:1;min-width:240px;"><p class="note" style="margin:0 0 3px;color:var(--warn-ink);">Co mogę robić lepiej</p>
+        <p style="margin:0;font-size:13px;line-height:1.6;">${esc(profil.doPoprawy).replace(/\n/g,' &middot; ')}</p></div>` : ''}
+    </div>` : ''}
+    ${profil.uwagi ? `<p class="note" style="margin:8px 0 0;">${esc(profil.uwagi)}</p>` : ''}
+  </div>`;
+}
+
+// FORMULARZ OCENY — 42 elementy i 141 składowych w jednym oknie.
+//
+// Wypełnianie musi być szybkie, więc ocena to sześć przycisków (nie lista rozwijana), a składowa
+// jeden przycisk przeskakujący wiodąca → neutralnie → deficyt → puste. Podsumowanie u góry liczy
+// się na bieżąco, żeby było widać, ile jeszcze zostało i jak wygląda średnia na pozycji.
+function openProfilKompetencjiModal(playerId, profilId){
+  const p = DB.players.find(x=>x.id===playerId);
+  if(!p) return;
+  const istniejacy = profilId ? profileKompetencji.find(z=> z.id === profilId) : null;
+  const stan = istniejacy
+    ? JSON.parse(JSON.stringify(istniejacy))
+    : pustyProfilKompetencji(p, currentScout || '', new Date().toISOString().slice(0,10));
+  stan.oceny = stan.oceny || {}; stan.znaki = stan.znaki || {};
+
+  const podpis = `${p.lastName||''} ${p.firstName||''}`.trim() + (p.clubId ? ' — '+clubName(p.clubId) : '');
+  const pole = (etykieta, id, wartosc, typ, dodatki)=>`
+    <div class="field-wrap" style="flex:1;min-width:150px;">
+      <label class="field" for="${id}">${etykieta}</label>
+      <input id="${id}" type="${typ||'text'}" value="${esc(wartosc == null ? '' : wartosc)}" ${dodatki||''}>
+    </div>`;
+
+  const obszarHtml = (o)=>{
+    const poz = profilPoKodzie(stan.profil || '');
+    const elementy = o.elementy.filter(e=> !e.testy).map(e=>{
+      const kluczowy = !!poz && poz.kluczowe.includes(e.nazwa);
+      const wybrana = Number(stan.oceny[e.nazwa]) || 0;
+      const oceny = [1,2,3,4,5,6].map(v=>`<button type="button" class="pk-o${wybrana===v?' pk-o-wyb':''}" data-el="${esc(e.nazwa)}" data-v="${v}"
+        title="${esc((LEGENDA_OCENY.find(l=>l.stopien===v)||{}).opis || '')}">${v}</button>`).join('');
+      const skladowe = e.skladowe.map(s=>{
+        const znak = stan.znaki[e.nazwa + '|' + s] || '';
+        return `<button type="button" class="pk-z pk-z-${znak||'brak'}" data-k="${esc(e.nazwa + '|' + s)}"
+          title="${esc(znak ? ZNAK_OPIS[znak] : 'nie oznaczone — kliknij: wiodąca, neutralnie, deficyt')}">${esc(s.toLowerCase())}</button>`;
+      }).join('');
+      return `<div class="pk-el">
+        <div class="pk-el-naglowek">
+          <span class="pk-el-nazwa">${esc(e.nazwa)}${kluczowy ? ` <span class="pk-kluczowy" title="Rozstrzyga o grze na ${esc(poz.kod)}">kluczowe</span>` : ''}</span>
+          <span class="pk-oceny">${oceny}</span>
+        </div>
+        ${e.opis ? `<p class="note pk-el-opis">${esc(e.opis)}</p>` : ''}
+        ${skladowe ? `<div class="pk-skladowe">${skladowe}</div>` : ''}
+      </div>`;
+    }).join('');
+    return `<details class="pk-obszar" open>
+      <summary><b>${esc(o.nazwa)}</b> <span class="note" data-podsum="${esc(o.nazwa)}"></span></summary>
+      ${elementy}
+      ${o.obligatoryjne ? `<p class="note" style="margin:6px 0 0;">Elementy obligatoryjne (bez oceny, warunek podstawowy): ${esc(o.obligatoryjne.join(' &middot; ')).replace(/&amp;middot;/g,'&middot;')}</p>` : ''}
+    </details>`;
+  };
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal modal-wide">
+      <h3>${istniejacy ? 'Profil kompetencji' : 'Nowy profil kompetencji'} — ${esc(podpis)}</h3>
+      <p class="note" style="margin-top:0;">Model z arkusza klubowego: 5 obszarów, 42 elementy w skali 1–6, 141 składowych.
+        Ocena elementu mówi o poziomie, składowa — co ten poziom tworzy. Nie trzeba wypełniać wszystkiego naraz: policzymy średnią z tego, co jest.</p>
+
+      <div class="pk-naglowek-pola">
+        ${pole('Sezon','pk-sezon',stan.sezon,'text','placeholder="2026/2027"')}
+        <div class="field-wrap" style="flex:1;min-width:150px;">
+          <label class="field" for="pk-runda">Runda</label>
+          <select id="pk-runda">${['JESIENNA','WIOSENNA'].map(r=>`<option value="${r}"${stan.runda===r?' selected':''}>${r.toLowerCase()}</option>`).join('')}</select>
+        </div>
+        ${pole('Zespół','pk-zespol',stan.zespol,'text','placeholder="U19"')}
+        ${pole('Poziom rozgrywkowy','pk-poziom',stan.poziomZespolu,'text','placeholder="CLJ U19 / A1 makroregion"')}
+      </div>
+      <div class="pk-naglowek-pola">
+        <div class="field-wrap" style="flex:1;min-width:180px;">
+          <label class="field" for="pk-profil">Profil pozycyjny</label>
+          <select id="pk-profil">
+            <option value="">— wskaż profil —</option>
+            ${PROFILE_POZYCJI.map(x=>`<option value="${esc(x.kod)}"${stan.profil===x.kod?' selected':''}>${esc(x.kod)} &middot; ${esc(x.nazwa)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field-wrap" style="flex:1;min-width:180px;">
+          <label class="field" for="pk-alternatywa">Alternatywa profilu</label>
+          <select id="pk-alternatywa">
+            <option value="">— brak —</option>
+            ${PROFILE_POZYCJI.map(x=>`<option value="${esc(x.kod)}"${stan.alternatywaProfilu===x.kod?' selected':''}>${esc(x.kod)} &middot; ${esc(x.nazwa)}</option>`).join('')}
+          </select>
+        </div>
+        ${pole('Trener oceniający','pk-trener',stan.trener)}
+        ${pole('Trener wspomagający','pk-trener2',stan.trenerWspomagajacy)}
+        ${pole('Data oceny','pk-data',stan.data,'date')}
+      </div>
+
+      <div class="pk-sekcja">
+        <p class="pk-sekcja-tytul">Notowanie 1–20 — stan dziś i pułap</p>
+        <div class="pk-naglowek-pola">
+          <div class="field-wrap" style="flex:1;min-width:260px;">
+            <label class="field" for="pk-stan">Stan faktyczny</label>
+            <select id="pk-stan"><option value="">— nie zaznaczono —</option>
+              ${DRABINA_NOTOWANIA.map(d=>`<option value="${d.stopien}"${Number(stan.notowanieStan)===d.stopien?' selected':''}>${d.stopien} &middot; ${esc(d.opis)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field-wrap" style="flex:1;min-width:260px;">
+            <label class="field" for="pk-potencjal">Potencjał</label>
+            <select id="pk-potencjal"><option value="">— nie zaznaczono —</option>
+              ${DRABINA_NOTOWANIA.map(d=>`<option value="${d.stopien}"${Number(stan.notowaniePotencjal)===d.stopien?' selected':''}>${d.stopien} &middot; ${esc(d.opis)}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="pk-sekcja">
+        <p class="pk-sekcja-tytul">Zawodnik i frekwencja</p>
+        <div class="pk-naglowek-pola">
+          ${pole('Wzrost (cm)','pk-wzrost',stan.wzrost,'number','min="120" max="220"')}
+          ${pole('Masa (kg)','pk-masa',stan.masa,'number','min="30" max="140"')}
+          ${pole('Noga','pk-noga',stan.noga,'text','placeholder="prawa / lewa / obunożny"')}
+          ${pole('Wiek biologiczny','pk-wiekbio',stan.wiekBiologiczny,'number','min="8" max="25" step="0.1"')}
+        </div>
+        <div class="pk-naglowek-pola">
+          ${pole('Jednostek treningowych','pk-jednostki',stan.jednostki,'number','min="0"')}
+          ${pole('Obecny','pk-obecny',stan.obecny,'number','min="0"')}
+          ${pole('Nieobecny uspr.','pk-uspr',stan.nieobecnyUspr,'number','min="0"')}
+          ${pole('Nieobecny nieuspr.','pk-nieuspr',stan.nieobecnyNieuspr,'number','min="0"')}
+          ${pole('Chory','pk-chory',stan.chory,'number','min="0"')}
+        </div>
+        <div class="field-wrap">
+          <label class="field" for="pk-somatotyp">Somatotyp</label>
+          <select id="pk-somatotyp"><option value="">— nie określono —</option>
+            ${['Mezomorfik (silny/umięsniony) - atletyczna budowa','Ektomorfik (wątły/szczupły) - smukła sylwetka','Endomorfik (krępy/tęgi) - masywna budowa']
+              .map(s=>`<option value="${esc(s)}"${stan.somatotyp===s?' selected':''}>${esc(s)}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+
+      <div class="pk-podsumowanie" id="pk-podsumowanie"></div>
+      ${OBSZARY_PROFILU.map(obszarHtml).join('')}
+
+      <div class="pk-sekcja">
+        <p class="pk-sekcja-tytul">Karta oceny — to, co zawodnik dostaje do ręki</p>
+        <div class="field-wrap">
+          <label class="field" for="pk-mocne">Mocne strony (jedna w wierszu)</label>
+          <textarea id="pk-mocne" rows="3" placeholder="wyprowadzanie piłki&#10;gra 1x1 zdobywając przestrzeń">${esc(stan.mocne||'')}</textarea>
+        </div>
+        <div class="field-wrap">
+          <label class="field" for="pk-lepiej">Co mogę robić lepiej (jedna w wierszu)</label>
+          <textarea id="pk-lepiej" rows="3" placeholder="passing na jeden kontakt&#10;gra kombinacyjna na małej przestrzeni">${esc(stan.doPoprawy||'')}</textarea>
+        </div>
+        <div class="field-wrap">
+          <label class="field" for="pk-uwagi">Uwagi</label>
+          <textarea id="pk-uwagi" rows="2">${esc(stan.uwagi||'')}</textarea>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        ${istniejacy ? `<button class="danger" id="pk-usun">Usuń ocenę</button>` : ''}
+        <button class="secondary" id="pk-anuluj">Anuluj</button>
+        <button class="gold" id="pk-zapisz">${istniejacy ? 'Zapisz zmiany' : 'Zapisz profil'}</button>
+      </div>
+    </div>`;
+
+  const zamknij = ()=> overlay.remove();
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) zamknij(); });
+  overlay.querySelector('#pk-anuluj').onclick = zamknij;
+
+  // PODSUMOWANIE NA BIEŻĄCO — ile wypełnione i jak wygląda średnia na wskazanej pozycji.
+  const odswiezPodsumowanie = ()=>{
+    for(const o of OBSZARY_PROFILU){
+      const w = podsumowanieObszaruProfilu(stan, o.nazwa);
+      const cel = overlay.querySelector(`[data-podsum="${o.nazwa.replace(/"/g,'\\"')}"]`);
+      if(cel) cel.textContent = `${w.ocenionych}/${w.wszystkich} ocenionych`
+        + (w.srednia != null ? ` · średnia ${fmt1(w.srednia)}` : '')
+        + (w.deficytow ? ` · ${w.deficytow} deficytów` : '');
+    }
+    const poz = sredniaNaPozycjiProfilu(stan);
+    const ile = elementyOceniane().filter(e=> Number(stan.oceny[e.nazwa]) >= 1).length;
+    const box = overlay.querySelector('#pk-podsumowanie');
+    box.innerHTML = `<span>Ocenione elementy: <b>${ile}</b> z ${elementyOceniane().length}</span>`
+      + (poz ? `<span>Na pozycji ${esc(poz.kod)}: <b>${poz.srednia != null ? fmt1(poz.srednia) : '—'}</b>
+          <span class="note">(${poz.ile}/${poz.wszystkich} kluczowych)</span></span>` : `<span class="note">Wskaż profil pozycyjny, żeby policzyć średnią „na pozycji".</span>`)
+      + `<span class="note">Deficytów: ${deficytyProfilu(stan).length}</span>`;
+  };
+
+  // Kliknięcie oceny 1–6. Ponowne kliknięcie tej samej wartości czyści pole — pomyłka nie
+  // zostaje w ocenie na zawsze tylko dlatego, że nie ma jak jej cofnąć.
+  overlay.querySelectorAll('.pk-o').forEach(b=> b.onclick = ()=>{
+    const el = b.dataset.el, v = Number(b.dataset.v);
+    const teraz = Number(stan.oceny[el]) || 0;
+    if(teraz === v) delete stan.oceny[el]; else stan.oceny[el] = v;
+    overlay.querySelectorAll(`.pk-o[data-el="${el.replace(/"/g,'\\"')}"]`).forEach(x=>
+      x.classList.toggle('pk-o-wyb', Number(x.dataset.v) === (Number(stan.oceny[el]) || 0)));
+    odswiezPodsumowanie();
+  });
+
+  // Składowa przeskakuje: puste → wiodąca → neutralnie → deficyt → puste.
+  overlay.querySelectorAll('.pk-z').forEach(b=> b.onclick = ()=>{
+    const k = b.dataset.k;
+    const teraz = stan.znaki[k] || '';
+    const nastepny = ZNAK_KOLEJNOSC[(ZNAK_KOLEJNOSC.indexOf(teraz) + 1) % ZNAK_KOLEJNOSC.length];
+    if(nastepny) stan.znaki[k] = nastepny; else delete stan.znaki[k];
+    b.className = 'pk-z pk-z-' + (nastepny || 'brak');
+    b.title = nastepny ? ZNAK_OPIS[nastepny] : 'nie oznaczone — kliknij: wiodąca, neutralnie, deficyt';
+    odswiezPodsumowanie();
+  });
+
+  // Zmiana profilu pozycyjnego przestawia, które elementy są oznaczone jako kluczowe.
+  (overlay.querySelector('#pk-profil') as HTMLSelectElement).onchange = (e)=>{
+    stan.profil = (e.target as HTMLSelectElement).value;
+    const poz = profilPoKodzie(stan.profil);
+    overlay.querySelectorAll('.pk-el').forEach(el=>{
+      const nazwa = (el.querySelector('.pk-el-nazwa') as HTMLElement).textContent.replace(/\s*kluczowe\s*$/, '').trim();
+      const znacznik = el.querySelector('.pk-kluczowy');
+      const ma = !!poz && poz.kluczowe.includes(nazwa);
+      if(ma && !znacznik){
+        const s = document.createElement('span');
+        s.className = 'pk-kluczowy'; s.textContent = 'kluczowe'; s.title = 'Rozstrzyga o grze na ' + poz.kod;
+        (el.querySelector('.pk-el-nazwa') as HTMLElement).appendChild(document.createTextNode(' '));
+        (el.querySelector('.pk-el-nazwa') as HTMLElement).appendChild(s);
+      } else if(!ma && znacznik) znacznik.remove();
+    });
+    odswiezPodsumowanie();
+  };
+  odswiezPodsumowanie();
+
+  if(istniejacy) (overlay.querySelector('#pk-usun') as HTMLElement).onclick = async ()=>{
+    if(!confirm('Usunąć tę ocenę? Nie da się jej odzyskać.')) return;
+    const kopia = profileKompetencji.slice();
+    profileKompetencji = profileKompetencji.filter(z=> z.id !== istniejacy.id);
+    const ok = await saveProfileKompetencji();
+    if(ok === false){ profileKompetencji = kopia; alert('Zapis się nie udał — ocena została.' + powodNieudanegoZapisu()); return; }
+    zamknij(); render(); pokazPotwierdzenie('Ocena usunięta.', 'ok');
+  };
+
+  overlay.querySelector('#pk-zapisz').onclick = async (e)=>{
+    const btn = e.currentTarget as HTMLButtonElement;
+    const txt = (id)=> ((overlay.querySelector('#'+id) as HTMLInputElement).value || '').trim();
+    const num = (id)=> { const v = txt(id); return v === '' ? null : Number(v); };
+    Object.assign(stan, {
+      sezon: txt('pk-sezon'), runda: txt('pk-runda'), zespol: txt('pk-zespol'), poziomZespolu: txt('pk-poziom'),
+      profil: txt('pk-profil'), alternatywaProfilu: txt('pk-alternatywa'),
+      trener: txt('pk-trener'), trenerWspomagajacy: txt('pk-trener2'), data: txt('pk-data'),
+      notowanieStan: num('pk-stan'), notowaniePotencjal: num('pk-potencjal'),
+      wzrost: num('pk-wzrost'), masa: num('pk-masa'), noga: txt('pk-noga'), somatotyp: txt('pk-somatotyp'),
+      wiekBiologiczny: num('pk-wiekbio'), jednostki: num('pk-jednostki'), obecny: num('pk-obecny'),
+      nieobecnyUspr: num('pk-uspr'), nieobecnyNieuspr: num('pk-nieuspr'), chory: num('pk-chory'),
+      mocne: (overlay.querySelector('#pk-mocne') as HTMLTextAreaElement).value.trim(),
+      doPoprawy: (overlay.querySelector('#pk-lepiej') as HTMLTextAreaElement).value.trim(),
+      uwagi: (overlay.querySelector('#pk-uwagi') as HTMLTextAreaElement).value.trim(),
+      zmienione: new Date().toISOString(),
+    });
+    if(!stan.sezon){ alert('Podaj sezon — bez niego nie da się ustawić ocen w kolejności.'); return; }
+
+    btn.disabled = true; btn.textContent = 'Zapisuję…';
+    const kopia = profileKompetencji.slice();
+    const i = profileKompetencji.findIndex(z=> z.id === stan.id);
+    if(i >= 0) profileKompetencji[i] = stan; else profileKompetencji.push(stan);
+    const ok = await saveProfileKompetencji();
+    if(ok === false){
+      profileKompetencji = kopia;
+      btn.disabled = false; btn.textContent = istniejacy ? 'Zapisz zmiany' : 'Zapisz profil';
+      alert('Nie udało się zapisać profilu.' + powodNieudanegoZapisu());
+      return;
+    }
+    zamknij(); render();
+    pokazPotwierdzenie(`Profil kompetencji zapisany (${esc(stan.sezon)} ${esc((stan.runda||'').toLowerCase())}).`, 'ok');
+  };
+
+  document.body.appendChild(overlay);
+}
+
 function viewPlayerDetail(id){
   const p = DB.players.find(x=>x.id===id);
   if(!p){ viewingPlayerId=null; return viewPlayers(); }
@@ -5394,6 +5870,7 @@ function viewPlayerDetail(id){
   return `
   <button class="secondary" data-action="back-players" style="margin-bottom:14px;">&larr; Wróć do listy</button>
   ${kartaZawodnikaHtml(p, a)}
+  ${profilKompetencjiPanelHtml(p)}
   <div class="toolbar">
     <div style="display:flex;align-items:center;gap:12px;">
       <label for="player-photo-input" style="cursor:pointer;display:inline-flex;" title="Kliknij, aby wgrać/zmienić zdjęcie">
@@ -14670,6 +15147,12 @@ function attachHandlers(){
     });
   }
   main.querySelectorAll('[data-action="zlec-analize"]').forEach(b=>b.onclick=()=>openZlecAnalizeModal(b.dataset.id));
+  // Profil kompetencji: przycisk bez data-profil zakłada nową rundę, z nim otwiera istniejącą ocenę.
+  main.querySelectorAll('[data-action="profil-kompetencji"]').forEach(b=>
+    b.onclick=()=>openProfilKompetencjiModal(b.dataset.id, b.dataset.profil || null));
+  // Wybór starszej rundy z listy — podgląd bez wchodzenia w edycję.
+  main.querySelectorAll('[data-action="profil-kompetencji-wybor"]').forEach(s=>
+    s.onchange=()=>openProfilKompetencjiModal(s.dataset.id, (s as HTMLSelectElement).value));
   main.querySelectorAll('[data-action="tm-odswiez"]').forEach(b=>b.onclick=()=>odswiezZTransfermarktu(b.dataset.id, b));
   main.querySelectorAll('[data-action="refresh-stats"]').forEach(b=>b.onclick=async()=>{
     const p = DB.players.find(x=>x.id===b.dataset.id);

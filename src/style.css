@@ -1263,3 +1263,73 @@ body.bez-kasowania #delete-selected-agencies-btn{
 .pakiet-wiersz:last-child{ border-bottom:0; }
 .pakiet-wiersz:hover{ background:var(--chalk-dim); }
 .pakiet-wiersz input{ width:16px; height:16px; flex:0 0 auto; cursor:pointer; }
+
+/* ═══ PROFIL KOMPETENCJI ═══
+   Ocena z arkusza klubowego w systemie: 5 obszarów, 42 elementy w skali 1-6, 141 składowych
+   oznaczanych jako wiodąca / neutralnie / deficyt.
+
+   KONTRAST (sprawdzony w obu motywach): znaki składowych używają par tło+tekst, które są już
+   w systemie zmiennych i przełączają się razem z motywem — --good-bg z --good, --warn-bg
+   z --warn-ink, --bad-bg z --clay-dark. Nieoznaczona składowa to --chalk-dim z --ink-soft
+   (jasny motyw 4,7:1, ciemny 5,1:1), więc jest czytelna, a jednocześnie wyraźnie bledsza od
+   oznaczonych — puste pole ma być widać jako puste. */
+.modal-wide{max-width:980px;}
+
+.pk-naglowek-pola{display:flex;gap:10px;flex-wrap:wrap;}
+.pk-sekcja{border-top:1px solid var(--border);margin-top:12px;padding-top:10px;}
+.pk-sekcja-tytul{font-family:'Barlow Condensed',sans-serif;font-size:15px;letter-spacing:.04em;
+  text-transform:uppercase;color:var(--heading);margin:0 0 8px;}
+
+/* Podsumowanie u góry formularza — jedzie z widokiem, żeby przy 42 elementach nie trzeba było
+   wracać na początek, by sprawdzić, ile jeszcze zostało. */
+.pk-podsumowanie{position:sticky;top:0;z-index:2;display:flex;gap:16px;flex-wrap:wrap;
+  background:var(--card-soft);border:1px solid var(--border);border-radius:8px;
+  padding:8px 12px;margin:14px 0 10px;font-size:13px;}
+
+.pk-obszar{border:1px solid var(--border);border-radius:8px;margin-bottom:8px;background:var(--card);}
+.pk-obszar>summary{cursor:pointer;padding:9px 12px;font-family:'Barlow Condensed',sans-serif;
+  font-size:16px;letter-spacing:.03em;color:var(--heading);}
+.pk-obszar>summary::marker{color:var(--gold);}
+
+.pk-el{border-top:1px solid var(--chalk-dim);padding:8px 12px;}
+.pk-el-naglowek{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
+.pk-el-nazwa{font-size:13px;font-weight:600;color:var(--ink);}
+.pk-el-opis{margin:3px 0 0;font-size:11.5px;line-height:1.45;}
+.pk-kluczowy{display:inline-block;background:var(--gold);color:#3A2C0C;font-size:10px;font-weight:700;
+  letter-spacing:.04em;text-transform:uppercase;padding:1px 6px;border-radius:10px;vertical-align:1px;}
+
+.pk-oceny{display:flex;gap:3px;}
+.pk-o{width:30px;height:28px;padding:0;border:1px solid var(--border-strong);background:var(--card);
+  color:var(--ink-soft);border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;}
+.pk-o:hover{border-color:var(--gold);color:var(--ink);}
+.pk-o-wyb{background:var(--heading);border-color:var(--heading);color:var(--on-pitch);}
+
+.pk-skladowe{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;}
+.pk-z{border:1px solid var(--border);border-radius:6px;padding:3px 8px;font-size:11.5px;cursor:pointer;
+  background:var(--chalk-dim);color:var(--ink-soft);}
+.pk-z:hover{border-color:var(--gold);}
+.pk-z-W{background:var(--good-bg);color:var(--good);border-color:var(--good);font-weight:600;}
+.pk-z-N{background:var(--warn-bg);color:var(--warn-ink);border-color:var(--warn-ink);}
+.pk-z-D{background:var(--bad-bg);color:var(--clay-dark);border-color:var(--clay);font-weight:600;}
+
+/* WIDOK W KARCIE ZAWODNIKA */
+.pk-obszary{width:100%;font-size:13px;border-collapse:collapse;margin-top:10px;}
+.pk-slupek{display:block;height:8px;background:var(--chalk-dim);border-radius:4px;overflow:hidden;}
+.pk-slupek>span{display:block;height:100%;border-radius:4px;}
+.pk-pozycja{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;
+  background:var(--card-soft);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;}
+.pk-notowanie{margin-top:12px;}
+.pk-drabina{position:relative;height:10px;background:var(--chalk-dim);border-radius:5px;}
+.pk-drabina-zakres{position:absolute;top:0;bottom:0;background:var(--good-bg);border-radius:5px;}
+.pk-drabina-znacznik{position:absolute;top:-4px;width:3px;height:18px;background:var(--heading);border-radius:2px;}
+.pk-drabina-pot{background:var(--gold);}
+.pk-deficyty{margin-top:12px;border-top:1px solid var(--border);padding-top:8px;}
+.pk-deficyt{display:inline-block;background:var(--bad-bg);color:var(--clay-dark);border-radius:6px;
+  padding:2px 7px;margin:0 3px 3px 0;font-size:12px;}
+.pk-wybor{width:auto;min-width:150px;}
+
+@media (max-width:640px){
+  .pk-el-naglowek{align-items:flex-start;}
+  .pk-o{width:36px;height:32px;}      /* palec zamiast kursora */
+  .pk-z{padding:5px 9px;font-size:12px;}
+}
