@@ -18,7 +18,12 @@ const sprawdz = (opis, warunek, dodatek = '') => {
 
 function szukaj(players, reports = [], observations = []) {
   const DB = { players, reports, observations };
-  return new Function('DB', 'importNorm', `${ciało[0]}; return znajdzDuplikaty();`)(DB, importNorm);
+  // Raporty i obserwacje zawodnika czytamy w aplikacji z indeksu (szybkość list) — w piaskownicy
+  // podstawiamy tę samą odpowiedź liczoną wprost, żeby test sprawdzał wybór duplikatu, a nie indeks.
+  const raportyGracza = (id) => reports.filter((r) => r.playerId === id);
+  const playerObs = (id) => observations.filter((o) => o.playerId === id);
+  return new Function('DB', 'importNorm', 'raportyGracza', 'playerObs',
+    `${ciało[0]}; return znajdzDuplikaty();`)(DB, importNorm, raportyGracza, playerObs);
 }
 
 // 1. Przypadek Marcinho: trzy karty, ten sam klub, to samo nazwisko.

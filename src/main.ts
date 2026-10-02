@@ -9310,7 +9310,7 @@ async function saveNewObservation(){
   }
 }
 
-function playerReports(playerId){ return DB.reports.filter(r=>r.playerId===playerId).sort((a,b)=>a.date.localeCompare(b.date)); }
+function playerReports(playerId){ return raportyGracza(playerId).slice().sort((a,b)=>String(a.date||'').localeCompare(String(b.date||''))); }
 
 // `krotko` — podpis na osi radaru. Pełne nazwy („Faza przejścia z ataku do obrony") nie mieszczą
 // się przy wierzchołku wykresu i zlewają się z sąsiednimi, więc na radarze i w PDF używamy skrótu.
@@ -13637,8 +13637,8 @@ function znajdzDuplikaty(){
     if(!wgKlucza.has(k)) wgKlucza.set(k, []);
     wgKlucza.get(k).push(p);
   });
-  const bogactwo = (p)=> DB.reports.filter(r=>r.playerId===p.id).length * 10
-    + DB.observations.filter(o=>o.playerId===p.id).length * 5
+  const bogactwo = (p)=> raportyGracza(p.id).length * 10
+    + playerObs(p.id).length * 5
     + (p.przebieg||[]).length
     + ['birthYear','position','height','foot','nationality','tmLink','photo'].filter(f=>String(p[f]||'').trim()).length;
   const pary = [];
