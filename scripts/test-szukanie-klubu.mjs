@@ -65,7 +65,10 @@ sprawdz('same spacje — filtra nie ma', filtrSzukaniaKlubu('   ') === null);
 
 console.log('\n6. Podpięcie');
 sprawdz('pole w widoku Kluby', /<input id="club-search"/.test(zrodlo));
-sprawdz('pole odświeża listę przy pisaniu', /poleSzukaniaKlubu\.oninput = \(\)=>\{ clubBrowse\.szukaj = poleSzukaniaKlubu\.value; render\(\); \}/.test(zrodlo));
+// Pisanie odświeża listę, ale Z ODROCZENIEM — przerysowanie na każdą literę zawieszało system
+// przy kilku tysiącach klubów (zgłoszenie 01.10.2026: „system wisi, nie wyszukuje").
+sprawdz('pole odświeża listę przy pisaniu, bez przerysowania na każdą literę',
+  /pisanieZOdroczeniem\(poleSzukaniaKlubu, \(v\)=>\{ clubBrowse\.szukaj = v; \}\);/.test(zrodlo));
 sprawdz('szukanie omija wybraną ligę i patrzy w całą bazę',
   /const szukanie = filtrSzukaniaKlubu\(clubBrowse\.szukaj\);\s*\n\s*if\(szukanie\) return list\.filter\(szukanie\);/.test(zrodlo));
 sprawdz('przycisk „Wyczyść" wraca do przeglądania wg lig', /data-action="club-search-clear"/.test(zrodlo) && /clubBrowse\.szukaj=""; render\(\);/.test(zrodlo));

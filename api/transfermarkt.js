@@ -123,7 +123,21 @@ export default async function handler(req, res) {
     return "";
   })();
 
-  const menadzer = wartoscPo(linie, /^Menad[żz]er/i);
+  // NAZWA AGENCJI — PEŁNA, NIE UCIĘTA WIELOKROPKIEM.
+  //
+  // Zgłoszenie (01.10.2026): „Buksa ma menedżera, co pokazuje Transfermarkt, a w systemie jest
+  // zaznaczone, że nie ma". Na stronie widnieje „HCM Sports ..." — Transfermarkt skraca długie
+  // nazwy w widocznym tekście, a PEŁNĄ trzyma w atrybucie title odnośnika do agencji:
+  //   <a href="/hcm-sports-management/beraterfirma/berater/2252">
+  //     <span class="cp" title="HCM Sports Management">HCM Sports ...</span></a>
+  // Czytanie samego tekstu dawało więc „HCM Sports ...", co w kartotece zakłada osobną agencję
+  // z wielokropkiem w nazwie — nigdy nie połączy się z prawdziwą. Bierzemy title, a tekst zostaje
+  // jako zapas (profile bez odnośnika, np. agent bez własnej strony).
+  const odnosnikAgencji = html.match(/<a[^>]+href="([^"]*\/beraterfirma\/berater\/\d+)"[^>]*>([\s\S]{0,400}?)<\/a>/i);
+  const menadzerLink = odnosnikAgencji ? "https://www.transfermarkt.pl" + odnosnikAgencji[1] : "";
+  const zTytulu = odnosnikAgencji ? odsloniec((odnosnikAgencji[2].match(/title="([^"]+)"/i) || [])[1] || "") : "";
+  const zTekstu = wartoscPo(linie, /^Menad[żz]er|^Mened[żz]er|^Doradc|^Agent/i);
+  const menadzer = (zTytulu || zTekstu).replace(/[\s.…]+$/u, "").trim();
   const wartoscM = html.match(/class="[^"]*data-header__market-value-wrapper[^"]*"[^>]*>([\s\S]{0,200}?)<\/a>/i);
   const wartoscRynkowa = wartoscM
     ? odsloniec(wartoscM[1].replace(/<[^>]+>/g, " ")).replace(/Ostatnia zmiana.*$/i, "").trim()
@@ -141,6 +155,7 @@ export default async function handler(req, res) {
     pozycjaPelna: pozycjaTekst,
     noga,
     menadzer: menadzer && !/^-$/.test(menadzer) ? menadzer : "",
+    menadzerLink,
     klub: wartoscPo(linie, /^Obecny klub:?$/i),
     wDruzynieOd: dataZTekstu(wartoscPo(linie, /^W dru[żz]ynie od:?$/i)),
     umowaDo: dataZTekstu(wartoscPo(linie, /^Umowa do:?$/i)),

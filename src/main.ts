@@ -1809,6 +1809,31 @@ function odswiezPrzelacznikMotywu(){
   };
 }
 
+// PISANIE NIE MOŻE PRZEBUDOWYWAĆ CAŁEJ LISTY NA KAŻDĄ LITERĘ.
+//
+// Zgłoszenie (01.10.2026): „jeśli w wyszukiwarce wpisujemy nazwisko, system wisi, nie wyszukuje,
+// dopiero po chwili się odwiesza". Każde naciśnięcie klawisza wywoływało pełne przerysowanie
+// widoku — a między jedną literą a drugą jest 60–120 ms, więc przeglądarka nie zdążyła skończyć
+// poprzedniego, zanim dostawała następne. Wartość zapamiętujemy OD RAZU (nic nie ginie), a widok
+// przerysowujemy dopiero, gdy pisanie na moment przystanie.
+//
+// 160 ms to próg wyczuwalny jako „od razu", a jednocześnie dłuższy niż przerwa między literami
+// przy szybkim pisaniu — dzięki temu wpisanie całego nazwiska to JEDNO przerysowanie, nie osiem.
+function pisanieZOdroczeniem(pole, zapamietaj, opoznienie){
+  if(!pole) return;
+  let czekajacy = null;
+  pole.oninput = ()=>{
+    zapamietaj(pole.value);
+    if(czekajacy) clearTimeout(czekajacy);
+    czekajacy = setTimeout(()=>{
+      czekajacy = null;
+      const sel = pole.id ? '#' + pole.id : null;
+      if(sel) zachowajKursorPoPrzerysowaniu(document, sel, render);
+      else render();
+    }, opoznienie || 160);
+  };
+}
+
 function zachowajKursorPoPrzerysowaniu(kontener, selektor, przerysuj){
   const stare = kontener.querySelector(selektor);
   const poz = (stare && stare.selectionStart != null) ? stare.selectionStart : null;
@@ -5108,6 +5133,10 @@ function naglowekSort(kolumna, etykieta, styl){
   return `<th style="${styl||''}">${zetonSort(kolumna, etykieta)}</th>`;
 }
 
+// „Pokaż wszystkich" z listy zawodników — świadoma decyzja skauta, że chce poczekać na komplet.
+// Wraca do porcji przy każdej zmianie filtra, żeby jedno kliknięcie nie spowalniało całej pracy.
+let pokazWszystkichZawodnikow = false;
+
 function viewPlayers(){
   if(viewingPlayerId) return viewPlayerDetail(viewingPlayerId);
 
@@ -5148,6 +5177,18 @@ function viewPlayers(){
   if(czyKlient()) list = list.filter(maDostepDoZawodnika);
   // Lista wg alfabetu (nazwisko, potem imię) — nie wg klubu/kolejności importu.
   list.sort(porownajZawodnikow);
+
+  // ILE WIERSZY RYSUJEMY NARAZ.
+  //
+  // Zgłoszenie (01.10.2026): „jeśli próbujemy wybrać dany klub albo ligę, to bardzo długo trzeba
+  // czekać". Przy kilku tysiącach zawodników sama tabela to kilka megabajtów kodu HTML, który
+  // przeglądarka musi złożyć przy każdym wejściu — i to jest to czekanie, niezależnie od tego, jak
+  // szybko policzymy dane. Pokazujemy więc pierwszą porcję, a resztę na życzenie: przy filtrowaniu
+  // (klub, liga, rocznik, szukanie) wyniki i tak mieszczą się poniżej progu, więc nic nie znika.
+  const PORCJA_WIERSZY = 300;
+  const wszystkich = list.length;
+  const uciete = !pokazWszystkichZawodnikow && wszystkich > PORCJA_WIERSZY;
+  if(uciete) list = list.slice(0, PORCJA_WIERSZY);
 
   const rows = list.map((p, idx)=>{
     const a = playerAvg(p.id);
@@ -5247,7 +5288,12 @@ function viewPlayers(){
       <thead><tr><th style="width:24px;"><input type="checkbox" class="header-checkbox"></th><th style="width:34px;text-align:right;" title="Liczba porządkowa">Lp.</th><th>${zetonSort('nazwisko','Zawodnik')} ${zetonSort('rocznik','rocznik')}</th>${naglowekSort('pozycja','Pozycja')}${naglowekSort('klub','Klub / region / liga')}${naglowekSort('status','Status')}<th style="text-align:center;" title="Czy zawodnik ma menedżera — kliknij, aby przełączyć Tak/Nie">Agent</th>${naglowekSort('mecze','Mecze','text-align:right;')}<th style="text-align:right;">${zetonSort('minuty','Minuty')} ${zetonSort('minutyWazone','waż.')}</th>${naglowekSort('gole','Gole','text-align:right;')}${naglowekSort('ocena','Śr. ocena','text-align:right;')}${naglowekSort('obsrap','Obs. / rap.','text-align:right;')}<th></th></tr></thead>
       <tbody>${rows || `<tr><td colspan="13"><div class="empty">Brak zawodników spełniających filtry.</div></td></tr>`}</tbody>
     </table>
-  </div>`;
+  </div>
+  ${uciete ? `<div class="card" style="text-align:center;margin-top:10px;">
+    <p class="note" style="margin:0 0 8px;">Pokazuję <b>${PORCJA_WIERSZY}</b> z <b>${wszystkich}</b> zawodników — tyle rysuje się od razu.
+      Zawęź filtrem (klub, liga, rocznik) albo wpisz nazwisko w wyszukiwarce, a zobaczysz wszystkich pasujących.</p>
+    <button class="secondary" data-action="pokaz-wszystkich-zawodnikow">Pokaż wszystkich (${wszystkich})</button>
+  </div>` : ''}`;
 }
 
 // Przełącznik „ma menedżera" wprost na liście — dla agencji to informacja pierwszego rzutu oka,
@@ -15327,7 +15373,7 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="agent-import"]').forEach(b=>b.onclick=()=>openAgentImportModal());
   main.querySelectorAll('[data-action="agencies-import"]').forEach(b=>b.onclick=()=>openAgenciesImportModal());
   const agencySearchInput = main.querySelector('#agency-search');
-  if(agencySearchInput) agencySearchInput.oninput = ()=>{ agencySearchQuery = agencySearchInput.value; render(); };
+  pisanieZOdroczeniem(agencySearchInput, (v)=>{ agencySearchQuery = v; });
   const agencySortSelect = main.querySelector('#agency-sort');
   if(agencySortSelect) agencySortSelect.onchange = ()=>{ agencySort = agencySortSelect.value; render(); };
   main.querySelectorAll('[data-action="agency-squad"]').forEach(b=>b.onclick=()=>openAgencySquadModal(b.dataset.id));
@@ -15393,6 +15439,13 @@ function attachHandlers(){
   });
   main.querySelectorAll('[data-action="back-agencies"]').forEach(b=>b.onclick=()=>cofnijWidok(()=>{ viewingAgencyId = null; }));
   main.querySelectorAll('[data-action="add-agency"]').forEach(b=>b.onclick=()=>{ if(!tylkoAdmin('Zakładanie i zmiana agencji.')) return; openAgencyModal(null); });
+  main.querySelectorAll('[data-action="pokaz-wszystkich-zawodnikow"]').forEach(b=>b.onclick=()=>{
+    pokazWszystkichZawodnikow = true;
+    b.disabled = true; b.textContent = 'Rysuję całą listę…';
+    // Oddajemy przeglądarce jedną klatkę, żeby zdążyła pokazać napis na przycisku, zanim
+    // zabierze się za kilka tysięcy wierszy.
+    setTimeout(()=> render(), 30);
+  });
   main.querySelectorAll('[data-action="agenci-hurt"]').forEach(b=>b.onclick=()=>{
     if(!tylkoAdmin('Zbiorcze uzupełnianie menedżerów.')) return;
     uzupelnijMenedzerowHurt();
@@ -16059,7 +16112,7 @@ function attachHandlers(){
     catch(e){ console.error(e); alert('Nie udało się wygenerować pliku: ' + (e.message||e)); }
   });
   const contactSearchInput = main.querySelector('#contact-search');
-  if(contactSearchInput) contactSearchInput.oninput = ()=>{ contactSearchQuery = contactSearchInput.value; render(); };
+  pisanieZOdroczeniem(contactSearchInput, (v)=>{ contactSearchQuery = v; });
   // Przełączenie Polska / Europa zeruje wyszukiwanie: fraza z jednej bazy w drugiej zwykle nic
   // nie znajduje, a pusta lista po zmianie zakładki wygląda jak brak danych.
   main.querySelectorAll('[data-action="klub-pl-edytuj"]').forEach(b=>b.onclick=()=>openKlubPLEdycja((b as HTMLElement).dataset.klub));
@@ -16070,7 +16123,7 @@ function attachHandlers(){
     render();
   });
   const monitoringSearchInput = main.querySelector('#monitoring-search');
-  if(monitoringSearchInput) monitoringSearchInput.oninput = ()=>{ monitoringSearchQuery = monitoringSearchInput.value; render(); };
+  pisanieZOdroczeniem(monitoringSearchInput, (v)=>{ monitoringSearchQuery = v; });
   const skanerL = document.getElementById('skaner-liga');
   if(skanerL) skanerL.onchange = ()=>{ skanerLiga = (skanerL as any).value; render(); };
   const skanerM = document.getElementById('skaner-minuty');
@@ -16368,7 +16421,7 @@ function attachHandlers(){
     clubBrowse.top = b.dataset.val; clubBrowse.group=""; clubBrowse.szukaj=""; render();
   });
   const poleSzukaniaKlubu = main.querySelector('#club-search') as HTMLInputElement | null;
-  if(poleSzukaniaKlubu) poleSzukaniaKlubu.oninput = ()=>{ clubBrowse.szukaj = poleSzukaniaKlubu.value; render(); };
+  pisanieZOdroczeniem(poleSzukaniaKlubu, (v)=>{ clubBrowse.szukaj = v; });
   main.querySelectorAll('[data-action="club-search-clear"]').forEach(b=>b.onclick=()=>{ clubBrowse.szukaj=""; render(); });
   main.querySelectorAll('.league-logo-input').forEach(inp=>inp.onchange = async ()=>{
     const file = inp.files[0];
@@ -17004,16 +17057,16 @@ function attachHandlers(){
   });
 
   // filters
-  const fr = document.getElementById('f-region'); if(fr) fr.onchange=()=>{playerFilters.region=fr.value; render();};
-  const fl = document.getElementById('f-league'); if(fl) fl.onchange=()=>{playerFilters.league=fl.value; render();};
-  const fp = document.getElementById('f-position'); if(fp) fp.onchange=()=>{playerFilters.position=fp.value; render();};
-  const fs = document.getElementById('f-status'); if(fs) fs.onchange=()=>{playerFilters.status=fs.value; render();};
-  const fby = document.getElementById('f-birthyear'); if(fby) fby.oninput=()=>{playerFilters.birthYear=fby.value.replace(/\D/g,''); render();};
+  const fr = document.getElementById('f-region'); if(fr) fr.onchange=()=>{playerFilters.region=fr.value; pokazWszystkichZawodnikow=false; render();};
+  const fl = document.getElementById('f-league'); if(fl) fl.onchange=()=>{playerFilters.league=fl.value; pokazWszystkichZawodnikow=false; render();};
+  const fp = document.getElementById('f-position'); if(fp) fp.onchange=()=>{playerFilters.position=fp.value; pokazWszystkichZawodnikow=false; render();};
+  const fs = document.getElementById('f-status'); if(fs) fs.onchange=()=>{playerFilters.status=fs.value; pokazWszystkichZawodnikow=false; render();};
+  pisanieZOdroczeniem(document.getElementById('f-birthyear'), (v)=>{ playerFilters.birthYear = String(v).replace(/\D/g,''); pokazWszystkichZawodnikow = false; });
   const fag = document.getElementById('f-agent'); if(fag) fag.onchange=()=>{playerFilters.agent=fag.value; render();};
-  const fq = document.getElementById('f-search'); if(fq) fq.oninput=()=>{playerFilters.search=fq.value; render();};
+  pisanieZOdroczeniem(document.getElementById('f-search'), (v)=>{ playerFilters.search = v; pokazWszystkichZawodnikow = false; });
   // Przerysowanie zabiera ognisko z pola, więc po każdej literze trzeba by w nie klikać na nowo.
   const fcl = document.getElementById('f-club');
-  if(fcl) fcl.oninput=()=>{ playerFilters.club=fcl.value; zachowajKursorPoPrzerysowaniu(document, '#f-club', render); };
+  pisanieZOdroczeniem(fcl, (v)=>{ playerFilters.club = v; pokazWszystkichZawodnikow = false; });
 
   // settings add/remove
   main.querySelectorAll('[data-action="add-setting"]').forEach(b=>b.onclick=async()=>{
@@ -21777,7 +21830,9 @@ async function uzupelnijMenedzerowHurt(){
         if(menedzer){
           p.hasAgent = true;
           p.agencyName = menedzer;
-          const agencja = znajdzLubUtworzAgencje(menedzer, '');
+          // Odnośnik do agencji na TM jest pewniejszy niż nazwa: po nim łączymy wpisy nawet wtedy,
+          // gdy nazwa zapisana jest inaczej („HCM Sports Management" / „HCM Sports").
+          const agencja = znajdzLubUtworzAgencje(menedzer, String(prof.menadzerLink || ''));
           if(agencja){
             if(p.agencyId !== agencja.id) p.agentId = '';   // zmiana agencji unieważnia starego opiekuna
             p.agencyId = agencja.id;

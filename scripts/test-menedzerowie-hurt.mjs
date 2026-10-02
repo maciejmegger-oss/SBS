@@ -72,8 +72,11 @@ sprawdz("adres profilu z kartoteki, a gdy go nie ma — szukanie po nazwisku",
   /let adres = String\(p\.profileTm \|\| ''\)\.trim\(\);[\s\S]{0,200}api\/tm-szukaj/.test(f));
 sprawdz("znaleziony adres zapamiętany w kartotece (następnym razem bez szukania)",
   /p\.profileTm = adres;/.test(f));
-sprawdz("menedżer wiązany z agencją, zmiana agencji zeruje opiekuna",
-  /znajdzLubUtworzAgencje\(menedzer, ''\)/.test(f) && /if\(p\.agencyId !== agencja\.id\) p\.agentId = '';/.test(f));
+sprawdz("menedżer wiązany z agencją po odnośniku z TM (pewniejszy niż nazwa)",
+  /znajdzLubUtworzAgencje\(menedzer, String\(prof\.menadzerLink \|\| ''\)\)/.test(f)
+  && /if\(p\.agencyId !== agencja\.id\) p\.agentId = '';/.test(f));
+sprawdz("pełna nazwa agencji, nie ucięta wielokropkiem przez Transfermarkt",
+  /const zTytulu =[\s\S]{0,120}title="\(\[\^"\]\+\)"/.test(fs.readFileSync("api/transfermarkt.js", "utf8")));
 sprawdz("data i źródło sprawdzenia zapisane", /p\.agentCheckedAt = dzis;\s*\n\s*p\.agentSource = 'Transfermarkt \(profil\)';/.test(f));
 sprawdz("zapis do bazy co 20 zawodników — przerwanie nie kasuje pracy",
   /if\(odOstatniegoZapisu >= 20\) await zapisz\(\);/.test(f));

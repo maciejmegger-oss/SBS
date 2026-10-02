@@ -149,5 +149,36 @@ console.log('\n4. Gorące miejsca nie wracają do przeszukiwania całej bazy');
     /if\(!rozbijNazweKlubu\.pamiec\) rozbijNazweKlubu\.pamiec = new Map\(\);/.test(zrodlo));
 }
 
+console.log('\n5. Pisanie i wielkość listy — to, co użytkownik czuje jako „system wisi"');
+// Zgłoszenie (01.10.2026): „jeśli w wyszukiwarce wpisujemy nazwisko, system wisi, nie wyszukuje,
+// dopiero po chwili się odwiesza" oraz „jeśli próbujemy wybrać dany klub albo ligę, bardzo długo
+// trzeba czekać". Dwie przyczyny: pełne przerysowanie na każdą literę i kilka tysięcy wierszy
+// składanych naraz.
+{
+  sprawdz('pisanie nie przerysowuje widoku na każdą literę',
+    /function pisanieZOdroczeniem\(pole, zapamietaj, opoznienie\)\{/.test(zrodlo));
+  sprawdz('wpisana wartość zapamiętuje się OD RAZU — nic nie ginie',
+    /pole\.oninput = \(\)=>\{\s*\n\s*zapamietaj\(pole\.value\);/.test(zrodlo));
+  sprawdz('poprzednie czekające przerysowanie jest odwoływane',
+    /if\(czekajacy\) clearTimeout\(czekajacy\);/.test(zrodlo));
+  sprawdz('kursor zostaje w polu po przerysowaniu',
+    /zachowajKursorPoPrzerysowaniu\(document, sel, render\)/.test(zrodlo));
+  const szukajki = ['f-search', 'f-club', 'f-birthyear'];
+  const nieodroczone = szukajki.filter(id => new RegExp("getElementById\\('" + id + "'\\)[^\\n]*oninput=").test(zrodlo));
+  sprawdz('wyszukiwarka zawodników, pole klubu i rocznik — wszystkie odroczone', !nieodroczone.length, nieodroczone.join(', '));
+  sprawdz('to samo w Monitoringu, Kontaktach, Menedżerach i Klubach',
+    (zrodlo.match(/pisanieZOdroczeniem\(/g) || []).length >= 7,
+    String((zrodlo.match(/pisanieZOdroczeniem\(/g) || []).length));
+
+  sprawdz('lista rysuje najpierw porcję, nie kilka tysięcy wierszy naraz',
+    /const PORCJA_WIERSZY = 300;/.test(zrodlo) && /if\(uciete\) list = list\.slice\(0, PORCJA_WIERSZY\);/.test(zrodlo));
+  sprawdz('widać, ile z ilu pokazujemy, i da się zobaczyć wszystkich',
+    /Pokazuję <b>\$\{PORCJA_WIERSZY\}<\/b> z <b>\$\{wszystkich\}<\/b>/.test(zrodlo)
+    && /data-action="pokaz-wszystkich-zawodnikow"/.test(zrodlo));
+  sprawdz('zmiana filtra wraca do porcji — jedno kliknięcie nie spowalnia całej pracy',
+    (zrodlo.match(/pokazWszystkichZawodnikow = false/g) || []).length >= 4,
+    String((zrodlo.match(/pokazWszystkichZawodnikow = false/g) || []).length));
+}
+
 console.log(bledy ? `\n${bledy} BŁĘDÓW` : '\nWszystko przeszło.');
 process.exit(bledy ? 1 : 0);
