@@ -4433,6 +4433,9 @@ function render(){
   const pageKey = currentView + '|' + (viewingPlayerId||'') + '|' + (viewingClubId||'');
   const pageChanged = pageKey !== lastRenderedPageKey;
   lastRenderedPageKey = pageKey;
+  // Wejście do innej zakładki wraca do porcji wierszy. „Pokaż wszystkie" to decyzja na TEN widok
+  // i tę chwilę — gdyby została na stałe, każde następne otwarcie zakładki znów by się wlokło.
+  if(pageChanged){ pokazCalaListe = {}; pokazWszystkichZawodnikow = false; }
   // Zachowaj pozycję kursora w polu tekstowym, jeśli jakieś jest aktywne — pełne przebudowanie innerHTML
   // niszczy i tworzy elementy na nowo, co bez tego resetowałoby kursor na koniec tekstu przy każdym znaku.
   const active = document.activeElement;
@@ -5136,6 +5139,29 @@ function naglowekSort(kolumna, etykieta, styl){
 // „Pokaż wszystkich" z listy zawodników — świadoma decyzja skauta, że chce poczekać na komplet.
 // Wraca do porcji przy każdej zmianie filtra, żeby jedno kliknięcie nie spowalniało całej pracy.
 let pokazWszystkichZawodnikow = false;
+
+// PORCJA WIERSZY DLA POZOSTAŁYCH DŁUGICH LIST (Kluby, Radar, Talent, Kontakty).
+//
+// Zmierzone na prawdziwej bazie (600 klubów, 16 671 zawodników) w przeglądarce klienta:
+//   Kontakty 913 ms · Zawodnicy 579 ms · Radar 573 ms (28 889 elementów!) · Talent 554 ms ·
+//   Kluby 541 ms · Monitoring 298 ms — a Dashboard, w którym wierszy nie ma, 20 ms.
+// Czas idzie więc wprost za liczbą wierszy: to nie liczenie danych jest wolne, tylko składanie
+// i wstawianie dziesiątek tysięcy elementów HTML. Rysujemy pierwszą porcję, resztę na życzenie.
+const PORCJA_LISTY = 300;
+let pokazCalaListe = {};
+function porcjaListy(lista, klucz){
+  const wszystkich = lista.length;
+  const uciete = !pokazCalaListe[klucz] && wszystkich > PORCJA_LISTY;
+  return { widoczne: uciete ? lista.slice(0, PORCJA_LISTY) : lista, wszystkich, uciete, klucz };
+}
+function stopkaListy(p, co){
+  if(!p || !p.uciete) return '';
+  return `<div class="card" style="text-align:center;margin-top:10px;">
+    <p class="note" style="margin:0 0 8px;">Pokazuję <b>${PORCJA_LISTY}</b> z <b>${p.wszystkich}</b> ${esc(co)} — tyle rysuje się od razu.
+      Zawęź filtrem albo wyszukiwarką, a zobaczysz wszystkie pasujące.</p>
+    <button class="secondary" data-action="pokaz-cala-liste" data-klucz="${esc(p.klucz)}">Pokaż wszystkie (${p.wszystkich})</button>
+  </div>`;
+}
 
 function viewPlayers(){
   if(viewingPlayerId) return viewPlayerDetail(viewingPlayerId);
@@ -6623,7 +6649,8 @@ function viewClubs(){
   const dorobekKlubow = new Map(list.map(c=>[c.id, meczeKlubu(c.id)]));
   const najwiecejMeczow = Math.max(0, ...[...dorobekKlubow.values()].map(x=>x.rozegrane));
 
-  const rows = list.map(c=>{
+  const porcjaKlubow = porcjaListy(list, 'kluby');
+  const rows = porcjaKlubow.widoczne.map(c=>{
     const count = zawodnicyKlubu(c.id).length;
     const d = dorobekKlubow.get(c.id) || { rozegrane: 0, wgrane: 0, punkty: null };
     // Brakiem jest tylko to, co DA SIĘ zebrać. Kolejka bez opublikowanych protokołów nie jest
@@ -6893,7 +6920,8 @@ function viewClubs(){
         ? `Żaden klub nie pasuje do „${esc(clubBrowse.szukaj)}". Spróbuj krótszej frazy albo samego miasta — szukam też po ZPN i lidze.`
         : 'Brak klubów w tym widoku.'}</div></td></tr>`}</tbody>
     </table>
-  </div>`;
+  </div>
+  ${stopkaListy(porcjaKlubow, 'klubów')}`;
 }
 
 // OFICJALNE SKŁADY CZTERECH GRUP III LIGI, SEZON 2026/2027 — spisane z tabel 90minut.
@@ -14497,7 +14525,8 @@ function viewRadarMlodziezy(){
   const czolowka = new Set(nowi.filter(x=>x.minuty > 0).slice()
     .sort((a,b)=> b.minuty - a.minuty).slice(0, 3).map(x=>x.p.id));
 
-  const wiersze = nowi.map(x=>{
+  const porcjaRadaru = porcjaListy(nowi, 'radar');
+  const wiersze = porcjaRadaru.widoczne.map(x=>{
     const p = x.p;
     const klub = DB.clubs.find(c=>c.id === p.clubId);
     const ograny = x.minuty >= PROG_OGRANEGO;
@@ -14529,6 +14558,7 @@ function viewRadarMlodziezy(){
       <tbody>${wiersze}</tbody>
     </table>
   </div>
+  ${stopkaListy(porcjaRadaru, 'zawodników na radarze')}
   <p class="note" style="margin-top:8px;">Kliknij wiersz, aby otworzyć profil. „Oznacz jako przejrzanych"
     czyści listę — zawodnicy zostają w bazie, znikają tylko z radaru.
     ${ogranych ? `<strong>Złotem</strong> zaznaczonych ${ogranych} zawodnik(ów) z co najmniej ${PROG_OGRANEGO} minutami — to trzy pełne mecze, ten sam próg, który wpuszcza na mapę pozycji. Znak ▲ mają trzej z największą liczbą minut.` : ''}</p>`;
@@ -15439,6 +15469,11 @@ function attachHandlers(){
   });
   main.querySelectorAll('[data-action="back-agencies"]').forEach(b=>b.onclick=()=>cofnijWidok(()=>{ viewingAgencyId = null; }));
   main.querySelectorAll('[data-action="add-agency"]').forEach(b=>b.onclick=()=>{ if(!tylkoAdmin('Zakładanie i zmiana agencji.')) return; openAgencyModal(null); });
+  main.querySelectorAll('[data-action="pokaz-cala-liste"]').forEach(b=>b.onclick=()=>{
+    pokazCalaListe[b.dataset.klucz] = true;
+    b.disabled = true; b.textContent = 'Rysuję całą listę…';
+    setTimeout(()=> render(), 30);
+  });
   main.querySelectorAll('[data-action="pokaz-wszystkich-zawodnikow"]').forEach(b=>b.onclick=()=>{
     pokazWszystkichZawodnikow = true;
     b.disabled = true; b.textContent = 'Rysuję całą listę…';
