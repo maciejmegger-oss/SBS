@@ -21759,7 +21759,26 @@ function openAgenciesImportModal(){
 //   * nie dotyka zawodników, którzy menedżera już mają — ich wpisy są decyzją skauta.
 const LIGI_DO_MENEDZEROW = /^(Ekstraklasa|I liga|II liga|III liga)\b/i;
 
+// „Bez agenta" na Transfermarkcie to zdanie, nie nazwa firmy. Zanim ruszymy dalej, prostujemy
+// wpisy, które trafiły do kartoteki jako agencja o takiej nazwie — zawodnik był przez to
+// oznaczony jako reprezentowany, czyli odwrotnie niż jest naprawdę.
+const NAZWA_TO_BRAK_AGENTA = /^(bez agenta|bez agencji|brak|brak danych|nieznany|ohne berater|without agent|no agent|k\.?\s?a\.?|[-–—])$/i;
+function naprawBlednieWpisanychAgentow(){
+  let poprawionych = 0;
+  for(const p of DB.players){
+    if(!p.hasAgent) continue;
+    if(!NAZWA_TO_BRAK_AGENTA.test(String(p.agencyName || '').trim())) continue;
+    p.hasAgent = false;
+    p.agencyName = '';
+    p.agencyId = '';
+    p.agentId = '';
+    poprawionych++;
+  }
+  return poprawionych;
+}
+
 function zawodnicyDoUzupelnieniaMenedzera(){
+  naprawBlednieWpisanychAgentow();
   return DB.players.filter(p=> !p.hasAgent && LIGI_DO_MENEDZEROW.test(String(ligaZawodnika(p) || '')));
 }
 
@@ -21861,7 +21880,10 @@ async function uzupelnijMenedzerowHurt(){
 
         p.agentCheckedAt = dzis;
         p.agentSource = 'Transfermarkt (profil)';
-        const menedzer = String(prof.menadzer || '').trim();
+        const odczytana = String(prof.menadzer || '').trim();
+        // Druga zapora na „Bez agenta": nawet gdyby serwis zwrócił taki tekst, do kartoteki
+        // nie wejdzie jako agencja.
+        const menedzer = NAZWA_TO_BRAK_AGENTA.test(odczytana) ? '' : odczytana;
         if(menedzer){
           p.hasAgent = true;
           p.agencyName = menedzer;

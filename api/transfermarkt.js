@@ -137,7 +137,12 @@ export default async function handler(req, res) {
   const menadzerLink = odnosnikAgencji ? "https://www.transfermarkt.pl" + odnosnikAgencji[1] : "";
   const zTytulu = odnosnikAgencji ? odsloniec((odnosnikAgencji[2].match(/title="([^"]+)"/i) || [])[1] || "") : "";
   const zTekstu = wartoscPo(linie, /^Menad[żz]er|^Mened[żz]er|^Doradc|^Agent/i);
-  const menadzer = (zTytulu || zTekstu).replace(/[\s.…]+$/u, "").trim();
+  const nazwaAgencji = (zTytulu || zTekstu).replace(/[\s.…]+$/u, "").trim();
+  // „Bez agenta" to NIE jest nazwa agencji — tak Transfermarkt pisze, że zawodnik agenta nie ma.
+  // Wzięte dosłownie zakładało w kartotece agencję „Bez agenta" i oznaczało zawodnika jako
+  // reprezentowanego, czyli dokładnie odwrotnie niż jest naprawdę.
+  const BRAK_AGENTA = /^(bez agenta|bez agencji|brak|brak danych|nieznany|ohne berater|without agent|no agent|k\.?\s?a\.?|[-–—])$/i;
+  const menadzer = BRAK_AGENTA.test(nazwaAgencji) ? "" : nazwaAgencji;
   const wartoscM = html.match(/class="[^"]*data-header__market-value-wrapper[^"]*"[^>]*>([\s\S]{0,200}?)<\/a>/i);
   const wartoscRynkowa = wartoscM
     ? odsloniec(wartoscM[1].replace(/<[^>]+>/g, " ")).replace(/Ostatnia zmiana.*$/i, "").trim()
