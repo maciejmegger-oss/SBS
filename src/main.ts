@@ -1844,6 +1844,21 @@ function zachowajKursorPoPrzerysowaniu(kontener, selektor, przerysuj){
   const docelowa = poz != null ? poz : String(nowe.value || '').length;
   try{ nowe.setSelectionRange(docelowa, docelowa); }catch(e){ /* np. input[type=number] tego nie wspiera */ }
 }
+// DZISIEJSZA DATA WEDŁUG ZEGARA UŻYTKOWNIKA, NIE WEDŁUG CZASU UNIWERSALNEGO.
+//
+// Zgłoszenie (05.10.2026, 01:12 w nocy): „jest dziś 05, a kalendarz pokazuje 4". Cała aplikacja
+// liczyła „dziś" przez new Date().toISOString(), a to jest czas UTC — w Polsce o dwie godziny
+// wcześniejszy latem i o godzinę zimą. Między północą a 02:00 (zimą 01:00) system podawał więc
+// datę WCZORAJSZĄ: podświetlony dzień w kalendarzu, domyślna data meczu w nowym planie, data
+// obserwacji, data sprawdzenia menedżera, data raportu — wszystko o jeden dzień za wcześnie.
+//
+// Skaut planuje mecze wieczorami i po meczach, czyli dokładnie w tych godzinach.
+function dzisiaj(){
+  const d = new Date();
+  const mies = String(d.getMonth() + 1).padStart(2, '0');
+  const dzien = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mies}-${dzien}`;
+}
 function fmt1(n){ return (Math.round(n*10)/10).toFixed(1); }
 
 async function enrichZniczRoster(){
@@ -1923,7 +1938,7 @@ async function importClubRoster(clubName, seedArray, profileTmUrl){
         videoLink: '', lnpLink: '', tmLink: '',
         hasAgent: false, agencyName: '', formation: '', customFields: {},
         notes,
-        dateAdded: new Date().toISOString().slice(0,10)
+        dateAdded: dzisiaj()
       });
       addedPlayers++;
     }
@@ -5352,7 +5367,7 @@ async function toggleHasAgent(id){
   if(!p.hasAgent) p.agencyName = '';
   // Ręczne kliknięcie liczy się jako sprawdzenie — także to na „Nie". Dzięki temu zawodnik
   // znika z kolejki „niesprawdzone", bo ktoś się nim faktycznie zajął.
-  p.agentCheckedAt = new Date().toISOString().slice(0,10);
+  p.agentCheckedAt = dzisiaj();
   p.agentSource = 'ręcznie';
   // Jeden zawodnik, jeden wiersz do bazy — nie cała kartoteka (zgłoszenie: „zapisywanie bardzo długo trwa").
   await savePlayersSome([p]);
@@ -5566,7 +5581,7 @@ function pustyProfilKompetencji(p, autor, dzis){
   return {
     id: uid('PK'), playerId: p.id, sezon: sr.sezon, runda: sr.runda,
     zespol: '', poziomZespolu: '', profil: kod, alternatywaProfilu: '',
-    trener: autor || '', trenerWspomagajacy: '', data: (dzis || new Date().toISOString().slice(0,10)),
+    trener: autor || '', trenerWspomagajacy: '', data: (dzis || dzisiaj()),
     notowanieStan: null, notowaniePotencjal: null,
     wzrost: (p && p.height) || null, masa: (p && p.weight) || null, noga: (p && p.foot) || '',
     somatotyp: '', wiekBiologiczny: null,
@@ -5733,7 +5748,7 @@ function openProfilKompetencjiModal(playerId, profilId){
   const istniejacy = profilId ? profileKompetencji.find(z=> z.id === profilId) : null;
   const stan = istniejacy
     ? JSON.parse(JSON.stringify(istniejacy))
-    : pustyProfilKompetencji(p, currentScout || '', new Date().toISOString().slice(0,10));
+    : pustyProfilKompetencji(p, currentScout || '', dzisiaj());
   stan.oceny = stan.oceny || {}; stan.znaki = stan.znaki || {};
 
   const podpis = `${p.lastName||''} ${p.firstName||''}`.trim() + (p.clubId ? ' — '+clubName(p.clubId) : '');
@@ -7543,7 +7558,7 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
       const nierozpoznaneKluby: string[] = [];
       const opisyKlubow: string[] = [];
       let nowychZKadry = 0, jużByłoWKartotece = 0, uzupelnionych = 0;
-      const dzisKadra = new Date().toISOString().slice(0,10);
+      const dzisKadra = dzisiaj();
       kadryZWklejki.forEach(k=>{
         // Ta sama droga co przy herbach: nazwa z ŁNP, grupa z otwartego okna, poziom z grupy.
         const klubKadry = dopasujKlubDoNazwy(k.nazwa, grupa, poziomWklejki);
@@ -7675,7 +7690,7 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
   async function zapiszWewnetrznie(){
     let dopisanych = 0, nowych = 0, meczow = 0, rocznikow = 0, powtorzonych = 0, wKadrzeBezGry = 0, pozycji = 0;
     const powtorzoneMecze = new Set();
-    const dzis = new Date().toISOString().slice(0,10);
+    const dzis = dzisiaj();
     wynik.forEach(protokol=>{
     meczow++;
     protokol.strony.forEach(s=>{
@@ -8060,7 +8075,7 @@ function openGrupaStatsModal(){
             videoLink: '', lnpLink: x.adres || '', tmLink: '',
             hasAgent: false, agencyName: '', formation: '', customFields: {},
             notes: 'Dopisany automatycznie z protokołu 90minut — uzupełnij pozycję i resztę danych.',
-            dateAdded: new Date().toISOString().slice(0,10),
+            dateAdded: dzisiaj(),
           });
         });
         const ok = await savePlayers();
@@ -8766,7 +8781,7 @@ async function rememberStadiumAddress(matchText, address){
   if(!maKontakt){
     DB.contacts.push({
       id: uid('C'), club: klubNazwa, email: '', firstName: '', lastName: '',
-      phone: '', note: '', dateAdded: new Date().toISOString().slice(0,10)
+      phone: '', note: '', dateAdded: dzisiaj()
     });
     await saveContacts();
     utworzonoKontakt = true;
@@ -8804,7 +8819,7 @@ function viewNewObs(){
         <select id="obs-player">${playerOptions || '<option value="">Brak zawodników — dodaj najpierw w zakładce Zawodnicy</option>'}</select>
       </div>
       <div class="grid grid-2">
-        <div class="field-wrap"><label class="field">Data meczu</label><input type="date" id="obs-date" value="${editing? esc(editing.date) : new Date().toISOString().slice(0,10)}"></div>
+        <div class="field-wrap"><label class="field">Data meczu</label><input type="date" id="obs-date" value="${editing? esc(editing.date) : dzisiaj()}"></div>
         <div class="field-wrap"><label class="field">Godzina meczu</label><input type="time" id="obs-time" value="${editing? esc(editing.matchTime||'15:00') : '15:00'}"></div>
       </div>
       <div class="field-wrap">
@@ -9150,7 +9165,7 @@ function obsCalendarHtml(){
   const firstOfMonth = new Date(y, m, 1);
   const startWeekday = (firstOfMonth.getDay()+6)%7; // poniedziałek=0
   const daysInMonth = new Date(y, m+1, 0).getDate();
-  const todayStr = new Date().toISOString().slice(0,10);
+  const todayStr = dzisiaj();
 
   const obsByDay = {};
   DB.observations.forEach(o=>{
@@ -10133,7 +10148,13 @@ function viewReports(){
   const widoczneRaporty = DB.reports.filter(czyRaportZawodnika);
   const ordinalOf = {};
   widoczneRaporty.forEach((r,i)=> ordinalOf[r.id] = i+1);
-  const allReports = widoczneRaporty.slice().sort((a,b)=> (b.date||'').localeCompare(a.date||'') || (ordinalOf[b.id]-ordinalOf[a.id]));
+  // KOLEJNOŚĆ: OD NAJNOWIEJ ZAPISANEGO, BEZ MIESZANIA DATĄ MECZU.
+  //
+  // Zgłoszenie (05.10.2026): „raporty wyświetlaj w kolejności utworzenia". Lista sortowała się
+  // najpierw po dacie MECZU, a dopiero potem po kolejności wpisania — przez to numery skakały
+  // (40, 38, 37, 34…), bo między nie wchodziły raporty z innych spotkań. Skaut szuka tego, co
+  // właśnie zapisał, a nie tego, czyj mecz był później.
+  const allReports = widoczneRaporty.slice().sort((a,b)=> ordinalOf[b.id] - ordinalOf[a.id]);
   const listHtml = allReports.length ? allReports.map(r=>{
     const pl = DB.players.find(p=>p.id===r.playerId);
     // Raport z CAŁEGO MECZU nie ma jednego zawodnika i to jest w porządku — nosi opis spotkania.
@@ -10193,7 +10214,7 @@ function viewReports(){
       </div>
     </div>
     <div class="grid grid-2">
-      <div class="field-wrap"><label class="field">Data</label><input type="date" id="rep-date" value="${editing? esc(editing.date) : new Date().toISOString().slice(0,10)}"></div>
+      <div class="field-wrap"><label class="field">Data</label><input type="date" id="rep-date" value="${editing? esc(editing.date) : dzisiaj()}"></div>
       <div class="field-wrap"><label class="field">Scout</label><input id="rep-scout" value="${editing? esc(editing.scout||'') : esc(currentScout)}" placeholder="Imię i nazwisko scouta"></div>
     </div>
     <div class="field-wrap">
@@ -10336,7 +10357,7 @@ function parseContactSheetRaw(rawRows){
   if(headerRowIdx === -1) return null; // brak rozpoznawalnych nagłówków w tym arkuszu
 
   const MAX_LEN = 80;
-  const nowDate = new Date().toISOString().slice(0,10);
+  const nowDate = dzisiaj();
   let skippedCount = 0;
   const contacts = [];
   for(let i=headerRowIdx+1; i<rawRows.length; i++){
@@ -10365,7 +10386,7 @@ function parseContactSheetRaw(rawRows){
 // z setkami adresów rozdzielonych przecinkami) - klub zostaje pusty do ręcznego uzupełnienia.
 function extractEmailsFallback(rawRows){
   const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
-  const nowDate = new Date().toISOString().slice(0,10);
+  const nowDate = dzisiaj();
   const found = new Set();
   rawRows.forEach(row=>{
     (row||[]).forEach(cell=>{
@@ -10434,7 +10455,7 @@ function parseTalentRowsObject(rows){
   const colClub = findCol('Klub','Club');
   if(!colFirst && !colLast) throw new Error('Nie znaleziono kolumny z imieniem ani nazwiskiem — sprawdź nagłówki arkusza (oczekiwane: Imię, Nazwisko, Rocznik, Klub).');
 
-  const nowDate = new Date().toISOString().slice(0,10);
+  const nowDate = dzisiaj();
   const MAX_NAME_LEN = 40; // realne imię/nazwisko nigdy nie jest tak długie — dłuższy tekst to zwykle
                             // przypadkowo złapany wiersz z legendą/notatką, a nie prawdziwy zawodnik
   const parsed = rows.map(row=>{
@@ -11138,7 +11159,7 @@ function parseTalentPastedText(text){
   const kadra = kadraZTekstu(text);
   const powolani = osobyZPowolaniaPzpn(String(text||''));
   if(powolani.length >= 3){
-    const dzis = new Date().toISOString().slice(0,10);
+    const dzis = dzisiaj();
     return { talents: powolani.map(o=>({
       id: uid('T'), ...o,
       reprezentacja: kadra || 'kadra Polski',
@@ -11176,7 +11197,7 @@ function parseTalentPastedTextZwykly(text){
     return parseTalentRowsObject(rows);
   }
 
-  const nowDate = new Date().toISOString().slice(0,10);
+  const nowDate = dzisiaj();
   const MAX_NAME_LEN = 40;
   let rocznik = null;
   const osoby = [];
@@ -11367,7 +11388,7 @@ async function addTalentManually(){
     club: document.getElementById('talent-manual-club').value.trim(),
     confidence: 'ręcznie',
     sourceImage: '',
-    dateAdded: new Date().toISOString().slice(0,10)
+    dateAdded: dzisiaj()
   }));
   await saveTalents();
   render();
@@ -12479,7 +12500,7 @@ function openKlubPLEdycja(nazwaKlubu){
       } else {
         DB.contacts.push(podpiszKontem({ id: uid('C'), club: wiersz.klub, email: k.email.trim(),
           firstName: k.imie.trim(), lastName: k.nazwisko.trim(), phone: k.telefon.trim(),
-          note: k.notatka.trim(), dateAdded: new Date().toISOString().slice(0,10) }));
+          note: k.notatka.trim(), dateAdded: dzisiaj() }));
         zmian++;
       }
     });
@@ -15290,7 +15311,7 @@ function attachHandlers(){
     const p = DB.players.find(x=>x.id===(b as HTMLElement).dataset.id);
     if(!p) return;
     if(talentZawodnika(p)){ pokazPotwierdzenie('Ten zawodnik już jest na liście Talent.', 'ok'); render(); return; }
-    const t = nowyTalentZZawodnika(p, uid('T'), new Date().toISOString().slice(0,10));
+    const t = nowyTalentZZawodnika(p, uid('T'), dzisiaj());
     DB.talents.push(podpiszKontem(t));
     const ok = await saveTalents();
     if(ok === false){
@@ -16310,7 +16331,7 @@ function attachHandlers(){
     if(!DB.settings.stadiumAddresses) DB.settings.stadiumAddresses = {};
     plan.adresy.forEach(({c, a})=>{ DB.settings.stadiumAddresses[c.id] = a.adres; });
     plan.emaile.forEach(({k, a})=>{ k.email = a.email; });
-    const dzis = new Date().toISOString().slice(0,10);
+    const dzis = dzisiaj();
     if(dopisz) plan.brakujace.forEach(({c, a})=> DB.contacts.push({
       id: uid('C'), club: c.name, email: a.email, firstName: '', lastName: '', phone: '',
       // Status z arkusza trafia do notatki, żeby przed wysyłką było widać, co jeszcze sprawdzić.
@@ -16406,7 +16427,7 @@ function attachHandlers(){
   // Radar młodzieży: oznaczanie przejrzanych. Datę zapisujemy, bo to ona pozwoli później
   // odpowiedzieć na pytanie „kiedy zobaczyliśmy go po raz pierwszy" — czyli zmierzyć wyprzedzenie.
   main.querySelectorAll('[data-action="radar-przejrzane"], [data-action="radar-punkt-odniesienia"]').forEach(b=>b.onclick=async()=>{
-    const dzis = new Date().toISOString().slice(0,10);
+    const dzis = dzisiaj();
     radarKandydaci().forEach(x=>{ if(!radarPrzejrzane[x.p.id]) radarPrzejrzane[x.p.id] = dzis; });
     const ok = await saveRadarPrzejrzane();
     if(!ok) alert('Nie udało się zapisać. Sprawdź baner u góry strony — lista radaru została bez zmian.');
@@ -17163,7 +17184,7 @@ function attachHandlers(){
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `sbs_kopia_${new Date().toISOString().slice(0,10)}.json`;
+    a.download = `sbs_kopia_${dzisiaj()}.json`;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(()=>URL.revokeObjectURL(url), 2000);
   });
@@ -18245,7 +18266,7 @@ function openSquadImportModal(clubId){
           // rocznika nie ma skąd wziąć.
           mlodziezowiec: p.mlodziezowiec === true,
           formation: '', customFields: {}, notes: '',
-          dateAdded: new Date().toISOString().slice(0,10)
+          dateAdded: dzisiaj()
         });
         added++;
       });
@@ -18333,7 +18354,7 @@ function openMatchScheduleModal(){
 
   // Mecze jeszcze nierozegrane w wybranej lidze (od dziś w przód), po dacie i godzinie.
   function futureMatches(){
-    const todayStr = new Date().toISOString().slice(0,10);
+    const todayStr = dzisiaj();
     // Dopasowanie po POZIOMIE rozgrywek: wybór "III liga" ma łapać też "III liga, gr. II" itd.
     const matchesLeague = (m)=> !selectedLeague || m.league === selectedLeague
       || topLevelOf(m.league) === selectedLeague;
@@ -18955,7 +18976,7 @@ async function przepiszTerminyDoObserwacji(potwierdzone){
   potwierdzone.forEach(m=>{
     poParze.set(`${importNorm(m.homeTeam)}|${importNorm(m.awayTeam)}`, {date: m.date, time: m.time || ''});
   });
-  const dzisiaj = new Date().toISOString().slice(0,10);
+  const dzisiaj = dzisiaj();
   let zmienione = 0;
   DB.observations.forEach(o=>{
     const czysty = String(o.match||'').replace(/\s+/g,' ').trim();
@@ -20757,7 +20778,7 @@ function znajdzLubUtworzAgencje(nazwa, link){
   a = {
     id: uid('AG'), name: czysta || nazwaZLinkuAgencji(czystyLink) || '(agencja bez nazwy)', tmLink: czystyLink,
     website:'', country:'', city:'', email:'', phone:'', notes:'',
-    dateAdded: new Date().toISOString().slice(0,10)
+    dateAdded: dzisiaj()
   };
   DB.agencies.push(a);
   return a;
@@ -21019,7 +21040,7 @@ function przypiszZawodnikaDoAgencji(p, agencja, zrodlo){
   p.agencyId = agencja.id;
   p.hasAgent = true;                    // to właśnie zapala „Tak" w kolumnie Agent
   p.agencyName = agencja.name + (agencja.tmLink ? ' ' + agencja.tmLink : '');
-  p.agentCheckedAt = new Date().toISOString().slice(0,10);
+  p.agentCheckedAt = dzisiaj();
   p.agentSource = zrodlo;
   return true;
 }
@@ -21247,7 +21268,7 @@ function openAgencyStaffModal(agencyId){
       const {nowi} = podzial();
       const zaznaczeni = Array.from(overlay.querySelectorAll('.staff-check:checked')).map((c:any)=>Number(c.dataset.idx));
       if(!zaznaczeni.length){ alert('Nikogo nie zaznaczyłeś.'); return; }
-      const dzis = new Date().toISOString().slice(0,10);
+      const dzis = dzisiaj();
       const telZWklejki = (rozpoznani as any).telAgencji || '';
       const mailZWklejki = (rozpoznani as any).mailAgencji || '';
       // Numer i mail z profilu uzupełniają też sam rekord agencji, jeśli był pusty.
@@ -21502,12 +21523,12 @@ function openAgencySquadModal(agencyId){
           videoLink: '', lnpLink: '', tmLink: '',
           hasAgent: true, agencyId: agencja.id, agentId: '',
           agencyName: agencja.name + (agencja.tmLink ? ' ' + agencja.tmLink : ''),
-          agentCheckedAt: new Date().toISOString().slice(0,10),
+          agentCheckedAt: dzisiaj(),
           agentSource: 'Transfermarkt (profil agencji)',
           formation: '', customFields: {},
           notes: 'Dodany z profilu agencji na Transfermarkcie.' +
             (x.rocznik ? ' Rocznik wyliczony z wieku — może być o rok wcześniejszy.' : ''),
-          dateAdded: new Date().toISOString().slice(0,10)
+          dateAdded: dzisiaj()
         };
         DB.players.push(nowy);
         zalozeni++;
@@ -21671,7 +21692,7 @@ function openAgenciesImportModal(){
     overlay.querySelectorAll('[data-action="agencies-apply"]').forEach(b=>b.onclick=async()=>{
       const {nowe, znane} = podzial();
       const zaznaczone = Array.from(overlay.querySelectorAll('.agency-row-check:checked')).map(c=>Number(c.dataset.idx));
-      const dzis = new Date().toISOString().slice(0,10);
+      const dzis = dzisiaj();
       let dodane = 0, uzupelnione = 0;
       zaznaczone.forEach(i=>{
         const w = nowe[i];
@@ -21843,7 +21864,7 @@ async function uzupelnijMenedzerowHurt(){
     idzie = true;
     start.disabled = true; start.textContent = 'Idzie…';
     stop.textContent = 'Przerwij';
-    const dzis = new Date().toISOString().slice(0,10);
+    const dzis = dzisiaj();
     let odOstatniegoZapisu = 0;
     // Do bazy idą TYLKO zawodnicy, których ten przebieg dotknął. Wcześniej co dwadzieścia nazwisk
     // leciała cała kartoteka — przy 16 671 kartach kilkanaście megabajtów i ponad osiemdziesiąt
@@ -22114,7 +22135,7 @@ function openAgentImportModal(){
     overlay.querySelectorAll('[data-action="agent-apply"]').forEach(b=>b.onclick=async()=>{
       const wynik = dopasowania();
       const zaznaczone = Array.from(overlay.querySelectorAll('.agent-row-check:checked')).map(c=>Number(c.dataset.idx));
-      const dzis = new Date().toISOString().slice(0,10);
+      const dzis = dzisiaj();
       let zAgentem = 0, samoSprawdzenie = 0, agencjeDotkniete = false;
       zaznaczone.forEach(i=>{
         const x = wynik[i];
@@ -22384,7 +22405,7 @@ function openLeagueStatsModal(league){
           p.matches = (p.matches || 0) + 1;
           p.minutes = (p.minutes || 0) + w.minutyGry;
           p.rozliczoneMecze = [...(p.rozliczoneMecze || []), protokol.klucz];
-          p.statsUpdatedAt = new Date().toISOString().slice(0,10);
+          p.statsUpdatedAt = dzisiaj();
           p.statsSource = 'protokół ŁNP';
           dopisanych++;
         });
@@ -22573,7 +22594,7 @@ function zalozKartoteke(z, klub){
     position: z.pozycja || '',
     birthYear: z.rocznik || '',
     status: '',
-    dateAdded: new Date().toISOString().slice(0,10),
+    dateAdded: dzisiaj(),
     source: 'wyróżniony w meczu',
     matches: 0, minutes: 0, goals: 0,
     monitored: true,
@@ -22672,7 +22693,7 @@ function openObsSkladModal(obsId){
       draw(); return;
     }
     obs.skladMeczu = {
-      zrodlo: 'baza', pobrano: new Date().toISOString().slice(0,10),
+      zrodlo: 'baza', pobrano: dzisiaj(),
       gospodarze: g || {nazwa: para.gospodarz, zawodnicy: []},
       goscie: s || {nazwa: para.gosc, zawodnicy: []},
     };
@@ -22718,7 +22739,7 @@ function openObsSkladModal(obsId){
       draw(); return;
     }
     obs.skladMeczu = {
-      zrodlo: 'wklejka', pobrano: new Date().toISOString().slice(0,10),
+      zrodlo: 'wklejka', pobrano: dzisiaj(),
       gospodarze: { nazwa: para.gospodarz, zawodnicy: gospodarze },
       goscie: { nazwa: para.gosc, zawodnicy: goscie },
     };
@@ -22760,7 +22781,7 @@ function openObsSkladModal(obsId){
         .map(z => (z.numer ? { nazwa: z.nazwa, numer: String(z.numer) } : { nazwa: z.nazwa }));
       const g = zawodnicy(dane.gospodarze), s = zawodnicy(dane.goscie);
       obs.skladMeczu = {
-        zrodlo: 'dostawca', pobrano: new Date().toISOString().slice(0,10),
+        zrodlo: 'dostawca', pobrano: dzisiaj(),
         gospodarze: { nazwa: para.gospodarz, zawodnicy: g },
         goscie: { nazwa: para.gosc, zawodnicy: s },
       };
@@ -22801,7 +22822,7 @@ function openObsSkladModal(obsId){
           }));
         };
         obs.skladMeczu = {
-          zrodlo: '90minut', pobrano: new Date().toISOString().slice(0,10),
+          zrodlo: '90minut', pobrano: dzisiaj(),
           wynik: dane.wynik || '', link: dane.zrodlo || '',
           gospodarze: {nazwa: dane.gospodarzeNazwa, zawodnicy: przenies('gospodarze', dane.gospodarze)},
           goscie: {nazwa: dane.goscieNazwa, zawodnicy: przenies('goscie', dane.goscie)},
@@ -23236,7 +23257,7 @@ function open90minutStatsModal(clubId){
           videoLink: '', lnpLink: '', tmLink: x.adres || '',
           hasAgent: false, agencyName: '', formation: '', customFields: {},
           notes: 'Dopisany automatycznie — zagrał w meczu, a nie było go w kartotece.',
-          dateAdded: new Date().toISOString().slice(0,10),
+          dateAdded: dzisiaj(),
         });
       });
       pracuje = 'zapis'; komunikat = ''; draw();
@@ -23675,7 +23696,7 @@ function openZlecAnalizeModal(playerId){
       prefillRaportu = Object.assign({}, s, {
         playerId,
         zawodnikNazwa: podpis,
-        date: new Date().toISOString().slice(0,10),
+        date: dzisiaj(),
         scout: currentScout || '',
         obsType: 'Video',
         rywal: s.rywal || mecz,
@@ -24147,7 +24168,7 @@ function openRocznikExcelImport(rocznikGroup){
             videoLink: '', lnpLink: '', tmLink: '',
             hasAgent: p.hasAgent === true, agencyName: p.agencyName || '',
             formation: '', customFields: {}, notes: p.info || '',
-            dateAdded: new Date().toISOString().slice(0,10)
+            dateAdded: dzisiaj()
           });
           added++;
         });
@@ -24240,7 +24261,7 @@ function openRocznikExcelImport(rocznikGroup){
             videoLink: '', lnpLink: '', tmLink: '',
             hasAgent: p.hasAgent === true, agencyName: p.agencyName || '',
             formation: '', customFields: {}, notes: p.info || '',
-            dateAdded: new Date().toISOString().slice(0,10)
+            dateAdded: dzisiaj()
           });
           added++;
         });
@@ -25524,7 +25545,7 @@ async function processAttachmentFile(file){
     reader.onerror = ()=>reject(new Error('Nie udało się odczytać pliku.'));
     reader.readAsDataURL(file);
   });
-  return {name: file.name, dataUrl, mime: file.type || 'application/octet-stream', size: file.size, uploadedAt: new Date().toISOString().slice(0,10)};
+  return {name: file.name, dataUrl, mime: file.type || 'application/octet-stream', size: file.size, uploadedAt: dzisiaj()};
 }
 
 // Miniatura załącznika: obrazek (JPG/PNG) renderowany wprost, PDF przez natywny podgląd przeglądarki
@@ -25765,7 +25786,7 @@ function wireLastModal(){
     const wczesniejSprawdzone = edytowanyZawodnik && edytowanyZawodnik.agentCheckedAt
       ? edytowanyZawodnik.agentCheckedAt : '';
     const agentCheckedAt = (ov.dataset.agentOdpowiedziano === '1' || hasAgent)
-      ? new Date().toISOString().slice(0,10)
+      ? dzisiaj()
       : wczesniejSprawdzone;
     const customFields = {};
     ov.querySelectorAll('.pm-custom').forEach(inp=>{ customFields[inp.dataset.field] = inp.value.trim(); });
@@ -25808,7 +25829,7 @@ function wireLastModal(){
       if(edytowanyZawodnik) Object.assign(edytowanyZawodnik, data);
     } else {
       data.id = uid('Z');
-      data.dateAdded = new Date().toISOString().slice(0,10);
+      data.dateAdded = dzisiaj();
       data.source = 'manual';
       DB.players.push(data);
     }
@@ -25860,7 +25881,7 @@ function wireLastModal(){
     const id = (ov as any).dataset.agencyId;
     const istniejaca = id ? agencyById(id) : null;
     if(istniejaca) Object.assign(istniejaca, pola);
-    else DB.agencies.push(Object.assign({id: uid('AG'), dateAdded: new Date().toISOString().slice(0,10)}, pola));
+    else DB.agencies.push(Object.assign({id: uid('AG'), dateAdded: dzisiaj()}, pola));
     const ok = await saveAgencies();
     if(!ok){ alert(('Nie udało się zapisać.' + powodNieudanegoZapisu())); return; }
     ov.remove(); render();
@@ -25889,7 +25910,7 @@ function wireLastModal(){
       }
       Object.assign(istniejacy, pola);
     } else {
-      DB.agents.push(Object.assign({id: uid('MN'), dateAdded: new Date().toISOString().slice(0,10)}, pola));
+      DB.agents.push(Object.assign({id: uid('MN'), dateAdded: dzisiaj()}, pola));
     }
     const ok = await saveAgents() && await savePlayers();
     if(!ok){ alert(('Nie udało się zapisać.' + powodNieudanegoZapisu())); return; }
