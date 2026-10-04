@@ -21764,6 +21764,10 @@ const LIGI_DO_MENEDZEROW = /^(Ekstraklasa|I liga|II liga|III liga)\b/i;
 // wpisy, które trafiły do kartoteki jako agencja o takiej nazwie — zawodnik był przez to
 // oznaczony jako reprezentowany, czyli odwrotnie niż jest naprawdę.
 const NAZWA_TO_BRAK_AGENTA = /^(bez agenta|bez agencji|brak|brak danych|nieznany|ohne berater|without agent|no agent|k\.?\s?a\.?|[-–—])$/i;
+// „Krewny" to też nie firma — tak Transfermarkt zapisuje zawodnika prowadzonego przez rodzinę.
+// Zawodnik MA opiekę (więc „Tak" przy menedżerze jest prawdziwe), ale zakładanie agencji o nazwie
+// „Krewny" zlepiłoby w jedną firmę setki niepowiązanych ze sobą rodzin.
+const NAZWA_TO_RODZINA = /^(krewny|krewni|rodzina|rodzice|cz[łl]onek rodziny|relatives?|verwandter?|familie|eltern|parents?)$/i;
 function naprawBlednieWpisanychAgentow(){
   let poprawionych = 0;
   for(const p of DB.players){
@@ -21894,9 +21898,11 @@ async function uzupelnijMenedzerowHurt(){
         if(menedzer){
           p.hasAgent = true;
           p.agencyName = menedzer;
+          // Prowadzony przez rodzinę: „Tak" przy menedżerze jest prawdziwe, ale agencji nie zakładamy.
+          const rodzina = NAZWA_TO_RODZINA.test(menedzer);
           // Odnośnik do agencji na TM jest pewniejszy niż nazwa: po nim łączymy wpisy nawet wtedy,
           // gdy nazwa zapisana jest inaczej („HCM Sports Management" / „HCM Sports").
-          const agencja = znajdzLubUtworzAgencje(menedzer, String(prof.menadzerLink || ''));
+          const agencja = rodzina ? null : znajdzLubUtworzAgencje(menedzer, String(prof.menadzerLink || ''));
           if(agencja){
             if(p.agencyId !== agencja.id) p.agentId = '';   // zmiana agencji unieważnia starego opiekuna
             p.agencyId = agencja.id;

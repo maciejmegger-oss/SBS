@@ -28,6 +28,7 @@ const wytnij = (nazwa, wzor) => {
 const kod = [
   wytnij("LIGI_DO_MENEDZEROW", /const LIGI_DO_MENEDZEROW = [^\n]*;/),
   wytnij("NAZWA_TO_BRAK_AGENTA", /const NAZWA_TO_BRAK_AGENTA = [^\n]*;/),
+  wytnij("NAZWA_TO_RODZINA", /const NAZWA_TO_RODZINA = [^\n]*;/),
   wytnij("naprawBlednieWpisanychAgentow", /function naprawBlednieWpisanychAgentow\(\)\{[\s\S]*?\n\}/),
   wytnij("zawodnicyDoUzupelnieniaMenedzera", /function zawodnicyDoUzupelnieniaMenedzera\(\)\{[\s\S]*?\n\}/),
 ].join("\n");
@@ -43,7 +44,7 @@ const DB = { players: [
 ] };
 const LIGI = { K1: "Ekstraklasa", K2: "I liga", K3: "III liga, gr. II", K4: "IV liga (śląska)", "": "" };
 const api = new Function("DB", "ligaZawodnika",
-  `${kod}\n return { zawodnicyDoUzupelnieniaMenedzera, LIGI_DO_MENEDZEROW, naprawBlednieWpisanychAgentow, NAZWA_TO_BRAK_AGENTA };`)(
+  `${kod}\n return { zawodnicyDoUzupelnieniaMenedzera, LIGI_DO_MENEDZEROW, naprawBlednieWpisanychAgentow, NAZWA_TO_BRAK_AGENTA, NAZWA_TO_RODZINA };`)(
   DB, (p) => (p && p.klubBezLigi ? "" : (LIGI[p && p.clubId] || "")));
 
 console.log("\n1. Kogo bierzemy pod uwagę");
@@ -67,6 +68,14 @@ console.log('\n1a. „Bez agenta" to zdanie, nie nazwa agencji');
   ['Bez agenta', 'bez agencji', 'Brak', '-', 'Ohne Berater', 'k.A.'].forEach(t =>
     sprawdz(`„${t}" nie jest agencją`, api.NAZWA_TO_BRAK_AGENTA ? api.NAZWA_TO_BRAK_AGENTA.test(t) : false, t));
   sprawdz('prawdziwa agencja przechodzi', !api.NAZWA_TO_BRAK_AGENTA.test('HCM Sports Management'));
+  // „Krewny" — tak Transfermarkt zapisuje zawodnika prowadzonego przez rodzinę. Opiekę ma, ale
+  // firmy o takiej nazwie nie ma, a założona zlepiłaby setki niepowiązanych rodzin w jedną agencję.
+  sprawdz('„Krewny" rozpoznane jako rodzina, nie agencja',
+    api.NAZWA_TO_RODZINA.test('Krewny') && api.NAZWA_TO_RODZINA.test('Rodzina')
+    && !api.NAZWA_TO_RODZINA.test('ELITE GROUP'));
+  sprawdz('przy rodzinie nie zakładamy agencji',
+    /const rodzina = NAZWA_TO_RODZINA\.test\(menedzer\);/.test(zrodlo)
+    && /const agencja = rodzina \? null : znajdzLubUtworzAgencje/.test(zrodlo));
   DB.players.push({ id: "X", lastName: "Zle wpisany", clubId: "K1", hasAgent: true, agencyName: "Bez agenta", agencyId: "AG1" });
   const poprawione = api.naprawBlednieWpisanychAgentow();
   const x = DB.players.find(p => p.id === "X");
