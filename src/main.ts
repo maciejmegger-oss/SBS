@@ -5354,7 +5354,8 @@ async function toggleHasAgent(id){
   // znika z kolejki „niesprawdzone", bo ktoś się nim faktycznie zajął.
   p.agentCheckedAt = new Date().toISOString().slice(0,10);
   p.agentSource = 'ręcznie';
-  await savePlayers();
+  // Jeden zawodnik, jeden wiersz do bazy — nie cała kartoteka (zgłoszenie: „zapisywanie bardzo długo trwa").
+  await savePlayersSome([p]);
   render();
 }
 
@@ -16655,7 +16656,7 @@ function attachHandlers(){
     });
     pl.druzyny = druzyny;
     const orig = b.textContent; b.textContent = 'Zapisywanie...'; b.disabled = true;
-    const ok = await savePlayers();
+    const ok = await savePlayersSome([pl]);
     b.textContent = ok ? '✓ Zapisano' : 'Błąd zapisu — spróbuj ponownie';
     setTimeout(()=>render(), 700);
   });
@@ -16667,7 +16668,7 @@ function attachHandlers(){
     const ta = document.getElementById('opis-koncowy');
     pl.opisKoncowy = ta ? ta.value.trim() : '';
     const orig = b.textContent; b.textContent = 'Zapisywanie...'; b.disabled = true;
-    const ok = await savePlayers();
+    const ok = await savePlayersSome([pl]);
     b.textContent = ok ? '✓ Zapisano' : 'Błąd zapisu — spróbuj ponownie';
     b.disabled = false;
     if(ok) setTimeout(()=>{ if(b.isConnected) b.textContent = orig; }, 1500);
@@ -21840,11 +21841,17 @@ async function uzupelnijMenedzerowHurt(){
     stop.textContent = 'Przerwij';
     const dzis = new Date().toISOString().slice(0,10);
     let odOstatniegoZapisu = 0;
+    // Do bazy idą TYLKO zawodnicy, których ten przebieg dotknął. Wcześniej co dwadzieścia nazwisk
+    // leciała cała kartoteka — przy 16 671 kartach kilkanaście megabajtów i ponad osiemdziesiąt
+    // zapytań, czyli większość czasu całego uzupełniania schodziła na przesyłanie danych, które
+    // się nie zmieniły.
+    let dotknieci = [];
 
     const zapisz = async ()=>{
-      const okZaw = await savePlayers();
+      const okZaw = dotknieci.length ? await savePlayersSome(dotknieci) : true;
       const okAg = await saveAgencies();
       if(okZaw === false || okAg === false) dopisz('Zapis do bazy się nie udał — poprawione wpisy są na ekranie, ale nie w bazie.', 'var(--clay-dark)');
+      dotknieci = [];
       odOstatniegoZapisu = 0;
     };
 
@@ -21900,6 +21907,7 @@ async function uzupelnijMenedzerowHurt(){
           licz.bezWpisu++;
           dopisz(`${podpis}: Transfermarkt nie podaje menedżera`, 'var(--ink-soft)');
         }
+        dotknieci.push(p);
         licz.sprawdzonych++; odOstatniegoZapisu++; odswiez();
         if(odOstatniegoZapisu >= 20) await zapisz();
       }catch(e){
@@ -25798,7 +25806,20 @@ function wireLastModal(){
       data.source = 'manual';
       DB.players.push(data);
     }
-    await savePlayers();
+    // ZAPIS JEDNEGO ZAWODNIKA WYSYŁA JEDNEGO ZAWODNIKA.
+    //
+    // Zgłoszenie (02.10.2026): „zapisywanie bardzo długo trwa". savePlayers() wysyła do bazy CAŁĄ
+    // kartotekę — przy 16 671 zawodnikach to kilkanaście megabajtów rozbitych na ponad osiemdziesiąt
+    // zapytań, czyli kilkadziesiąt sekund czekania przy zmianie jednego pola. Tutaj zmienia się
+    // dokładnie jeden wpis, więc idzie tylko on. Pełny zapis zostaje tam, gdzie naprawdę zmienia się
+    // wiele kart naraz (import, scalanie, zbiorcze uzupełnianie).
+    const zapisanyWpis = editingPlayerId ? (edytowanyZawodnik || null) : data;
+    const okZapis = zapisanyWpis ? await savePlayersSome([zapisanyWpis]) : await savePlayers();
+    if(okZapis === false){
+      b.disabled = false; b.textContent = origLabel;
+      alert('Nie udało się zapisać zawodnika.' + powodNieudanegoZapisu());
+      return;
+    }
     // DODANIE DO BAZY NIE ZDEJMUJE ZAWODNIKA Z LISTY TALENTÓW.
     //
     // Dawniej wpis Talentu był tu kasowany — zawodnik lądował w Zawodnikach i znikał z listy, na której
