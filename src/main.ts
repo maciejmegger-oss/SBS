@@ -21790,22 +21790,56 @@ const NAZWA_TO_BRAK_AGENTA = /^(bez agenta|bez agencji|brak|brak danych|nieznany
 // „Krewny" zlepiłoby w jedną firmę setki niepowiązanych ze sobą rodzin.
 const NAZWA_TO_RODZINA = /^(krewny|krewni|rodzina|rodzice|cz[łl]onek rodziny|relatives?|verwandter?|familie|eltern|parents?)$/i;
 function naprawBlednieWpisanychAgentow(){
-  let poprawionych = 0;
+  const wynik = { zawodnicyBezAgenta: [], zawodnicyRodzina: [], agencjeUsuniete: [] };
   for(const p of DB.players){
     if(!p.hasAgent) continue;
-    if(!NAZWA_TO_BRAK_AGENTA.test(String(p.agencyName || '').trim())) continue;
-    p.hasAgent = false;
-    p.agencyName = '';
-    p.agencyId = '';
-    p.agentId = '';
-    poprawionych++;
+    const nazwa = String(p.agencyName || '').trim();
+    if(NAZWA_TO_BRAK_AGENTA.test(nazwa)){
+      // „Bez agenta" wpisane jako agencja znaczyło dokładnie odwrotnie, niż jest naprawdę.
+      p.hasAgent = false;
+      p.agencyName = '';
+      p.agencyId = '';
+      p.agentId = '';
+      wynik.zawodnicyBezAgenta.push(p);
+    } else if(NAZWA_TO_RODZINA.test(nazwa) && (p.agencyId || p.agentId)){
+      // Prowadzony przez rodzinę MA opiekę, więc „Tak" zostaje — ale to nie jest agencja i nie może
+      // siedzieć w zakładce Menedżerowie jako firma z trzydziestoma zawodnikami.
+      p.agencyId = '';
+      p.agentId = '';
+      wynik.zawodnicyRodzina.push(p);
+    }
   }
-  return poprawionych;
+  // Same wpisy agencji-śmieci znikają z listy. Agencje idą jednym rekordem JSON, więc wystarczy
+  // usunąć je z tablicy i zapisać — nie ma tu osobnego kasowania wiersza w bazie.
+  const smieciowa = (a)=>{
+    const n = String((a && a.name) || '').trim();
+    return NAZWA_TO_BRAK_AGENTA.test(n) || NAZWA_TO_RODZINA.test(n);
+  };
+  wynik.agencjeUsuniete = (DB.agencies || []).filter(smieciowa);
+  if(wynik.agencjeUsuniete.length) DB.agencies = DB.agencies.filter(a=> !smieciowa(a));
+  return wynik;
+}
+
+// KOLEJNOŚĆ SPRAWDZANIA: NAJPIERW EKSTRAKLASA, POTEM I, II I III LIGA.
+//
+// Zgłoszenie (05.10.2026): „jest jeszcze w Ekstraklasie i 1 lidze dużo braków". Lista szła
+// w kolejności zapisu w bazie, czyli przypadkowej — przy 3200 nazwiskach i kilku godzinach pracy
+// Ekstraklasa uzupełniała się przez cały ten czas po trochu. Najwyższe ligi są najważniejsze
+// i najczęściej oglądane, więc idą pierwsze: po pierwszej godzinie Ekstraklasa jest gotowa cała.
+function rangaLigiDoMenedzerow(p){
+  const liga = String(ligaZawodnika(p) || '');
+  if(/^Ekstraklasa/i.test(liga)) return 0;
+  if(/^I liga/i.test(liga)) return 1;
+  if(/^II liga/i.test(liga)) return 2;
+  return 3;
 }
 
 function zawodnicyDoUzupelnieniaMenedzera(){
   naprawBlednieWpisanychAgentow();
-  return DB.players.filter(p=> !p.hasAgent && LIGI_DO_MENEDZEROW.test(String(ligaZawodnika(p) || '')));
+  return DB.players
+    .filter(p=> !p.hasAgent && LIGI_DO_MENEDZEROW.test(String(ligaZawodnika(p) || '')))
+    .sort((a,b)=> rangaLigiDoMenedzerow(a) - rangaLigiDoMenedzerow(b)
+      || String(a.lastName||'').localeCompare(String(b.lastName||''), 'pl'));
 }
 
 // KTÓRY Z KILKU PROFILI O TYM SAMYM NAZWISKU TO NASZ ZAWODNIK.
@@ -21817,6 +21851,67 @@ function zawodnicyDoUzupelnieniaMenedzera(){
 // niż puste pole, a przy nazwiskach pospolitych to realne ryzyko, nie teoria.
 //
 // Każdy sprawdzony kandydat to osobne zapytanie, więc patrzymy najwyżej na czterech.
+/** Czy taką agencję już mamy — po odnośniku z TM albo po nazwie. Bez zakładania nowej. */
+function agencjaPoNazwieLubLinku(nazwa, link){
+  const czystyLink = String(link || '').trim();
+  const czysta = String(nazwa || '').trim();
+  if(czystyLink){
+    const poLinku = (DB.agencies || []).find(x=> x.tmLink && x.tmLink === czystyLink);
+    if(poLinku) return poLinku;
+  }
+  if(!czysta) return null;
+  return (DB.agencies || []).find(x=> importNorm(x.name) === importNorm(czysta)) || null;
+}
+
+// ZAWODNICY NOWEJ AGENCJI — z jej własnej strony na Transfermarkcie.
+//
+// Dopisujemy TYLKO tych, których już mamy w kartotece i którzy nie mają jeszcze menedżera. Nie
+// zakładamy nowych kart: lista agencji to w większości zawodnicy spoza naszych lig, a kartoteka
+// nie jest miejscem na kopię Transfermarktu.
+//
+// Dopasowanie jest ostre — pełne imię i nazwisko po normalizacji. Gdy pod jedno nazwisko podpada
+// więcej niż trzy nasze karty, odpuszczamy: przy takiej liczbie trafień to już nie jest ten sam
+// człowiek w kilku kategoriach, tylko imiennicy.
+async function dociagnijZawodnikowAgencji(agencja, link, dzis, dopisz){
+  const dopisani = [];
+  try{
+    const odp = await fetch('/api/tm-agencja?url=' + encodeURIComponent(link));
+    const dane = await odp.json().catch(()=>({}));
+    if(!odp.ok || dane.error || !Array.isArray(dane.zawodnicy)) return dopisani;
+
+    const nasi = new Map();
+    for(const p of DB.players){
+      const klucz = szukajNorm(`${p.firstName||''} ${p.lastName||''}`);
+      if(!klucz) continue;
+      const lista = nasi.get(klucz);
+      if(lista) lista.push(p); else nasi.set(klucz, [p]);
+    }
+
+    for(const z of dane.zawodnicy){
+      const trafienia = nasi.get(szukajNorm(z.nazwa)) || [];
+      if(!trafienia.length || trafienia.length > 3) continue;
+      for(const p of trafienia){
+        if(p.hasAgent) continue;              // czyjejś decyzji nie nadpisujemy
+        p.hasAgent = true;
+        p.agencyName = agencja.name;
+        p.agencyId = agencja.id;
+        p.agentId = '';
+        p.agentCheckedAt = dzis;
+        p.agentSource = 'Transfermarkt (profil agencji)';
+        if(!p.profileTm && z.url) p.profileTm = z.url;
+        dopisani.push(p);
+      }
+    }
+    if(dopisani.length && dopisz) dopisz(`   ↳ ${agencja.name}: z profilu agencji dopisano ${dopisani.length} ${
+      dopisani.length === 1 ? 'zawodnika' : 'zawodników'} (agencja prowadzi ${dane.ilu}).`, 'var(--good)');
+    else if(dopisz) dopisz(`   ↳ ${agencja.name}: profil agencji wymienia ${dane.ilu || 0} zawodników, żaden z naszej kartoteki.`, 'var(--ink-soft)');
+  }catch(e){
+    if(dopisz) dopisz(`   ↳ ${agencja.name}: nie udało się odczytać listy zawodników agencji.`, 'var(--ink-soft)');
+  }
+  await new Promise(r=>setTimeout(r, 400));
+  return dopisani;
+}
+
 async function rozstrzygnijProfilTm(p, kandydaci){
   const naszKlub = szukajNorm(clubName(p.clubId) || '');
   const naszRocznik = String(rocznikZawodnika(p) || '').match(/\d{4}/);
@@ -21843,8 +21938,19 @@ async function rozstrzygnijProfilTm(p, kandydaci){
 }
 
 async function uzupelnijMenedzerowHurt(){
+  // Sprzątanie wpisów-śmieci z wcześniejszych przebiegów idzie PRZED liczeniem kolejki — poprawieni
+  // zawodnicy mają wrócić do sprawdzenia w tym samym przebiegu, a nie dopiero w następnym.
+  const sprzatanie = naprawBlednieWpisanychAgentow();
   const lista = zawodnicyDoUzupelnieniaMenedzera();
-  if(!lista.length){ alert('Wszyscy zawodnicy z Ekstraklasy, I, II i III ligi mają już wpisanego menedżera.'); return; }
+  if(!lista.length && !sprzatanie.zawodnicyBezAgenta.length && !sprzatanie.zawodnicyRodzina.length){
+    alert('Wszyscy zawodnicy z Ekstraklasy, I, II i III ligi mają już wpisanego menedżera.');
+    return;
+  }
+  if(sprzatanie.zawodnicyBezAgenta.length || sprzatanie.zawodnicyRodzina.length || sprzatanie.agencjeUsuniete.length){
+    const dotkniete = [...sprzatanie.zawodnicyBezAgenta, ...sprzatanie.zawodnicyRodzina];
+    if(dotkniete.length) savePlayersSome(dotkniete);
+    if(sprzatanie.agencjeUsuniete.length) saveAgencies();
+  }
 
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -21855,7 +21961,14 @@ async function uzupelnijMenedzerowHurt(){
         z Ekstraklasy, I, II i III ligi, którzy nie mają wpisanego menedżera.
         Każdy profil to osobne zapytanie do Transfermarktu, więc idzie to spokojnym tempem —
         okno możesz zostawić otwarte i wrócić później. Wynik zapisuje się po drodze, więc
-        przerwanie niczego nie cofa.</p>
+        przerwanie niczego nie cofa. Kolejność: najpierw Ekstraklasa, potem I, II i III liga.</p>
+      ${sprzatanie.zawodnicyBezAgenta.length || sprzatanie.zawodnicyRodzina.length || sprzatanie.agencjeUsuniete.length
+        ? `<p class="note" style="margin:0 0 8px;color:var(--warn-ink);">Posprzątane przed startem: ${[
+            sprzatanie.zawodnicyBezAgenta.length ? `${sprzatanie.zawodnicyBezAgenta.length} zawodników miało wpisaną „agencję" Bez agenta — wracają do sprawdzenia` : '',
+            sprzatanie.zawodnicyRodzina.length ? `${sprzatanie.zawodnicyRodzina.length} prowadzonych przez rodzinę odpiętych od rzekomej agencji` : '',
+            sprzatanie.agencjeUsuniete.length ? `usunięte wpisy agencji: ${sprzatanie.agencjeUsuniete.map(a=>esc(a.name)).join(', ')}` : '',
+          ].filter(Boolean).join(' &middot; ')}.</p>`
+        : ''}
       <div id="ah-postep" class="pk-podsumowanie" style="position:static;"></div>
       <div id="ah-log" style="max-height:220px;overflow:auto;font-size:12px;line-height:1.5;margin-top:10px;"></div>
       <div class="modal-actions">
@@ -21871,10 +21984,11 @@ async function uzupelnijMenedzerowHurt(){
   const stop = overlay.querySelector('#ah-stop') as HTMLButtonElement;
   let przerwane = false, idzie = false;
 
-  const licz = { sprawdzonych: 0, zMenedzerem: 0, bezWpisu: 0, niejednoznacznych: 0, bledow: 0 };
+  const licz = { sprawdzonych: 0, zMenedzerem: 0, bezWpisu: 0, niejednoznacznych: 0, bledow: 0, zAgencji: 0 };
   const odswiez = ()=>{
     postep.innerHTML = `<span>Sprawdzone: <b>${licz.sprawdzonych}</b> z ${lista.length}</span>`
       + `<span>Z menedżerem: <b style="color:var(--good);">${licz.zMenedzerem}</b></span>`
+      + (licz.zAgencji ? `<span>Z list agencji: <b style="color:var(--good);">${licz.zAgencji}</b></span>` : '')
       + `<span class="note">TM nic nie podaje: ${licz.bezWpisu}</span>`
       + `<span class="note">niejednoznaczne: ${licz.niejednoznacznych}</span>`
       + (licz.bledow ? `<span class="note" style="color:var(--clay-dark);">błędy: ${licz.bledow}</span>` : '');
@@ -21964,6 +22078,7 @@ async function uzupelnijMenedzerowHurt(){
           const rodzina = NAZWA_TO_RODZINA.test(menedzer);
           // Odnośnik do agencji na TM jest pewniejszy niż nazwa: po nim łączymy wpisy nawet wtedy,
           // gdy nazwa zapisana jest inaczej („HCM Sports Management" / „HCM Sports").
+          const bylaWczesniej = !!agencjaPoNazwieLubLinku(menedzer, String(prof.menadzerLink || ''));
           const agencja = rodzina ? null : znajdzLubUtworzAgencje(menedzer, String(prof.menadzerLink || ''));
           if(agencja){
             if(p.agencyId !== agencja.id) p.agentId = '';   // zmiana agencji unieważnia starego opiekuna
@@ -21971,6 +22086,21 @@ async function uzupelnijMenedzerowHurt(){
           }
           licz.zMenedzerem++;
           dopisz(`${podpis}: ${menedzer}`, 'var(--good)');
+
+          // NOWA AGENCJA ZACIĄGA OD RAZU CAŁĄ SWOJĄ LISTĘ.
+          //
+          // Zgłoszenie (05.10.2026): „jeśli pojawia się nowa agencja, automatycznie dodaj ją do bazy
+          // i wszystkich zawodników, jakich mają". Strona agencji wymienia ich naraz, więc zamiast
+          // czekać, aż przebieg dojdzie do każdego z osobna, bierzemy listę jednym zapytaniem
+          // i dopisujemy tych, których mamy w kartotece.
+          if(agencja && !bylaWczesniej && prof.menadzerLink){
+            const dopisani = await dociagnijZawodnikowAgencji(agencja, String(prof.menadzerLink), dzis, dopisz);
+            if(dopisani.length){
+              dotknieci.push(...dopisani);
+              licz.zAgencji += dopisani.length;
+              odOstatniegoZapisu += dopisani.length;
+            }
+          }
         } else {
           licz.bezWpisu++;
           dopisz(`${podpis}: Transfermarkt nie podaje menedżera`, 'var(--ink-soft)');

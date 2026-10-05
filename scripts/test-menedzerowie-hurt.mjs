@@ -30,6 +30,7 @@ const kod = [
   wytnij("NAZWA_TO_BRAK_AGENTA", /const NAZWA_TO_BRAK_AGENTA = [^\n]*;/),
   wytnij("NAZWA_TO_RODZINA", /const NAZWA_TO_RODZINA = [^\n]*;/),
   wytnij("naprawBlednieWpisanychAgentow", /function naprawBlednieWpisanychAgentow\(\)\{[\s\S]*?\n\}/),
+  wytnij("rangaLigiDoMenedzerow", /function rangaLigiDoMenedzerow\(p\)\{[\s\S]*?\n\}/),
   wytnij("zawodnicyDoUzupelnieniaMenedzera", /function zawodnicyDoUzupelnieniaMenedzera\(\)\{[\s\S]*?\n\}/),
 ].join("\n");
 
@@ -41,10 +42,10 @@ const DB = { players: [
   { id: "E", lastName: "Czwartoligowiec", clubId: "K4", hasAgent: false },
   { id: "F", lastName: "Junior bez ligi", clubId: "K1", hasAgent: false, klubBezLigi: true },
   { id: "G", lastName: "Bez klubu", clubId: "", hasAgent: false },
-] };
+], agencies: [] };
 const LIGI = { K1: "Ekstraklasa", K2: "I liga", K3: "III liga, gr. II", K4: "IV liga (śląska)", "": "" };
 const api = new Function("DB", "ligaZawodnika",
-  `${kod}\n return { zawodnicyDoUzupelnieniaMenedzera, LIGI_DO_MENEDZEROW, naprawBlednieWpisanychAgentow, NAZWA_TO_BRAK_AGENTA, NAZWA_TO_RODZINA };`)(
+  `${kod}\n return { zawodnicyDoUzupelnieniaMenedzera, LIGI_DO_MENEDZEROW, naprawBlednieWpisanychAgentow, NAZWA_TO_BRAK_AGENTA, NAZWA_TO_RODZINA, rangaLigiDoMenedzerow };`)(
   DB, (p) => (p && p.klubBezLigi ? "" : (LIGI[p && p.clubId] || "")));
 
 console.log("\n1. Kogo bierzemy pod uwagę");
@@ -79,7 +80,19 @@ console.log('\n1a. „Bez agenta" to zdanie, nie nazwa agencji');
   DB.players.push({ id: "X", lastName: "Zle wpisany", clubId: "K1", hasAgent: true, agencyName: "Bez agenta", agencyId: "AG1" });
   const poprawione = api.naprawBlednieWpisanychAgentow();
   const x = DB.players.find(p => p.id === "X");
-  sprawdz('wpis z poprzedniego przebiegu jest prostowany', poprawione === 1 && x.hasAgent === false && !x.agencyName && !x.agencyId);
+  sprawdz('wpis z poprzedniego przebiegu jest prostowany',
+    poprawione.zawodnicyBezAgenta.length === 1 && x.hasAgent === false && !x.agencyName && !x.agencyId);
+  // Prowadzony przez rodzinę zostaje z „Tak", ale przestaje wisieć pod rzekomą agencją.
+  DB.players.push({ id: "R", lastName: "Rodzinny", clubId: "K1", hasAgent: true, agencyName: "Krewny", agencyId: "AG2", agentId: "M1" });
+  DB.agencies = [{ id: "AG1", name: "Bez agenta" }, { id: "AG2", name: "Krewny" }, { id: "AG3", name: "FairSport" }];
+  const drugie = api.naprawBlednieWpisanychAgentow();
+  const r2 = DB.players.find((p) => p.id === "R");
+  sprawdz('rodzina: menedżer zostaje, agencja odpięta',
+    drugie.zawodnicyRodzina.length === 1 && r2.hasAgent === true && !r2.agencyId && !r2.agentId && r2.agencyName === "Krewny");
+  sprawdz('wpisy agencji-śmieci znikają z listy, prawdziwe zostają',
+    drugie.agencjeUsuniete.length === 2 && DB.agencies.length === 1 && DB.agencies[0].name === "FairSport",
+    JSON.stringify(DB.agencies));
+  DB.players = DB.players.filter((p) => p.id !== "R");
   sprawdz('i wraca do sprawdzenia', api.zawodnicyDoUzupelnieniaMenedzera().some(p => p.id === "X"));
   DB.players = DB.players.filter(p => p.id !== "X");
   sprawdz('po stronie serwera to samo — „Bez agenta" nie wraca jako nazwa',
@@ -163,6 +176,40 @@ console.log('\n5. Dwa różne „Nie" na liście');
     /Jeszcze nie sprawdzone — nie wiemy, czy ma menedżera/.test(niesprawdzony));
   sprawdz("przygaszenie opisane w arkuszu stylów",
     /\.agent-niesprawdzony\{opacity:\.5/.test(fs.readFileSync("src/style.css", "utf8")));
+}
+
+console.log('\n6. Nowa agencja zaciąga od razu swoich zawodników');
+// Zgłoszenie (05.10.2026): „jeśli pojawia się nowa agencja, automatycznie dodaj ją do bazy
+// i wszystkich zawodników, jakich mają". Strona agencji wymienia ich naraz, więc zamiast czekać,
+// aż przebieg dojdzie do każdego z osobna, bierzemy listę jednym zapytaniem.
+{
+  const d = wytnij("dociagnijZawodnikowAgencji", /async function dociagnijZawodnikowAgencji\(agencja, link, dzis, dopisz\)\{[\s\S]*?\n\}/);
+  const serwer = fs.readFileSync("api/tm-agencja.js", "utf8");
+  sprawdz("lista zawodników agencji pobierana funkcją serwera", fs.existsSync("api/tm-agencja.js"));
+  sprawdz("funkcja przyjmuje wyłącznie adresy agencji na TM — nie jest otwartą bramką",
+    /beraterfirma/.test(serwer) && /Potrzebny adres agencji na Transfermarkcie/.test(serwer));
+  sprawdz("dociągamy tylko przy agencji, której wcześniej nie było",
+    /if\(agencja && !bylaWczesniej && prof\.menadzerLink\)\{/.test(f));
+  sprawdz('sprawdzenie „czy już mamy" nie zakłada nowej agencji',
+    /function agencjaPoNazwieLubLinku\(nazwa, link\)\{/.test(zrodlo));
+  sprawdz("nie zakładamy nowych kart zawodników — tylko łączymy istniejące", !/DB\.players\.push/.test(d));
+  sprawdz("czyjejś decyzji nie nadpisujemy", /if\(p\.hasAgent\) continue;/.test(d));
+  sprawdz("dopasowanie po pełnym imieniu i nazwisku", /nasi\.get\(szukajNorm\(z\.nazwa\)\)/.test(d));
+  sprawdz("przy więcej niż trzech trafieniach odpuszczamy (imiennicy)", /trafienia\.length > 3\) continue;/.test(d));
+  sprawdz("zapisujemy, skąd to wiemy", /p\.agentSource = 'Transfermarkt \(profil agencji\)';/.test(d));
+  sprawdz("dopisani wchodzą do zapisu i do licznika",
+    /dotknieci\.push\(\.\.\.dopisani\);/.test(f) && /licz\.zAgencji \+= dopisani\.length;/.test(f));
+}
+
+console.log('\n7. Kolejność: najpierw Ekstraklasa i I liga');
+// Zgłoszenie (05.10.2026): „jest jeszcze w Ekstraklasie i 1 lidze dużo braków".
+{
+  sprawdz("Ekstraklasa przed I ligą, I liga przed II i III",
+    api.rangaLigiDoMenedzerow({ clubId: "K1" }) === 0 && api.rangaLigiDoMenedzerow({ clubId: "K2" }) === 1
+    && api.rangaLigiDoMenedzerow({ clubId: "K3" }) === 3);
+  const kolejka = api.zawodnicyDoUzupelnieniaMenedzera().map((p) => p.id);
+  sprawdz("kolejka zaczyna się od Ekstraklasy", kolejka[0] === "A", kolejka.join(","));
+  sprawdz("okno mówi o tej kolejności", /Kolejność: najpierw Ekstraklasa, potem I, II i III liga/.test(f));
 }
 
 console.log(bledy ? `\n${bledy} BŁĘDÓW` : "\nWszystko przeszło.");
