@@ -21808,6 +21808,40 @@ function zawodnicyDoUzupelnieniaMenedzera(){
   return DB.players.filter(p=> !p.hasAgent && LIGI_DO_MENEDZEROW.test(String(ligaZawodnika(p) || '')));
 }
 
+// KTÓRY Z KILKU PROFILI O TYM SAMYM NAZWISKU TO NASZ ZAWODNIK.
+//
+// Transfermarkt zna trzech „Krzysztofów Kamińskich". Rozstrzygamy dwiema rzeczami, które mamy
+// w kartotece i których nie da się pomylić: KLUBEM i ROCZNIKIEM. Profil musi zgadzać się
+// przynajmniej w jednym z nich i być JEDYNYM, który się zgadza — przy dwóch pasujących albo przy
+// zerze oddajemy null i zawodnik zostaje pominięty. Wpisanie komuś cudzego agenta jest gorsze
+// niż puste pole, a przy nazwiskach pospolitych to realne ryzyko, nie teoria.
+//
+// Każdy sprawdzony kandydat to osobne zapytanie, więc patrzymy najwyżej na czterech.
+async function rozstrzygnijProfilTm(p, kandydaci){
+  const naszKlub = szukajNorm(clubName(p.clubId) || '');
+  const naszRocznik = String(rocznikZawodnika(p) || '').match(/\d{4}/);
+  if(!naszKlub && !naszRocznik) return null;   // nie mamy czym rozstrzygać
+
+  const pasujace = [];
+  for(const k of kandydaci.slice(0, 4)){
+    try{
+      const odp = await fetch('/api/transfermarkt?url=' + encodeURIComponent(k.url));
+      const prof = await odp.json().catch(()=>({}));
+      if(!odp.ok || prof.error) continue;
+      const klubTm = szukajNorm(String(prof.klub || ''));
+      const rokTm = String(prof.dataUrodzenia || '').match(/\d{4}/);
+      const klubPasuje = !!naszKlub && !!klubTm && (klubTm === naszKlub || klubyToSamo(String(prof.klub||''), clubName(p.clubId)||''));
+      const rocznikPasuje = !!naszRocznik && !!rokTm && rokTm[0] === naszRocznik[0];
+      if(klubPasuje || rocznikPasuje) pasujace.push({ ...k, prof, klubPasuje, rocznikPasuje });
+    }catch(e){ /* jeden nieudany odczyt nie przekreśla pozostałych kandydatów */ }
+    await new Promise(r=>setTimeout(r, 350));
+  }
+  if(pasujace.length === 1) return pasujace[0];
+  // Gdy pasuje kilku, ale tylko jeden zgadza się I KLUBEM, I ROCZNIKIEM — to już nie jest zgadywanie.
+  const pewne = pasujace.filter(x=> x.klubPasuje && x.rocznikPasuje);
+  return pewne.length === 1 ? pewne[0] : null;
+}
+
 async function uzupelnijMenedzerowHurt(){
   const lista = zawodnicyDoUzupelnieniaMenedzera();
   if(!lista.length){ alert('Wszyscy zawodnicy z Ekstraklasy, I, II i III ligi mają już wpisanego menedżera.'); return; }
@@ -21890,13 +21924,20 @@ async function uzupelnijMenedzerowHurt(){
           const odp = await fetch('/api/tm-szukaj?szukaj=' + encodeURIComponent(`${p.firstName||''} ${p.lastName||''}`.trim()));
           const d = await odp.json().catch(()=>({}));
           const kand = (d && d.kandydaci) || [];
-          if(kand.length !== 1){
+          // KILKA PROFILI O TYM SAMYM NAZWISKU — ROZSTRZYGAMY KLUBEM I ROCZNIKIEM.
+          //
+          // Przy młodzieży to połowa przypadków (439 na 823 w pierwszym przebiegu): „Kamiński
+          // Krzysztof" ma na Transfermarkcie trzy profile. Zamiast pomijać, otwieramy kandydatów
+          // i zostawiamy tego, który gra w TYM klubie albo ma TEN rocznik. Gdy pasuje więcej niż
+          // jeden albo żaden — nadal pomijamy, bo zgadywanie wpisałoby komuś cudzego agenta.
+          const wybrany = kand.length > 1 ? await rozstrzygnijProfilTm(p, kand) : (kand[0] || null);
+          if(!wybrany){
             licz.niejednoznacznych++; licz.sprawdzonych++; odswiez();
-            dopisz(`${podpis}: ${kand.length ? kand.length + ' profili o tym nazwisku — pomijam, żeby nie wpisać cudzego menedżera' : 'nie ma takiego profilu na TM'}`, 'var(--ink-soft)');
+            dopisz(`${podpis}: ${kand.length ? kand.length + ' profili o tym nazwisku, żaden nie pasuje klubem ani rocznikiem — pomijam' : 'nie ma takiego profilu na TM'}`, 'var(--ink-soft)');
             await new Promise(r=>setTimeout(r, 400));
             continue;
           }
-          adres = kand[0].url;
+          adres = wybrany.url;
           p.profileTm = adres;   // następnym razem nie trzeba już szukać
         }
 

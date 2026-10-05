@@ -88,9 +88,27 @@ console.log('\n1a. „Bez agenta" to zdanie, nie nazwa agencji');
 
 console.log("\n2. Czego funkcja NIE robi — to jest tu najważniejsze");
 const f = wytnij("uzupelnijMenedzerowHurt", /async function uzupelnijMenedzerowHurt\(\)\{[\s\S]*?\n\}\n/);
-sprawdz("kilka profili o tym samym nazwisku — pomija, nie zgaduje",
-  /if\(kand\.length !== 1\)\{[\s\S]{0,420}continue;/.test(f));
-sprawdz("powod pominiecia napisany wprost", /pomijam, żeby nie wpisać cudzego menedżera/.test(f));
+// Kilka profili o tym samym nazwisku: najpierw próbujemy rozstrzygnąć klubem i rocznikiem,
+// a dopiero gdy się nie da — pomijamy. Zgadywanie wpisałoby komuś cudzego agenta.
+sprawdz("przy kilku profilach najpierw rozstrzygamy klubem i rocznikiem",
+  /const wybrany = kand\.length > 1 \? await rozstrzygnijProfilTm\(p, kand\) : \(kand\[0\] \|\| null\);/.test(f));
+sprawdz("gdy nie da się rozstrzygnąć — pomijamy, nie zgadujemy",
+  /if\(!wybrany\)\{[\s\S]{0,420}continue;/.test(f));
+sprawdz("powod pominiecia napisany wprost", /żaden nie pasuje klubem ani rocznikiem — pomijam/.test(f));
+{
+  const r = wytnij("rozstrzygnijProfilTm", /async function rozstrzygnijProfilTm\(p, kandydaci\)\{[\s\S]*?\n\}/);
+  sprawdz("rozstrzyga tylko tym, co mamy w kartotece: klub i rocznik",
+    /const naszKlub = szukajNorm\(clubName\(p\.clubId\) \|\| ''\);/.test(r)
+    && /const naszRocznik = String\(rocznikZawodnika\(p\) \|\| ''\)\.match\(\/\\d\{4\}\/\);/.test(r));
+  sprawdz("bez klubu i bez rocznika nie próbuje wcale", /if\(!naszKlub && !naszRocznik\) return null;/.test(r));
+  sprawdz("jeden pasujący — bierzemy; kilku — tylko gdy zgadza się I klub, I rocznik",
+    /if\(pasujace\.length === 1\) return pasujace\[0\];/.test(r)
+    && /const pewne = pasujace\.filter\(x=> x\.klubPasuje && x\.rocznikPasuje\);/.test(r)
+    && /return pewne\.length === 1 \? pewne\[0\] : null;/.test(r));
+  sprawdz("sprawdza najwyżej czterech kandydatów (każdy to osobne zapytanie)", /kandydaci\.slice\(0, 4\)/.test(r));
+  sprawdz("nieudany odczyt jednego kandydata nie przekreśla reszty", /catch\(e\)\{ \/\* jeden nieudany odczyt/.test(r));
+  sprawdz("odstęp między zapytaniami także tutaj", /setTimeout\(r, 350\)/.test(r));
+}
 sprawdz('brak wpisu na TM NIE ustawia „nie ma menedżera” — zapisuje tylko datę sprawdzenia',
   /} else \{\s*\n\s*licz\.bezWpisu\+\+;/.test(f) && !/hasAgent = false/.test(f));
 sprawdz("napisane w kodzie, dlaczego tak", /To brak danych, nie potwierdzenie\s*\n\s*\/\/\s*braku/.test(zrodlo));
