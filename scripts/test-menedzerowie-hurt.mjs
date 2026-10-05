@@ -31,6 +31,8 @@ const kod = [
   wytnij("NAZWA_TO_RODZINA", /const NAZWA_TO_RODZINA = [^\n]*;/),
   wytnij("naprawBlednieWpisanychAgentow", /function naprawBlednieWpisanychAgentow\(\)\{[\s\S]*?\n\}/),
   wytnij("rangaLigiDoMenedzerow", /function rangaLigiDoMenedzerow\(p\)\{[\s\S]*?\n\}/),
+  wytnij("SPRAWDZANIE_WAZNE_DNI", /const SPRAWDZANIE_WAZNE_DNI = [^\n]*;/),
+  wytnij("sprawdzanyNiedawnoUZrodla", /function sprawdzanyNiedawnoUZrodla\(p\)\{[\s\S]*?\n\}/),
   wytnij("zawodnicyDoUzupelnieniaMenedzera", /function zawodnicyDoUzupelnieniaMenedzera\(\)\{[\s\S]*?\n\}/),
 ].join("\n");
 
@@ -45,7 +47,7 @@ const DB = { players: [
 ], agencies: [] };
 const LIGI = { K1: "Ekstraklasa", K2: "I liga", K3: "III liga, gr. II", K4: "IV liga (śląska)", "": "" };
 const api = new Function("DB", "ligaZawodnika",
-  `${kod}\n return { zawodnicyDoUzupelnieniaMenedzera, LIGI_DO_MENEDZEROW, naprawBlednieWpisanychAgentow, NAZWA_TO_BRAK_AGENTA, NAZWA_TO_RODZINA, rangaLigiDoMenedzerow };`)(
+  `${kod}\n return { zawodnicyDoUzupelnieniaMenedzera, LIGI_DO_MENEDZEROW, naprawBlednieWpisanychAgentow, NAZWA_TO_BRAK_AGENTA, NAZWA_TO_RODZINA, rangaLigiDoMenedzerow, sprawdzanyNiedawnoUZrodla };`)(
   DB, (p) => (p && p.klubBezLigi ? "" : (LIGI[p && p.clubId] || "")));
 
 console.log("\n1. Kogo bierzemy pod uwagę");
@@ -168,8 +170,11 @@ console.log('\n5. Dwa różne „Nie" na liście');
   sprawdz("ma menedżera — Tak, z nazwą agencji w podpowiedzi", />Tak</.test(zAgentem) && /Pro Sport/.test(zAgentem));
   sprawdz('sprawdzony bez menedżera — zwykłe „Nie", pełnym drukiem',
     />Nie</.test(sprawdzonyBez) && !/agent-niesprawdzony/.test(sprawdzonyBez), sprawdzonyBez);
-  sprawdz("i mówi, kiedy oraz skąd to wiadomo",
-    /Sprawdzone 2026-10-01 — Transfermarkt \(profil\): nikt go nie reprezentuje/.test(sprawdzonyBez), sprawdzonyBez);
+  // Źródło mówi „nie wiem", a nie „nie ma" — Transfermarkt publikuje agencję tylko przy części
+  // zawodników (sprawdzone na surowych stronach, np. Amir Al-Ammari z Cracovii).
+  sprawdz("mówi, kiedy sprawdzone i że to brak danych u źródła, nie brak agenta",
+    /Sprawdzone 2026-10-01: Transfermarkt nie podaje menedżera przy tym zawodniku/.test(sprawdzonyBez)
+    && /To nie znaczy, że go nie ma/.test(sprawdzonyBez), sprawdzonyBez);
   sprawdz('niesprawdzony — przygaszone „Nie ?", nie udaje wiedzy',
     /agent-niesprawdzony/.test(niesprawdzony) && /Nie&#8239;\?/.test(niesprawdzony), niesprawdzony);
   sprawdz("podpowiedź mówi wprost, że nie wiemy",
@@ -210,6 +215,24 @@ console.log('\n7. Kolejność: najpierw Ekstraklasa i I liga');
   const kolejka = api.zawodnicyDoUzupelnieniaMenedzera().map((p) => p.id);
   sprawdz("kolejka zaczyna się od Ekstraklasy", kolejka[0] === "A", kolejka.join(","));
   sprawdz("okno mówi o tej kolejności", /Kolejność: najpierw Ekstraklasa, potem I, II i III liga/.test(f));
+}
+
+console.log('\n8. Nie pytamy drugi raz o to, co już wiemy');
+// Po pełnym przebiegu 05.10.2026 zostało 1951 zawodników, przy których Transfermarkt naprawdę
+// nikogo nie podaje. Powtórne pytanie o nich to dwie godziny po odpowiedź, którą już mamy.
+{
+  const dzis = new Date().toISOString().slice(0, 10);
+  const dawno = new Date(Date.now() - 60 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+  sprawdz('sprawdzony dziś u źródła — pomijany',
+    api.sprawdzanyNiedawnoUZrodla({ agentCheckedAt: dzis, agentSource: 'Transfermarkt (profil)' }) === true);
+  sprawdz('sprawdzony dwa miesiące temu — wraca do kolejki',
+    api.sprawdzanyNiedawnoUZrodla({ agentCheckedAt: dawno, agentSource: 'Transfermarkt (profil)' }) === false);
+  sprawdz('niejednoznaczny (bez daty sprawdzenia) — zawsze wraca',
+    api.sprawdzanyNiedawnoUZrodla({ agentSource: 'Transfermarkt (profil)' }) === false);
+  sprawdz('odznaczenie ręczne nie blokuje sprawdzenia u źródła',
+    api.sprawdzanyNiedawnoUZrodla({ agentCheckedAt: dzis, agentSource: 'ręcznie' }) === false);
+  sprawdz('kolejka korzysta z tego filtra',
+    /&& !sprawdzanyNiedawnoUZrodla\(p\)\)/.test(zrodlo));
 }
 
 console.log(bledy ? `\n${bledy} BŁĘDÓW` : "\nWszystko przeszło.");

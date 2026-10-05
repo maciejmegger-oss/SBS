@@ -5352,7 +5352,15 @@ function agentToggleHtml(p){
   const tytul = tak
     ? 'Ma menedżera' + (p.agencyName ? ': ' + p.agencyName : '') + ' — kliknij, aby zmienić na „Nie"'
     : sprawdzone
-      ? `Sprawdzone ${p.agentCheckedAt}${p.agentSource ? ' — ' + p.agentSource : ''}: nikt go nie reprezentuje. Kliknij, aby zmienić na „Tak".`
+      ? (/^Transfermarkt/i.test(String(p.agentSource || ''))
+          // ŹRÓDŁO MÓWI „NIE WIEM", A NIE „NIE MA".
+          //
+          // Zgłoszenie (05.10.2026): „każdy ma menedżera w Ekstraklasie". W rzeczywistości tak jest,
+          // ale Transfermarkt pokazuje agencję tylko przy części zawodników — sprawdzone na surowych
+          // stronach (np. Amir Al-Ammari, Cracovia: pola z agentem po prostu nie ma). Podpowiedź
+          // mówiła dotąd „nikt go nie reprezentuje", czyli więcej, niż wiemy.
+          ? `Sprawdzone ${p.agentCheckedAt}: Transfermarkt nie podaje menedżera przy tym zawodniku. To nie znaczy, że go nie ma — serwis publikuje agencję tylko przy części piłkarzy. Kliknij, aby wpisać „Tak".`
+          : `Sprawdzone ${p.agentCheckedAt} — ${p.agentSource}: bez menedżera. Kliknij, aby zmienić na „Tak".`)
       : 'Jeszcze nie sprawdzone — nie wiemy, czy ma menedżera. Kliknij, aby wpisać „Tak".';
   const klasa = tak ? 'agent-yes' : (sprawdzone ? 'agent-no' : 'agent-no agent-niesprawdzony');
   return `<button class="link-btn agent-toggle ${klasa}" data-action="toggle-agent" data-id="${p.id}" title="${esc(tytul)}">${
@@ -21826,6 +21834,22 @@ function naprawBlednieWpisanychAgentow(){
 // w kolejności zapisu w bazie, czyli przypadkowej — przy 3200 nazwiskach i kilku godzinach pracy
 // Ekstraklasa uzupełniała się przez cały ten czas po trochu. Najwyższe ligi są najważniejsze
 // i najczęściej oglądane, więc idą pierwsze: po pierwszej godzinie Ekstraklasa jest gotowa cała.
+// CZEGO NIE SPRAWDZAMY DRUGI RAZ.
+//
+// Po pełnym przebiegu (05.10.2026) zostało 1951 zawodników, przy których Transfermarkt naprawdę
+// nikogo nie podaje, i 289 niejednoznacznych. Powtórne pytanie o te pierwsze to dwie godziny
+// zapytań po odpowiedź, którą już znamy — więc pomijamy sprawdzonych u źródła w ostatnich 30 dniach.
+// Niejednoznaczni daty sprawdzenia NIE dostają (świadomie), więc wracają w każdym przebiegu —
+// i to oni są tym, co zostaje do domknięcia.
+const SPRAWDZANIE_WAZNE_DNI = 30;
+function sprawdzanyNiedawnoUZrodla(p){
+  if(!p || !p.agentCheckedAt) return false;
+  if(!/^Transfermarkt/i.test(String(p.agentSource || ''))) return false;
+  const granica = new Date();
+  granica.setDate(granica.getDate() - SPRAWDZANIE_WAZNE_DNI);
+  return String(p.agentCheckedAt) >= granica.toISOString().slice(0, 10);
+}
+
 function rangaLigiDoMenedzerow(p){
   const liga = String(ligaZawodnika(p) || '');
   if(/^Ekstraklasa/i.test(liga)) return 0;
@@ -21837,7 +21861,7 @@ function rangaLigiDoMenedzerow(p){
 function zawodnicyDoUzupelnieniaMenedzera(){
   naprawBlednieWpisanychAgentow();
   return DB.players
-    .filter(p=> !p.hasAgent && LIGI_DO_MENEDZEROW.test(String(ligaZawodnika(p) || '')))
+    .filter(p=> !p.hasAgent && LIGI_DO_MENEDZEROW.test(String(ligaZawodnika(p) || '')) && !sprawdzanyNiedawnoUZrodla(p))
     .sort((a,b)=> rangaLigiDoMenedzerow(a) - rangaLigiDoMenedzerow(b)
       || String(a.lastName||'').localeCompare(String(b.lastName||''), 'pl'));
 }
