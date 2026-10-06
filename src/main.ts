@@ -7232,6 +7232,7 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
         <span>
           <button class="secondary" data-x="zakladka" title="Jedno kliknięcie na stronie meczu zamiast zaznaczania całej strony">🔖 Szybkie kopiowanie z ŁNP</button>
           <button class="secondary" data-x="otworz-lnp" title="Otwiera kolejkę tej grupy na Łączy nas piłka — tam uruchamiasz zakładkę">↗ ${klub ? 'Otwórz mecze klubu' : 'Otwórz kolejkę w ŁNP'}</button>
+          <button class="secondary" data-x="ze-skrzynki" title="Pobierz protokoły zebrane przed chwilą zakładką — bez schowka i bez wklejania">⇩ Pobierz zebrane protokoły</button>
         </span>
         <span>
           <button class="secondary" data-x="zamknij">Zamknij</button>
@@ -7247,6 +7248,32 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
     </div>`;
     overlay.querySelectorAll('[data-x="zamknij"]').forEach(b=>b.onclick=()=>{ overlay.remove(); render(); });
     overlay.querySelectorAll('[data-x="rozpoznaj"]').forEach(b=>b.onclick=()=>rozpoznaj());
+    // ODBIÓR ZE SKRZYNKI NA SERWERZE — gdy schowek albo nowe okno zawiodły.
+    //
+    // Zakładka wysyła zebrane protokoły także prosto na serwer (api/wklejka-lnp.js). Ten przycisk
+    // je stamtąd bierze: żadnego kopiowania, żadnego Ctrl+V, żadnych blokad przeglądarki.
+    overlay.querySelectorAll('[data-x="ze-skrzynki"]').forEach(b=>b.onclick=async()=>{
+      const napis = b.textContent;
+      b.disabled = true; b.textContent = 'Pobieram…';
+      try{
+        const odp = await fetch('/api/wklejka-lnp');
+        const d = await odp.json().catch(()=>({}));
+        if(!odp.ok || !d.tresc){
+          komunikat = d.error || 'Nie udało się pobrać zebranych protokołów.';
+          b.disabled = false; b.textContent = napis; rysuj();
+          return;
+        }
+        const pole = overlay.querySelector('#pm-tekst') as HTMLTextAreaElement | null;
+        if(pole) pole.value = d.tresc;
+        wklejka = d.tresc;
+        komunikat = `Pobrałem zbiórkę z ${new Date(d.kiedy).toLocaleString('pl-PL')} (${Math.round(d.tresc.length/1024)} kB). Rozpoznaję…`;
+        rysuj();
+        rozpoznaj();
+      }catch(e){
+        komunikat = 'Nie udało się połączyć ze skrzynką: ' + String((e as Error).message || e);
+        b.disabled = false; b.textContent = napis; rysuj();
+      }
+    });
     overlay.querySelectorAll('[data-x="zakladka"]').forEach(b=>b.onclick=()=>openLnpBookmarkletModal());
     overlay.querySelectorAll('[data-x="otworz-lnp"]').forEach(b=>b.onclick=()=>{
       // Kolejność: link do KOLEJKI tej grupy (bo to z niej zakładka zbiera całą rundę naraz),
