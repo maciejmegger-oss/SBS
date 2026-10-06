@@ -99,3 +99,56 @@ parsera w `api/transfermarkt.js`.
 - **Nie ocenia na podstawie nagrań** — nie ogląda meczów; liczy z ocen, które wpisał skaut.
 - Plan Vercel **Hobby** ma 2 zadania cykliczne; to trzecie może się nie zarejestrować (sprawdź
   Project → Settings → Cron Jobs). Wtedy: plan Pro albo wywołanie z GitHub Actions / zewnętrznego crona.
+
+# Narzędzia agenta — `/api/agent`
+
+Dziesięć funkcji, którymi asystent AI czyta i zmienia dane w SBS (kod: `api/_agent-narzedzia.js`, bramka: `api/agent.js`,
+test: `node scripts/test-agent-narzedzia.mjs`).
+
+| Narzędzie | Co robi | Zapis |
+|---|---|---|
+| `pobierz_zawodnika` | kartoteka + obserwacje + raporty + analiza względem profilu klubu | – |
+| `pobierz_liste_zawodnikow` | lista z filtrami (status, klub, pozycja, rocznik), do 100 na stronę | – |
+| `wyszukaj_zawodnika` | po fragmencie imienia i nazwiska, kolejność słów bez znaczenia | – |
+| `porownaj_zawodnikow` | zestawienie 2–5 zawodników; „najlepszy" tylko przy dość danych i ocenach | – |
+| `pobierz_dane_meczu` | mecz z terminarza + obserwacje do tego meczu | – |
+| `dodaj_zawodnika` | nowa kartoteka (status „Do Obserwacji", autor „SBS AI"); blokuje duplikat | tak |
+| `zaktualizuj_ocene` | **propozycja** oceny 1–6 z uzasadnieniem | tak |
+| `utworz_raport` | raport do **skrzynki raportów** | tak |
+| `ustaw_zadanie_scoutingowe` | tworzy lub aktualizuje zadanie dla skauta (`scouting:zadania_scoutingowe`) | tak |
+| `zmien_status_zawodnika` | zmiana statusu z powodem dopisanym do notatek | tak |
+
+## Bezpieczeństwo — co agent może, a czego nie
+
+- **Oceny agenta nie liczą się do rankingu**, dopóki skaut ich nie potwierdzi (`stats_filled_in = false`).
+- **Raporty agenta trafiają do skrzynki**, nie do kartoteki — skaut przegląda je w zakładce Raporty, jak raport każdego analityka.
+- **Statusy „Odrzucony", „Do transferu", „Na Testy"** wymagają `potwierdzone_przez_uzytkownika: true`. Agent ma ustawiać tę flagę
+  wyłącznie po wyraźnej zgodzie użytkownika (jest to napisane w opisie narzędzia).
+- **Duplikaty:** `dodaj_zawodnika` odmawia przy tym samym imieniu i nazwisku, dopóki nie padnie `na_pewno: true`.
+- **Dziennik:** każdy zapis ląduje w `sbs_kv` pod `scouting:ai_dziennik` (ostatnie 500 wpisów: czas, narzędzie, zawodnik, wynik).
+- **Notatki:** zmiana statusu dopisuje wiersz `[SBS AI RRRR-MM-DD] status: A → B. powód` — nic nie jest nadpisywane.
+
+## Uruchomienie
+
+1. Wygeneruj token: `openssl rand -hex 32`. W Vercelu dodaj `AGENT_TOKEN` (pełny dostęp).
+   Opcjonalnie drugi, `AGENT_TOKEN_ODCZYT` — dla agentów, które mają tylko analizować.
+2. Wymagany jest też `SUPABASE_SERVICE_KEY` (patrz `WDROZENIE.md`). Bez `AGENT_TOKEN` bramka odpowiada 503 — nigdy nie jest otwarta.
+3. Sprawdź: `curl -H "Authorization: Bearer $AGENT_TOKEN" https://<domena>/api/agent` → lista narzędzi.
+4. Wywołanie: `curl -X POST -H "Authorization: Bearer $AGENT_TOKEN" -H "Content-Type: application/json" \
+   -d '{"narzedzie":"wyszukaj_zawodnika","argumenty":{"fraza":"kowalski"}}' https://<domena>/api/agent`
+
+Odmowa narzędzia (np. duplikat, brak zgody) to odpowiedź 200 z `{"ok": false, "powod": …}` — agent ma ją przeczytać i zareagować.
+Błąd 502 oznacza awarię bazy.
+
+## Podłączenie do Claude (pętla tool-use)
+
+Lista z `GET /api/agent` ma kształt parametru `tools` API Claude. Szkic w Node:
+
+```js
+const { narzedzia } = await (await fetch(`${URL}/api/agent`, { headers: { Authorization: `Bearer ${TOKEN}` } })).json();
+// messages.create({ model, tools: narzedzia, messages })
+// dla każdego bloku tool_use: POST /api/agent { narzedzie: blok.name, argumenty: blok.input } → tool_result
+```
+
+Instrukcja systemowa agenta powinna powtarzać zasady wyżej: nie wymyślać ocen, nie opisywać nieobejrzanych meczów,
+pytać użytkownika przed statusami o skutkach poza systemem.

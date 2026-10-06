@@ -27,45 +27,12 @@
 import { BAZA, KLUCZ_BAZY, naglowkiBazy, PODPOWIEDZ_BRAK_KLUCZA } from "./_baza.js";
 import { zbudujRaport, wybierzNowych, KLUCZ_PROFILU, KLUCZ_STANU } from "./_raport-dzienny.js";
 import { uzupelnijZawodnikow, pobierzStrone } from "./_uzupelnianie.js";
+import { pobierzWszystko, czytajKv, zapiszKv } from "./_db.js";
 import { patchZPonowieniem } from "./_ponawianie.js";
 
 // Odczyt Transfermarktu trwa ok. 1–3 s na zawodnika; limit czasu funkcji (60 s) jest w vercel.json.
 
 const KLUCZ_RAPORTU = "scouting:raport_dzienny";
-
-async function pobierzWszystko(tabela, kolumny) {
-  let wiersze = [], od = 0;
-  for (;;) {
-    const r = await fetch(`${BAZA}/rest/v1/${tabela}?select=${kolumny}&limit=1000&offset=${od}`, {
-      headers: naglowkiBazy(), signal: AbortSignal.timeout(20000),
-    });
-    if (!r.ok) throw new Error(`${tabela}: ${r.status}`);
-    const czesc = await r.json();
-    wiersze = wiersze.concat(czesc);
-    if (czesc.length < 1000) return wiersze;
-    od += 1000;
-  }
-}
-
-async function czytajKv(klucz) {
-  const r = await fetch(`${BAZA}/rest/v1/sbs_kv?select=value&key=eq.${encodeURIComponent(klucz)}`, {
-    headers: naglowkiBazy(), signal: AbortSignal.timeout(20000),
-  });
-  if (!r.ok) throw new Error(`sbs_kv ${klucz}: ${r.status}`);
-  const w = await r.json();
-  if (!w.length) return null;
-  try { return JSON.parse(w[0].value); } catch { return null; }
-}
-
-async function zapiszKv(klucz, wartosc) {
-  const r = await fetch(`${BAZA}/rest/v1/sbs_kv?on_conflict=key`, {
-    method: "POST",
-    headers: { ...naglowkiBazy(), Prefer: "resolution=merge-duplicates,return=minimal" },
-    body: JSON.stringify({ key: klucz, value: JSON.stringify(wartosc), updated_at: new Date().toISOString() }),
-    signal: AbortSignal.timeout(20000),
-  });
-  if (!r.ok) throw new Error(`zapis sbs_kv ${klucz}: ${r.status} ${await r.text()}`);
-}
 
 // Zwraca nazwę kanału, którym poszło, albo null, gdy żaden nie jest ustawiony. Błąd wysyłki rzuca.
 async function wyslijNaTelefon(tytul, tekst) {
