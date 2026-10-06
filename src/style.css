@@ -171,6 +171,8 @@ body{margin:0;background:var(--chalk);color:var(--ink);}
 .nav-item.active{background:var(--pitch-2);color:var(--on-pitch);border-left-color:var(--gold);font-weight:600;}
 .nav-dot{width:6px;height:6px;border-radius:50%;background:#5B7A6C;flex-shrink:0;}
 .nav-item.active .nav-dot{background:var(--gold);}
+/* Odznaka z liczbą propozycji AI czekających na decyzję. */
+.nav-odznaka{margin-left:auto;background:var(--gold);color:#16302A;font-size:11px;font-weight:600;border-radius:10px;padding:0 7px;line-height:18px;}
 .scout-box{margin-top:auto;padding:14px 20px 0 20px;border-top:1px solid var(--line);}
 .scout-box label{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#9FB3A9;}
 .scout-box select{width:100%;margin-top:6px;}

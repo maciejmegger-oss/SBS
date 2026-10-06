@@ -22,6 +22,7 @@ import { uruchomTlumaczenie, odswiezPrzelacznikJezyka } from "./i18n/dom";
 uruchomTlumaczenie();
 // Oczko przy polach hasła — ten sam przycisk co w formularzu zgłoszenia na stronie głównej.
 import { podepnijOczko } from "./ui/oko";
+import { zaladujSbsAi, kartaDashboardu, widokSbsAi, podepnijSbsAi, doRozpatrzenia } from "./ui/sbs-ai";
 // Herby jako pliki, a nie jako treść w bazie — 14 MB zdjęte z każdego otwarcia panelu.
 import { wyslijHerb, herbJestPlikiem, przeniesHerby } from "./data/herby";
 // Kod zbieracza ŁNP — ten sam plik, który serwujemy pod /zakladka-lnp-v2.js.
@@ -4139,6 +4140,7 @@ const NAV_ITEMS = [
   {id:"players", label:"Zawodnicy"},
   {id:"newobs", label:"Plan Obserwacji"},
   {id:"reports", label:"Raporty"},
+  {id:"sbsai", label:"SBS AI"},
   {id:"monitoring", label:"Monitoring"},
   {id:"radar", label:"Radar młodzieży"},
   {id:"ranking", label:"Ranking"},
@@ -4341,14 +4343,15 @@ function renderNav(){
   // wszystkim pozostałym. Zamiast Ustawień dostaje „Moje pakiety": co ma wykupione i do kiedy.
   let pozycje = NAV_ITEMS;
   if(czyKlient()){
-    pozycje = NAV_ITEMS.filter(it => it.id !== 'settings')
+    // „SBS AI" to narzędzie pracowni (raport o kartotece i propozycje ocen) — klient go nie widzi.
+    pozycje = NAV_ITEMS.filter(it => it.id !== 'settings' && it.id !== 'sbsai')
       .concat([{id:'pakiety', label:'Moje pakiety'}]);
   } else if(czyAdmin()){
     pozycje = NAV_ITEMS.concat([{id:'access', label:'Dostęp'}]);
   }
   nav.innerHTML = pozycje.map(it => `
     <div class="nav-item ${currentView===it.id?'active':''}" data-view="${it.id}">
-      <span class="nav-dot"></span>${it.label}
+      <span class="nav-dot"></span>${it.label}${it.id==='sbsai' && doRozpatrzenia() ? `<span class="nav-odznaka" title="Propozycje ocen czekają na Twoją decyzję">${doRozpatrzenia()}</span>` : ''}
     </div>`).join('');
   nav.querySelectorAll('.nav-item').forEach(el=>{
     // Kliknięcie w zakładkę z bocznego panelu wraca na jej stronę główną. Wcześniej zerowaliśmy
@@ -4484,6 +4487,7 @@ function render(){
   else if(currentView==="contacts") main.innerHTML = viewContacts();
   else if(currentView==="settings") main.innerHTML = viewSettings();
   else if(currentView==="compare") main.innerHTML = viewCompare();
+  else if(currentView==="sbsai") main.innerHTML = czyKlient() ? viewDashboard() : viewSbsAi();
   else if(currentView==="access") main.innerHTML = viewAccess();
   else if(currentView==="pakiety") main.innerHTML = viewPakiety();
   // ILE TO TRWAŁO — żeby „wolno się otwiera" dało się sprawdzić, a nie tylko odczuć.
@@ -5026,6 +5030,26 @@ async function pobierzTabeleLigowe(liga){
   render();
 }
 
+// ---------- SBS AI ----------
+// Zakładka i karta na dashboardzie pokazują pracę asystenta (zaplecze: api/raport-dzienny.js,
+// api/agent.js; opis: AI-PRACOWNIK.md). Cała logika widoku jest w src/ui/sbs-ai.ts — tu tylko
+// zależności od aplikacji, żeby tamten plik nie musiał importować main.ts.
+function sbsAiZaleznosci(){
+  return {
+    esc, render: ()=>render(),
+    nazwaZawodnika: (id)=>{ const p = DB.players.find(x=>x.id===id); return p ? `${p.firstName||''} ${p.lastName||''}`.trim() : ''; },
+    kto: ()=>currentScout || '',
+    // Potwierdzona propozycja zaczyna się liczyć do średnich — więc musi trafić do pamięci aplikacji,
+    // inaczej zawodnik pokazywałby starą średnią aż do przeładowania strony.
+    wprowadzObserwacje: (o)=>{ if(!DB.observations.some(x=>x.id===o.id)) DB.observations.push(o as any); },
+    powiadom: (t)=>pokazPotwierdzenie(t),
+    przejdzDo: (widok)=>{ currentView = widok; editingPlayerId = null; viewingPlayerId = null; render(); },
+    otworzZawodnika: (id)=>{ currentView = 'players'; viewingPlayerId = id; viewingClubId = null; editingPlayerId = null; render(); },
+  };
+}
+function sbsAiKarta(){ zaladujSbsAi(sbsAiZaleznosci()); return kartaDashboardu({esc}); }
+function viewSbsAi(){ zaladujSbsAi(sbsAiZaleznosci()); return widokSbsAi({esc, nazwaZawodnika: sbsAiZaleznosci().nazwaZawodnika}); }
+
 function viewDashboard(){
   const totalClubs = DB.clubs.length;
   const totalPlayers = DB.players.length;
@@ -5070,6 +5094,7 @@ function viewDashboard(){
   <div style="margin-bottom:18px;">
     ${leagueQuickAccessPanel()}
   </div>
+  ${czyKlient() ? '' : `<div style="margin-bottom:18px;">${sbsAiKarta()}</div>`}
   <!-- MAPA, A OBOK NIEJ JEDNA KOLUMNA: statystyki obserwacji → dystans → szybkie akcje.
        „Ostatnie obserwacje" usunięte z Dashboardu — obserwacje są w Planie Obserwacji.
        Po kliknięciu województwa jego lista klubów zajmuje miejsce kolumny (mapa i kluby obok
@@ -15338,6 +15363,7 @@ function openClubModal(id){
 // ---------- EVENT HANDLING ----------
 function attachHandlers(){
   const main = document.getElementById('main');
+  podepnijSbsAi(main, sbsAiZaleznosci());
 
   main.querySelectorAll('[data-action="goto-newobs"]').forEach(b=>b.onclick=()=>{currentView='newobs';render();});
   main.querySelectorAll('[data-action="goto-addplayer"]').forEach(b=>b.onclick=()=>{currentView='players';render();openPlayerModal(null);});
