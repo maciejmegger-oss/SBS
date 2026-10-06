@@ -7837,6 +7837,15 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
       ? ` Nie umiem przypisać pozycji: ${[...POZYCJE_NIEROZPOZNANE].slice(0,6).join(', ')}`
         + `${POZYCJE_NIEROZPOZNANE.size>6?` i ${POZYCJE_NIEROZPOZNANE.size-6} innych`:''} — pokaż mi ten komunikat, dopiszę je.`
       : '';
+    // CZEGO NADAL BRAKUJE. Sama informacja „już rozliczone" wygląda jak błąd zapisu, a zwykle
+    // znaczy, że wklejka nie objęła ostatnich kolejek (zgłoszenie 06.10.2026, IV liga dolnośląska).
+    const klubyWklejki = [...new Set(wynik.flatMap(pr=> (pr.strony||[]).map(s=> s.klub).filter(Boolean)))];
+    const braki = brakujaceKolejkiPoWklejce(klubyWklejki);
+    const oBrakach = braki.length
+      ? ' Nadal brakuje kolejek: ' + braki.slice(0, 6).map(b=> `${b.nazwa} ${b.wgrane}/${b.rozegrane}`).join(', ')
+        + (braki.length > 6 ? ` i ${braki.length - 6} innych klubów` : '')
+        + '. To znaczy, że ta wklejka nie objęła tych spotkań — otwórz w ŁNP brakującą kolejkę i zbierz ją zakładką.'
+      : '';
     komunikat = komunikatKadrOstatni + (dopisanych || nowych || rocznikow || pozycji
       ? `Zapisano ${meczow} ${meczow===1?'mecz':'meczów'}: ${dopisanych} wpisów dorobku`
         + `${nowych?`, w tym ${nowych} nowych zawodników w kartotece`:''}`
@@ -7846,7 +7855,8 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
         + oPozycjach
       : `Nic nowego nie zapisałem — wszystkie ${meczow} ${meczow===1?'mecz z tej wklejki jest':'meczów z tej wklejki jest'} `
         + `już rozliczonych. ${oPowtorkach} Dorobek został nietknięty.`
-      + (zapamietane.length ? ` Zapamiętałem też adres ŁNP dla ${zapamietane.join(' i ')} — następnym razem otworzy się jednym kliknięciem.` : ' Wklej kolejne protokoły.'));
+      + oBrakach
+      + (zapamietane.length ? ` Zapamiętałem też adres ŁNP dla ${zapamietane.join(' i ')} — następnym razem otworzy się jednym kliknięciem.` : ''));
     wynik = null;
     rysuj();
   }
@@ -13569,6 +13579,24 @@ function meczeKlubu(clubId){
   const wynik = policzMeczeKlubu(clubId, meczeKlubu.wgKlubu.get(clubId) || []);
   meczeKlubu.pamiec.set(clubId, wynik);
   return wynik;
+}
+// CZEGO JESZCZE BRAKUJE — ZAMIAST SAMEGO „NIC NOWEGO".
+//
+// Zgłoszenie (06.10.2026): „zaktualizowałem dane 4 ligi, ale nie wgrało". Okno mówiło tylko
+// „wszystkie mecze z tej wklejki są już rozliczone", więc wyglądało na błąd zapisu. Sprawdzenie
+// u źródła pokazało co innego: wklejka faktycznie nie zawierała dwóch ostatnich kolejek —
+// Piast Żmigród miał w 90minut jedenaście meczów, u nas dziewięć, a brakowało spotkań
+// z Orłem Ząbkowice i Prochowiczanką. Okno ma to mówić wprost, zamiast kazać się domyślać.
+function brakujaceKolejkiPoWklejce(kluby){
+  const braki = [];
+  (kluby || []).forEach(k=>{
+    if(!k) return;
+    const d = meczeKlubu(k.id);
+    if(!d || !d.zTabeli) return;
+    const brakuje = Math.max(0, Number(d.rozegrane || 0) - Number(d.wgrane || 0));
+    if(brakuje) braki.push({ nazwa: k.name, brakuje, rozegrane: d.rozegrane, wgrane: d.wgrane });
+  });
+  return braki.sort((a,b)=> b.brakuje - a.brakuje);
 }
 function policzMeczeKlubu(clubId, zawodnicy){
   const klub = (DB.klubyWgId ? DB.klubyWgId.get(clubId) : DB.clubs.find(c=>c.id === clubId));
