@@ -61,6 +61,10 @@ assert.ok(bp.nowi.every((x) => !x.spelniaProfil));
 assert.match(bp.wiadomosc, /Brak profilu/);
 
 assert.match(zlozWiadomosc({ nowi: [], ranking: [], zBazyDoObserwacji: 0 }), /0 nowych zawodników/);
+const z = zbudujRaport({ zawodnicy, obserwacjePoZawodniku: obs, profil, stan: null, dzis,
+  uzupelnienie: { uzupelnieni: 3, doRecznegoWskazania: ["Adam Nowak"], pola: {}, bledy: [] } }).wiadomosc;
+assert.match(z, /Uzupełniono dane \(Transfermarkt\): 3 zawodników/);
+assert.match(z, /Do ręcznego wskazania profilu TM: Adam Nowak/);
 console.log("OK — raport dzienny: wszystkie sprawdzenia przeszły");
 console.log("\n" + msg);
 assert.ok(wg.B.wynik < 70, "niezgodny z profilem nie przekracza progu");

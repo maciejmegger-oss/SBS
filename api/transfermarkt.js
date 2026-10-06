@@ -12,7 +12,7 @@
 // CZEGO TU NIE MA: statystyk meczowych. Te liczymy z protokołów PZPN i z 90minut — źródeł
 // związkowych. Transfermarkt służy do opisu zawodnika, nie do liczenia jego minut.
 
-const NAGLOWKI = {
+export const NAGLOWKI = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
   "Accept-Language": "pl-PL,pl;q=0.9",
   "Accept": "text/html,application/xhtml+xml",
@@ -58,31 +58,9 @@ function wartoscPo(linie, wzor) {
   return "";
 }
 
-export default async function handler(req, res) {
-  const adres = String((req.query && req.query.url) || "");
-  if (!/^https?:\/\/(www\.)?transfermarkt\.[a-z.]+\/.+\/profil\/spieler\/\d+/i.test(adres)) {
-    return res.status(400).json({
-      error: "To nie jest adres profilu zawodnika na Transfermarkcie.",
-      podpowiedz: "Adres wygląda tak: https://www.transfermarkt.pl/imie-nazwisko/profil/spieler/123456",
-    });
-  }
-
-  let html;
-  try {
-    const odp = await fetch(adres, { headers: NAGLOWKI });
-    if (!odp.ok) {
-      return res.status(502).json({
-        error: `Transfermarkt odpowiedział kodem ${odp.status}.`,
-        podpowiedz: odp.status === 403 || odp.status === 429
-          ? "Serwis chwilowo odrzuca zapytania — spróbuj za kilka minut."
-          : "Sprawdź, czy adres profilu jest poprawny.",
-      });
-    }
-    html = await odp.text();
-  } catch (e) {
-    return res.status(502).json({ error: "Nie udało się połączyć z Transfermarktem: " + String((e && e.message) || e) });
-  }
-
+// Rozbiera stronę profilu na pola kartoteki. Wydzielone z handlera, żeby korzystał z niego też
+// asystent AI (api/_uzupelnianie.js) — jeden parser, a nie dwa, które mogłyby się rozjechać.
+export function rozbierzProfil(html, adres) {
   const linie = html
     .replace(/<script[\s\S]*?<\/script>/gi, "")
     .replace(/<style[\s\S]*?<\/style>/gi, "")
@@ -100,7 +78,8 @@ export default async function handler(req, res) {
   })();
 
   const nogaTekst = wartoscPo(linie, /^Noga:?$/i).toLowerCase();
-  const noga = /prawo/.test(nogaTekst) ? "Prawa" : /lewo/.test(nogaTekst) ? "Lewa" : /obie|obu/.test(nogaTekst) ? "Obie" : "";
+  // „prawa/lewa" (polski serwis) i „prawo/lewo" (formy z innych widoków) — stąd rdzeń słowa.
+  const noga = /obie|obu/.test(nogaTekst) ? "Obie" : /praw/.test(nogaTekst) ? "Prawa" : /lew/.test(nogaTekst) ? "Lewa" : "";
 
   // Pozycja na TM bywa złożona („Napastnik - Prawy napastnik") — bierzemy człon główny, bo to on
   // odpowiada nazewnictwu w kartotece.
@@ -149,7 +128,7 @@ export default async function handler(req, res) {
     : "";
   const zdjecie = (html.match(/<img[^>]+src="(https:\/\/img\.a\.transfermarkt\.technology\/portrait\/[^"]+)"/i) || [])[1] || "";
 
-  return res.status(200).json({
+  return {
     zrodlo: adres,
     nazwaPelna: wartoscPo(linie, /^Nazwisko w kraju/i),
     dataUrodzenia: dataZTekstu(wartoscPo(linie, /^Urodz|^Data urodzenia/i)),
@@ -166,5 +145,33 @@ export default async function handler(req, res) {
     umowaDo: dataZTekstu(wartoscPo(linie, /^Umowa do:?$/i)),
     wartoscRynkowa,
     zdjecie,
-  });
+  };
+}
+
+export default async function handler(req, res) {
+  const adres = String((req.query && req.query.url) || "");
+  if (!/^https?:\/\/(www\.)?transfermarkt\.[a-z.]+\/.+\/profil\/spieler\/\d+/i.test(adres)) {
+    return res.status(400).json({
+      error: "To nie jest adres profilu zawodnika na Transfermarkcie.",
+      podpowiedz: "Adres wygląda tak: https://www.transfermarkt.pl/imie-nazwisko/profil/spieler/123456",
+    });
+  }
+
+  let html;
+  try {
+    const odp = await fetch(adres, { headers: NAGLOWKI });
+    if (!odp.ok) {
+      return res.status(502).json({
+        error: `Transfermarkt odpowiedział kodem ${odp.status}.`,
+        podpowiedz: odp.status === 403 || odp.status === 429
+          ? "Serwis chwilowo odrzuca zapytania — spróbuj za kilka minut."
+          : "Sprawdź, czy adres profilu jest poprawny.",
+      });
+    }
+    html = await odp.text();
+  } catch (e) {
+    return res.status(502).json({ error: "Nie udało się połączyć z Transfermarktem: " + String((e && e.message) || e) });
+  }
+
+  return res.status(200).json(rozbierzProfil(html, adres));
 }

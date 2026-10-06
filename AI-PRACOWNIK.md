@@ -13,8 +13,8 @@ SBS AI – raport dzienny
 1 zawodnik – brak wystarczających danych
 ```
 
-Kod: `api/raport-dzienny.js` (baza + wysyłka), `api/_raport-dzienny.js` (cała logika oceny),
-test: `node scripts/test-raport-dzienny.mjs`. Zadanie cykliczne: codziennie 06:00 UTC, godzinę po
+Kod: `api/raport-dzienny.js` (baza + wysyłka), `api/_raport-dzienny.js` (logika oceny),
+`api/_uzupelnianie.js` (braki z Transfermarktu); testy: `node scripts/test-raport-dzienny.mjs`, `node scripts/test-uzupelnianie.mjs`. Zadanie cykliczne: codziennie 06:00 UTC, godzinę po
 odświeżeniu statystyk (`/api/refresh-stats`, 05:00 UTC), żeby minuty były świeże.
 
 ## Uruchomienie (jednorazowo)
@@ -70,12 +70,32 @@ Zawodnicy ze statusem „Odrzucony" są pomijani. Progi są stałymi na górze `
 Pełny raport (listy imienne, braki w danych, powody ponownej obserwacji, ranking całej bazy) zapisuje się
 w `sbs_kv`: `scouting:raport_dzienny` i kopia z datą `scouting:raport_dzienny:RRRR-MM-DD`.
 
+## Uzupełnianie braków z Transfermarktu
+
+Przed policzeniem raportu asystent próbuje uzupełnić puste pola zawodników: pozycję, wzrost, nogę,
+datę urodzenia, narodowość, koniec umowy i menedżera (`api/_uzupelnianie.js`, parser z `api/transfermarkt.js`).
+Kolejność: najpierw nowi zawodnicy, potem ci z największą liczbą braków; domyślnie do 10 zawodników
+na przebieg (`?limit=`), pauza 1,2 s między zapytaniami, stop po 35 s albo po błędzie 403/429.
+
+Zasady, żeby nie wpisać cudzych danych:
+- **tylko puste pola** — niczego wpisanego przez skauta nie nadpisuje; `has_agent` zmienia tylko z „nie" na „tak";
+- **tylko pewny profil** — zawodnik ma już adres Transfermarkt, albo wyszukiwanie daje *dokładnie jednego*
+  kandydata o tym samym imieniu i nazwisku, którego rocznik (lub klub) zgadza się z kartoteką.
+  Dwóch pasujących albo żadnego → nic nie wpisuje, a nazwisko trafia do wiadomości
+  („Do ręcznego wskazania profilu TM"). Wystarczy wkleić adres profilu w kartotece, a następnego dnia dane się dociągną;
+- **ślad** w `custom_fields.__ext.uzupelnienieAI` (data, źródło, adres, lista pól); nieudana próba też jest
+  zapisana, więc ten sam zawodnik nie jest odpytywany częściej niż co 14 dni;
+- błąd tego kroku nie blokuje raportu; `?bez_uzupelniania=1` wyłącza go całkiem.
+
+**Uwaga:** logikę sprawdzono testem na atrapie serwisu (`node scripts/test-uzupelnianie.mjs`). Odczyt prawdziwego
+Transfermarktu wymaga sieci, której to środowisko nie miało — przy pierwszym uruchomieniu zrób `?dry=1` i obejrzyj
+pole `uzupelnienie` w odpowiedzi. Transfermarkt zmienia układ stron; jeśli pola przestaną się wypełniać, zacznij od
+parsera w `api/transfermarkt.js`.
+
 ## Czego asystent NIE robi (świadomie)
 
 - **Nie zmienia kartoteki** — nie wpisuje ocen, statusów ani raportów. Tylko czyta i podsumowuje.
+- **Nie nadpisuje danych** wpisanych ręcznie i nie zgaduje, który to zawodnik, gdy Transfermarkt ma kilku pasujących.
 - **Nie ocenia na podstawie nagrań** — nie ogląda meczów; liczy z ocen, które wpisał skaut.
-- **Nie szuka braków w internecie sam.** Wypisuje, czego brakuje (`braki` w raporcie). Minuty uzupełniają
-  `/api/refresh-stats` i `/api/stats-90minut`. Automatyczne dociąganie reszty (np. wzrost, noga z Transfermarkt)
-  to osobny, następny krok.
 - Plan Vercel **Hobby** ma 2 zadania cykliczne; to trzecie może się nie zarejestrować (sprawdź
   Project → Settings → Cron Jobs). Wtedy: plan Pro albo wywołanie z GitHub Actions / zewnętrznego crona.

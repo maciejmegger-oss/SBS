@@ -25,7 +25,11 @@
 // PODGLĄD: ?dry=1 — liczy i zwraca raport, niczego nie zapisuje i nie wysyła (jak w refresh-stats).
 
 import { BAZA, KLUCZ_BAZY, naglowkiBazy, PODPOWIEDZ_BRAK_KLUCZA } from "./_baza.js";
-import { zbudujRaport, KLUCZ_PROFILU, KLUCZ_STANU } from "./_raport-dzienny.js";
+import { zbudujRaport, wybierzNowych, KLUCZ_PROFILU, KLUCZ_STANU } from "./_raport-dzienny.js";
+import { uzupelnijZawodnikow, pobierzStrone } from "./_uzupelnianie.js";
+import { patchZPonowieniem } from "./_ponawianie.js";
+
+// Odczyt Transfermarktu trwa ok. 1–3 s na zawodnika; limit czasu funkcji (60 s) jest w vercel.json.
 
 const KLUCZ_RAPORTU = "scouting:raport_dzienny";
 
@@ -111,7 +115,7 @@ export default async function handler(req, res) {
   try {
     const [zawodnicy, obserwacje, profil, stan] = await Promise.all([
       pobierzWszystko("sbs_players",
-        "id,first_name,last_name,birth_year,birth_date,position,foot,height,minutes,matches,goals,status,club_id,has_contract,has_agent,date_added,custom_fields"),
+        "id,first_name,last_name,birth_year,birth_date,position,foot,height,minutes,matches,goals,status,club_id,has_agent,agency_name,nationality,tm_link,date_added,custom_fields"),
       pobierzWszystko("sbs_observations", "player_id,date,ratings,recommendation,stats_filled_in"),
       czytajKv(KLUCZ_PROFILU),
       czytajKv(KLUCZ_STANU),
@@ -123,7 +127,37 @@ export default async function handler(req, res) {
       poZawodniku.get(o.player_id).push(o);
     });
     wszyscy = zawodnicy;
-    raport = zbudujRaport({ zawodnicy, obserwacjePoZawodniku: poZawodniku, profil, stan });
+
+    // KROK 4: uzupełnienie braków — ZANIM policzymy raport, żeby ranking widział świeże dane.
+    // Błąd tego kroku nie może przewrócić raportu: Transfermarkt bywa niedostępny, a raport o
+    // nowych zawodnikach ma przyjść i tak.
+    let uzupelnienie = null;
+    if (String(req.query.bez_uzupelniania || "") !== "1") {
+      try {
+        const kluby = await pobierzWszystko("sbs_clubs", "id,name");
+        const nazwaKlubu = new Map(kluby.map((k) => [k.id, k.name]));
+        const idNowych = new Set(wybierzNowych(zawodnicy.filter((p) => p.status !== "Odrzucony"), stan, new Date().toISOString().slice(0, 10)).map((p) => p.id));
+        uzupelnienie = await uzupelnijZawodnikow({
+          zawodnicy, idNowych, nazwaKlubuPo: (p) => nazwaKlubu.get(p.club_id) || "",
+          limit: parseInt(req.query.limit, 10) || 10,
+          pobierz: pobierzStrone,
+          zapisz: async (p, kolumny, noweExt) => {
+            if (!zapisz) return; // podgląd: nic nie zapisujemy
+            // Świeży odczyt tuż przed zapisem — skaut mógł w międzyczasie zmienić kartotekę.
+            const r = await fetch(`${BAZA}/rest/v1/sbs_players?select=custom_fields&id=eq.${encodeURIComponent(p.id)}`, { headers: naglowkiBazy() });
+            const akt = r.ok ? ((await r.json())[0] || {}).custom_fields || {} : (p.custom_fields || {});
+            const w = await patchZPonowieniem(`${BAZA}/rest/v1/sbs_players?id=eq.${encodeURIComponent(p.id)}`, {
+              method: "PATCH", headers: naglowkiBazy(),
+              body: JSON.stringify({ ...kolumny, custom_fields: { ...akt, __ext: { ...(akt.__ext || {}), ...noweExt } } }),
+            });
+            if (!w.ok) throw new Error(`zapis zawodnika ${p.id}: ${w.status}`);
+          },
+        });
+      } catch (e) {
+        uzupelnienie = { sprawdzeni: 0, uzupelnieni: 0, pola: {}, doRecznegoWskazania: [], bezZmian: 0, bledy: ["krok uzupełniania: " + e.message], przerwanoPoCzasie: false };
+      }
+    }
+    raport = zbudujRaport({ zawodnicy, obserwacjePoZawodniku: poZawodniku, profil, stan, uzupelnienie });
   } catch (e) {
     return res.status(502).json({ error: "Odczyt z bazy nie powiódł się: " + e.message });
   }

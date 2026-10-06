@@ -110,7 +110,7 @@ export function ocenKryterium(p, kr, obsPod) {
     warunek("wzrost", liczba(p.height), (v) => v >= kr.wzrostMin);
   }
   if (kr.noga) {
-    warunek("noga", p.foot, (v) => norm(v).startsWith(norm(kr.noga).slice(0, 3)) || norm(v).includes("obu"));
+    warunek("noga", p.foot, (v) => norm(v).startsWith(norm(kr.noga).slice(0, 3)) || /^obie|^obu/.test(norm(v)));
   }
   if (liczba(kr.minutyMin) !== null) {
     warunek("minuty", liczba(p.minutes), (v) => v >= kr.minutyMin);
@@ -144,9 +144,12 @@ export function brakiDanych(p, obsPod) {
   return braki;
 }
 
+// Umowa i narodowość nie mają własnych kolumn — aplikacja chowa je w custom_fields.__ext
+// (patrz EXT_CONFIG w src/data/storage.ts).
+const ext = (p) => (p.custom_fields && p.custom_fields.__ext) || {};
+
 function umowaWygasaWCiaguRoku(p, dzis) {
-  const cf = (p.custom_fields && p.custom_fields.__ext) || {};
-  const data = p.contract_until || cf.contractUntil || (p.custom_fields && p.custom_fields.contractUntil);
+  const data = ext(p).contractUntil;
   if (!data) return false;
   const t = Date.parse(String(data).slice(0, 10));
   return Number.isFinite(t) && t - dzis.getTime() < 365 * 86400000;
@@ -197,7 +200,7 @@ export function analizujZawodnika(p, obs, profil, dzis = new Date()) {
   const drogaDoTransferu =
     p.status === "Do transferu" ||
     /do transferu/i.test(obsPod.ostatniaRekomendacja) ||
-    p.has_contract === false ||
+    ext(p).hasContract === false ||
     umowaWygasaWCiaguRoku(p, dzis);
   const potencjalTransferowy = !brakWystarczajacychDanych && wysokiPotencjal && drogaDoTransferu;
 
@@ -262,12 +265,20 @@ export function zlozWiadomosc(raport) {
   if (zBazyDoObserwacji > 0) {
     linie.push("", `W bazie: ${zBazyDoObserwacji} ${odmiana(zBazyDoObserwacji, "zawodnik czeka", "zawodników czeka")} na ponowną obserwację`);
   }
+  const u = raport.uzupelnienie;
+  if (u && (u.uzupelnieni || u.doRecznegoWskazania.length)) {
+    linie.push("");
+    if (u.uzupelnieni) linie.push(`Uzupełniono dane (Transfermarkt): ${u.uzupelnieni} ${odmiana(u.uzupelnieni, "zawodnik", "zawodników")}`);
+    if (u.doRecznegoWskazania.length) {
+      linie.push(`Do ręcznego wskazania profilu TM: ${u.doRecznegoWskazania.slice(0, 3).join(", ")}${u.doRecznegoWskazania.length > 3 ? "…" : ""}`);
+    }
+  }
   if (raport.ostrzezenie) linie.push("", "⚠ " + raport.ostrzezenie);
   return linie.join("\n");
 }
 
 /** Cały raport: analiza nowych, ranking, zawodnicy z bazy do ponownej obserwacji. */
-export function zbudujRaport({ zawodnicy, obserwacjePoZawodniku, profil, stan, dzis = new Date() }) {
+export function zbudujRaport({ zawodnicy, obserwacjePoZawodniku, profil, stan, uzupelnienie = null, dzis = new Date() }) {
   const dzisTekst = dzis.toISOString().slice(0, 10);
   const aktywni = zawodnicy.filter((p) => p.status !== "Odrzucony");
   const analizy = new Map(aktywni.map((p) => [p.id, analizujZawodnika(p, obserwacjePoZawodniku.get(p.id) || [], profil, dzis)]));
@@ -288,6 +299,7 @@ export function zbudujRaport({ zawodnicy, obserwacjePoZawodniku, profil, stan, d
     rankingBazy,
     zBazyDoObserwacji: zBazy.length,
     zBazyLista: zBazy.slice(0, 20),
+    uzupelnienie,
     ostrzezenie: "",
   };
   if (!raport.maProfil) {
