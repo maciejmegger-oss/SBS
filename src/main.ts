@@ -7772,8 +7772,25 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
           return;
         }
 
-        const juzRozliczony = (p.rozliczoneMecze||[]).includes(protokol.klucz)
-          || (p.przebieg||[]).some(x=> importNorm(x.rywal||'') === importNorm(rywal) && !!x.dom === uSiebie);
+        // CZY TEN MECZ JEST JUŻ POLICZONY — I DLACZEGO NIE WYSTARCZY SAM KLUCZ Z WKLEJKI.
+        //
+        // Klucz z treści wklejki bywa inny przy każdym zebraniu, więc obok niego zapisujemy klucz
+        // WŁASNY, zbudowany z sezonu, rywala i strony boiska. W rozgrywkach ligowych każda taka
+        // para zdarza się w sezonie dokładnie raz, a sezon w kluczu sprawia, że ten sam mecz
+        // z poprzedniego roku niczego nie blokuje.
+        //
+        // Zgłoszenie (06.10.2026): „zaktualizowałem dane 4 ligi, ale nie wgrało, dalej mają mniej
+        // meczów". Przyczyna: dotąd wystarczyło, że zawodnik miał W OGÓLE wpis z tym rywalem i tą
+        // stroną boiska — bez patrzenia na sezon. Mecz z poprzedniego sezonu blokował więc ten
+        // sam mecz w nowym i okno meldowało „wszystko już rozliczone", choć dorobek nie rósł.
+        const sezonKlubuTeraz = String((klub && klub.season) || '');
+        const kluczWlasny = `${sezonKlubuTeraz}|${odciskKlubu(rywal)}|${uSiebie ? 'D' : 'W'}`;
+        const rozliczone = p.rozliczoneMecze || [];
+        const juzRozliczony = rozliczone.includes(protokol.klucz) || rozliczone.includes(kluczWlasny)
+          // Wpisy sprzed kluczy (stare importy) rozpoznajemy po rywalu i stronie — ale tylko
+          // wtedy, gdy pochodzą z TEGO sezonu.
+          || (String(p.przebiegSezon || '') === sezonKlubuTeraz
+              && (p.przebieg||[]).some(x=> !x.mecz && importNorm(x.rywal||'') === importNorm(rywal) && !!x.dom === uSiebie));
         if(juzRozliczony){ powtorzonych++; powtorzoneMecze.add(`${s.nazwa} — ${rywal}`); return; }
         p.matches = (p.matches || 0) + 1;
         p.minutes = (p.minutes || 0) + w.minutyGry;
@@ -7782,7 +7799,7 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
         if(w.gole) p.goals = (p.goals || 0) + w.gole;
         if(w.zolte) p.yellowCards = (p.yellowCards || 0) + w.zolte;
         if(w.czerwone) p.redCards = (p.redCards || 0) + w.czerwone;
-        p.rozliczoneMecze = [...(p.rozliczoneMecze || []), protokol.klucz];
+        p.rozliczoneMecze = [...rozliczone, protokol.klucz, kluczWlasny];
         // Minuty mecz po meczu — to z nich powstaje wykres dostępności w profilu i w PDF.
         const przebieg = (p.przebieg || []).filter(x=>x.mecz !== protokol.klucz);
         przebieg.push({ mecz: protokol.klucz, data: '', kolejka: null, rywal, gole: w.gole || 0,
@@ -19768,11 +19785,16 @@ function przetworzProtokolLnp(rawText, adresMeczu, grupaOkna){
       const zawodnik = DB.players.find(p=>p.clubId===klub.id
         && importNorm(p.firstName+p.lastName) === importNorm(z.firstName+z.lastName));
       // TA SAMA REGUŁA CO PRZY ZAPISIE — inaczej okno pokazywałoby jako nowe mecze, których zapis
-      // i tak nie policzy. Klucz z treści wklejki bywa inny przy każdym zebraniu; para
-      // (rywal, czy u siebie) wskazuje spotkanie jednoznacznie.
+      // i tak nie policzy (albo odwrotnie: jako policzone te, których brakuje). Klucz z wklejki
+      // bywa inny przy każdym zebraniu, więc obok niego patrzymy na klucz własny: sezon, rywal
+      // i strona boiska. Sezon w kluczu sprawia, że mecz z poprzedniego roku nie blokuje nowego.
+      const sezonTegoKlubu = String((klub && klub.season) || '');
+      const kluczWlasnyPodgladu = `${sezonTegoKlubu}|${odciskKlubu(rywalStrony)}|${uSiebieStrona ? 'D' : 'W'}`;
       const juzPoliczony = !!zawodnik && (
         (zawodnik.rozliczoneMecze||[]).includes(klucz)
-        || (zawodnik.przebieg||[]).some(x=> importNorm(x.rywal||'') === importNorm(rywalStrony) && !!x.dom === uSiebieStrona)
+        || (zawodnik.rozliczoneMecze||[]).includes(kluczWlasnyPodgladu)
+        || (String(zawodnik.przebiegSezon || '') === sezonTegoKlubu
+            && (zawodnik.przebieg||[]).some(x=> !x.mecz && importNorm(x.rywal||'') === importNorm(rywalStrony) && !!x.dom === uSiebieStrona))
       );
       // Gole i kartki wiążemy z zawodnikiem po nazwisku — wiersz zdarzenia niesie tekst całego
       // wiersza z protokołu, więc nazwisko w nim stoi. Sprawdzamy oba człony, bo wiersz bywa
