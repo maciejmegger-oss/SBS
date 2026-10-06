@@ -100,6 +100,27 @@ parsera w `api/transfermarkt.js`.
 - Plan Vercel **Hobby** ma 2 zadania cykliczne; to trzecie może się nie zarejestrować (sprawdź
   Project → Settings → Cron Jobs). Wtedy: plan Pro albo wywołanie z GitHub Actions / zewnętrznego crona.
 
+# Zakładka „SBS AI" w aplikacji
+
+W aplikacji (`/app`) asystenta widać w trzech miejscach — kod: `src/ui/sbs-ai.ts` (widok), `src/data/sbs-ai.ts` (logika, test:
+`node scripts/test-sbs-ai.mjs`, wymaga Node ≥ 22.18):
+
+- **Karta „SBS AI" na dashboardzie** — liczby z ostatniego raportu dziennego (nowi, spełniają profil, do obserwacji, potencjał transferowy,
+  brak danych), ile ocen czeka na potwierdzenie i ile zadań jest otwartych. Gdy raport jest starszy niż 2 dni, karta ostrzega,
+  że zadanie dzienne nie działa.
+- **Pozycja „SBS AI" w menu** z odznaką: liczba propozycji ocen czekających na Twoją decyzję.
+- **Zakładka „SBS AI"**: propozycje ocen z uzasadnieniem (**Potwierdź / Odrzuć**), pełny raport dzienny (ten sam tekst, który idzie na telefon,
+  rankingi, lista „do ręcznego wskazania profilu TM"), zadania scoutingowe ze zmianą statusu i dziennik zapisów agenta (tylko do odczytu).
+
+Co robią przyciski:
+- **Potwierdź ocenę** — ustawia `stats_filled_in = true` i zmienia notatkę na „ocena potwierdzona przez …". Od tej chwili ocena liczy się do średnich
+  i rankingu (także w już otwartej aplikacji).
+- **Odrzuć** — niczego nie kasuje, tylko oznacza notatkę jako odrzuconą; propozycja znika z listy, ślad zostaje w obserwacjach.
+- **Status zadania** — zapisuje listę zadań w `sbs_kv`; tuż przed zapisem odczytuje ją na nowo, żeby nie nadpisać zadania dodanego w międzyczasie przez agenta.
+
+Widoczne dla skautów i administratorów, **ukryte dla kont klienta**. Aplikacja nie uruchamia asystenta — zakładka tylko czyta jego wyniki;
+asystent pracuje na serwerze (zadanie dzienne i `/api/agent`).
+
 # Narzędzia agenta — `/api/agent`
 
 Dziesięć funkcji, którymi asystent AI czyta i zmienia dane w SBS (kod: `api/_agent-narzedzia.js`, bramka: `api/agent.js`,
