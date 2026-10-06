@@ -13557,6 +13557,26 @@ function policzMeczeKlubu(clubId, zawodnicy){
   const klub = (DB.klubyWgId ? DB.klubyWgId.get(clubId) : DB.clubs.find(c=>c.id === clubId));
   const sezonKlubu = String((klub && klub.season) || '').trim();
   const nasi = zawodnicy || DB.players.filter(p=>p.clubId === clubId);
+  // DOROBEK Z INNYCH ROZGRYWEK NIE LICZY SIĘ DO TEGO KLUBU.
+  //
+  // Zgłoszenie (06.10.2026): „Korona 2 Kielce ma 20 meczów, chyba zsumowało z Ekstraklasą".
+  // Dokładnie tak: karta rezerw zbiera zawodników, którzy mają w kartotece dorobek PIERWSZEJ
+  // drużyny (statystyki z 90minut niosą nazwę rozgrywek — „90minut (Ekstraklasa)"). Gdy w tabeli
+  // III ligi nie znajdzie się wiersz tego klubu, liczba rozegranych brana była z tych właśnie
+  // kartotek — i rezerwy pokazywały dwadzieścia kolejek Ekstraklasy.
+  //
+  // Zawodnika pomijamy TYLKO wtedy, gdy źródło wprost nazywa inne rozgrywki. Brak takiej informacji
+  // (protokoły ŁNP, wpisy ręczne) zostawiamy jak dotąd — zgadywanie wycięłoby połowę prawdziwych
+  // danych.
+  const ligaKlubu = String((klub && klub.league) || '');
+  const zInnychRozgrywek = (p)=>{
+    const wNawiasie = String(p && p.statsSource || '').match(/\(([^)]+)\)/);
+    if(!wNawiasie || !ligaKlubu) return false;
+    const zrodloweRozgrywki = wNawiasie[1].trim();
+    if(/wklejone|ręcznie|recznie/i.test(zrodloweRozgrywki)) return false;
+    return !wTychRozgrywkach(ligaKlubu, zrodloweRozgrywki) && !wTychRozgrywkach(zrodloweRozgrywki, ligaKlubu)
+      && zrodloweRozgrywki !== ligaKlubu;
+  };
   const spotkania = new Map();     // "rywal|D" -> wynik (albo '')
   const nazwyRywali = new Map();   // "rywal|D" -> czytelna nazwa rywala do pokazania w podpowiedzi
   nasi.forEach(p=>{
@@ -13566,6 +13586,7 @@ function policzMeczeKlubu(clubId, zawodnicy){
     // jako bieżąca: tak powstają wpisy z protokołów ŁNP, które sezonu nie niosą.
     const sezonZawodnika = String(p.przebiegSezon || '').trim();
     if(sezonKlubu && sezonZawodnika && sezonZawodnika !== sezonKlubu) return;
+    if(zInnychRozgrywek(p)) return;
     (p.przebieg || []).forEach(x=>{
       // RYWALA ROZPOZNAJEMY ODCISKIEM NAZWY, NIE SUROWYM ZAPISEM.
       //
@@ -13587,7 +13608,7 @@ function policzMeczeKlubu(clubId, zawodnicy){
   // nie dostaniemy"). Po odświeżeniu statystyk zawodnik ma więc poprawne „7 meczów", ale rozpisanych
   // spotkań jest mniej — i kolumna pokazywała 4/6 tam, gdzie 90minut pokazuje 7. Liczbą rozegranych
   // kolejek jest to, co WIĘKSZE: najwyższy dorobek w kartotekach albo liczba rozpisanych spotkań.
-  const zSum = Math.max(0, ...nasi.map(p=>Number(p.matches) || 0));
+  const zSum = Math.max(0, ...nasi.filter(p=> !zInnychRozgrywek(p)).map(p=>Number(p.matches) || 0));
   let punkty = null;
   spotkania.forEach((wynik, k)=>{
     // Wynik zapisujemy z perspektywy meczu („2:1"), więc u gościa strony trzeba odwrócić.
