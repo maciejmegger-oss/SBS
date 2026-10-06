@@ -38,10 +38,29 @@ sprawdz("wersja zakładki podbita, żeby panel pokazał nową", /SBS_ZBIERACZ="v
 
 console.log("\n3. Aplikacja odbiera jednym kliknięciem");
 sprawdz("przycisk w oknie protokołów", /data-x="ze-skrzynki"/.test(app));
-sprawdz("po pobraniu od razu rozpoznaje", /rysuj\(\);\n\s*rozpoznaj\(\);/.test(app));
 sprawdz("mówi, z kiedy jest zbiórka i ile waży", /Pobrałem zbiórkę z \$\{new Date\(d\.kiedy\)\.toLocaleString\('pl-PL'\)\}/.test(app));
 sprawdz("błąd serwera pokazany, nie połknięty", /komunikat = d\.error \|\| 'Nie udało się pobrać zebranych protokołów\.'/.test(app));
 sprawdz("wklejanie ręczne zostaje jako druga droga", /data-x="rozpoznaj"/.test(app));
+
+// KOLEJNOŚĆ W TYM JEDNYM KLIKNIĘCIU DECYDUJE O WSZYSTKIM.
+//
+// rysuj() nadpisuje całe wnętrze okna. Gdy treść wkładaliśmy do pola PRZED przerysowaniem,
+// ginęła razem ze starym polem i rozpoznawanie dostawało pustkę. A gdy w handlerze stała
+// linijka „wklejka = d.tresc" — zmiennej, której w tym oknie nie ma — przycisk w ogóle nie
+// dochodził do rozpoznawania i kończył na „Nie udało się połączyć ze skrzynką: wklejka is not
+// defined" (zgłoszone na żywo 06.10.2026, przy 98 protokołach IV ligi dolnośląskiej).
+const handler = (app.match(/data-x="ze-skrzynki"\]'\)\.forEach[\s\S]*?\n    \}\);/) || [""])[0];
+sprawdz("handler odnaleziony w źródle", handler.length > 200, "zmieniła się nazwa przycisku?");
+sprawdz("treść trafia do pola PO przerysowaniu okna",
+  handler.indexOf("rysuj();") < handler.indexOf("pole.value = d.tresc"),
+  "pole.value przed rysuj() — tekst przepadnie przy przerysowaniu");
+sprawdz("po włożeniu treści od razu rozpoznaje",
+  handler.indexOf("pole.value = d.tresc") < handler.lastIndexOf("rozpoznaj();"));
+// Komentarze odcinamy: w samym źródle stoi wyjaśnienie, co tu kiedyś było, i ono też zawiera
+// te słowa — inaczej test oblewałby się o własny komentarz.
+const handlerKod = handler.split("\n").filter((w) => !/^\s*\/\//.test(w)).join("\n");
+sprawdz("nie pisze do zmiennej, której w tym oknie nie ma",
+  !/\bwklejka\s*=/.test(handlerKod), "została linijka „wklejka = …\" — rzuci wyjątkiem");
 
 console.log(bledy ? `\n${bledy} BŁĘDÓW` : "\nWszystko przeszło.");
 process.exit(bledy ? 1 : 0);

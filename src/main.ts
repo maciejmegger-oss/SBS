@@ -7263,11 +7263,15 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
           b.disabled = false; b.textContent = napis; rysuj();
           return;
         }
-        const pole = overlay.querySelector('#pm-tekst') as HTMLTextAreaElement | null;
-        if(pole) pole.value = d.tresc;
-        wklejka = d.tresc;
+        // Najpierw przerysowujemy okno z komunikatem, a TREŚĆ wkładamy do pola dopiero potem —
+        // rysuj() nadpisuje całe wnętrze okna, więc tekst wstawiony wcześniej przepadałby razem
+        // ze starym polem i „Rozpoznaj" dostawałby pustkę. (Była tu też linijka „wklejka = …",
+        // której w tym oknie nie ma — rozpoznawanie czyta wprost z pola. Rzucała wyjątkiem
+        // „wklejka is not defined" i przycisk kończył na „Nie udało się połączyć ze skrzynką".)
         komunikat = `Pobrałem zbiórkę z ${new Date(d.kiedy).toLocaleString('pl-PL')} (${Math.round(d.tresc.length/1024)} kB). Rozpoznaję…`;
         rysuj();
+        const pole = overlay.querySelector('#pm-tekst') as HTMLTextAreaElement | null;
+        if(pole) pole.value = d.tresc;
         rozpoznaj();
       }catch(e){
         komunikat = 'Nie udało się połączyć ze skrzynką: ' + String((e as Error).message || e);
