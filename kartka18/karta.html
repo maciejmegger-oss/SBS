@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="pl"><head><meta charset="utf-8"><title>18 lat</title>
+<link href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Lobster&display=block&subset=latin-ext" rel="stylesheet">
+<style>
+@page{size:A4;margin:0}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:210mm;height:297mm;background:#fff}
+.page{width:210mm;height:297mm;padding:12mm 12mm 12mm;display:flex;flex-direction:column;background:#fff}
+.gold{color:#c9a85a}
+.top{display:flex;align-items:center;justify-content:center;gap:7mm;height:34mm}
+.top h1{font-family:'Alfa Slab One',serif;font-weight:400;font-size:27mm;line-height:1;letter-spacing:.5mm;color:#c9a85a}
+.sun{width:9mm;height:9mm;flex:none}
+.row{display:grid;grid-template-columns:repeat(3,1fr);gap:4mm;height:62mm;margin-top:3mm}
+.ph{overflow:hidden;background:#ddd}
+.ph img{width:100%;height:100%;object-fit:cover;display:block}
+.txt{text-align:center;margin-top:5mm;height:50mm;display:flex;flex-direction:column;justify-content:center}
+.txt .s{font-family:'Lobster',cursive;font-size:19mm;line-height:1;color:#2b2b2b}
+.txt .l{font-family:'Alfa Slab One',serif;font-size:28mm;line-height:1;color:#c9a85a;margin-top:1mm}
+.dash{border-top:.7mm dashed #c9a85a;margin:2mm 0 4mm}
+.big{flex:1;min-height:0}
+</style></head><body>
+<div class="page">
+ <div class="top">
+  <svg class="sun" viewBox="0 0 100 100"><g fill="#c9a85a"><circle cx="50" cy="50" r="26"/><g id="r"><polygon points="50,0 57,22 43,22"/></g><use href="#r" transform="rotate(45 50 50)"/><use href="#r" transform="rotate(90 50 50)"/><use href="#r" transform="rotate(135 50 50)"/><use href="#r" transform="rotate(180 50 50)"/><use href="#r" transform="rotate(225 50 50)"/><use href="#r" transform="rotate(270 50 50)"/><use href="#r" transform="rotate(315 50 50)"/></g><circle cx="50" cy="50" r="14" fill="#fff"/></svg>
+  <h1>18 LAT</h1>
+  <svg class="sun" viewBox="0 0 100 100"><g fill="#c9a85a"><circle cx="50" cy="50" r="26"/><use href="#r"/><use href="#r" transform="rotate(45 50 50)"/><use href="#r" transform="rotate(90 50 50)"/><use href="#r" transform="rotate(135 50 50)"/><use href="#r" transform="rotate(180 50 50)"/><use href="#r" transform="rotate(225 50 50)"/><use href="#r" transform="rotate(270 50 50)"/><use href="#r" transform="rotate(315 50 50)"/></g><circle cx="50" cy="50" r="14" fill="#fff"/></svg>
+ </div>
+ <div class="row">
+  <div class="ph"><img src="img/1.jpg" style="object-position:50% 40%"></div>
+  <div class="ph"><img src="img/2.jpg" style="object-position:48% 50%"></div>
+  <div class="ph"><img src="img/3.jpg" style="object-position:50% 30%"></div>
+ </div>
+ <div class="txt"><div class="s">bycia absolutną</div><div class="l">LEGENDĄ</div></div>
+ <div class="dash"></div>
+ <div class="ph big"><img src="img/4.jpg" style="object-position:50% 25%"></div>
+</div>
+</body></html>
