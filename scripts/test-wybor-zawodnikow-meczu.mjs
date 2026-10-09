@@ -35,15 +35,17 @@ const kod = [
   wytnij("znacznikZRozgrywek", /export function znacznikZRozgrywek[\s\S]*?\n\}/),
   wytnij("klubZNazwy", /function klubZNazwy[\s\S]*?\n    \|\| null;\n\}/),
   wytnij("druzynyZMeczu", /function druzynyZMeczu[\s\S]*?\n\}/),
-  wytnij("zawężanie listy", /const \[nazwaG, nazwaS\] = druzynyZMeczu\(planMecz\);[\s\S]*?const zawezone = zMeczu\.length > 0;/),
+  wytnij("zawodnicyDoWyboru", /function zawodnicyDoWyboru\(\)[\s\S]*?\n\}/),
+  wytnij("opcjeZawodnikow", /const opcjeZawodnikow = [\s\S]*?\.join\(""\);/),
 ].join("\n").replace(/export /g, "");
 
-// Wycięty fragment rysuje też same <option>, więc podstawiamy dwie najprostsze funkcje panelu —
-// i dzięki temu widzimy nie tylko pulę, ale i to, co naprawdę wchodzi do listy na ekranie.
+// Podstawiamy dwie najprostsze funkcje panelu, zeby zobaczyc nie tylko pule, ale i to,
+// co naprawde wchodzi do listy na ekranie.
 const uruchom = (cache, planMecz, planRozgrywki = "") =>
   new Function("cache", "planMecz", "planRozgrywki", "esc", "clubName", `
     ${transformSync(kod, { loader: "ts" }).code}
-    return { doWyboru, zawezone, klubyMeczu, players };
+    const { lista, zawezone } = zawodnicyDoWyboru();
+    return { doWyboru: lista, zawezone, players: opcjeZawodnikow(lista) };
   `)(cache, planMecz, planRozgrywki, String,
      (id) => (cache.clubs.find((c) => c.id === id) || {}).name || "");
 
@@ -76,16 +78,20 @@ console.log("Mecz, na ktory scout dzisiaj jedzie");
   spr("nie ma juniorów tego samego klubu", !kto.includes("Junior"), kto.join(", "));
   spr("dokładnie dwóch do wyboru", w.doWyboru.length === 2, String(w.doWyboru.length));
   // Liczy się to, co naprawdę wchodzi do listy na ekranie, nie sama pula.
+  // Pierwsza pozycja to zawsze "— obserwacja meczu —", wiec nazwisk jest o jedno mniej.
   spr("na rozwijanej liście są tylko ci dwaj",
-    (w.players.match(/<option/g) || []).length === 2
+    (w.players.match(/<option/g) || []).length === 3
     && /Marcinio/.test(w.players) && /Mosek/.test(w.players) && !/Kowal/.test(w.players),
     w.players);
+  spr("i jest wyjście na obserwację całego meczu",
+    /<option value="">— obserwacja meczu —<\/option>/.test(w.players));
 }
 
 console.log("\nNazwa skrocona, tak jak ja pisze scout");
 {
   const w = uruchom(cache, "Chojniczanka - Podhale", "Betclic 2 Liga");
-  spr("skrót dopasowuje oba kluby", w.klubyMeczu.length === 2, JSON.stringify(w.klubyMeczu));
+  const kto = w.doWyboru.map((p) => p.lastName).sort();
+  spr("skrót dopasowuje oba kluby", kto.join() === "Marcinio,Mosek", kto.join(", "));
   spr("i dalej są tylko ci dwaj", w.doWyboru.length === 2 && w.zawezone === true);
 }
 
@@ -108,9 +114,32 @@ console.log("\nGdy klubow nie da sie rozpoznac");
   spr("puste pole „Mecz” nie zostawia pustej listy", w.doWyboru.length === cache.players.length);
 }
 
+console.log("\nLista przelicza sie w trakcie pisania");
+{
+  // TU BYL BLAD, zgloszony ze stadionu: "sa wszyscy zawodnicy, a nie tylko zawodnicy
+  // Chojniczanki czy Podhala". Lista powstawala RAZ, przy rysowaniu formularza — czyli gdy pole
+  // "Mecz" bylo jeszcze puste. Scout wpisywal mecz, otwieral liste i widzial cala kartoteke,
+  // bo nic jej od tamtej pory nie przeliczylo.
+  spr("wpisanie meczu przelicza listę w miejscu",
+    /if \(t\.id === "n-match"\) \{[\s\S]{0,120}odswiezListeZawodnikow\(\);/.test(panel));
+  spr("rozgrywki też ją przeliczają — to inna kadra tego samego klubu",
+    /if \(t\.id === "n-liga"\) \{[\s\S]{0,200}odswiezListeZawodnikow\(\);/.test(panel));
+  const cialo = (panel.match(/function odswiezListeZawodnikow\(\): void \{([\s\S]*?)\n\}/) || [])[1];
+  spr("przeliczenie nie przerysowuje ekranu (kursor zostaje w polu)",
+    !!cialo && !/render\(\)/.test(cialo), String(cialo).slice(0, 80));
+  spr("wskazany zawodnik zostaje, o ile dalej jest na liście",
+    /sel\.value = lista\.some\(\(p\) => p\.id === byl\) \? byl : "";/.test(panel));
+  spr("podpis pod listą też się odświeża", /n-player-hint/.test(panel));
+  // Formularz i przeliczenie musza liczyc TO SAMO — dwie kopie rozjada sie przy pierwszej zmianie.
+  spr("jedno źródło listy dla formularza i dla przeliczenia",
+    (panel.match(/zawodnicyDoWyboru\(\)/g) || []).length >= 2);
+}
+
 console.log("\nCo widzi scout");
 {
-  spr("lista zawodników bierze się z zawężonej puli", /const players = doWyboru\s*\n\s*\.slice\(\)/.test(panel));
+  spr("lista zawodników bierze się z zawężonej puli",
+    /const \{ lista: doWyboru, zawezone \} = zawodnicyDoWyboru\(\);/.test(panel)
+    && /<select id="n-player">\$\{opcjeZawodnikow\(doWyboru\)\}<\/select>/.test(panel));
   spr("podpis mówi, że to zawodnicy z tego meczu", /Tylko zawodnicy drużyn z tego meczu/.test(panel));
   spr("i mówi, co zrobić, gdy klubów nie rozpoznano",
     /sprawdź, czy nazwy drużyn zgadzają się z tymi w SBS/.test(panel));

@@ -16,7 +16,7 @@ import {
   wyczyscKopieBazy, getHerby, pobierzHerby,
   type Cache, type LiveEvent, type LiveState, type Period,
 } from "./db";
-import type { Observation, Report } from "../types";
+import type { Observation, Report, Player } from "../types";
 import { linkDoMeczuZPola, bezpiecznyLinkMeczu } from "../data/link-meczu";
 // Skala według pozycji — jedno źródło dla panelu i dla systemu, patrz src/domain/pozycje.ts.
 import {
@@ -1001,19 +1001,21 @@ function viewWklej(): string {
     <button class="btn ghost" data-act="wczytaj-ze-zrzutu">Wczytaj do formularza</button>`;
 }
 
-function viewNowa(): string {
-  const scouts = cache.scouts.length
-    ? cache.scouts.map((s) => `<option ${s === getScout() ? "selected" : ""}>${esc(s)}</option>`).join("")
-    : "";
-  // ZAWODNICY TYLKO Z TEGO MECZU.
-  //
-  // Lista pokazywała CAŁĄ kartotekę — przy kilkuset nazwiskach wybór właściwego to przewijanie
-  // przez ludzi, których dziś na boisku nie będzie. A pomyłka nie daje się zauważyć: obserwacja
-  // zapisuje się na kogoś, kto gra dwieście kilometrów dalej, i wychodzi to dopiero przy raporcie.
-  //
-  // Skoro pole „Mecz" zna obie drużyny, zawężamy do ich zawodników. Gdy nie da się dopasować
-  // żadnego klubu (mecz wpisany inaczej niż nazwy w kartotece, drużyna spoza bazy) — pokazujemy
-  // wszystkich, bo lista pusta byłaby gorsza niż za długa: zabierałaby jedyną drogę.
+// ZAWODNICY TYLKO Z TEGO MECZU.
+//
+// Lista pokazywała CAŁĄ kartotekę — przy kilkuset nazwiskach wybór właściwego to przewijanie
+// przez ludzi, których dziś na boisku nie będzie. A pomyłka nie daje się zauważyć: obserwacja
+// zapisuje się na kogoś, kto gra dwieście kilometrów dalej, i wychodzi to dopiero przy raporcie.
+//
+// Skoro pole „Mecz" zna obie drużyny, zawężamy do ich zawodników. Gdy nie da się dopasować
+// żadnego klubu (mecz wpisany inaczej niż nazwy w kartotece, drużyna spoza bazy) — pokazujemy
+// wszystkich, bo lista pusta byłaby gorsza niż za długa: zabierałaby jedyną drogę.
+//
+// OSOBNA FUNKCJA, bo listę trzeba przeliczyć DWA RAZY: przy rysowaniu formularza i jeszcze raz
+// w trakcie wpisywania nazw drużyn. Nazwa meczu żyje w polu DOM, więc przy pierwszym rysowaniu
+// jest zwykle pusta — bez przeliczenia scout otwierał listę i widział całą kartotekę, mimo że
+// mecz miał już wpisany.
+function zawodnicyDoWyboru(): { lista: Player[]; zawezone: boolean } {
   const [nazwaG, nazwaS] = druzynyZMeczu(planMecz);
   const znacznik = znacznikZRozgrywek(planRozgrywki);
   const klubyMeczu = [nazwaG, nazwaS]
@@ -1022,13 +1024,40 @@ function viewNowa(): string {
   const zMeczu = klubyMeczu.length
     ? cache.players.filter((p) => p.clubId && klubyMeczu.includes(p.clubId))
     : [];
-  const doWyboru = zMeczu.length ? zMeczu : cache.players;
-  const players = doWyboru
+  const lista = (zMeczu.length ? zMeczu : cache.players)
     .slice()
-    .sort((a, b) => (a.lastName || "").localeCompare(b.lastName || "", "pl"))
-    .map((p) => `<option value="${esc(p.id)}">${esc(p.lastName)} ${esc(p.firstName)} — ${esc(clubName(p.clubId))}</option>`)
-    .join("");
-  const zawezone = zMeczu.length > 0;
+    .sort((a, b) => (a.lastName || "").localeCompare(b.lastName || "", "pl"));
+  return { lista, zawezone: zMeczu.length > 0 };
+}
+
+const opcjeZawodnikow = (lista: Player[]): string =>
+  '<option value="">— obserwacja meczu —</option>'
+  + lista.map((p) => `<option value="${esc(p.id)}">${esc(p.lastName)} ${esc(p.firstName)} — ${esc(clubName(p.clubId))}</option>`).join("");
+
+const podpisListyZawodnikow = (zawezone: boolean, ile: number): string => zawezone
+  ? `Tylko zawodnicy drużyn z tego meczu (${ile}). Wskaż tego, którego jedziesz oglądać.`
+  : "Nie rozpoznałem klubów z pola „Mecz”, więc pokazuję całą kartotekę — sprawdź, czy nazwy drużyn zgadzają się z tymi w SBS.";
+
+// Przeliczenie listy BEZ przerysowania całego formularza: pełny render w trakcie pisania
+// zabrałby kursor z pola, a to samo pole trzeba jeszcze dopisać do końca.
+function odswiezListeZawodnikow(): void {
+  const sel = $<HTMLSelectElement>("n-player");
+  if (!sel) return;
+  const byl = sel.value;
+  const { lista, zawezone } = zawodnicyDoWyboru();
+  sel.innerHTML = opcjeZawodnikow(lista);
+  // Wskazany zawodnik zostaje, o ile dalej jest na liście. Jeśli wypadł — bo scout poprawił
+  // nazwę drużyny — lepiej wrócić do „obserwacji meczu" niż zostawić wybór, którego nie widać.
+  sel.value = lista.some((p) => p.id === byl) ? byl : "";
+  const podpis = $("n-player-hint");
+  if (podpis) podpis.textContent = podpisListyZawodnikow(zawezone, lista.length);
+}
+
+function viewNowa(): string {
+  const scouts = cache.scouts.length
+    ? cache.scouts.map((s) => `<option ${s === getScout() ? "selected" : ""}>${esc(s)}</option>`).join("")
+    : "";
+  const { lista: doWyboru, zawezone } = zawodnicyDoWyboru();
 
   return `
     <h2>Zaplanuj obserwację</h2>
@@ -1067,10 +1096,9 @@ function viewNowa(): string {
         ? (kategoriaRecznie ? "Wybrane ręcznie." : "Rozpoznane z nazwy rozgrywek — popraw, jeśli się mylę.")
         : "Rozpoznam z nazwy rozgrywek albo wskaż sam."}</span></div>
     <div class="field"><span class="label">Zawodnik (opcjonalnie)</span>
-      <select id="n-player"><option value="">— obserwacja meczu —</option>${players}</select>
-      <span class="hint" style="display:block; margin-top:4px;">${zawezone
-        ? `Tylko zawodnicy drużyn z tego meczu (${doWyboru.length}). Wskaż tych, których jedziesz oglądać.`
-        : "Nie rozpoznałem klubów z pola „Mecz”, więc pokazuję całą kartotekę — sprawdź, czy nazwy drużyn zgadzają się z tymi w SBS."}</span></div>
+      <select id="n-player">${opcjeZawodnikow(doWyboru)}</select>
+      <span class="hint" id="n-player-hint" style="display:block; margin-top:4px;">${
+        esc(podpisListyZawodnikow(zawezone, doWyboru.length))}</span></div>
     <div class="field"><span class="label">Rodzaj</span>
       <select id="n-typ">
         <option value="live">Live — na stadionie</option>
@@ -4007,10 +4035,24 @@ document.addEventListener("change", (e) => {
 document.addEventListener("input", (e) => {
   const t = e.target as HTMLInputElement;
 
+  // NAZWY DRUŻYN ZAWĘŻAJĄ LISTĘ ZAWODNIKÓW JUŻ W TRAKCIE PISANIA.
+  //
+  // Lista powstawała raz, przy rysowaniu formularza — czyli wtedy, gdy pole „Mecz" było jeszcze
+  // puste. Scout wpisywał mecz, otwierał listę i widział całą kartotekę, bo nic jej od tamtej
+  // pory nie przeliczyło. Przeliczamy więc przy każdej zmianie nazwy meczu, w miejscu, bez
+  // przerysowania ekranu.
+  if (t.id === "n-match") {
+    planMecz = t.value;
+    odswiezListeZawodnikow();
+    return;
+  }
+
   // Kategoria dopowiada się przy wpisywaniu rozgrywek. Przełącznik przestawiamy WPROST, bez
   // przerysowania widoku: pełny render w trakcie pisania zabrałby kursor z pola.
   if (t.id === "n-liga") {
     planRozgrywki = t.value;
+    // Rozgrywki też rozstrzygają o składzie listy: „CLJ U17" znaczy inną kadrę tego samego klubu.
+    odswiezListeZawodnikow();
     if (kategoriaRecznie) return;
     planKategoria = kategoriaZRozgrywek(planRozgrywki, planMecz);
     $("n-kategoria")?.querySelectorAll<HTMLElement>("[data-act='kategoria']").forEach((b) => {
