@@ -20,8 +20,8 @@ import type { Observation, Report } from "../types";
 import { linkDoMeczuZPola, bezpiecznyLinkMeczu } from "../data/link-meczu";
 // Skala według pozycji — jedno źródło dla panelu i dla systemu, patrz src/domain/pozycje.ts.
 import {
-  PROFILE, WSZYSTKIE_KAFLE, grupaZNumeru, grupaZOpisu, grupaZFaz,
-  type GrupaPozycji,
+  PROFILE, WSZYSTKIE_KAFLE, kafleRoli, rolaZNumeru, rolaZOpisu, grupaZRoli, grupaZFaz,
+  type GrupaPozycji, type RolaKafli,
 } from "../domain/pozycje";
 
 // ---------------------------------------------------------------------------
@@ -119,11 +119,18 @@ const EVENT_TAGS = [
   { key: "gol", label: "Gol", grupa: "Zdarzenia meczu", neutralny: true },
 ] as const;
 
+// Kafle POZYCYJNE, przy których biegun też nic nie znaczy (patrz src/domain/pozycje.ts).
+// Asysta i gol albo padły, albo nie — „nieudana asysta" to nie jest zdarzenie, a spalonego
+// się nie wykonuje udanie. Klucze są wspólne z kaflami meczowymi, więc liczby zgadzają się
+// niezależnie od tego, czy akcję zapisano przy nazwisku, czy przy drużynie.
+const KAFLE_BEZ_BIEGUNA = new Set(["gol", "asysta", "spalony"]);
+
 // Czy ten kafel pyta o „udane / nieudane". Rzut rożny nie jest udany ani nieudany — był.
 // Stawianie przy nim bieguna produkowałoby liczbę, która nic nie znaczy, a wyglądałaby
 // na statystykę.
 const kafelNeutralny = (key: string): boolean =>
-  !!(EVENT_TAGS.find((t) => t.key === key) as { neutralny?: boolean } | undefined)?.neutralny;
+  KAFLE_BEZ_BIEGUNA.has(key)
+  || !!(EVENT_TAGS.find((t) => t.key === key) as { neutralny?: boolean } | undefined)?.neutralny;
 
 // ---------------------------------------------------------------------------
 // Pomocnicze
@@ -1009,11 +1016,30 @@ function viewNowa(): string {
   const scouts = cache.scouts.length
     ? cache.scouts.map((s) => `<option ${s === getScout() ? "selected" : ""}>${esc(s)}</option>`).join("")
     : "";
-  const players = cache.players
+  // ZAWODNICY TYLKO Z TEGO MECZU.
+  //
+  // Lista pokazywała CAŁĄ kartotekę — przy kilkuset nazwiskach wybór właściwego to przewijanie
+  // przez ludzi, których dziś na boisku nie będzie. A pomyłka nie daje się zauważyć: obserwacja
+  // zapisuje się na kogoś, kto gra dwieście kilometrów dalej, i wychodzi to dopiero przy raporcie.
+  //
+  // Skoro pole „Mecz" zna obie drużyny, zawężamy do ich zawodników. Gdy nie da się dopasować
+  // żadnego klubu (mecz wpisany inaczej niż nazwy w kartotece, drużyna spoza bazy) — pokazujemy
+  // wszystkich, bo lista pusta byłaby gorsza niż za długa: zabierałaby jedyną drogę.
+  const [nazwaG, nazwaS] = druzynyZMeczu(planMecz);
+  const znacznik = znacznikZRozgrywek(planRozgrywki);
+  const klubyMeczu = [nazwaG, nazwaS]
+    .map((n) => klubZNazwy(n, znacznik)?.id)
+    .filter(Boolean) as string[];
+  const zMeczu = klubyMeczu.length
+    ? cache.players.filter((p) => p.clubId && klubyMeczu.includes(p.clubId))
+    : [];
+  const doWyboru = zMeczu.length ? zMeczu : cache.players;
+  const players = doWyboru
     .slice()
     .sort((a, b) => (a.lastName || "").localeCompare(b.lastName || "", "pl"))
     .map((p) => `<option value="${esc(p.id)}">${esc(p.lastName)} ${esc(p.firstName)} — ${esc(clubName(p.clubId))}</option>`)
     .join("");
+  const zawezone = zMeczu.length > 0;
 
   return `
     <h2>Zaplanuj obserwację</h2>
@@ -1052,7 +1078,10 @@ function viewNowa(): string {
         ? (kategoriaRecznie ? "Wybrane ręcznie." : "Rozpoznane z nazwy rozgrywek — popraw, jeśli się mylę.")
         : "Rozpoznam z nazwy rozgrywek albo wskaż sam."}</span></div>
     <div class="field"><span class="label">Zawodnik (opcjonalnie)</span>
-      <select id="n-player"><option value="">— obserwacja meczu —</option>${players}</select></div>
+      <select id="n-player"><option value="">— obserwacja meczu —</option>${players}</select>
+      <span class="hint" style="display:block; margin-top:4px;">${zawezone
+        ? `Tylko zawodnicy drużyn z tego meczu (${doWyboru.length}). Wskaż tych, których jedziesz oglądać.`
+        : "Nie rozpoznałem klubów z pola „Mecz”, więc pokazuję całą kartotekę — sprawdź, czy nazwy drużyn zgadzają się z tymi w SBS."}</span></div>
     <div class="field"><span class="label">Rodzaj</span>
       <select id="n-typ">
         <option value="live">Live — na stadionie</option>
@@ -1278,18 +1307,25 @@ const FORMACJA_WSPOLRZEDNE: Record<string, Record<number, Punkt>> = {
 //   2. wystawiony już protokół — jeśli w tym meczu padły oceny bramkarskie, to przesądza
 //      sprawę i nie wolno podmienić skali w trakcie, bo wystawione oceny zniknęłyby z oczu;
 //   3. kartoteka — działa od razu po wczytaniu składu, jeszcze zanim ktokolwiek dotknie mapy.
-function grupaZawodnika(z: SkladZawodnik, nazwaKlubu?: string): GrupaPozycji | null {
-  const zMapy = grupaZNumeru(z.pozycja);
+function rolaZawodnika(z: SkladZawodnik, nazwaKlubu?: string): RolaKafli | null {
+  const zMapy = rolaZNumeru(z.pozycja);
   if (zMapy) return zMapy;
   // Wystawiony już protokół przesądza: skala nie może zmienić się w trakcie meczu, bo wystawione
-  // oceny zniknęłyby scoutowi z oczu.
+  // oceny zniknęłyby scoutowi z oczu. Protokół zna tylko cztery grupy oceny — skrzydłowego nie
+  // da się z niego odczytać, bo wystawia mu się rubryki pomocnika. I to jest w porządku: kafle
+  // skrzydłowe wracają w chwili, gdy ktoś postawi go na planszy na 7 albo 11.
   const zProtokolu = grupaZFaz(z.fazy);
   if (zProtokolu) return zProtokolu;
   // Kartoteka wchodzi DOPIERO gdy zawodnika nie ma na mapie — bo o skali rozstrzyga to, na czym
   // stoi w TYM meczu. Odwrotna pomyłka jest częsta: w kartotece zostaje stara pozycja z czasów
   // juniorskich albo zawodnik przekwalifikowany dawno temu.
-  return grupaZKartoteki(z.nazwa, nazwaKlubu);
+  return rolaZKartoteki(z.nazwa, nazwaKlubu);
 }
+
+// Grupa OCENY tego zawodnika — protokół 1–6 i podpis nad nim. Skrzydłowy ocenia się jak pomocnik,
+// więc jedno rozpoznanie wystarcza na oba użycia i nie da się ich rozjechać.
+const grupaZawodnika = (z: SkladZawodnik, nazwaKlubu?: string): GrupaPozycji | null =>
+  grupaZRoli(rolaZawodnika(z, nazwaKlubu));
 
 // Odpowiedź kartoteki zapamiętana na czas życia kopii bazy.
 //
@@ -1298,29 +1334,32 @@ function grupaZawodnika(z: SkladZawodnik, nazwaKlubu?: string): GrupaPozycji | n
 // każdego wyróżnionego na liście. Przy kilku tysiącach kartotek i kilkunastu wyróżnionych to
 // dziesiątki tysięcy operacji na tekście między dotknięciem a zapaleniem się kafla — czyli
 // dokładnie to opóźnienie, którego przy tagowaniu na żywo nie wolno mieć.
-let bramkarzePamiec = new Map<string, GrupaPozycji | null>();
+let bramkarzePamiec = new Map<string, RolaKafli | null>();
 let bramkarzeZrodlo: unknown = null;
 
-function grupaZKartoteki(nazwa: string, nazwaKlubu?: string): GrupaPozycji | null {
+function rolaZKartoteki(nazwa: string, nazwaKlubu?: string): RolaKafli | null {
   // Kopia bazy podmienia całą tablicę zawodników, więc jej tożsamość jest wystarczającym
   // znacznikiem świeżości — po odświeżeniu pytamy kartotekę na nowo.
   if (bramkarzeZrodlo !== cache.players) {
     bramkarzeZrodlo = cache.players;
     bramkarzePamiec = new Map();
   }
-  const klucz = `${nazwa} ${nazwaKlubu || ""}`;
+  // Rozdzielnik to znak zerowy zapisany UCIECZKĄ, nie wklejony w źródło: w pliku surowy bajt
+  // 0 robił z main.ts „plik binarny" dla grepa i rg, więc szukanie czegokolwiek w panelu po cichu
+  // przestawało cokolwiek znajdować.
+  const klucz = `${nazwa}\u0000${nazwaKlubu || ""}`;
   const znane = bramkarzePamiec.get(klucz);
   if (znane !== undefined) return znane;
   const id = znajdzZawodnika(nazwa, nazwaKlubu);
   const p = id ? cache.players.find((x) => x.id === id) : null;
-  const wynik = grupaZOpisu(p?.position);
+  const wynik = rolaZOpisu(p?.position);
   bramkarzePamiec.set(klucz, wynik);
   return wynik;
 }
 
-/** Kafle do tagowania dla tego zawodnika. */
-const kafleDla = (grupa: GrupaPozycji | null) =>
-  (grupa ? PROFILE[grupa].kafle : EVENT_TAGS) as readonly { key: string; label: string }[];
+/** Kafle do tagowania dla tego zawodnika. Bez rozpoznanej pozycji zostają kafle meczowe. */
+const kafleDla = (rola: RolaKafli | null) =>
+  (kafleRoli(rola) || EVENT_TAGS) as readonly { key: string; label: string }[];
 
 /** Pozycje protokołu 1–6 dla tego zawodnika. */
 const fazyDla = (grupa: GrupaPozycji | null) =>
@@ -1820,19 +1859,32 @@ function ocenianyTeraz(): { obs: Observation & { skladMeczu?: Sklad }; strona?: 
   return null;
 }
 
-/** Czy zawodnik, którego się właśnie taguje, to bramkarz. */
-function grupaTeraz(): GrupaPozycji | null {
+/** Rola zawodnika, którego się właśnie taguje — od niej zależy zestaw kafli. */
+function rolaTeraz(): RolaKafli | null {
   const dane = ocenianyTeraz();
-  return dane ? grupaZawodnika(dane.z, dane.strona?.nazwa) : null;
+  return dane ? rolaZawodnika(dane.z, dane.strona?.nazwa) : null;
 }
+
+// Jak nazwać na ekranie zestaw kafli, który właśnie widać. Scout musi widzieć, że panel
+// naprawdę się zmienił wraz z pozycją — inaczej przy skrzydłowym szuka kafli, których tam nie ma,
+// i nie wie, czy to panel, czy on się myli.
+const NAZWA_ROLI: Record<RolaKafli, string> = {
+  bramkarz: "Bramkarz",
+  obronca: "Obrońca",
+  pomocnik: "Pomocnik",
+  skrzydlowy: "Skrzydłowy / wahadłowy",
+  napastnik: "Napastnik",
+};
 
 // SIATKA KAFLI — Z NAGŁÓWKAMI GRUP TAM, GDZIE GRUPY SĄ.
 //
-// Przy wskazanym zawodniku kafle są pozycyjne i płaskie: dziesięć rzeczy, które robi obrońca,
-// i nie ma czego dzielić. Przy całej drużynie grup jest trzy i nagłówki nie są ozdobą — dają
-// palcowi pamięć miejsca. W trakcie akcji szuka się ręką, nie wzrokiem, a kafel znaleziony
-// o sekundę za późno to akcja opisana z pamięci zamiast z boiska.
+// Przy wskazanym zawodniku kafle są pozycyjne i płaskie: dwanaście rzeczy, które robi obrońca,
+// i nie ma czego dzielić — nad nimi stoi tylko podpis, z jakiej pozycji są. Przy całej drużynie
+// grup jest trzy i nagłówki nie są ozdobą — dają palcowi pamięć miejsca. W trakcie akcji szuka
+// się ręką, nie wzrokiem, a kafel znaleziony o sekundę za późno to akcja opisana z pamięci
+// zamiast z boiska.
 function siatkaKafli(counts: Record<string, number>): string {
+  const rola = rolaTeraz();
   const kafle = kafleTeraz() as readonly { key: string; label: string; grupa?: string }[];
   const kafel = (t: { key: string; label: string }) => `
     <button class="tagbtn ${counts[t.key] ? "hit" : ""}" data-act="tag" data-k="${t.key}">
@@ -1841,9 +1893,17 @@ function siatkaKafli(counts: Record<string, number>): string {
 
   const grupy: string[] = [];
   kafle.forEach((t) => { if (t.grupa && !grupy.includes(t.grupa)) grupy.push(t.grupa); });
-  if (!grupy.length) return `<div class="tags">${kafle.map(kafel).join("")}</div>`;
+  if (!grupy.length) return `
+    <div class="label" style="margin:0 0 4px;">Kafle pozycyjne · ${esc(NAZWA_ROLI[rola!])}</div>
+    <div class="tags">${kafle.map(kafel).join("")}</div>`;
 
-  return grupy.map((g) => {
+  // Wskazany zawodnik, a kafle meczowe: pozycji nie udało się rozpoznać. Mówimy to wprost
+  // i podpowiadamy jedyne lekarstwo — postawienie go na planszy w zakładce Składy.
+  const bezPozycji = !!live?.wybranyZawodnik && !rola
+    ? '<p class="hint" style="margin:0 0 6px;">Nie znam pozycji tego zawodnika — póki co kafle meczowe. Ustaw go na planszy w zakładce Składy, a dostaniesz kafle jego pozycji.</p>'
+    : "";
+
+  return bezPozycji + grupy.map((g) => {
     const wGrupie = kafle.filter((t) => t.grupa === g);
     // Gdy CAŁA grupa jest neutralna, mówimy to przy nagłówku. Przełącznik „udane / nieudane"
     // stoi wyżej i jest wspólny, więc bez tego zdania scout miałby prawo sądzić, że dotyczy
@@ -1859,7 +1919,7 @@ function siatkaKafli(counts: Record<string, number>): string {
 // Kafle pod bieżącego zawodnika. Dopóki nikt nie jest wybrany, zostają kafle zawodnika z pola:
 // zdarzenie zapisane bez nazwiska dotyczy meczu, nie bramkarza, więc bramkarska lista byłaby
 // wtedy myląca.
-const kafleTeraz = () => kafleDla(grupaTeraz());
+const kafleTeraz = () => kafleDla(rolaTeraz());
 
 // Treść pól tekstowych żyje w DOM, nie w stanie — przed każdym przerysowaniem trzeba ją przepisać
 // do zawodnika, inaczej notatka przepada przy pierwszym dotknięciu kropki oceny.

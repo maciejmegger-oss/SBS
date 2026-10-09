@@ -6,8 +6,16 @@
 // a to, co przy każdym z nich naprawdę rozstrzyga, nie miało gdzie się zapisać. Scout albo
 // naciągał cudze rubryki, albo zostawiał je puste.
 //
-// CZTERY GRUPY: bramkarz, obrońca, pomocnik, napastnik. Skrzydłowi (7 i 11) idą do pomocników —
-// tak jak rozstrzygnął scout: liczy się u nich praca w obie strony, nie samo wykańczanie.
+// CZTERY GRUPY OCENY: bramkarz, obrońca, pomocnik, napastnik. Skrzydłowi (7 i 11) idą do
+// pomocników — tak jak rozstrzygnął scout: liczy się u nich praca w obie strony, nie samo
+// wykańczanie.
+//
+// PIĘĆ ZESTAWÓW KAFLI, bo kafle to coś innego niż ocena. Protokół 1–6 rysuje radar w systemie
+// i dlatego musi mieć stałą liczbę rubryk — kafle tylko liczą zdarzenia, więc skrzydłowy może
+// dostać własny zestaw, zostając w ocenie pomocnikiem. To właśnie zgłosił scout: „gra na pozycji
+// 11, czyli wahadłowy, skrzydłowy, i powinien mieć podania, dośrodkowania, strzały, gol, asystę,
+// spalonego, obronę 1 na 1" — czyli i podania, i powrót do obrony, czego środkowy pomocnik
+// w tej postaci nie ma.
 //
 // DLACZEGO OSOBNY PLIK, A NIE STAŁE W main.ts.
 // Numeracja pozycji jest wpisana osobno w systemie i w panelu i już raz się przez to rozjechała
@@ -17,6 +25,9 @@
 // raport, w którym oceny stoją pod cudzymi podpisami. Jedno źródło, dwa wejścia.
 
 export type GrupaPozycji = "bramkarz" | "obronca" | "pomocnik" | "napastnik";
+
+/** Rola przy KAFLACH — grupy oceny plus skrzydłowy, który liczy inne zdarzenia niż środek pola. */
+export type RolaKafli = GrupaPozycji | "skrzydlowy";
 
 export interface Kafel { key: string; label: string; }
 export interface Faza { key: string; label: string; krotko: string; }
@@ -53,6 +64,30 @@ export function grupaZOpisu(tekst: unknown): GrupaPozycji | null {
   return null;
 }
 
+// ROLA PRZY KAFLACH — osobno od grupy oceny.
+//
+// Siódemka i jedenastka zostają w ocenie pomocnikami (radar ma cztery wierzchołki i ani jednego
+// więcej), ale liczą inne zdarzenia: dośrodkowania i powrót do obrony zamiast rozgrywania.
+const ROLA_Z_NUMERU: Record<number, RolaKafli> = { ...GRUPA_Z_NUMERU, 7: "skrzydlowy", 11: "skrzydlowy" };
+
+/** Rola przy kaflach wg numeru na mapie pozycji. */
+export const rolaZNumeru = (numer: unknown): RolaKafli | null =>
+  ROLA_Z_NUMERU[Number(numer)] || null;
+
+/** Rola przy kaflach wg pozycji z kartoteki. „Wahadłowy" i „skrzydłowy" idą przed obrońcę
+ *  i przed pomocnika — „Obrońca (wahadłowy)" ma tagować jak skrzydło, bo tak gra. */
+export function rolaZOpisu(tekst: unknown): RolaKafli | null {
+  const n = String(tekst ?? "").toLowerCase();
+  if (!n.trim()) return null;
+  if (/bramkarz/.test(n)) return "bramkarz";
+  if (/wahad[łl]ow|skrzyd[łl]ow/.test(n)) return "skrzydlowy";
+  return grupaZOpisu(n);
+}
+
+/** Grupa oceny stojąca za rolą. Skrzydłowy ocenia się jak pomocnik — decyzja scouta. */
+export const grupaZRoli = (rola: RolaKafli | null): GrupaPozycji | null =>
+  rola === "skrzydlowy" ? "pomocnik" : rola;
+
 /** Bramkarz ustawiony na mapie pozycji. */
 export const pozycjaToBramkarz = (numer: unknown): boolean =>
   Number(numer) === NUMER_BRAMKARZA;
@@ -64,8 +99,11 @@ export const opisToBramkarz = (tekst: unknown): boolean => grupaZOpisu(tekst) ==
 // Kafle do tagowania na żywo
 // ---------------------------------------------------------------------------
 //
-// Dziesięć kafli w każdej grupie — nie więcej, bo przewijanie w trakcie akcji oznacza akcję
-// przegapioną, i nie mniej, bo ekran i tak mieści trzy w rzędzie.
+// DWANAŚCIE kafli w każdej roli — dokładnie cztery pełne rzędy po trzy. Dziesięć zajmowało tyle
+// samo miejsca na ekranie (cztery rzędy, ostatni w jedną trzecią pusty), więc dwunastka nie
+// kosztuje ani jednego przewinięcia, a domyka zestaw: wcześniej nie było najzwyklejszego
+// PODANIA, gola przy pomocniku ani spalonego przy napastniku, czyli rzeczy, które w zapisie
+// meczu padają najczęściej.
 //
 // Część kluczy powtarza się między grupami CELOWO: „Pojedynek", „Strata" czy „Gol" znaczą przy
 // każdej pozycji dokładnie to samo, więc dzielą klucz i zostają porównywalne przez cały sezon,
@@ -79,7 +117,9 @@ const KAFLE_BRAMKARZ: Kafel[] = [
   { key: "obrona_strzalu", label: "Obrona strzału" },
   { key: "wyjscie_dosrodkowanie", label: "Wyjście na dośrodkowanie" },
   { key: "sam_na_sam", label: "Sam na sam" },
+  { key: "obrona_karnego", label: "Obrona karnego" },
   { key: "gra_nogami", label: "Gra nogami" },
+  { key: "podanie", label: "Podanie" },
   { key: "wznowienie", label: "Wznowienie długie" },
   { key: "podanie_kluczowe", label: "Podanie kluczowe" },
   { key: "pojedynek", label: "Pojedynek" },
@@ -94,24 +134,51 @@ const KAFLE_OBRONCA: Kafel[] = [
   { key: "przechwyt", label: "Przechwyt" },
   { key: "gra_glowa", label: "Gra głową" },
   { key: "asekuracja", label: "Asekuracja" },
-  { key: "wyprowadzenie", label: "Wyprowadzenie piłki" },
   { key: "pojedynek", label: "Pojedynek" },
+  { key: "podanie", label: "Podanie" },
+  { key: "wyprowadzenie", label: "Wyprowadzenie piłki" },
+  // Boczni obrońcy (2 i 3) dośrodkowują nie rzadziej niż skrzydła — bez tego kafla ich główna
+  // robota w ataku szła pod „podanie" i znikała w liczbie, która i tak jest największa.
+  { key: "dosrodkowanie", label: "Dośrodkowanie" },
   { key: "ustawienie", label: "Ustawienie" },
   { key: "strata", label: "Strata" },
   { key: "gol", label: "Gol" },
 ];
 
 const KAFLE_POMOCNIK: Kafel[] = [
+  { key: "podanie", label: "Podanie" },
   { key: "podanie_kluczowe", label: "Podanie kluczowe" },
-  { key: "drybling", label: "Drybling" },
   { key: "przyjecie", label: "Przyjęcie pod presją" },
-  { key: "odbior", label: "Odbiór" },
+  { key: "drybling", label: "Drybling" },
   { key: "dosrodkowanie", label: "Dośrodkowanie" },
   { key: "strzal", label: "Strzał" },
+  { key: "odbior", label: "Odbiór" },
   { key: "pojedynek", label: "Pojedynek" },
   { key: "ustawienie", label: "Ustawienie" },
   { key: "strata", label: "Strata" },
   { key: "asysta", label: "Asysta" },
+  { key: "gol", label: "Gol" },
+];
+
+// SKRZYDŁOWY I WAHADŁOWY (7, 11) — zestaw zamówiony ze stadionu.
+//
+// Środek pola rozgrywa, skrzydło dowozi piłkę i wraca. Dlatego stoją tu obok siebie podanie
+// i dośrodkowanie, a z drugiej strony OBRONA 1 NA 1 i POWRÓT: skrzydłowy przy obronie broni
+// jak obrońca, tylko dwadzieścia metrów wyżej, i to się da policzyć. Spalony jest tu, a nie
+// u pomocnika, bo łapie go ten, kto biega za plecami obrony.
+const KAFLE_SKRZYDLOWY: Kafel[] = [
+  { key: "podanie", label: "Podanie" },
+  { key: "dosrodkowanie", label: "Dośrodkowanie" },
+  { key: "drybling", label: "Drybling" },
+  { key: "podanie_kluczowe", label: "Podanie kluczowe" },
+  { key: "strzal", label: "Strzał" },
+  { key: "pojedynek", label: "Pojedynek" },
+  { key: "obrona_1v1", label: "Obrona 1 na 1" },
+  { key: "powrot_obronny", label: "Powrót do obrony" },
+  { key: "strata", label: "Strata" },
+  { key: "spalony", label: "Spalony" },
+  { key: "asysta", label: "Asysta" },
+  { key: "gol", label: "Gol" },
 ];
 
 const KAFLE_NAPASTNIK: Kafel[] = [
@@ -121,11 +188,25 @@ const KAFLE_NAPASTNIK: Kafel[] = [
   { key: "gra_glowa", label: "Gra głową" },
   { key: "presja", label: "Presja na obrońcach" },
   { key: "drybling", label: "Drybling" },
+  { key: "podanie", label: "Podanie" },
   { key: "pojedynek", label: "Pojedynek" },
   { key: "strata", label: "Strata" },
+  { key: "spalony", label: "Spalony" },
   { key: "asysta", label: "Asysta" },
   { key: "gol", label: "Gol" },
 ];
+
+/** Kafle wg roli — jedno wejście dla panelu, z numeru albo z kartoteki. */
+export const KAFLE_ROLI: Record<RolaKafli, Kafel[]> = {
+  bramkarz: KAFLE_BRAMKARZ,
+  obronca: KAFLE_OBRONCA,
+  pomocnik: KAFLE_POMOCNIK,
+  skrzydlowy: KAFLE_SKRZYDLOWY,
+  napastnik: KAFLE_NAPASTNIK,
+};
+
+/** Kafle dla tej roli. `null` znaczy „pozycja nierozpoznana" — wtedy panel zostaje przy meczowych. */
+export const kafleRoli = (rola: RolaKafli | null): Kafel[] | null => (rola ? KAFLE_ROLI[rola] : null);
 
 // ---------------------------------------------------------------------------
 // Protokół 1–6
@@ -172,22 +253,23 @@ const FAZY_NAPASTNIK: Faza[] = [
 // Profile
 // ---------------------------------------------------------------------------
 
+// Profil to PROTOKÓŁ 1–6, nie kafle. Kafle stoją osobno (KAFLE_ROLI), bo ról jest pięć, a grup
+// oceny cztery — i tak ma zostać: radar rysuje tyle wierzchołków, ile jest rubryk protokołu.
 export interface Profil {
-  kafle: Kafel[];
   fazy: Faza[];
   /** Podpis nad protokołem 1–6 w panelu. */
   etykietaFaz: string;
 }
 
 export const PROFILE: Record<GrupaPozycji, Profil> = {
-  bramkarz: { kafle: KAFLE_BRAMKARZ, fazy: FAZY_BRAMKARZ, etykietaFaz: "Gra bramkarza" },
-  obronca: { kafle: KAFLE_OBRONCA, fazy: FAZY_OBRONCA, etykietaFaz: "Gra w obronie" },
-  pomocnik: { kafle: KAFLE_POMOCNIK, fazy: FAZY_POMOCNIK, etykietaFaz: "Gra w środku pola" },
-  napastnik: { kafle: KAFLE_NAPASTNIK, fazy: FAZY_NAPASTNIK, etykietaFaz: "Gra w ataku" },
+  bramkarz: { fazy: FAZY_BRAMKARZ, etykietaFaz: "Gra bramkarza" },
+  obronca: { fazy: FAZY_OBRONCA, etykietaFaz: "Gra w obronie" },
+  pomocnik: { fazy: FAZY_POMOCNIK, etykietaFaz: "Gra w środku pola" },
+  napastnik: { fazy: FAZY_NAPASTNIK, etykietaFaz: "Gra w ataku" },
 };
 
-/** Wszystkie kafle wszystkich grup — do odczytania etykiety zdarzenia zapisanego kiedykolwiek. */
-export const WSZYSTKIE_KAFLE: Kafel[] = Object.values(PROFILE).flatMap((p) => p.kafle);
+/** Wszystkie kafle wszystkich ról — do odczytania etykiety zdarzenia zapisanego kiedykolwiek. */
+export const WSZYSTKIE_KAFLE: Kafel[] = Object.values(KAFLE_ROLI).flat();
 
 /** Wszystkie pozycje protokołu — do liczenia średnich z historii, niezależnie od pozycji. */
 export const WSZYSTKIE_FAZY: Faza[] = Object.values(PROFILE).flatMap((p) => p.fazy);

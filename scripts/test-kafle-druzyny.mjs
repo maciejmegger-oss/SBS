@@ -15,6 +15,7 @@ const spr = (opis, w, dod="") => { console.log(`${w?"  OK  ":" BŁĄD "} ${opis}
 
 // Prawdziwa definicja kafli, nie jej odpis.
 const kod = panel.match(/const EVENT_TAGS = \[[\s\S]*?\n\] as const;/)[0]
+  + "\n" + panel.match(/const KAFLE_BEZ_BIEGUNA = new Set\(\[[^\]]*\]\);/)[0]
   + "\n" + panel.match(/const kafelNeutralny = [\s\S]*?\n[^\n]*neutralny;/)[0];
 const { EVENT_TAGS, kafelNeutralny } =
   new Function(`${transformSync(kod, { loader: "ts" }).code}\nreturn { EVENT_TAGS, kafelNeutralny };`)();
@@ -66,6 +67,9 @@ console.log("\nBieguny: co jest udane, a co po prostu zaszlo");
   }
   spr("gol nie pyta o biegun", kafelNeutralny("gol") === true);
   spr("nieznany klucz nie jest neutralny", kafelNeutralny("czego_nie_ma") === false);
+  // Kafle POZYCYJNE idą tym samym torem: „nieudana asysta" to nie jest zdarzenie.
+  spr("asysta też bez bieguna", kafelNeutralny("asysta") === true);
+  spr("obrona 1 na 1 dalej udana albo nieudana", kafelNeutralny("obrona_1v1") === false);
 }
 
 console.log("\nGrupy i ich kolejnosc");
@@ -82,7 +86,10 @@ console.log("\nGrupy i ich kolejnosc");
 console.log("\nWpiecie w panel");
 {
   spr("siatka rysuje grupy z nagłówkami", /function siatkaKafli/.test(panel));
-  spr("kafle pozycyjne zostają płaskie", /if \(!grupy\.length\) return `<div class="tags">/.test(panel));
+  // Kafle pozycyjne zostaja plaskie — dwanascie rzeczy jednej pozycji nie ma czego dzielic.
+  // Nad nimi stoi jeden podpis, z jakiej pozycji sa.
+  spr("kafle pozycyjne zostają płaskie",
+    /if \(!grupy\.length\) return `\s*\n\s*<div class="label"[^\n]*Kafle pozycyjne[\s\S]{0,120}<div class="tags">/.test(panel));
   // Przelacznik "udane/nieudane" jest wspolny i stoi wyzej — bez tego zdania skaut mialby prawo
   // sadzic, ze dotyczy takze rzutow roznych.
   spr("neutralna grupa mówi o tym przy nagłówku", /bez udane\/nieudane/.test(panel));
