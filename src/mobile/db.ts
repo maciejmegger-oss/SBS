@@ -27,7 +27,10 @@ export interface LiveEvent {
   minute: number;
   type: string;      // klucz zdarzenia, np. "strzal"
   label: string;     // etykieta pokazywana scoutowi, np. "Strzał"
-  quality: 1 | -1;   // 1 = udane, -1 = nieudane
+  // Ślad po przełączniku „udane / nieudane", którego panel już nie ma: od teraz każde nowe
+  // zdarzenie ma tu 1 i liczy się samo wystąpienie. Pole zostaje, bo -1 leży w zdarzeniach
+  // zapisanych wcześniej i te mają się dalej otwierać i czytać tak, jak je zapisano.
+  quality: 1 | -1;
   // CZYJE JEST TO ZDARZENIE — DRUŻYNA.
   //
   // Bez tego pola oś zdarzeń mówiła tylko „strzał w 23. minucie" i nie dawało się odczytać,
