@@ -6,7 +6,7 @@
 // są cztery ekrany, które da się obsłużyć jedną ręką, stojąc.
 
 import "./style.css";
-import { parsujSklad, normKlub, slowaKlubu, TOKEN_ZESPOLU, type SkladZawodnik } from "../domain/sklad";
+import { parsujSklad, podzielTekst, normKlub, slowaKlubu, TOKEN_ZESPOLU, type SkladZawodnik } from "../domain/sklad";
 import { currentUser, signIn, signOut, requestPasswordReset, mojeKonto, type Konto } from "../data/auth";
 import {
   uid, getCache, refreshCache, patchCache, flushQueue, queueLength,
@@ -16,12 +16,12 @@ import {
   wyczyscKopieBazy, getHerby, pobierzHerby,
   type Cache, type LiveEvent, type LiveState, type Period,
 } from "./db";
-import type { Observation, Report } from "../types";
+import type { Observation, Report, Player } from "../types";
 import { linkDoMeczuZPola, bezpiecznyLinkMeczu } from "../data/link-meczu";
 // Skala według pozycji — jedno źródło dla panelu i dla systemu, patrz src/domain/pozycje.ts.
 import {
-  PROFILE, WSZYSTKIE_KAFLE, grupaZNumeru, grupaZOpisu, grupaZFaz,
-  type GrupaPozycji,
+  PROFILE, WSZYSTKIE_KAFLE, kafleRoli, rolaZNumeru, rolaZOpisu, grupaZRoli, grupaZFaz,
+  type GrupaPozycji, type RolaKafli,
 } from "../domain/pozycje";
 
 // ---------------------------------------------------------------------------
@@ -81,24 +81,23 @@ const periodOf = (n: Period) => PERIODS.find((p) => p.n === n) || PERIODS[0];
 // przeniesiona żywcem z panelu indywidualnego. Przy drużynie nie znaczyły nic: „drybling Lecha"
 // to nie jest zdanie, które da się potem policzyć.
 //
-// Teraz są trzy grupy, bo trzy rzeczy liczy się inaczej:
+// JEDNO DOTKNIĘCIE = JEDNO ZDARZENIE. Przełącznik „udane / nieudane" został usunięty na
+// życzenie ze stadionu: przy tagowaniu na żywo kosztował drugie dotknięcie przy każdej akcji,
+// a stan przełącznika zostawał z poprzedniego zdarzenia i po cichu przyklejał się do następnego.
+// Liczymy więc, ILE RAZY coś zaszło. Skuteczność podań i celność strzałów z tego nie wyjdą —
+// gdyby były potrzebne, wracają jako osobne kafle („Strzał celny"), a nie jako przełącznik.
 //
-//   GRA — akcje z piłką, każda udana albo nieudana. Z nich wychodzą udziały procentowe:
-//   skuteczność podań, celność strzałów, bilans odbiorów do strat.
+// Trzy grupy, bo trzy rzeczy ogląda się inaczej:
 //
-//   STAŁE FRAGMENTY I PRZERWY — rzeczy, które po prostu ZASZŁY. Rzut rożny nie jest „udany"
-//   ani „nieudany": albo był, albo go nie było. Te kafle mają `neutralny` i nie pytają
-//   o biegun — liczy się ich SUMA, nie jakość (patrz addEvent).
+//   GRA — akcje z piłką, w biegu, najczęstsze. Stoją pierwsze, bo palec trafia tu najczęściej.
+//
+//   STAŁE FRAGMENTY I PRZERWY — rzuty rożne i wolne ROZDZIELONE NA ATAK I OBRONĘ, tak jak
+//   prosił scout. Sama „liczba rożnych" nie mówi nic: dwadzieścia rożnych bronionych i dwadzieścia
+//   wykonanych to dwa różne mecze, a przy obserwacji całego spotkania to właśnie ta różnica
+//   opisuje, kto grał w co.
 //
 //   ZDARZENIA MECZU — rzadkie i ważne. Stoją na końcu, bo pomyłkowe dotknięcie kosztuje tu
 //   najwięcej: gol wpisany przez przypadek przekłamuje cały zapis.
-//
-// CZTERY KAFLE DOŁOŻONE PONAD LISTĘ ZE STADIONU, każdy z powodu:
-//   • Gol — bez niego zapis meczu jest niepełny, a to jedyne zdarzenie, które widzą wszyscy;
-//   • Odbiór — bez niego liczymy same STRATY, więc bilans jest jednostronny i nic nie mówi;
-//   • Dośrodkowanie — osobna akcja z własną skutecznością; wrzucone do „podania" znika
-//     w liczbie, która i tak jest największa;
-//   • Faul — rzuty wolne biorą się z fauli; bez tego kafla widać skutek, a nie przyczynę.
 const EVENT_TAGS = [
   // GRA
   { key: "podanie", label: "Podanie", grupa: "Gra" },
@@ -107,23 +106,21 @@ const EVENT_TAGS = [
   { key: "atak_pola_karnego", label: "Atak pola karnego", grupa: "Gra" },
   { key: "odbior", label: "Odbiór", grupa: "Gra" },
   { key: "strata", label: "Strata", grupa: "Gra" },
-  // STAŁE FRAGMENTY I PRZERWY — bez bieguna
-  { key: "rzut_rozny", label: "Rzut rożny", grupa: "Stałe fragmenty", neutralny: true },
-  { key: "rzut_wolny", label: "Rzut wolny", grupa: "Stałe fragmenty", neutralny: true },
-  { key: "karny", label: "Karny", grupa: "Stałe fragmenty", neutralny: true },
-  { key: "spalony", label: "Spalony", grupa: "Stałe fragmenty", neutralny: true },
-  { key: "out", label: "Out", grupa: "Stałe fragmenty", neutralny: true },
-  { key: "faul", label: "Faul", grupa: "Stałe fragmenty", neutralny: true },
+  // STAŁE FRAGMENTY I PRZERWY
+  { key: "rzut_rozny_atak", label: "Rzut rożny — atak", grupa: "Stałe fragmenty" },
+  { key: "rzut_rozny_obrona", label: "Rzut rożny — obrona", grupa: "Stałe fragmenty" },
+  { key: "rzut_wolny_atak", label: "Rzut wolny — atak", grupa: "Stałe fragmenty" },
+  { key: "rzut_wolny_obrona", label: "Rzut wolny — obrona", grupa: "Stałe fragmenty" },
+  { key: "karny", label: "Karny", grupa: "Stałe fragmenty" },
+  { key: "spalony", label: "Spalony", grupa: "Stałe fragmenty" },
+  // Po polsku to AUT. Klucz zostaje stary („out"), bo pod nim leżą już zapisane zdarzenia —
+  // zmiana klucza rozbiłaby jedną statystykę na dwie, podpisane tak samo.
+  { key: "out", label: "Aut", grupa: "Stałe fragmenty" },
+  { key: "faul", label: "Faul", grupa: "Stałe fragmenty" },
   // ZDARZENIA MECZU
   { key: "interwencja_bramkarza", label: "Interwencja bramkarza", grupa: "Zdarzenia meczu" },
-  { key: "gol", label: "Gol", grupa: "Zdarzenia meczu", neutralny: true },
+  { key: "gol", label: "Gol", grupa: "Zdarzenia meczu" },
 ] as const;
-
-// Czy ten kafel pyta o „udane / nieudane". Rzut rożny nie jest udany ani nieudany — był.
-// Stawianie przy nim bieguna produkowałoby liczbę, która nic nie znaczy, a wyglądałaby
-// na statystykę.
-const kafelNeutralny = (key: string): boolean =>
-  !!(EVENT_TAGS.find((t) => t.key === key) as { neutralny?: boolean } | undefined)?.neutralny;
 
 // ---------------------------------------------------------------------------
 // Pomocnicze
@@ -290,7 +287,6 @@ let cache: Cache = getCache();
 let herby: Record<string, string> = getHerby();
 let view: ViewName = "dzis";
 let live: LiveState | null = getLive();
-let polarity: 1 | -1 = 1;
 // Która zakładka ekranu Live jest widoczna: rejestrowanie zdarzeń czy składy meczu.
 let liveTab: "zdarzenia" | "sklady" = "zdarzenia";
 // Zakładka Składy ma trzy stany: lista nazwisk, plansza z ustawieniem i panel jednego zawodnika.
@@ -301,6 +297,8 @@ let wyborZKadry: "gospodarze" | "goscie" | null = null;   // otwarta lista kadry
 // pustych, więc po wgraniu jednej drużyny nie było jak wkleić drugiej ani poprawić pierwszej —
 // a składy przychodzą na raty, kwadrans przed gwizdkiem i w trakcie rozgrzewki.
 let wklejanie = false;
+// Skład przysłany linkiem (…/m#sklad=…) — czeka w polach do wklejania, aż scout naciśnie „Wczytaj".
+let wklejkaZAdresu = "";
 let obsadzanaPozycja: number | null = null;   // wybrane puste pole na planszy — czeka na zawodnika
 let ocenianyZawodnik: number | null = null;   // indeks zawodnika, którego panel oceny jest otwarty
 // Czy panel ocen na ekranie zdarzeń jest rozwinięty. Zwinięty pokazuje sam pasek z nazwiskiem
@@ -1005,15 +1003,63 @@ function viewWklej(): string {
     <button class="btn ghost" data-act="wczytaj-ze-zrzutu">Wczytaj do formularza</button>`;
 }
 
+// ZAWODNICY TYLKO Z TEGO MECZU.
+//
+// Lista pokazywała CAŁĄ kartotekę — przy kilkuset nazwiskach wybór właściwego to przewijanie
+// przez ludzi, których dziś na boisku nie będzie. A pomyłka nie daje się zauważyć: obserwacja
+// zapisuje się na kogoś, kto gra dwieście kilometrów dalej, i wychodzi to dopiero przy raporcie.
+//
+// Skoro pole „Mecz" zna obie drużyny, zawężamy do ich zawodników. Gdy nie da się dopasować
+// żadnego klubu (mecz wpisany inaczej niż nazwy w kartotece, drużyna spoza bazy) — pokazujemy
+// wszystkich, bo lista pusta byłaby gorsza niż za długa: zabierałaby jedyną drogę.
+//
+// OSOBNA FUNKCJA, bo listę trzeba przeliczyć DWA RAZY: przy rysowaniu formularza i jeszcze raz
+// w trakcie wpisywania nazw drużyn. Nazwa meczu żyje w polu DOM, więc przy pierwszym rysowaniu
+// jest zwykle pusta — bez przeliczenia scout otwierał listę i widział całą kartotekę, mimo że
+// mecz miał już wpisany.
+function zawodnicyDoWyboru(): { lista: Player[]; zawezone: boolean } {
+  const [nazwaG, nazwaS] = druzynyZMeczu(planMecz);
+  const znacznik = znacznikZRozgrywek(planRozgrywki);
+  const klubyMeczu = [nazwaG, nazwaS]
+    .map((n) => klubZNazwy(n, znacznik)?.id)
+    .filter(Boolean) as string[];
+  const zMeczu = klubyMeczu.length
+    ? cache.players.filter((p) => p.clubId && klubyMeczu.includes(p.clubId))
+    : [];
+  const lista = (zMeczu.length ? zMeczu : cache.players)
+    .slice()
+    .sort((a, b) => (a.lastName || "").localeCompare(b.lastName || "", "pl"));
+  return { lista, zawezone: zMeczu.length > 0 };
+}
+
+const opcjeZawodnikow = (lista: Player[]): string =>
+  '<option value="">— obserwacja meczu —</option>'
+  + lista.map((p) => `<option value="${esc(p.id)}">${esc(p.lastName)} ${esc(p.firstName)} — ${esc(clubName(p.clubId))}</option>`).join("");
+
+const podpisListyZawodnikow = (zawezone: boolean, ile: number): string => zawezone
+  ? `Tylko zawodnicy drużyn z tego meczu (${ile}). Wskaż tego, którego jedziesz oglądać.`
+  : "Nie rozpoznałem klubów z pola „Mecz”, więc pokazuję całą kartotekę — sprawdź, czy nazwy drużyn zgadzają się z tymi w SBS.";
+
+// Przeliczenie listy BEZ przerysowania całego formularza: pełny render w trakcie pisania
+// zabrałby kursor z pola, a to samo pole trzeba jeszcze dopisać do końca.
+function odswiezListeZawodnikow(): void {
+  const sel = $<HTMLSelectElement>("n-player");
+  if (!sel) return;
+  const byl = sel.value;
+  const { lista, zawezone } = zawodnicyDoWyboru();
+  sel.innerHTML = opcjeZawodnikow(lista);
+  // Wskazany zawodnik zostaje, o ile dalej jest na liście. Jeśli wypadł — bo scout poprawił
+  // nazwę drużyny — lepiej wrócić do „obserwacji meczu" niż zostawić wybór, którego nie widać.
+  sel.value = lista.some((p) => p.id === byl) ? byl : "";
+  const podpis = $("n-player-hint");
+  if (podpis) podpis.textContent = podpisListyZawodnikow(zawezone, lista.length);
+}
+
 function viewNowa(): string {
   const scouts = cache.scouts.length
     ? cache.scouts.map((s) => `<option ${s === getScout() ? "selected" : ""}>${esc(s)}</option>`).join("")
     : "";
-  const players = cache.players
-    .slice()
-    .sort((a, b) => (a.lastName || "").localeCompare(b.lastName || "", "pl"))
-    .map((p) => `<option value="${esc(p.id)}">${esc(p.lastName)} ${esc(p.firstName)} — ${esc(clubName(p.clubId))}</option>`)
-    .join("");
+  const { lista: doWyboru, zawezone } = zawodnicyDoWyboru();
 
   return `
     <h2>Zaplanuj obserwację</h2>
@@ -1052,7 +1098,9 @@ function viewNowa(): string {
         ? (kategoriaRecznie ? "Wybrane ręcznie." : "Rozpoznane z nazwy rozgrywek — popraw, jeśli się mylę.")
         : "Rozpoznam z nazwy rozgrywek albo wskaż sam."}</span></div>
     <div class="field"><span class="label">Zawodnik (opcjonalnie)</span>
-      <select id="n-player"><option value="">— obserwacja meczu —</option>${players}</select></div>
+      <select id="n-player">${opcjeZawodnikow(doWyboru)}</select>
+      <span class="hint" id="n-player-hint" style="display:block; margin-top:4px;">${
+        esc(podpisListyZawodnikow(zawezone, doWyboru.length))}</span></div>
     <div class="field"><span class="label">Rodzaj</span>
       <select id="n-typ">
         <option value="live">Live — na stadionie</option>
@@ -1193,10 +1241,6 @@ function viewLive(): string {
     ${pasekDruzyn()}
     ${pasekZawodnikow()}
     ${blokOceny()}
-    <div class="polarity">
-      <button class="pol plus" data-act="pol" data-v="1" aria-pressed="${polarity === 1}">+ udane</button>
-      <button class="pol minus" data-act="pol" data-v="-1" aria-pressed="${polarity === -1}">− nieudane</button>
-    </div>
 
     ${siatkaKafli(counts)}
 
@@ -1213,13 +1257,16 @@ function viewLive(): string {
     </div>
     <div class="timeline">
       ${live.events.slice().reverse().slice(0, 40).map((e) => `
-        <div class="ev ${kafelNeutralny(e.type) ? "" : (e.quality === 1 ? "plus" : "minus")}">
+        ${/* Czerwona ramka i minus zostają TYLKO przy zdarzeniach zapisanych dawniej, gdy panel
+              miał jeszcze przełącznik „udane / nieudane". Nowe są samymi licznikami, więc nic
+              ich nie podpisuje — a stare mają zostać czytelne takie, jakie są. */""}
+        <div class="ev ${e.quality === -1 ? "minus" : ""}">
           <span class="min">${e.minute}'</span>
           <span class="txt">${e.zawodnik
             ? `<strong>${esc(e.zawodnik)}</strong> · `
             : (e.druzyna ? `<strong>${esc(nazwyStron()[e.druzyna])}</strong> · ` : "")
           }${esc(e.label)}${e.note ? " — " + esc(e.note) : ""}</span>
-          <span class="sign">${kafelNeutralny(e.type) ? "" : (e.quality === 1 ? "+" : "−")}</span>
+          <span class="sign">${e.quality === -1 ? "−" : ""}</span>
           <button class="ev-del" data-act="usun-zdarzenie" data-id="${esc(e.id)}" aria-label="Usuń zdarzenie">✕</button>
         </div>`).join("") || '<div class="empty">Jeszcze nic nie zarejestrowano.</div>'}
     </div>`}`;
@@ -1278,18 +1325,25 @@ const FORMACJA_WSPOLRZEDNE: Record<string, Record<number, Punkt>> = {
 //   2. wystawiony już protokół — jeśli w tym meczu padły oceny bramkarskie, to przesądza
 //      sprawę i nie wolno podmienić skali w trakcie, bo wystawione oceny zniknęłyby z oczu;
 //   3. kartoteka — działa od razu po wczytaniu składu, jeszcze zanim ktokolwiek dotknie mapy.
-function grupaZawodnika(z: SkladZawodnik, nazwaKlubu?: string): GrupaPozycji | null {
-  const zMapy = grupaZNumeru(z.pozycja);
+function rolaZawodnika(z: SkladZawodnik, nazwaKlubu?: string): RolaKafli | null {
+  const zMapy = rolaZNumeru(z.pozycja);
   if (zMapy) return zMapy;
   // Wystawiony już protokół przesądza: skala nie może zmienić się w trakcie meczu, bo wystawione
-  // oceny zniknęłyby scoutowi z oczu.
+  // oceny zniknęłyby scoutowi z oczu. Protokół zna tylko cztery grupy oceny — skrzydłowego nie
+  // da się z niego odczytać, bo wystawia mu się rubryki pomocnika. I to jest w porządku: kafle
+  // skrzydłowe wracają w chwili, gdy ktoś postawi go na planszy na 7 albo 11.
   const zProtokolu = grupaZFaz(z.fazy);
   if (zProtokolu) return zProtokolu;
   // Kartoteka wchodzi DOPIERO gdy zawodnika nie ma na mapie — bo o skali rozstrzyga to, na czym
   // stoi w TYM meczu. Odwrotna pomyłka jest częsta: w kartotece zostaje stara pozycja z czasów
   // juniorskich albo zawodnik przekwalifikowany dawno temu.
-  return grupaZKartoteki(z.nazwa, nazwaKlubu);
+  return rolaZKartoteki(z.nazwa, nazwaKlubu);
 }
+
+// Grupa OCENY tego zawodnika — protokół 1–6 i podpis nad nim. Skrzydłowy ocenia się jak pomocnik,
+// więc jedno rozpoznanie wystarcza na oba użycia i nie da się ich rozjechać.
+const grupaZawodnika = (z: SkladZawodnik, nazwaKlubu?: string): GrupaPozycji | null =>
+  grupaZRoli(rolaZawodnika(z, nazwaKlubu));
 
 // Odpowiedź kartoteki zapamiętana na czas życia kopii bazy.
 //
@@ -1298,29 +1352,32 @@ function grupaZawodnika(z: SkladZawodnik, nazwaKlubu?: string): GrupaPozycji | n
 // każdego wyróżnionego na liście. Przy kilku tysiącach kartotek i kilkunastu wyróżnionych to
 // dziesiątki tysięcy operacji na tekście między dotknięciem a zapaleniem się kafla — czyli
 // dokładnie to opóźnienie, którego przy tagowaniu na żywo nie wolno mieć.
-let bramkarzePamiec = new Map<string, GrupaPozycji | null>();
+let bramkarzePamiec = new Map<string, RolaKafli | null>();
 let bramkarzeZrodlo: unknown = null;
 
-function grupaZKartoteki(nazwa: string, nazwaKlubu?: string): GrupaPozycji | null {
+function rolaZKartoteki(nazwa: string, nazwaKlubu?: string): RolaKafli | null {
   // Kopia bazy podmienia całą tablicę zawodników, więc jej tożsamość jest wystarczającym
   // znacznikiem świeżości — po odświeżeniu pytamy kartotekę na nowo.
   if (bramkarzeZrodlo !== cache.players) {
     bramkarzeZrodlo = cache.players;
     bramkarzePamiec = new Map();
   }
-  const klucz = `${nazwa} ${nazwaKlubu || ""}`;
+  // Rozdzielnik to znak zerowy zapisany UCIECZKĄ, nie wklejony w źródło: w pliku surowy bajt
+  // 0 robił z main.ts „plik binarny" dla grepa i rg, więc szukanie czegokolwiek w panelu po cichu
+  // przestawało cokolwiek znajdować.
+  const klucz = `${nazwa}\u0000${nazwaKlubu || ""}`;
   const znane = bramkarzePamiec.get(klucz);
   if (znane !== undefined) return znane;
   const id = znajdzZawodnika(nazwa, nazwaKlubu);
   const p = id ? cache.players.find((x) => x.id === id) : null;
-  const wynik = grupaZOpisu(p?.position);
+  const wynik = rolaZOpisu(p?.position);
   bramkarzePamiec.set(klucz, wynik);
   return wynik;
 }
 
-/** Kafle do tagowania dla tego zawodnika. */
-const kafleDla = (grupa: GrupaPozycji | null) =>
-  (grupa ? PROFILE[grupa].kafle : EVENT_TAGS) as readonly { key: string; label: string }[];
+/** Kafle do tagowania dla tego zawodnika. Bez rozpoznanej pozycji zostają kafle meczowe. */
+const kafleDla = (rola: RolaKafli | null) =>
+  (kafleRoli(rola) || EVENT_TAGS) as readonly { key: string; label: string }[];
 
 /** Pozycje protokołu 1–6 dla tego zawodnika. */
 const fazyDla = (grupa: GrupaPozycji | null) =>
@@ -1472,6 +1529,13 @@ function viewSklady(): string {
         <button class="btn ghost small" data-act="zamknij-kadre">Gotowe</button>
       </div>
       ${klub ? "" : '<p class="hint">Nie znalazłem tego klubu w bazie — nazwa w polu „Mecz" musi się zgadzać z nazwą klubu w SBS.</p>'}
+      ${/* ŻADNEGO ŚLEPEGO ZAUŁKA. Gdy klubu nie ma w bazie albo nie ma w nim zawodników, na tym
+            ekranie zostawał sam przycisk „Gotowe" — scout stał przed pustą stroną na pięć minut
+            przed gwizdkiem i nie miał stąd dokąd pójść. Druga droga prowadzi wprost z tego
+            miejsca, zamiast kazać wracać i szukać jej samemu. */""}
+      ${!kadra.length ? `
+        <button class="btn" data-act="wklej-sklad-stad" data-strona="${wyborZKadry}">Wklej skład tej drużyny</button>
+        <p class="hint">Skład ze strony meczu albo ze zrzutu ekranu — wklejka wczyta się z numerami.</p>` : ""}
       ${nieTenZespol
         ? `<p class="hint" style="color:var(--accent-fg);">To kadra innego zespołu tego klubu. Rozgrywki mówią
            <strong>${esc(chcianyZespol.toUpperCase())}</strong>, a w bazie nie ma takiej drużyny — dopisz ją w SBS
@@ -1495,6 +1559,11 @@ function viewSklady(): string {
   // drużynę i tylko ją — puste zostawia w spokoju, więc da się poprawić jedną stronę, nie
   // ruszając drugiej. Mówimy o tym wprost, bo podmiana kasuje wyróżnienia i oceny tej drużyny.
   if (wklejanie || pusto) {
+    // Treść z linku rozdzielamy tak samo jak wklejkę ze schowka — po nagłówku z nazwą drugiej
+    // drużyny. Gdy nie ma gdzie ciąć, cały tekst idzie do gospodarzy i scout przesunie go sam.
+    const zLinku = wklejkaZAdresu ? podzielTekst(wklejkaZAdresu, gosp, gosc) : null;
+    const wstepG = zLinku ? zLinku.gospodarze : wklejkaZAdresu;
+    const wstepS = zLinku ? zLinku.goscie : "";
     return `
       ${pusto ? "" : `<div class="row" style="margin-bottom:8px;">
         <span class="label" style="margin:0;">Wklej skład</span>
@@ -1503,16 +1572,36 @@ function viewSklady(): string {
       <div style="display:flex; gap:6px; margin-bottom:10px;">
         ${STRONY.map((k) => `<button class="btn ghost" style="margin-top:0;" data-act="otworz-kadre" data-strona="${k}">Kadra: ${esc(k === "gospodarze" ? gosp : gosc)}</button>`).join("")}
       </div>
+      ${/* SKŁAD ZE ZRZUTU EKRANU — DROGA, KTÓRA NA TELEFONIE DZIAŁA ZAWSZE.
+            Składy bywają tylko w aplikacji ŁNP, czyli nie da się ich zaznaczyć myszą ani
+            skopiować ze strony. Zostaje zrzut ekranu i tekst wyjęty z obrazka przez iPhone'a —
+            a wklejenie go palcem w pole tekstowe bywa loterią: menu „Wklej" nie zawsze się
+            pokazuje. Przycisk czyta schowek sam, jednym dotknięciem. */""}
+      <div class="card" style="margin-bottom:10px;">
+        <span class="label">Skład ze zrzutu ekranu</span>
+        <ol style="margin:8px 0 0; padding-left:20px; font-size:14.5px; line-height:1.65; color:var(--text-2);">
+          <li>Zrób zrzut ekranu ze składem (ŁNP, serwis wynikowy, strona klubu)</li>
+          <li>Otwórz go w <strong>Zdjęciach</strong> i <strong>przytrzymaj palcem</strong> na tekście</li>
+          <li><strong>Zaznacz wszystko</strong> → <strong>Kopiuj</strong></li>
+          <li>Wróć tutaj i naciśnij <strong>Wklej ze schowka</strong> przy właściwej drużynie</li>
+        </ol>
+      </div>
       <p class="hint">Po jednym zawodniku w wierszu. Numer na początku wiersza jest rozpoznawany.
-      Na iPhonie tekst da się skopiować wprost ze zdjęcia: przytrzymaj palec na zrzucie ekranu i zaznacz.
+      Jeśli w jednej wklejce są oba składy, rozdzielę je sam.
       ${pusto ? "" : "Wypełnione pole <strong>podmienia całą tę drużynę</strong> — puste zostawia bez zmian."}</p>
       <div class="field">
-        <span class="label">${esc(gosp)}${ilu("gospodarze") ? ` · w składzie ${ilu("gospodarze")}` : ""}</span>
-        <textarea id="sklad-gospodarze" placeholder="1 Kowalski&#10;4 Nowak&#10;…"></textarea>
+        <div class="row" style="margin-bottom:6px;">
+          <span class="label" style="margin:0;">${esc(gosp)}${ilu("gospodarze") ? ` · w składzie ${ilu("gospodarze")}` : ""}</span>
+          <button class="btn ghost small" style="margin:0;" data-act="wklej-sklad-ze-schowka" data-strona="gospodarze">📋 Wklej ze schowka</button>
+        </div>
+        <textarea id="sklad-gospodarze" placeholder="1 Kowalski&#10;4 Nowak&#10;…">${esc(wstepG)}</textarea>
       </div>
       <div class="field">
-        <span class="label">${esc(gosc)}${ilu("goscie") ? ` · w składzie ${ilu("goscie")}` : ""}</span>
-        <textarea id="sklad-goscie" placeholder="1 Wiśniewski&#10;5 Zieliński&#10;…"></textarea>
+        <div class="row" style="margin-bottom:6px;">
+          <span class="label" style="margin:0;">${esc(gosc)}${ilu("goscie") ? ` · w składzie ${ilu("goscie")}` : ""}</span>
+          <button class="btn ghost small" style="margin:0;" data-act="wklej-sklad-ze-schowka" data-strona="goscie">📋 Wklej ze schowka</button>
+        </div>
+        <textarea id="sklad-goscie" placeholder="1 Wiśniewski&#10;5 Zieliński&#10;…">${esc(wstepS)}</textarea>
       </div>
       <button class="btn" data-act="wczytaj-sklady">Wczytaj składy</button>`;
   }
@@ -1689,7 +1778,9 @@ function zdarzeniaZawodnika(obsId: string, klucz: string): string {
   const wszystkie = live && live.observationId === obsId ? live.events : zdarzeniaObserwacji(obsId);
   const licznik = new Map<string, number>();
   wszystkie.filter((e) => (e.zawodnik || "") === klucz).forEach((e) => {
-    const k = e.label + (e.quality === 1 ? " +" : " −");
+    // Panel nie pyta już o biegun, więc zliczamy po samej nazwie. Minus zostaje tylko przy
+    // zdarzeniach sprzed zmiany — inaczej dawne „nieudane" wpadłyby do jednego worka z udanymi.
+    const k = e.label + (e.quality === -1 ? " −" : "");
     licznik.set(k, (licznik.get(k) || 0) + 1);
   });
   return [...licznik.entries()].map(([co, ile]) => `${co} ${ile}`).join(" · ");
@@ -1820,19 +1911,32 @@ function ocenianyTeraz(): { obs: Observation & { skladMeczu?: Sklad }; strona?: 
   return null;
 }
 
-/** Czy zawodnik, którego się właśnie taguje, to bramkarz. */
-function grupaTeraz(): GrupaPozycji | null {
+/** Rola zawodnika, którego się właśnie taguje — od niej zależy zestaw kafli. */
+function rolaTeraz(): RolaKafli | null {
   const dane = ocenianyTeraz();
-  return dane ? grupaZawodnika(dane.z, dane.strona?.nazwa) : null;
+  return dane ? rolaZawodnika(dane.z, dane.strona?.nazwa) : null;
 }
+
+// Jak nazwać na ekranie zestaw kafli, który właśnie widać. Scout musi widzieć, że panel
+// naprawdę się zmienił wraz z pozycją — inaczej przy skrzydłowym szuka kafli, których tam nie ma,
+// i nie wie, czy to panel, czy on się myli.
+const NAZWA_ROLI: Record<RolaKafli, string> = {
+  bramkarz: "Bramkarz",
+  obronca: "Obrońca",
+  pomocnik: "Pomocnik",
+  skrzydlowy: "Skrzydłowy / wahadłowy",
+  napastnik: "Napastnik",
+};
 
 // SIATKA KAFLI — Z NAGŁÓWKAMI GRUP TAM, GDZIE GRUPY SĄ.
 //
-// Przy wskazanym zawodniku kafle są pozycyjne i płaskie: dziesięć rzeczy, które robi obrońca,
-// i nie ma czego dzielić. Przy całej drużynie grup jest trzy i nagłówki nie są ozdobą — dają
-// palcowi pamięć miejsca. W trakcie akcji szuka się ręką, nie wzrokiem, a kafel znaleziony
-// o sekundę za późno to akcja opisana z pamięci zamiast z boiska.
+// Przy wskazanym zawodniku kafle są pozycyjne i płaskie: dwanaście rzeczy, które robi obrońca,
+// i nie ma czego dzielić — nad nimi stoi tylko podpis, z jakiej pozycji są. Przy całej drużynie
+// grup jest trzy i nagłówki nie są ozdobą — dają palcowi pamięć miejsca. W trakcie akcji szuka
+// się ręką, nie wzrokiem, a kafel znaleziony o sekundę za późno to akcja opisana z pamięci
+// zamiast z boiska.
 function siatkaKafli(counts: Record<string, number>): string {
+  const rola = rolaTeraz();
   const kafle = kafleTeraz() as readonly { key: string; label: string; grupa?: string }[];
   const kafel = (t: { key: string; label: string }) => `
     <button class="tagbtn ${counts[t.key] ? "hit" : ""}" data-act="tag" data-k="${t.key}">
@@ -1841,17 +1945,20 @@ function siatkaKafli(counts: Record<string, number>): string {
 
   const grupy: string[] = [];
   kafle.forEach((t) => { if (t.grupa && !grupy.includes(t.grupa)) grupy.push(t.grupa); });
-  if (!grupy.length) return `<div class="tags">${kafle.map(kafel).join("")}</div>`;
+  if (!grupy.length) return `
+    <div class="label" style="margin:0 0 4px;">Kafle pozycyjne · ${esc(NAZWA_ROLI[rola!])}</div>
+    <div class="tags">${kafle.map(kafel).join("")}</div>`;
 
-  return grupy.map((g) => {
+  // Wskazany zawodnik, a kafle meczowe: pozycji nie udało się rozpoznać. Mówimy to wprost
+  // i podpowiadamy jedyne lekarstwo — postawienie go na planszy w zakładce Składy.
+  const bezPozycji = !!live?.wybranyZawodnik && !rola
+    ? '<p class="hint" style="margin:0 0 6px;">Nie znam pozycji tego zawodnika — póki co kafle meczowe. Ustaw go na planszy w zakładce Składy, a dostaniesz kafle jego pozycji.</p>'
+    : "";
+
+  return bezPozycji + grupy.map((g) => {
     const wGrupie = kafle.filter((t) => t.grupa === g);
-    // Gdy CAŁA grupa jest neutralna, mówimy to przy nagłówku. Przełącznik „udane / nieudane"
-    // stoi wyżej i jest wspólny, więc bez tego zdania scout miałby prawo sądzić, że dotyczy
-    // też rzutów rożnych — i dziwić się, czemu liczby nie wychodzą.
-    const neutralna = wGrupie.every((t) => kafelNeutralny(t.key));
     return `
-    <div class="label" style="margin:10px 0 4px;">${esc(g)}${
-      neutralna ? ' <span class="sub" style="font-weight:400;">· liczymy ile razy, bez udane/nieudane</span>' : ""}</div>
+    <div class="label" style="margin:10px 0 4px;">${esc(g)}</div>
     <div class="tags">${wGrupie.map(kafel).join("")}</div>`;
   }).join("");
 }
@@ -1859,7 +1966,7 @@ function siatkaKafli(counts: Record<string, number>): string {
 // Kafle pod bieżącego zawodnika. Dopóki nikt nie jest wybrany, zostają kafle zawodnika z pola:
 // zdarzenie zapisane bez nazwiska dotyczy meczu, nie bramkarza, więc bramkarska lista byłaby
 // wtedy myląca.
-const kafleTeraz = () => kafleDla(grupaTeraz());
+const kafleTeraz = () => kafleDla(rolaTeraz());
 
 // Treść pól tekstowych żyje w DOM, nie w stanie — przed każdym przerysowaniem trzeba ją przepisać
 // do zawodnika, inaczej notatka przepada przy pierwszym dotknięciu kropki oceny.
@@ -2136,7 +2243,7 @@ function viewPodglad(): string {
     const kto = e.zawodnik || "Zespół";
     if (!wgZawodnika.has(kto)) wgZawodnika.set(kto, new Map());
     const licznik = wgZawodnika.get(kto)!;
-    const klucz = e.label + (e.quality === 1 ? " +" : " −");
+    const klucz = e.label + (e.quality === -1 ? " −" : "");
     licznik.set(klucz, (licznik.get(klucz) || 0) + 1);
   });
 
@@ -2707,9 +2814,9 @@ function addEvent(key: string) {
     minute: liveMinute(live),
     type: tag.key,
     label: tag.label,
-    // Kafel neutralny („rzut rożny", „out") nie pyta o biegun — patrz kafelNeutralny. Zapisanie
-    // tu stanu przełącznika dałoby liczbę wyglądającą na statystykę i nieznaczącą nic.
-    quality: kafelNeutralny(tag.key) ? 1 : polarity,
+    // Panel nie pyta już o „udane / nieudane" — liczymy, ile razy coś zaszło. Pole zostaje
+    // w zapisie, bo leżą pod nim zdarzenia sprzed zmiany i raporty mają się dalej otwierać.
+    quality: 1,
     zawodnik: live.wybranyZawodnik || undefined,
     // Drużyna wchodzi do KAŻDEGO zdarzenia, także tego bez nazwiska — po to cała ta zmiana.
     druzyna: live.wybranaDruzyna,
@@ -3483,7 +3590,6 @@ document.addEventListener("click", (e) => {
       setLive(live); render();
       break;
     }
-    case "pol": polarity = Number(v) === -1 ? -1 : 1; render(); break;
     case "taguj-kogo":
       if (!live) break;
       // Notatka poprzedniego zawodnika zapisuje się ZANIM zmieni się wybór — patrz
@@ -3564,6 +3670,8 @@ document.addEventListener("click", (e) => {
     case "otworz-kadre": wyborZKadry = el.dataset.strona as "gospodarze" | "goscie"; render(); break;
     case "zamknij-kadre": wyborZKadry = null; render(); break;
     case "otworz-wklejanie": wklejanie = true; render(); break;
+    // Przejście z pustej kadry wprost do wklejania — jedno dotknięcie zamiast „Gotowe" i szukania.
+    case "wklej-sklad-stad": wyborZKadry = null; wklejanie = true; render(); break;
     case "zamknij-wklejanie": wklejanie = false; render(); break;
 
     case "z-kadry": {
@@ -3699,13 +3807,59 @@ document.addEventListener("click", (e) => {
       break;
     }
 
+    // WKLEJENIE SKŁADU ZE SCHOWKA, bez walki z menu „Wklej" nad polem tekstowym.
+    //
+    // Schowek czytamy TYLKO na dotknięcie przycisku — iPhone pyta wtedy o zgodę raz i wprost,
+    // zamiast pozwalać stronie zaglądać do niego po cichu.
+    case "wklej-sklad-ze-schowka": {
+      const strona = el.dataset.strona === "goscie" ? "goscie" : "gospodarze";
+      if (!navigator.clipboard?.readText) { toast("Ta przeglądarka nie odda schowka — wklej palcem w pole niżej"); break; }
+      navigator.clipboard.readText()
+        .then((t) => {
+          if (!t.trim()) { toast("Schowek jest pusty — skopiuj tekst ze zrzutu"); return; }
+          const obs = live ? cache.observations.find((o) => o.id === live!.observationId) : undefined;
+          const [ng, ns] = druzynyZMeczu(obs?.match);
+          const poleG = $<HTMLTextAreaElement>("sklad-gospodarze");
+          const poleS = $<HTMLTextAreaElement>("sklad-goscie");
+          // Jedna wklejka z OBOMA składami to najczęstszy przypadek: na zrzucie ze strony meczu
+          // stoją jeden pod drugim. Rozdzielamy tym samym kodem, co komputer — po nagłówku
+          // z nazwą drugiej drużyny.
+          const czesci = podzielTekst(t, ng, ns);
+          if (czesci && poleG && poleS) {
+            poleG.value = czesci.gospodarze;
+            poleS.value = czesci.goscie;
+            const ileG = parsujSklad(czesci.gospodarze, [ng, ns]).length;
+            const ileS = parsujSklad(czesci.goscie, [ng, ns]).length;
+            toast(`Rozdzieliłem: ${ileG} i ${ileS} — sprawdź i naciśnij „Wczytaj składy”`);
+            return;
+          }
+          const pole = strona === "goscie" ? poleS : poleG;
+          if (!pole) return;
+          pole.value = t;
+          const ile = parsujSklad(t, [ng, ns]).length;
+          toast(ile
+            ? `Rozpoznaję ${ile} nazwisk — naciśnij „Wczytaj składy”`
+            : "Wkleiłem, ale nie widzę tu nazwisk — sprawdź, czy skopiował się cały skład");
+        })
+        .catch(() => toast("Nie udało się odczytać schowka — wklej palcem w pole niżej"));
+      break;
+    }
+
     case "wczytaj-sklady": {
       if (!live) break;
       const obs = cache.observations.find((o) => o.id === live!.observationId) as (Observation & { skladMeczu?: Sklad }) | undefined;
       if (!obs) break;
       const [ngWst, nsWst] = druzynyZMeczu(obs.match);
-      const gospodarze = parsujSklad($<HTMLTextAreaElement>("sklad-gospodarze")?.value || "", [ngWst, nsWst]);
-      const goscie = parsujSklad($<HTMLTextAreaElement>("sklad-goscie")?.value || "", [ngWst, nsWst]);
+      const tekstG = $<HTMLTextAreaElement>("sklad-gospodarze")?.value || "";
+      const tekstS = $<HTMLTextAreaElement>("sklad-goscie")?.value || "";
+      // CAŁA WKLEJKA W JEDNYM POLU — rozdzielamy, zamiast wpisywać obie drużyny jednej.
+      //
+      // Zrzut strony meczu niesie oba składy jeden pod drugim i ląduje w pierwszym polu, bo tam
+      // pada palec. Bez tego dwudziestu zawodników rywala wchodziło do gospodarzy i obserwacja
+      // była nie do odczytania: pół składu grało w drugiej drużynie.
+      const obaWJednym = !tekstS.trim() ? podzielTekst(tekstG, ngWst, nsWst) : null;
+      const gospodarze = parsujSklad(obaWJednym ? obaWJednym.gospodarze : tekstG, [ngWst, nsWst]);
+      const goscie = parsujSklad(obaWJednym ? obaWJednym.goscie : tekstS, [ngWst, nsWst]);
       if (!gospodarze.length && !goscie.length) { toast("Nie rozpoznałem żadnego zawodnika"); break; }
       const [ng, ns] = druzynyZMeczu(obs.match);
       // Dopisujemy do tego, co ewentualnie przyszło z komputera, zamiast nadpisywać całość:
@@ -3716,6 +3870,7 @@ document.addEventListener("click", (e) => {
       };
       saveObservation(obs);
       wklejanie = false;
+      wklejkaZAdresu = "";   // zużyta — przy następnym otwarciu pola mają być puste
       render();
       toast(`Wczytano ${gospodarze.length + goscie.length} zawodników`);
       break;
@@ -3963,10 +4118,24 @@ document.addEventListener("change", (e) => {
 document.addEventListener("input", (e) => {
   const t = e.target as HTMLInputElement;
 
+  // NAZWY DRUŻYN ZAWĘŻAJĄ LISTĘ ZAWODNIKÓW JUŻ W TRAKCIE PISANIA.
+  //
+  // Lista powstawała raz, przy rysowaniu formularza — czyli wtedy, gdy pole „Mecz" było jeszcze
+  // puste. Scout wpisywał mecz, otwierał listę i widział całą kartotekę, bo nic jej od tamtej
+  // pory nie przeliczyło. Przeliczamy więc przy każdej zmianie nazwy meczu, w miejscu, bez
+  // przerysowania ekranu.
+  if (t.id === "n-match") {
+    planMecz = t.value;
+    odswiezListeZawodnikow();
+    return;
+  }
+
   // Kategoria dopowiada się przy wpisywaniu rozgrywek. Przełącznik przestawiamy WPROST, bez
   // przerysowania widoku: pełny render w trakcie pisania zabrałby kursor z pola.
   if (t.id === "n-liga") {
     planRozgrywki = t.value;
+    // Rozgrywki też rozstrzygają o składzie listy: „CLJ U17" znaczy inną kadrę tego samego klubu.
+    odswiezListeZawodnikow();
     if (kategoriaRecznie) return;
     planKategoria = kategoriaZRozgrywek(planRozgrywki, planMecz);
     $("n-kategoria")?.querySelectorAll<HTMLElement>("[data-act='kategoria']").forEach((b) => {
@@ -4205,6 +4374,34 @@ function obserwacjaZAdresu(): string {
   return m ? m[1] : "";
 }
 
+// SKŁAD PODANY W ADRESIE: …/m#sklad=<tekst w base64>.
+//
+// Po co. Gdy telefon nie chce wkleić (menu „Wklej" nie wychodzi, schowek pusty po przełączeniu
+// aplikacji), zostaje droga, która nie wymaga schowka w ogóle: ktoś przysyła gotowy link,
+// scout go otwiera i ma skład w polach. Pracuje tak samo wklejka z komputera i wiadomość.
+//
+// NIE WCZYTUJEMY SAMI. Link tylko WYPEŁNIA pola do wklejania — zatwierdza scout, bo wczytanie
+// podmienia drużynę razem z wyróżnieniami i ocenami, a linka można otworzyć przez przypadek.
+function skladZAdresu(): string {
+  const m = String(location.hash || "").match(/sklad=([A-Za-z0-9_\-+/=%]+)/);
+  if (!m) return "";
+  try {
+    const surowy = decodeURIComponent(m[1]).replace(/-/g, "+").replace(/_/g, "/").replace(/=+$/, "");
+    // Ogonek „=" bywa ucięty — część narzędzi zapisuje base64 bez niego. Dokładamy go sami,
+    // zamiast odrzucać poprawny link.
+    const b64 = surowy + "=".repeat((4 - (surowy.length % 4)) % 4);
+    // atob połyka byle co i oddaje bajtowy bełkot zamiast rzucić błędem, a ten bełkot wszedłby
+    // scoutowi w pola jak gdyby nigdy nic. Sprawdzamy więc alfabet i długość z góry, a na końcu
+    // jeszcze raz wynik: tekst musi dać się odczytać, bez znaków zastępczych.
+    if (surowy.length % 4 === 1 || !/^[A-Za-z0-9+/]+$/.test(surowy)) return "";
+    const bajty = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const tekst = new TextDecoder("utf-8", { fatal: false }).decode(bajty);
+    return /�/.test(tekst) ? "" : tekst;   // polskie znaki w linku mają wyjść polskie
+  } catch {
+    return "";
+  }
+}
+
 async function start(pobranaKopia?: Cache) {
   cache = pobranaKopia || getCache();
   live = getLive();
@@ -4215,6 +4412,16 @@ async function start(pobranaKopia?: Cache) {
   if (zAdresu && cache.observations.some((o) => o.id === zAdresu)) {
     beginLive(zAdresu);
     liveTab = "sklady";
+  }
+  // Skład z linku ląduje w polach do wklejania — otwieramy je od razu, żeby było widać, co przyszło.
+  const zLinku = skladZAdresu();
+  if (zLinku) {
+    wklejkaZAdresu = zLinku;
+    liveTab = "sklady";
+    wklejanie = true;
+    // Bez otwartej obserwacji nie ma dokąd tego wstawić. Tekst zostaje w pamięci i wejdzie
+    // w pola, gdy tylko scout otworzy mecz — mówimy mu o tym, zamiast gubić wklejkę po cichu.
+    if (!live) setTimeout(() => toast("Skład z linku czeka — otwórz obserwację, wejdzie w zakładkę Składy"), 400);
   }
   render();
 

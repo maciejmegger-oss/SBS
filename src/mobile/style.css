@@ -105,8 +105,6 @@
   --good-fg:#8FD3A2;
   --bad-bg:rgba(182,80,63,.18);
   --bad-fg:#EBA495;
-  --pol-plus:rgba(78,154,99,.85);
-  --pol-minus:rgba(182,80,63,.85);
   --toast:#0B1A15;
   --splash:#16302A;
   --shadow:0 18px 40px rgba(0,0,0,.45);
@@ -137,8 +135,6 @@
   --good-fg:#2F6B41;
   --bad-bg:#F3D6D0;
   --bad-fg:#7C3428;
-  --pol-plus:#3E7D4C;
-  --pol-minus:#B6503F;
   --toast:#16302A;
   --splash:#16302A;   /* ekran powitalny zostaje ciemny w obu motywach — patrz .splash */
   --shadow:0 10px 26px rgba(20,26,23,.14);
@@ -351,11 +347,10 @@ textarea{resize:vertical; min-height:84px;}
   font-weight:650; font-size:13.5px; color:var(--text-2);
 }
 .pol[aria-pressed="true"]{color:#fff; border-color:transparent;}
-/* Przełącznik zakładek Live używa tego samego kształtu co udane/nieudane, ale NIE dostaje ich
-   kolorów — bez własnej reguły zaznaczona zakładka miała biały tekst na jasnym tle i znikała. */
+/* Zaznaczona zakładka potrzebuje własnej reguły — bez niej miała biały tekst na jasnym tle
+   i po prostu znikała. Kolory „udane/nieudane" (.pol.plus/.pol.minus) odeszły razem
+   z przełącznikiem: panel liczy teraz, ile razy coś zaszło, i o biegun nie pyta. */
 .pol.seg[aria-pressed="true"]{background:var(--accent); border-color:var(--accent); color:var(--accent-ink);}
-.pol.plus[aria-pressed="true"]{background:var(--pol-plus);}
-.pol.minus[aria-pressed="true"]{background:var(--pol-minus);}
 
 /* ---------- kafle zdarzeń ---------- */
 .tags{display:grid; grid-template-columns:repeat(3,1fr); gap:6px;}
@@ -377,7 +372,7 @@ textarea{resize:vertical; min-height:84px;}
   display:flex; align-items:center; gap:9px; padding:8px 10px; border-radius:9px;
   background:var(--surface); border-left:3px solid var(--border); font-size:12.5px;
 }
-.ev.plus{border-left-color:var(--good);}
+/* .ev.minus zostaje dla zdarzeń zapisanych, gdy panel miał jeszcze bieguny. */
 .ev.minus{border-left-color:var(--clay);}
 .ev .min{font-family:var(--data); color:var(--text-2); font-size:12px; min-width:34px;}
 .ev .txt{flex:1; color:var(--text);}

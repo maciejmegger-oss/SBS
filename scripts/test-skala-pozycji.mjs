@@ -11,7 +11,10 @@ import { transformSync } from "esbuild";
 const zrodloDomeny = fs.readFileSync("src/domain/pozycje.ts", "utf8");
 const js = transformSync(zrodloDomeny, { loader: "ts", format: "esm" }).code;
 const modul = await import("data:text/javascript;base64," + Buffer.from(js).toString("base64"));
-const { PROFILE, WSZYSTKIE_KAFLE, WSZYSTKIE_FAZY, grupaZNumeru, grupaZOpisu, grupaZFaz } = modul;
+const {
+  PROFILE, KAFLE_ROLI, kafleRoli, WSZYSTKIE_KAFLE, WSZYSTKIE_FAZY,
+  grupaZNumeru, grupaZOpisu, grupaZFaz, rolaZNumeru, rolaZOpisu, grupaZRoli,
+} = modul;
 
 const zrodloPc = fs.readFileSync("src/main.ts", "utf8");
 const zrodloPanel = fs.readFileSync("src/mobile/main.ts", "utf8");
@@ -30,15 +33,25 @@ const sprawdz = (opis, warunek, dodatek = "") => {
   if (!warunek) bledy++;
 };
 
+// Cztery grupy OCENY (tyle, ile skal protokołu) i pięć zestawów KAFLI — skrzydłowy liczy inne
+// zdarzenia niż środek pola, ale ocenia się jak pomocnik, bo radar ma cztery wierzchołki.
 const GRUPY = ["bramkarz", "obronca", "pomocnik", "napastnik"];
+const ROLE = ["bramkarz", "obronca", "pomocnik", "skrzydlowy", "napastnik"];
 
 // ---------------------------------------------------------------------------
 console.log("1. Każda pozycja ma komplet");
+ROLE.forEach((r) => {
+  const kafle = KAFLE_ROLI[r];
+  // Dwanaście to dokładnie cztery pełne rzędy po trzy — tyle samo wysokości co dawne dziesięć
+  // (ostatni rząd stał w dwóch trzecich pusty), więc nic nie trzeba przewijać.
+  sprawdz(`${r}: dwanaście kafli, cztery pełne rzędy`, kafle.length === 12, `jest ${kafle.length}`);
+  sprawdz(`${r}: klucze kafli bez powtórzeń`, new Set(kafle.map((k) => k.key)).size === 12);
+  sprawdz(`${r}: kafle wychodzą też przez kafleRoli`, kafleRoli(r) === kafle);
+});
+sprawdz("bez rozpoznanej pozycji nie ma kafli pozycyjnych", kafleRoli(null) === null);
+
 GRUPY.forEach((g) => {
   const pr = PROFILE[g];
-  sprawdz(`${g}: dziesięć kafli`, pr.kafle.length === 10, `jest ${pr.kafle.length}`);
-  sprawdz(`${g}: klucze kafli bez powtórzeń`,
-    new Set(pr.kafle.map((k) => k.key)).size === 10);
   // Cztery, bo tyle wierzchołków rysuje radar w systemie. Inna liczba zmieniłaby kształt
   // wykresu i raport przestałby dać się porównać między zawodnikami.
   sprawdz(`${g}: cztery rubryki protokołu, tyle co faz gry`,
@@ -46,6 +59,27 @@ GRUPY.forEach((g) => {
   sprawdz(`${g}: każda rubryka ma skrót na radar`, pr.fazy.every((f) => !!f.krotko));
   sprawdz(`${g}: ma własny podpis protokołu`, !!pr.etykietaFaz && pr.etykietaFaz !== "Fazy gry");
 });
+
+// ---------------------------------------------------------------------------
+// ZAMÓWIENIE ZE STADIONU, słowo w słowo: „jak jedziemy Moska obserwować, to ten chłopiec gra na
+// pozycji 11, czyli wahadłowy, skrzydłowy. Czyli on powinien mieć również podania, dośrodkowania,
+// strzały, gol, asysta, spalony, obrona 1 na 1, obrona".
+console.log("\n1a. Kafle skrzydłowego — to, o co prosił scout");
+{
+  const k = KAFLE_ROLI.skrzydlowy.map((x) => x.key);
+  for (const [klucz, opis] of [
+    ["podanie", "podania"], ["dosrodkowanie", "dośrodkowania"], ["strzal", "strzały"],
+    ["gol", "gol"], ["asysta", "asysta"], ["spalony", "spalony"],
+    ["obrona_1v1", "obrona 1 na 1"], ["powrot_obronny", "powrót do obrony"],
+  ]) sprawdz(`skrzydłowy ma ${opis}`, k.includes(klucz), klucz);
+  // To właśnie różni skrzydło od środka pola: tam rozgrywanie, tu dowożenie piłki i powrót.
+  const pom = KAFLE_POMOCNIK_KLUCZE();
+  sprawdz("zestaw skrzydłowego różni się od pomocnika", k.join() !== pom.join());
+  sprawdz("obrona 1 na 1 jest u skrzydłowego, a nie u pomocnika",
+    k.includes("obrona_1v1") && !pom.includes("obrona_1v1"));
+  sprawdz("pomocnik dalej ma rozgrywanie", pom.includes("podanie_kluczowe") && pom.includes("przyjecie"));
+}
+function KAFLE_POMOCNIK_KLUCZE() { return KAFLE_ROLI.pomocnik.map((x) => x.key); }
 
 // ---------------------------------------------------------------------------
 // NAJWAŻNIEJSZE. Wszystkie rubryki protokołu, niezależnie od pozycji, leżą w TYM SAMYM polu
@@ -70,8 +104,8 @@ console.log("\n2. Klucze protokołu nie zderzają się");
 console.log("\n3. Wspólne kafle znaczą to samo");
 {
   const wgKlucza = new Map();
-  for (const g of GRUPY) {
-    for (const k of PROFILE[g].kafle) {
+  for (const r of ROLE) {
+    for (const k of KAFLE_ROLI[r]) {
       if (!wgKlucza.has(k.key)) wgKlucza.set(k.key, new Set());
       wgKlucza.get(k.key).add(k.label);
     }
@@ -80,7 +114,20 @@ console.log("\n3. Wspólne kafle znaczą to samo");
   sprawdz("ten sam klucz ma wszędzie tę samą etykietę", rozjechane.length === 0,
     rozjechane.map(([k, e]) => `${k}: ${[...e].join(" / ")}`).join("; "));
   sprawdz("Pojedynek i Strata sa wspolne dla wszystkich",
-    ["pojedynek", "strata"].every((k) => GRUPY.every((g) => PROFILE[g].kafle.some((x) => x.key === k))));
+    ["pojedynek", "strata"].every((k) => ROLE.every((r) => KAFLE_ROLI[r].some((x) => x.key === k))));
+  // Najzwyklejsze podanie pada na każdej pozycji częściej niż cokolwiek innego — i do niedawna
+  // nie miało kafla przy żadnej.
+  sprawdz("Podanie jest wszędzie",
+    ROLE.every((r) => KAFLE_ROLI[r].some((x) => x.key === "podanie")));
+  // Klucze kafli pozycyjnych muszą zgadzać się z meczowymi (EVENT_TAGS w panelu), bo oba zapisy
+  // lądują w jednym polu `type`. Inaczej „Podanie" przy nazwisku i „Podanie" przy drużynie byłyby
+  // dwiema różnymi statystykami.
+  const meczowe = new Map([...zrodloPanel.matchAll(/\{ key: "([a-z_]+)", label: "([^"]+)", grupa:/g)]
+    .map((m) => [m[1], m[2]]));
+  const zderzenia = [...wgKlucza.entries()]
+    .filter(([k, e]) => meczowe.has(k) && ![...e][0].startsWith(meczowe.get(k)));
+  sprawdz("kafel pozycyjny nie kłóci się z meczowym o ten sam klucz", zderzenia.length === 0,
+    zderzenia.map(([k, e]) => `${k}: ${[...e].join("/")} vs ${meczowe.get(k)}`).join("; "));
 }
 
 // Kafel ma trzy w rzędzie i mieści dwie linijki po ~14 znaków.
@@ -118,6 +165,32 @@ console.log("\n5. Rozpoznanie pozycji");
 }
 
 // ---------------------------------------------------------------------------
+// ROLA PRZY KAFLACH osobno od grupy oceny. Dwie skale, jedno rozpoznanie: ocena skrzydłowego
+// zostaje pomocnikowa (radar!), ale kafle ma własne.
+console.log("\n5a. Skrzydłowy ma swoje kafle, a ocenę pomocnika");
+{
+  sprawdz("7 i 11 to przy kaflach skrzydła", [7, 11].every((n) => rolaZNumeru(n) === "skrzydlowy"));
+  sprawdz("ale w ocenie zostają pomocnikami", [7, 11].every((n) => grupaZNumeru(n) === "pomocnik"));
+  sprawdz("grupaZRoli sprowadza skrzydło do pomocnika", grupaZRoli("skrzydlowy") === "pomocnik");
+  sprawdz("pozostałe numery mają rolę taką jak grupę",
+    [1, 2, 3, 4, 5, 6, 8, 9, 10].every((n) => rolaZNumeru(n) === grupaZNumeru(n)));
+  sprawdz("brak numeru to dalej nie wiem", rolaZNumeru(undefined) === null && rolaZNumeru(0) === null);
+
+  sprawdz("kartoteka: Skrzydłowy prawy", rolaZOpisu("Skrzydłowy prawy") === "skrzydlowy");
+  sprawdz("kartoteka: Wahadłowy lewy", rolaZOpisu("Wahadłowy lewy") === "skrzydlowy");
+  // Wahadłowy bywa wpisany jako obrońca — gra jak skrzydło i tak ma tagować.
+  sprawdz("kartoteka: Obrońca (wahadłowy) taguje jak skrzydło",
+    rolaZOpisu("Obrońca boczny (wahadłowy)") === "skrzydlowy");
+  sprawdz("kartoteka: Pomocnik defensywny zostaje pomocnikiem",
+    rolaZOpisu("Pomocnik defensywny") === "pomocnik");
+  sprawdz("kartoteka: Bramkarz", rolaZOpisu("Bramkarz") === "bramkarz");
+  sprawdz("kartoteka: Napastnik", rolaZOpisu("Napastnik") === "napastnik");
+  sprawdz("pusta pozycja to null", rolaZOpisu("") === null && rolaZOpisu(undefined) === null);
+  sprawdz("rola zawsze sprowadza się do istniejącej grupy oceny",
+    ROLE.every((r) => GRUPY.includes(grupaZRoli(r))));
+}
+
+// ---------------------------------------------------------------------------
 console.log("\n6. Zapisany protokół sam mówi, czyj jest");
 {
   GRUPY.forEach((g) => {
@@ -140,6 +213,13 @@ console.log("\n7. Obie aplikacje biorą to z jednego miejsca");
   // zostaje plaski. Zrodlo kafli jest dalej to samo — zalezne od pozycji.
   sprawdz("kafle rysują się z listy zależnej od pozycji",
     /const kafle = kafleTeraz\(\)/.test(zrodloPanel) && /\$\{siatkaKafli\(counts\)\}/.test(zrodloPanel));
+  sprawdz("zestaw kafli bierze się z ROLI, nie z grupy oceny",
+    /const kafleTeraz = \(\) => kafleDla\(rolaTeraz\(\)\);/.test(zrodloPanel));
+  // Bez podpisu scout nie wie, czy panel naprawdę zmienił się wraz z pozycją, czy to on się myli.
+  sprawdz("nad kaflami stoi podpis, z jakiej pozycji są",
+    /Kafle pozycyjne · \$\{esc\(NAZWA_ROLI\[rola!\]\)\}/.test(zrodloPanel));
+  sprawdz("każda rola ma nazwę na ekranie",
+    ROLE.every((r) => new RegExp(`${r}: "`).test(zrodloPanel)));
   sprawdz("zapis zdarzenia szuka etykiety we WSZYSTKICH listach",
     /WSZYSTKIE_KAFLE\.find/.test(zrodloPanel));
   sprawdz("średnie zawodnika zbierają rubryki wszystkich pozycji",
@@ -152,23 +232,27 @@ console.log("\n7. Obie aplikacje biorą to z jednego miejsca");
 // PIERWSZEŃSTWO ŹRÓDEŁ — na PRAWDZIWYM kodzie panelu.
 console.log("\n8. Co decyduje, gdy źródła się nie zgadzają");
 {
-  const kod = wytnij("grupaZawodnika", /function grupaZawodnika[\s\S]*?\n}\n/, zrodloPanel)
-    + wytnij("grupaZKartoteki", /let bramkarzePamiec[\s\S]*?\nfunction grupaZKartoteki[\s\S]*?\n}\n/, zrodloPanel);
+  const kod = wytnij("rolaZawodnika", /function rolaZawodnika[\s\S]*?\n}\n/, zrodloPanel)
+    + wytnij("grupaZawodnika", /const grupaZawodnika = [\s\S]*?nazwaKlubu\)\);\n/, zrodloPanel)
+    + wytnij("rolaZKartoteki", /let bramkarzePamiec[\s\S]*?\nfunction rolaZKartoteki[\s\S]*?\n}\n/, zrodloPanel);
   const bezTypow = transformSync(kod, { loader: "ts", format: "esm" }).code;
 
   const kartoteka = [
     { id: "b1", firstName: "Jan", lastName: "Nowak", position: "Bramkarz" },
     { id: "n1", firstName: "Adam", lastName: "Kowal", position: "Napastnik" },
+    { id: "s1", firstName: "Oliwier", lastName: "Mosek", position: "Skrzydłowy lewy" },
   ];
   const cache = { players: kartoteka };
-  const grupaZawodnika = new Function("grupaZNumeru", "grupaZFaz", "grupaZOpisu", "cache", `
+  const panel = new Function(
+    "rolaZNumeru", "grupaZFaz", "rolaZOpisu", "grupaZRoli", "cache", `
     const znajdzZawodnika = (nazwa) => {
       const p = cache.players.find(x => (x.firstName + " " + x.lastName) === nazwa);
       return p ? p.id : null;
     };
     ${bezTypow.replace(/export\s+/g, "")}
-    return grupaZawodnika;
-  `)(grupaZNumeru, grupaZFaz, grupaZOpisu, cache);
+    return { rolaZawodnika, grupaZawodnika };
+  `)(rolaZNumeru, grupaZFaz, rolaZOpisu, grupaZRoli, cache);
+  const { rolaZawodnika, grupaZawodnika } = panel;
 
   sprawdz("kartoteka działa, zanim ktokolwiek ułoży mapę",
     grupaZawodnika({ nazwa: "Jan Nowak" }) === "bramkarz");
@@ -180,6 +264,18 @@ console.log("\n8. Co decyduje, gdy źródła się nie zgadzają");
     grupaZawodnika({ nazwa: "Adam Kowal", fazy: { obrObrona1v1: 5 } }) === "obronca");
   sprawdz("nazwisko spoza kartoteki zostaje bez pozycji",
     grupaZawodnika({ nazwa: "Nikt Nieznany" }) === null);
+
+  // MOSEK NA JEDENASTCE — przypadek z dzisiejszego wyjazdu.
+  sprawdz("zawodnik z jedenastki dostaje kafle skrzydłowe",
+    rolaZawodnika({ nazwa: "Oliwier Mosek", pozycja: 11 }) === "skrzydlowy");
+  sprawdz("a protokół 1–6 zostaje pomocnikowy",
+    grupaZawodnika({ nazwa: "Oliwier Mosek", pozycja: 11 }) === "pomocnik");
+  sprawdz("skrzydłowy z kartoteki też, jeszcze przed ułożeniem planszy",
+    rolaZawodnika({ nazwa: "Oliwier Mosek" }) === "skrzydlowy");
+  // Protokół zna tylko cztery grupy — po wystawieniu ocen rola spada do pomocnika i tak ma być:
+  // podmiana kafli w trakcie meczu zabrałaby scoutowi liczniki z oczu.
+  sprawdz("wystawiony protokół pomocnika nie udaje skrzydła",
+    rolaZawodnika({ nazwa: "Oliwier Mosek", fazy: { pomPodania: 4 } }) === "pomocnik");
 }
 
 console.log(bledy ? `\n${bledy} błędów.` : "\nWszystko się zgadza.");
