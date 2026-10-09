@@ -747,6 +747,13 @@ textarea{resize:vertical; min-height:84px;}
   width:46px; flex-shrink:0; border-radius:10px;
   background:var(--surface); border:1px solid var(--border); color:var(--text-2); font-size:16px;
 }
+/* Strzałka „na ławkę / do pierwszego składu". Ten sam kształt co usuwanie, ale BEZ czerwieni
+   przy dotknięciu: to przesunięcie, nie skasowanie, i pomyłka kosztuje jedno dotknięcie. */
+.sklad-ruch{
+  width:42px; flex-shrink:0; border-radius:10px;
+  background:var(--surface); border:1px solid var(--border); color:var(--text-2); font-size:15px;
+}
+.sklad-ruch:active{background:var(--surface-2); color:var(--text);}
 .sklad-del:active{background:var(--bad-bg); color:var(--bad-fg); border-color:var(--clay);}
 
 /* Pasek „Tagujesz" — przewijany poziomo, bo wyróżnionych bywa kilkunastu, a zawijanie ich

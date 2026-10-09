@@ -51,6 +51,37 @@ console.log("\nPierwszy sklad kontra lawka — okno na komputerze");
     /obs-lawka[\s\S]{0,260}stopPropagation\(\)/.test(app));
 }
 
+console.log("\nPierwszy sklad kontra lawka — lista na telefonie");
+{
+  // Zgloszenie ze stadionu: "musimy podzielic to na pierwszy sklad i sklad rezerwowy, tak jak ja
+  // wklejalem — zeby to bylo podzielone". Jedna lista dwudziestu nazwisk zrownywala ze soba
+  // jedenastu, ktorzy zaczynaja, i lawke, ktora moze wejsc.
+  spr("panel dzieli listę na dwie grupy",
+    /const pierwszy = zIndeksem\.filter\(\(x\) => x\.z\.podstawowy !== false\);/.test(panel)
+    && /const lawka = zIndeksem\.filter\(\(x\) => x\.z\.podstawowy === false\);/.test(panel));
+  spr("obie grupy mają nagłówek z liczbą",
+    /grupa\("Pierwszy skład", pierwszy\) \+ grupa\("Rezerwowi", lawka\)/.test(panel)
+    && /\$\{podpis\} · \$\{poz\.length\}/.test(panel));
+  // Gdy wklejka nic nie rozstrzygnela (skopiowal sie sam fragment listy), nie zgadujemy:
+  // zostaje jedna lista bez naglowkow.
+  spr("bez rozstrzygnięcia zostaje jedna lista",
+    /lawka\.length\s*\n?\s*\? grupa\("Pierwszy skład"[\s\S]{0,120}: pierwszy\.map/.test(panel));
+  // Indeks wedruje razem z zawodnikiem: po nim trafiaja do niego wyroznienie, numer i usuwanie.
+  // Liczenie go od nowa w grupie wskazywaloby cudze nazwisko.
+  spr("indeks zostaje z całej listy, nie z grupy",
+    /const zIndeksem = lista\.map\(\(z, i\) => \(\{ z, i \}\)\);/.test(panel)
+    && /poz\.map\(\(x\) => wiersz\(x\.z, x\.i\)\)/.test(panel));
+  spr("da się przesunąć zawodnika strzałką", /data-act="sklad-lawka"/.test(panel)
+    && /case "sklad-lawka":/.test(panel));
+  spr("strzałka pokazuje kierunek", /naLawce \? "↑" : "↓"/.test(panel));
+  // Ten sam zapis co na komputerze — inaczej telefon i system rozjechalyby sie przy pierwszej
+  // poprawce skladu.
+  spr("powrót do składu kasuje pole, nie stawia true",
+    /if \(z\.podstawowy === false\) delete z\.podstawowy; else z\.podstawowy = false;/.test(panel));
+  spr("przesunięcie zapisuje się od razu",
+    /case "sklad-lawka":[\s\S]{0,500}saveObservation\(obs\);/.test(panel));
+}
+
 // --- 2. TAGOWANIE Z KOMPUTERA ---
 //
 // Otwieramy TEN SAM panel, co na telefonie, zamiast pisac druga plansze. Dwie kopie tej samej
