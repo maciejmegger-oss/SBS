@@ -3834,8 +3834,16 @@ document.addEventListener("click", (e) => {
       const obs = cache.observations.find((o) => o.id === live!.observationId) as (Observation & { skladMeczu?: Sklad }) | undefined;
       if (!obs) break;
       const [ngWst, nsWst] = druzynyZMeczu(obs.match);
-      const gospodarze = parsujSklad($<HTMLTextAreaElement>("sklad-gospodarze")?.value || "", [ngWst, nsWst]);
-      const goscie = parsujSklad($<HTMLTextAreaElement>("sklad-goscie")?.value || "", [ngWst, nsWst]);
+      const tekstG = $<HTMLTextAreaElement>("sklad-gospodarze")?.value || "";
+      const tekstS = $<HTMLTextAreaElement>("sklad-goscie")?.value || "";
+      // CAŁA WKLEJKA W JEDNYM POLU — rozdzielamy, zamiast wpisywać obie drużyny jednej.
+      //
+      // Zrzut strony meczu niesie oba składy jeden pod drugim i ląduje w pierwszym polu, bo tam
+      // pada palec. Bez tego dwudziestu zawodników rywala wchodziło do gospodarzy i obserwacja
+      // była nie do odczytania: pół składu grało w drugiej drużynie.
+      const obaWJednym = !tekstS.trim() ? podzielTekst(tekstG, ngWst, nsWst) : null;
+      const gospodarze = parsujSklad(obaWJednym ? obaWJednym.gospodarze : tekstG, [ngWst, nsWst]);
+      const goscie = parsujSklad(obaWJednym ? obaWJednym.goscie : tekstS, [ngWst, nsWst]);
       if (!gospodarze.length && !goscie.length) { toast("Nie rozpoznałem żadnego zawodnika"); break; }
       const [ng, ns] = druzynyZMeczu(obs.match);
       // Dopisujemy do tego, co ewentualnie przyszło z komputera, zamiast nadpisywać całość:

@@ -90,6 +90,12 @@ console.log("\nPrzycisk w panelu");
   spr("gdy przeglądarka nie odda schowka, zostaje droga ręczna",
     /wklej palcem w pole niżej/.test(panel));
   spr("instrukcja ze zrzutu stoi nad polami", /Skład ze zrzutu ekranu/.test(panel));
+  // Palec ladu je w pierwszym polu, wiec cala wklejka trafia do gospodarzy. Bez rozdzielenia
+  // dwudziestu zawodnikow rywala wchodzi do gospodarzy i obserwacja jest nie do odczytania.
+  spr("cała wklejka w jednym polu też się rozdziela przy wczytywaniu",
+    /const obaWJednym = !tekstS\.trim\(\) \? podzielTekst\(tekstG, ngWst, nsWst\) : null;/.test(panel));
+  spr("gdy drugie pole jest wypełnione, nic nie ruszamy",
+    /parsujSklad\(obaWJednym \? obaWJednym\.goscie : tekstS, \[ngWst, nsWst\]\)/.test(panel));
   spr("i mówi o rozdzieleniu obu składów", /Jeśli w jednej wklejce są oba składy, rozdzielę je sam/.test(panel));
 }
 
