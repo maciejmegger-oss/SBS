@@ -1606,16 +1606,23 @@ function viewSklady(): string {
       <button class="btn" data-act="wczytaj-sklady">Wczytaj składy</button>`;
   }
 
+  // PIERWSZY SKŁAD I REZERWOWI OSOBNO — tak, jak stoi na stronie meczu.
+  //
+  // Jedna lista dwudziestu nazwisk zrównywała ze sobą dwie różne rzeczy: jedenastu, którzy
+  // zaczynają, i ławkę, która może wejść. Scout patrzy na boisko i szuka na liście tego, kto gra
+  // — a znajdował wszystkich naraz. Podział bierzemy z wklejki: nagłówek „Skład rezerwowy"
+  // rozstrzyga sam (patrz src/domain/sklad.ts).
+  //
+  // Gdy wklejka nic nie rozstrzygnęła — bo skopiował się sam fragment listy — zostaje jedna lista
+  // bez nagłówków. Nie zgadujemy, kto wyszedł w pierwszym składzie: strzałka przy nazwisku
+  // przesuwa na ławkę i z powrotem, tak samo jak w oknie składu na komputerze.
   const strona = (klucz: "gospodarze" | "goscie", tytul: string) => {
     const lista = sklad[klucz]?.zawodnicy || [];
     if (!lista.length) return "";
-    return `
-      <div class="section" style="${klucz === "gospodarze" ? "border-top:none; margin-top:0; padding-top:0;" : ""}">
-        <div class="row" style="margin-bottom:6px;">
-          <span class="label" style="margin:0;">${esc(sklad[klucz]?.nazwa || tytul)} · ${lista.length}</span>
-          <button class="btn ghost small" data-act="wyczysc-sklad" data-strona="${klucz}">Wyczyść</button>
-        </div>
-        ${lista.map((z, i) => `
+
+    const wiersz = (z: SkladZawodnik, i: number) => {
+      const naLawce = z.podstawowy === false;
+      return `
           <div class="sklad-wiersz">
             <input class="sklad-nr-pole" data-numer-strona="${klucz}" data-numer-i="${i}"
                    value="${esc(z.numer || "")}" placeholder="—"
@@ -1624,9 +1631,31 @@ function viewSklady(): string {
               <span class="sklad-nazwa">${esc(z.nazwa)}</span>
               <span class="sklad-znak">${z.wyrozniony ? "★" : "☆"}</span>
             </button>
+            <button class="sklad-ruch" data-act="sklad-lawka" data-strona="${klucz}" data-i="${i}"
+                    aria-label="${naLawce ? "Przesuń do pierwszego składu" : "Przesuń na ławkę"}: ${esc(z.nazwa)}">${naLawce ? "↑" : "↓"}</button>
             <button class="sklad-del" data-act="usun-zawodnika" data-strona="${klucz}" data-i="${i}"
                     aria-label="Usuń ${esc(z.nazwa)}">✕</button>
-          </div>`).join("")}
+          </div>`;
+    };
+
+    // Indeks z CAŁEJ listy wędruje razem z zawodnikiem: po nim trafiają do niego wyróżnienie,
+    // numer i usuwanie. Liczenie go od nowa w grupie wskazywałoby cudze nazwisko.
+    const zIndeksem = lista.map((z, i) => ({ z, i }));
+    const pierwszy = zIndeksem.filter((x) => x.z.podstawowy !== false);
+    const lawka = zIndeksem.filter((x) => x.z.podstawowy === false);
+    const grupa = (podpis: string, poz: typeof zIndeksem) => poz.length ? `
+          <div class="label" style="margin:10px 0 4px;">${podpis} · ${poz.length}</div>
+          ${poz.map((x) => wiersz(x.z, x.i)).join("")}` : "";
+
+    return `
+      <div class="section" style="${klucz === "gospodarze" ? "border-top:none; margin-top:0; padding-top:0;" : ""}">
+        <div class="row" style="margin-bottom:6px;">
+          <span class="label" style="margin:0;">${esc(sklad[klucz]?.nazwa || tytul)} · ${lista.length}</span>
+          <button class="btn ghost small" data-act="wyczysc-sklad" data-strona="${klucz}">Wyczyść</button>
+        </div>
+        ${lawka.length
+          ? grupa("Pierwszy skład", pierwszy) + grupa("Rezerwowi", lawka)
+          : pierwszy.map((x) => wiersz(x.z, x.i)).join("")}
       </div>`;
   };
 
@@ -3636,6 +3665,22 @@ document.addEventListener("click", (e) => {
       ocenianyZawodnik = null;
       render();
       break;
+
+    // PRZESUNIĘCIE MIĘDZY PIERWSZYM SKŁADEM A ŁAWKĄ — ten sam zapis co w oknie składu na
+    // komputerze: wejście na ławkę to `podstawowy: false`, powrót KASUJE pole, zamiast stawiać
+    // `true`. Dzięki temu „nie wiadomo" i „na pewno w pierwszym składzie" zostają osobno, a to
+    // różnica, którą widać potem w raporcie.
+    case "sklad-lawka": {
+      if (!live) break;
+      const obs = cache.observations.find((o) => o.id === live!.observationId) as (Observation & { skladMeczu?: Sklad }) | undefined;
+      const lista = obs?.skladMeczu?.[el.dataset.strona as "gospodarze" | "goscie"]?.zawodnicy;
+      const z = lista?.[Number(el.dataset.i)];
+      if (!obs || !z) break;
+      if (z.podstawowy === false) delete z.podstawowy; else z.podstawowy = false;
+      saveObservation(obs);
+      render();
+      break;
+    }
 
     case "usun-zawodnika": {
       if (!live) break;
