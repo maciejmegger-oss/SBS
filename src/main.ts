@@ -61,6 +61,28 @@ const sel_el = (sel: string) => document.querySelector(sel) as HTMLSelectElement
 const SKROTY_OCEN = { technika:'TEC', taktyka:'TAK', motoryka:'MOT', mentalnosc:'MEN', potencjal:'POT' };
 const RATING_KEYS = ["technika","taktyka","motoryka","mentalnosc","potencjal"];
 const RATING_LABELS = {technika:"Technika",taktyka:"Taktyka",motoryka:"Motoryka",mentalnosc:"Mentalność",potencjal:"Potencjał"};
+// SKALA PIĘCIU ATRYBUTÓW TO 1-6 — TA SAMA, CO WSZĘDZIE INDZIEJ W RAPORCIE.
+//
+// Wcześniej te pięć osi żyło na skali 1-10 (suwaki z okna obserwacji, dziś nieistniejące), a karta
+// zawodnika opisywała je nagłówkiem „skala 1-6". Dwie skale pod jedną etykietą dawały na wydruku
+// „MOTORYKA 10.0" obok „średnia ogólna 4.5 (skala 1-6)" — dokument sam sobie przeczył.
+const SKALA_ATRYBUTOW = 6;
+// Ocena atrybutu albo jej brak. Uwaga na pułapkę: Number(null) to 0, a Number.isFinite(0) to
+// prawda — sprawdzanie „czy liczba" bez tego kroku uznawało brak oceny za zero i drukowało „0.0".
+function ocenaAtrybutu(v){
+  if(v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+// Pięć atrybutów raportu: klucz oceny, pole z opisem w formularzu i nazwa pola w raporcie.
+// Jedna lista zamiast pięciu niemal identycznych linijek w trzech miejscach.
+const ATRYBUTY_RAPORTU = [
+  { key:'technika',   label:'Technika',   pole:'rep-technika',        tekst:'technika',       placeholder:'Ocena techniczna opisowo...' },
+  { key:'taktyka',    label:'Taktyka',    pole:'rep-taktyka',         tekst:'taktyka',        placeholder:'Ocena taktyczna opisowo...' },
+  { key:'motoryka',   label:'Motoryka',   pole:'rep-motoryka',        tekst:'motoryka',       placeholder:'Ocena motoryczna opisowo...' },
+  { key:'mentalnosc', label:'Mentalność', pole:'rep-mentalnosc-opis', tekst:'mentalnoscOpis', placeholder:'Ocena mentalna opisowo...' },
+  { key:'potencjal',  label:'Potencjał',  pole:'rep-potencjal-opis',  tekst:'potencjalOpis',  placeholder:'Ocena potencjału opisowo...' },
+];
 const STATUS_CLASS = {"Nowy typ":"new","W obserwacji":"watching","Rekomendowany":"reco","Na testach":"trial","Podpisany":"signed","Odrzucony":"rejected","Wstrzymany":"hold","Do Obserwacji":"watching","Na Testy":"trial","Do transferu":"signed","Z polecenia":"reco"};
 // Trzy ostatnie dołożone 09.2026, bo Ekstraklasa gra nimi na co dzień, a nie dało się ich wpisać:
 // Śląsk 5-3-2, Legia 3-4-2-1, Widzew i Radomiak 4-1-4-1. Bez nich klub z takim ustawieniem musiał
@@ -3377,13 +3399,31 @@ function policzSredniaZawodnika(playerId){
   const obs = playerObs(playerId);
   const reps = raportyGracza(playerId);
   const { overall, ratedReports } = sredniaZRaportow(reps);
-  // Radar tylko z obserwacji z faktycznie wypełnioną (historycznie) statystyką.
-  const rated = obs.filter(o=> o.statsFilledIn && o.ratings && RATING_KEYS.some(k=>Number(o.ratings[k])>0));
+  // PIĘĆ ATRYBUTÓW LICZYMY Z RAPORTÓW, NIE ZE STARYCH SUWAKÓW OBSERWACJI.
+  //
+  // Suwaki w oknie obserwacji szły po skali 1-10 i zniknęły z ekranu dawno temu — zostały po nich
+  // tylko wartości w bazie. Karta zawodnika pokazywała je pod nagłówkiem „skala 1-6", więc na
+  // wydruku stało „MOTORYKA 10.0" obok „średnia ogólna 4.5 (skala 1-6)", a atrybuty, których nikt
+  // nie ruszył, meldowały się jako „0.0" — czyli ocena niższa od najniższej możliwej.
+  //
+  // Teraz liczba bierze się z tego samego raportu, co opis obok niej. Każdy atrybut uśredniamy po
+  // raportach, w których GO WYSTAWIONO: brak oceny zostaje brakiem (null), nie zerem, i nie ciągnie
+  // średniej w dół.
   let avgs = null;
-  if(rated.length){
-    const sums = {}; RATING_KEYS.forEach(k=>sums[k]=0);
-    rated.forEach(o=> RATING_KEYS.forEach(k=> sums[k]+= (Number(o.ratings[k])||0) ));
-    avgs = {}; RATING_KEYS.forEach(k=> avgs[k]= sums[k]/rated.length );
+  {
+    const sumy = {}, ile = {};
+    RATING_KEYS.forEach(k=>{ sumy[k] = 0; ile[k] = 0; });
+    reps.forEach(r=>{
+      const o = (r && r.ocenyAtrybutow) || {};
+      RATING_KEYS.forEach(k=>{
+        const v = Number(o[k]);
+        if(Number.isFinite(v) && v >= 1 && v <= SKALA_ATRYBUTOW){ sumy[k] += v; ile[k]++; }
+      });
+    });
+    if(RATING_KEYS.some(k=>ile[k] > 0)){
+      avgs = {};
+      RATING_KEYS.forEach(k=> avgs[k] = ile[k] ? sumy[k]/ile[k] : null );
+    }
   }
   // METRYKI Z RAPORTÓW — TO ONE ZASILAJĄ RADAR.
   //
@@ -3455,14 +3495,14 @@ function daysSince(dateStr){
 
 // ---------- RADAR / PORÓWNYWARKA ----------
 const RADAR_COLORS = ['var(--pitch)', 'var(--gold)', 'var(--clay)']; // pitch / gold / clay — do 3 zawodników
-// Radar (wykres pajęczy) z 5 atrybutów (RATING_KEYS, skala 1-10). entries: [{label, avgs:{k:val}, count}].
+// Radar (wykres pajęczy) z 5 atrybutów (RATING_KEYS, skala 1-6). entries: [{label, avgs:{k:val}, count}].
 function radarSvg(entries){
-  const keys = RATING_KEYS, N = keys.length, max = 10;
+  const keys = RATING_KEYS, N = keys.length, max = SKALA_ATRYBUTOW;
   const cx = 150, cy = 150, R = 96;
   const ang = i => (-90 + i*(360/N)) * Math.PI/180;
   const pt = (i, r) => [ +(cx + r*Math.cos(ang(i))).toFixed(1), +(cy + r*Math.sin(ang(i))).toFixed(1) ];
   let grid = '';
-  for(let ring=2; ring<=10; ring+=2){
+  for(let ring=2; ring<=SKALA_ATRYBUTOW; ring+=2){
     const rr = R*ring/max;
     grid += `<polygon points="${keys.map((_,i)=>pt(i,rr).join(',')).join(' ')}" fill="none" stroke="var(--chalk-dim)" stroke-width="1"/>`;
   }
@@ -3497,7 +3537,11 @@ function compareDescriptive(entries){
     lines.push(`<li><strong>Ogólnie najwyżej (śr. z raportów):</strong> ${esc(bestOverall.p.lastName)} ${esc(bestOverall.p.firstName)} — średnia <strong>${fmt1(bestOverall.avg.overall)}</strong>/6.</li>`);
   }
   RATING_KEYS.forEach(k=>{
-    const sorted = withAvg.slice().sort((a,b)=> b.avg.avgs[k]-a.avg.avgs[k]);
+    // Atrybut, którego nikt nie wystawił, pomijamy — zdanie „najlepszy w mentalności: NaN"
+    // nie jest porównaniem, tylko dziurą w danych udającą wynik.
+    const zOcena = withAvg.filter(e=>ocenaAtrybutu(e.avg.avgs[k]) != null);
+    if(zOcena.length < 2) return;
+    const sorted = zOcena.slice().sort((a,b)=> b.avg.avgs[k]-a.avg.avgs[k]);
     const best = sorted[0], diff = best.avg.avgs[k]-sorted[sorted.length-1].avg.avgs[k];
     lines.push(`<li><strong>${esc(RATING_LABELS[k])}:</strong> ${esc(best.p.lastName)} (${fmt1(best.avg.avgs[k])})${diff<0.3?' — porównywalnie':''}.</li>`);
   });
@@ -3512,8 +3556,14 @@ function compareTable(entries){
   if(!withAvg.length) return '';
   const head = `<tr><th>Atrybut</th>${withAvg.map(e=>`<th>${esc(e.p.lastName)}</th>`).join('')}</tr>`;
   const rows = RATING_KEYS.map(k=>{
-    const mx = Math.max(...withAvg.map(e=>e.avg.avgs[k]));
-    return `<tr><td>${esc(RATING_LABELS[k])}</td>${withAvg.map(e=>`<td style="${e.avg.avgs[k]===mx?'font-weight:800;color:var(--heading);':''}">${fmt1(e.avg.avgs[k])}</td>`).join('')}</tr>`;
+    const wartosci = withAvg.map(e=>ocenaAtrybutu(e.avg.avgs[k])).filter(v=>v != null);
+    if(!wartosci.length) return '';
+    const mx = Math.max(...wartosci);
+    return `<tr><td>${esc(RATING_LABELS[k])}</td>${withAvg.map(e=>{
+      const v = ocenaAtrybutu(e.avg.avgs[k]);
+      if(v == null) return '<td style="color:var(--ink-soft);">—</td>';
+      return `<td style="${v===mx?'font-weight:800;color:var(--heading);':''}">${fmt1(v)}</td>`;
+    }).join('')}</tr>`;
   }).join('');
   const overallRow = `<tr style="border-top:2px solid var(--border);"><td><strong>Śr. z raportów</strong></td>${withAvg.map(e=>`<td><strong>${e.avg.overall!=null?fmt1(e.avg.overall):'—'}</strong></td>`).join('')}</tr>`;
   const obsRow = `<tr><td style="color:var(--ink-soft);font-size:11.5px;">Liczba obserwacji</td>${withAvg.map(e=>`<td style="color:var(--ink-soft);font-size:11.5px;">${e.avg.count}</td>`).join('')}</tr>`;
@@ -6237,9 +6287,12 @@ function viewPlayerDetail(id){
   </div>`;
 }
 
+// Progi na skali 1-6: od piątki w górę zielone (wybitny / międzynarodowy), czwórka złota
+// (wiodący we własnym środowisku), niżej czerwone. Wcześniej stały tu progi 8 i 5 ze skali 1-10,
+// przez co każda realna ocena atrybutu lądowała w czerwonym.
 function gaugeColor(value){
-  if(value>=8) return 'var(--good)'; // score-high (zielony)
-  if(value>=5) return 'var(--gold)'; // score-mid (złoty)
+  if(value>=5) return 'var(--good)'; // score-high (zielony)
+  if(value>=3.5) return 'var(--gold)'; // score-mid (złoty)
   return 'var(--clay)'; // score-low (czerwony)
 }
 function gaugeRing(value, size, label){
@@ -6247,9 +6300,13 @@ function gaugeRing(value, size, label){
   const r = (s/2) - 7;
   const cx = s/2, cy = s/2;
   const circumference = 2 * Math.PI * r;
-  const pct = Math.max(0, Math.min(1, (value||0)/10));
+  // Brak oceny to pusty pierścień i kreska w środku — nie zero. Zero nie istnieje na skali 1-6,
+  // a pokazane jako „0.0" czytało się jak najgorsza możliwa nota.
+  const ocena = ocenaAtrybutu(value);
+  const ma = ocena != null;
+  const pct = ma ? Math.max(0, Math.min(1, ocena/SKALA_ATRYBUTOW)) : 0;
   const dashOffset = circumference * (1 - pct);
-  const color = gaugeColor(value||0);
+  const color = ma ? gaugeColor(ocena) : 'var(--chalk-dim)';
   return `<div class="gauge-wrap">
     <div class="gauge-ring" style="width:${s}px;height:${s}px;">
       <svg viewBox="0 0 ${s} ${s}" width="${s}" height="${s}">
@@ -6258,7 +6315,7 @@ function gaugeRing(value, size, label){
           stroke-dasharray="${circumference.toFixed(2)}" stroke-dashoffset="${dashOffset.toFixed(2)}"
           stroke-linecap="round" transform="rotate(-90 ${cx} ${cy})"/>
       </svg>
-      <div class="gauge-value">${fmt1(value||0)}</div>
+      <div class="gauge-value">${ma ? fmt1(ocena) : '—'}</div>
     </div>
     ${label? `<div class="gauge-label">${esc(label)}</div>` : ''}
   </div>`;
@@ -6269,19 +6326,20 @@ function radarChart(avgs){
   const n = RATING_KEYS.length;
   const pt = (i,val)=>{
     const ang = -Math.PI/2 + i*(2*Math.PI/n);
-    const rad = (val/10)*r;
+    const rad = (val/SKALA_ATRYBUTOW)*r;
     return [cx+rad*Math.cos(ang), cy+rad*Math.sin(ang)];
   };
   const gridLevels=[0.25,0.5,0.75,1];
   let grid = gridLevels.map(lvl=>{
-    const pts = RATING_KEYS.map((k,i)=>pt(i,lvl*10).join(",")).join(" ");
+    const pts = RATING_KEYS.map((k,i)=>pt(i,lvl*SKALA_ATRYBUTOW).join(",")).join(" ");
     return `<polygon points="${pts}" fill="none" stroke="var(--border-strong)" stroke-width="1"/>`;
   }).join('');
   let axes = RATING_KEYS.map((k,i)=>{
-    const [x,y] = pt(i,10);
+    const [x,y] = pt(i,SKALA_ATRYBUTOW);
     return `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="var(--border-strong)" stroke-width="1"/>`;
   }).join('');
-  let dataPts = RATING_KEYS.map((k,i)=>pt(i,avgs[k]).join(",")).join(" ");
+  // Oś bez oceny rysujemy w środku — wielokąt ma się nie rozsypać, gdy skaut wypełnił tylko część.
+  let dataPts = RATING_KEYS.map((k,i)=>pt(i, ocenaAtrybutu(avgs[k]) ?? 0).join(",")).join(" ");
   let labels = RATING_KEYS.map((k,i)=>{
     const ang = -Math.PI/2 + i*(2*Math.PI/n);
     const lx = cx+(r+26)*Math.cos(ang), ly = cy+(r+26)*Math.sin(ang);
@@ -10003,6 +10061,31 @@ function ratingPointsHtml(id, val){
   </span>`;
 }
 
+// OCENA ATRYBUTU — TA SAMA SKALA 1-6, ALE WOLNO JEJ NIE WYSTAWIĆ.
+//
+// Fazy gry ocenia się zawsze (stąd domyślna trójka wyżej), ale techniki, taktyki, motoryki,
+// mentalności i potencjału skaut po jednym meczu czasem po prostu nie widział — i wtedy ma
+// prawo zostawić puste. Dlatego pierwszy punkt to „—": zero nie jest oceną na skali 1-6,
+// a właśnie tak wyglądało wcześniej nieuzupełnione pole („MENTALNOŚĆ 0.0" pod akapitem
+// chwalącym mentalność zawodnika).
+//
+// W dymku każdego punktu stoi legenda z arkusza kompetencji, żeby czwórka u jednego skauta
+// znaczyła to samo, co czwórka u drugiego.
+function ocenaAtrybutuHtml(id, val){
+  const v = Number(val);
+  const maOcene = Number.isFinite(v) && v >= 1 && v <= 6;
+  const punkt = (n, etykieta, tytul) => `<button type="button" class="rp-dot ${
+    (maOcene ? v === n : n === null) ? 'active' : ''}" data-target="${id}" data-val="${n ?? ''}"${
+    n === null ? ' style="--rp:var(--ink-soft);"' : ` style="--rp:${pointColor(n)};"`
+    } title="${esc(tytul)}">${etykieta}</button>`;
+  return `<span class="rating-points rating-points-opc">
+    ${punkt(null, '—', 'Nie oceniam — nie widziałem tego w tym meczu')}
+    ${[1,2,3,4,5,6].map(n=>punkt(n, String(n),
+      `${n}/6 — ${(LEGENDA_OCENY.find(l=>l.stopien===n)||{}).opis || ''}`)).join('')}
+    <input type="hidden" id="${id}" value="${maOcene ? v : ''}">
+  </span>`;
+}
+
 // Punktowe ocenianie 1-6 — ustaw wartość w ukrytym inpucie i podświetl wybrany punkt
 // (bez render → nic nie kasuje). Wydzielone, bo blok protokołu bywa stawiany od nowa po zmianie
 // zawodnika i świeże kropki też muszą reagować na dotknięcie.
@@ -10322,11 +10405,20 @@ function viewReports(){
       <div class="field-wrap"><label class="field">Do poprawy — jedna w linijce</label>
         <textarea id="rep-do-poprawy" rows="3" placeholder="Lewa noga w prostowaniu&#10;Krycie przy rożnych&#10;Wytrzymałość po 75. minucie">${editing? esc(editing.doPoprawy||'') : ''}</textarea></div>
     </div>
-    <div class="field-wrap"><label class="field">Technika (opis)</label><textarea id="rep-technika" rows="2" placeholder="Ocena techniczna opisowo...">${editing? esc(editing.technika||'') : ''}</textarea></div>
-    <div class="field-wrap"><label class="field">Taktyka (opis)</label><textarea id="rep-taktyka" rows="2" placeholder="Ocena taktyczna opisowo...">${editing? esc(editing.taktyka||'') : ''}</textarea></div>
-    <div class="field-wrap"><label class="field">Motoryka (opis)</label><textarea id="rep-motoryka" rows="2" placeholder="Ocena motoryczna opisowo...">${editing? esc(editing.motoryka||'') : ''}</textarea></div>
-    <div class="field-wrap"><label class="field">Mentalność (opis)</label><textarea id="rep-mentalnosc-opis" rows="2" placeholder="Ocena mentalna opisowo...">${editing? esc(editing.mentalnoscOpis||'') : ''}</textarea></div>
-    <div class="field-wrap"><label class="field">Potencjał (opis)</label><textarea id="rep-potencjal-opis" rows="2" placeholder="Ocena potencjału opisowo...">${editing? esc(editing.potencjalOpis||'') : ''}</textarea></div>
+    ${/* PIĘĆ ATRYBUTÓW: OPIS I OCENA RAZEM, W JEDNYM MIEJSCU.
+          Dotąd ten blok zbierał wyłącznie opisy, a liczby w karcie zawodnika brały się ze starych
+          suwaków z okna obserwacji (skala 1-10, dawno usunięte z ekranu). Stąd „MOTORYKA 10.0"
+          pod nagłówkiem „skala 1-6" i zera przy nieruszonych suwakach. Ocena należy do tego
+          samego raportu, co opis — ten sam mecz, ten sam skaut, ta sama skala. */''}
+    ${ATRYBUTY_RAPORTU.map(at=>`<div class="field-wrap">
+      <label class="field" for="${at.pole}">${esc(at.label)} — opis i ocena</label>
+      <textarea id="${at.pole}" rows="2" placeholder="${esc(at.placeholder)}">${
+        editing ? esc(editing[at.tekst]||'') : ''}</textarea>
+      <div class="ocena-atrybutu">
+        <span class="ocena-atrybutu-lbl">Ocena 1-6</span>
+        ${ocenaAtrybutuHtml('rep-ocena-'+at.key, editing && editing.ocenyAtrybutow ? editing.ocenyAtrybutow[at.key] : null)}
+      </div>
+    </div>`).join('')}
 
     <div style="border-top:1px solid var(--border);margin:14px 0;padding-top:10px;">
       <label class="field" style="display:block;margin-bottom:8px;">Perspektywa</label>
@@ -17143,6 +17235,16 @@ function attachHandlers(){
       motoryka: document.getElementById('rep-motoryka').value.trim(),
       mentalnoscOpis: document.getElementById('rep-mentalnosc-opis').value.trim(),
       potencjalOpis: document.getElementById('rep-potencjal-opis').value.trim(),
+      // Oceny pięciu atrybutów: tylko te faktycznie wystawione. Pustego pola NIE zapisujemy jako
+      // zera — „nie oceniałem" to nie jest najniższa nota, a właśnie tak czytało się dawne 0.0.
+      ocenyAtrybutow: (()=>{
+        const out = {};
+        ATRYBUTY_RAPORTU.forEach(at=>{
+          const v = Number((document.getElementById('rep-ocena-'+at.key) as HTMLInputElement || {} as any).value);
+          if(Number.isFinite(v) && v >= 1 && v <= SKALA_ATRYBUTOW) out[at.key] = v;
+        });
+        return out;
+      })(),
       perspektywa: reportPerspektywaValue,
       obsType: reportObsTypeValue,
       rywal: (document.getElementById('rep-rywal') as HTMLInputElement).value.trim(),
@@ -25273,6 +25375,7 @@ async function generatePlayerPDF(playerId){
     .attr5-head{background:var(--pitch);color:var(--on-pitch);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.02em;
       padding:7px 6px;border-radius:6px 6px 0 0;text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px;}
     .attr5-score{background:var(--gold);color:var(--heading);border-radius:10px;padding:1px 9px;font-size:13px;font-weight:700;}
+    .attr5-score-brak{background:transparent;color:#9AA6A0;border:1px solid #4A5A52;font-weight:600;}
     .attr5-body{background:var(--chalk);border:1px solid var(--chalk-dim);border-top:none;border-radius:0 0 6px 6px;
       padding:8px 8px;font-size:10.5px;color:var(--ink);line-height:1.4;flex:1;min-height:46px;}
     .attr5-empty{color:var(--ink-faint);}
@@ -25426,7 +25529,7 @@ async function generatePlayerPDF(playerId){
       const kolorRodzaju = { live:'#3E7D4C', online:'#2F6FA8', video:'#8B5CF6' };
       const maOceny = obs.some(o=> o.statsFilledIn && o.ratings && RATING_KEYS.some(k=>Number(o.ratings[k])>0));
       return `<table class="obs-table">
-      <tr><th>Data</th><th>Rodzaj</th><th>Mecz</th><th>Scout</th>${maOceny?'<th>Ocena</th>':''}<th>Rekomendacja</th></tr>
+      <tr><th>Data</th><th>Rodzaj</th><th>Mecz</th><th>Scout</th>${maOceny?'<th title="Stare oceny z okna obserwacji, skala 1-10 — nie mylić ze skalą 1-6 w raportach">Ocena (1-10, archiwum)</th>':''}<th>Rekomendacja</th></tr>
       ${obs.map(o=>{
         const hasHist = o.statsFilledIn && o.ratings && RATING_KEYS.some(k=>Number(o.ratings[k])>0);
         const rowAvg = hasHist ? RATING_KEYS.reduce((s,k)=>s+(Number(o.ratings[k])||0),0)/RATING_KEYS.length : null;
@@ -25475,7 +25578,14 @@ async function generatePlayerPDF(playerId){
     </div>` : ''}
     ${(a || latestReport) ? `<div class="attr5-grid">
       ${RATING_KEYS.map(k=>`<div class="attr5-col">
-        <div class="attr5-head"><span>${esc(RATING_LABELS[k])}</span>${a&&a.avgs?`<span class="attr5-score">${fmt1(a.avgs[k])}</span>`:''}</div>
+        <div class="attr5-head"><span>${esc(RATING_LABELS[k])}</span>${(()=>{
+          // Kreska, a nie „0.0": brak oceny to brak oceny. Zero na skali 1-6 nie istnieje,
+          // a wydrukowane pod akapitem chwalącym zawodnika wyglądało jak nota najniższa z możliwych.
+          const v = a && a.avgs ? ocenaAtrybutu(a.avgs[k]) : null;
+          return v != null
+            ? `<span class="attr5-score">${fmt1(v)}</span>`
+            : `<span class="attr5-score attr5-score-brak" title="Skaut nie wystawił oceny tego atrybutu">—</span>`;
+        })()}</div>
         <div class="attr5-body">${reportTextByKey[k]?tekstRaportuHtml(reportTextByKey[k], {odstep:3}):'<span class="attr5-empty">—</span>'}</div>
       </div>`).join('')}
     </div>` : `<p class="empty-note">Brak obserwacji i raportu — oceny oraz opisy pojawią się po pierwszej wizycie scoutingowej.</p>`}
