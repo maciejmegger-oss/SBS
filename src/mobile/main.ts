@@ -6,7 +6,7 @@
 // są cztery ekrany, które da się obsłużyć jedną ręką, stojąc.
 
 import "./style.css";
-import { parsujSklad, normKlub, slowaKlubu, TOKEN_ZESPOLU, type SkladZawodnik } from "../domain/sklad";
+import { parsujSklad, podzielTekst, normKlub, slowaKlubu, TOKEN_ZESPOLU, type SkladZawodnik } from "../domain/sklad";
 import { currentUser, signIn, signOut, requestPasswordReset, mojeKonto, type Konto } from "../data/auth";
 import {
   uid, getCache, refreshCache, patchCache, flushQueue, queueLength,
@@ -1558,15 +1558,35 @@ function viewSklady(): string {
       <div style="display:flex; gap:6px; margin-bottom:10px;">
         ${STRONY.map((k) => `<button class="btn ghost" style="margin-top:0;" data-act="otworz-kadre" data-strona="${k}">Kadra: ${esc(k === "gospodarze" ? gosp : gosc)}</button>`).join("")}
       </div>
+      ${/* SKŁAD ZE ZRZUTU EKRANU — DROGA, KTÓRA NA TELEFONIE DZIAŁA ZAWSZE.
+            Składy bywają tylko w aplikacji ŁNP, czyli nie da się ich zaznaczyć myszą ani
+            skopiować ze strony. Zostaje zrzut ekranu i tekst wyjęty z obrazka przez iPhone'a —
+            a wklejenie go palcem w pole tekstowe bywa loterią: menu „Wklej" nie zawsze się
+            pokazuje. Przycisk czyta schowek sam, jednym dotknięciem. */""}
+      <div class="card" style="margin-bottom:10px;">
+        <span class="label">Skład ze zrzutu ekranu</span>
+        <ol style="margin:8px 0 0; padding-left:20px; font-size:14.5px; line-height:1.65; color:var(--text-2);">
+          <li>Zrób zrzut ekranu ze składem (ŁNP, serwis wynikowy, strona klubu)</li>
+          <li>Otwórz go w <strong>Zdjęciach</strong> i <strong>przytrzymaj palcem</strong> na tekście</li>
+          <li><strong>Zaznacz wszystko</strong> → <strong>Kopiuj</strong></li>
+          <li>Wróć tutaj i naciśnij <strong>Wklej ze schowka</strong> przy właściwej drużynie</li>
+        </ol>
+      </div>
       <p class="hint">Po jednym zawodniku w wierszu. Numer na początku wiersza jest rozpoznawany.
-      Na iPhonie tekst da się skopiować wprost ze zdjęcia: przytrzymaj palec na zrzucie ekranu i zaznacz.
+      Jeśli w jednej wklejce są oba składy, rozdzielę je sam.
       ${pusto ? "" : "Wypełnione pole <strong>podmienia całą tę drużynę</strong> — puste zostawia bez zmian."}</p>
       <div class="field">
-        <span class="label">${esc(gosp)}${ilu("gospodarze") ? ` · w składzie ${ilu("gospodarze")}` : ""}</span>
+        <div class="row" style="margin-bottom:6px;">
+          <span class="label" style="margin:0;">${esc(gosp)}${ilu("gospodarze") ? ` · w składzie ${ilu("gospodarze")}` : ""}</span>
+          <button class="btn ghost small" style="margin:0;" data-act="wklej-sklad-ze-schowka" data-strona="gospodarze">📋 Wklej ze schowka</button>
+        </div>
         <textarea id="sklad-gospodarze" placeholder="1 Kowalski&#10;4 Nowak&#10;…"></textarea>
       </div>
       <div class="field">
-        <span class="label">${esc(gosc)}${ilu("goscie") ? ` · w składzie ${ilu("goscie")}` : ""}</span>
+        <div class="row" style="margin-bottom:6px;">
+          <span class="label" style="margin:0;">${esc(gosc)}${ilu("goscie") ? ` · w składzie ${ilu("goscie")}` : ""}</span>
+          <button class="btn ghost small" style="margin:0;" data-act="wklej-sklad-ze-schowka" data-strona="goscie">📋 Wklej ze schowka</button>
+        </div>
         <textarea id="sklad-goscie" placeholder="1 Wiśniewski&#10;5 Zieliński&#10;…"></textarea>
       </div>
       <button class="btn" data-act="wczytaj-sklady">Wczytaj składy</button>`;
@@ -3768,6 +3788,44 @@ document.addEventListener("click", (e) => {
       zapiszZmianeZawodnika({ obs, strona, z });
       if (navigator.vibrate) navigator.vibrate(10);
       render();
+      break;
+    }
+
+    // WKLEJENIE SKŁADU ZE SCHOWKA, bez walki z menu „Wklej" nad polem tekstowym.
+    //
+    // Schowek czytamy TYLKO na dotknięcie przycisku — iPhone pyta wtedy o zgodę raz i wprost,
+    // zamiast pozwalać stronie zaglądać do niego po cichu.
+    case "wklej-sklad-ze-schowka": {
+      const strona = el.dataset.strona === "goscie" ? "goscie" : "gospodarze";
+      if (!navigator.clipboard?.readText) { toast("Ta przeglądarka nie odda schowka — wklej palcem w pole niżej"); break; }
+      navigator.clipboard.readText()
+        .then((t) => {
+          if (!t.trim()) { toast("Schowek jest pusty — skopiuj tekst ze zrzutu"); return; }
+          const obs = live ? cache.observations.find((o) => o.id === live!.observationId) : undefined;
+          const [ng, ns] = druzynyZMeczu(obs?.match);
+          const poleG = $<HTMLTextAreaElement>("sklad-gospodarze");
+          const poleS = $<HTMLTextAreaElement>("sklad-goscie");
+          // Jedna wklejka z OBOMA składami to najczęstszy przypadek: na zrzucie ze strony meczu
+          // stoją jeden pod drugim. Rozdzielamy tym samym kodem, co komputer — po nagłówku
+          // z nazwą drugiej drużyny.
+          const czesci = podzielTekst(t, ng, ns);
+          if (czesci && poleG && poleS) {
+            poleG.value = czesci.gospodarze;
+            poleS.value = czesci.goscie;
+            const ileG = parsujSklad(czesci.gospodarze, [ng, ns]).length;
+            const ileS = parsujSklad(czesci.goscie, [ng, ns]).length;
+            toast(`Rozdzieliłem: ${ileG} i ${ileS} — sprawdź i naciśnij „Wczytaj składy”`);
+            return;
+          }
+          const pole = strona === "goscie" ? poleS : poleG;
+          if (!pole) return;
+          pole.value = t;
+          const ile = parsujSklad(t, [ng, ns]).length;
+          toast(ile
+            ? `Rozpoznaję ${ile} nazwisk — naciśnij „Wczytaj składy”`
+            : "Wkleiłem, ale nie widzę tu nazwisk — sprawdź, czy skopiował się cały skład");
+        })
+        .catch(() => toast("Nie udało się odczytać schowka — wklej palcem w pole niżej"));
       break;
     }
 

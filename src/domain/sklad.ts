@@ -195,12 +195,8 @@ export function parsujSklad(tekst: string, nazwyDruzyn: string[] = []): SkladZaw
 //
 // Dzielimy więc tam, gdzie w tekście pada nazwa DRUGIEJ drużyny. Gdy nie pada — oddajemy wszystko
 // jako jedną listę i mówimy o tym wprost, zamiast rozcinać w przypadkowym miejscu.
-export function podzielNaDruzyny(
-  tekst: string,
-  gospodarz: string,
-  gosc: string,
-): { gospodarze: SkladZawodnik[]; goscie: SkladZawodnik[]; podzielone: boolean } {
-  const linie = String(tekst || "").split("\n");
+/** Wiersz, w którym zaczyna się druga drużyna. −1 znaczy „nie znalazłem takiego miejsca". */
+export function wierszDrugiejDruzyny(linie: string[], gospodarz: string, gosc: string): number {
   const pasuje = (linia: string, nazwa: string) => {
     const sl = slowaKlubu(normKlub(linia.trim()));
     const sn = slowaKlubu(normKlub(nazwa));
@@ -210,18 +206,41 @@ export function podzielNaDruzyny(
 
   // Szukamy nagłówka drugiej drużyny POZA pierwszym wierszem: wklejka zaczyna się zwykle od
   // nazwy gospodarza, a gdy zaczyna się od gościa — i tak rozdzieli ją nazwa tego drugiego.
-  let ciecie = -1;
   for (let i = 1; i < linie.length; i++) {
-    if (pasuje(linie[i], gosc) || (ciecie < 0 && pasuje(linie[i], gospodarz) && i > 3)) { ciecie = i; break; }
+    if (pasuje(linie[i], gosc) || (pasuje(linie[i], gospodarz) && i > 3)) return i;
   }
+  return -1;
+}
 
+/** Ten sam podział, ale na SUROWYM TEKŚCIE — dla panelu, który ma dwa pola do wklejania
+ *  i po wklejeniu jednej wklejki z oboma składami wypełnia oba naraz. `null` = nie ma gdzie ciąć. */
+export function podzielTekst(
+  tekst: string,
+  gospodarz: string,
+  gosc: string,
+): { gospodarze: string; goscie: string } | null {
+  const linie = String(tekst || "").split("\n");
+  const ciecie = wierszDrugiejDruzyny(linie, gospodarz, gosc);
+  if (ciecie < 0) return null;
+  return {
+    gospodarze: linie.slice(0, ciecie).join("\n"),
+    goscie: linie.slice(ciecie).join("\n"),
+  };
+}
+
+export function podzielNaDruzyny(
+  tekst: string,
+  gospodarz: string,
+  gosc: string,
+): { gospodarze: SkladZawodnik[]; goscie: SkladZawodnik[]; podzielone: boolean } {
   const nazwy = [gospodarz, gosc].filter(Boolean);
-  if (ciecie < 0) {
+  const czesci = podzielTekst(tekst, gospodarz, gosc);
+  if (!czesci) {
     return { gospodarze: parsujSklad(tekst, nazwy), goscie: [], podzielone: false };
   }
   return {
-    gospodarze: parsujSklad(linie.slice(0, ciecie).join("\n"), nazwy),
-    goscie: parsujSklad(linie.slice(ciecie).join("\n"), nazwy),
+    gospodarze: parsujSklad(czesci.gospodarze, nazwy),
+    goscie: parsujSklad(czesci.goscie, nazwy),
     podzielone: true,
   };
 }
