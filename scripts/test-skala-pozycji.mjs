@@ -136,7 +136,10 @@ console.log("\n7. Obie aplikacje biorą to z jednego miejsca");
   sprawdz("system importuje moduł", /from ["']\.\/domain\/pozycje["']/.test(zrodloPc));
   sprawdz("panel importuje moduł", /from ["']\.\.\/domain\/pozycje["']/.test(zrodloPanel));
   sprawdz("stary moduł bramkarza już nie istnieje", !fs.existsSync("src/domain/bramkarz.ts"));
-  sprawdz("kafle rysują się z listy zależnej od pozycji", /\$\{kafleTeraz\(\)\.map/.test(zrodloPanel));
+  // Rysowanie przeszlo do siatkaKafli: panel druzyny ma grupy z naglowkami, panel zawodnika
+  // zostaje plaski. Zrodlo kafli jest dalej to samo — zalezne od pozycji.
+  sprawdz("kafle rysują się z listy zależnej od pozycji",
+    /const kafle = kafleTeraz\(\)/.test(zrodloPanel) && /\$\{siatkaKafli\(counts\)\}/.test(zrodloPanel));
   sprawdz("zapis zdarzenia szuka etykiety we WSZYSTKICH listach",
     /WSZYSTKIE_KAFLE\.find/.test(zrodloPanel));
   sprawdz("średnie zawodnika zbierają rubryki wszystkich pozycji",
