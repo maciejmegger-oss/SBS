@@ -74,18 +74,56 @@ const periodOf = (n: Period) => PERIODS.find((p) => p.n === n) || PERIODS[0];
 
 // Zdarzenia rejestrowane jednym dotknięciem. Dziewięć kafli to maksimum, jakie mieści się na
 // ekranie telefonu bez przewijania — a przewijanie w trakcie akcji oznacza przegapioną akcję.
+// KAFLE DLA CAŁEJ DRUŻYNY.
+//
+// Te kafle widać, dopóki nie wskazano nazwiska — czyli przy obserwacji całego meczu, a to
+// większość pracy. Wcześniej stała tu lista zdarzeń ZAWODNIKA (drybling, gra głową, ustawienie),
+// przeniesiona żywcem z panelu indywidualnego. Przy drużynie nie znaczyły nic: „drybling Lecha"
+// to nie jest zdanie, które da się potem policzyć.
+//
+// Teraz są trzy grupy, bo trzy rzeczy liczy się inaczej:
+//
+//   GRA — akcje z piłką, każda udana albo nieudana. Z nich wychodzą udziały procentowe:
+//   skuteczność podań, celność strzałów, bilans odbiorów do strat.
+//
+//   STAŁE FRAGMENTY I PRZERWY — rzeczy, które po prostu ZASZŁY. Rzut rożny nie jest „udany"
+//   ani „nieudany": albo był, albo go nie było. Te kafle mają `neutralny` i nie pytają
+//   o biegun — liczy się ich SUMA, nie jakość (patrz addEvent).
+//
+//   ZDARZENIA MECZU — rzadkie i ważne. Stoją na końcu, bo pomyłkowe dotknięcie kosztuje tu
+//   najwięcej: gol wpisany przez przypadek przekłamuje cały zapis.
+//
+// CZTERY KAFLE DOŁOŻONE PONAD LISTĘ ZE STADIONU, każdy z powodu:
+//   • Gol — bez niego zapis meczu jest niepełny, a to jedyne zdarzenie, które widzą wszyscy;
+//   • Odbiór — bez niego liczymy same STRATY, więc bilans jest jednostronny i nic nie mówi;
+//   • Dośrodkowanie — osobna akcja z własną skutecznością; wrzucone do „podania" znika
+//     w liczbie, która i tak jest największa;
+//   • Faul — rzuty wolne biorą się z fauli; bez tego kafla widać skutek, a nie przyczynę.
 const EVENT_TAGS = [
-  { key: "podanie_kluczowe", label: "Podanie kluczowe" },
-  { key: "strzal", label: "Strzał" },
-  { key: "drybling", label: "Drybling" },
-  { key: "pojedynek", label: "Pojedynek" },
-  { key: "gra_glowa", label: "Gra głową" },
-  { key: "odbior", label: "Odbiór" },
-  { key: "strata", label: "Strata" },
-  { key: "ustawienie", label: "Ustawienie" },
-  { key: "gol", label: "Gol" },
-  { key: "asysta", label: "Asysta" },
-];
+  // GRA
+  { key: "podanie", label: "Podanie", grupa: "Gra" },
+  { key: "dosrodkowanie", label: "Dośrodkowanie", grupa: "Gra" },
+  { key: "strzal", label: "Strzał", grupa: "Gra" },
+  { key: "atak_pola_karnego", label: "Atak pola karnego", grupa: "Gra" },
+  { key: "odbior", label: "Odbiór", grupa: "Gra" },
+  { key: "strata", label: "Strata", grupa: "Gra" },
+  // STAŁE FRAGMENTY I PRZERWY — bez bieguna
+  { key: "rzut_rozny", label: "Rzut rożny", grupa: "Stałe fragmenty", neutralny: true },
+  { key: "rzut_wolny", label: "Rzut wolny", grupa: "Stałe fragmenty", neutralny: true },
+  { key: "karny", label: "Karny", grupa: "Stałe fragmenty", neutralny: true },
+  { key: "spalony", label: "Spalony", grupa: "Stałe fragmenty", neutralny: true },
+  { key: "out", label: "Out", grupa: "Stałe fragmenty", neutralny: true },
+  { key: "faul", label: "Faul", grupa: "Stałe fragmenty", neutralny: true },
+  // ZDARZENIA MECZU
+  { key: "interwencja_bramkarza", label: "Interwencja bramkarza", grupa: "Zdarzenia meczu" },
+  { key: "gol", label: "Gol", grupa: "Zdarzenia meczu", neutralny: true },
+] as const;
+
+// Czy ten kafel pyta o „udane / nieudane". Rzut rożny nie jest udany ani nieudany — był.
+// Stawianie przy nim bieguna produkowałoby liczbę, która nic nie znaczy, a wyglądałaby
+// na statystykę.
+const kafelNeutralny = (key: string): boolean =>
+  !!(EVENT_TAGS.find((t) => t.key === key) as { neutralny?: boolean } | undefined)?.neutralny;
 
 // ---------------------------------------------------------------------------
 // Pomocnicze
@@ -1160,12 +1198,7 @@ function viewLive(): string {
       <button class="pol minus" data-act="pol" data-v="-1" aria-pressed="${polarity === -1}">− nieudane</button>
     </div>
 
-    <div class="tags">
-      ${kafleTeraz().map((t) => `
-        <button class="tagbtn ${counts[t.key] ? "hit" : ""}" data-act="tag" data-k="${t.key}">
-          <span class="cnt">${counts[t.key] || ""}</span>${esc(t.label)}
-        </button>`).join("")}
-    </div>
+    ${siatkaKafli(counts)}
 
     <div class="field" style="margin-top:12px;">
       <input id="quick-note" placeholder="Notatka do bieżącej minuty…">
@@ -1180,13 +1213,13 @@ function viewLive(): string {
     </div>
     <div class="timeline">
       ${live.events.slice().reverse().slice(0, 40).map((e) => `
-        <div class="ev ${e.quality === 1 ? "plus" : "minus"}">
+        <div class="ev ${kafelNeutralny(e.type) ? "" : (e.quality === 1 ? "plus" : "minus")}">
           <span class="min">${e.minute}'</span>
           <span class="txt">${e.zawodnik
             ? `<strong>${esc(e.zawodnik)}</strong> · `
             : (e.druzyna ? `<strong>${esc(nazwyStron()[e.druzyna])}</strong> · ` : "")
           }${esc(e.label)}${e.note ? " — " + esc(e.note) : ""}</span>
-          <span class="sign">${e.quality === 1 ? "+" : "−"}</span>
+          <span class="sign">${kafelNeutralny(e.type) ? "" : (e.quality === 1 ? "+" : "−")}</span>
           <button class="ev-del" data-act="usun-zdarzenie" data-id="${esc(e.id)}" aria-label="Usuń zdarzenie">✕</button>
         </div>`).join("") || '<div class="empty">Jeszcze nic nie zarejestrowano.</div>'}
     </div>`}`;
@@ -1791,6 +1824,36 @@ function ocenianyTeraz(): { obs: Observation & { skladMeczu?: Sklad }; strona?: 
 function grupaTeraz(): GrupaPozycji | null {
   const dane = ocenianyTeraz();
   return dane ? grupaZawodnika(dane.z, dane.strona?.nazwa) : null;
+}
+
+// SIATKA KAFLI — Z NAGŁÓWKAMI GRUP TAM, GDZIE GRUPY SĄ.
+//
+// Przy wskazanym zawodniku kafle są pozycyjne i płaskie: dziesięć rzeczy, które robi obrońca,
+// i nie ma czego dzielić. Przy całej drużynie grup jest trzy i nagłówki nie są ozdobą — dają
+// palcowi pamięć miejsca. W trakcie akcji szuka się ręką, nie wzrokiem, a kafel znaleziony
+// o sekundę za późno to akcja opisana z pamięci zamiast z boiska.
+function siatkaKafli(counts: Record<string, number>): string {
+  const kafle = kafleTeraz() as readonly { key: string; label: string; grupa?: string }[];
+  const kafel = (t: { key: string; label: string }) => `
+    <button class="tagbtn ${counts[t.key] ? "hit" : ""}" data-act="tag" data-k="${t.key}">
+      <span class="cnt">${counts[t.key] || ""}</span>${esc(t.label)}
+    </button>`;
+
+  const grupy: string[] = [];
+  kafle.forEach((t) => { if (t.grupa && !grupy.includes(t.grupa)) grupy.push(t.grupa); });
+  if (!grupy.length) return `<div class="tags">${kafle.map(kafel).join("")}</div>`;
+
+  return grupy.map((g) => {
+    const wGrupie = kafle.filter((t) => t.grupa === g);
+    // Gdy CAŁA grupa jest neutralna, mówimy to przy nagłówku. Przełącznik „udane / nieudane"
+    // stoi wyżej i jest wspólny, więc bez tego zdania scout miałby prawo sądzić, że dotyczy
+    // też rzutów rożnych — i dziwić się, czemu liczby nie wychodzą.
+    const neutralna = wGrupie.every((t) => kafelNeutralny(t.key));
+    return `
+    <div class="label" style="margin:10px 0 4px;">${esc(g)}${
+      neutralna ? ' <span class="sub" style="font-weight:400;">· liczymy ile razy, bez udane/nieudane</span>' : ""}</div>
+    <div class="tags">${wGrupie.map(kafel).join("")}</div>`;
+  }).join("");
 }
 
 // Kafle pod bieżącego zawodnika. Dopóki nikt nie jest wybrany, zostają kafle zawodnika z pola:
@@ -2644,7 +2707,9 @@ function addEvent(key: string) {
     minute: liveMinute(live),
     type: tag.key,
     label: tag.label,
-    quality: polarity,
+    // Kafel neutralny („rzut rożny", „out") nie pyta o biegun — patrz kafelNeutralny. Zapisanie
+    // tu stanu przełącznika dałoby liczbę wyglądającą na statystykę i nieznaczącą nic.
+    quality: kafelNeutralny(tag.key) ? 1 : polarity,
     zawodnik: live.wybranyZawodnik || undefined,
     // Drużyna wchodzi do KAŻDEGO zdarzenia, także tego bez nazwiska — po to cała ta zmiana.
     druzyna: live.wybranaDruzyna,

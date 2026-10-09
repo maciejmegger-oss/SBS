@@ -1,6 +1,6 @@
 (function(){
 
-var SBS_ZBIERACZ="v53 z 25.09.2026";
+var SBS_ZBIERACZ="v54 z 06.10.2026";
 var SBS_ADRES=(typeof window!=='undefined'&&window.__SBS_ADRES)?window.__SBS_ADRES:"";
 var STRONA_STARTOWA=location.href;
 
@@ -1933,6 +1933,14 @@ function wyslij(tresc, zostawPanel){
  if(!udalo&&navigator.clipboard&&navigator.clipboard.writeText){
   try{navigator.clipboard.writeText(tresc);udalo=true;}catch(e){}
  }
+ // TRZECIA DROGA, GDY SCHOWEK I NOWE OKNO ZAWIODA: skrzynka na serwerze SBS.
+ // Zdarza sie, ze przegladarka nie pozwoli zapisac do schowka ANI otworzyc okna - wtedy kilka
+ // minut zbierania szlo do kosza. Wysylamy wiec tresc od razu na serwer; aplikacja pobiera ja
+ // jednym klikniecem w oknie protokolow. Nie czekamy na odpowiedz - to droga zapasowa.
+ try{
+  fetch(SBS_ADRES+'/api/wklejka-lnp',{method:'POST',headers:{'content-type':'application/json'},
+   body:JSON.stringify({tresc:tresc,zrodlo:STRONA_STARTOWA})}).catch(function(){});
+ }catch(e){}
  var doSbs=SBS_ADRES+'/app?sbs=odbior';
  linia.textContent='SBS '+SBS_ZBIERACZ+': wysylam '+zebrane.length+' protokolow do aplikacji...';
  var okno=null;
