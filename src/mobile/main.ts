@@ -297,6 +297,8 @@ let wyborZKadry: "gospodarze" | "goscie" | null = null;   // otwarta lista kadry
 // pustych, więc po wgraniu jednej drużyny nie było jak wkleić drugiej ani poprawić pierwszej —
 // a składy przychodzą na raty, kwadrans przed gwizdkiem i w trakcie rozgrzewki.
 let wklejanie = false;
+// Skład przysłany linkiem (…/m#sklad=…) — czeka w polach do wklejania, aż scout naciśnie „Wczytaj".
+let wklejkaZAdresu = "";
 let obsadzanaPozycja: number | null = null;   // wybrane puste pole na planszy — czeka na zawodnika
 let ocenianyZawodnik: number | null = null;   // indeks zawodnika, którego panel oceny jest otwarty
 // Czy panel ocen na ekranie zdarzeń jest rozwinięty. Zwinięty pokazuje sam pasek z nazwiskiem
@@ -1527,6 +1529,13 @@ function viewSklady(): string {
         <button class="btn ghost small" data-act="zamknij-kadre">Gotowe</button>
       </div>
       ${klub ? "" : '<p class="hint">Nie znalazłem tego klubu w bazie — nazwa w polu „Mecz" musi się zgadzać z nazwą klubu w SBS.</p>'}
+      ${/* ŻADNEGO ŚLEPEGO ZAUŁKA. Gdy klubu nie ma w bazie albo nie ma w nim zawodników, na tym
+            ekranie zostawał sam przycisk „Gotowe" — scout stał przed pustą stroną na pięć minut
+            przed gwizdkiem i nie miał stąd dokąd pójść. Druga droga prowadzi wprost z tego
+            miejsca, zamiast kazać wracać i szukać jej samemu. */""}
+      ${!kadra.length ? `
+        <button class="btn" data-act="wklej-sklad-stad" data-strona="${wyborZKadry}">Wklej skład tej drużyny</button>
+        <p class="hint">Skład ze strony meczu albo ze zrzutu ekranu — wklejka wczyta się z numerami.</p>` : ""}
       ${nieTenZespol
         ? `<p class="hint" style="color:var(--accent-fg);">To kadra innego zespołu tego klubu. Rozgrywki mówią
            <strong>${esc(chcianyZespol.toUpperCase())}</strong>, a w bazie nie ma takiej drużyny — dopisz ją w SBS
@@ -1550,6 +1559,11 @@ function viewSklady(): string {
   // drużynę i tylko ją — puste zostawia w spokoju, więc da się poprawić jedną stronę, nie
   // ruszając drugiej. Mówimy o tym wprost, bo podmiana kasuje wyróżnienia i oceny tej drużyny.
   if (wklejanie || pusto) {
+    // Treść z linku rozdzielamy tak samo jak wklejkę ze schowka — po nagłówku z nazwą drugiej
+    // drużyny. Gdy nie ma gdzie ciąć, cały tekst idzie do gospodarzy i scout przesunie go sam.
+    const zLinku = wklejkaZAdresu ? podzielTekst(wklejkaZAdresu, gosp, gosc) : null;
+    const wstepG = zLinku ? zLinku.gospodarze : wklejkaZAdresu;
+    const wstepS = zLinku ? zLinku.goscie : "";
     return `
       ${pusto ? "" : `<div class="row" style="margin-bottom:8px;">
         <span class="label" style="margin:0;">Wklej skład</span>
@@ -1580,14 +1594,14 @@ function viewSklady(): string {
           <span class="label" style="margin:0;">${esc(gosp)}${ilu("gospodarze") ? ` · w składzie ${ilu("gospodarze")}` : ""}</span>
           <button class="btn ghost small" style="margin:0;" data-act="wklej-sklad-ze-schowka" data-strona="gospodarze">📋 Wklej ze schowka</button>
         </div>
-        <textarea id="sklad-gospodarze" placeholder="1 Kowalski&#10;4 Nowak&#10;…"></textarea>
+        <textarea id="sklad-gospodarze" placeholder="1 Kowalski&#10;4 Nowak&#10;…">${esc(wstepG)}</textarea>
       </div>
       <div class="field">
         <div class="row" style="margin-bottom:6px;">
           <span class="label" style="margin:0;">${esc(gosc)}${ilu("goscie") ? ` · w składzie ${ilu("goscie")}` : ""}</span>
           <button class="btn ghost small" style="margin:0;" data-act="wklej-sklad-ze-schowka" data-strona="goscie">📋 Wklej ze schowka</button>
         </div>
-        <textarea id="sklad-goscie" placeholder="1 Wiśniewski&#10;5 Zieliński&#10;…"></textarea>
+        <textarea id="sklad-goscie" placeholder="1 Wiśniewski&#10;5 Zieliński&#10;…">${esc(wstepS)}</textarea>
       </div>
       <button class="btn" data-act="wczytaj-sklady">Wczytaj składy</button>`;
   }
@@ -3656,6 +3670,8 @@ document.addEventListener("click", (e) => {
     case "otworz-kadre": wyborZKadry = el.dataset.strona as "gospodarze" | "goscie"; render(); break;
     case "zamknij-kadre": wyborZKadry = null; render(); break;
     case "otworz-wklejanie": wklejanie = true; render(); break;
+    // Przejście z pustej kadry wprost do wklejania — jedno dotknięcie zamiast „Gotowe" i szukania.
+    case "wklej-sklad-stad": wyborZKadry = null; wklejanie = true; render(); break;
     case "zamknij-wklejanie": wklejanie = false; render(); break;
 
     case "z-kadry": {
@@ -3854,6 +3870,7 @@ document.addEventListener("click", (e) => {
       };
       saveObservation(obs);
       wklejanie = false;
+      wklejkaZAdresu = "";   // zużyta — przy następnym otwarciu pola mają być puste
       render();
       toast(`Wczytano ${gospodarze.length + goscie.length} zawodników`);
       break;
@@ -4357,6 +4374,34 @@ function obserwacjaZAdresu(): string {
   return m ? m[1] : "";
 }
 
+// SKŁAD PODANY W ADRESIE: …/m#sklad=<tekst w base64>.
+//
+// Po co. Gdy telefon nie chce wkleić (menu „Wklej" nie wychodzi, schowek pusty po przełączeniu
+// aplikacji), zostaje droga, która nie wymaga schowka w ogóle: ktoś przysyła gotowy link,
+// scout go otwiera i ma skład w polach. Pracuje tak samo wklejka z komputera i wiadomość.
+//
+// NIE WCZYTUJEMY SAMI. Link tylko WYPEŁNIA pola do wklejania — zatwierdza scout, bo wczytanie
+// podmienia drużynę razem z wyróżnieniami i ocenami, a linka można otworzyć przez przypadek.
+function skladZAdresu(): string {
+  const m = String(location.hash || "").match(/sklad=([A-Za-z0-9_\-+/=%]+)/);
+  if (!m) return "";
+  try {
+    const surowy = decodeURIComponent(m[1]).replace(/-/g, "+").replace(/_/g, "/").replace(/=+$/, "");
+    // Ogonek „=" bywa ucięty — część narzędzi zapisuje base64 bez niego. Dokładamy go sami,
+    // zamiast odrzucać poprawny link.
+    const b64 = surowy + "=".repeat((4 - (surowy.length % 4)) % 4);
+    // atob połyka byle co i oddaje bajtowy bełkot zamiast rzucić błędem, a ten bełkot wszedłby
+    // scoutowi w pola jak gdyby nigdy nic. Sprawdzamy więc alfabet i długość z góry, a na końcu
+    // jeszcze raz wynik: tekst musi dać się odczytać, bez znaków zastępczych.
+    if (surowy.length % 4 === 1 || !/^[A-Za-z0-9+/]+$/.test(surowy)) return "";
+    const bajty = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const tekst = new TextDecoder("utf-8", { fatal: false }).decode(bajty);
+    return /�/.test(tekst) ? "" : tekst;   // polskie znaki w linku mają wyjść polskie
+  } catch {
+    return "";
+  }
+}
+
 async function start(pobranaKopia?: Cache) {
   cache = pobranaKopia || getCache();
   live = getLive();
@@ -4367,6 +4412,16 @@ async function start(pobranaKopia?: Cache) {
   if (zAdresu && cache.observations.some((o) => o.id === zAdresu)) {
     beginLive(zAdresu);
     liveTab = "sklady";
+  }
+  // Skład z linku ląduje w polach do wklejania — otwieramy je od razu, żeby było widać, co przyszło.
+  const zLinku = skladZAdresu();
+  if (zLinku) {
+    wklejkaZAdresu = zLinku;
+    liveTab = "sklady";
+    wklejanie = true;
+    // Bez otwartej obserwacji nie ma dokąd tego wstawić. Tekst zostaje w pamięci i wejdzie
+    // w pola, gdy tylko scout otworzy mecz — mówimy mu o tym, zamiast gubić wklejkę po cichu.
+    if (!live) setTimeout(() => toast("Skład z linku czeka — otwórz obserwację, wejdzie w zakładkę Składy"), 400);
   }
   render();
 

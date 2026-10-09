@@ -99,5 +99,41 @@ console.log("\nPrzycisk w panelu");
   spr("i mówi o rozdzieleniu obu składów", /Jeśli w jednej wklejce są oba składy, rozdzielę je sam/.test(panel));
 }
 
+console.log("\nSklad przyslany linkiem");
+{
+  // Gdy telefon nie chce wkleic (menu "Wklej" nie wychodzi, schowek pusty po przelaczeniu
+  // aplikacji), zostaje droga, ktora schowka nie potrzebuje w ogole: gotowy link.
+  const kod = (panel.match(/function skladZAdresu\(\): string \{[\s\S]*?\n\}/) || [])[0];
+  spr("panel czyta skład z adresu", !!kod);
+  if (kod) {
+    const tekst = "27\nHubert Adamczyk\nNKP Podhale Nowy Targ\n7\nŁukasz Seweryn\n";
+    const b64 = Buffer.from(tekst, "utf8").toString("base64url");
+    const czytaj = new Function("location",
+      `${transformSync(kod, { loader: "ts" }).code}\nreturn skladZAdresu;`)({ hash: "#sklad=" + b64 });
+    spr("tekst wraca z linku bez zmian", czytaj() === tekst, JSON.stringify(czytaj()));
+    // Polskie znaki musza przejsc przez base64 i wrocic polskie — inaczej "Łukasz" wraca jako krzaki.
+    spr("polskie znaki przeżywają drogę", /Łukasz/.test(czytaj()));
+    const psuty = new Function("location",
+      `${transformSync(kod, { loader: "ts" }).code}\nreturn skladZAdresu;`)({ hash: "#sklad=to-nie-jest-base64!!" });
+    spr("popsuty link nie wywraca panelu", psuty() === "");
+  }
+  spr("treść z linku ląduje w polach, a nie w składzie",
+    /const zLinku = wklejkaZAdresu \? podzielTekst\(wklejkaZAdresu, gosp, gosc\) : null;/.test(panel));
+  // Wczytanie podmienia druzyne razem z wyroznieniami i ocenami, a link da sie otworzyc przypadkiem.
+  spr("zatwierdza scout, nie link", /NIE WCZYTUJEMY SAMI/.test(panel));
+  spr("zużyta wklejka nie wraca przy następnym otwarciu", /wklejkaZAdresu = "";/.test(panel));
+  spr("bez otwartej obserwacji panel mówi, co zrobić",
+    /Skład z linku czeka — otwórz obserwację/.test(panel));
+}
+
+console.log("\nZadnego slepego zaulka przy pustej kadrze");
+{
+  // Przy klubie spoza bazy zostawal na ekranie sam przycisk "Gotowe": scout stal przed pusta
+  // strona piec minut przed gwizdkiem i nie mial stad dokad pojsc.
+  spr("z pustej kadry prowadzi przycisk do wklejania",
+    /data-act="wklej-sklad-stad"/.test(panel) && /case "wklej-sklad-stad":/.test(panel));
+  spr("przycisk pokazuje się tylko przy pustej kadrze", /\$\{!kadra\.length \? `/.test(panel));
+}
+
 console.log(bledy ? `\n${bledy} błędów.` : "\nWszystko się zgadza.");
 process.exit(bledy ? 1 : 0);
