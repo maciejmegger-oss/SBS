@@ -1647,12 +1647,26 @@ function viewSklady(): string {
           <div class="label" style="margin:10px 0 4px;">${podpis} · ${poz.length}</div>
           ${poz.map((x) => wiersz(x.z, x.i)).join("")}` : "";
 
+    // PODZIAŁ NA JEDNO DOTKNIĘCIE, gdy wklejka go nie przyniosła.
+    //
+    // Strony meczu wypisują skład w jednym porządku: najpierw jedenastu, potem ławka. Gdy
+    // nagłówek „Skład rezerwowy" nie skopiował się razem z nazwiskami, panel nie ma tego skąd
+    // wiedzieć — a przestawianie dziewięciu nazwisk strzałką przed gwizdkiem to robota na minutę,
+    // której nie ma. Nie dzielimy więc po cichu, tylko proponujemy wprost: pierwszych jedenastu
+    // gra, reszta siada. Scout widzi, co się stanie, zanim dotknie, i cofa to tą samą strzałką.
+    const doPodzialu = !lawka.length && lista.length > 11;
+
     return `
       <div class="section" style="${klucz === "gospodarze" ? "border-top:none; margin-top:0; padding-top:0;" : ""}">
         <div class="row" style="margin-bottom:6px;">
           <span class="label" style="margin:0;">${esc(sklad[klucz]?.nazwa || tytul)} · ${lista.length}</span>
           <button class="btn ghost small" data-act="wyczysc-sklad" data-strona="${klucz}">Wyczyść</button>
         </div>
+        ${doPodzialu ? `
+          <button class="btn ghost small" style="width:100%; margin:0 0 8px;" data-act="podziel-sklad" data-strona="${klucz}">
+            Podziel: pierwszych 11 gra, reszta na ławkę</button>
+          <p class="hint" style="margin:-4px 0 8px;">We wklejce nie było nagłówka „Skład rezerwowy”, więc nie wiem,
+          kto zaczyna. Strzałką przy nazwisku poprawisz każdego z osobna.</p>` : ""}
         ${lawka.length
           ? grupa("Pierwszy skład", pierwszy) + grupa("Rezerwowi", lawka)
           : pierwszy.map((x) => wiersz(x.z, x.i)).join("")}
@@ -3679,6 +3693,20 @@ document.addEventListener("click", (e) => {
       if (z.podstawowy === false) delete z.podstawowy; else z.podstawowy = false;
       saveObservation(obs);
       render();
+      break;
+    }
+
+    // Pierwszych jedenastu zostaje w składzie, reszta siada na ławkę. Kolejność bierzemy taką,
+    // jaka przyszła ze strony meczu — tam skład stoi od bramkarza do rezerwowych.
+    case "podziel-sklad": {
+      if (!live) break;
+      const obs = cache.observations.find((o) => o.id === live!.observationId) as (Observation & { skladMeczu?: Sklad }) | undefined;
+      const lista = obs?.skladMeczu?.[el.dataset.strona as "gospodarze" | "goscie"]?.zawodnicy;
+      if (!obs || !lista || lista.length <= 11) break;
+      lista.forEach((z, i) => { if (i >= 11) z.podstawowy = false; else delete z.podstawowy; });
+      saveObservation(obs);
+      render();
+      toast(`Pierwszy skład 11, rezerwowi ${lista.length - 11} — popraw strzałką, jeśli trzeba`);
       break;
     }
 

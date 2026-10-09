@@ -78,6 +78,18 @@ console.log("\nPierwszy sklad kontra lawka — lista na telefonie");
   // poprawce skladu.
   spr("powrót do składu kasuje pole, nie stawia true",
     /if \(z\.podstawowy === false\) delete z\.podstawowy; else z\.podstawowy = false;/.test(panel));
+  // Gdy naglowek "Sklad rezerwowy" nie skopiowal sie razem z nazwiskami, przestawianie dziewieciu
+  // nazwisk strzalka przed gwizdkiem to robota na minute, ktorej nie ma. Nie dzielimy po cichu —
+  // proponujemy wprost, jednym przyciskiem.
+  spr("przy niepodzielonej liście panel proponuje podział",
+    /const doPodzialu = !lawka\.length && lista\.length > 11;/.test(panel)
+    && /data-act="podziel-sklad"/.test(panel));
+  spr("i mówi, czemu nie zrobił tego sam", /nie było nagłówka „Skład rezerwowy”/.test(panel));
+  spr("podział jest obsłużony", /case "podziel-sklad":/.test(panel));
+  spr("pierwszych jedenastu zostaje w składzie",
+    /lista\.forEach\(\(z, i\) => \{ if \(i >= 11\) z\.podstawowy = false; else delete z\.podstawowy; \}\);/.test(panel));
+  // Przy jedenastu i mniej nie ma czego dzielic — przycisk nie moze sie wtedy w ogole pokazac.
+  spr("przy jedenastu i mniej nie ma co dzielić", /lista\.length <= 11\) break;/.test(panel));
   spr("przesunięcie zapisuje się od razu",
     /case "sklad-lawka":[\s\S]{0,500}saveObservation\(obs\);/.test(panel));
 }
