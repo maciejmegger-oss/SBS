@@ -28,6 +28,16 @@ export interface LiveEvent {
   type: string;      // klucz zdarzenia, np. "strzal"
   label: string;     // etykieta pokazywana scoutowi, np. "Strzał"
   quality: 1 | -1;   // 1 = udane, -1 = nieudane
+  // CZYJE JEST TO ZDARZENIE — DRUŻYNA.
+  //
+  // Bez tego pola oś zdarzeń mówiła tylko „strzał w 23. minucie" i nie dawało się odczytać,
+  // kto strzelał. Przy obserwacji całego meczu, gdzie nikt nie jest wyróżniony, połowa zapisu
+  // była przez to bezużyteczna: nie wiadomo, czy to atak obserwowanej drużyny, czy rywala.
+  //
+  // Trzymamy stronę („gospodarze"/„goscie"), a nie nazwę: nazwa drużyny bywa poprawiana przy
+  // obserwacji i zapisana w zdarzeniu rozjechałaby się z tą na liście. Nazwę składamy przy
+  // wyświetlaniu, z aktualnego pola „Mecz".
+  druzyna?: "gospodarze" | "goscie";
   // Kogo dotyczy zdarzenie. Zawodnicy ze składu meczu nie mają identyfikatorów w bazie —
   // skład bywa wklejony z kartki albo ze strony meczu — więc zapisujemy nazwę tak, jak
   // widnieje na liście („10 Mosek"). Puste = zdarzenie zespołu.
@@ -788,6 +798,9 @@ export interface LiveState {
   // Komu przypisują się kolejne zdarzenia (nazwa ze składu). Puste = zespół. Trzymane w stanie
   // meczu, a nie w pamięci widoku, bo wybór ma przetrwać zamknięcie karty w trakcie gry.
   wybranyZawodnik?: string;
+  // Która drużyna jest teraz tagowana. Zostaje wybrana aż do zmiany — w trakcie akcji nie ma
+  // czasu na potwierdzanie, a większość zdarzeń pod rząd dotyczy tej samej strony.
+  wybranaDruzyna?: "gospodarze" | "goscie";
   events: LiveEvent[];
 }
 
