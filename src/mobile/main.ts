@@ -1152,6 +1152,7 @@ function viewLive(): string {
     </div>
 
     ${liveTab === "sklady" ? viewSklady() : `
+    ${pasekDruzyn()}
     ${pasekZawodnikow()}
     ${blokOceny()}
     <div class="polarity">
@@ -1181,7 +1182,10 @@ function viewLive(): string {
       ${live.events.slice().reverse().slice(0, 40).map((e) => `
         <div class="ev ${e.quality === 1 ? "plus" : "minus"}">
           <span class="min">${e.minute}'</span>
-          <span class="txt">${e.zawodnik ? `<strong>${esc(e.zawodnik)}</strong> · ` : ""}${esc(e.label)}${e.note ? " — " + esc(e.note) : ""}</span>
+          <span class="txt">${e.zawodnik
+            ? `<strong>${esc(e.zawodnik)}</strong> · `
+            : (e.druzyna ? `<strong>${esc(nazwyStron()[e.druzyna])}</strong> · ` : "")
+          }${esc(e.label)}${e.note ? " — " + esc(e.note) : ""}</span>
           <span class="sign">${e.quality === 1 ? "+" : "−"}</span>
           <button class="ev-del" data-act="usun-zdarzenie" data-id="${esc(e.id)}" aria-label="Usuń zdarzenie">✕</button>
         </div>`).join("") || '<div class="empty">Jeszcze nic nie zarejestrowano.</div>'}
@@ -1825,17 +1829,53 @@ function zabezpieczNotatke() {
 // nikogo, a przy jednym wskazanym zawodniku i tak nie da się tagować drugiego. Wyróżnieni ze
 // składu trafiają więc na pasek nad kaflami — dotknięcie przełącza, komu przypisują się kolejne
 // zdarzenia. Wybór zostaje aż do zmiany, bo w trakcie akcji nie ma czasu na potwierdzanie.
-function wyroznieniZawodnicy(): { klucz: string; etykieta: string }[] {
+function wyroznieniZawodnicy(): { klucz: string; etykieta: string; strona: "gospodarze" | "goscie" }[] {
   if (!live) return [];
   const sklad = skladObserwacji(live.observationId);
   if (!sklad) return [];
-  const wynik: { klucz: string; etykieta: string }[] = [];
+  const wynik: { klucz: string; etykieta: string; strona: "gospodarze" | "goscie" }[] = [];
   STRONY.forEach((strona) => {
     (sklad[strona]?.zawodnicy || []).forEach((z) => {
-      if (z.wyrozniony) wynik.push({ klucz: kluczZawodnika(z), etykieta: kluczZawodnika(z) });
+      if (z.wyrozniony) wynik.push({ klucz: kluczZawodnika(z), etykieta: kluczZawodnika(z), strona });
     });
   });
   return wynik;
+}
+
+// Po której stronie gra wyróżniony zawodnik. Wybór nazwiska ma SAM ustawiać drużynę: nikt nie
+// gra w obu naraz, a kazanie scoutowi wskazywać jedno i drugie to dwa dotknięcia zamiast jednego
+// i okazja do pomyłki, której da się uniknąć.
+function stronaZawodnika(klucz: string): "gospodarze" | "goscie" | undefined {
+  return wyroznieniZawodnicy().find((z) => z.klucz === klucz)?.strona;
+}
+
+// Nazwy obu drużyn z pola „Mecz" — do opisania, czyje jest zdarzenie.
+function nazwyStron(): Record<"gospodarze" | "goscie", string> {
+  const obs = live ? cache.observations.find((o) => o.id === live!.observationId) : undefined;
+  const [g, s] = druzynyZMeczu(obs?.match);
+  return { gospodarze: g || "gospodarze", goscie: s || "goście" };
+}
+
+// WYBÓR DRUŻYNY STOI PRZED WYBOREM NAZWISKA.
+//
+// Dotąd zdarzenie bez wyróżnionego zawodnika lądowało „gdzieś w meczu": oś pokazywała „strzał
+// w 23. minucie" i nie dawało się odczytać, kto strzelał. Przy obserwacji całego meczu — a to
+// większość pracy — połowa zapisu była przez to bezużyteczna, bo nie wiadomo, czy to atak
+// obserwowanej drużyny, czy rywala.
+//
+// Drużyna jest więc wybrana ZAWSZE, także wtedy, gdy nikt nie jest wyróżniony. Wybór nazwiska
+// ustawia ją sam — nikt nie gra w obu drużynach naraz.
+function pasekDruzyn(): string {
+  const nazwy = nazwyStron();
+  const wybrana = live?.wybranaDruzyna || "";
+  return `
+    <div class="polarity" style="margin-bottom:8px;">
+      ${STRONY.map((k) => `
+        <button class="pol seg" data-act="taguj-druzyne" data-v="${k}" aria-pressed="${wybrana === k}">
+          ${esc(nazwy[k])}
+        </button>`).join("")}
+    </div>
+    ${wybrana ? "" : '<p class="hint" style="margin-top:-4px;">Wskaż drużynę, zanim zaczniesz tagować — bez tego nie da się potem odczytać, kto wykonał akcję.</p>'}`;
 }
 
 function pasekZawodnikow(): string {
@@ -1851,7 +1891,8 @@ function pasekZawodnikow(): string {
     <div class="tagujesz-strefa">
       <span class="label">Tagujesz i oceniasz</span>
       <div class="tagujesz">
-        <button class="chip ${wybrany ? "" : "wybrany"}" data-act="taguj-kogo" data-v="" aria-pressed="${!wybrany}">Zespół</button>
+        <button class="chip ${wybrany ? "" : "wybrany"}" data-act="taguj-kogo" data-v="" aria-pressed="${!wybrany}">${
+          live?.wybranaDruzyna ? esc(nazwyStron()[live.wybranaDruzyna]) : "Cały zespół"}</button>
         ${lista.map((z) => `
           <button class="chip ${wybrany === z.klucz ? "wybrany" : ""}" data-act="taguj-kogo" data-v="${esc(z.klucz)}" aria-pressed="${wybrany === z.klucz}">${esc(z.etykieta)}</button>`).join("")}
       </div>
@@ -2605,6 +2646,8 @@ function addEvent(key: string) {
     label: tag.label,
     quality: polarity,
     zawodnik: live.wybranyZawodnik || undefined,
+    // Drużyna wchodzi do KAŻDEGO zdarzenia, także tego bez nazwiska — po to cała ta zmiana.
+    druzyna: live.wybranaDruzyna,
     note: noteEl?.value.trim() || undefined,
     createdAt: new Date().toISOString(),
   };
@@ -3382,9 +3425,30 @@ document.addEventListener("click", (e) => {
       // zamknijEdycjeZawodnika. Panel nie jest tu zamykany, więc nikt inny by jej nie zebrał.
       zamknijEdycjeZawodnika();
       live.wybranyZawodnik = v || undefined;
+      // Nazwisko rozstrzyga drużynę — nikt nie gra w obu naraz. Przy powrocie na „cały zespół"
+      // zostawiamy ostatnio wybraną stronę: scout dalej ogląda ten sam mecz z tej samej strony.
+      if (v) live.wybranaDruzyna = stronaZawodnika(v) || live.wybranaDruzyna;
       setLive(live);
       render();
       break;
+
+    // WYBÓR DRUŻYNY. Zdejmuje wskazanie zawodnika, bo przejście na drugą stronę boiska znaczy,
+    // że tagowana jest już inna drużyna — zostawienie nazwiska z poprzedniej przypisywałoby jej
+    // akcje rywala. Ponowne dotknięcie tej samej drużyny niczego nie zmienia: w trakcie akcji
+    // łatwo trafić dwa razy, a odznaczenie drużyny zabrałoby zdarzeniu jedyną informację o tym,
+    // czyje jest.
+    case "taguj-druzyne": {
+      if (!live) break;
+      zamknijEdycjeZawodnika();
+      const strona = v === "goscie" ? "goscie" : "gospodarze";
+      if (live.wybranaDruzyna !== strona) {
+        live.wybranaDruzyna = strona;
+        live.wybranyZawodnik = undefined;
+      }
+      setLive(live);
+      render();
+      break;
+    }
 
     // Rozwinięcie i zwinięcie panelu ocen wskazanego zawodnika. Wybór zostaje na cały mecz:
     // scout pracuje seriami — albo taguje akcje kaflami, albo obchodzi wyróżnionych z ocenami.
