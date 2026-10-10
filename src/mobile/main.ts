@@ -2268,6 +2268,90 @@ function viewOcena(): string {
 // Po zapisaniu ocen dorobek meczu znikał z telefonu: stan meczu był kasowany, a wejścia w
 // gotową obserwację nie było. Dane szły do bazy, ale scout tego nie widział — a to jest
 // dokładnie ta chwila, w której chce się jeszcze raz spojrzeć na to, co się zapisało.
+// CAŁA OBSERWACJA JAKO TEKST — do schowka, jednym dotknięciem.
+//
+// Podgląd pokazuje wszystko: policzone zdarzenia, oceny, protokół 1–6, notatki. Tyle że ZOSTAJE
+// w telefonie. Żeby cokolwiek z tym zrobić — wysłać do klubu, wkleić do analizy, pokazać komuś,
+// kto nie ma dostępu do SBS — trzeba było przepisywać ręcznie albo robić serię zrzutów ekranu.
+//
+// Liczby są DOKŁADNIE te, które pokazuje panel: ten sam licznik, co na ekranie podglądu, więc
+// tekst nie może rozejść się z tym, co scout widzi.
+function podsumowanieObserwacji(obs: Observation & { skladMeczu?: Sklad }): string {
+  const o = obs as Observation & { poziomMeczu?: number; warunki?: string[]; notatkaMeczu?: string };
+  const zdarzenia = zdarzeniaObserwacji(obs.id);
+  const [nazwaG, nazwaS] = druzynyZMeczu(obs.match);
+  const nazwaStrony = { gospodarze: nazwaG, goscie: nazwaS } as Record<string, string>;
+
+  // Licznik zdarzeń — po nazwisku, a gdy go nie ma, po drużynie.
+  const policz = (filtr: (e: LiveEvent) => boolean): string => {
+    const licznik = new Map<string, number>();
+    zdarzenia.filter(filtr).forEach((e) => {
+      const k = e.label + (e.quality === -1 ? " −" : "");
+      licznik.set(k, (licznik.get(k) || 0) + 1);
+    });
+    return [...licznik.entries()].map(([co, ile]) => `${co} ${ile}`).join(" · ");
+  };
+
+  const linie: string[] = [];
+  linie.push(obs.match || "Obserwacja");
+  linie.push([
+    dataZDniem(obs.date || ""),
+    obs.matchTime || "",
+    (obs as { rozgrywki?: string }).rozgrywki || "",
+    obs.scout ? "scout: " + obs.scout : "",
+  ].filter(Boolean).join(" · "));
+  if (o.poziomMeczu) linie.push(`Poziom meczu: ${o.poziomMeczu}/10`);
+  if ((o.warunki || []).length) linie.push(`Warunki: ${(o.warunki as string[]).join(", ")}`);
+  if (o.notatkaMeczu) linie.push(`Charakterystyka meczu: ${o.notatkaMeczu}`);
+
+  STRONY.forEach((strona) => {
+    const dane = obs.skladMeczu?.[strona];
+    const zawodnicy = (dane?.zawodnicy || []).filter((z) => z.wyrozniony
+      || z.notatka || z.status
+      || [z.ocena, z.fazy, z.sfg].some((w) => w && Object.values(w).some((n) => Number(n) > 0)));
+    const druzyna = policz((e) => !e.zawodnik && e.druzyna === strona);
+    if (!zawodnicy.length && !druzyna) return;
+
+    linie.push("");
+    linie.push(`== ${dane?.nazwa || nazwaStrony[strona]} ==`);
+    if (dane?.formacja) linie.push(`System gry: ${dane.formacja}`);
+    if (druzyna) linie.push(`Zespół (zdarzenia bez nazwiska): ${druzyna}`);
+
+    zawodnicy.forEach((z) => {
+      const klucz = kluczZawodnika(z);
+      linie.push("");
+      linie.push(`${z.wyrozniony ? "★ " : ""}${klucz}${z.pozycja ? ` · ${POZYCJE_PELNE[z.pozycja]}` : ""}${z.noga ? ` · noga ${z.noga}` : ""}`);
+      const zdarzeniaZ = policz((e) => e.zawodnik === klucz);
+      if (zdarzeniaZ) linie.push(`  Zdarzenia: ${zdarzeniaZ}`);
+      const ocena = [
+        ...OCENA_MAPY.map((k) => ({ k, l: RATING_LABELS[k] })),
+        ...OCENA_GLOWA.map((f) => ({ k: f.key, l: f.label })),
+      ].filter((x) => Number(z.ocena?.[x.k]) > 0).map((x) => `${x.l} ${z.ocena![x.k]}/10`).join(" · ");
+      if (ocena) linie.push(`  Ocena: ${ocena}`);
+      const protokol = [
+        ...fazyDla(grupaZawodnika(z, dane?.nazwa)).filter((f) => Number(z.fazy?.[f.key]) > 0).map((f) => `${f.label} ${z.fazy![f.key]}/6`),
+        ...REPORT_SET_PIECES.filter((f) => Number(z.sfg?.[f.key]) > 0).map((f) => `${f.label} ${z.sfg![f.key]}/6`),
+      ].join(" · ");
+      if (protokol) linie.push(`  Protokół: ${protokol}`);
+      if (z.status) linie.push(`  Decyzja: ${z.status}`);
+      if (z.notatka) linie.push(`  Notatka: ${z.notatka}`);
+    });
+  });
+
+  // Oś zdarzeń na końcu: z niej odczytuje się przebieg, a nie samą sumę. Bez niej z podsumowania
+  // nie da się powiedzieć, KIEDY coś się działo — a to pierwsze pytanie przy analizie.
+  if (zdarzenia.length) {
+    linie.push("");
+    linie.push(`== Przebieg · ${zdarzenia.length} zdarzeń ==`);
+    zdarzenia.forEach((e) => {
+      const kto = e.zawodnik || (e.druzyna ? nazwaStrony[e.druzyna] : "");
+      linie.push(`${e.minute}' ${kto ? kto + " · " : ""}${e.label}${e.quality === -1 ? " −" : ""}${e.note ? " — " + e.note : ""}`);
+    });
+  }
+
+  return linie.join("\n").trim();
+}
+
 function viewPodglad(): string {
   const obs = cache.observations.find((x) => x.id === podgladObsId) as (Observation & { skladMeczu?: Sklad }) | undefined;
   if (!obs) return '<h2>Obserwacja</h2><div class="empty">Nie znaleziono tej obserwacji.</div>';
@@ -2395,6 +2479,9 @@ function viewPodglad(): string {
 
     ${skladHtml}
 
+    ${/* Podsumowanie do schowka: stąd idzie do wiadomości, do klubu albo do analizy. Bez tego
+          jedyną drogą było przepisywanie z ekranu albo seria zrzutów. */""}
+    <button class="btn ghost" data-act="kopiuj-podsumowanie">📋 Kopiuj podsumowanie (zdarzenia, oceny, notatki)</button>
     <button class="btn ghost" data-act="podglad-ocen">Popraw oceny</button>
     <button class="btn ghost" data-act="go-dzis">Wróć do listy</button>`;
 }
@@ -3602,6 +3689,19 @@ document.addEventListener("click", (e) => {
     case "open-ocena": startOcena(el.dataset.id!); view = "ocena"; render(); break;
     case "podglad": podgladObsId = el.dataset.id!; view = "podglad"; render(); break;
     case "podglad-ocen": startOcena(podgladObsId!); view = "ocena"; render(); break;
+
+    // Podsumowanie obserwacji do schowka. Gdy przeglądarka schowka nie odda, pokazujemy tekst
+    // w oknie — zaznaczenie i skopiowanie ręcznie jest gorsze, ale wciąż jest drogą.
+    case "kopiuj-podsumowanie": {
+      const obs = cache.observations.find((x) => x.id === podgladObsId) as (Observation & { skladMeczu?: Sklad }) | undefined;
+      if (!obs) break;
+      const tekst = podsumowanieObserwacji(obs);
+      if (!navigator.clipboard?.writeText) { window.prompt("Skopiuj podsumowanie:", tekst); break; }
+      navigator.clipboard.writeText(tekst)
+        .then(() => toast("Podsumowanie w schowku — wklej, gdzie potrzebujesz"))
+        .catch(() => window.prompt("Skopiuj podsumowanie:", tekst));
+      break;
+    }
     case "save-nowa": saveNowa(el.dataset.start === "1"); break;
 
     case "clock-toggle":
