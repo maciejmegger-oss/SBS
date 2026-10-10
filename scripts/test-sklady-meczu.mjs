@@ -4,10 +4,10 @@
 import fs from "node:fs";
 import { transformSync } from "esbuild";
 
-const panel = fs.readFileSync("src/mobile/main.ts", "utf8");
+const panel = fs.readFileSync("src/mobile/main.ts", "utf8").split(String.fromCharCode(13)).join("");
 // normKlub i slowaKlubu mieszkaja od teraz we wspolnym module — panel i system na komputerze
 // czytaja sklad TYM SAMYM kodem, zeby nie rozjechaly sie jak kiedys dwie kopie zbieracza LNP.
-const wspolne = fs.readFileSync("src/domain/sklad.ts", "utf8");
+const wspolne = fs.readFileSync("src/domain/sklad.ts", "utf8").split(String.fromCharCode(13)).join("");
 const wytnij = (nazwa, wzor) => {
   const m = panel.match(wzor);
   if (!m) { console.error(`Nie znalazłem ${nazwa} — test i kod się rozjechały.`); process.exit(1); }

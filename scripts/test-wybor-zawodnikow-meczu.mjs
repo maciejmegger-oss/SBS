@@ -12,8 +12,8 @@
 import fs from "node:fs";
 import { transformSync } from "esbuild";
 
-const panel = fs.readFileSync("src/mobile/main.ts", "utf8");
-const wspolne = fs.readFileSync("src/domain/sklad.ts", "utf8");
+const panel = fs.readFileSync("src/mobile/main.ts", "utf8").split(String.fromCharCode(13)).join("");
+const wspolne = fs.readFileSync("src/domain/sklad.ts", "utf8").split(String.fromCharCode(13)).join("");
 
 let bledy = 0;
 const spr = (opis, w, dod = "") => {

@@ -8,7 +8,7 @@
 import fs from "node:fs";
 import { transformSync } from "esbuild";
 
-const zrodloDomeny = fs.readFileSync("src/domain/pozycje.ts", "utf8");
+const zrodloDomeny = fs.readFileSync("src/domain/pozycje.ts", "utf8").split(String.fromCharCode(13)).join("");
 const js = transformSync(zrodloDomeny, { loader: "ts", format: "esm" }).code;
 const modul = await import("data:text/javascript;base64," + Buffer.from(js).toString("base64"));
 const {
@@ -16,8 +16,8 @@ const {
   grupaZNumeru, grupaZOpisu, grupaZFaz, rolaZNumeru, rolaZOpisu, grupaZRoli,
 } = modul;
 
-const zrodloPc = fs.readFileSync("src/main.ts", "utf8");
-const zrodloPanel = fs.readFileSync("src/mobile/main.ts", "utf8");
+const zrodloPc = fs.readFileSync("src/main.ts", "utf8").split(String.fromCharCode(13)).join("");
+const zrodloPanel = fs.readFileSync("src/mobile/main.ts", "utf8").split(String.fromCharCode(13)).join("");
 
 const wytnij = (nazwa, wzor, zrodlo) => {
   const m = zrodlo.match(wzor);

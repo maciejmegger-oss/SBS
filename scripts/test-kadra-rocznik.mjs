@@ -12,7 +12,7 @@
 import fs from "node:fs";
 import { transformSync } from "esbuild";
 
-const panel = fs.readFileSync(new URL("../src/mobile/main.ts", import.meta.url), "utf8");
+const panel = fs.readFileSync(new URL("../src/mobile/main.ts", import.meta.url), "utf8").split(String.fromCharCode(13)).join("");
 let bledy = 0;
 const spr = (opis, w, dod="") => { console.log(`${w?"  OK  ":" BŁĄD "} ${opis}${w?"":"   "+dod}`); if(!w) bledy++; };
 

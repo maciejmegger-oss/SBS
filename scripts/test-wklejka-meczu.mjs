@@ -7,9 +7,9 @@
 import fs from "node:fs";
 import { transformSync } from "esbuild";
 
-const zrodlo = fs.readFileSync("src/mobile/main.ts", "utf8");
+const zrodlo = fs.readFileSync("src/mobile/main.ts", "utf8").split(String.fromCharCode(13)).join("");
 // normKlub mieszka od teraz we wspolnym module (patrz src/domain/sklad.ts).
-const wspolne = fs.readFileSync("src/domain/sklad.ts", "utf8");
+const wspolne = fs.readFileSync("src/domain/sklad.ts", "utf8").split(String.fromCharCode(13)).join("");
 const wytnijZe = (nazwa, wzor) => {
   const m = zrodlo.match(wzor);
   if (!m) { console.error(`Nie znalazłem ${nazwa} w src/mobile/main.ts — test i kod się rozjechały.`); process.exit(1); }

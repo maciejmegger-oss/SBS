@@ -1374,3 +1374,39 @@ body.bez-kasowania #delete-selected-agencies-btn{
   box-shadow:0 0 0 1px rgba(0,0,0,.18);}
 .kz-flaga .flaga-img,.kz-flaga.flaga-img{width:26px;height:19px;box-shadow:0 0 0 1px rgba(246,243,234,.35);}
 .flaga-naglowek{width:22px;height:16px;vertical-align:-3px;margin-right:2px;}
+
+/* ---- PROGNOZA ROZWOJU ----------------------------------------------------------------------
+   Dwie liczby i strzałka między nimi: gdzie zawodnik jest dziś, dokąd może dojść. Pod spodem
+   rozpisane składniki, bo prognoza bez uzasadnienia jest wróżeniem — menedżer klubowy ma widzieć,
+   za co dostał każdy punkt, i móc się z tym nie zgodzić. */
+.prognoza-karta{margin-bottom:14px;}
+.prognoza-naglowek{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+.prognoza-tytul{font-weight:800;color:var(--heading);letter-spacing:.02em;}
+.prognoza-pewnosc{margin-left:auto;font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
+  padding:2px 9px;border-radius:10px;}
+.pewnosc-wysoka{background:var(--good);color:#FFFFFF;}
+.pewnosc-srednia{background:var(--gold);color:var(--heading);}
+.pewnosc-niska{background:var(--chalk-dim);color:var(--ink-soft);}
+.prognoza-odmowa{margin-left:auto;font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
+  padding:2px 9px;border-radius:10px;background:var(--chalk-dim);color:var(--ink-soft);}
+.prognoza-liczby{display:flex;align-items:stretch;gap:14px;flex-wrap:wrap;}
+.prognoza-blok{flex:0 0 auto;min-width:150px;max-width:260px;padding:10px 14px;border-radius:10px;
+  background:var(--chalk);border:1px solid var(--border);}
+.prognoza-blok-cel{background:var(--heading);border-color:var(--heading);}
+.prognoza-blok-cel .prognoza-num,.prognoza-blok-cel .prognoza-opis,.prognoza-blok-cel .prognoza-lbl{color:#F3EFE2;}
+.prognoza-blok-cel .prognoza-num{color:var(--gold);}
+.prognoza-lbl{font-size:10.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-soft);}
+.prognoza-num{font-size:30px;font-weight:800;line-height:1.1;color:var(--heading);}
+.prognoza-opis{font-size:11.5px;line-height:1.35;color:var(--ink-soft);margin-top:2px;}
+.prognoza-strzalka{align-self:center;font-size:22px;color:var(--gold-dark);}
+.prognoza-horyzont{flex:1 1 150px;min-width:140px;padding:10px 0;}
+.prognoza-hor{font-size:18px;font-weight:800;color:var(--heading);line-height:1.2;}
+.prognoza-skladniki{width:100%;font-size:12.5px;}
+.prognoza-skladniki td{padding:3px 8px 3px 0;vertical-align:top;}
+.prognoza-skladniki td:first-child{font-weight:700;white-space:nowrap;}
+.prognoza-pkt{text-align:right;white-space:nowrap;font-weight:800;width:46px;}
+.prognoza-pkt.plus{color:var(--good);}
+.prognoza-pkt.minus{color:var(--clay);}
+.prognoza-pkt.zero{color:var(--ink-soft);font-weight:600;}
+.prognoza-uzasadnienie{color:var(--ink-soft);line-height:1.4;}
+.prognoza-braki{margin:0 0 10px;padding-left:18px;font-size:13px;line-height:1.6;color:var(--clay-dark);}

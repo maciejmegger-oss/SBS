@@ -11,6 +11,7 @@ import { plikFlagi } from "./data/flagi";
 // Profil kompetencji — model oceny przeniesiony z arkusza klubowego (5 obszarów, 48 elementów,
 // 141 składowych) i przypisanie elementów do profili pozycyjnych.
 import { OBSZARY_PROFILU, LEGENDA_OCENY, DRABINA_NOTOWANIA } from "./data/profil-kompetencji";
+import { prognozaZawodnika, poziomBezGrupy } from "./prognoza";
 import { PROFILE_POZYCJI, profilDlaNumeru, profilPoKodzie } from "./data/profil-pozycje";
 import { parsujSklad, podzielNaDruzyny } from "./domain/sklad";
 import { SKLADY_MECZOWE } from "./data/sklady-meczowe";
@@ -5699,6 +5700,132 @@ function deficytyProfilu(profil){
 }
 
 /** Panel w karcie zawodnika: najnowszy profil graficznie + przejście do starszych rund. */
+
+// ---- PROGNOZA ZAWODNIKA ------------------------------------------------------------------------
+//
+// „Na jaki poziom go stać" — jedyne pytanie, które dyrektor sportowy naprawdę zadaje. Cała logika
+// siedzi w src/prognoza.ts (czysta, bez DOM-u, z własnym testem); tutaj tylko zbieramy dla niej
+// dane z kartoteki i rysujemy wynik.
+//
+// Prognoza ma prawo powiedzieć „nie wiem". Trzy twarde bramki — 180 minut, historia dwóch poziomów
+// rozgrywek, raport z oceną potencjału — pilnują, żeby liczba nigdy nie powstała z powietrza.
+// Okno odmowy jest tu ważniejsze od okna z wynikiem: mówi skautowi, czego dołożyć.
+
+function wiekZawodnika(p){
+  const rok = Number(rocznikZawodnika(p));
+  if(!rok) return null;
+  const data = String((p && p.birthDate) || '').trim();
+  const d = data ? new Date(data) : null;
+  const dzis = new Date();
+  if(d && !isNaN(d.getTime())){
+    let w = dzis.getFullYear() - d.getFullYear();
+    const przed = dzis.getMonth() < d.getMonth() || (dzis.getMonth() === d.getMonth() && dzis.getDate() < d.getDate());
+    return przed ? w - 1 : w;
+  }
+  return dzis.getFullYear() - rok;
+}
+
+// Historia sezonów w kartotece trzymana jest kluczem „2025/26"; prognoza chce listy od najnowszego.
+function sezonyKariery(p){
+  const s = (p && p.seasonStats) || {};
+  return Object.keys(s).sort().reverse().map(k=>({ sezon: k, ...(s[k] || {}) }));
+}
+
+// Typowa skuteczność na tej pozycji i tym poziomie — liczona z WŁASNEJ bazy, gdy jest z czego.
+// Przy mniej niż ośmiu porównywalnych zawodnikach oddajemy null i prognoza użyje progów
+// orientacyjnych; średnia z trzech osób nie jest tłem, tylko przypadkiem.
+function goleNa90NaPozycji(p){
+  const poziom = poziomBezGrupy(clubLeague(p.clubId) || '');
+  const pozycja = String(p.position || '');
+  if(!poziom || !pozycja) return null;
+  const wartosci = [];
+  DB.players.forEach(x=>{
+    if(x.id === p.id || String(x.position||'') !== pozycja) return;
+    if(poziomBezGrupy(clubLeague(x.clubId) || '') !== poziom) return;
+    const minuty = (x.przebieg||[]).reduce((s,m)=>s+(Number(m.minuty)||0),0);
+    if(minuty < 450) return;
+    const gole = (x.przebieg||[]).reduce((s,m)=>s+(Number(m.gole)||0),0);
+    wartosci.push(gole / (minuty/90));
+  });
+  if(wartosci.length < 8) return null;
+  wartosci.sort((a,b)=>a-b);
+  return wartosci[Math.floor(wartosci.length/2)];
+}
+
+function danePrognozy(p){
+  const raport = raportyGracza(p.id).slice()
+    .sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')))
+    .filter(r=>r && r.ocenyAtrybutow && Number(r.ocenyAtrybutow.potencjal) > 0).pop()
+    || raportyGracza(p.id).slice().sort((a,b)=>String(a.date||'').localeCompare(String(b.date||''))).pop();
+  return {
+    wiek: wiekZawodnika(p),
+    pozycja: String(p.position || ''),
+    poziomTeraz: clubLeague(p.clubId) || '',
+    przebieg: p.przebieg || [],
+    sezony: sezonyKariery(p),
+    ocenyAtrybutow: raport ? (raport.ocenyAtrybutow || null) : null,
+    perspektywa: raport ? (raport.perspektywa || '') : '',
+    goleNa90Odniesienie: goleNa90NaPozycji(p),
+  };
+}
+
+function opisStopnia(stopien){
+  const w = DRABINA_NOTOWANIA.find(x=>x.stopien === stopien);
+  return w ? w.opis : '';
+}
+
+function prognozaPanelHtml(p){
+  const w = prognozaZawodnika(danePrognozy(p));
+  const maLink = has90minutLink(p);
+  if(!w.mozliwa){
+    return `<div class="card prognoza-karta prognoza-brak">
+      <div class="prognoza-naglowek"><span class="prognoza-tytul">Prognoza rozwoju</span>
+        <span class="prognoza-odmowa">niedostępna</span></div>
+      <p class="note" style="margin:6px 0 8px;">Nie stawiamy pułapu, dopóki nie stoi za nim materiał. Brakuje:</p>
+      <ul class="prognoza-braki">${w.braki.map(b=>`<li>${esc(b)}</li>`).join('')}</ul>
+      ${maLink ? `<button class="secondary" data-action="pobierz-kariere" data-id="${p.id}"
+        title="Pobierze z 90minut sezon po sezonie: klub, poziom rozgrywek, minuty i mecze od pierwszej minuty">⬇ Pobierz historię sezonów</button>`
+        : `<p class="note" style="margin:0;">Historię sezonów pobierzemy z 90minut — dopisz zawodnikowi link do profilu (Edytuj → link 90minut).</p>`}
+    </div>`;
+  }
+  const zakres = w.pulapOd === w.pulapDo ? String(w.pulapDo) : `${w.pulapOd}–${w.pulapDo}`;
+  const klasaPewnosci = w.pewnosc === 'WYSOKA' ? 'pewnosc-wysoka' : w.pewnosc === 'ŚREDNIA' ? 'pewnosc-srednia' : 'pewnosc-niska';
+  return `<div class="card prognoza-karta">
+    <div class="prognoza-naglowek">
+      <span class="prognoza-tytul">Prognoza rozwoju</span>
+      <span class="prognoza-pewnosc ${klasaPewnosci}">pewność ${esc(w.pewnosc)}</span>
+    </div>
+    <div class="prognoza-liczby">
+      <div class="prognoza-blok">
+        <div class="prognoza-lbl">Dziś</div>
+        <div class="prognoza-num">${w.stopienTeraz}</div>
+        <div class="prognoza-opis">${esc(opisStopnia(w.stopienTeraz))}</div>
+      </div>
+      <div class="prognoza-strzalka">→</div>
+      <div class="prognoza-blok prognoza-blok-cel">
+        <div class="prognoza-lbl">Pułap</div>
+        <div class="prognoza-num">${esc(zakres)}</div>
+        <div class="prognoza-opis">${esc(opisStopnia(w.pulapDo))}</div>
+      </div>
+      <div class="prognoza-horyzont">
+        <div class="prognoza-lbl">Horyzont</div>
+        <div class="prognoza-hor">${esc(w.horyzont)}</div>
+        <div class="prognoza-opis">rola dziś: ${esc(w.rolaTeraz)}</div>
+      </div>
+    </div>
+    <div class="prognoza-lbl" style="margin:10px 0 4px;">Na czym to stoi</div>
+    <table class="prognoza-skladniki"><tbody>${w.skladniki.map(s=>{
+      const znak = s.punkty > 0 ? '+' : '';
+      const klasa = s.punkty > 0 ? 'plus' : s.punkty < 0 ? 'minus' : 'zero';
+      return `<tr><td>${esc(s.nazwa)}</td><td class="prognoza-pkt ${klasa}">${
+        s.punkty === 0 ? '—' : znak + String(Math.round(s.punkty*100)/100).replace('.', ',')
+      }</td><td class="prognoza-uzasadnienie">${esc(s.opis)}</td></tr>`;
+    }).join('')}</tbody></table>
+    <p class="note" style="margin:8px 0 0;">Stopnie według drabiny notowania z arkusza kompetencji (1–21).
+      To wnioskowanie z reguł, nie model uczony na danych — każdy składnik widać wyżej z osobna.</p>
+  </div>`;
+}
+
 function profilKompetencjiPanelHtml(p){
   const lista = profileZawodnika(p.id);
   if(!lista.length) return `
@@ -6079,6 +6206,7 @@ function viewPlayerDetail(id){
   return `
   <button class="secondary" data-action="back-players" style="margin-bottom:14px;">&larr; Wróć do listy</button>
   ${kartaZawodnikaHtml(p, a)}
+  ${prognozaPanelHtml(p)}
   ${profilKompetencjiPanelHtml(p)}
   <div class="toolbar">
     <div style="display:flex;align-items:center;gap:12px;">
@@ -15538,6 +15666,52 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="profil-kompetencji-wybor"]').forEach(s=>
     s.onchange=()=>openProfilKompetencjiModal(s.dataset.id, (s as HTMLSelectElement).value));
   main.querySelectorAll('[data-action="tm-odswiez"]').forEach(b=>b.onclick=()=>odswiezZTransfermarktu(b.dataset.id, b));
+  // HISTORIA SEZONÓW — BEZ NIEJ PROGNOZA NIE RUSZY.
+  //
+  // Kartoteka trzyma dorobek sezonu bieżącego i nadpisuje go przy każdym odświeżeniu. Prognoza
+  // pyta o coś innego: czy zawodnik PRZECHODZI kolejne szczeble. To widać dopiero w kilku sezonach
+  // obok siebie, z poziomem rozgrywek i liczbą meczów od pierwszej minuty — a tych 90minut nie
+  // podaje na stronie kariery, tylko na stronach występów, sezon po sezonie.
+  main.querySelectorAll('[data-action="pobierz-kariere"]').forEach(b=>b.onclick=async()=>{
+    const p = DB.players.find(x=>x.id===b.dataset.id);
+    if(!p) return;
+    const link = String(p.lnpLink || p.tmLink || '');
+    if(!/90minut\.pl/i.test(link)){
+      alert('Ten zawodnik nie ma linku do profilu na 90minut. Dopisz go w „Edytuj".');
+      return;
+    }
+    const orig = b.textContent;
+    b.disabled = true; b.textContent = '⏳ Czytam sezony...';
+    try{
+      const res = await fetch('/api/kariera?url=' + encodeURIComponent(link));
+      const ctype = res.headers.get('content-type') || '';
+      if(!ctype.includes('application/json')) throw new Error('działa tylko na wdrożonej stronie (lokalnie nie ma /api).');
+      const d = await res.json();
+      if(!res.ok) throw new Error(d.error || ('serwer odpowiedział kodem ' + res.status));
+      const sezony = Array.isArray(d.sezony) ? d.sezony : [];
+      if(!sezony.length) throw new Error('90minut nie ma dla tego zawodnika rozbicia na sezony.');
+      const zapis = { ...(p.seasonStats || {}) };
+      sezony.forEach(s=>{
+        if(!s || !s.sezon) return;
+        // „mecze" zostaje obok „wystepy", bo tabelka poprzednich sezonów w profilu czyta starą nazwę.
+        zapis[s.sezon] = { klub: s.klub, rozgrywki: s.rozgrywki, wystepy: s.wystepy,
+          wPodstawowym: s.wPodstawowym, minuty: s.minuty, gole: s.gole,
+          mecze: s.wystepy, zrodlo: s.zrodlo || '90minut.pl' };
+      });
+      p.seasonStats = zapis;
+      p.kariereUpdatedAt = new Date().toISOString();
+      const ok = await savePlayers();
+      if(!ok){ alert('Pobrałem historię, ale nie udało się jej zapisać.' + powodNieudanegoZapisu()); return; }
+      const opis = sezony.map(s=>`${s.sezon}: ${s.rozgrywki || '—'} · ${s.minuty} min · ${s.wPodstawowym}/${s.wystepy} od 1. minuty`).join('\n');
+      alert(`Wczytałem ${sezony.length} ${sezony.length===1?'sezon':'sezonów'} z 90minut:\n\n${opis}` +
+        (d.pominiete && d.pominiete.length ? `\n\nNie udało się odczytać: ${d.pominiete.join(', ')}.` : ''));
+      render();
+    }catch(e){
+      alert('Nie udało się pobrać historii sezonów: ' + ((e && e.message) || e));
+    }finally{
+      b.disabled = false; b.textContent = orig;
+    }
+  });
   main.querySelectorAll('[data-action="refresh-stats"]').forEach(b=>b.onclick=async()=>{
     const p = DB.players.find(x=>x.id===b.dataset.id);
     if(!p) return;
