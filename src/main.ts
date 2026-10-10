@@ -5803,6 +5803,22 @@ function goleNa90NaPozycji(p){
   return wartosci[Math.floor(wartosci.length/2)];
 }
 
+// Czy zawodnik wybrany w formularzu raportu jest niepełnoletni.
+//
+// Przy takim zawodniku sekcja „Otoczenie i postawa" dostaje dodatkowe ostrzeżenie. W kartotece
+// SBS niepełnoletnich są tysiące (CLJ U15, U17, kadry wojewódzkie) i opis życia prywatnego
+// nastolatka nie ma prawa trafić do dokumentu transferowego.
+function wybranyZawodnikNiepelnoletni(){
+  try{
+    const pole = document.getElementById('rep-player');
+    const id = pole ? pole.value : '';
+    const p = id ? DB.players.find(x=>x.id===id) : null;
+    if(!p) return false;
+    const w = wiekZawodnika(p);
+    return w != null && w < 18;
+  }catch(e){ return false; }
+}
+
 function danePrognozy(p){
   const raport = raportyGracza(p.id).slice()
     .sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')))
@@ -6440,6 +6456,10 @@ function viewPlayerDetail(id){
           ${r.motoryka?`<div style="margin-top:4px;"><strong>Motoryka:</strong>${tekstRaportuHtml(r.motoryka, {odstep:3})}</div>`:''}
           ${r.mentalnoscOpis?`<div style="margin-top:4px;"><strong>Mentalność:</strong>${tekstRaportuHtml(r.mentalnoscOpis, {odstep:3})}</div>`:''}
           ${r.potencjalOpis?`<div style="margin-top:4px;"><strong>Potencjał:</strong>${tekstRaportuHtml(r.potencjalOpis, {odstep:3})}</div>`:''}
+          ${r.otoczenie?`<div style="margin-top:4px;"><strong>Środowisko i wsparcie:</strong>${tekstRaportuHtml(r.otoczenie, {odstep:3})}</div>`:''}
+          ${r.postawa?`<div style="margin-top:4px;"><strong>Podejście do zawodu:</strong>${tekstRaportuHtml(r.postawa, {odstep:3})}</div>`:''}
+          ${r.stabilnosc?`<div style="margin-top:4px;"><strong>Sytuacja i funkcjonowanie:</strong>${tekstRaportuHtml(r.stabilnosc, {odstep:3})}</div>`:''}
+          ${(r.otoczenie||r.postawa||r.stabilnosc)?`<div class="meta" style="margin-top:3px;">Otoczenie — źródło: ${esc(r.zrodloOtoczenia||'nie wskazano')}</div>`:''}
         </div>
         <div class="meta" style="margin-top:4px;">${fazyR.map(f=>f.label+": "+r.phases[f.key]).join(' &middot; ')}</div>
         <div class="meta">${REPORT_SET_PIECES.map(f=>f.label+": "+r.setPieces[f.key]).join(' &middot; ')}</div>
@@ -10606,6 +10626,41 @@ function viewReports(){
       </div>
     </div>`).join('')}
 
+
+    ${/* OTOCZENIE I POSTAWA — to, czego nie widać w protokole.
+          Zgłoszenie (10.10.2026): „nie widzę oceny z mediów społecznościowych (...) ocena żeby
+          była o jego życiu charakterze funkcjonowaniu". Klub rzeczywiście tego potrzebuje —
+          ale nie w formie wyroku wyciągniętego przez maszynę z czyjegoś Facebooka. Opinia AI
+          ma wprost zapisane, że kont w mediach społecznościowych nie rusza, i to zostaje:
+          w kartotece jest mnóstwo niepełnoletnich, a automat czytający prywatny profil
+          nastolatka to nie jest skauting, tylko kłopot.
+
+          Dlatego to pole wypełnia CZŁOWIEK i przy każdym wpisie mówi, skąd wie. Zdanie
+          „ma trudną sytuację rodzinną" bez źródła jest bezwartościowe i niebezpieczne naraz;
+          to samo zdanie z „rozmowa z trenerem" jest informacją, na której da się oprzeć decyzję.
+          Profile społecznościowe stoją obok jako materiał do obejrzenia przez skauta — nie jako
+          wsad dla modelu. */''}
+    <div style="border-top:1px solid var(--border);margin:14px 0;padding-top:10px;">
+      <label class="field" style="display:block;margin-bottom:2px;">Otoczenie i postawa</label>
+      <p class="note" style="margin:0 0 10px;">Wypełniasz z własnego rozeznania — rozmowy, obserwacji, opinii sztabu.
+        Trzymaj się tego, co dotyczy zawodu: podejście do pracy, stabilność sytuacji, wsparcie wokół zawodnika.
+        <strong>Nie wpisuj tu</strong> wyznania, poglądów politycznych, zdrowia, pochodzenia ani życia uczuciowego —
+        to dane wrażliwe i nie wolno ich trzymać w kartotece.</p>
+      ${wybranyZawodnikNiepelnoletni() ? `<p class="note" style="color:var(--clay-dark);margin:0 0 10px;">
+        <strong>To zawodnik niepełnoletni.</strong> Ogranicz się do spraw sportowych (treningi, frekwencja, kontakt ze sztabem).
+        Nie opisuj jego życia prywatnego ani profili w mediach społecznościowych.</p>` : ''}
+      <div class="field-wrap"><label class="field" for="rep-otoczenie">Środowisko i wsparcie</label>
+        <textarea id="rep-otoczenie" rows="2" placeholder="Kto stoi za zawodnikiem, jak wygląda jego zaplecze, czy ma stabilne warunki do pracy...">${editing? esc(editing.otoczenie||'') : ''}</textarea></div>
+      <div class="field-wrap"><label class="field" for="rep-postawa">Podejście do zawodu</label>
+        <textarea id="rep-postawa" rows="2" placeholder="Treningi, punktualność, reakcja na krytykę i na słabszy mecz, praca po godzinach...">${editing? esc(editing.postawa||'') : ''}</textarea></div>
+      <div class="field-wrap"><label class="field" for="rep-stabilnosc">Sytuacja i funkcjonowanie</label>
+        <textarea id="rep-stabilnosc" rows="2" placeholder="Wypożyczenie, przeprowadzka, szkoła lub studia, dojazdy, zmiana klubu w trakcie sezonu...">${editing? esc(editing.stabilnosc||'') : ''}</textarea></div>
+      <div class="field-wrap"><label class="field" for="rep-zrodlo-otoczenia">Skąd to wiesz</label>
+        <select id="rep-zrodlo-otoczenia">
+          ${['', 'Rozmowa z zawodnikiem', 'Rozmowa z trenerem', 'Sztab klubu', 'Inny skaut', 'Obserwacja na miejscu', 'Publiczne źródła', 'Inne']
+            .map(z=>`<option value="${esc(z)}" ${editing && editing.zrodloOtoczenia===z ? 'selected':''}>${z || '— wskaż źródło —'}</option>`).join('')}
+        </select></div>
+    </div>
     <div style="border-top:1px solid var(--border);margin:14px 0;padding-top:10px;">
       <label class="field" style="display:block;margin-bottom:8px;">Perspektywa</label>
       <div class="perspektywa-picker" id="rep-perspektywa-picker" data-value="${esc(reportPerspektywaValue)}">
@@ -17508,6 +17563,12 @@ function attachHandlers(){
       motoryka: document.getElementById('rep-motoryka').value.trim(),
       mentalnoscOpis: document.getElementById('rep-mentalnosc-opis').value.trim(),
       potencjalOpis: document.getElementById('rep-potencjal-opis').value.trim(),
+      // Otoczenie i postawa — wpisane przez człowieka, z zaznaczonym źródłem. Bez źródła zdanie
+      // o czyimś charakterze jest bezwartościowe i niebezpieczne naraz.
+      otoczenie: (document.getElementById('rep-otoczenie') as HTMLTextAreaElement || {} as any).value?.trim() || '',
+      postawa: (document.getElementById('rep-postawa') as HTMLTextAreaElement || {} as any).value?.trim() || '',
+      stabilnosc: (document.getElementById('rep-stabilnosc') as HTMLTextAreaElement || {} as any).value?.trim() || '',
+      zrodloOtoczenia: (document.getElementById('rep-zrodlo-otoczenia') as HTMLSelectElement || {} as any).value || '',
       // Oceny pięciu atrybutów: tylko te faktycznie wystawione. Pustego pola NIE zapisujemy jako
       // zera — „nie oceniałem" to nie jest najniższa nota, a właśnie tak czytało się dawne 0.0.
       ocenyAtrybutow: (()=>{
@@ -25750,11 +25811,22 @@ async function generatePlayerPDF(playerId){
         ['Technika', latestReport.technika], ['Taktyka', latestReport.taktyka],
         ['Motoryka', latestReport.motoryka], ['Mentalność', latestReport.mentalnoscOpis],
         ['Potencjał', latestReport.potencjalOpis],
+        // Otoczenie i postawa — wpisane ręcznie przez skauta. W PDF-ie stoją na końcu, bo czyta
+        // się je po tym, co zawodnik pokazał na boisku, a nie zamiast tego.
+        ['Środowisko i wsparcie', latestReport.otoczenie],
+        ['Podejście do zawodu', latestReport.postawa],
+        ['Sytuacja i funkcjonowanie', latestReport.stabilnosc],
       ].filter(([, t])=>String(t||'').trim());
       if(!bloki.length) return '';
+      const maOtoczenie = [latestReport.otoczenie, latestReport.postawa, latestReport.stabilnosc]
+        .some(t=>String(t||'').trim());
+      // Skąd skaut to wie — bez tego zdanie o czyimś charakterze nie waży nic.
+      const zrodlo = maOtoczenie && latestReport.zrodloOtoczenia
+        ? `<p class="empty-note" style="margin:2px 0 0;">Otoczenie i postawa — źródło: ${esc(latestReport.zrodloOtoczenia)}. Ocena skauta, nie odczyt z mediów społecznościowych.</p>`
+        : (maOtoczenie ? `<p class="empty-note" style="margin:2px 0 0;">Otoczenie i postawa — skaut nie wskazał źródła.</p>` : '');
       return `<div style="margin-bottom:10px;">${bloki.map(([etykieta, tresc])=>
         `<div style="margin-bottom:7px;"><div class="lbl" style="margin-bottom:2px;">${esc(etykieta)}</div>
-         <div class="notes-box" style="margin:0;">${tekstRaportuHtml(tresc)}</div></div>`).join('')}</div>`;
+         <div class="notes-box" style="margin:0;">${tekstRaportuHtml(tresc)}</div></div>`).join('')}${zrodlo}</div>`;
     })()}
     ${latestReport.description?`<div class="lbl" style="margin-bottom:2px;">Opis raportu</div><div class="notes-box" style="margin-bottom:10px;">${tekstRaportuHtml(latestReport.description)}</div>`:''}
     ${(latestReport.phases&&Object.keys(latestReport.phases).length)?`<div class="metric-section-label">${podpisProtokolu(fazyRaportu(latestReport))} (1-6)</div><div class="attr5-grid metric4">${fazyRaportu(latestReport).map(f=>`<div class="attr5-col"><div class="attr5-head"><span>${esc(f.label)}</span></div><div class="metric-num-body">${latestReport.phases[f.key]!=null?latestReport.phases[f.key]:'—'}</div></div>`).join('')}</div>`:''}

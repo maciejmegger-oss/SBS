@@ -14,3 +14,6 @@ vite.config.ts.timestamp-*.mjs
 # Kopie zapasowe kartoteki i podglądy napraw — bywają wielomegabajtowe i są robocze.
 kopie/
 scripts/.podglad-naprawy.json
+
+# Gotowe dokumenty do wysylki (PDF, prezentacje) — nie nalezy ich trzymac w repozytorium.
+dokumenty/
