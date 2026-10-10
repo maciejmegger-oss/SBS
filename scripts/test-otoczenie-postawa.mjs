@@ -69,5 +69,38 @@ sprawdz("model korzysta wyłącznie ze źródeł piłkarskich",
 sprawdz("mentalności nie wolno oceniać zdalnie — tylko poszlaki",
   /Ocen[ay] mentalności nie da się postawić zdalnie/.test(opinia));
 
+
+console.log("\n6. Opinia AI dostaje ustalenia skauta i ma je streścić");
+const analiza = zrodlo;
+sprawdz("pola otoczenia idą do endpointu opinii",
+  /otoczenie: r\.otoczenie \|\| '', postawa: r\.postawa \|\| '', stabilnosc: r\.stabilnosc \|\| '',/.test(analiza));
+sprawdz("razem ze źródłem", /zrodloOtoczenia: r\.zrodloOtoczenia \|\| '',/.test(analiza));
+sprawdz("opinia ma osobną sekcję o otoczeniu", /OTOCZENIE I POSTAWA \(ustalenia skauta\)/.test(opinia));
+sprawdz("model ma tam streszczać, a nie dopowiadać",
+  /Niczego tu nie dopowiadasz/.test(opinia));
+sprawdz("pusta sekcja ma być nazwana luką, nie pominięta",
+  /nikt tego nie sprawdził/.test(opinia));
+
+console.log("\n7. To, co publiczne, model zbiera — to, co prywatne, zostawia");
+sprawdz("jest sekcja o publicznych wypowiedziach i komunikatach klubu",
+  /CO O NIM WIADOMO PUBLICZNIE/.test(opinia));
+sprawdz("przy każdej informacji ma stać źródło", /Przy każdej informacji podajesz źródło/.test(opinia));
+sprawdz("media społecznościowe i rodzina wyłączone z tej sekcji",
+  /Tu NIE wchodzą media społecznościowe, rodzina/.test(opinia));
+sprawdz("powód odmowy podany rzeczowo: model i tak tych kont nie przeczyta",
+  /tych kont i tak nie przeczytasz/.test(opinia));
+sprawdz("model wie, że adres profilu w danych niczego nie zmienia",
+  /nawet jeśli\s*\n?w danych wejściowych jest adres takiego profilu/.test(opinia));
+
+console.log("\n8. Dokument analizy pokazuje profile i otoczenie");
+sprawdz("profile zawodnika trafiają do dokumentu", /<h2>Profile zawodnika<\/h2>/.test(analiza));
+sprawdz("wśród nich Facebook i Instagram",
+  /\['Instagram', p\.instagramLink\], \['Facebook', p\.facebookLink\]/.test(analiza));
+sprawdz("dokument mówi, kto ocenia te profile", /nie ocenia automat — robi to skaut/.test(analiza));
+sprawdz("brak wypełnionego otoczenia jest zaznaczony na czerwono jako luka",
+  /Nikt tego nie sprawdził\./.test(analiza));
+sprawdz("wypełnione otoczenie idzie do dokumentu ze źródłem",
+  /źródło: \$\{esc\(r\.zrodloOtoczenia\|\|'nie wskazano'\)\}/.test(analiza));
+
 console.log(bledy ? `\n${bledy} BŁĘDÓW` : "\nWszystko przeszło.");
 process.exit(bledy ? 1 : 0);

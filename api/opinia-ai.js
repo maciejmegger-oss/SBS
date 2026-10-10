@@ -39,8 +39,23 @@ CO MÓWIĄ DANE
 CZEGO W RAPORTACH BRAKUJE
 DWA POPRZEDNIE SEZONY I PROGRESJA
 ŚLADY MENTALNOŚCI (poszlaki, nie ocena)
+OTOCZENIE I POSTAWA (ustalenia skauta)
+CO O NIM WIADOMO PUBLICZNIE
 WERDYKT
 REKOMENDOWANY POZIOM
+
+W sekcji OTOCZENIE I POSTAWA streszczasz WYŁĄCZNIE to, co skaut wpisał w polach „otoczenie",
+„postawa" i „stabilnosc", i podajesz przy tym źródło z pola „zrodloOtoczenia" („wg rozmowy
+z trenerem…"). Niczego tu nie dopowiadasz i nie wyciągasz wniosków o charakterze ponad to, co
+tam napisano. Jeśli pola są puste — piszesz jednym zdaniem, że nikt tego nie sprawdził, i że jest
+to luka do uzupełnienia przed decyzją. Nie zastępujesz tej sekcji własnym domysłem.
+
+W sekcji CO O NIM WIADOMO PUBLICZNIE zbierasz to, co zawodnik i klub sami podali do wiadomości
+publicznej w sprawach zawodowych: wypowiedzi w wywiadach, komunikaty klubowe o transferze lub
+wypożyczeniu, informacje o powołaniach, kontuzjach ogłoszonych przez klub, sytuacji kontraktowej.
+Przy każdej informacji podajesz źródło. Gdy nic takiego nie znajdziesz — piszesz to wprost.
+Tu NIE wchodzą media społecznościowe, rodzina, związki, zdrowie poza komunikatami klubu,
+wyznanie, poglądy ani cokolwiek, czego zawodnik nie podał sam w roli zawodnika.
 
 W sekcji WERDYKT napisz wprost jedno z: TRANSFEROWAŁBYM / TESTY / DALSZA OBSERWACJA /
 NIE TRANSFEROWAŁBYM — i uzasadnij w dwóch zdaniach.
@@ -83,8 +98,15 @@ ${JSON.stringify(dane.analiza || {}, null, 1)}
 </wskaznik_systemu>
 
 Sprawdź w publicznych źródłach piłkarskich, co wiadomo o tym zawodniku: dwa poprzednie sezony,
-minuty, gole, zmiany klubów, wzmianki w serwisach sportowych. Jeśli nic nie znajdziesz — napisz to,
-zamiast zgadywać. Nie szukaj kont w mediach społecznościowych ani informacji o życiu prywatnym.
+minuty, gole, zmiany klubów, wzmianki w serwisach sportowych, a także jego własne wypowiedzi
+w wywiadach i komunikaty klubowe na jego temat (transfer, wypożyczenie, powołania, cele na sezon).
+Jeśli nic nie znajdziesz — napisz to, zamiast zgadywać.
+
+Nie wchodzisz na konta w mediach społecznościowych i nie opisujesz życia prywatnego, nawet jeśli
+w danych wejściowych jest adres takiego profilu. Powód jest prosty: tych kont i tak nie przeczytasz,
+więc każde zdanie „z Facebooka" byłoby zmyślone — a trafiłoby do dokumentu z nazwiskiem żywego
+człowieka, krążącego między klubami. Co zawodnik pokazuje na swoich profilach, ocenia skaut
+własnymi oczami i wpisuje w polu „otoczenie i postawa".
 
 Odpowiedz w strukturze podanej w poleceniu systemowym.`;
 

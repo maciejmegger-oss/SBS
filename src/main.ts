@@ -13663,6 +13663,13 @@ async function pobierzOpinieAI(playerId, przycisk, miejsce, poZapisie?){
     technika: r.technika || '', taktyka: r.taktyka || '', motoryka: r.motoryka || '',
     mentalnosc: r.mentalnoscOpis || '', potencjal: r.potencjalOpis || '',
     opis: r.description || '', fazyGry: r.phases || {}, staleFragmenty: r.setPieces || {},
+    // OTOCZENIE I POSTAWA — to, co skaut ustalił poza boiskiem, razem ze źródłem.
+    //
+    // Model nie ma jak sam dojść do tego, jak zawodnik funkcjonuje na co dzień: nie wejdzie na
+    // prywatny profil i nie porozmawia z trenerem. Ale jeśli skaut to ustalił i zapisał, opinia
+    // ma to wziąć pod uwagę — i podać, od kogo to wie, bo bez źródła takie zdanie nic nie waży.
+    otoczenie: r.otoczenie || '', postawa: r.postawa || '', stabilnosc: r.stabilnosc || '',
+    zrodloOtoczenia: r.zrodloOtoczenia || '',
   }));
   const przebieg = (p.przebieg || []).map(x=>({
     rywal: x.rywal || '', dom: !!x.dom, minuty: x.minuty || 0,
@@ -13836,6 +13843,45 @@ async function generateAnalysisPDF(playerId){
     <div><strong>Do poprawy</strong>${lista(an.weaknesses)}</div>
   </div>
 
+
+  ${/* PROFILE ZAWODNIKA — do obejrzenia własnymi oczami.
+        Zgłoszenie (10.10.2026): „jest tam link do Facebooka (...) nie widzę oceny z mediów
+        społecznościowych". Adresy były w kartotece, ale do dokumentu nie trafiały, więc czytający
+        nie miał nawet jak kliknąć. Teraz stoją w analizie — jako materiał dla człowieka.
+        Oceny tych profili nie wystawia żaden automat: model ich nie przeczyta (są za logowaniem),
+        więc cokolwiek by o nich napisał, byłoby zmyślone i trafiłoby do dokumentu z nazwiskiem
+        żywego człowieka. Co widać na profilu, ocenia skaut i wpisuje w „Otoczenie i postawa". */''}
+  ${(()=>{
+    const profile = [
+      ['Transfermarkt', p.profileTm], ['90minut / ŁNP', p.lnpLink || p.profileLnp],
+      ['Instagram', p.instagramLink], ['Facebook', p.facebookLink],
+    ].filter(([, a])=>String(a||'').trim());
+    if(!profile.length) return '';
+    return `<h2>Profile zawodnika</h2>
+    <p style="margin:0 0 4px;color:#5B6560;">Do obejrzenia przed decyzją. Tego, co widać na profilach
+      społecznościowych, nie ocenia automat — robi to skaut i zapisuje w „Otoczeniu i postawie".</p>
+    <ul style="margin:0 0 10px;padding-left:16px;">${profile.map(([nazwa, adres])=>
+      `<li><strong>${esc(nazwa)}:</strong> <span style="color:#8C6C21;word-break:break-all;">${esc(adres)}</span></li>`).join('')}</ul>`;
+  })()}
+
+  ${/* Co skauci ustalili poza boiskiem — razem ze źródłem. */''}
+  ${(()=>{
+    const zOtoczeniem = raporty.filter((r: any)=> String(r.otoczenie||'').trim()
+      || String(r.postawa||'').trim() || String(r.stabilnosc||'').trim());
+    if(!zOtoczeniem.length){
+      return `<h2>Otoczenie i postawa</h2>
+      <p style="margin:0 0 10px;color:#8C3A2E;">Nikt tego nie sprawdził. Jak zawodnik funkcjonuje na co dzień,
+        co ma wokół siebie i jak podchodzi do pracy — tego w dokumencie nie ma, a przed decyzją transferową
+        powinno być. Wypełnia się to w raporcie, w sekcji „Otoczenie i postawa".</p>`;
+    }
+    return `<h2>Otoczenie i postawa</h2>${zOtoczeniem.map((r: any)=>`<div class="rap">
+      <strong>${esc(r.date||'bez daty')}</strong> <span style="color:#5B6560;">${esc(r.scout||'—')}
+      &middot; źródło: ${esc(r.zrodloOtoczenia||'nie wskazano')}</span>
+      ${r.otoczenie?`<div style="margin-top:3px;"><strong>Środowisko i wsparcie:</strong> ${esc(r.otoczenie)}</div>`:''}
+      ${r.postawa?`<div style="margin-top:3px;"><strong>Podejście do zawodu:</strong> ${esc(r.postawa)}</div>`:''}
+      ${r.stabilnosc?`<div style="margin-top:3px;"><strong>Sytuacja i funkcjonowanie:</strong> ${esc(r.stabilnosc)}</div>`:''}
+    </div>`).join('')}`;
+  })()}
   <h2>Raporty, na których opiera się analiza (${raporty.length})</h2>
   ${raporty.length ? raporty.map((r: any)=>`<div class="rap"><strong>${esc(r.date||'bez daty')}</strong>
       <span style="color:#5B6560;">${esc(r.scout||'—')}${r.perspektywa?` &middot; perspektywa ${esc(r.perspektywa)}`:''}${r.obsType?` &middot; ${esc(r.obsType)}`:''}</span>
