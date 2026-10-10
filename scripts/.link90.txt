@@ -1,0 +1,13 @@
+// ADRES ZAWODNIKA NA 90MINUT — Z LINKU ALBO Z IDENTYFIKATORA, KTÓRY JUŻ MAMY.
+//
+// Przez długi czas liczył się tylko ręcznie wklejony `lnpLink`, więc prognoza mówiła „dodaj link
+// do 90minut" przy zawodnikach, przy których ten link dawno dało się złożyć: odświeżanie
+// statystyk klubu dopasowuje nasze kartoteki do stron 90minut i zapisuje przy nich `m90Id`.
+// Baza powstała z protokołów ŁNP, które identyfikatorów nie niosą, więc ręcznie wklejonych
+// linków jest garstka — a identyfikatorów całe kluby.
+function adres90minut(p){
+  const wprost = String((p && p.lnpLink) || '');
+  if(/90minut\.pl/i.test(wprost)) return wprost;
+  const id = String((p && p.m90Id) || '').trim();
+  return /^\d+$/.test(id) ? ('http://www.90minut.pl/kariera.php?id=' + id) : '';
+}

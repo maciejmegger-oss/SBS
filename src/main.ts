@@ -2801,7 +2801,52 @@ function normalizuj90minut(link){
   return s.replace(/^https:\/\/((?:www\.)?90minut\.pl)/i, 'http://$1');
 }
 
-function has90minutLink(p){ return !!(p.lnpLink && /90minut\.pl/i.test(p.lnpLink)); }
+// ADRES ZAWODNIKA NA 90MINUT — Z LINKU ALBO Z IDENTYFIKATORA, KTÓRY JUŻ MAMY.
+//
+// Liczył się tu dotąd wyłącznie ręcznie wklejony `lnpLink`, więc prognoza prosiła „dodaj link do
+// 90minut" przy zawodnikach, przy których ten adres dawno dało się złożyć samemu: odświeżanie
+// statystyk klubu dopasowuje nasze kartoteki do stron 90minut i zapisuje przy nich `m90Id`.
+// Kartoteki powstały z protokołów ŁNP, a te identyfikatorów nie niosą — ręcznie wklejonych linków
+// jest więc garstka, a zapisanych identyfikatorów całe kluby. Prognoza stała przez to bezczynnie
+// przy danych, które już leżały w bazie.
+// POBRANIE HISTORII SEZONÓW JEDNEGO ZAWODNIKA (bez zapisu — zapis woła ten, kto to uruchomił).
+//
+// Wydzielone, bo robi to i przycisk przy zawodniku, i przebieg po całym składzie, a przy dwóch
+// kopiach tej samej obróbki jedna zawsze zostaje w tyle.
+async function wczytajKariere(p){
+  const link = adres90minut(p);
+  if(!link) return { ok:false, blad:'brak linku i identyfikatora z 90minut' };
+  try{
+    const res = await fetch('/api/kariera?url=' + encodeURIComponent(link));
+    const ctype = res.headers.get('content-type') || '';
+    if(!ctype.includes('application/json')) return { ok:false, blad:'działa tylko na wdrożonej stronie' };
+    const d = await res.json();
+    if(!res.ok) return { ok:false, puste: res.status === 404, blad: d.error || ('kod ' + res.status) };
+    const sezony = Array.isArray(d.sezony) ? d.sezony : [];
+    if(!sezony.length) return { ok:false, puste:true, blad:'brak rozbicia na sezony' };
+    const zapis = { ...(p.seasonStats || {}) };
+    sezony.forEach(s=>{
+      if(!s || !s.sezon) return;
+      // „mecze" zostaje obok „wystepy", bo tabelka poprzednich sezonów w profilu czyta starą nazwę.
+      zapis[s.sezon] = { klub: s.klub, rozgrywki: s.rozgrywki, wystepy: s.wystepy,
+        wPodstawowym: s.wPodstawowym, minuty: s.minuty, gole: s.gole,
+        mecze: s.wystepy, zrodlo: s.zrodlo || '90minut.pl' };
+    });
+    p.seasonStats = zapis;
+    p.kariereUpdatedAt = new Date().toISOString();
+    return { ok:true, sezony };
+  }catch(e){
+    return { ok:false, blad: String((e && e.message) || e) };
+  }
+}
+
+function adres90minut(p){
+  const wprost = String((p && p.lnpLink) || '');
+  if(/90minut\.pl/i.test(wprost)) return wprost;
+  const id = String((p && p.m90Id) || '').trim();
+  return /^\d+$/.test(id) ? ('http://www.90minut.pl/kariera.php?id=' + id) : '';
+}
+function has90minutLink(p){ return !!adres90minut(p); }
 
 function statsAreStale(p){
   if(!p.statsUpdatedAt) return true;
@@ -5791,7 +5836,9 @@ function prognozaPanelHtml(p){
       <ul class="prognoza-braki">${w.braki.map(b=>`<li>${esc(b)}</li>`).join('')}</ul>
       ${maLink ? `<button class="secondary" data-action="pobierz-kariere" data-id="${p.id}"
         title="Pobierze z 90minut sezon po sezonie: klub, poziom rozgrywek, minuty i mecze od pierwszej minuty">⬇ Pobierz historię sezonów</button>`
-        : `<p class="note" style="margin:0;">Historię sezonów pobierzemy z 90minut — dopisz zawodnikowi link do profilu (Edytuj → link 90minut).</p>`}
+        : `<p class="note" style="margin:0;">Historię sezonów pobierzemy z 90minut, ale nie wiemy, który to profil. Dwie drogi:
+            w klubie kliknij <strong>„⏱ Statystyki z 90minut"</strong> — dopasuje cały skład i zapisze identyfikatory —
+            albo dopisz adres temu zawodnikowi ręcznie (Edytuj → Profil Łączy Nas Piłka / mPZPN).</p>`}
     </div>`;
   }
   const zakres = w.pulapOd === w.pulapDo ? String(w.pulapDo) : `${w.pulapOd}–${w.pulapDo}`;
@@ -8743,6 +8790,11 @@ function viewClubDetail(id){
            <button class="secondary" data-action="stats-90minut" data-id="${c.id}" title="Próba pobrania z serwera. Dla IV ligi zwykle się nie uda: ŁNP nie wysyła składów serwerom.">⏱ Spróbuj pobrać z serwera</button>`
         : `<button class="gold" data-action="stats-90minut" data-id="${c.id}" title="Pobierz z 90minut mecze, minuty, bramki i kartki całego składu — bez kopiowania czegokolwiek">⏱ Statystyki z 90minut</button>
            <button class="secondary" data-action="import-squad-stats" data-id="${c.id}" title="Zapasowa droga: ręczna wklejka z Transfermarktu. Dla polskich lig użyj przycisku obok.">📋 Wklejka z Transfermarktu</button>`}
+      ${/* HISTORIA SEZONÓW CAŁEGO SKŁADU — bez tego prognoza stoi na jednym sezonie i odmawia.
+            Idzie zawodnik po zawodniku, bo 90minut trzyma każdego na osobnych stronach; przy
+            dwudziestu kartotekach to kilka minut. Dlatego osobny przycisk, a nie cichy dodatek
+            do odświeżania statystyk — skaut ma wiedzieć, na co czeka. */''}
+      <button class="secondary" data-action="kariera-klubu" data-id="${c.id}" title="Pobierz z 90minut historię sezonów całego składu: poziom rozgrywek, minuty i mecze od pierwszej minuty. To odblokowuje prognozę rozwoju.">⬇ Historia sezonów całego składu</button>
       <button class="secondary" data-action="edit-club" data-id="${c.id}">Edytuj klub</button>
       <button class="danger" data-action="delete-club" data-id="${c.id}">Usuń</button>
     </div>
@@ -15691,39 +15743,66 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="pobierz-kariere"]').forEach(b=>b.onclick=async()=>{
     const p = DB.players.find(x=>x.id===b.dataset.id);
     if(!p) return;
-    const link = String(p.lnpLink || p.tmLink || '');
-    if(!/90minut\.pl/i.test(link)){
-      alert('Ten zawodnik nie ma linku do profilu na 90minut. Dopisz go w „Edytuj".');
+    const link = adres90minut(p);
+    if(!link){
+      alert('Ten zawodnik nie ma ani linku do 90minut, ani identyfikatora z odświeżania statystyk klubu.\n\nDopisz link w „Edytuj" albo odśwież statystyki całego klubu — wtedy identyfikator zapisze się sam.');
       return;
     }
     const orig = b.textContent;
     b.disabled = true; b.textContent = '⏳ Czytam sezony...';
     try{
-      const res = await fetch('/api/kariera?url=' + encodeURIComponent(link));
-      const ctype = res.headers.get('content-type') || '';
-      if(!ctype.includes('application/json')) throw new Error('działa tylko na wdrożonej stronie (lokalnie nie ma /api).');
-      const d = await res.json();
-      if(!res.ok) throw new Error(d.error || ('serwer odpowiedział kodem ' + res.status));
-      const sezony = Array.isArray(d.sezony) ? d.sezony : [];
-      if(!sezony.length) throw new Error('90minut nie ma dla tego zawodnika rozbicia na sezony.');
-      const zapis = { ...(p.seasonStats || {}) };
-      sezony.forEach(s=>{
-        if(!s || !s.sezon) return;
-        // „mecze" zostaje obok „wystepy", bo tabelka poprzednich sezonów w profilu czyta starą nazwę.
-        zapis[s.sezon] = { klub: s.klub, rozgrywki: s.rozgrywki, wystepy: s.wystepy,
-          wPodstawowym: s.wPodstawowym, minuty: s.minuty, gole: s.gole,
-          mecze: s.wystepy, zrodlo: s.zrodlo || '90minut.pl' };
-      });
-      p.seasonStats = zapis;
-      p.kariereUpdatedAt = new Date().toISOString();
+      const w = await wczytajKariere(p);
+      if(!w.ok){ alert('Nie udało się pobrać historii sezonów: ' + w.blad); return; }
       const ok = await savePlayers();
       if(!ok){ alert('Pobrałem historię, ale nie udało się jej zapisać.' + powodNieudanegoZapisu()); return; }
-      const opis = sezony.map(s=>`${s.sezon}: ${s.rozgrywki || '—'} · ${s.minuty} min · ${s.wPodstawowym}/${s.wystepy} od 1. minuty`).join('\n');
-      alert(`Wczytałem ${sezony.length} ${sezony.length===1?'sezon':'sezonów'} z 90minut:\n\n${opis}` +
-        (d.pominiete && d.pominiete.length ? `\n\nNie udało się odczytać: ${d.pominiete.join(', ')}.` : ''));
+      const opis = w.sezony.map(s=>`${s.sezon}: ${s.rozgrywki || '—'} · ${s.minuty} min · ${s.wPodstawowym}/${s.wystepy} od 1. minuty`).join('\n');
+      alert(`Wczytałem ${w.sezony.length} ${w.sezony.length===1?'sezon':'sezonów'} z 90minut:\n\n${opis}`);
       render();
-    }catch(e){
-      alert('Nie udało się pobrać historii sezonów: ' + ((e && e.message) || e));
+    }finally{
+      b.disabled = false; b.textContent = orig;
+    }
+  });
+  // HISTORIA SEZONÓW DLA CAŁEGO SKŁADU.
+  //
+  // Prognoza odmawia bez dwóch poziomów rozgrywek w historii, a historię trzyma 90minut na
+  // osobnej stronie każdego sezonu — więc jeden zawodnik to kilka pobrań, a cały skład kilka
+  // minut. Idziemy po kolei i zapisujemy DOPIERO NA KOŃCU: dwadzieścia zapisów całej kartoteki
+  // pod rząd trwałoby dłużej niż samo czytanie z 90minut.
+  //
+  // Zawodnika bez identyfikatora pomijamy zamiast zgadywać, który to profil — imiennik w innym
+  // klubie wpisałby komuś cudzą karierę, a to gorsze niż brak danych.
+  main.querySelectorAll('[data-action="kariera-klubu"]').forEach(b=>b.onclick=async()=>{
+    const klub = DB.clubs.find(x=>x.id===b.dataset.id);
+    if(!klub) return;
+    const sklad = zawodnicyKlubu(klub.id);
+    const doWziecia = sklad.filter(p=>adres90minut(p));
+    const bezId = sklad.length - doWziecia.length;
+    if(!doWziecia.length){
+      alert(`Żaden zawodnik ${klub.name} nie ma identyfikatora z 90minut.\n\nNajpierw kliknij „⏱ Statystyki z 90minut" — dopasuje kartoteki do stron 90minut i zapisze identyfikatory, a dopiero potem da się pobrać historię sezonów.`);
+      return;
+    }
+    if(!confirm(`Pobrać historię sezonów dla ${doWziecia.length} ${doWziecia.length===1?'zawodnika':'zawodników'} ${klub.name}?`
+      + (bezId ? `\n\n${bezId} bez identyfikatora z 90minut zostanie pominiętych.` : '')
+      + `\n\nTo potrwa kilka minut — 90minut trzyma każdy sezon na osobnej stronie. Nie zamykaj karty.`)) return;
+    const orig = b.textContent;
+    b.disabled = true;
+    let udane = 0, puste = 0;
+    const bledy = [];
+    try{
+      for(let i=0;i<doWziecia.length;i++){
+        const p = doWziecia[i];
+        b.textContent = `⏳ ${i+1}/${doWziecia.length}: ${p.lastName || p.firstName || ''}`;
+        const w = await wczytajKariere(p);
+        if(w.ok) udane++; else if(w.puste) puste++; else bledy.push(`${p.lastName} ${p.firstName}: ${w.blad}`);
+      }
+      b.textContent = '⏳ Zapisuję...';
+      const ok = await savePlayers();
+      if(!ok){ alert('Pobrałem historię, ale nie udało się jej zapisać.' + powodNieudanegoZapisu()); return; }
+      alert(`${klub.name}: historia sezonów wczytana dla ${udane} ${udane===1?'zawodnika':'zawodników'}.`
+        + (puste ? `\n${puste} bez rozbicia na sezony na 90minut.` : '')
+        + (bezId ? `\n${bezId} pominiętych — brak identyfikatora.` : '')
+        + (bledy.length ? `\n\nNie udało się: ${bledy.slice(0,5).join('; ')}${bledy.length>5?` i ${bledy.length-5} innych`:''}.` : ''));
+      render();
     }finally{
       b.disabled = false; b.textContent = orig;
     }
