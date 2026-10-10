@@ -63,12 +63,12 @@ sprawdz('e-mail osoby klikalny, a gdy go nie ma — kontakt klubu',
 sprawdz('źródło otwiera się w nowej karcie', /źródło ↗/.test(zrodlo));
 sprawdz('status weryfikacji ma barwę wg legendy z arkusza', /function barwaStatusuKontaktu\(status\)\{[\s\S]*?var\(--good\)/.test(zrodlo));
 sprawdz('priorytet 1 oznaczony przy nazwisku', /Priorytet 1 — kontaktować w pierwszej kolejności/.test(zrodlo));
-sprawdz('szukanie działa po kraju, klubie i stanowisku', /const stog = szukajNorm\(\[k\.kraj, k\.klub, k\.osoba, k\.stanowisko/.test(zrodlo));
+sprawdz('szukanie działa po kraju, klubie i stanowisku', /const stog = szukajNorm\(\[k\.kraj, k\.liga, k\.klub, k\.osoba, k\.stanowisko/.test(zrodlo));
 
 console.log('\n4. Skąd się biorą dane');
 sprawdz('plik danych wygenerowany, nie pisany ręcznie', /NIE POPRAWIAJ RĘCZNIE/.test(fs.readFileSync('src/data/kontakty-europa.ts', 'utf8')));
 sprawdz('skrypt przenoszący arkusz jest w repozytorium', fs.existsSync('scripts/wczytaj-kontakty-europa.mjs'));
-sprawdz('widok czyta dane z pliku', /import \{ KONTAKTY_EUROPA, RANKINGI_CIES \} from "\.\/data\/kontakty-europa";/.test(zrodlo));
+sprawdz('widok czyta dane z pliku', /import \{ KONTAKTY_EUROPA as KONTAKTY_EUROPA_SCOUTING, RANKINGI_CIES \} from "\.\/data\/kontakty-europa";/.test(zrodlo));
 
 console.log('\n5. Rankingi CIES pod listą');
 {

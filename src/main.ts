@@ -28,7 +28,13 @@ import { wyslijHerb, herbJestPlikiem, przeniesHerby } from "./data/herby";
 // Kod zbieracza ŁNP — ten sam plik, który serwujemy pod /zakladka-lnp-v2.js.
 import LNP_ZBIERACZ from "../public/zakladka-lnp-v2.js?raw";
 import { PZPN, ZWIAZKI_WOJEWODZKIE, adresPocztowy } from "./data/federacja";
-import { KONTAKTY_EUROPA, RANKINGI_CIES } from "./data/kontakty-europa";
+import { KONTAKTY_EUROPA as KONTAKTY_EUROPA_SCOUTING, RANKINGI_CIES } from "./data/kontakty-europa";
+import { KONTAKTY_AKADEMIE } from "./data/akademie-skandynawia";
+// Kontakty → Europa to dwie bazy z dwóch arkuszy: ludzie od scoutingu (Kluby_Europa_Kontakty_Scouting.xlsx)
+// i szefowie akademii w 2.–3. lidze Szwecji i Norwegii (Szwecja_Norwegia_Akademie_Kontakty.xlsx) — do
+// aplikowania na stanowisko dyrektora / koordynatora akademii. Osobne pliki, bo każdy arkusz generuje
+// swój plik od nowa; w widoku są jedną listą, a pigułka „Akademie" zawęża ją do drugiej bazy.
+const KONTAKTY_EUROPA: any[] = [...KONTAKTY_EUROPA_SCOUTING, ...KONTAKTY_AKADEMIE];
 import { ADRESY_KLUBOW } from "./data/adresy-klubow";
 // Kod zakładek leży w public/zakladki/ — ten sam plik idzie na serwer (skąd zakładka pobiera go
 // przy każdym kliknięciu) i tutaj, jako kopia awaryjna na wypadek braku sieci.
@@ -12458,11 +12464,13 @@ function barwaStatusuKontaktu(status){
   return 'var(--clay-dark)';
 }
 
+let europaTylkoAkademie = false;
 function viewKontaktyEuropa(){
   const q = szukajNorm(contactSearchQuery);
   const pasuje = (k)=>{
+    if(europaTylkoAkademie && !k.liga) return false;
     if(!q) return true;
-    const stog = szukajNorm([k.kraj, k.klub, k.osoba, k.stanowisko, k.obszar, k.email, k.emailKlubu, k.uwagi].join(' '));
+    const stog = szukajNorm([k.kraj, k.liga, k.klub, k.osoba, k.stanowisko, k.obszar, k.email, k.emailKlubu, k.telefon, k.uwagi].join(' '));
     return q.split(/\s+/).filter(Boolean).every(s=> stog.includes(s));
   };
   const widoczne = KONTAKTY_EUROPA.filter(pasuje);
@@ -12490,7 +12498,7 @@ function viewKontaktyEuropa(){
       const powod = k.email ? `<div class="note">${esc(k.email)}</div>` : '';
       if(klub) return `<span class="note">osoby brak &middot; </span>${klub}${powod}`;
       return powod || '<span class="meta">—</span>';
-    })()}</td>
+    })()}${k.telefon ? `<div class="note">tel. <a class="ext-link" href="tel:${esc(k.telefon.replace(/[^\d+]/g,''))}">${esc(k.telefon)}</a></div>` : ''}</td>
     <td><span style="color:${barwaStatusuKontaktu(k.status)};font-weight:700;font-size:12px;">${esc(k.status || '—')}</span>
       ${k.uwagi ? `<div class="note">${esc(k.uwagi)}</div>` : ''}</td>
     <td>${k.zrodlo ? `<a class="ext-link" href="${esc(k.zrodlo)}" target="_blank" rel="noopener">źródło ↗</a>` : '<span class="meta">—</span>'}</td>
@@ -12512,8 +12520,16 @@ function viewKontaktyEuropa(){
   <p class="view-sub">Kontakty do ludzi od scoutingu w klubach europejskich — zebrane i sprawdzone przy źródle
     w arkuszu <strong>Kluby_Europa_Kontakty_Scouting.xlsx</strong>. Adresów z komercyjnych baz ani zgadywanych
     z domeny tu nie ma: każdy wiersz ma odnośnik do strony, z której pochodzi.</p>
+  <div class="toolbar" style="margin-top:12px;flex-wrap:wrap;gap:6px;">
+    ${pill(`Wszystkie (${KONTAKTY_EUROPA.length})`, !europaTylkoAkademie, 'europa-rodzaj', {val:'wszystkie'}, '🌍')}
+    ${pill(`Akademie – praca, Szwecja i Norwegia (${KONTAKTY_AKADEMIE.length})`, europaTylkoAkademie, 'europa-rodzaj', {val:'akademie'}, '🎓')}
+  </div>
+  ${europaTylkoAkademie ? `<p class="note" style="margin-top:8px;">Szefowie i koordynatorzy akademii w Superettan, Ettan Norra/Södra,
+    OBOS-ligaen i PostNord-ligaen. Liczba <span class="badge new">1</span> przy nazwisku = klub właśnie szuka szefa akademii.
+    Słownik: Akademichef / akademisjef = dyrektor akademii, Ungdomsansvarig = szef piłki młodzieżowej,
+    Sportslig leder = dyrektor sportowy, Daglig leder = dyrektor zarządzający.</p>` : ''}
   <div class="toolbar" style="margin-top:12px;">
-    <input id="contact-search" placeholder="Szukaj po kraju, klubie, nazwisku, stanowisku…" value="${esc(contactSearchQuery)}" style="max-width:360px;">
+    <input id="contact-search" placeholder="Szukaj po kraju, lidze, klubie, nazwisku, stanowisku…" value="${esc(contactSearchQuery)}" style="max-width:360px;">
     <div class="note">${widoczne.length} ${widoczne.length === 1 ? 'kontakt' : 'kontaktów'}
       ${contactSearchQuery ? `z ${KONTAKTY_EUROPA.length}` : `&middot; ${kraje.length} ${kraje.length === 1 ? 'kraj' : 'krajów'}`}</div>
   </div>
@@ -16548,6 +16564,10 @@ function attachHandlers(){
     const wybrana = (b as HTMLElement).dataset.val;
     kontaktyZakladka = wybrana === 'europa' ? 'europa' : 'polska';
     contactSearchQuery = '';
+    render();
+  });
+  main.querySelectorAll('[data-action="europa-rodzaj"]').forEach(b=>(b as HTMLElement).onclick=()=>{
+    europaTylkoAkademie = (b as HTMLElement).dataset.val === 'akademie';
     render();
   });
   const monitoringSearchInput = main.querySelector('#monitoring-search');
