@@ -17,6 +17,8 @@
 //
 // Wymaga zmiennej środowiskowej ANTHROPIC_API_KEY w ustawieniach projektu na Vercelu.
 
+import { zalogowanyZatwierdzony, zaliczWywolanie, limitZEnv, rozmiarWBezpiecznychGranicach } from "./_auth.js";
+
 const MODEL = "claude-sonnet-5";
 
 const POLECENIE = `Jesteś asystentem skauta w polskim klubie piłkarskim. Przygotowujesz SZKIC raportu
@@ -63,6 +65,11 @@ export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Ta ścieżka przyjmuje wyłącznie POST." });
   }
+  // Bez zalogowanego, zatwierdzonego konta nie wołamy płatnego modelu (patrz api/_auth.js).
+  const konto = await zalogowanyZatwierdzony(req);
+  if (!konto) {
+    return res.status(401).json({ error: "Ta funkcja wymaga zalogowania. Zaloguj się ponownie i spróbuj jeszcze raz." });
+  }
   const klucz = process.env.ANTHROPIC_API_KEY;
   if (!klucz) {
     return res.status(503).json({
@@ -75,6 +82,17 @@ export default async function handler(req, res) {
   const dane = req.body && typeof req.body === "object" ? req.body : {};
   if (!dane.zawodnik || !dane.zawodnik.nazwisko) {
     return res.status(400).json({ error: "Brak danych zawodnika." });
+  }
+  if (!rozmiarWBezpiecznychGranicach(dane, 150000)) {
+    return res.status(413).json({ error: "Za dużo danych w jednym zapytaniu — ogranicz liczbę raportów." });
+  }
+  // Dzienny limit na konto. Zmieniasz go zmienną AI_LIMIT_SZKICOW_DZIENNIE w Vercelu (domyślnie 40).
+  const limit = limitZEnv("AI_LIMIT_SZKICOW_DZIENNIE", 40);
+  const licznik = await zaliczWywolanie(req, konto, "szkic", limit);
+  if (!licznik.ok) {
+    return res.status(429).json({
+      error: "Dzienny limit szkiców raportów wykorzystany (" + licznik.uzyte + " z " + licznik.limit + "). Wróć jutro albo poproś administratora o podniesienie limitu.",
+    });
   }
 
   // Treść pisana przez ludzi (notatki, raporty) idzie w ramkach jako DANE — żeby zdanie w stylu

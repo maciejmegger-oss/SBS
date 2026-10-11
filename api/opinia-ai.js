@@ -13,6 +13,8 @@
 //
 // Wymaga zmiennej środowiskowej ANTHROPIC_API_KEY w ustawieniach projektu na Vercelu.
 
+import { zalogowanyZatwierdzony, zaliczWywolanie, limitZEnv, rozmiarWBezpiecznychGranicach } from "./_auth.js";
+
 const MODEL = "claude-sonnet-5";
 
 // Polecenie systemowe trzymamy TUTAJ, a nie po stronie przeglądarki — inaczej każdy mógłby je
@@ -66,6 +68,11 @@ export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Ta ścieżka przyjmuje wyłącznie POST." });
   }
+  // Bez zalogowanego, zatwierdzonego konta nie wołamy płatnego modelu (patrz api/_auth.js).
+  const konto = await zalogowanyZatwierdzony(req);
+  if (!konto) {
+    return res.status(401).json({ error: "Ta funkcja wymaga zalogowania. Zaloguj się ponownie i spróbuj jeszcze raz." });
+  }
   const klucz = process.env.ANTHROPIC_API_KEY;
   if (!klucz) {
     return res.status(503).json({
@@ -78,6 +85,17 @@ export default async function handler(req, res) {
   const dane = req.body && typeof req.body === "object" ? req.body : {};
   if (!dane.zawodnik || !dane.zawodnik.nazwisko) {
     return res.status(400).json({ error: "Brak danych zawodnika." });
+  }
+  if (!rozmiarWBezpiecznychGranicach(dane, 300000)) {
+    return res.status(413).json({ error: "Za dużo danych w jednym zapytaniu — ogranicz liczbę raportów." });
+  }
+  // Dzienny limit na konto. Zmieniasz go zmienną AI_LIMIT_OPINII_DZIENNIE w Vercelu (domyślnie 10).
+  const limit = limitZEnv("AI_LIMIT_OPINII_DZIENNIE", 10);
+  const licznik = await zaliczWywolanie(req, konto, "opinia", limit);
+  if (!licznik.ok) {
+    return res.status(429).json({
+      error: "Dzienny limit drugich opinii wykorzystany (" + licznik.uzyte + " z " + licznik.limit + "). Wróć jutro albo poproś administratora o podniesienie limitu.",
+    });
   }
 
   // Model dostaje dane jako DANE, wyraźnie oddzielone od polecenia. Treść raportów pisali ludzie

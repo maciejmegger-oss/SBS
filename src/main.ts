@@ -7515,7 +7515,8 @@ function openProtokolMeczuModal(clubId, tekstZZewnatrz, zrodloLnp){
       const napis = b.textContent;
       b.disabled = true; b.textContent = 'Pobieram…';
       try{
-        const odp = await fetch('/api/wklejka-lnp');
+        const tokenSk = await tokenSesji();
+        const odp = await fetch('/api/wklejka-lnp', { headers: tokenSk ? { Authorization: 'Bearer ' + tokenSk } : {} });
         const d = await odp.json().catch(()=>({}));
         if(!odp.ok || !d.tresc){
           komunikat = d.error || 'Nie udało się pobrać zebranych protokołów.';
@@ -13677,8 +13678,10 @@ async function pobierzOpinieAI(playerId, przycisk, miejsce, poZapisie?){
   }));
 
   try{
+    // Funkcja AI kosztuje, więc serwer wpuszcza tylko zalogowanych (api/_auth.js).
+    const tokenAI = await tokenSesji();
     const odp = await fetch('/api/opinia-ai', {
-      method: 'POST', headers: {'content-type':'application/json'},
+      method: 'POST', headers: {'content-type':'application/json', ...(tokenAI ? {Authorization: 'Bearer ' + tokenAI} : {})},
       body: JSON.stringify({
         zawodnik: {
           imie: p.firstName || '', nazwisko: p.lastName || '',
@@ -24443,8 +24446,9 @@ function openZlecAnalizeModal(playerId){
       mentalnosc: r.mentalnoscOpis || '', potencjal: r.potencjalOpis || '', opis: r.description || '',
     }));
     try{
+      const tokenAI = await tokenSesji();
       const odp = await fetch('/api/raport-ai', {
-        method: 'POST', headers: {'content-type':'application/json'},
+        method: 'POST', headers: {'content-type':'application/json', ...(tokenAI ? {Authorization: 'Bearer ' + tokenAI} : {})},
         body: JSON.stringify({
           mecz, zrodlo: wartosc('zl-link') || wartosc('zl-plik'), uwagi,
           pozycja: (overlay.querySelector('#zl-pozycja') as HTMLSelectElement).selectedOptions[0]?.textContent || '',

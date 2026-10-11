@@ -19,6 +19,7 @@
 // Serwer pisze kluczem serwisowym — przeglądarka na ŁNP nie ma i nie może mieć dostępu do bazy.
 
 import { BAZA, naglowkiBazy, MA_KLUCZ_SERWISOWY } from "./_baza.js";
+import { zalogowanyZatwierdzony } from "./_auth.js";
 
 const DOZWOLONE = ["https://www.laczynaspilka.pl", "https://laczynaspilka.pl", "https://www.scoutbasesystem.com"];
 const KLUCZ = (grupa) => "scouting:wklejka_lnp" + (grupa ? ":" + String(grupa).slice(0, 60) : "");
@@ -27,7 +28,7 @@ export default async function handler(req, res) {
   const skad = String(req.headers.origin || "");
   if (DOZWOLONE.includes(skad)) {
     res.setHeader("Access-Control-Allow-Origin", skad);
-    res.setHeader("Access-Control-Allow-Headers", "content-type");
+    res.setHeader("Access-Control-Allow-Headers", "content-type, authorization");
     res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   }
   if (req.method === "OPTIONS") return res.status(204).end();
@@ -36,10 +37,22 @@ export default async function handler(req, res) {
     return res.status(503).json({ error: "Skrzynka wymaga klucza serwisowego (SUPABASE_SERVICE_KEY) w ustawieniach projektu." });
   }
 
+  // Nazwa grupy trafia do klucza w bazie — przepuszczamy tylko znaki, które w niej występują.
   const grupa = String((req.query && req.query.grupa) || "");
+  if (grupa && !/^[\w\-. ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]{1,60}$/.test(grupa)) {
+    return res.status(400).json({ error: "Niepoprawna nazwa grupy." });
+  }
   const klucz = KLUCZ(grupa);
 
   if (req.method === "POST") {
+    // Zapis przyjmujemy tylko ze stron z listy DOZWOLONE (zakładka na ŁNP i nasza aplikacja).
+    // To nie jest uwierzytelnienie — nagłówek Origin da się podrobić poza przeglądarką — bo zakładka
+    // działa na cudzej stronie i nie ma sesji użytkownika. Ogranicza przypadkowe i masowe zapisy.
+    // Treść ze skrzynki jest i tak traktowana jak dane z zewnątrz: aplikacja ją parsuje i pokazuje
+    // do sprawdzenia, nic nie trafia do kartoteki bez klikania skauta.
+    if (!DOZWOLONE.includes(skad)) {
+      return res.status(403).json({ error: "Zapis możliwy tylko z zakładki na Łączy Nas Piłka albo z aplikacji." });
+    }
     const dane = req.body && typeof req.body === "object" ? req.body : {};
     const tresc = typeof dane.tresc === "string" ? dane.tresc : "";
     if (!tresc.trim()) return res.status(400).json({ error: "Pusta treść — nie ma czego zapisać." });
@@ -58,6 +71,10 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "GET") {
+    // Odczyt tylko dla zalogowanych i zatwierdzonych — skrzynka zawiera zebrane dane rozgrywkowe.
+    if (!(await zalogowanyZatwierdzony(req))) {
+      return res.status(401).json({ error: "Zaloguj się w aplikacji, żeby pobrać zebrane protokoły." });
+    }
     const odp = await fetch(`${BAZA}/rest/v1/sbs_kv?select=value&key=eq.${encodeURIComponent(klucz)}`, { headers: naglowkiBazy() });
     if (!odp.ok) return res.status(502).json({ error: "Baza odmówiła odczytu." });
     const wiersze = await odp.json();
