@@ -1,10 +1,11 @@
-// Sprawdza kontakty do akademii w Szwecji i Norwegii (2.–3. poziom) w Kontakty → Europa.
+// Sprawdza kontakty do akademii (Szwecja, Norwegia 2.–3. poziom; Szkocja SPFL) w Kontakty → Europa.
 //
 // Zgłoszenie (30.09.2026): „zbierz adresy kontaktów w drugich i trzecich ligach szwedzkich, gdzie mają
 // akademię, żeby aplikować na dyrektora albo koordynatora akademii — i to samo w Norwegii", potem
-// „dodaj do Kontakty → Europa".
+// „dodaj do Kontakty → Europa". Potem (11.10.2026): „wyszukaj kontakty do klubów szkockich i wprowadź
+// do systemu" — akademia i scouting, wszystkie 4 ligi SPFL.
 //
-// Uruchomienie:  node scripts/test-akademie-skandynawia.mjs
+// Uruchomienie:  node scripts/test-kontakty-akademii.mjs
 import fs from "node:fs";
 import { buildSync } from "esbuild";
 
@@ -15,7 +16,7 @@ const sprawdz = (opis, warunek, dodatek = '') => {
 };
 
 const { outputFiles } = buildSync({
-  stdin: { contents: "export { KONTAKTY_AKADEMIE } from './src/data/akademie-skandynawia.ts';", resolveDir: process.cwd(), loader: 'ts' },
+  stdin: { contents: "export { KONTAKTY_AKADEMIE } from './src/data/kontakty-akademii.ts';", resolveDir: process.cwd(), loader: 'ts' },
   bundle: true, format: "esm", write: false,
 });
 const { KONTAKTY_AKADEMIE: A } = await import("data:text/javascript;base64," + Buffer.from(outputFiles[0].text).toString("base64"));
@@ -23,10 +24,17 @@ const zrodlo = fs.readFileSync("src/main.ts", "utf8");
 
 console.log('\n1. Baza z arkusza');
 const ligi = [...new Set(A.map(k => k.liga))];
-sprawdz(`${A.length} klubów`, A.length >= 80, String(A.length));
+sprawdz(`${A.length} kontaktów`, A.length >= 130, String(A.length));
 sprawdz(`ligi: ${ligi.join(', ')}`, ['Superettan', 'Ettan Norra', 'Ettan Södra', 'OBOS-ligaen'].every(l => ligi.includes(l))
   && ligi.some(l => /PostNord/.test(l)));
-sprawdz('tylko Szwecja i Norwegia', A.every(k => k.kraj === 'Szwecja' || k.kraj === 'Norwegia'));
+sprawdz('tylko Szwecja, Norwegia i Szkocja', A.every(k => ['Szwecja', 'Norwegia', 'Szkocja'].includes(k.kraj)));
+{
+  const sz = A.filter(k => k.kraj === 'Szkocja');
+  const klubySz = new Set(sz.map(k => k.klub));
+  sprawdz(`Szkocja: ${klubySz.size} klubów SPFL, ${sz.length} wierszy`, klubySz.size === 42, String(klubySz.size));
+  sprawdz('Szkocja: cztery ligi SPFL', ['Premiership', 'Championship', 'League One', 'League Two'].every(l => sz.some(k => k.liga === l)));
+  sprawdz('Szkocja: jest akademia i scouting', sz.some(k => k.obszar.startsWith('Akademia')) && sz.some(k => k.obszar.startsWith('Scouting')));
+}
 sprawdz('każdy wiersz ma klub, źródło i status', A.every(k => k.klub && k.zrodlo && k.status));
 sprawdz('adres bez nazwiska trafia do kolumny klubu', A.every(k => k.osoba || !/@/.test(k.email)));
 sprawdz('w kolumnie maila tylko adres albo adnotacja o ukryciu',
