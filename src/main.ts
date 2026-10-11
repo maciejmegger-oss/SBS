@@ -29,10 +29,10 @@ import { wyslijHerb, herbJestPlikiem, przeniesHerby } from "./data/herby";
 import LNP_ZBIERACZ from "../public/zakladka-lnp-v2.js?raw";
 import { PZPN, ZWIAZKI_WOJEWODZKIE, adresPocztowy } from "./data/federacja";
 import { KONTAKTY_EUROPA as KONTAKTY_EUROPA_SCOUTING, RANKINGI_CIES } from "./data/kontakty-europa";
-import { KONTAKTY_AKADEMIE } from "./data/akademie-skandynawia";
+import { KONTAKTY_AKADEMIE } from "./data/kontakty-akademii";
 // Kontakty → Europa to dwie bazy z dwóch arkuszy: ludzie od scoutingu (Kluby_Europa_Kontakty_Scouting.xlsx)
-// i szefowie akademii w 2.–3. lidze Szwecji i Norwegii (Szwecja_Norwegia_Akademie_Kontakty.xlsx) — do
-// aplikowania na stanowisko dyrektora / koordynatora akademii. Osobne pliki, bo każdy arkusz generuje
+// i szefowie akademii (oraz rekrutacji) w ligach Szwecji, Norwegii i Szkocji (arkusze *_Akademie_*.xlsx) —
+// do aplikowania na stanowisko dyrektora / koordynatora akademii. Osobne pliki, bo każdy arkusz generuje
 // swój plik od nowa; w widoku są jedną listą, a pigułka „Akademie" zawęża ją do drugiej bazy.
 const KONTAKTY_EUROPA: any[] = [...KONTAKTY_EUROPA_SCOUTING, ...KONTAKTY_AKADEMIE];
 import { ADRESY_KLUBOW } from "./data/adresy-klubow";
@@ -12629,12 +12629,12 @@ function viewKontaktyEuropa(){
     z domeny tu nie ma: każdy wiersz ma odnośnik do strony, z której pochodzi.</p>
   <div class="toolbar" style="margin-top:12px;flex-wrap:wrap;gap:6px;">
     ${pill(`Wszystkie (${KONTAKTY_EUROPA.length})`, !europaTylkoAkademie, 'europa-rodzaj', {val:'wszystkie'}, '🌍')}
-    ${pill(`Akademie – praca, Szwecja i Norwegia (${KONTAKTY_AKADEMIE.length})`, europaTylkoAkademie, 'europa-rodzaj', {val:'akademie'}, '🎓')}
+    ${pill(`Akademie – praca: Szwecja, Norwegia, Szkocja (${KONTAKTY_AKADEMIE.length})`, europaTylkoAkademie, 'europa-rodzaj', {val:'akademie'}, '🎓')}
   </div>
   ${europaTylkoAkademie ? `<p class="note" style="margin-top:8px;">Szefowie i koordynatorzy akademii w Superettan, Ettan Norra/Södra,
-    OBOS-ligaen i PostNord-ligaen. Liczba <span class="badge new">1</span> przy nazwisku = klub właśnie szuka szefa akademii.
+    OBOS-ligaen, PostNord-ligaen i wszystkich ligach SPFL (w Szkocji także szefowie rekrutacji — „Scouting" w opisie). Liczba <span class="badge new">1</span> przy nazwisku = klub właśnie szuka szefa akademii.
     Słownik: Akademichef / akademisjef = dyrektor akademii, Ungdomsansvarig = szef piłki młodzieżowej,
-    Sportslig leder = dyrektor sportowy, Daglig leder = dyrektor zarządzający.</p>` : ''}
+    Sportslig leder = dyrektor sportowy, Daglig leder = dyrektor zarządzający, Head of Youth = szef akademii.</p>` : ''}
   <div class="toolbar" style="margin-top:12px;">
     <input id="contact-search" placeholder="Szukaj po kraju, lidze, klubie, nazwisku, stanowisku…" value="${esc(contactSearchQuery)}" style="max-width:360px;">
     <div class="note">${widoczne.length} ${widoczne.length === 1 ? 'kontakt' : 'kontaktów'}
