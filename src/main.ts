@@ -39,6 +39,7 @@ import { ADRESY_KLUBOW } from "./data/adresy-klubow";
 import { talentyEuropy } from "./data/europa-mlodziez";
 import { talentyCies } from "./data/europa-cies";
 import { talentyPolacyZaGranica } from "./data/polacy-za-granica";
+import { statEuropy } from "./data/europa-statystyki";
 // Kod zakładek leży w public/zakladki/ — ten sam plik idzie na serwer (skąd zakładka pobiera go
 // przy każdym kliknięciu) i tutaj, jako kopia awaryjna na wypadek braku sieci.
 import LNP_PROTOKOL_KOD from "../public/zakladki/lnp-protokol.js?raw";
@@ -12088,6 +12089,12 @@ function scalPowolanychZIstniejacymi(istniejace, nowe){
 let talentKadra = '';
 let talentKraj = '';   // zakładka Europa: wybrany kraj (pusty = wszystkie)
 // Kraj zawodnika z Europy: pierwszy człon znacznika („Szwecja U-19", „Chorwacja · CIES: …").
+// Statystyki i liga zawodnika z Europy (z Transfermarktu, plik europa-statystyki.ts) — po numerze z jego linku.
+const statTalentu = (t)=>{
+  const id = String((t && t.tmLink) || '').split('/spieler/')[1];
+  return id ? statEuropy(id) : null;
+};
+const ligaTalentu = (t)=>{ const s = statTalentu(t); return s && s.liga ? s.liga : ''; };
 const krajEuropy = (t)=> String((t && t.krajKlubu) || '').split(/ · | U-\d/)[0].trim() || 'Inne';
 // Rocznik w „Talencie klubowym": '' = wszystkie, 'brak' = bez rocznika, inaczej rok („2013").
 let talentRocznik = '';
@@ -12324,7 +12331,7 @@ function viewTalent(){
   // Powołanie nie niesie rocznika, więc wszyscy reprezentanci lądowaliby w worku „Bez rocznika"
   // — obok przypadkowych wpisów bez daty. A to jest odwrotność ich wartości: to lista dwudziestu
   // paru chłopców wybranych z całego rocznika w kraju. Dostają własną grupę i widać, z której kadry.
-  const grupaTalentu = (t)=> talentKadra === 'europa' ? 'kraj:' + krajEuropy(t)
+  const grupaTalentu = (t)=> talentKadra === 'europa' ? 'kraj:' + krajEuropy(t) + '|' + ligaTalentu(t)
     : t.reprezentacja ? 'kadra:' + t.reprezentacja : 'rocznik:' + (t.birthYear || '');
   const rangaGrupy = (t)=> t.reprezentacja ? 0 : 1;
   // Zawężenie do jednej kadry. „Pozostali" to wszyscy bez powołania — talenty z arkuszy
@@ -12339,6 +12346,13 @@ function viewTalent(){
     if(talentKadra === 'europa'){
       const k = krajEuropy(a).localeCompare(krajEuropy(b), 'pl');
       if(k) return k;
+      const sa = statTalentu(a), sb = statTalentu(b);
+      const ta = sa && sa.liga ? sa.szczebel : 99, tb = sb && sb.liga ? sb.szczebel : 99;
+      if(ta !== tb) return ta - tb;
+      const l = ligaTalentu(a).localeCompare(ligaTalentu(b), 'pl');
+      if(l) return l;
+      const m = (sb ? sb.min : -1) - (sa ? sa.min : -1);
+      if(m) return m;
     }
     if(rangaGrupy(a) !== rangaGrupy(b)) return rangaGrupy(a) - rangaGrupy(b);
     if(a.reprezentacja || b.reprezentacja){
@@ -12421,6 +12435,13 @@ function viewTalent(){
           // informacja w wierszu, bo mówi, że kartoteki nie zbudujemy z polskich protokołów.
           t.krajKlubu ? ` &middot; <strong>${esc(t.krajKlubu)}</strong>` : ''}</span>
       </span></div></td>
+      ${talentKadra === 'europa' ? (()=>{
+        const s = statTalentu(t);
+        if(!s) return '<td><span class="meta">—</span></td>';
+        return `<td style="white-space:nowrap;font-variant-numeric:tabular-nums;" title="Sezon 2026/27: występy · minuty · gole · asysty">${s.min > 0
+          ? `<strong>${s.min}′</strong> <span class="meta">${s.wyst} m. &middot; ${s.gole} g. &middot; ${s.asysty} a.</span>`
+          : '<span class="meta">bez minut</span>'}</td>`;
+      })() : ''}
       <td class="talent-akcje">${karta
         ? `<button class="secondary" data-action="talent-profil" data-player-id="${esc(karta.id)}" title="Ten zawodnik jest już w bazie">Profil →</button>`
         : `<button class="secondary" data-action="talent-promote" data-id="${t.id}" title="Otwórz pełny profil i dodaj do bazy">Dodaj do bazy</button>`}
@@ -12436,16 +12457,16 @@ function viewTalent(){
         biezacaGrupa = g;
         const ilu = rows.filter(x=>grupaTalentu(x) === g).length;
         const etykieta = talentKadra === 'europa'
-          ? `<span style="display:inline-flex;align-items:center;gap:8px;">${nationalityFlag(krajEuropy(t))}${esc(krajEuropy(t))}</span>`
+          ? `<span style="display:inline-flex;align-items:center;gap:8px;">${nationalityFlag(krajEuropy(t))}${esc(krajEuropy(t))} &middot; ${ligaTalentu(t) ? esc(ligaTalentu(t)) : 'akademie i drużyny młodzieżowe'}</span>`
           : t.reprezentacja
           ? 'Reprezentacja Polski ' + esc(t.reprezentacja)
           : (t.birthYear ? 'Rocznik ' + esc(String(t.birthYear)) : 'Bez rocznika');
-        rowsHtml += `<tr class="talent-grupa"><td colspan="6"><div class="talent-year-head">${etykieta} <span class="reports-count">${ilu}</span></div></td></tr>`;
+        rowsHtml += `<tr class="talent-grupa"><td colspan="${talentKadra === 'europa' ? 7 : 6}"><div class="talent-year-head">${etykieta} <span class="reports-count">${ilu}</span></div></td></tr>`;
       }
       rowsHtml += wierszTalentu(t);
     });
     rowsHtml = `<table class="players-table talent-tabela">
-      <thead><tr><th></th><th>Zawodnik</th><th style="width:118px;">Rocznik</th><th>Pozycja</th><th>Klub</th><th></th></tr></thead>
+      <thead><tr><th></th><th>Zawodnik</th><th style="width:118px;">Rocznik</th><th>Pozycja</th><th>Klub</th>${talentKadra === 'europa' ? '<th>Sezon 26/27</th>' : ''}<th></th></tr></thead>
       <tbody>${rowsHtml}</tbody>
     </table>`;
   } else {
