@@ -14830,7 +14830,7 @@ function opiniaAIAkapity(tekst, rozmiar = 12.5){
     if(b.typ==='glowny') return `<div style="margin:8px 0 7px;padding:6px 10px;border-left:4px solid #8C6D1F;background:#FBF6E6;border-radius:3px;">
         <div style="font-size:${rozmiar}px;font-weight:800;letter-spacing:.06em;color:#8C6D1F;">${esc(b.tytul)}</div>
         <div style="font-size:${rozmiar + 1}px;font-weight:800;line-height:1.4;color:#1B3A2D;margin-top:2px;">${tresc}</div></div>`;
-    if(b.typ.startsWith('naglowek')) return `<p style="margin:6px 0 2px;"><strong>${esc(b.tytul)}</strong></p>${tresc ? `<p style="margin:0 0 5px;">${tresc}</p>` : ''}`;
+    if(b.typ.startsWith('naglowek')) return `<div style="margin:10px 0 3px;padding-bottom:2px;border-bottom:1.5px solid #D9C78E;font-size:${rozmiar}px;font-weight:800;letter-spacing:.05em;color:#8C6D1F;">${esc(b.tytul)}</div>${tresc ? `<p style="margin:0 0 5px;">${tresc}</p>` : ''}`;
     return `<p style="margin:0 0 5px;">${tresc}</p>`;
   }).join('');
 }
