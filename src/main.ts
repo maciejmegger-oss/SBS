@@ -2985,11 +2985,15 @@ function przypiszTabeleDoGrup(tabele, kluby){
   });
   return { przypisane, nieprzypisane };
 }
-// System, w którym liczymy zawodnika: własny wpis z profilu, a gdy go nie ma — układ jego klubu.
+// System, w którym liczymy zawodnika: układ jego KLUBU, a własny wpis z profilu tylko wtedy, gdy klub
+// systemu nie ma. Zawodnik gra w układzie drużyny — wcześniej własny wpis (często stary, sprzed
+// zmiany trenera) wygrywał z klubowym, więc w jednym klubie zawodnicy mieli różne systemy i mapa
+// pozycji ich rozdzielała.
 function systemZawodnika(p){
   if(!p) return '';
-  return String(p.formation || '') || String(systemyKlubow[p.clubId] || '');
+  return String(systemyKlubow[p.clubId] || '') || String(p.formation || '');
 }
+const systemZKlubu = (p)=> !!(p && systemyKlubow[p.clubId]);
 
 // JAWNE, punktowe usunięcie jednego rekordu z bazy. Zapisy (save*) NIGDY nie kasują — kasujemy tylko
 // tutaj, gdy użytkownik świadomie kliknie "usuń". Ponawiamy do 3 razy; przy porażce pokazujemy baner
@@ -6322,7 +6326,7 @@ function viewPlayerDetail(id){
         <tr><td style="color:var(--ink-soft);">Narodowość</td><td>${p.nationality? nationalityFlag(p.nationality)+' '+esc(p.nationality) : "—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">Noga</td><td>${esc(p.foot||"—")}</td></tr>
         <tr><td style="color:var(--ink-soft);">Wzrost</td><td>${p.height? p.height+" cm":"—"}</td></tr>
-        <tr><td style="color:var(--ink-soft);">System gry</td><td>${systemZawodnika(p)? `<strong>${esc(etykietaSystemu(systemZawodnika(p)))}</strong>${p.formation?'':' <span style="color:var(--ink-soft);font-size:12px;">(z klubu)</span>'}`:"—"}</td></tr>
+        <tr><td style="color:var(--ink-soft);">System gry</td><td>${systemZawodnika(p)? `<strong>${esc(etykietaSystemu(systemZawodnika(p)))}</strong>${systemZKlubu(p)?' <span style="color:var(--ink-soft);font-size:12px;">(z klubu)</span>':''}`:"—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">Pozycja wg NMG</td><td>${opisPozycjiNmg(p) ? `<strong>${esc(opisPozycjiNmg(p))}</strong>` : "—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">Mecze / minuty / gole / asysty</td><td>${(p.matches!=null||p.minutes!=null||p.goals!=null||p.assists!=null) ? `${p.matches!=null?p.matches:'—'} mecze &middot; ${p.minutes!=null?p.minutes:'—'} min &middot; ${p.goals!=null?p.goals:'—'} goli &middot; ${p.assists!=null?p.assists:'—'} asyst` : "—"}${minutyWazone(p)!=null ? `<div class="note" style="font-size:11px;margin-top:2px;" title="Minuty pomnożone przez wagę poziomu rozgrywek. Wagi są umowne — zmienisz je w Ustawieniach.">≈ <strong>${minutyWazone(p)}</strong> min ważonych poziomem &middot; ${esc(kluczPoziomu(ligaZawodnika(p)))} ×${String(wagaPoziomu(ligaZawodnika(p))).replace('.',',')}</div>` : ''}${p.statsUpdatedAt?`<div class="note" style="font-size:11px;margin-top:2px;">Mecze i bramki z ${esc(p.statsSource||'90minut.pl')}${p.statsSeason?' (sezon '+esc(p.statsSeason)+')':''}, odświeżone ${esc(String(p.statsUpdatedAt).slice(0,10))}. Minuty i asysty wpisujesz ręcznie.</div>`:''}</td></tr>
         <tr><td style="color:var(--ink-soft);">Kadra wojewódzka</td><td>${p.kadraWojewodzka? '<strong style="color:var(--good);">Tak</strong>' : 'Nie'}</td></tr>
@@ -25952,7 +25956,7 @@ async function generatePlayerPDF(playerId){
     <div class="meta-item"><div class="lbl">Rocznik</div><div class="val">${rocznikHtml(p)}</div></div>
     <div class="meta-item"><div class="lbl">Wzrost</div><div class="val">${p.height?p.height+" cm":"—"}</div></div>
     <div class="meta-item"><div class="lbl">Noga</div><div class="val">${esc(p.foot||"—")}</div></div>
-    <div class="meta-item"><div class="lbl">System gry</div><div class="val">${esc(etykietaSystemu(systemZawodnika(p))||"—")}${systemZawodnika(p)&&!p.formation?' <span style="font-size:11px;color:var(--ink-soft);">(z klubu)</span>':''}</div></div>
+    <div class="meta-item"><div class="lbl">System gry</div><div class="val">${esc(etykietaSystemu(systemZawodnika(p))||"—")}${systemZKlubu(p)?' <span style="font-size:11px;color:var(--ink-soft);">(z klubu)</span>':''}</div></div>
     <div class="meta-item"><div class="lbl">Pozycja wg NMG</div><div class="val">${esc(opisPozycjiNmg(p)||"—")}</div></div>
     <div class="meta-item"><div class="lbl">Status</div><div class="val">${esc(p.status||"—")}</div></div>
     <div class="meta-item"><div class="lbl">Kontrakt</div><div class="val">${p.hasContract? ('Tak'+(p.contractUntil?' — do '+esc(p.contractUntil):'')) : 'Nie'}</div></div>
