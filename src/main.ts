@@ -8836,6 +8836,7 @@ function viewClubDetail(id){
       <button class="danger" data-action="delete-club" data-id="${c.id}">Usuń</button>
     </div>
   </div>
+  ${daneKlubuHtml(c)}
   <div class="card">
     <h4 style="margin-top:0;color:var(--heading);">Pełny oficjalny skład</h4>
     <p class="note" style="margin-bottom:10px;">Nie pobieramy automatycznie składów z zewnętrznych serwisów — poniżej znajdziesz bezpośrednie linki do sprawdzenia pełnej, aktualnej listy zawodników na sezon ${esc(c.season||'bieżący')}.</p>
@@ -8910,6 +8911,53 @@ function hostFromMatch(matchText){
 // Adres obiektu należy do KLUBU, nie do pojedynczej osoby, dlatego trzymamy jeden adres na klub
 // (w ustawieniach) i pokazujemy go w Kontaktach. Gdyby siedział w wierszu kontaktu, klub z kilkoma
 // osobami miałby kilka kopii adresu, które od razu zaczęłyby się rozjeżdżać.
+// DANE KLUBU W JEGO PROFILU: system gry, adres obiektu, e-mail, telefon i osoby z Kontaktów.
+//
+// Adres i e-mail biorą się z tego samego miejsca co w zakładce Kontakty (zapisany przy klubie, a gdy
+// go brak — z wbudowanej bazy 270 klubów), telefon i osoby z wierszy Kontaktów przypisanych do tego
+// klubu. Telefonu baza klubów nie ma wcale, więc przy braku wiersza w Kontaktach stoi tam kreska
+// i podpowiedź, gdzie go wpisać — zamiast wymyślonego numeru.
+function kontaktyKlubu(c){
+  const n = importNorm(c.name);
+  return (DB.contacts || []).filter(k=>{
+    const nk = importNorm(contactClubName(k));
+    return nk && (nk === n || clubIdByName(contactClubName(k)) === c.id);
+  });
+}
+function daneKlubuHtml(c){
+  const kontakty = kontaktyKlubu(c);
+  const wpis = wpisZBazyKlubow(c.name, false);
+  const adres = contactAddress({club: c.name}) || (wpis && wpis.adres) || '';
+  const emaile = [...new Set([...kontakty.map(k=>String(k.email||'').trim()), wpis ? String(wpis.email||'').trim() : ''].filter(Boolean))];
+  const telefony = [...new Set(kontakty.map(k=>String(k.phone||'').trim()).filter(Boolean))];
+  const osoby = kontakty.filter(k=> (k.firstName||k.lastName)).map(k=>{
+    const nazwa = [k.firstName, k.lastName].filter(Boolean).join(' ');
+    return esc(nazwa) + (k.phone ? ' · ' + esc(k.phone) : '') + (k.email ? ' · ' + esc(k.email) : '') + (k.note ? ' <span class="meta">(' + esc(k.note) + ')</span>' : '');
+  });
+  const sys = systemyKlubow[c.id];
+  const wiersz = (etykieta, tresc)=> `<tr><td style="color:var(--ink-soft);width:150px;">${etykieta}</td><td>${tresc || '<span class="meta">—</span>'}</td></tr>`;
+  return `<div class="card" style="margin-bottom:14px;">
+    <div class="toolbar" style="margin-bottom:6px;"><h4 style="margin:0;color:var(--heading);">Dane klubu</h4>
+      <button class="link-btn" data-action="goto-kontakty" title="Telefon, e-mail i osoby wpisujesz w zakładce Kontakty">Kontakty →</button></div>
+    <table style="width:100%;"><tbody>
+      ${wiersz('System gry', sys ? '<strong>' + esc(etykietaSystemu(sys)) + '</strong>' : '<span class="meta">nie określono — ustaw w „Edytuj klub"</span>')}
+      ${wiersz('Adres obiektu', adres ? esc(adres) : '')}
+      ${wiersz('E-mail', emaile.map(e=> '<a href="mailto:' + esc(e) + '">' + esc(e) + '</a>').join(', '))}
+      ${wiersz('Telefon', telefony.map(esc).join(', ') || '')}
+      ${wiersz('Osoby', osoby.join('<br>'))}
+      ${wiersz('Zawodnicy w bazie', (()=>{
+        const gracze = DB.players.filter(p=>p.clubId === c.id);
+        if(!gracze.length) return '';
+        const mlodzi = gracze.filter(p=>isYouthPlayer(p)).length;
+        const monit = gracze.filter(p=>p.monitored).length;
+        const rap = gracze.filter(p=>raportyGracza(p.id).length).length;
+        return `<strong>${gracze.length}</strong> &middot; młodzieżowców ${mlodzi} &middot; w Monitoringu ${monit} &middot; z raportem ${rap}`;
+      })())}
+      ${wiersz('Miasto / region', [c.city, c.region].filter(Boolean).map(esc).join(' · '))}
+      ${wiersz('Strony', [c.profileLnp ? '<a href="' + esc(c.profileLnp) + '" target="_blank" rel="noopener">90minut / ŁNP</a>' : '', c.profileTm ? '<a href="' + esc(c.profileTm) + '" target="_blank" rel="noopener">Transfermarkt</a>' : ''].filter(Boolean).join(' · '))}
+    </tbody></table>
+  </div>`;
+}
 function contactClubName(c){ return String((c && (c.club || c.name)) || '').trim(); }
 // Adres obiektu w Kontaktach: najpierw ten zapisany przy klubie (z Planu Obserwacji albo wpisany
 // ręcznie), a gdy go nie ma — adres z wbudowanej bazy klubów (Kluby_Polska_Adresy.xlsx), tak jak
@@ -15906,6 +15954,7 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="goto-newobs"]').forEach(b=>b.onclick=()=>{currentView='newobs';render();});
   main.querySelectorAll('[data-action="goto-addplayer"]').forEach(b=>b.onclick=()=>{currentView='players';render();openPlayerModal(null);});
   main.querySelectorAll('[data-action="goto-monitoring"]').forEach(b=>b.onclick=()=>{currentView='monitoring';render();});
+  main.querySelectorAll('[data-action="goto-kontakty"]').forEach(b=>b.onclick=()=>{ viewingClubId = null; currentView='contacts'; render(); });
   main.querySelectorAll('[data-action="goto-clubs"]').forEach(b=>b.onclick=()=>{currentView='clubs';viewingClubId=null;render();});
   // KTO SIEDZI PRZY TEJ PRZEGLĄDARCE. Dotąd system brał po prostu pierwszego scouta z listy
   // w Ustawieniach — a więc każdy członek zespołu podpisywał się tym samym nazwiskiem, i to nie
