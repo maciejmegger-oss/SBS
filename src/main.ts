@@ -13796,7 +13796,7 @@ async function generateAnalysisPDF(playerId){
     .dwie ul{margin:2px 0 0;padding-left:15px;}
     .rap{border-left:3px solid #C6A04A;background:#FCFAF4;padding:6px 10px;margin:5px 0;border-radius:0 5px 5px 0;}
     .werdykt{border:1px solid #e3decd;border-left:4px solid #2F6B4F;border-radius:6px;padding:8px 12px;background:#F7FAF7;height:100%;box-sizing:border-box;}
-    .opinia{font-size:9.8px;line-height:1.38;white-space:pre-wrap;}
+    .opinia{font-size:9.8px;line-height:1.38;}
     .stopka{margin:14px 30px 0;border-top:1px solid #e3decd;padding-top:6px;color:#8a857a;font-size:8.5px;
       display:flex;justify-content:space-between;gap:16px;}
   </style></head><body>
@@ -13907,8 +13907,7 @@ async function generateAnalysisPDF(playerId){
   ${opinia && opinia.tekst ? `<h2>Druga opinia (AI) — ${esc(String(opinia.data||'').slice(0,10))}</h2>
     ${/* Akapit po akapicie, a nie jeden blok: dzielenie na strony szuka miejsc cięcia po dolnych
           krawędziach elementów, więc z jednego wysokiego bloku nie miało czego wybrać. */''}
-    <div class="opinia">${String(opinia.tekst).split(/\n{2,}/).map(akapit=>
-      `<p style="margin:0 0 5px;">${esc(akapit.trim())}</p>`).join('')}</div>
+    <div class="opinia">${opiniaAIAkapity(opinia.tekst, 9.8)}</div>
     <p style="color:#8a857a;font-size:8.5px;margin:5px 0 0;">Opinia wygenerowana automatycznie na podstawie danych z systemu i publicznych źródeł piłkarskich. Nie zastępuje obserwacji na żywo.</p>` : ''}
 
   </div>
@@ -14806,10 +14805,40 @@ function raportyMeczoweHtml(raporty){
   }).join('');
 }
 
+// Opinia AI jako HTML: WERDYKT i REKOMENDOWANY POZIOM to to, po co komitet sięga w pierwszej
+// kolejności, więc dostają ramkę i pogrubienie; reszta zostaje zwykłymi akapitami, a jej nagłówki
+// (wielkie litery) są tylko pogrubione. Zmarszczki zapisu modelu — „**", „#", dwukropki — zdejmujemy.
+function opiniaAIAkapity(tekst, rozmiar = 12.5){
+  const linie = String(tekst || '').replace(/[*#]/g, '').split('\n').map(l=>l.trim());
+  const GLOWNE = /^(WERDYKT|REKOMENDOWANY POZIOM)\s*:?\s*(.*)$/;
+  const NAGLOWEK = /^[A-ZĄĆĘŁŃÓŚŹŻ][A-ZĄĆĘŁŃÓŚŹŻ ]{3,}:?$/;
+  const bloki: {typ:string, tytul:string, tresc:string[]}[] = [];
+  let biezacy: any = null;
+  const zamknij = ()=>{ if(biezacy && (biezacy.tytul || biezacy.tresc.length)) bloki.push(biezacy); biezacy = null; };
+  linie.forEach(l=>{
+    const g = l.match(GLOWNE);
+    if(g){ zamknij(); biezacy = {typ:'glowny', tytul:g[1], tresc: g[2] ? [g[2]] : []}; return; }
+    if(NAGLOWEK.test(l)){ zamknij(); biezacy = {typ:'naglowek', tytul:l.replace(/:$/, ''), tresc:[]}; return; }
+    if(!l){ if(biezacy && biezacy.typ==='zwykly'){ zamknij(); } return; }
+    if(!biezacy) biezacy = {typ:'zwykly', tytul:'', tresc:[]};
+    biezacy.tresc.push(l);
+    if(biezacy.typ==='naglowek') biezacy.typ = 'naglowek-z-trescia';
+  });
+  zamknij();
+  return bloki.map(b=>{
+    const tresc = b.tresc.map(esc).join(' ');
+    if(b.typ==='glowny') return `<div style="margin:8px 0 7px;padding:6px 10px;border-left:4px solid #8C6D1F;background:#FBF6E6;border-radius:3px;">
+        <div style="font-size:${rozmiar}px;font-weight:800;letter-spacing:.06em;color:#8C6D1F;">${esc(b.tytul)}</div>
+        <div style="font-size:${rozmiar + 1}px;font-weight:800;line-height:1.4;color:#1B3A2D;margin-top:2px;">${tresc}</div></div>`;
+    if(b.typ.startsWith('naglowek')) return `<p style="margin:6px 0 2px;"><strong>${esc(b.tytul)}</strong></p>${tresc ? `<p style="margin:0 0 5px;">${tresc}</p>` : ''}`;
+    return `<p style="margin:0 0 5px;">${tresc}</p>`;
+  }).join('');
+}
+
 function opiniaAIHtml(tekst, data){
   return `<label class="field">Druga opinia (AI)${data ? ' — ' + esc(String(data).slice(0, 10)) : ''}</label>
-    <div style="white-space:pre-wrap;font-size:12.5px;line-height:1.6;border:1px solid var(--border);
-                border-radius:8px;padding:10px 12px;background:var(--card-warm);max-height:320px;overflow:auto;">${esc(tekst)}</div>
+    <div style="font-size:12.5px;line-height:1.6;border:1px solid var(--border);
+                border-radius:8px;padding:10px 12px;background:var(--card-warm);max-height:320px;overflow:auto;">${opiniaAIAkapity(tekst)}</div>
     <p class="note" style="margin-top:6px;">Opinia powstała z danych w systemie i publicznych źródeł piłkarskich.
       Nie obejmuje mediów społecznościowych ani życia prywatnego. Nie zastępuje obserwacji na żywo —
       traktuj ją jak głos w dyskusji, nie jak rozstrzygnięcie. Wejdzie też do PDF-a analizy.</p>`;
