@@ -37,6 +37,7 @@ import { KONTAKTY_AKADEMIE } from "./data/kontakty-akademii";
 const KONTAKTY_EUROPA: any[] = [...KONTAKTY_EUROPA_SCOUTING, ...KONTAKTY_AKADEMIE];
 import { ADRESY_KLUBOW } from "./data/adresy-klubow";
 import { talentyEuropy } from "./data/europa-mlodziez";
+import { talentyCies } from "./data/europa-cies";
 // Kod zakładek leży w public/zakladki/ — ten sam plik idzie na serwer (skąd zakładka pobiera go
 // przy każdym kliknięciu) i tutaj, jako kopia awaryjna na wypadek braku sieci.
 import LNP_PROTOKOL_KOD from "../public/zakladki/lnp-protokol.js?raw";
@@ -2608,6 +2609,9 @@ async function loadAll(){
   gdyBazaGotowa(wpiszSystemySezonu)
     .then(ile=>{ if(ile) render(); })
     .catch(e=>console.warn('Wpisywanie systemów gry klubów nie powiodło się:', e));
+  gdyBazaGotowa(wpiszEuropeCies)
+    .then(ile=>{ if(ile) render(); })
+    .catch(e=>console.warn('Wpisywanie młodych z CIES nie powiodło się:', e));
   gdyBazaGotowa(wpiszEuropeMlodziez)
     .then(ile=>{ if(ile) render(); })
     .catch(e=>console.warn('Wpisywanie kadr U-19 z Europy nie powiodło się:', e));
@@ -12075,6 +12079,9 @@ function scalPowolanychZIstniejacymi(istniejace, nowe){
   return { doDodania, uzupelnieni };
 }
 let talentKadra = '';
+let talentKraj = '';   // zakładka Europa: wybrany kraj (pusty = wszystkie)
+// Kraj zawodnika z Europy: pierwszy człon znacznika („Szwecja U-19", „Chorwacja · CIES: …").
+const krajEuropy = (t)=> String((t && t.krajKlubu) || '').split(/ · | U-d/)[0].trim() || 'Inne';
 // Rocznik w „Talencie klubowym": '' = wszystkie, 'brak' = bez rocznika, inaczej rok („2013").
 let talentRocznik = '';
 function wRocznikuTalentu(t, rocznik){
@@ -12310,7 +12317,8 @@ function viewTalent(){
   // Powołanie nie niesie rocznika, więc wszyscy reprezentanci lądowaliby w worku „Bez rocznika"
   // — obok przypadkowych wpisów bez daty. A to jest odwrotność ich wartości: to lista dwudziestu
   // paru chłopców wybranych z całego rocznika w kraju. Dostają własną grupę i widać, z której kadry.
-  const grupaTalentu = (t)=> t.reprezentacja ? 'kadra:' + t.reprezentacja : 'rocznik:' + (t.birthYear || '');
+  const grupaTalentu = (t)=> talentKadra === 'europa' ? 'kraj:' + krajEuropy(t)
+    : t.reprezentacja ? 'kadra:' + t.reprezentacja : 'rocznik:' + (t.birthYear || '');
   const rangaGrupy = (t)=> t.reprezentacja ? 0 : 1;
   // Zawężenie do jednej kadry. „Pozostali" to wszyscy bez powołania — talenty z arkuszy
   // i wklejek, czyli dotychczasowa zawartość tej zakładki.
@@ -12318,8 +12326,13 @@ function viewTalent(){
     : k === 'inni' ? (!t.reprezentacja && !t.europa) : String(t.reprezentacja||'') === k;
   // „Talent klubowy" (dawniej „Poza kadrą") zawęża się dodatkowo do wybranego rocznika.
   const widoczne = (talentKadra ? DB.talents.filter(t=>wKadrze(t, talentKadra)) : DB.talents)
-    .filter(t=> talentKadra !== 'inni' || wRocznikuTalentu(t, talentRocznik));
+    .filter(t=> talentKadra !== 'inni' || wRocznikuTalentu(t, talentRocznik))
+    .filter(t=> talentKadra !== 'europa' || !talentKraj || krajEuropy(t) === talentKraj);
   const rows = widoczne.slice().sort((a,b)=>{
+    if(talentKadra === 'europa'){
+      const k = krajEuropy(a).localeCompare(krajEuropy(b), 'pl');
+      if(k) return k;
+    }
     if(rangaGrupy(a) !== rangaGrupy(b)) return rangaGrupy(a) - rangaGrupy(b);
     if(a.reprezentacja || b.reprezentacja){
       const k = String(a.reprezentacja||'').localeCompare(String(b.reprezentacja||''), 'pl');
@@ -12415,7 +12428,9 @@ function viewTalent(){
       if(g !== biezacaGrupa){
         biezacaGrupa = g;
         const ilu = rows.filter(x=>grupaTalentu(x) === g).length;
-        const etykieta = t.reprezentacja
+        const etykieta = talentKadra === 'europa'
+          ? `<span style="display:inline-flex;align-items:center;gap:8px;">${nationalityFlag(krajEuropy(t))}${esc(krajEuropy(t))}</span>`
+          : t.reprezentacja
           ? 'Reprezentacja Polski ' + esc(t.reprezentacja)
           : (t.birthYear ? 'Rocznik ' + esc(String(t.birthYear)) : 'Bez rocznika');
         rowsHtml += `<tr class="talent-grupa"><td colspan="6"><div class="talent-year-head">${etykieta} <span class="reports-count">${ilu}</span></div></td></tr>`;
@@ -12471,6 +12486,12 @@ function viewTalent(){
     </div>
     <div class="talent-sekcja talent-sekcja-klub">
       <div class="filters" style="margin-bottom:0;">${pigulkaKadry('inni', 'Talent klubowy', iluWKadrze('inni'), tarczaTalentu)}${pigulkaKadry('europa', 'Europa', iluWKadrze('europa'), '🌍')}</div>
+      ${talentKadra === 'europa' ? (()=>{
+        const eu = DB.talents.filter(t=> t.europa);
+        const kraje = [...new Set(eu.map(krajEuropy))].map(k=>({k, n: eu.filter(t=> krajEuropy(t) === k).length})).sort((a,b)=> b.n - a.n || a.k.localeCompare(b.k, 'pl'));
+        const pk = (wartosc, etykieta, ile, ikona = '')=> pill(`${etykieta} (${ile})`, talentKraj === wartosc, 'talent-kraj', {val: wartosc}, ikona);
+        return `<div class="filters talent-roczniki" style="margin:8px 0 0;">${pk('', 'Wszystkie kraje', eu.length)}${kraje.map(x=> pk(x.k, x.k, x.n, nationalityFlag(x.k))).join('')}</div>`;
+      })() : ''}
       ${talentKadra === 'inni' ? `<div class="filters talent-roczniki" style="margin:8px 0 0;">
         ${pigulkaRocznika('', 'Wszystkie roczniki', klubowi.length)}
         ${rocznikiKlubowe.map(r=> pigulkaRocznika(String(r), String(r), klubowi.filter(t=> Number(t.birthYear) === r).length, znaczekRocznika(r))).join('')}
@@ -14428,6 +14449,29 @@ async function wpiszEuropeMlodziez(){
   const ok = await saveTalents();
   if(!ok) return 0;
   systemyKlubow[ZNACZNIK_EUROPA] = dzisiaj();
+  await saveSystemyKlubow();
+  return dodano;
+}
+
+// MŁODZI Z DWUNASTU KRAJÓW WG CIES FOOTBALL OBSERVATORY (zakładka Talent → Europa). Jednorazowo,
+// ze znacznikiem jak przy kadrach z Transfermarktu. Zawodnik, który już jest na liście (ta sama
+// osoba i ten sam klub), nie dostaje drugiego wpisu.
+const ZNACZNIK_CIES = '__europa_cies_2026_10';
+async function wpiszEuropeCies(){
+  if(systemyKlubow[ZNACZNIK_CIES]) return 0;
+  if(nieudaneOdczyty.length) return 0;
+  let dodano = 0;
+  talentyCies().forEach(n=>{
+    if((DB.talents||[]).some(t=> tenSamTalent(t, n))) return;
+    DB.talents.push(podpiszKontem({
+      id: uid('T'), firstName: n.firstName, lastName: n.lastName, birthYear: n.birthYear,
+      club: n.club, confidence: 'europa', sourceImage: '', dateAdded: dzisiaj(),
+      pozycja: n.pozycja, krajKlubu: n.krajKlubu, europa: true,
+    }));
+    dodano++;
+  });
+  if(dodano){ const ok = await saveTalents(); if(!ok) return 0; }
+  systemyKlubow[ZNACZNIK_CIES] = dzisiaj();
   await saveSystemyKlubow();
   return dodano;
 }
@@ -16954,8 +16998,10 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="talent-kadra"]').forEach(b=>b.onclick=()=>{
     talentKadra = (b as HTMLElement).dataset.val || '';
     talentRocznik = '';   // każde wejście w zakładkę zaczyna od wszystkich roczników
+    talentKraj = '';
     render();
   });
+  main.querySelectorAll('[data-action="talent-kraj"]').forEach(b=>b.onclick=()=>{ talentKraj = (b as HTMLElement).dataset.val || ''; render(); });
   main.querySelectorAll('[data-action="talent-rocznik-filtr"]').forEach(b=>b.onclick=()=>{
     talentRocznik = (b as HTMLElement).dataset.val || '';
     render();
