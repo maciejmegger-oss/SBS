@@ -38,6 +38,7 @@ const KONTAKTY_EUROPA: any[] = [...KONTAKTY_EUROPA_SCOUTING, ...KONTAKTY_AKADEMI
 import { ADRESY_KLUBOW } from "./data/adresy-klubow";
 import { talentyEuropy } from "./data/europa-mlodziez";
 import { talentyCies } from "./data/europa-cies";
+import { talentyPolacyZaGranica } from "./data/polacy-za-granica";
 // Kod zakładek leży w public/zakladki/ — ten sam plik idzie na serwer (skąd zakładka pobiera go
 // przy każdym kliknięciu) i tutaj, jako kopia awaryjna na wypadek braku sieci.
 import LNP_PROTOKOL_KOD from "../public/zakladki/lnp-protokol.js?raw";
@@ -2609,6 +2610,9 @@ async function loadAll(){
   gdyBazaGotowa(wpiszSystemySezonu)
     .then(ile=>{ if(ile) render(); })
     .catch(e=>console.warn('Wpisywanie systemów gry klubów nie powiodło się:', e));
+  gdyBazaGotowa(wpiszPolakowZaGranica)
+    .then(ile=>{ if(ile) render(); })
+    .catch(e=>console.warn('Wpisywanie Polaków za granicą nie powiodło się:', e));
   gdyBazaGotowa(wpiszEuropeCies)
     .then(ile=>{ if(ile) render(); })
     .catch(e=>console.warn('Wpisywanie młodych z CIES nie powiodło się:', e));
@@ -12003,6 +12007,7 @@ function talentyDoZapisu(talenty){
     // „europa · Kraj". Powołanie do polskiej kadry ma pierwszeństwo — to jedno pole na jedną rzecz.
     if(reprezentacja) return { ...wiersz, confidence: kadraDoPolaZrodla({ reprezentacja, krajKlubu }) };
     if(europa) return { ...wiersz, confidence: 'europa' + (krajKlubu ? ' · ' + krajKlubu : '') };
+    if(krajKlubu) return { ...wiersz, confidence: 'za granicą · ' + krajKlubu };
     return wiersz;
   });
 }
@@ -12043,7 +12048,9 @@ function nalozPozycjeZPolaTalentu(talenty){
 function nalozKadreZPolaZrodla(talenty){
   (talenty || []).forEach(t=>{
     if(!t || t.reprezentacja) return;
-    const eu = String(t.confidence || '').match(/^europa(?:s+·s+(.+))?$/);
+    const zg = String(t.confidence || '').match(/^za granicą(?:\s+·\s+(.+))?$/);
+    if(zg){ if(!t.krajKlubu && zg[1]) t.krajKlubu = zg[1].trim(); return; }
+    const eu = String(t.confidence || '').match(/^europa(?:\s+·\s+(.+))?$/);
     if(eu){ t.europa = true; if(!t.krajKlubu && eu[1]) t.krajKlubu = eu[1].trim(); return; }
     const k = kadraZPolaZrodla(t.confidence);
     if(!k) return;
@@ -12081,7 +12088,7 @@ function scalPowolanychZIstniejacymi(istniejace, nowe){
 let talentKadra = '';
 let talentKraj = '';   // zakładka Europa: wybrany kraj (pusty = wszystkie)
 // Kraj zawodnika z Europy: pierwszy człon znacznika („Szwecja U-19", „Chorwacja · CIES: …").
-const krajEuropy = (t)=> String((t && t.krajKlubu) || '').split(/ · | U-d/)[0].trim() || 'Inne';
+const krajEuropy = (t)=> String((t && t.krajKlubu) || '').split(/ · | U-\d/)[0].trim() || 'Inne';
 // Rocznik w „Talencie klubowym": '' = wszystkie, 'brak' = bez rocznika, inaczej rok („2013").
 let talentRocznik = '';
 function wRocznikuTalentu(t, rocznik){
@@ -14472,6 +14479,27 @@ async function wpiszEuropeCies(){
   });
   if(dodano){ const ok = await saveTalents(); if(!ok) return 0; }
   systemyKlubow[ZNACZNIK_CIES] = dzisiaj();
+  await saveSystemyKlubow();
+  return dodano;
+}
+
+// POLACY ZA GRANICĄ, ROCZNIK 2005 I MŁODSI (zakładka Talent → Talent klubowy), z listy 90minut.pl. Jednorazowo,
+// ze znacznikiem jak przy Europie; kraj klubu zostaje przy zawodniku (pole „za granicą · kraj").
+const ZNACZNIK_POLACY = '__polacy_za_granica_2026_10';
+async function wpiszPolakowZaGranica(){
+  if(systemyKlubow[ZNACZNIK_POLACY]) return 0;
+  if(nieudaneOdczyty.length) return 0;
+  let dodano = 0;
+  talentyPolacyZaGranica().forEach(n=>{
+    if((DB.talents||[]).some(t=> tenSamTalent(t, n))) return;
+    DB.talents.push(podpiszKontem({
+      id: uid('T'), firstName: n.firstName, lastName: n.lastName, birthYear: n.birthYear,
+      club: n.club, confidence: 'za granicą', sourceImage: '', dateAdded: dzisiaj(), krajKlubu: n.krajKlubu,
+    }));
+    dodano++;
+  });
+  if(dodano){ const ok = await saveTalents(); if(!ok) return 0; }
+  systemyKlubow[ZNACZNIK_POLACY] = dzisiaj();
   await saveSystemyKlubow();
   return dodano;
 }
