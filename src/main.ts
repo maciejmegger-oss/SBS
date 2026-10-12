@@ -15195,10 +15195,11 @@ function panelSkanera(){
   const juniorskie = ((DB.settings as any).leagues||[]).filter((l:any)=>topLevelOf(l)==='Kategorie juniorskie');
   if(!juniorskie.length) return '';
   if(!skanerLiga || (!juniorskie.includes(skanerLiga) && !SKANER_POZIOMY_SENIORSKIE.includes(skanerLiga))){
-    skanerLiga = juniorskie.find(l=>/^CLJ U15/.test(l)) || juniorskie[0];
+    skanerLiga = SKANER_POZIOMY_SENIORSKIE[0];   // III liga: od niej zaczyna się wybór; U19 i reszta niżej na liście
   }
   const {kluby, wiersze, zawodnikow} = skanerKategorii(skanerLiga, skanerMinMinut);
-  const opcje = [...SKANER_POZIOMY_SENIORSKIE, ...juniorskie].map(l=>`<option value="${esc(l)}" ${l===skanerLiga?'selected':''}>${esc(l)}</option>`).join('');
+  const kolejnosc = [...SKANER_POZIOMY_SENIORSKIE, ...juniorskie.filter(l=>/^CLJ U19/.test(l)), ...juniorskie.filter(l=>!/^CLJ U19/.test(l))];
+  const opcje = kolejnosc.map(l=>`<option value="${esc(l)}" ${l===skanerLiga?'selected':''}>${esc(l)}</option>`).join('');
   const progi = [0, 90, 180, 360, 540].map(m=>
     `<option value="${m}" ${m===skanerMinMinut?'selected':''}>${m===0?'bez progu':'od '+m+' minut'}</option>`).join('');
 
