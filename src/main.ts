@@ -14277,34 +14277,66 @@ const SYSTEMY_PODPOWIEDZI = {
 // raz — inaczej dwie listy zaczęłyby się rozjeżdżać i nie byłoby wiadomo, która jest prawdziwa.
 SKLADY_MECZOWE.forEach(s=>{ SYSTEMY_PODPOWIEDZI[s.klub] = s.system; });
 
-// SYSTEMY GRY EKSTRAKLASY NA SEZON 2026/27 — sprawdzone w sieci 12.10.2026.
+// SYSTEMY GRY EKSTRAKLASY I I LIGI NA SEZON 2026/27 — z oficjalnych składów, stan na 12.10.2026.
 //
-// Źródło: starting11.com, które z oficjalnych składów liczy najczęstsze ustawienie każdego zespołu
-// (ostatnie 3–5 kolejek; Lech i Raków — dłuższa seria). To serwis zbiorczy, nie klub, i bywa
-// niespójny: przy Wiśle Kraków, Cracovii i Śląsku podpis ustawienia nie zgadza się z wypisanym
-// składem, więc tam zostawiam układ z podpisu, zgodny z wcześniejszym odczytem ze zrzutów. Trenerzy
-// zmieniali się we wrześniu (m.in. Zagłębie, Raków, Piast, Widzew, Radomiak), więc to stan na dziś,
-// nie na cały sezon.
+// Źródło: formacje podane w składach wyjściowych ostatnich sześciu rozegranych meczów każdego klubu
+// (Flashscore, dane o ustawieniu z protokołu). Wpisujemy układ, w którym drużyna wyszła najczęściej;
+// przy remisie — ten z najnowszego meczu. Liczba przy klubie to trafienia z sześciu, czyli pewność.
+// Poniżej połowy (≤3/6) układ jest niepewny: trener zmienia go z kolejki na kolejkę.
 //
-// Kluby I i II ligi celowo tu nie ma: w żadnym dostępnym serwisie nie znalazłem dla nich
-// sprawdzalnego ustawienia i nie wpisuję zgadniętych.
+// DWA UKŁADY NIE MAJĄ OSOBNEGO POLA NA MAPIE i idą na najbliższy: 4-4-1-1 → 4-5-1, 3-4-1-2 → 3-5-2.
+//
+// II ligi tu nie ma: Flashscore nie podaje dla niej ustawień (sam skład bez układu), więc niczego
+// nie zgaduję. Znicz Pruszków i reszta czekają na ręczne ustawienie w profilu klubu.
 const SYSTEMY_SEZONU = {
-  'Górnik Zabrze': '1-4-3-3', 'Lech Poznań': '1-4-2-3-1', 'Legia Warszawa': '1-3-4-2-1',
-  'Pogoń Szczecin': '1-4-3-3', 'GKS Katowice': '1-3-4-3', 'Wisła Kraków': '1-4-5-1',
-  'Piast Gliwice': '1-4-4-2', 'Korona Kielce': '1-4-2-3-1', 'Zagłębie Lubin': '1-5-4-1',
-  'Jagiellonia Białystok': '1-4-2-3-1', 'Cracovia': '1-4-2-3-1', 'Wisła Płock': '1-3-4-3',
-  'Widzew Łódź': '1-4-1-4-1', 'Motor Lublin': '1-4-1-4-1', 'Wieczysta Kraków': '1-3-4-3',
-  'Radomiak Radom': '1-4-2-3-1', 'Śląsk Wrocław': '1-5-3-2', 'Raków Częstochowa': '1-3-4-3',
+  // Ekstraklasa
+  'Cracovia': '1-4-2-3-1',          // 4/6
+  'GKS Katowice': '1-3-4-3',        // 6/6
+  'Górnik Zabrze': '1-4-3-3',       // 3/6, niepewny
+  'Jagiellonia Białystok': '1-4-2-3-1', // 5/6
+  'Korona Kielce': '1-4-5-1',       // 3/6, niepewny
+  'Lech Poznań': '1-4-4-2',         // 5/6
+  'Legia Warszawa': '1-3-4-3',      // 3/6 po równo z 3-4-2-1, niepewny
+  'Motor Lublin': '1-4-1-4-1',      // 5/6
+  'Piast Gliwice': '1-4-4-2',       // 6/6
+  'Pogoń Szczecin': '1-4-2-3-1',    // 3/6, niepewny
+  'Radomiak Radom': '1-4-2-3-1',    // 2/6, niepewny
+  'Raków Częstochowa': '1-4-2-3-1', // 2/6, niepewny (wcześniej 3-4-3)
+  'Widzew Łódź': '1-4-1-4-1',       // 4/6
+  'Wieczysta Kraków': '1-3-4-3',    // 3/6, niepewny
+  'Wisła Kraków': '1-4-5-1',        // 2/6, niepewny (4-4-1-1 / 4-5-1 / 4-2-3-1 po równo)
+  'Wisła Płock': '1-3-4-3',         // 5/6
+  'Zagłębie Lubin': '1-5-4-1',      // 2/6, niepewny (nowy trener)
+  'Śląsk Wrocław': '1-5-3-2',       // 6/6
+  // I liga
+  'Arka Gdynia': '1-4-3-3',         // 5/6
+  'Bruk-Bet Termalica Nieciecza': '1-4-4-2', // 4/6
+  'Chrobry Głogów': '1-4-2-3-1',    // 6/6
+  'Lechia Gdańsk': '1-4-4-2',       // 6/6
+  'Miedź Legnica': '1-4-3-3',       // 2/6, niepewny (nowy trener)
+  'Odra Opole': '1-3-4-3',          // 6/6
+  'Podbeskidzie Bielsko-Biała': '1-3-5-2', // 3/6 (3-4-1-2), niepewny
+  'Pogoń Grodzisk Mazowiecki': '1-3-5-2', // 6/6
+  'Pogoń Siedlce': '1-4-5-1',       // 4/6 (4-4-1-1)
+  'Polonia Bytom': '1-3-4-3',       // 3/6, niepewny
+  'Polonia Warszawa': '1-4-2-3-1',  // 6/6
+  'Puszcza Niepołomice': '1-4-2-3-1', // 4/6
+  'Ruch Chorzów': '1-4-2-3-1',      // 5/6
+  'Stal Mielec': '1-4-5-1',         // 2/6 (4-4-1-1), niepewny
+  'Stal Rzeszów': '1-4-5-1',        // 2/6 (4-4-1-1), niepewny
+  'Unia Skierniewice': '1-3-4-2-1', // 3/6, niepewny
+  'Warta Poznań': '1-3-4-2-1',      // 4/6
+  'ŁKS Łódź': '1-3-5-2',            // 6/6
 };
 Object.assign(SYSTEMY_PODPOWIEDZI, SYSTEMY_SEZONU);
-const ZNACZNIK_SYSTEMOW = '__sezon_2026_27';
+const ZNACZNIK_SYSTEMOW = '__sezon_2026_27_v2';
 
-// Wpisuje te systemy klubom Ekstraklasy RAZ. Nadpisuje wcześniejsze wpisy, bo o to chodziło —
+// Wpisuje te systemy klubom Ekstraklasy i I ligi RAZ. Nadpisuje wcześniejsze wpisy, bo o to chodziło —
 // stan sprzed tygodnia bywał już nieaktualny. Znacznik w tej samej mapie sprawia, że kolejne
 // uruchomienia niczego nie ruszają, więc późniejsza ręczna zmiana w profilu klubu zostaje.
 async function wpiszSystemySezonu(){
   if(systemyKlubow[ZNACZNIK_SYSTEMOW]) return 0;
-  const kluby = DB.clubs.filter(c=>c.league === 'Ekstraklasa');
+  const kluby = DB.clubs.filter(c=>c.league === 'Ekstraklasa' || c.league === 'I liga');
   if(!kluby.length) return 0;
   let ile = 0;
   kluby.forEach(c=>{
@@ -14320,7 +14352,7 @@ async function wpiszSystemySezonu(){
   });
   systemyKlubow[ZNACZNIK_SYSTEMOW] = '12.10.2026';
   const ok = await saveSystemyKlubow();
-  if(ok !== false) console.info('Systemy gry Ekstraklasy 2026/27: wpisałem ' + ile + ' z ' + kluby.length + ' klubów.');
+  if(ok !== false) console.info('Systemy gry Ekstraklasy i I ligi 2026/27: wpisałem ' + ile + ' z ' + kluby.length + ' klubów.');
   return ile;
 }
 
