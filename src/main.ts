@@ -18038,7 +18038,12 @@ function openCommitteeReportsModal(playerId){
       try{
         const att = await processAttachmentFile(file);
         p.committeeReports.push(att);
-        await savePlayers();
+        // Jeden wiersz, nie cała kartoteka: savePlayers() przepisuje ponad czternaście tysięcy
+        // rekordów, więc okno wisiało na „Wczytywanie…", a opinia nie zdążyła się zapisać.
+        if(await savePlayerOne(p) === false){
+          p.committeeReports.pop();
+          throw new Error('Nie udało się zapisać pliku.' + powodNieudanegoZapisu());
+        }
         draw();
       }catch(e){
         status.textContent = e.message || 'Nie udało się wczytać pliku.';
@@ -18047,12 +18052,23 @@ function openCommitteeReportsModal(playerId){
     };
     overlay.querySelectorAll('.committee-report-delete-btn').forEach(b=>b.onclick=async()=>{
       p.committeeReports.splice(Number(b.dataset.idx), 1);
-      await savePlayers();
+      await savePlayerOne(p);
       draw();
     });
     overlay.querySelectorAll('[data-action="save-committee-opinion"]').forEach(b=>b.onclick=async()=>{
+      const poprzednia = p.committeeOpinion;
       p.committeeOpinion = overlay.querySelector('#committee-opinion-text').value.trim();
-      await savePlayers();
+      b.disabled = true;
+      const ok = await savePlayerOne(p);
+      if(ok === false){
+        // Okno zostaje otwarte: zamknięcie po nieudanym zapisie wyglądało jak sukces, a tekst
+        // opinii przepadał.
+        p.committeeOpinion = poprzednia;
+        b.disabled = false;
+        pokazPotwierdzenie('Nie udało się zapisać opinii.' + powodNieudanegoZapisu(), 'blad');
+        return;
+      }
+      pokazPotwierdzenie('Opinia zapisana.');
       closeAndRefresh();
     });
   }
