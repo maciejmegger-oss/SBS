@@ -2594,10 +2594,20 @@ async function loadAll(){
   odbierzZalegleProtokoly();
   // Młodzieżowcy, którym dorobek przekroczył próg, wchodzą do Monitoringu sami. Poza wyścigiem
   // z limitem czasu i bez przerywania startu — to praca w tle, a nie warunek pokazania bazy.
-  wpiszSystemySezonu()
+  // CZEKAMY, AŻ KARTOTEKA NAPRAWDĘ SIĘ WCZYTA. Powyższy wyścig z limitem czasu kończy się też wtedy,
+  // gdy baza ładuje się wolno — a wtedy DB.clubs i DB.players są jeszcze puste i obie prace w tle
+  // wracały z niczym, bez śladu i bez ponowienia. Stąd klub, któremu „wpisaliśmy" system, dalej go nie miał.
+  const gdyBazaGotowa = async (praca)=>{
+    for(let i = 0; i < 60; i++){
+      if(DB.clubs.length && DB.players.length) return praca();
+      await new Promise(r=>setTimeout(r, 3000));
+    }
+    return 0;
+  };
+  gdyBazaGotowa(wpiszSystemySezonu)
     .then(ile=>{ if(ile) render(); })
     .catch(e=>console.warn('Wpisywanie systemów gry klubów nie powiodło się:', e));
-  dopiszMlodziezowcowDoMonitoringu()
+  gdyBazaGotowa(dopiszMlodziezowcowDoMonitoringu)
     .then(ile=>{ if(ile) render(); })
     .catch(e=>console.warn('Dopisywanie młodzieżowców do Monitoringu nie powiodło się:', e));
   // Odświeżanie statystyk celowo POZA wyścigiem z limitem czasu — to praca w tle, która nie może
