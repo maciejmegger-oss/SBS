@@ -11807,6 +11807,8 @@ async function addTalentManually(){
     firstName, lastName,
     birthYear: yearVal ? Number(yearVal) : null,
     club: document.getElementById('talent-manual-club').value.trim(),
+    // Na zakładce Europa każdy ręcznie dodany wpis jest z Europy; kraj klubu to dodatkowe pole.
+    ...(talentKadra === 'europa' ? { europa: true, krajKlubu: (document.getElementById('talent-manual-kraj') as any)?.value.trim() || '' } : {}),
     confidence: 'ręcznie',
     sourceImage: '',
     dateAdded: dzisiaj()
@@ -11885,8 +11887,8 @@ let talentyKadry = {};
 function mapaKadrZTalentow(talenty){
   const mapa = {};
   (talenty || []).forEach(t=>{
-    if(t && t.id && (t.reprezentacja || t.krajKlubu)){
-      mapa[t.id] = { reprezentacja: t.reprezentacja || '', krajKlubu: t.krajKlubu || '' };
+    if(t && t.id && (t.reprezentacja || t.krajKlubu || t.europa)){
+      mapa[t.id] = { reprezentacja: t.reprezentacja || '', krajKlubu: t.krajKlubu || '', europa: !!t.europa };
     }
   });
   return mapa;
@@ -11900,6 +11902,7 @@ function nalozKadryNaTalenty(talenty, mapa){
     if(!k) return;
     if(!t.reprezentacja && k.reprezentacja) t.reprezentacja = k.reprezentacja;
     if(!t.krajKlubu && k.krajKlubu) t.krajKlubu = k.krajKlubu;
+    if(!t.europa && k.europa) t.europa = true;
   });
 }
 
@@ -11928,8 +11931,13 @@ function kadraZPolaZrodla(pole){
 function talentyDoZapisu(talenty){
   return (talenty || []).map(t=>{
     const { reprezentacja, krajKlubu, pozycjeNmg, pozycja, ...reszta } = t;
-    const wiersz = { ...reszta, sourceImage: pozycjaDoPolaTalentu({ pozycjeNmg, pozycja }) };
-    return reprezentacja ? { ...wiersz, confidence: kadraDoPolaZrodla({ reprezentacja, krajKlubu }) } : wiersz;
+    const { europa, ...bezEuropy } = reszta;
+    const wiersz = { ...bezEuropy, sourceImage: pozycjaDoPolaTalentu({ pozycjeNmg, pozycja }) };
+    // EUROPA jedzie w tym samym polu co kadra (tabela nie ma na nią kolumny): „europa" albo
+    // „europa · Kraj". Powołanie do polskiej kadry ma pierwszeństwo — to jedno pole na jedną rzecz.
+    if(reprezentacja) return { ...wiersz, confidence: kadraDoPolaZrodla({ reprezentacja, krajKlubu }) };
+    if(europa) return { ...wiersz, confidence: 'europa' + (krajKlubu ? ' · ' + krajKlubu : '') };
+    return wiersz;
   });
 }
 
@@ -11963,6 +11971,8 @@ function nalozPozycjeZPolaTalentu(talenty){
 function nalozKadreZPolaZrodla(talenty){
   (talenty || []).forEach(t=>{
     if(!t || t.reprezentacja) return;
+    const eu = String(t.confidence || '').match(/^europa(?:s+·s+(.+))?$/);
+    if(eu){ t.europa = true; if(!t.krajKlubu && eu[1]) t.krajKlubu = eu[1].trim(); return; }
     const k = kadraZPolaZrodla(t.confidence);
     if(!k) return;
     t.reprezentacja = k.reprezentacja;
@@ -12236,7 +12246,8 @@ function viewTalent(){
   const rangaGrupy = (t)=> t.reprezentacja ? 0 : 1;
   // Zawężenie do jednej kadry. „Pozostali" to wszyscy bez powołania — talenty z arkuszy
   // i wklejek, czyli dotychczasowa zawartość tej zakładki.
-  const wKadrze = (t, k)=> k === 'inni' ? !t.reprezentacja : String(t.reprezentacja||'') === k;
+  const wKadrze = (t, k)=> k === 'europa' ? !!t.europa
+    : k === 'inni' ? (!t.reprezentacja && !t.europa) : String(t.reprezentacja||'') === k;
   // „Talent klubowy" (dawniej „Poza kadrą") zawęża się dodatkowo do wybranego rocznika.
   const widoczne = (talentKadra ? DB.talents.filter(t=>wKadrze(t, talentKadra)) : DB.talents)
     .filter(t=> talentKadra !== 'inni' || wRocznikuTalentu(t, talentRocznik));
@@ -12347,7 +12358,9 @@ function viewTalent(){
       <tbody>${rowsHtml}</tbody>
     </table>`;
   } else {
-    rowsHtml = talentKadra === 'inni'
+    rowsHtml = talentKadra === 'europa'
+      ? `<div class="empty">Brak zawodników z Europy — najlepsi młodzi zawodnicy zagranicznych klubów. Dodaj ich w polu poniżej (wklejka albo ręcznie): na tej zakładce każdy nowy wpis trafi do Europy.</div>`
+      : talentKadra === 'inni'
       ? `<div class="empty">Brak talentów klubowych${talentRocznik
           ? (talentRocznik === 'brak' ? ' bez rocznika' : ' z rocznika ' + esc(talentRocznik)) : ''} — wklej listę w polu poniżej.</div>`
       : talentKadra
@@ -12377,7 +12390,7 @@ function viewTalent(){
   // powołania, dawniej „Poza kadrą"). Po jego kliknięciu pod spodem otwierają się roczniki — od
   // najmłodszego, z liczbą zawodników — i lista zawęża się do wybranego rocznika.
   const naglowekSekcji = (tekst)=> `<div class="note" style="margin:0 0 5px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;opacity:.75;">${esc(tekst)}</div>`;
-  const klubowi = DB.talents.filter(t=> !t.reprezentacja);
+  const klubowi = DB.talents.filter(t=> !t.reprezentacja && !t.europa);
   const rocznikiKlubowe = [...new Set(klubowi.map(t=> Number(t.birthYear)).filter(Boolean))].sort((a,b)=> b - a);
   const bezRocznika = klubowi.filter(t=> !t.birthYear).length;
   const pigulkaRocznika = (wartosc, etykieta, ile, ikona = '')=> pill(`${etykieta} (${ile})`, talentRocznik === wartosc, 'talent-rocznik-filtr', {val: wartosc}, ikona);
@@ -12388,7 +12401,7 @@ function viewTalent(){
       <div class="filters" style="margin-bottom:0;">${KADRY_MLODZIEZOWE.map(k=>pigulkaKadry(k, k, iluWKadrze(k), znaczekKadry(k))).join('')}</div>
     </div>
     <div class="talent-sekcja talent-sekcja-klub">
-      <div class="filters" style="margin-bottom:0;">${pigulkaKadry('inni', 'Talent klubowy', iluWKadrze('inni'), tarczaTalentu)}</div>
+      <div class="filters" style="margin-bottom:0;">${pigulkaKadry('inni', 'Talent klubowy', iluWKadrze('inni'), tarczaTalentu)}${pigulkaKadry('europa', 'Europa', iluWKadrze('europa'), '🌍')}</div>
       ${talentKadra === 'inni' ? `<div class="filters talent-roczniki" style="margin:8px 0 0;">
         ${pigulkaRocznika('', 'Wszystkie roczniki', klubowi.length)}
         ${rocznikiKlubowe.map(r=> pigulkaRocznika(String(r), String(r), klubowi.filter(t=> Number(t.birthYear) === r).length, znaczekRocznika(r))).join('')}
@@ -12483,6 +12496,7 @@ function viewTalent(){
           <div class="field-wrap"><label class="field">Rocznik</label><input type="number" id="talent-manual-year" placeholder="np. 2010"></div>
           <div class="field-wrap"><label class="field">Klub</label><input id="talent-manual-club"></div>
         </div>
+        ${talentKadra === 'europa' ? `<div class="field-wrap"><label class="field">Kraj klubu</label><input id="talent-manual-kraj" placeholder="np. Hiszpania"></div>` : ''}
         <div class="modal-actions" style="justify-content:flex-start;">
           <button class="gold" data-action="talent-add-manual">Dodaj do listy</button>
         </div>
@@ -16828,6 +16842,7 @@ function attachHandlers(){
     if(!toAdd.length){ alert('Brak zaznaczonych zawodników do dodania.'); return; }
     // Powołany, który JUŻ jest na liście, dostaje kadrę dopisaną do swojego wpisu — nie drugi wpis.
     // Tak też odzyskuje się kadrę, którą wcześniej wyciął zapis: wystarczy wkleić komunikat ponownie.
+    if(talentKadra === 'europa') toAdd.forEach(x=>{ x.europa = true; });
     const { doDodania, uzupelnieni } = scalPowolanychZIstniejacymi(DB.talents, toAdd);
     DB.talents.push(...doDodania);
     const ok = await saveTalents();
