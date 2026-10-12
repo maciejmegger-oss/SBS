@@ -36,6 +36,7 @@ import { KONTAKTY_AKADEMIE } from "./data/kontakty-akademii";
 // swój plik od nowa; w widoku są jedną listą, a pigułka „Akademie" zawęża ją do drugiej bazy.
 const KONTAKTY_EUROPA: any[] = [...KONTAKTY_EUROPA_SCOUTING, ...KONTAKTY_AKADEMIE];
 import { ADRESY_KLUBOW } from "./data/adresy-klubow";
+import { talentyEuropyU19 } from "./data/europa-u19";
 // Kod zakładek leży w public/zakladki/ — ten sam plik idzie na serwer (skąd zakładka pobiera go
 // przy każdym kliknięciu) i tutaj, jako kopia awaryjna na wypadek braku sieci.
 import LNP_PROTOKOL_KOD from "../public/zakladki/lnp-protokol.js?raw";
@@ -2607,6 +2608,9 @@ async function loadAll(){
   gdyBazaGotowa(wpiszSystemySezonu)
     .then(ile=>{ if(ile) render(); })
     .catch(e=>console.warn('Wpisywanie systemów gry klubów nie powiodło się:', e));
+  gdyBazaGotowa(wpiszEuropeU19)
+    .then(ile=>{ if(ile) render(); })
+    .catch(e=>console.warn('Wpisywanie kadr U-19 z Europy nie powiodło się:', e));
   gdyBazaGotowa(dopiszMlodziezowcowDoMonitoringu)
     .then(ile=>{ if(ile) render(); })
     .catch(e=>console.warn('Dopisywanie młodzieżowców do Monitoringu nie powiodło się:', e));
@@ -14387,6 +14391,30 @@ const SYSTEMY_SEZONU = {
   'ŁKS Łódź': '1-3-5-2',            // 6/6
 };
 Object.assign(SYSTEMY_PODPOWIEDZI, SYSTEMY_SEZONU);
+// REPREZENTANCI U-19 ZAGRANICY (zakładka Talent → Europa). Wpisuje się RAZ, przy pierwszym uruchomieniu po
+// wdrożeniu; znacznik leży w mapie systemów klubów (to jedyny zapis „klucz → tekst", który już mamy),
+// więc usunięcie zawodnika z listy nie przywraca go przy następnym starcie. Wpisu, który już jest
+// na liście (to samo imię i nazwisko), nie dublujemy.
+const ZNACZNIK_EUROPA_U19 = '__europa_u19_2026_10';
+async function wpiszEuropeU19(){
+  if(systemyKlubow[ZNACZNIK_EUROPA_U19]) return 0;
+  if(nieudaneOdczyty.length) return 0;
+  let dodano = 0;
+  talentyEuropyU19().forEach(n=>{
+    if((DB.talents||[]).some(t=> tenSamTalent(t, n))) return;
+    DB.talents.push(podpiszKontem({
+      id: uid('T'), firstName: n.firstName, lastName: n.lastName, birthYear: n.birthYear,
+      club: '', confidence: 'europa', sourceImage: '', dateAdded: dzisiaj(),
+      pozycja: n.pozycja, krajKlubu: n.krajKlubu, europa: true,
+    }));
+    dodano++;
+  });
+  if(dodano){ const ok = await saveTalents(); if(!ok) return 0; }
+  systemyKlubow[ZNACZNIK_EUROPA_U19] = dzisiaj();
+  await saveSystemyKlubow();
+  return dodano;
+}
+
 const ZNACZNIK_SYSTEMOW = '__sezon_2026_27_v2';
 
 // Wpisuje te systemy klubom Ekstraklasy i I ligi RAZ. Nadpisuje wcześniejsze wpisy, bo o to chodziło —
