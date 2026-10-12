@@ -13630,7 +13630,18 @@ function analyzePlayer(p){
     // skautów mówiły coś przeciwnego — i to on przeważał decyzję końcową.
     let s = (overall/6)*72;                                    // baza z ocen (0-72)
     if(trend!=null) s += Math.max(-8, Math.min(8, trend*8));   // trend +/-8
-    s += devBonus;                                             // okno rozwoju (0-12)
+    // PERSPEKTYWA SKAUTA — wskaźnik mierzy drogę w górę (do wyższego poziomu, docelowo Ekstraklasy),
+    // a nie samą grę na obecnym poziomie. Sama średnia ocen tego nie widzi: zawodnik z 5,1 i
+    // perspektywą WYSOKA wychodził 50–62, choć skaut pisał „transferowałbym". Perspektywa zastępuje
+    // dawny bonus za wiek, bo to ocena skauta, a wiek jest tylko jej zgrubnym przybliżeniem; bonus
+    // za wiek zostaje, gdy żaden raport perspektywy nie wpisał.
+    const pers = reports.map(r=>String(r.perspektywa||'').toUpperCase()).filter(x=>x==='WYSOKA'||x==='ŚREDNIA'||x==='NISKA');
+    if(pers.length){
+      const pkt = {WYSOKA:12, 'ŚREDNIA':4, NISKA:-8};
+      s += pers.reduce((t,x)=>t+pkt[x],0)/pers.length;         // perspektywa (-8..+12)
+    } else {
+      s += devBonus;                                           // okno rozwoju (0-12)
+    }
     score = Math.max(0, Math.min(100, Math.round(s)));
   }
   // Rekomendacja niezależna.
