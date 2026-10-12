@@ -10508,7 +10508,21 @@ function viewReports(){
   // tu nie wchodzi, nawet gdy z tego meczu są raporty zawodników: zostaje w bazie — nie kasujemy go —
   // ale lista raportów to lista zawodników. Raport zawodnika usuniętego z kartoteki zostaje (ma
   // playerId), żeby dało się go skasować. Numer porządkowy liczymy wśród pokazanych.
-  const widoczneRaporty = DB.reports.filter(czyRaportZawodnika);
+  // KOLEJNOŚĆ TWORZENIA CZYTAMY Z IDENTYFIKATORA, NIE Z POŁOŻENIA W TABELI.
+  //
+  // Baza oddaje wiersze bez ORDER BY, więc ich kolejność to kolejność fizyczna — a edycja raportu
+  // (upsert) przenosi wiersz na koniec. Przez to numery nie zgadzały się z chwilą utworzenia, choć
+  // lista twierdziła, że idzie „wg kolejności utworzenia". Id raportu to „R" + czas utworzenia
+  // w systemie dwójkowo-trzydziestosześciowym (patrz uid()), więc z niego da się ją odtworzyć.
+  // Id w innym kształcie zostają na swoim miejscu (sort jest stabilny, klucz 0 = najstarsze).
+  const czasUtworzenia = (r)=>{
+    const m = /^R([0-9a-z]{8})[0-9a-z]{4}$/.exec(String(r.id||''));
+    return m ? parseInt(m[1], 36) : 0;
+  };
+  const widoczneRaporty = DB.reports.filter(czyRaportZawodnika)
+    .map((r,i)=>({r, i, c: czasUtworzenia(r)}))
+    .sort((a,b)=> a.c - b.c || a.i - b.i)
+    .map(x=>x.r);
   const ordinalOf = {};
   widoczneRaporty.forEach((r,i)=> ordinalOf[r.id] = i+1);
   // KOLEJNOŚĆ: OD NAJNOWIEJ ZAPISANEGO, BEZ MIESZANIA DATĄ MECZU.
