@@ -2594,6 +2594,9 @@ async function loadAll(){
   odbierzZalegleProtokoly();
   // Młodzieżowcy, którym dorobek przekroczył próg, wchodzą do Monitoringu sami. Poza wyścigiem
   // z limitem czasu i bez przerywania startu — to praca w tle, a nie warunek pokazania bazy.
+  wpiszSystemySezonu()
+    .then(ile=>{ if(ile) render(); })
+    .catch(e=>console.warn('Wpisywanie systemów gry klubów nie powiodło się:', e));
   dopiszMlodziezowcowDoMonitoringu()
     .then(ile=>{ if(ile) render(); })
     .catch(e=>console.warn('Dopisywanie młodzieżowców do Monitoringu nie powiodło się:', e));
@@ -13113,10 +13116,11 @@ function buildAutoPositionCandidates(league, formation, number){
   // tych, których ktoś wcześniej ręcznie wziął na warsztat, więc trzeba było wiedzieć o zawodniku,
   // zanim się go zobaczyło. Teraz wchodzą wszyscy, którzy zagrali choć minutę.
   const kwalifikujeSie = (p)=> p.status==='Do transferu' || p.status==='Na Testy' || !!p.monitored
+    || (p.wyroznienia||[]).length > 0
     || (LIGI_Z_MLODZIEZOWCAMI.has(ligaZawodnika(p)) && isYouthPlayer(p) && minutyZawodnika(p) > 0);
   const statusRank = {'Do transferu':0, 'Na Testy':1};
   // Młodzieżowiec bez statusu ląduje za prowadzonymi, ale przed resztą — i wyżej, im więcej zagrał.
-  const rangaZawodnika = (p)=> statusRank[p.status] !== undefined ? statusRank[p.status] : (p.monitored ? 2 : 3);
+  const rangaZawodnika = (p)=> statusRank[p.status] !== undefined ? statusRank[p.status] : ((p.monitored || (p.wyroznienia||[]).length) ? 2 : 3);
   // WSKAZANY NUMER WG NMG BIJE POZYCJĘ OGÓLNĄ.
   //
   // Pole „Pozycja" mówi tylko „Obrońca środkowy", więc ten sam zawodnik pasował i do lewego,
@@ -14240,6 +14244,53 @@ const SYSTEMY_PODPOWIEDZI = {
 // Składy meczowe niosą system w komplecie ze zdjęcia ustawienia, więc nie przepisujemy go tu drugi
 // raz — inaczej dwie listy zaczęłyby się rozjeżdżać i nie byłoby wiadomo, która jest prawdziwa.
 SKLADY_MECZOWE.forEach(s=>{ SYSTEMY_PODPOWIEDZI[s.klub] = s.system; });
+
+// SYSTEMY GRY EKSTRAKLASY NA SEZON 2026/27 — sprawdzone w sieci 12.10.2026.
+//
+// Źródło: starting11.com, które z oficjalnych składów liczy najczęstsze ustawienie każdego zespołu
+// (ostatnie 3–5 kolejek; Lech i Raków — dłuższa seria). To serwis zbiorczy, nie klub, i bywa
+// niespójny: przy Wiśle Kraków, Cracovii i Śląsku podpis ustawienia nie zgadza się z wypisanym
+// składem, więc tam zostawiam układ z podpisu, zgodny z wcześniejszym odczytem ze zrzutów. Trenerzy
+// zmieniali się we wrześniu (m.in. Zagłębie, Raków, Piast, Widzew, Radomiak), więc to stan na dziś,
+// nie na cały sezon.
+//
+// Kluby I i II ligi celowo tu nie ma: w żadnym dostępnym serwisie nie znalazłem dla nich
+// sprawdzalnego ustawienia i nie wpisuję zgadniętych.
+const SYSTEMY_SEZONU = {
+  'Górnik Zabrze': '1-4-3-3', 'Lech Poznań': '1-4-2-3-1', 'Legia Warszawa': '1-3-4-2-1',
+  'Pogoń Szczecin': '1-4-3-3', 'GKS Katowice': '1-3-4-3', 'Wisła Kraków': '1-4-5-1',
+  'Piast Gliwice': '1-4-4-2', 'Korona Kielce': '1-4-2-3-1', 'Zagłębie Lubin': '1-5-4-1',
+  'Jagiellonia Białystok': '1-4-2-3-1', 'Cracovia': '1-4-2-3-1', 'Wisła Płock': '1-3-4-3',
+  'Widzew Łódź': '1-4-1-4-1', 'Motor Lublin': '1-4-1-4-1', 'Wieczysta Kraków': '1-3-4-3',
+  'Radomiak Radom': '1-4-2-3-1', 'Śląsk Wrocław': '1-5-3-2', 'Raków Częstochowa': '1-3-4-3',
+};
+Object.assign(SYSTEMY_PODPOWIEDZI, SYSTEMY_SEZONU);
+const ZNACZNIK_SYSTEMOW = '__sezon_2026_27';
+
+// Wpisuje te systemy klubom Ekstraklasy RAZ. Nadpisuje wcześniejsze wpisy, bo o to chodziło —
+// stan sprzed tygodnia bywał już nieaktualny. Znacznik w tej samej mapie sprawia, że kolejne
+// uruchomienia niczego nie ruszają, więc późniejsza ręczna zmiana w profilu klubu zostaje.
+async function wpiszSystemySezonu(){
+  if(systemyKlubow[ZNACZNIK_SYSTEMOW]) return 0;
+  const kluby = DB.clubs.filter(c=>c.league === 'Ekstraklasa');
+  if(!kluby.length) return 0;
+  let ile = 0;
+  kluby.forEach(c=>{
+    const n = importNorm(c.name);
+    const klucz = Object.keys(SYSTEMY_SEZONU).find(k=>{
+      if(importNorm(k) === n) return true;
+      const a = rozbijNazweKlubu(k).rdzen, b = rozbijNazweKlubu(c.name).rdzen;
+      if(!a.length || !b.length) return false;
+      const wspolne = a.filter(x=>b.some(y=>tenSamCzlon(x,y)));
+      return wspolne.length >= a.length && wspolne.some(x=>x.length >= 4);
+    });
+    if(klucz && systemyKlubow[c.id] !== SYSTEMY_SEZONU[klucz]){ systemyKlubow[c.id] = SYSTEMY_SEZONU[klucz]; ile++; }
+  });
+  systemyKlubow[ZNACZNIK_SYSTEMOW] = '12.10.2026';
+  const ok = await saveSystemyKlubow();
+  if(ok !== false) console.info('Systemy gry Ekstraklasy 2026/27: wpisałem ' + ile + ' z ' + kluby.length + ' klubów.');
+  return ile;
+}
 
 function podpowiedzSystemu(klub){
   const n = importNorm(klub.name);
