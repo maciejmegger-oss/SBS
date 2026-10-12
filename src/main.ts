@@ -13610,11 +13610,14 @@ function analyzePlayer(p){
   else { devNote=`Doświadczony (${age} l.) — rozwój ograniczony, liczy się forma bieżąca.`; devBonus=0; }
   // Pewność / granica błędu wg ilości danych.
   const nData = (a?a.count:0) + reports.length;
-  let confidence, errorMargin, confPenalty;
-  if(nData===0){ confidence='brak danych'; errorMargin='bardzo wysoka'; confPenalty=0.55; }
-  else if(nData<3){ confidence='niska'; errorMargin='wysoka'; confPenalty=0.8; }
-  else if(nData<6){ confidence='umiarkowana'; errorMargin='średnia'; confPenalty=0.92; }
-  else { confidence='wysoka'; errorMargin='niska'; confPenalty=1; }
+  // Pewność tylko OPISUJE wynik (etykieta + ostrzeżenie „Mała próba"), nie zmienia go. Wcześniej
+  // wskaźnik mnożono tu przez 0,8 / 0,92, a liczby były wpisane na oko — przy jednym raporcie
+  // taka kara przesuwała zawodnika o całą kategorię (62 → 50, „TESTY" → „OBSERWACJA").
+  let confidence, errorMargin;
+  if(nData===0){ confidence='brak danych'; errorMargin='bardzo wysoka'; }
+  else if(nData<3){ confidence='niska'; errorMargin='wysoka'; }
+  else if(nData<6){ confidence='umiarkowana'; errorMargin='średnia'; }
+  else { confidence='wysoka'; errorMargin='niska'; }
   // Niezależny wskaźnik 0-100.
   let score = null;
   if(overall!=null){
@@ -13628,7 +13631,6 @@ function analyzePlayer(p){
     let s = (overall/6)*72;                                    // baza z ocen (0-72)
     if(trend!=null) s += Math.max(-8, Math.min(8, trend*8));   // trend +/-8
     s += devBonus;                                             // okno rozwoju (0-12)
-    s *= confPenalty;                                          // kara za niepewność danych
     score = Math.max(0, Math.min(100, Math.round(s)));
   }
   // Rekomendacja niezależna.
