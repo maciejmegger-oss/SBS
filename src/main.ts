@@ -36,7 +36,7 @@ import { KONTAKTY_AKADEMIE } from "./data/kontakty-akademii";
 // swój plik od nowa; w widoku są jedną listą, a pigułka „Akademie" zawęża ją do drugiej bazy.
 const KONTAKTY_EUROPA: any[] = [...KONTAKTY_EUROPA_SCOUTING, ...KONTAKTY_AKADEMIE];
 import { ADRESY_KLUBOW } from "./data/adresy-klubow";
-import { talentyEuropyU19 } from "./data/europa-u19";
+import { talentyEuropy } from "./data/europa-mlodziez";
 // Kod zakładek leży w public/zakladki/ — ten sam plik idzie na serwer (skąd zakładka pobiera go
 // przy każdym kliknięciu) i tutaj, jako kopia awaryjna na wypadek braku sieci.
 import LNP_PROTOKOL_KOD from "../public/zakladki/lnp-protokol.js?raw";
@@ -2608,7 +2608,7 @@ async function loadAll(){
   gdyBazaGotowa(wpiszSystemySezonu)
     .then(ile=>{ if(ile) render(); })
     .catch(e=>console.warn('Wpisywanie systemów gry klubów nie powiodło się:', e));
-  gdyBazaGotowa(wpiszEuropeU19)
+  gdyBazaGotowa(wpiszEuropeMlodziez)
     .then(ile=>{ if(ile) render(); })
     .catch(e=>console.warn('Wpisywanie kadr U-19 z Europy nie powiodło się:', e));
   gdyBazaGotowa(dopiszMlodziezowcowDoMonitoringu)
@@ -11992,9 +11992,9 @@ function kadraZPolaZrodla(pole){
 // Obiekty w pamięci zostają nietknięte — widok dalej ma kadrę pod swoją nazwą.
 function talentyDoZapisu(talenty){
   return (talenty || []).map(t=>{
-    const { reprezentacja, krajKlubu, pozycjeNmg, pozycja, ...reszta } = t;
+    const { reprezentacja, krajKlubu, pozycjeNmg, pozycja, tmLink, birthDate, wartosc, ...reszta } = t;
     const { europa, ...bezEuropy } = reszta;
-    const wiersz = { ...bezEuropy, sourceImage: pozycjaDoPolaTalentu({ pozycjeNmg, pozycja }) };
+    const wiersz = { ...bezEuropy, sourceImage: pozycjaDoPolaTalentu({ pozycjeNmg, pozycja, tmLink }) };
     // EUROPA jedzie w tym samym polu co kadra (tabela nie ma na nią kolumny): „europa" albo
     // „europa · Kraj". Powołanie do polskiej kadry ma pierwszeństwo — to jedno pole na jedną rzecz.
     if(reprezentacja) return { ...wiersz, confidence: kadraDoPolaZrodla({ reprezentacja, krajKlubu }) };
@@ -12009,12 +12009,13 @@ function talentyDoZapisu(talenty){
 // dana zapisuje się razem z talentem albo wcale.
 function pozycjaDoPolaTalentu(t){
   const nmg = ((t && t.pozycjeNmg) || []).map(Number).filter(n=> n >= 1 && n <= 11);
-  if(nmg.length) return 'nmg=' + nmg.join(',');
-  if(t && t.pozycja) return 'poz=' + t.pozycja;
-  return '';
+  const tm = t && t.tmLink ? ';tm=' + String(t.tmLink).replace('https://www.transfermarkt.pl/', '') : '';
+  if(nmg.length) return 'nmg=' + nmg.join(',') + tm;
+  if(t && t.pozycja) return 'poz=' + t.pozycja + tm;
+  return tm;
 }
 function pozycjaZPolaTalentu(pole){
-  const s = String(pole || '').trim();
+  const s = String(pole || '').trim().split(';tm=')[0].trim();
   const n = s.match(/^nmg=(\d{1,2}(?:,\d{1,2})*)$/);
   if(n) return { pozycjeNmg: n[1].split(',').map(Number).filter(x=> x >= 1 && x <= 11), pozycja: '' };
   const p = s.match(/^poz=(.+)$/);
@@ -12026,6 +12027,11 @@ function nalozPozycjeZPolaTalentu(talenty){
     if(!t || (t.pozycjeNmg && t.pozycjeNmg.length) || t.pozycja) return;
     const p = pozycjaZPolaTalentu(t.sourceImage);
     if(p){ t.pozycjeNmg = p.pozycjeNmg; t.pozycja = p.pozycja; }
+  });
+  // Link do Transfermarktu jedzie za pozycją, po „;tm=" (tabela talentów nie ma na niego kolumny).
+  (talenty || []).forEach(t=>{
+    const m = t && !t.tmLink ? String(t.sourceImage || '').match(/;tm=(.+)$/) : null;
+    if(m) t.tmLink = 'https://www.transfermarkt.pl/' + m[1].trim();
   });
 }
 
@@ -12367,7 +12373,8 @@ function viewTalent(){
       <td style="width:26px;"><input type="checkbox" class="talent-check" data-id="${t.id}" aria-label="Zaznacz: ${esc(t.firstName)} ${esc(t.lastName)}"></td>
       <td><div class="zaw-cell">
         <span class="zaw-nazwa"><strong>${esc(t.lastName)}</strong> ${esc(t.firstName)}${
-          t.reprezentacja ? ` <span class="kadra-znacznik" title="Powołany do reprezentacji ${esc(t.reprezentacja)}">${esc(t.reprezentacja)}</span>` : ''}</span>
+          t.reprezentacja ? ` <span class="kadra-znacznik" title="Powołany do reprezentacji ${esc(t.reprezentacja)}">${esc(t.reprezentacja)}</span>` : ''}${
+          t.tmLink ? ` <a href="${esc(t.tmLink)}" target="_blank" rel="noopener" class="meta" title="Profil na Transfermarkt">TM ↗</a>` : ''}</span>
         <span class="zaw-meta">${isYouthPlayer(jakZawodnik) ? youthBadge(jakZawodnik) : ''}${odznakaMlodszego(jakZawodnik)}</span>
       </div></td>
       <td><span class="talent-rocznik-wrap">
@@ -14391,26 +14398,36 @@ const SYSTEMY_SEZONU = {
   'ŁKS Łódź': '1-3-5-2',            // 6/6
 };
 Object.assign(SYSTEMY_PODPOWIEDZI, SYSTEMY_SEZONU);
-// REPREZENTANCI U-19 ZAGRANICY (zakładka Talent → Europa). Wpisuje się RAZ, przy pierwszym uruchomieniu po
-// wdrożeniu; znacznik leży w mapie systemów klubów (to jedyny zapis „klucz → tekst", który już mamy),
-// więc usunięcie zawodnika z listy nie przywraca go przy następnym starcie. Wpisu, który już jest
-// na liście (to samo imię i nazwisko), nie dublujemy.
-const ZNACZNIK_EUROPA_U19 = '__europa_u19_2026_10';
-async function wpiszEuropeU19(){
-  if(systemyKlubow[ZNACZNIK_EUROPA_U19]) return 0;
+// MŁODZIEŻ Z EUROPY (zakładka Talent → Europa): kadry U-19, U-18 i U-17 dwunastu krajów z Transfermarktu.
+// Wpisuje się RAZ, przy pierwszym uruchomieniu po wdrożeniu; znacznik leży w mapie systemów klubów
+// (jedyny zapis „klucz → tekst", jaki mamy), więc usunięty zawodnik nie wraca. Najpierw znika
+// wcześniejsza lista z UEFA (bez klubów, tylko U-19), bo ta jest od niej pełniejsza i dokładniejsza.
+// Zawodnik, który już jest na liście (to samo imię i nazwisko), dostaje klub, datę i pozycję zamiast drugiego wpisu.
+const ZNACZNIK_EUROPA = '__europa_tm_2026_10';
+async function wpiszEuropeMlodziez(){
+  if(systemyKlubow[ZNACZNIK_EUROPA]) return 0;
   if(nieudaneOdczyty.length) return 0;
+  const poprzednie = (DB.talents||[]).filter(t=> t.europa && !t.club && /U-19$/.test(String(t.krajKlubu||'')));
+  if(poprzednie.length) DB.talents = DB.talents.filter(t=> !poprzednie.includes(t));
   let dodano = 0;
-  talentyEuropyU19().forEach(n=>{
-    if((DB.talents||[]).some(t=> tenSamTalent(t, n))) return;
+  talentyEuropy().forEach(n=>{
+    const jest = (DB.talents||[]).find(t=> tenSamTalent(t, n));
+    if(jest){
+      jest.europa = true;
+      Object.assign(jest, { club: jest.club || n.club, krajKlubu: n.krajKlubu, tmLink: n.tmLink,
+        pozycja: jest.pozycja || n.pozycja, birthYear: jest.birthYear || n.birthYear });
+      return;
+    }
     DB.talents.push(podpiszKontem({
       id: uid('T'), firstName: n.firstName, lastName: n.lastName, birthYear: n.birthYear,
-      club: '', confidence: 'europa', sourceImage: '', dateAdded: dzisiaj(),
-      pozycja: n.pozycja, krajKlubu: n.krajKlubu, europa: true,
+      club: n.club, confidence: 'europa', sourceImage: '', dateAdded: dzisiaj(),
+      pozycja: n.pozycja, krajKlubu: n.krajKlubu, tmLink: n.tmLink, europa: true,
     }));
     dodano++;
   });
-  if(dodano){ const ok = await saveTalents(); if(!ok) return 0; }
-  systemyKlubow[ZNACZNIK_EUROPA_U19] = dzisiaj();
+  const ok = await saveTalents();
+  if(!ok) return 0;
+  systemyKlubow[ZNACZNIK_EUROPA] = dzisiaj();
   await saveSystemyKlubow();
   return dodano;
 }
