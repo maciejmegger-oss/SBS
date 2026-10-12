@@ -15199,7 +15199,7 @@ function panelSkanera(){
   }
   const {kluby, wiersze, zawodnikow} = skanerKategorii(skanerLiga, skanerMinMinut);
   const opcje = [...SKANER_POZIOMY_SENIORSKIE, ...juniorskie].map(l=>`<option value="${esc(l)}" ${l===skanerLiga?'selected':''}>${esc(l)}</option>`).join('');
-  const progi = [0, 180, 360, 540].map(m=>
+  const progi = [0, 90, 180, 360, 540].map(m=>
     `<option value="${m}" ${m===skanerMinMinut?'selected':''}>${m===0?'bez progu':'od '+m+' minut'}</option>`).join('');
 
   const trs = wiersze.slice(0, 40).map((w,i)=>{
@@ -15233,7 +15233,7 @@ function panelSkanera(){
     <div class="toolbar" style="margin-bottom:10px;gap:8px;">
       <select id="skaner-liga" style="max-width:230px;">${opcje}</select>
       <select id="skaner-minuty" style="max-width:160px;">${progi}</select>
-      <span class="note">${kluby.length} ${kluby.length===1?'klub':'klubów'} &middot; ${zawodnikow} w kartotece &middot; ${wiersze.length} ze strzelonym golem</span>
+      <span class="note">${kluby.length} ${kluby.length===1?'klub':'klubów'} &middot; ${zawodnikow} w kartotece &middot; ${wiersze.length} ${SKANER_POZIOMY_SENIORSKIE.includes(skanerLiga) ? 'młodzieżowców z minutami' : 'ze strzelonym golem'}</span>
     </div>
     ${!kluby.length
       ? `<div class="empty">W tej grupie nie ma jeszcze żadnego klubu. Załóż je w zakładce Kluby, a potem wczytaj protokoły z ŁNP.</div>`
