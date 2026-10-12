@@ -10004,9 +10004,10 @@ const LIGI_Z_MLODZIEZOWCAMI = new Set([
 
 // PRÓG, OD KTÓREGO MŁODZIEŻOWIEC WCHODZI DO MONITORINGU SAM.
 //
-// 270 minut to trzy pełne mecze. Jeden występ bywa przypadkiem — kontuzje, kartki, obowiązek
-// regulaminowy. Trzy mecze to już decyzja trenera powtórzona, czyli coś, czego nie wolno przegapić.
-const MINUTY_DO_MONITORINGU = 270;
+// 90 minut to jeden pełny mecz — próg obniżony z 270 na wyraźne życzenie: młodzieżowiec z III i IV
+// ligi ma trafiać do Monitoringu od razu po pierwszym pełnym meczu, a odsiać można go potem ręcznie.
+const MINUTY_DO_MONITORINGU = 90;
+const ligaZMlodziezowcami = (liga)=> LIGI_Z_MLODZIEZOWCAMI.has(liga) || topLevelOf(liga) === 'IV liga';
 
 const minutyZawodnika = (p)=> Number(p && p.minutes) || 0;
 
@@ -10018,7 +10019,7 @@ const minutyZawodnika = (p)=> Number(p && p.minutes) || 0;
 async function dopiszMlodziezowcowDoMonitoringu(){
   const nowi = DB.players.filter(p=>
     !p.monitored && !p.watchlistRemoved
-    && LIGI_Z_MLODZIEZOWCAMI.has(ligaZawodnika(p))
+    && ligaZMlodziezowcami(ligaZawodnika(p))
     && isYouthPlayer(p)
     && minutyZawodnika(p) >= MINUTY_DO_MONITORINGU);
   if(!nowi.length) return 0;
@@ -15150,8 +15151,11 @@ const MONITORING_STATUSES = ['Do Obserwacji','Na Testy','Do transferu','Z polece
 const SKANER_PELNA_WAGA_MINUT = 450;   // pięć pełnych meczów
 const SKANER_MALA_PROBA = 180;          // poniżej dwóch meczów każdy wskaźnik to przypadek
 
+// „III liga" i „IV liga" w skanerze to cały poziom (wszystkie grupy), a lista to MŁODZIEŻOWCY wg minut.
+const SKANER_POZIOMY_SENIORSKIE = ['III liga', 'IV liga'];
 function skanerKategorii(liga, minMinut){
-  const kluby = DB.clubs.filter(c=>c.league === liga);
+  const seniorski = SKANER_POZIOMY_SENIORSKIE.includes(liga);
+  const kluby = DB.clubs.filter(c=> seniorski ? topLevelOf(c.league) === liga : c.league === liga);
   if(!kluby.length) return {kluby: [], wiersze: [], zawodnikow: 0};
   const idyKlubow = new Set(kluby.map(c=>c.id));
   const wszyscy = DB.players.filter(p=>idyKlubow.has(p.clubId));
@@ -15176,9 +15180,12 @@ function skanerKategorii(liga, minMinut){
     return {p, mecze, minuty, gole, na90, udzial, pewnosc, wskaznik,
       malaProba: minuty > 0 && minuty < SKANER_MALA_PROBA,
       brakRocznika: !rocznikZawodnika(p)};
-  }).filter(w=> w.gole > 0 && w.minuty >= minMinut);
+  }).filter(w=> seniorski ? (isYouthPlayer(w.p) && w.minuty >= Math.max(minMinut, 1))
+                          : (w.gole > 0 && w.minuty >= minMinut));
 
-  wiersze.sort((a,b)=> b.wskaznik - a.wskaznik
+  if(seniorski) wiersze.sort((a,b)=> b.minuty - a.minuty || b.gole - a.gole
+    || (a.p.lastName||'').localeCompare(b.p.lastName||'','pl'));
+  else wiersze.sort((a,b)=> b.wskaznik - a.wskaznik
     || b.gole - a.gole
     || (a.p.lastName||'').localeCompare(b.p.lastName||'','pl'));
   return {kluby, wiersze, zawodnikow: wszyscy.length};
@@ -15187,11 +15194,11 @@ function skanerKategorii(liga, minMinut){
 function panelSkanera(){
   const juniorskie = ((DB.settings as any).leagues||[]).filter((l:any)=>topLevelOf(l)==='Kategorie juniorskie');
   if(!juniorskie.length) return '';
-  if(!skanerLiga || !juniorskie.includes(skanerLiga)){
+  if(!skanerLiga || (!juniorskie.includes(skanerLiga) && !SKANER_POZIOMY_SENIORSKIE.includes(skanerLiga))){
     skanerLiga = juniorskie.find(l=>/^CLJ U15/.test(l)) || juniorskie[0];
   }
   const {kluby, wiersze, zawodnikow} = skanerKategorii(skanerLiga, skanerMinMinut);
-  const opcje = juniorskie.map(l=>`<option value="${esc(l)}" ${l===skanerLiga?'selected':''}>${esc(l)}</option>`).join('');
+  const opcje = [...SKANER_POZIOMY_SENIORSKIE, ...juniorskie].map(l=>`<option value="${esc(l)}" ${l===skanerLiga?'selected':''}>${esc(l)}</option>`).join('');
   const progi = [0, 180, 360, 540].map(m=>
     `<option value="${m}" ${m===skanerMinMinut?'selected':''}>${m===0?'bez progu':'od '+m+' minut'}</option>`).join('');
 
