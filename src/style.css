@@ -1472,3 +1472,8 @@ body.bez-kasowania #delete-selected-agencies-btn{
 .rynki-krok{display:flex;gap:12px;align-items:flex-start;padding:7px 0;font-size:13px;}
 .rynki-krok-kiedy{flex:0 0 84px;font-size:12px;color:var(--ink-faint);font-variant-numeric:tabular-nums;}
 .rynki-krok-kropka{flex:0 0 9px;width:9px;height:9px;border-radius:50%;background:var(--gold);margin-top:4px;}
+.rynki-tm-tabela{font-size:12.5px;font-variant-numeric:tabular-nums;}
+.rynki-tm-tabela th{white-space:nowrap;}
+.rynki-tm-poboczne td{color:var(--ink-faint);}
+.rynki-kandydaci{border-color:var(--gold);}
+.rynki-kandydat{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid var(--border);border-radius:8px;}

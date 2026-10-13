@@ -173,7 +173,12 @@ export type ZawodnikMonitorowany = {
   udzialPoprz: number | null;
   obserwacje: ObserwacjaRynku[];
   notatka: string;
+  /** Numer zawodnika na Transfermarkcie — gdy profil założono z kadry młodzieżowej. */
+  tmId?: string;
+  tmLink?: string;
 };
+
+export const STATUSY_RYNKOW: ZawodnikMonitorowany["status"][] = ["Do sprawdzenia", "Obserwacja", "Wideo", "Raport", "Rekomendacja", "Odrzucony"];
 
 export const MONITORING_RYNKI: ZawodnikMonitorowany[] = [
   {
@@ -223,6 +228,99 @@ export const MONITORING_RYNKI: ZawodnikMonitorowany[] = [
   },
 ];
 
+// ---------- EDYCJE Z SYSTEMU ----------
+//
+// Profile poprawione w aplikacji („Edytuj profil") i zawodnicy dopisani z kadr trzymamy w jednym
+// wierszu bazy (sbs_kv, klucz scouting:rynki_zawodnicy): { id: pełny profil }. Wpis o tym samym id
+// co zawodnik z MONITORING_RYNKI zastępuje go w całości — w bazie leży to, co skaut zatwierdził,
+// a lista w kodzie jest tylko punktem startu.
+
+let EDYCJE: Record<string, ZawodnikMonitorowany> = {};
+export function ustawEdycjeRynkow(e: Record<string, ZawodnikMonitorowany> | null | undefined): void {
+  EDYCJE = e && typeof e === "object" ? e : {};
+}
+export const edycjeRynkow = (): Record<string, ZawodnikMonitorowany> => EDYCJE;
+export function zapiszProfilRynku(m: ZawodnikMonitorowany): void {
+  EDYCJE = { ...EDYCJE, [m.id]: m };
+}
+
+/** Monitorowani po uwzględnieniu edycji: profile z kodu (poprawione, jeśli są edycje) + dopisani w systemie. */
+export function monitorowani(): ZawodnikMonitorowany[] {
+  const zKodu = MONITORING_RYNKI.map((m) => EDYCJE[m.id] || m);
+  const dopisani = Object.values(EDYCJE).filter((m) => !MONITORING_RYNKI.some((x) => x.id === m.id));
+  return zKodu.concat(dopisani);
+}
+
+/** Pusty profil do założenia z zawodnika z kadry (dane z Transfermarktu jako punkt startu). */
+export function profilZKadry(z: { imie: string; nazwisko: string; dataUr: string; liga: LigaRynku; klub: string;
+  pozycja: string; kadra: string; tmLink: string; minuty: number | null; wystepy: number | null }, dzis: string): ZawodnikMonitorowany {
+  const tmId = String(z.tmLink || "").split("/spieler/")[1] || "";
+  const kraj = String(z.kadra || "").split(" U-")[0].trim();
+  return {
+    id: "K" + (tmId || Date.now()), imie: z.imie, nazwisko: z.nazwisko, dataUr: z.dataUr, ligaId: z.liga.id, klub: z.klub,
+    pozycja: z.pozycja, obywatelstwo: kraj ? [kraj] : [], kontraktDo: "", wypozyczenie: null, status: "Do sprawdzenia",
+    wzrost: null, menedzer: "", wartoscTM: "", wKlubieOd: "", sciezka: [], udzialPoprz: null,
+    obserwacje: z.minuty != null ? [{ data: dzis, rodzaj: "Dane ligowe", minuty: z.minuty, meczeMozliwe: null,
+      wystepy: z.wystepy, odPierwszej: null, szacunek: false, notatka: "Z Transfermarktu (kadra " + z.kadra + ")." }] : [],
+    notatka: "", tmId, tmLink: z.tmLink,
+  };
+}
+
+// ---------- STATYSTYKI Z TRANSFERMARKTU ----------
+//
+// Zgłoszenie (13.10.2026): „jak są na Transfermarkt, to niech system już wprowadza ich dane
+// statystyczne — mecze, minuty, gole, asysty". Liczby przychodzą z /api/tm-wystepy (sumy na sezon
+// i rozgrywki, razem z liczbą meczów DRUŻYNY), a tutaj trzymamy je w pamięci podręcznej
+// (sbs_kv: scouting:rynki_tm) — klucz to numer zawodnika na Transfermarkcie.
+
+export type WierszTM = {
+  sezonId: number; sezon: string; rozgrywkiId: string; rozgrywki: string; typRozgrywek: number | null;
+  reprezentacja: boolean; klubId: string; klub: string; meczeDruzyny: number; wKadrze: number; wystepy: number;
+  odPierwszej: number; zLawki: number; minuty: number; minutyMozliwe: number; gole: number; asysty: number;
+  samoboje: number; zolte: number; czerwone: number; ostatniMecz: string;
+};
+export type ProfilTM = { nazwa: string; dataUr: string; wzrost: number | null; noga: string; kontraktDo: string;
+  menedzer: string; wartosc: string; wypozyczony: boolean };
+export type StatystykiTM = { pobrano: string; profil: ProfilTM | null; sezony: { sezonId: number; sezon: string; rozgrywki: WierszTM[] }[] };
+
+let STATY_TM: Record<string, StatystykiTM> = {};
+export function ustawStatystykiTM(e: Record<string, StatystykiTM> | null | undefined): void {
+  STATY_TM = e && typeof e === "object" ? e : {};
+}
+export const statystykiTM = (): Record<string, StatystykiTM> => STATY_TM;
+export const statystykiZawodnikaTM = (tmId: string): StatystykiTM | null => (tmId && STATY_TM[tmId]) || null;
+export function zapiszStatystykiTM(tmId: string, d: StatystykiTM): void {
+  STATY_TM = { ...STATY_TM, [tmId]: d };
+}
+export const tmIdZLinku = (link: string): string => (String(link || "").match(/\/spieler\/(\d+)/) || [])[1] || "";
+
+/** Czy statystyki trzeba odświeżyć: nie ma ich albo są starsze niż `godzin`. */
+export function staryStanTM(tmId: string, teraz: Date, godzin = 24): boolean {
+  const d = statystykiZawodnikaTM(tmId);
+  if (!d || !d.pobrano) return true;
+  return teraz.getTime() - new Date(d.pobrano).getTime() > godzin * 3600000;
+}
+
+export type SezonLigowy = { sezon: string; sezonId: number; rozgrywki: string; kluby: string; meczeDruzyny: number;
+  wystepy: number; odPierwszej: number; minuty: number; minutyMozliwe: number; gole: number; asysty: number;
+  zolte: number; czerwone: number; udzial: number | null };
+
+/** Sumy LIGOWE (bez pucharów, sparingów i reprezentacji) dla każdego sezonu, od najnowszego. */
+export function sezonyLigowe(d: StatystykiTM | null): SezonLigowy[] {
+  if (!d) return [];
+  return d.sezony.map((s) => {
+    const w = s.rozgrywki.filter((r) => !r.reprezentacja && (r.typRozgrywek === 1 || r.typRozgrywek === 2));
+    if (!w.length) return null;
+    const suma = (k: keyof WierszTM) => w.reduce((a, r) => a + (Number(r[k]) || 0), 0);
+    const minuty = suma("minuty"), mozliwe = suma("minutyMozliwe");
+    return { sezon: s.sezon, sezonId: s.sezonId, rozgrywki: [...new Set(w.map((r) => r.rozgrywki))].join(", "),
+      kluby: [...new Set(w.map((r) => r.klub).filter(Boolean))].join(", "), meczeDruzyny: suma("meczeDruzyny"),
+      wystepy: suma("wystepy"), odPierwszej: suma("odPierwszej"), minuty, minutyMozliwe: mozliwe,
+      gole: suma("gole"), asysty: suma("asysty"), zolte: suma("zolte"), czerwone: suma("czerwone"),
+      udzial: mozliwe ? Math.min(1, minuty / mozliwe) : null } as SezonLigowy;
+  }).filter((x): x is SezonLigowy => !!x).sort((a, b) => b.sezonId - a.sezonId);
+}
+
 // ---------- JEDNA LISTA DLA ZAKŁADKI ----------
 
 export type ZawodnikRynku = {
@@ -247,39 +345,68 @@ export type ZawodnikRynku = {
   tmLink: string;
   uwagaTransferowa: string;
   monitorowany: ZawodnikMonitorowany | null;
+  /** Numer na Transfermarkcie — klucz do statystyk pobieranych automatycznie. */
+  tmId: string;
+  odPierwszej: number | null;
+  gole: number | null;
+  asysty: number | null;
+  /** Skąd liczby meczów i minut: obserwacja skauta, Transfermarkt (pełne, z meczami drużyny) albo plik kadr. */
+  zrodloLiczb: "obserwacja" | "transfermarkt" | "kadry" | "";
+  staty: StatystykiTM | null;
 };
 
 export function zawodnicyRynkow(dzis: Date): ZawodnikRynku[] {
   const wynik: ZawodnikRynku[] = [];
-  for (const m of MONITORING_RYNKI) {
+  const lista = monitorowani();
+  const wMonitoringu = new Set(lista.map((m) => m.tmId).filter(Boolean));
+  for (const m of lista) {
     const liga = ligaRynku(m.ligaId);
     if (!liga) continue;
     const wiek = wiekNaDzien(m.dataUr, dzis);
     const ost = m.obserwacje[m.obserwacje.length - 1] || null;
-    const udzial = ost ? udzialMinut(ost.minuty, ost.meczeMozliwe) : null;
+    const tmId = m.tmId || tmIdZLinku(m.tmLink || "");
+    const staty = statystykiZawodnikaTM(tmId);
+    const [biez, poprz] = sezonyLigowe(staty);
+    const udzialObs = ost ? udzialMinut(ost.minuty, ost.meczeMozliwe) : null;
+    // Transfermarkt ma pierwszeństwo, gdy jest: liczy mecze drużyny co do jednego, a obserwacja
+    // skauta bywa szacunkiem z procentu na profilu.
+    const zTM = !!(biez && biez.udzial != null);
+    const udzial = zTM ? biez.udzial : udzialObs;
+    const udzialPoprz = m.udzialPoprz != null ? m.udzialPoprz : (poprz ? poprz.udzial : null);
     const ue = m.obywatelstwo.some(czyUeEog);
     wynik.push({
       klucz: "m:" + m.id, zrodlo: "monitoring", imie: m.imie, nazwisko: m.nazwisko, dataUr: m.dataUr,
       wiek, przedzial: przedzialWieku(wiek), liga, klub: m.klub, pozycja: m.pozycja, ueEog: ue,
-      udzial, minuty: ost ? ost.minuty : null, wystepy: ost ? ost.wystepy : null,
-      tempo: tempoRozwoju(m.udzialPoprz, udzial), status: m.status, kadra: "", tmLink: "",
-      uwagaTransferowa: uwagaTransferowa(wiek, ue), monitorowany: m,
+      udzial, minuty: zTM ? biez.minuty : (ost ? ost.minuty : null), wystepy: zTM ? biez.wystepy : (ost ? ost.wystepy : null),
+      tempo: tempoRozwoju(udzialPoprz, udzial), status: m.status, kadra: "", tmLink: m.tmLink || "",
+      uwagaTransferowa: uwagaTransferowa(wiek, ue), monitorowany: m, tmId,
+      odPierwszej: zTM ? biez.odPierwszej : (ost ? ost.odPierwszej : null),
+      gole: zTM ? biez.gole : null, asysty: zTM ? biez.asysty : null,
+      zrodloLiczb: zTM ? "transfermarkt" : (ost ? "obserwacja" : ""), staty,
     });
   }
   for (const t of talentyEuropy()) {
     const id = String(t.tmLink || "").split("/spieler/")[1] || "";
+    if (id && wMonitoringu.has(id)) continue;
     const s = id ? statEuropy(id) : null;
     const liga = s ? ligaPoNazwieTM(s.liga) : undefined;
     if (!liga) continue;
     const kraj = String(t.krajKlubu || "").split(" U-")[0].trim();
     const wiek = wiekNaDzien(t.birthDate, dzis);
     const ue = kraj ? czyUeEog(kraj) : null;
+    const staty = statystykiZawodnikaTM(id);
+    const [biez, poprz] = sezonyLigowe(staty);
+    const zTM = !!biez;
     wynik.push({
       klucz: "k:" + id, zrodlo: "kadra", imie: t.firstName, nazwisko: t.lastName, dataUr: t.birthDate,
       wiek, przedzial: przedzialWieku(wiek), liga, klub: t.club, pozycja: t.pozycja, ueEog: ue,
-      udzial: null, minuty: s ? s.min : null, wystepy: s ? s.wyst : null, tempo: null,
+      udzial: zTM ? biez.udzial : null, minuty: zTM ? biez.minuty : (s ? s.min : null),
+      wystepy: zTM ? biez.wystepy : (s ? s.wyst : null),
+      tempo: zTM ? tempoRozwoju(poprz ? poprz.udzial : null, biez.udzial) : null,
       status: "Kadra", kadra: t.krajKlubu, tmLink: t.tmLink, uwagaTransferowa: uwagaTransferowa(wiek, ue),
-      monitorowany: null,
+      monitorowany: null, tmId: id, odPierwszej: zTM ? biez.odPierwszej : null,
+      gole: zTM ? biez.gole : (s ? s.gole : null), asysty: zTM ? biez.asysty : (s ? s.asysty : null),
+      zrodloLiczb: zTM ? "transfermarkt" : "kadry", staty,
     });
   }
   return wynik;

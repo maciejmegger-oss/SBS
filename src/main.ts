@@ -41,7 +41,9 @@ import { talentyCies } from "./data/europa-cies";
 import { talentyPolacyZaGranica } from "./data/polacy-za-granica";
 import { statEuropy } from "./data/europa-statystyki";
 import { LIGI_RYNKOW, REGIONY, krajeRegionu, ligiKraju, ligaRynku, priorytetKraju, czyUeEog, zawodnicyRynkow,
-  sygnalyRynkow, udzialMinut, OPIS_PRZEDZIALU, PROG_SKOKU, PROG_WZROSTU } from "./data/rynki";
+  sygnalyRynkow, udzialMinut, OPIS_PRZEDZIALU, PROG_SKOKU, PROG_WZROSTU, STATUSY_RYNKOW, ustawEdycjeRynkow,
+  edycjeRynkow, zapiszProfilRynku, profilZKadry, sezonyLigowe, ustawStatystykiTM, statystykiTM, statystykiZawodnikaTM,
+  zapiszStatystykiTM, staryStanTM, tmIdZLinku } from "./data/rynki";
 // Kod zakładek leży w public/zakladki/ — ten sam plik idzie na serwer (skąd zakładka pobiera go
 // przy każdym kliknięciu) i tutaj, jako kopia awaryjna na wypadek braku sieci.
 import LNP_PROTOKOL_KOD from "../public/zakladki/lnp-protokol.js?raw";
@@ -2085,7 +2087,7 @@ async function loadAllInner(){
   };
 
   const [p, c, o, rp, tl, ct, mt, ag, agt, pmaRow, radarRow, systemyRow, tabeleRow, kadryRow, profileRow, s,
-    seedFlag, enrichFlag, enrichAviaFlag, enrichGornikFlag, enrichAviaV2Flag, recoMigrationFlag, statusMigrationFlag] = await Promise.all([
+    seedFlag, enrichFlag, enrichAviaFlag, enrichGornikFlag, enrichAviaV2Flag, recoMigrationFlag, statusMigrationFlag, rynkiRow, rynkiTmRow] = await Promise.all([
     czytaj('scouting:players'),
     czytaj('scouting:clubs'),
     czytaj('scouting:observations'),
@@ -2123,6 +2125,10 @@ async function loadAllInner(){
     czytaj('scouting:enrich_avia_olimpia_v2'),
     czytaj('scouting:reco_migration_v1'),
     czytaj('scouting:status_migration_v1'),
+    // Profile z zakładki Rynki poprawione w systemie — jeden wiersz JSON { id: profil }, bez migracji bazy.
+    czytaj('scouting:rynki_zawodnicy'),
+    // Statystyki z Transfermarktu dla zawodników z Rynków (pamięć podręczna, odświeżana co dobę).
+    czytaj('scouting:rynki_tm'),
   ]);
   try{ DB.players = p ? JSON.parse(p.value) : []; }catch(e){ DB.players = []; }
   try{ DB.clubs = c ? JSON.parse(c.value) : []; }catch(e){ DB.clubs = []; }
@@ -2139,6 +2145,8 @@ async function loadAllInner(){
   try{ tabeleLig = tabeleRow ? JSON.parse(tabeleRow.value) : {}; }catch(e){ tabeleLig = {}; }
   try{ talentyKadry = kadryRow ? JSON.parse(kadryRow.value) : {}; }catch(e){ talentyKadry = {}; }
   try{ profileKompetencji = profileRow ? JSON.parse(profileRow.value) : []; }catch(e){ profileKompetencji = []; }
+  try{ ustawEdycjeRynkow(rynkiRow ? JSON.parse(rynkiRow.value) : {}); }catch(e){ ustawEdycjeRynkow({}); }
+  try{ ustawStatystykiTM(rynkiTmRow ? JSON.parse(rynkiTmRow.value) : {}); }catch(e){ ustawStatystykiTM({}); }
   // Najpierw kadra z wiersza talentu (źródło główne), potem z zapasowej mapy — mapa uzupełnia
   // wyłącznie talenty, które po pierwszym kroku nadal są bez kadry.
   nalozKadreZPolaZrodla(DB.talents);
@@ -2944,6 +2952,8 @@ async function saveRadarPrzejrzane(){ return robustStorageSet('scouting:radar_pr
 async function saveSystemyKlubow(){ return robustStorageSet('scouting:systemy_klubow', JSON.stringify(systemyKlubow)); }
 async function saveProfileKompetencji(){ return robustStorageSet('scouting:profile_kompetencji', JSON.stringify(profileKompetencji)); }
 async function saveTabeleLig(){ return robustStorageSet('scouting:tabele_lig', JSON.stringify(tabeleLig)); }
+async function saveRynki(){ return robustStorageSet('scouting:rynki_zawodnicy', JSON.stringify(edycjeRynkow())); }
+async function saveRynkiTM(){ return robustStorageSet('scouting:rynki_tm', JSON.stringify(statystykiTM())); }
 
 // POBRANIE TABEL LIGOWYCH Z 90MINUT.
 //
@@ -4289,7 +4299,7 @@ const NAV_ITEMS = [
 const SAVE_FN_BY_KEY = {
   'scouting:players': ()=>savePlayers(), 'scouting:clubs': ()=>saveClubs(), 'scouting:observations': ()=>saveObservations(),
   'scouting:reports': ()=>saveReports(), 'scouting:talents': ()=>saveTalents(), 'scouting:contacts': ()=>saveContacts(),
-  'scouting:settings': ()=>saveSettings(), 'scouting:position_map_assignments': ()=>savePositionMapAssignments(), 'scouting:radar_przejrzane': ()=>saveRadarPrzejrzane(), 'scouting:systemy_klubow': ()=>saveSystemyKlubow(), 'scouting:tabele_lig': ()=>saveTabeleLig(),
+  'scouting:settings': ()=>saveSettings(), 'scouting:position_map_assignments': ()=>savePositionMapAssignments(), 'scouting:radar_przejrzane': ()=>saveRadarPrzejrzane(), 'scouting:systemy_klubow': ()=>saveSystemyKlubow(), 'scouting:tabele_lig': ()=>saveTabeleLig(), 'scouting:rynki_zawodnicy': ()=>saveRynki(), 'scouting:rynki_tm': ()=>saveRynkiTM(),
   'scouting:profile_kompetencji': ()=>saveProfileKompetencji(),
   'scouting:agencies': ()=>saveAgencies(), 'scouting:agents': ()=>saveAgents(),
   'scouting:agency_logos': ()=>saveAgencyLogos(),
@@ -15839,16 +15849,17 @@ function viewRynkiLiga(lista){
   <h2 class="view-title">${esc(l.nazwa)}</h2>
   <p class="view-sub">${nationalityFlag(l.kraj)} ${esc(l.kraj)} · ${l.poziom}. poziom · sezon ${esc(l.sezon)} · priorytet ${l.priorytet}${l.uwagi ? ' · ' + esc(l.uwagi) : ''}</p>
   ${kluby.length ? `<div class="rynki-kluby"><span class="rynki-info-lbl">Kluby z zawodnikami w bazie</span>${kluby.map(k=> `<span class="rynki-tag rynki-tag-szary">${esc(k.k)} · ${k.n}</span>`).join('')}</div>` : ''}
-  <div class="filters">${pig('', 'Wszystkie')}${pig('A', 'A 16–17')}${pig('B', 'B 18–19')}${pig('C', 'C 20–21')}</div>
+  <div class="filters" style="align-items:center;">${pig('', 'Wszystkie')}${pig('A', 'A 16–17')}${pig('B', 'B 18–19')}${pig('C', 'C 20–21')}
+    <button class="secondary" data-action="rynki-tm-liga" data-liga="${esc(l.id)}" style="margin-left:auto;" ${rynkiHurtem ? 'disabled' : ''}>⟳ Statystyki z Transfermarktu (${wLidze.filter(z=> z.tmId || z.monitorowany).length})</button></div>
   ${widoczni.length ? `<div class="card" style="padding:0;overflow:auto;">
     <table>
-      <thead><tr><th>Zawodnik</th><th>Wiek</th><th>Pozycja</th><th>Klub</th><th style="min-width:150px;">Gra w sezonie</th><th>Tempo</th><th>Status</th><th>Transfer do PL</th></tr></thead>
+      <thead><tr><th>Zawodnik</th><th>Wiek</th><th>Pozycja</th><th>Klub</th><th style="min-width:150px;">Gra w sezonie</th><th title="Gole / asysty w lidze">G / A</th><th>Tempo</th><th>Status</th><th>Transfer do PL</th></tr></thead>
       <tbody>${widoczni.map(z=> `<tr class="rynki-wiersz" data-action="rynki-zaw" data-klucz="${esc(z.klucz)}">
         <td><button class="link-btn" data-action="rynki-zaw" data-klucz="${esc(z.klucz)}" style="font-size:13.5px;">${esc(z.nazwisko)} ${esc(z.imie)}</button>
           ${z.monitorowany && z.monitorowany.wypozyczenie ? `<div class="note" style="font-style:normal;">wypożyczony do ${dataPl(z.monitorowany.wypozyczenie.do)}</div>` : ''}</td>
         <td>${z.wiek ?? '—'} <span class="note" style="font-style:normal;">${z.przedzial ? z.przedzial : ''}</span></td>
         <td>${esc(z.pozycja)}</td><td>${esc(z.klub)}</td>
-        <td>${rynkiPasekUdzialu(z)}</td><td>${rynkiTempo(z.tempo)}</td><td>${rynkiStatus(z)}</td>
+        <td>${rynkiPasekUdzialu(z)}</td><td class="rynki-liczby">${z.gole != null || z.asysty != null ? `${z.gole ?? 0} / ${z.asysty ?? 0}` : '—'}</td><td>${rynkiTempo(z.tempo)}</td><td>${rynkiStatus(z)}</td>
         <td class="rynki-transfer">${esc(z.uwagaTransferowa)}</td></tr>`).join('')}</tbody>
     </table>
   </div>
@@ -15870,14 +15881,58 @@ function rynkiWykresUdzialu(m){
   </svg>`;
 }
 
+// Stan pobierania z Transfermarktu na karcie: kto się właśnie pobiera i — gdy nazwisko dało kilku
+// kandydatów — lista do wyboru. Nie zgadujemy, który „Johansson" to nasz: wybiera skaut.
+let rynkiTM = { wTrakcie: '', blad: '', kandydaci: null, dlaKlucza: '' };
+
+function rynkiTabelaTM(staty){
+  if(!staty || !staty.sezony || !staty.sezony.length) return '';
+  const wiersze = [];
+  for(const s of staty.sezony){
+    for(const r of s.rozgrywki){
+      const udz = r.minutyMozliwe ? Math.round(r.minuty / r.minutyMozliwe * 100) + '%' : '—';
+      const liga = !r.reprezentacja && (r.typRozgrywek === 1 || r.typRozgrywek === 2);
+      wiersze.push(`<tr${liga ? '' : ' class="rynki-tm-poboczne"'}>
+        <td>${esc(s.sezon)}</td><td>${esc(r.rozgrywki)}${r.reprezentacja ? ' <span class="note" style="font-style:normal;">· reprezentacja</span>' : ''}</td><td>${esc(r.klub)}</td>
+        <td>${r.meczeDruzyny}</td><td>${r.wKadrze}</td><td><strong>${r.wystepy}</strong></td><td>${r.odPierwszej}</td><td>${r.zLawki}</td>
+        <td><strong>${r.minuty}</strong></td><td>${liga ? udz : '—'}</td><td>${r.gole}</td><td>${r.asysty}</td><td>${r.zolte}</td><td>${r.czerwone}</td></tr>`);
+    }
+  }
+  return `<div class="card" style="padding:0;overflow:auto;">
+    <h3 class="rynki-h3" style="padding:16px 20px 0;">Statystyki z Transfermarktu <span class="note" style="font-family:inherit;letter-spacing:0;">— pobrane ${esc(new Date(staty.pobrano).toLocaleString('pl-PL', {dateStyle:'short', timeStyle:'short'}))}</span></h3>
+    <table class="rynki-tm-tabela">
+      <thead><tr><th>Sezon</th><th>Rozgrywki</th><th>Klub</th><th title="Mecze drużyny, gdy zawodnik był w klubie">Mecze dr.</th><th title="W kadrze meczowej">W kadrze</th><th>Wyst.</th><th title="Od pierwszej minuty">Od 1. min</th><th title="Wejścia z ławki">Z ławki</th><th>Minuty</th><th title="Minuty / minuty możliwe (tylko liga)">Udział</th><th>Gole</th><th>Asysty</th><th title="Żółte kartki">ŻK</th><th title="Czerwone kartki">CK</th></tr></thead>
+      <tbody>${wiersze.join('')}</tbody>
+    </table>
+    <p class="note" style="padding:0 20px 14px;">Udział liczony tylko w lidze: minuty zawodnika / suma długości meczów drużyny (mecz z dogrywką = 120). Szare wiersze: puchary, sparingi i reprezentacja — nie wchodzą do tempa rozwoju.</p>
+  </div>`;
+}
+
+function rynkiPasekTM(z){
+  if(rynkiTM.wTrakcie === z.klucz) return '<p class="note" style="margin:-6px 0 14px;font-style:normal;">⟳ Pobieram statystyki z Transfermarktu…</p>';
+  if(rynkiTM.dlaKlucza === z.klucz && rynkiTM.kandydaci && rynkiTM.kandydaci.length){
+    return `<div class="card rynki-kandydaci"><strong>Na Transfermarkcie jest kilku zawodników o tym nazwisku — który to?</strong>
+      <div class="rynki-tagi" style="margin-top:8px;">${rynkiTM.kandydaci.slice(0, 6).map(k=> `<span class="rynki-kandydat">
+        <a class="link-btn" href="${esc(k.url)}" target="_blank" rel="noopener">${esc(k.nazwa)} ↗</a>
+        <button class="secondary" data-action="rynki-tm-wybierz" data-klucz="${esc(z.klucz)}" data-id="${esc(k.id)}" data-url="${esc(k.url)}">To ten</button></span>`).join('')}</div></div>`;
+  }
+  if(rynkiTM.dlaKlucza === z.klucz && rynkiTM.blad) return `<p class="note" style="margin:-6px 0 14px;font-style:normal;color:var(--clay-dark);">${esc(rynkiTM.blad)}</p>`;
+  return '';
+}
+
 function viewRynkiZawodnik(lista){
   const z = lista.find(x=> x.klucz === rynkiStan.zaw);
   if(!z){ rynkiStan.zaw = ''; return rynkiStan.liga ? viewRynkiLiga(lista) : viewRynkiEuropa(lista); }
   const m = z.monitorowany;
   const ost = m && m.obserwacje.length ? m.obserwacje[m.obserwacje.length - 1] : null;
+  const b = sezonyLigowe(z.staty)[0] || null;
+  const prof = z.staty && z.staty.profil;
   const kafel = (num, lbl)=> `<div class="stat"><div class="num">${num}</div><div class="lbl">${lbl}</div></div>`;
   const wiersz = (lbl, wart)=> wart ? `<div class="rynki-para"><span>${lbl}</span><span>${wart}</span></div>` : '';
   const flagi = m ? m.obywatelstwo.map(k=> nationalityFlag(k) || `<span class="rynki-tag rynki-tag-szary">${esc(k)}</span>`).join('') : '';
+  const wyst = b ? `${b.wystepy}/${b.meczeDruzyny}` : ost ? `${ost.wystepy ?? '—'}${ost.meczeMozliwe ? '/' + ost.meczeMozliwe : ''}` : (z.wystepy ?? '—');
+  const wzrost = (m && m.wzrost) || (prof && prof.wzrost) || null;
+  const mozeEdytowac = !czyKlient();
   return `
   ${rynkiOkruszki()}
   <div class="card rynki-naglowek">
@@ -15886,19 +15941,29 @@ function viewRynkiZawodnik(lista){
       <div class="view-sub" style="margin:4px 0 8px;">${esc(z.pozycja)} · ${esc(z.klub)} · ${esc(z.liga.nazwa)} (${esc(z.liga.kraj)}, ${z.liga.poziom}. poziom)</div>
       <div class="rynki-tagi">${flagi}${rynkiZnacznikUe(z.ueEog)}${z.przedzial ? `<span class="rynki-tag rynki-tag-zloty">Przedział ${z.przedzial} · ${OPIS_PRZEDZIALU[z.przedzial]}</span>` : ''}${rynkiStatus(z)}</div>
     </div>
-    ${z.tmLink ? `<a class="link-btn" href="${esc(z.tmLink)}" target="_blank" rel="noopener">Profil na Transfermarkcie ↗</a>` : ''}
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      ${z.tmLink ? `<a class="link-btn" href="${esc(z.tmLink)}" target="_blank" rel="noopener">Profil na Transfermarkcie ↗</a>` : ''}
+      <button class="secondary" data-action="rynki-tm" data-klucz="${esc(z.klucz)}" ${rynkiTM.wTrakcie ? 'disabled' : ''}>⟳ ${z.tmId ? 'Odśwież statystyki z TM' : 'Szukaj na Transfermarkcie'}</button>
+      ${mozeEdytowac ? `<button class="gold" data-action="rynki-edytuj" data-klucz="${esc(z.klucz)}">✎ ${m ? 'Edytuj profil' : 'Dodaj do monitoringu'}</button>` : ''}
+    </div>
   </div>
-  <div class="grid grid-5" style="margin-bottom:18px;">
+  ${rynkiPasekTM(z)}
+  <div class="grid grid-4" style="margin-bottom:10px;">
     ${kafel(z.wiek ?? '—', 'Wiek · ur. ' + dataPl(z.dataUr))}
-    ${m ? kafel(m.wzrost ? m.wzrost : '—', 'Wzrost (cm)') : kafel(z.kadra ? esc(z.kadra.split(' ').pop()) : '—', 'Kadra')}
-    ${kafel(ost ? `${ost.wystepy ?? '—'}${ost.meczeMozliwe ? '/' + ost.meczeMozliwe : ''}` : (z.wystepy ?? '—'), 'Występy')}
-    ${kafel(ost ? (ost.odPierwszej ?? '—') : (z.minuty ?? '—'), ost ? 'Od 1. minuty' : 'Minuty')}
-    ${kafel(z.udzial != null ? '~' + procent(z.udzial) : '—', 'Udział w minutach')}
+    ${m || wzrost ? kafel(wzrost || '—', 'Wzrost (cm)') : kafel(z.kadra ? esc(z.kadra.split(' ').pop()) : '—', 'Kadra')}
+    ${kafel(wyst, b ? 'Występy / mecze drużyny' : 'Występy')}
+    ${kafel(b ? b.odPierwszej : ost ? (ost.odPierwszej ?? '—') : '—', 'Od 1. minuty')}
+  </div>
+  <div class="grid grid-4" style="margin-bottom:18px;">
+    ${kafel(b ? b.minuty : (z.minuty ?? '—'), 'Minuty' + (b ? ' · ' + esc(b.sezon) : ''))}
+    ${kafel(z.udzial != null ? (z.zrodloLiczb === 'transfermarkt' ? '' : '~') + procent(z.udzial) : '—', 'Udział w minutach')}
+    ${kafel(b ? b.gole : (z.gole ?? '—'), 'Gole w lidze')}
+    ${kafel(b ? b.asysty : (z.asysty ?? '—'), 'Asysty w lidze')}
   </div>
   ${m ? `<div class="grid grid-2">
     <div class="card"><h3 class="rynki-h3">Tempo rozwoju · udział minut</h3>
       ${rynkiWykresUdzialu(m)}
-      <p class="note">${m.udzialPoprz == null ? 'Brak danych poprzedniego sezonu — po ich wpisaniu system policzy tempo (skok / wzrost / stabilnie / spadek).' : 'Tempo: ' + esc(z.tempo || '')}</p></div>
+      <p class="note">${z.tempo && z.tempo !== 'Brak danych poprz. sezonu' ? 'Tempo względem poprzedniego sezonu: <strong>' + esc(z.tempo) + '</strong>.' : 'Brak danych poprzedniego sezonu — po ich wpisaniu (albo pobraniu z Transfermarktu) system policzy tempo.'}</p></div>
     <div class="card"><h3 class="rynki-h3">Kontrakt i transfer</h3>
       ${wiersz('W klubie od', m.wKlubieOd ? dataPl(m.wKlubieOd) : '')}
       ${wiersz('Kontrakt do', m.kontraktDo ? dataPl(m.kontraktDo) : 'brak danych')}
@@ -15907,15 +15972,224 @@ function viewRynkiZawodnik(lista){
       ${wiersz('Wycena TM (orientacyjna)', esc(m.wartoscTM))}
       ${wiersz('Transfer do Polski', esc(z.uwagaTransferowa))}
       ${m.notatka ? `<p class="note" style="margin-top:10px;font-style:normal;">${esc(m.notatka)}</p>` : ''}</div>
-  </div>
-  <div class="grid grid-2">
+  </div>`
+  : `<div class="grid grid-2">
+    <div class="card"><h3 class="rynki-h3">Reprezentant młodzieżowy</h3>
+      <p style="margin:0 0 8px;">${esc(z.kadra)}. ${esc(z.uwagaTransferowa)}.</p>
+      <p class="note">${z.staty ? 'Liczby z Transfermarktu. Tempo rozwoju porównuje udział w minutach ligi z poprzednim sezonem.' : 'Liczby z pliku kadr. Pełne statystyki (mecze drużyny, udział, tempo) pojawią się po pobraniu z Transfermarktu.'}</p></div>
+    <div class="card"><h3 class="rynki-h3">Kontrakt i transfer</h3>
+      ${prof ? `${wiersz('Kontrakt do', prof.kontraktDo ? dataPl(prof.kontraktDo) : 'brak danych')}${wiersz('Wypożyczenie', prof.wypozyczony ? 'tak' : '')}${wiersz('Menedżer', esc(prof.menedzer))}${wiersz('Noga', esc(prof.noga))}${wiersz('Wycena TM (orientacyjna)', esc(prof.wartosc))}` : '<p class="note">Po pobraniu z Transfermarktu.</p>'}
+      ${wiersz('Transfer do Polski', esc(z.uwagaTransferowa))}</div>
+  </div>`}
+  ${rynkiTabelaTM(z.staty)}
+  ${m ? `<div class="grid grid-2">
     <div class="card"><h3 class="rynki-h3">Ścieżka kariery</h3>
       ${m.sciezka.length ? m.sciezka.map(c=> `<div class="rynki-krok"><span class="rynki-krok-kiedy">${esc(c.kiedy)}</span><span class="rynki-krok-kropka"></span><span>${esc(c.co)}</span></div>`).join('') : '<div class="empty">Do uzupełnienia — ifkdb.com albo zakładka „Kariera" na Transfermarkcie.</div>'}</div>
     <div class="card"><h3 class="rynki-h3">Obserwacje</h3>
       ${m.obserwacje.slice().reverse().map(o=> `<div class="rynki-krok"><span class="rynki-krok-kiedy">${dataPl(o.data)}</span><span><strong>${esc(o.rodzaj)}</strong> · ${o.minuty} min${o.szacunek ? ' (szac.)' : ''}${o.wystepy != null ? ` · ${o.wystepy}${o.meczeMozliwe ? '/' + o.meczeMozliwe : ''} meczów` : ''}<div class="note" style="font-style:normal;">${esc(o.notatka)}</div></span></div>`).join('')}</div>
-  </div>`
-  : `<div class="card"><p style="margin:0;">Reprezentant młodzieżowy (${esc(z.kadra)}). W sezonie: ${z.wystepy ?? 0} występów, ${z.minuty ?? 0} minut. ${esc(z.uwagaTransferowa)}.</p>
-    <p class="note">Udział w minutach i tempo rozwoju policzymy, gdy zawodnik trafi do monitoringu z liczbą meczów drużyny.</p></div>`}`;
+  </div>` : ''}`;
+}
+
+// POBIERANIE STATYSTYK Z TRANSFERMARKTU (api/tm-wystepy.js).
+//
+// Kolejność: numer zawodnika na Transfermarkcie (z profilu albo linku) → gdy go nie ma, szukamy po
+// imieniu i nazwisku i bierzemy wynik tylko wtedy, gdy jest JEDEN (albo jeden w tym klubie) — przy
+// kilku pytamy skauta. U monitorowanych wynik zostaje też w profilu: puste pola (kontrakt, menedżer,
+// wycena, wzrost) uzupełniamy, a bieżący sezon ligowy dopisujemy jako obserwację, jeśli liczby się
+// zmieniły — dzięki temu wykres tempa dorasta sam przy każdym odświeżeniu.
+async function pobierzStatystykiRynku(klucz, tmIdWybrany = '', tmUrlWybrany = ''){
+  const z = zawodnicyRynkow(new Date()).find(x=> x.klucz === klucz);
+  if(!z || rynkiTM.wTrakcie) return false;
+  rynkiTM = { wTrakcie: klucz, blad: '', kandydaci: null, dlaKlucza: klucz };
+  const odswiezJesliWidac = ()=>{ if(currentView === 'rynki') render(); };
+  odswiezJesliWidac();
+  try{
+    let tmId = tmIdWybrany || z.tmId;
+    let tmUrl = tmUrlWybrany || z.tmLink;
+    if(!tmId){
+      const odp = await fetch('/api/tm-szukaj?szukaj=' + encodeURIComponent(`${z.imie} ${z.nazwisko}`.trim()));
+      const d = await odp.json().catch(()=>({}));
+      if(!odp.ok || d.error) throw new Error('Wyszukiwarka Transfermarktu niedostępna: ' + (d.error || odp.status));
+      const kand = d.kandydaci || [];
+      if(!kand.length) throw new Error('Nie znalazłem tego nazwiska na Transfermarkcie — wpisz adres profilu w „Edytuj profil".');
+      if(kand.length > 1){ rynkiTM = { wTrakcie: '', blad: '', kandydaci: kand, dlaKlucza: klucz }; odswiezJesliWidac(); return false; }
+      tmId = kand[0].id; tmUrl = kand[0].url;
+    }
+    const odp = await fetch('/api/tm-wystepy?id=' + encodeURIComponent(tmId));
+    const d = await odp.json().catch(()=>({}));
+    if(!odp.ok || d.error) throw new Error(String(d.error || ('Transfermarkt: błąd ' + odp.status)));
+    zapiszStatystykiTM(tmId, { pobrano: d.pobrano || new Date().toISOString(), profil: d.profil || null, sezony: d.sezony || [] });
+    const mozeZapisac = !czyKlient() && !nieudaneOdczyty.length;
+    if(z.monitorowany){
+      const m = z.monitorowany, p = d.profil || {};
+      const nowy: any = { ...m, tmId, tmLink: m.tmLink || tmUrl || ('https://www.transfermarkt.pl/profil/spieler/' + tmId),
+        kontraktDo: m.kontraktDo || p.kontraktDo || '', menedzer: m.menedzer || p.menedzer || '',
+        wartoscTM: p.wartosc || m.wartoscTM || '', wzrost: m.wzrost || p.wzrost || null, dataUr: m.dataUr || p.dataUr || '' };
+      const b = sezonyLigowe(statystykiZawodnikaTM(tmId))[0];
+      const ost = m.obserwacje[m.obserwacje.length - 1];
+      if(b && (!ost || ost.minuty !== b.minuty || ost.meczeMozliwe !== b.meczeDruzyny || ost.wystepy !== b.wystepy)){
+        nowy.obserwacje = m.obserwacje.filter(o=> !(o.data === dzisiaj() && o.rodzaj === 'Dane ligowe')).concat([{
+          data: dzisiaj(), rodzaj: 'Dane ligowe', minuty: b.minuty, meczeMozliwe: b.meczeDruzyny, wystepy: b.wystepy,
+          odPierwszej: b.odPierwszej, szacunek: false,
+          notatka: `Transfermarkt · ${b.rozgrywki} ${b.sezon}: gole ${b.gole}, asysty ${b.asysty}, żółte kartki ${b.zolte}, czerwone ${b.czerwone}.` }]);
+      }
+      zapiszProfilRynku(nowy);
+    }
+    // Najpierw ekran, potem baza: liczby są już w pamięci, a zapis potrafi chwilę potrwać.
+    rynkiTM = { wTrakcie: '', blad: '', kandydaci: null, dlaKlucza: '' };
+    odswiezJesliWidac();
+    if(mozeZapisac){
+      if(z.monitorowany) await saveRynki();
+      await saveRynkiTM();
+    }
+    return true;
+  }catch(e){
+    rynkiTM = { wTrakcie: '', blad: String((e && e.message) || e), kandydaci: null, dlaKlucza: klucz };
+    odswiezJesliWidac();
+    return false;
+  }
+}
+
+// Wszyscy z ligi naraz — po kolei i z przerwą, żeby nie zasypać Transfermarktu zapytaniami.
+let rynkiHurtem = false;
+async function pobierzStatystykiLigi(ligaId){
+  if(rynkiHurtem) return;
+  const kto = zawodnicyRynkow(new Date()).filter(z=> z.liga.id === ligaId && (z.tmId || z.monitorowany));
+  if(!kto.length){ pokazPotwierdzenie('Nikt w tej lidze nie ma jeszcze numeru z Transfermarktu — otwórz kartę i kliknij „Szukaj na Transfermarkcie".', 'blad'); return; }
+  rynkiHurtem = true;
+  let ok = 0;
+  for(let i = 0; i < kto.length; i++){
+    pokazPotwierdzenie(`Pobieram statystyki z Transfermarktu: ${i + 1} z ${kto.length}…`);
+    if(await pobierzStatystykiRynku(kto[i].klucz)) ok++;
+    await new Promise(r=> setTimeout(r, 400));
+  }
+  rynkiHurtem = false;
+  pokazPotwierdzenie(`Statystyki z Transfermarktu: ${ok} z ${kto.length} zawodników zaktualizowanych.`, ok === kto.length ? 'ok' : 'blad');
+  if(currentView === 'rynki') render();
+}
+
+// EDYCJA PROFILU NA RYNKACH.
+//
+// Zgłoszenie (13.10.2026): „teraz musi być możliwość edycji profilu, zrób przycisk". Profil to
+// dane stałe (klub, kontrakt, wypożyczenie, menedżer) plus OBSERWACJE — a tempo rozwoju liczy się
+// właśnie z obserwacji. Dlatego w tym samym oknie jest miejsce na nową obserwację: skaut po meczu
+// wpisuje występy i minuty, a wykres na karcie dorasta o punkt. Starych obserwacji nie nadpisujemy —
+// historia jest wartością samą w sobie.
+//
+// Zawodnik z kadry młodzieżowej (dane z Transfermarktu, tylko do odczytu) po pierwszym zapisie
+// staje się profilem monitorowanym: od tej chwili jego dane prowadzi skaut, nie plik z kadrami.
+function openRynkiModal(klucz){
+  const z = zawodnicyRynkow(new Date()).find(x=> x.klucz === klucz);
+  if(!z) return;
+  const m = z.monitorowany || profilZKadry(z, dzisiaj());
+  const ost = m.obserwacje.length ? m.obserwacje[m.obserwacje.length - 1] : null;
+  const pole = (id, etykieta, wartosc, typ = 'text', extra = '')=>
+    `<div class="field-wrap"><label class="field" for="${id}">${etykieta}</label><input id="${id}" type="${typ}" value="${esc(wartosc ?? '')}" ${extra}></div>`;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal" style="max-width:760px;" role="dialog" aria-modal="true" aria-labelledby="rz-tytul">
+    <h3 id="rz-tytul">${z.monitorowany ? 'Edytuj profil' : 'Dodaj do monitoringu'} — ${esc(m.imie)} ${esc(m.nazwisko)}</h3>
+    ${z.monitorowany ? '' : '<p class="note" style="margin-top:-6px;">Zawodnik z kadry młodzieżowej. Po zapisie trafi do monitoringu, a jego dane będziesz prowadzić tutaj.</p>'}
+    <div class="grid grid-3">
+      ${pole('rz-imie', 'Imię', m.imie)}${pole('rz-nazwisko', 'Nazwisko', m.nazwisko)}${pole('rz-ur', 'Data urodzenia', m.dataUr, 'date')}
+    </div>
+    <div class="grid grid-3">
+      ${pole('rz-pozycja', 'Pozycja', m.pozycja)}${pole('rz-klub', 'Klub (w którym gra)', m.klub)}
+      <div class="field-wrap"><label class="field" for="rz-liga">Liga</label><select id="rz-liga">${LIGI_RYNKOW.map(l=>
+        `<option value="${esc(l.id)}" ${l.id === m.ligaId ? 'selected' : ''}>${esc(l.kraj)} · ${esc(l.nazwa)}</option>`).join('')}</select></div>
+    </div>
+    <div class="grid grid-4">
+      <div class="field-wrap"><label class="field" for="rz-status">Status</label><select id="rz-status">${STATUSY_RYNKOW.map(s=>
+        `<option ${s === m.status ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div>
+      ${pole('rz-obyw', 'Obywatelstwo (po przecinku)', m.obywatelstwo.join(', '))}
+      ${pole('rz-wzrost', 'Wzrost (cm)', m.wzrost, 'number', 'min="140" max="215"')}
+      ${pole('rz-poprz', 'Udział minut — poprz. sezon (%)', m.udzialPoprz == null ? '' : Math.round(m.udzialPoprz * 100), 'number', 'min="0" max="100"')}
+    </div>
+    <div class="grid grid-4">
+      ${pole('rz-wklubie', 'W klubie od', m.wKlubieOd, 'date')}${pole('rz-kontrakt', 'Kontrakt do', m.kontraktDo, 'date')}
+      ${pole('rz-menedzer', 'Menedżer', m.menedzer)}${pole('rz-wartosc', 'Wycena TM', m.wartoscTM, 'text', 'placeholder="np. 100 tys. €"')}
+    </div>
+    <div class="grid grid-2">
+      ${pole('rz-wyp-z', 'Wypożyczony z (puste = bez wypożyczenia)', m.wypozyczenie ? m.wypozyczenie.z : '')}
+      ${pole('rz-wyp-do', 'Wypożyczenie do', m.wypozyczenie ? m.wypozyczenie.do : '', 'date')}
+    </div>
+    ${pole('rz-tm', 'Profil na Transfermarkcie (adres) — statystyki będą się pobierać same', m.tmLink || '', 'url', 'placeholder="https://www.transfermarkt.pl/…/profil/spieler/123456"')}
+    <div class="field-wrap"><label class="field" for="rz-sciezka">Ścieżka kariery — jedna linia: kiedy | co</label>
+      <textarea id="rz-sciezka" rows="3" placeholder="do 2024 | Akademia AIK Solna">${esc(m.sciezka.map(c=> c.kiedy + ' | ' + c.co).join('\n'))}</textarea></div>
+    <div class="field-wrap"><label class="field" for="rz-notatka">Notatka skautingowa</label>
+      <textarea id="rz-notatka" rows="2">${esc(m.notatka)}</textarea></div>
+
+    <h4 class="rynki-h3" style="font-size:17px;margin:14px 0 4px;">Nowa obserwacja <span class="note" style="font-family:inherit;letter-spacing:0;">— opcjonalnie; puste minuty = bez nowej obserwacji</span></h4>
+    ${ost ? `<p class="note" style="margin:0 0 6px;">Ostatnia: ${dataPl(ost.data)} · ${ost.minuty} min · ${ost.wystepy ?? '—'}${ost.meczeMozliwe ? '/' + ost.meczeMozliwe : ''} meczów. Minuty i mecze wpisuj narastająco od początku sezonu.</p>` : ''}
+    <div class="grid grid-5">
+      ${pole('rz-o-data', 'Data', dzisiaj(), 'date')}
+      <div class="field-wrap"><label class="field" for="rz-o-rodzaj">Rodzaj</label><select id="rz-o-rodzaj">${['Dane ligowe','Wideo','Na żywo','Informacja z klubu'].map(r=> `<option>${r}</option>`).join('')}</select></div>
+      ${pole('rz-o-mozliwe', 'Mecze możliwe', '', 'number', 'min="0"')}
+      ${pole('rz-o-wyst', 'Występy / od 1. min', '', 'text', 'placeholder="np. 10 / 7"')}
+      ${pole('rz-o-min', 'Minuty', '', 'number', 'min="0"')}
+    </div>
+    ${pole('rz-o-notatka', 'Notatka do obserwacji', '')}
+    <p class="note" id="rz-blad" role="alert" style="color:var(--clay-dark);font-style:normal;"></p>
+    <div class="modal-actions">
+      <button class="secondary" id="rz-anuluj">Anuluj</button>
+      <button class="gold" id="rz-zapisz">${z.monitorowany ? 'Zapisz profil' : 'Dodaj do monitoringu'}</button>
+    </div></div>`;
+  document.body.appendChild(overlay);
+  const v = (id)=> String((overlay.querySelector('#' + id) as HTMLInputElement).value || '').trim();
+  const liczba = (t)=> t === '' ? null : (Number.isFinite(Number(t)) ? Number(t) : NaN);
+  const zamknij = ()=> overlay.remove();
+  overlay.querySelector('#rz-anuluj').addEventListener('click', zamknij);
+  overlay.addEventListener('keydown', (e)=>{ if((e as KeyboardEvent).key === 'Escape') zamknij(); });
+  (overlay.querySelector('#rz-imie') as HTMLInputElement).focus();
+  overlay.querySelector('#rz-zapisz').addEventListener('click', async ()=>{
+    const blad = overlay.querySelector('#rz-blad');
+    const wzrost = liczba(v('rz-wzrost')), poprz = liczba(v('rz-poprz'));
+    const minuty = liczba(v('rz-o-min')), mozliwe = liczba(v('rz-o-mozliwe'));
+    const [wystT, odPierwT] = v('rz-o-wyst').split('/').map(x=> x.trim());
+    const wyst = liczba(wystT || ''), odPierw = liczba(odPierwT || '');
+    const bledy = [];
+    if(!v('rz-nazwisko')) bledy.push('podaj nazwisko');
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(v('rz-ur'))) bledy.push('podaj datę urodzenia');
+    if([wzrost, poprz, minuty, mozliwe, wyst, odPierw].some(x=> Number.isNaN(x))) bledy.push('w polach liczbowych wpisz same liczby');
+    if(poprz != null && (poprz < 0 || poprz > 100)) bledy.push('udział minut to 0–100%');
+    if(v('rz-wyp-z') && !/^\d{4}-\d{2}-\d{2}$/.test(v('rz-wyp-do'))) bledy.push('podaj datę końca wypożyczenia');
+    if(minuty != null && mozliwe && minuty > mozliwe * 90) bledy.push('minut jest więcej niż mecze możliwe × 90');
+    if(v('rz-tm') && !tmIdZLinku(v('rz-tm'))) bledy.push('adres Transfermarktu musi zawierać „/spieler/" i numer');
+    if(bledy.length){ blad.textContent = 'Popraw: ' + bledy.join(', ') + '.'; return; }
+    const nowy: any = {
+      ...m,
+      imie: v('rz-imie'), nazwisko: v('rz-nazwisko'), dataUr: v('rz-ur'), pozycja: v('rz-pozycja'), klub: v('rz-klub'),
+      ligaId: v('rz-liga'), status: v('rz-status'),
+      obywatelstwo: v('rz-obyw').split(',').map(x=> x.trim()).filter(Boolean),
+      wzrost, udzialPoprz: poprz == null ? null : poprz / 100,
+      wKlubieOd: v('rz-wklubie'), kontraktDo: v('rz-kontrakt'), menedzer: v('rz-menedzer'), wartoscTM: v('rz-wartosc'),
+      wypozyczenie: v('rz-wyp-z') ? { z: v('rz-wyp-z'), do: v('rz-wyp-do') } : null,
+      sciezka: v('rz-sciezka').split('\n').map(l=> l.trim()).filter(Boolean).map(l=>{
+        const [kiedy, ...reszta] = l.split('|'); return reszta.length ? { kiedy: kiedy.trim(), co: reszta.join('|').trim() } : { kiedy: '', co: l };
+      }),
+      notatka: v('rz-notatka'),
+      tmLink: v('rz-tm'), tmId: tmIdZLinku(v('rz-tm')),
+      obserwacje: minuty == null ? m.obserwacje.slice() : m.obserwacje.concat([{
+        data: v('rz-o-data') || dzisiaj(), rodzaj: v('rz-o-rodzaj'), minuty, meczeMozliwe: mozliwe, wystepy: wyst,
+        odPierwszej: odPierw, szacunek: false, notatka: v('rz-o-notatka'),
+      } as any]).sort((a, b)=> a.data.localeCompare(b.data)),
+    };
+    const przycisk = overlay.querySelector('#rz-zapisz') as HTMLButtonElement;
+    przycisk.disabled = true; przycisk.textContent = 'Zapisuję…';
+    const poprzednie = edycjeRynkow();
+    zapiszProfilRynku(nowy);
+    const ok = await saveRynki();
+    if(ok === false){
+      ustawEdycjeRynkow(poprzednie);
+      przycisk.disabled = false; przycisk.textContent = 'Spróbuj ponownie';
+      blad.textContent = 'Nie udało się zapisać w bazie — zmiany nie zostały przyjęte.' + powodNieudanegoZapisu();
+      return;
+    }
+    zamknij();
+    rynkiStan = { ...rynkiStan, kraj: ligaRynku(nowy.ligaId)?.kraj || rynkiStan.kraj, liga: nowy.ligaId, zaw: 'm:' + nowy.id };
+    render();
+    pokazPotwierdzenie('Zapisano profil: ' + nowy.imie + ' ' + nowy.nazwisko);
+  });
 }
 
 function viewRynki(){
@@ -15939,6 +16213,20 @@ function podepnijRynki(main){
     if(z) rynkiStan = { ...rynkiStan, kraj: z.liga.kraj, liga: z.liga.id, zaw: z.klucz };
     render();
   });
+  main.querySelectorAll('[data-action="rynki-edytuj"]').forEach(b=> b.onclick = ()=> openRynkiModal(b.dataset.klucz));
+  main.querySelectorAll('[data-action="rynki-tm"]').forEach(b=> b.onclick = ()=>{ void pobierzStatystykiRynku(b.dataset.klucz); });
+  main.querySelectorAll('[data-action="rynki-tm-wybierz"]').forEach(b=> b.onclick = ()=>{
+    void pobierzStatystykiRynku(b.dataset.klucz, b.dataset.id, b.dataset.url);
+  });
+  main.querySelectorAll('[data-action="rynki-tm-liga"]').forEach(b=> b.onclick = ()=>{ void pobierzStatystykiLigi(b.dataset.liga); });
+  // SAMO SIĘ ODŚWIEŻA: karta zawodnika z numerem na Transfermarkcie, którego statystyki są starsze
+  // niż doba (albo ich nie ma), pobiera je w tle. Błąd zapamiętujemy dla tej karty, żeby nie pytać
+  // w kółko przy każdym przerysowaniu.
+  if(currentView === 'rynki' && rynkiStan.zaw && !rynkiTM.wTrakcie && !rynkiHurtem
+     && !(rynkiTM.dlaKlucza === rynkiStan.zaw && (rynkiTM.blad || rynkiTM.kandydaci))){
+    const zw = zawodnicyRynkow(new Date()).find(x=> x.klucz === rynkiStan.zaw);
+    if(zw && zw.tmId && staryStanTM(zw.tmId, new Date())) setTimeout(()=> void pobierzStatystykiRynku(zw.klucz), 0);
+  }
   main.querySelectorAll('[data-action="rynki-przedzial"]').forEach(b=> b.onclick = ()=>{
     rynkiStan = { ...rynkiStan, przedzial: b.dataset.val || '' }; render();
   });

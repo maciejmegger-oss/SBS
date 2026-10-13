@@ -1,0 +1,668 @@
+{
+ "_opis": "Wycinek odpowiedzi tmapi.transfermarkt.technology/player/1260327/performance-game (Tadeas Husar), 13.10.2026 — po jednym wpisie każdego stanu i rozgrywek, tylko pola używane przez api/_tm-wystepy.js.",
+ "performance": [
+  {
+   "gameInformation": {
+    "gameId": "5075455",
+    "competitionId": "SK2",
+    "competitionTypeId": 2,
+    "seasonId": 2026,
+    "gameDuration": 90,
+    "isNationalGame": false,
+    "date": {
+     "dateTimeUTC": "2026-10-11T08:30:00+00:00"
+    },
+    "season": {
+     "display": "26/27"
+    }
+   },
+   "clubsInformation": {
+    "club": {
+     "clubId": "46955"
+    }
+   },
+   "statistics": {
+    "generalStatistics": {
+     "participationState": "played"
+    },
+    "goalStatistics": {
+     "goalsScoredTotal": 0,
+     "assists": 0,
+     "ownGoalsScored": 0
+    },
+    "cardStatistics": {
+     "yellowCardNet": 0,
+     "yellowCardGross": 0
+    },
+    "playingTimeStatistics": {
+     "playedMinutes": 90,
+     "isStarting": true
+    }
+   }
+  },
+  {
+   "gameInformation": {
+    "gameId": "5052845",
+    "competitionId": "FS",
+    "competitionTypeId": 11,
+    "seasonId": 2026,
+    "gameDuration": 90,
+    "isNationalGame": true,
+    "date": {
+     "dateTimeUTC": "2026-10-01T09:30:00+00:00"
+    },
+    "season": {
+     "display": "26/27"
+    }
+   },
+   "clubsInformation": {
+    "club": {
+     "clubId": "25960"
+    }
+   },
+   "statistics": {
+    "generalStatistics": {
+     "participationState": "played"
+    },
+    "goalStatistics": {
+     "goalsScoredTotal": 1,
+     "assists": 0,
+     "ownGoalsScored": 0
+    },
+    "cardStatistics": {
+     "yellowCardNet": 0,
+     "yellowCardGross": 0
+    },
+    "playingTimeStatistics": {
+     "playedMinutes": 88,
+     "isStarting": true
+    }
+   }
+  },
+  {
+   "gameInformation": {
+    "gameId": "5063618",
+    "competitionId": "SK2",
+    "competitionTypeId": 2,
+    "seasonId": 2026,
+    "gameDuration": 90,
+    "isNationalGame": false,
+    "date": {
+     "dateTimeUTC": "2026-09-27T08:30:00+00:00"
+    },
+    "season": {
+     "display": "26/27"
+    }
+   },
+   "clubsInformation": {
+    "club": {
+     "clubId": "46955"
+    }
+   },
+   "statistics": {
+    "generalStatistics": {
+     "participationState": "not in squad"
+    },
+    "goalStatistics": {
+     "goalsScoredTotal": null,
+     "assists": null,
+     "ownGoalsScored": null
+    },
+    "cardStatistics": {
+     "yellowCardNet": null,
+     "yellowCardGross": null
+    },
+    "playingTimeStatistics": {
+     "playedMinutes": null,
+     "isStarting": false
+    }
+   }
+  },
+  {
+   "gameInformation": {
+    "gameId": "5050867",
+    "competitionId": "SKC",
+    "competitionTypeId": 8,
+    "seasonId": 2026,
+    "gameDuration": 90,
+    "isNationalGame": false,
+    "date": {
+     "dateTimeUTC": "2026-08-19T15:00:00+00:00"
+    },
+    "season": {
+     "display": "26/27"
+    }
+   },
+   "clubsInformation": {
+    "club": {
+     "clubId": "46955"
+    }
+   },
+   "statistics": {
+    "generalStatistics": {
+     "participationState": "not in squad"
+    },
+    "goalStatistics": {
+     "goalsScoredTotal": null,
+     "assists": null,
+     "ownGoalsScored": null
+    },
+    "cardStatistics": {
+     "yellowCardNet": null,
+     "yellowCardGross": null
+    },
+    "playingTimeStatistics": {
+     "playedMinutes": null,
+     "isStarting": false
+    }
+   }
+  },
+  {
+   "gameInformation": {
+    "gameId": "4898028",
+    "competitionId": "ECLQ",
+    "competitionTypeId": 10,
+    "seasonId": 2026,
+    "gameDuration": 120,
+    "isNationalGame": false,
+    "date": {
+     "dateTimeUTC": "2026-07-28T17:30:00+00:00"
+    },
+    "season": {
+     "display": "26/27"
+    }
+   },
+   "clubsInformation": {
+    "club": {
+     "clubId": "365"
+    }
+   },
+   "statistics": {
+    "generalStatistics": {
+     "participationState": "not in squad"
+    },
+    "goalStatistics": {
+     "goalsScoredTotal": null,
+     "assists": null,
+     "ownGoalsScored": null
+    },
+    "cardStatistics": {
+     "yellowCardNet": null,
+     "yellowCardGross": null
+    },
+    "playingTimeStatistics": {
+     "playedMinutes": null,
+     "isStarting": false
+    }
+   }
+  },
+  {
+   "gameInformation": {
+    "gameId": "4971548",
+    "competitionId": "SLO1",
+    "competitionTypeId": 1,
+    "seasonId": 2026,
+    "gameDuration": 90,
+    "isNationalGame": false,
+    "date": {
+     "dateTimeUTC": "2026-07-25T16:00:00+00:00"
+    },
+    "season": {
+     "display": "26/27"
+    }
+   },
+   "clubsInformation": {
+    "club": {
+     "clubId": "365"
+    }
+   },
+   "statistics": {
+    "generalStatistics": {
+     "participationState": "not in squad"
+    },
+    "goalStatistics": {
+     "goalsScoredTotal": null,
+     "assists": null,
+     "ownGoalsScored": null
+    },
+    "cardStatistics": {
+     "yellowCardNet": null,
+     "yellowCardGross": null
+    },
+    "playingTimeStatistics": {
+     "playedMinutes": null,
+     "isStarting": false
+    }
+   }
+  },
+  {
+   "gameInformation": {
+    "gameId": "4883012",
+    "competitionId": "SK19",
+    "competitionTypeId": 7,
+    "seasonId": 2025,
+    "gameDuration": 90,
+    "isNationalGame": false,
+    "date": {
+     "dateTimeUTC": "2026-06-06T09:00:00+00:00"
+    },
+    "season": {
+     "display": "25/26"
+    }
+   },
+   "clubsInformation": {
+    "club": {
+     "clubId": "18746"
+    }
+   },
+   "statistics": {
+    "generalStatistics": {
+     "participationState": "played"
+    },
+    "goalStatistics": {
+     "goalsScoredTotal": 0,
+     "assists": 0,
+     "ownGoalsScored": 0
+    },
+    "cardStatistics": {
+     "yellowCardNet": 0,
+     "yellowCardGross": 0
+    },
+    "playingTimeStatistics": {
+     "playedMinutes": 45,
+     "isStarting": false
+    }
+   }
+  },
+  {
+   "gameInformation": {
+    "gameId": "4889216",
+    "competitionId": "FS",
+    "competitionTypeId": 11,
+    "seasonId": 2025,
+    "gameDuration": 90,
+    "isNationalGame": true,
+    "date": {
+     "dateTimeUTC": "2026-05-27T13:00:00+00:00"
+    },
+    "season": {
+     "display": "25/26"
+    }
+   },
+   "clubsInformation": {
+    "club": {
+     "clubId": "25960"
+    }
+   },
+   "statistics": {
+    "generalStatistics": {
+     "participationState": "not in squad"
+    },
+    "goalStatistics": {
+     "goalsScoredTotal": null,
+     "assists": null,
+     "ownGoalsScored": null
+    },
+    "cardStatistics": {
+     "yellowCardNet": null,
+     "yellowCardGross": null
+    },
+    "playingTimeStatistics": {
+     "playedMinutes": null,
+     "isStarting": false
+    }
+   }
+  },
+  {
+   "gameInformation": {
+    "gameId": "4825275",
+    "competitionId": "U19Q",
+    "competitionTypeId": 20,
+    "seasonId": 2026,
+    "gameDuration": 90,
+    "isNationalGame": true,
+    "date": {
+     "dateTimeUTC": "2026-05-21T09:00:00+00:00"
+    },
+    "season": {
+     "display": "26/27"
+    }
+   },
+   "clubsInformation": {
+    "club": {
+     "clubId": "25960"
+    }
+   },
+   "statistics": {
+    "generalStatistics": {
+     "participationState": "played"
+    },
+    "goalStatistics": {
+     "goalsScoredTotal": 0,
+     "assists": 0,
+     "ownGoalsScored": 0
+    },
+    "cardStatistics": {
+     "yellowCardNet": 0,
+     "yellowCardGross": 0
+    },
+    "playingTimeStatistics": {
+     "playedMinutes": 90,
+     "isStarting": true
+    }
+   }
+  },
+  {
+   "gameInformation": {
+    "gameId": "4854103",
+    "competitionId": "SLAR",
+    "competitionTypeId": 12,
+    "seasonId": 2025,
+    "gameDuration": 90,
+    "isNationalGame": false,
+    "date": {
+     "dateTimeUTC": "2026-05-16T15:00:00+00:00"
+    },
+    "season": {
+     "display": "25/26"
+    }
+   },
+   "clubsInformation": {
+    "club": {
+     "clubId": "365"
+    }
+   },
+   "statistics": {
+    "generalStatistics": {
+     "participationState": "not in squad"
+    },
+    "goalStatistics": {
+     "goalsScoredTotal": null,
+     "assists": null,
+     "ownGoalsScored": null
+    },
+    "cardStatistics": {
+     "yellowCardNet": null,
+     "yellowCardGross": null
+    },
+    "playingTimeStatistics": {
+     "playedMinutes": null,
+     "isStarting": false
+    }
+   }
+  },
+  {
+   "gameInformation": {
+    "gameId": "4825271",
+    "competitionId": "U19Q",
+    "competitionTypeId": 20,
+    "seasonId": 2026,
+    "gameDuration": 90,
+    "isNationalGame": true,
+    "date": {
+     "dateTimeUTC": "2026-05-15T09:00:00+00:00"
+    },
+    "season": {
+     "display": "26/27"
+    }
+   },
+   "clubsInformation": {
+    "club": {
+     "clubId": "25960"
+    }
+   },
+   "statistics": {
+    "generalStatistics": {
+     "participationState": "in squad"
+    },
+    "goalStatistics": {
+     "goalsScoredTotal": null,
+     "assists": null,
+     "ownGoalsScored": null
+    },
+    "cardStatistics": {
+     "yellowCardNet": null,
+     "yellowCardGross": null
+    },
+    "playingTimeStatistics": {
+     "playedMinutes": null,
+     "isStarting": false
+    }
+   }
+  },
+  {
+   "gameInformation": {
+    "gameId": "4874380",
+    "competitionId": "SK19",
+    "competitionTypeId": 7,
+    "seasonId": 2025,
+    "gameDuration": 90,
+    "isNationalGame": false,
+    "date": {
+     "dateTimeUTC": "2026-05-09T09:00:00+00:00"
+    },
+    "season": {
+     "display": "25/26"
+    }
+   },
+   "clubsInformation": {
+    "club": {
+     "clubId": "18746"
+    }
+   },
+   "statistics": {
+    "generalStatistics": {
+     "participationState": "not in squad"
+    },
+    "goalStatistics": {
+     "goalsScoredTotal": null,
+     "assists": null,
+     "ownGoalsScored": null
+    },
+    "cardStatistics": {
+     "yellowCardNet": null,
+     "yellowCardGross": null
+    },
+    "playingTimeStatistics": {
+     "playedMinutes": null,
+     "isStarting": false
+    }
+   }
+  },
+  {
+   "gameInformation": {
+    "gameId": "4854096",
+    "competitionId": "SLAR",
+    "competitionTypeId": 12,
+    "seasonId": 2025,
+    "gameDuration": 90,
+    "isNationalGame": false,
+    "date": {
+     "dateTimeUTC": "2026-04-26T17:00:00+00:00"
+    },
+    "season": {
+     "display": "25/26"
+    }
+   },
+   "clubsInformation": {
+    "club": {
+     "clubId": "365"
+    }
+   },
+   "statistics": {
+    "generalStatistics": {
+     "participationState": "played for a different team"
+    },
+    "goalStatistics": {
+     "goalsScoredTotal": null,
+     "assists": null,
+     "ownGoalsScored": null
+    },
+    "cardStatistics": {
+     "yellowCardNet": null,
+     "yellowCardGross": null
+    },
+    "playingTimeStatistics": {
+     "playedMinutes": null,
+     "isStarting": false
+    }
+   }
+  },
+  {
+   "gameInformation": {
+    "gameId": "4854091",
+    "competitionId": "SLAR",
+    "competitionTypeId": 12,
+    "seasonId": 2025,
+    "gameDuration": 90,
+    "isNationalGame": false,
+    "date": {
+     "dateTimeUTC": "2026-04-18T13:30:00+00:00"
+    },
+    "season": {
+     "display": "25/26"
+    }
+   },
+   "clubsInformation": {
+    "club": {
+     "clubId": "365"
+    }
+   },
+   "statistics": {
+    "generalStatistics": {
+     "participationState": "in squad"
+    },
+    "goalStatistics": {
+     "goalsScoredTotal": null,
+     "assists": null,
+     "ownGoalsScored": null
+    },
+    "cardStatistics": {
+     "yellowCardNet": null,
+     "yellowCardGross": null
+    },
+    "playingTimeStatistics": {
+     "playedMinutes": null,
+     "isStarting": false
+    }
+   }
+  },
+  {
+   "gameInformation": {
+    "gameId": "4862640",
+    "competitionId": "SK19",
+    "competitionTypeId": 7,
+    "seasonId": 2025,
+    "gameDuration": 90,
+    "isNationalGame": false,
+    "date": {
+     "dateTimeUTC": "2026-04-18T09:00:00+00:00"
+    },
+    "season": {
+     "display": "25/26"
+    }
+   },
+   "clubsInformation": {
+    "club": {
+     "clubId": "18746"
+    }
+   },
+   "statistics": {
+    "generalStatistics": {
+     "participationState": "played for a different team"
+    },
+    "goalStatistics": {
+     "goalsScoredTotal": null,
+     "assists": null,
+     "ownGoalsScored": null
+    },
+    "cardStatistics": {
+     "yellowCardNet": null,
+     "yellowCardGross": null
+    },
+    "playingTimeStatistics": {
+     "playedMinutes": null,
+     "isStarting": false
+    }
+   }
+  },
+  {
+   "gameInformation": {
+    "gameId": "4548806",
+    "competitionId": "U17Q",
+    "competitionTypeId": 20,
+    "seasonId": 2024,
+    "gameDuration": 90,
+    "isNationalGame": true,
+    "date": {
+     "dateTimeUTC": "2025-03-25T14:30:00+00:00"
+    },
+    "season": {
+     "display": "24/25"
+    }
+   },
+   "clubsInformation": {
+    "club": {
+     "clubId": "25792"
+    }
+   },
+   "statistics": {
+    "generalStatistics": {
+     "participationState": "played"
+    },
+    "goalStatistics": {
+     "goalsScoredTotal": 0,
+     "assists": 0,
+     "ownGoalsScored": 0
+    },
+    "cardStatistics": {
+     "yellowCardNet": 0,
+     "yellowCardGross": 0
+    },
+    "playingTimeStatistics": {
+     "playedMinutes": 67,
+     "isStarting": true
+    }
+   }
+  },
+  {
+   "gameInformation": {
+    "gameId": "4548753",
+    "competitionId": "U17Q",
+    "competitionTypeId": 20,
+    "seasonId": 2024,
+    "gameDuration": 90,
+    "isNationalGame": true,
+    "date": {
+     "dateTimeUTC": "2025-03-19T14:30:00+00:00"
+    },
+    "season": {
+     "display": "24/25"
+    }
+   },
+   "clubsInformation": {
+    "club": {
+     "clubId": "25792"
+    }
+   },
+   "statistics": {
+    "generalStatistics": {
+     "participationState": "in squad"
+    },
+    "goalStatistics": {
+     "goalsScoredTotal": null,
+     "assists": null,
+     "ownGoalsScored": null
+    },
+    "cardStatistics": {
+     "yellowCardNet": null,
+     "yellowCardGross": null
+    },
+    "playingTimeStatistics": {
+     "playedMinutes": null,
+     "isStarting": false
+    }
+   }
+  }
+ ]
+}
