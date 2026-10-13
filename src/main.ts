@@ -11005,6 +11005,41 @@ function parseTalentRowsObject(rows){
 //      „Hubert Simson(8)-Wda Świecie" i pustym nazwisku.
 const RE_ROK_TALENTU = /\b(19[89]\d|20[0-4]\d)\b/;
 
+// CO NA PEWNO NIE JEST ZAWODNIKIEM.
+//
+// Zgłoszenie (13.10.2026): po wklejeniu strony profilu z Transfermarktu system „rozpoznał"
+// 256 zawodników — a były to wiersze terminarza („Sobota 01.05. - 00:00", rocznik 2027)
+// i pozycje menu serwisu („Często Zadawane Pytania", „Drugie Żółte Kartki", „Wolni Zawodnicy").
+// Parser brał każdą linijkę z dwoma słowami od wielkiej litery za imię i nazwisko.
+//
+// Odsiewamy trzy rzeczy, których w liście zawodników być nie może: godziny, daty z nazwą dnia
+// tygodnia i krótkie hasła ze słownika nawigacji serwisów piłkarskich. Słownik działa tylko
+// na liniach do czterech słów, żeby nie zjeść wiersza składu, w którym pada słowo „mecze".
+const SLOWNIK_NAWIGACJI = new Set([
+  'zawodnik','zawodnicy','zawodnikow','zawodnika','pytania','zadawane','czesto','zolte','czerwone',
+  'kartki','kartka','porownaj','dane','wolni','zywo','login','logowanie','wyloguj','transfermarkt',
+  'terminarz','tabela','tabele','statystyki','mecze','sezon','sezony','liga','ligi','puchar',
+  'strzelcy','asysty','transfery','transfer','wartosc','rynkowa','profil','kalendarz','wyniki',
+  'sklady','obsada','newsletter','forum','reklama','regulamin','prywatnosci','cookies','kontakt',
+  'szukaj','menu','glowna','wiecej','zobacz','wszystkie','rekordy','historia','galeria','zdjecia',
+  'wideo','archiwum','ranking','notowania','sedziowie','trenerzy','kluby','druzyny','rozgrywki',
+]);
+const DNI_TYGODNIA = /^(pon|wt|sr|śr|czw|pt|sob|niedz|nd)\w*/i;
+function liniaToSmiecTalentu(linia){
+  const l = String(linia||'').trim();
+  if(!l) return true;
+  if(!/\p{L}/u.test(l)) return true;                           // sama liczba albo same znaki
+  if(/\b\d{1,2}:\d{2}\b/.test(l)) return true;                 // godzina — wiersz terminarza
+  if(DNI_TYGODNIA.test(l) && /\d/.test(l)) return true;        // „Sobota 01.05. - 00:00"
+  if(/\b\d{1,2}\.\d{1,2}\.(\d{2,4})?(\s|$)/.test(l)) return true;   // data w zapisie 01.05.
+  const slowa = l.split(/\s+/).filter(Boolean);
+  if(slowa.length <= 4){
+    const bezOgonkow = (s)=> s.toLowerCase().normalize('NFD').replace(/\p{M}/gu,'').replace(/[^a-z]/g,'');
+    if(slowa.some(w=> SLOWNIK_NAWIGACJI.has(bezOgonkow(w)))) return true;
+  }
+  return false;
+}
+
 function czyscLinieTalentu(l){
   // Twarda spacja i myślniki w kilku wariantach to standard przy kopiowaniu z PDF i stron WWW.
   return String(l||'').replace(/ /g,' ').replace(/[‐-―]/g,'-').replace(/\s+/g,' ').trim();
@@ -11644,6 +11679,54 @@ function osobyZPowolaniaPzpn(tekst){
   return osoby;
 }
 
+// JEDEN ZAWODNIK Z LINKU DO TRANSFERMARKTU.
+//
+// Zgłoszenie (13.10.2026): „wkleiłem screena i skopiowałem dane zawodnika, a tu mi wprowadziło
+// jakieś dziwne dane — link do zawodnika, go chciałem wprowadzić". Użytkownik wkleja całą stronę
+// profilu albo sam adres, a chce jednej kartoteki. Czytanie tekstu strony jest tu bez sensu:
+// mamy gotowy odczyt profilu po adresie (api/transfermarkt.js), ten sam, którym uzupełniamy
+// zawodników w głównej bazie.
+//
+// Imię i nazwisko bierzemy z adresu — w nim siedzi czytelny zapis („bartosz-szywala") — a gdy
+// serwis poda nazwisko w pisowni krajowej, wygrywa ono, bo ma polskie znaki.
+const RE_LINK_TM_ZAWODNIK = /https?:\/\/[^\s]*transfermarkt\.[a-z.]+\/[^\s]*\/spieler\/(\d+)/i;
+
+function imieNazwiskoZLinkuTm(adres){
+  const slug = String(adres||'').split('/profil/')[0].split('/').filter(Boolean).pop() || '';
+  const slowa = slug.split('-').filter(Boolean).map(s=> s.charAt(0).toUpperCase() + s.slice(1));
+  if(slowa.length < 2) return null;
+  return { firstName: slowa[0], lastName: slowa.slice(1).join(' ') };
+}
+
+async function talentZLinkuTransfermarkt(adres){
+  const odp = await fetch('/api/transfermarkt?url=' + encodeURIComponent(adres));
+  const dane = await odp.json().catch(()=>({}));
+  if(!odp.ok) throw new Error(dane.error || 'Transfermarkt nie oddał tej strony.');
+
+  const zLinku = imieNazwiskoZLinkuTm(adres);
+  // „Nazwisko w kraju" to pełne imię i nazwisko w pisowni ojczystej — stamtąd biorą się ogonki.
+  const pelne = String(dane.nazwaPelna||'').trim();
+  const czesci = pelne ? pelne.split(/\s+/) : [];
+  const imie = czesci.length > 1 ? czesci[0] : (zLinku ? zLinku.firstName : '');
+  const nazwisko = czesci.length > 1 ? czesci.slice(1).join(' ') : (zLinku ? zLinku.lastName : '');
+  if(!imie && !nazwisko) throw new Error('Z tego adresu nie dało się odczytać imienia i nazwiska.');
+
+  const rocznik = Number(String(dane.dataUrodzenia||'').slice(0,4)) || null;
+  const wZakresie = rocznik && rocznik >= NAJSTARSZY_ROCZNIK_TALENTU && rocznik <= new Date().getFullYear();
+  return {
+    id: uid('T'),
+    firstName: imie,
+    lastName: nazwisko,
+    birthYear: wZakresie ? rocznik : null,
+    club: dane.klub || '',
+    position: dane.pozycja || '',
+    tmLink: adres,
+    confidence: 'transfermarkt',
+    sourceImage: '',
+    dateAdded: dzisiaj(),
+  };
+}
+
 function parseTalentPastedText(text){
   // POWOŁANIA CZYTAMY PIERWSZE. Wzór „Nazwisko (Klub)" powtórzony kilka razy nie występuje
   // w żadnym z pozostałych obsługiwanych formatów: skopiowany skład ma w nawiasie numer na
@@ -11667,9 +11750,12 @@ function parseTalentPastedTextZwykly(text){
   // Lista powołań bywa wklejana jako jeden akapit: „1. Jan Kowalski - Legia 2. Piotr Nowak - Lech".
   // Numer porządkowy w środku linii to wtedy granica kolejnego zawodnika.
   const linie = [];
+  let odsiane = 0;   // ile linijek odpadlo jako terminarz albo menu serwisu
   surowe.forEach(l=>{
     const c = czyscLinieTalentu(l);
     if(!c) return;
+    // Wiersze terminarza i pozycje menu odpadaja tu, zanim ktokolwiek uzna je za nazwiska.
+    if(liniaToSmiecTalentu(c)){ odsiane++; return; }
     if(/^\d{1,3}[.)]\s/.test(c) && /\s\d{1,3}[.)]\s/.test(c)) c.split(/\s+(?=\d{1,3}[.)]\s)/).forEach(x=>linie.push(x));
     else linie.push(c);
   });
@@ -11747,7 +11833,7 @@ function parseTalentPastedTextZwykly(text){
       id: uid('T'), firstName: o.firstName, lastName: o.lastName, birthYear: o.birthYear || null,
       club: o.club || '', confidence: 'import', sourceImage: '', dateAdded: nowDate
     })),
-    skippedCount: pominiete
+    skippedCount: pominiete, odsianeSmieci: odsiane
   };
 }
 
@@ -12088,6 +12174,20 @@ function scalPowolanychZIstniejacymi(istniejace, nowe){
 }
 let talentKadra = '';
 let talentKraj = '';   // zakładka Europa: wybrany kraj (pusty = wszystkie)
+let talentSzukaj = '';  // wyszukiwarka listy talentów — wpisywana fraza
+// Tekst do porównywania: małe litery, bez ogonków, bez znaków przestankowych. Dzięki temu
+// „zielinski" znajduje Zielińskiego, a „lech poznan" — Lecha Poznań.
+const doSzukaniaTalentu = (s)=> String(s||'').toLowerCase()
+  .normalize('NFD').replace(/\p{M}/gu,'').replace(/[^a-z0-9]+/g,' ').trim();
+// Każde słowo frazy musi się gdzieś w wpisie znaleźć, ale nie muszą stać obok siebie ani
+// w tej kolejności — „kowalski lech" trafia tak samo jak „lech kowalski".
+function talentPasuje(t, fraza){
+  const q = doSzukaniaTalentu(fraza);
+  if(!q) return true;
+  const stog = doSzukaniaTalentu([t.firstName, t.lastName, t.club, t.position,
+    t.birthYear, t.reprezentacja, t.liga, t.krajKlubu].filter(Boolean).join(' '));
+  return q.split(' ').every(slowo=> stog.includes(slowo));
+}
 // Kraj zawodnika z Europy: pierwszy człon znacznika („Szwecja U-19", „Chorwacja · CIES: …").
 // Statystyki i liga zawodnika z Europy (z Transfermarktu, plik europa-statystyki.ts) — po numerze z jego linku.
 const statTalentu = (t)=>{
@@ -12341,7 +12441,12 @@ function viewTalent(){
   // „Talent klubowy" (dawniej „Poza kadrą") zawęża się dodatkowo do wybranego rocznika.
   const widoczne = (talentKadra ? DB.talents.filter(t=>wKadrze(t, talentKadra)) : DB.talents)
     .filter(t=> talentKadra !== 'inni' || wRocznikuTalentu(t, talentRocznik))
-    .filter(t=> talentKadra !== 'europa' || !talentKraj || krajEuropy(t) === talentKraj);
+    .filter(t=> talentKadra !== 'europa' || !talentKraj || krajEuropy(t) === talentKraj)
+    .filter(t=> talentPasuje(t, talentSzukaj));
+  // Ilu pasuje w CAŁEJ liście talentów — przy 1838 wpisach łatwo szukać kogoś w zakładce U-15,
+  // kiedy on siedzi w talencie klubowym. Zamiast pustej listy mówimy, gdzie jest.
+  const trafieniaWszedzie = talentSzukaj.trim()
+    ? DB.talents.filter(t=> talentPasuje(t, talentSzukaj)).length : 0;
   const rows = widoczne.slice().sort((a,b)=>{
     if(talentKadra === 'europa'){
       const k = krajEuropy(a).localeCompare(krajEuropy(b), 'pl');
@@ -12543,6 +12648,22 @@ function viewTalent(){
        na jakiś czas — lista jest tym, na co się patrzy — więc formularze schodzą pod nią. -->
   <h3 class="reports-aside-title" style="margin-top:0;">Lista talentów <span class="reports-count">${rows.length}</span></h3>
   ${zakladkiKadr}
+  ${/* WYSZUKIWARKA — przy 1838 wpisach same zakładki nie wystarczą.
+        Zgłoszenie (13.10.2026): „wstaw wyszukiwarkę przez wpisywanie". Szuka naraz po nazwisku,
+        imieniu, klubie, pozycji, roczniku i kadrze, bez ogonków i bez względu na kolejność słów.
+        Liczy też trafienia w całej liście, żeby szukanie w zawężonej zakładce nie kończyło się
+        pustą stroną, kiedy zawodnik po prostu siedzi gdzie indziej. */''}
+  <div style="display:flex;align-items:center;gap:8px;margin:0 0 10px;flex-wrap:wrap;">
+    <input id="talent-szukaj" type="search" value="${esc(talentSzukaj)}" style="flex:1 1 280px;max-width:420px;"
+      placeholder="Szukaj: nazwisko, klub, pozycja, rocznik…" aria-label="Szukaj w liście talentów">
+    ${talentSzukaj.trim() ? `<button class="secondary" data-action="talent-szukaj-wyczysc">Wyczyść</button>
+      <span class="note" style="margin:0;">${rows.length === 1 ? 'jedno trafienie' : 'trafień: ' + rows.length}</span>` : ''}
+  </div>
+  ${talentSzukaj.trim() && !rows.length && trafieniaWszedzie ? `<div class="empty" style="margin-bottom:10px;">
+    W tej zakładce nic nie pasuje, ale w całej liście talentów
+    ${trafieniaWszedzie === 1 ? 'jest jedno trafienie' : 'są trafienia (' + trafieniaWszedzie + ')'}.
+    <button class="secondary" data-action="talent-szukaj-wszedzie" style="margin-left:6px;">Szukaj we wszystkich</button>
+  </div>` : ''}
   ${(()=>{
     const ile = DB.talents.filter(t=> wpisTalentuDoPorzadku(t)).length;
     return ile ? `<div style="margin:-4px 0 10px;">
@@ -17044,6 +17165,19 @@ function attachHandlers(){
     viewingClubId = null;
     render();
   });
+  // Wyszukiwarka listy talentów. Przerysowanie widoku zabrałoby ognisko z pola po każdej
+  // literze, więc kursor przywracamy tym samym pomocnikiem, co w pozostałych polach aplikacji.
+  {
+    const pole = main.querySelector('#talent-szukaj');
+    if(pole) pole.oninput = ()=>{
+      talentSzukaj = (pole as HTMLInputElement).value;
+      zachowajKursorPoPrzerysowaniu(main, '#talent-szukaj', render);
+    };
+  }
+  main.querySelectorAll('[data-action="talent-szukaj-wyczysc"]').forEach(b=>b.onclick=()=>{ talentSzukaj = ''; render(); });
+  main.querySelectorAll('[data-action="talent-szukaj-wszedzie"]').forEach(b=>b.onclick=()=>{
+    talentKadra = ''; talentRocznik = ''; talentKraj = ''; render();
+  });
   main.querySelectorAll('[data-action="talent-kadra"]').forEach(b=>b.onclick=()=>{
     talentKadra = (b as HTMLElement).dataset.val || '';
     talentRocznik = '';   // każde wejście w zakładkę zaczyna od wszystkich roczników
@@ -17056,11 +17190,38 @@ function attachHandlers(){
     render();
   });
   main.querySelectorAll('[data-action="talent-add-manual"]').forEach(b=>b.onclick=()=>addTalentManually());
-  main.querySelectorAll('[data-action="talent-paste-parse"]').forEach(b=>b.onclick=()=>{
+  main.querySelectorAll('[data-action="talent-paste-parse"]').forEach(b=>b.onclick=async()=>{
     const ta = main.querySelector('#talent-paste-text');
     talentPasteText = ta ? ta.value : '';
+    // ADRES PROFILU MA PIERWSZEŃSTWO PRZED TREŚCIĄ STRONY.
+    // Gdy we wklejce jest link do zawodnika na Transfermarkcie, czytamy profil po adresie
+    // zamiast zgadywać z tekstu. Tekst całej strony niesie terminarz i menu, nie zawodnika.
+    const link = (talentPasteText.match(RE_LINK_TM_ZAWODNIK) || [])[0];
+    if(link){
+      const napis = b.textContent;
+      (b as HTMLButtonElement).disabled = true; b.textContent = 'Czytam profil…';
+      try{
+        talentPasteParsed = [await talentZLinkuTransfermarkt(link)];
+      }catch(e){
+        alert('Nie udało się odczytać profilu z Transfermarktu.\n\n' + (e.message || '') +
+          '\n\nTego zawodnika możesz dodać formularzem „Dodaj ręcznie" obok.');
+        talentPasteParsed = null;
+      }
+      (b as HTMLButtonElement).disabled = false; b.textContent = napis;
+      render();
+      return;
+    }
     try{
-      talentPasteParsed = parseTalentPastedText(talentPasteText).talents;
+      const wynik = parseTalentPastedText(talentPasteText);
+      talentPasteParsed = wynik.talents;
+      // Więcej linijek odsianych niż rozpoznanych osób to znak, że wklejono stronę serwisu,
+      // a nie listę. Lepiej powiedzieć to wprost, niż wyświetlić listę śmieci do zaznaczenia.
+      if(wynik.odsianeSmieci && wynik.odsianeSmieci > wynik.talents.length){
+        alert('To wygląda na skopiowaną stronę serwisu, a nie na listę zawodników.\n\n' +
+          'Pominąłem ' + wynik.odsianeSmieci + ' linijek z terminarza i menu, rozpoznałem ' +
+          wynik.talents.length + '.\nPrzejrzyj listę przed dodaniem — a jeśli chodziło o jednego ' +
+          'zawodnika z Transfermarktu, wklej sam adres jego profilu.');
+      }
     }catch(e){
       alert(e.message || 'Nie udało się rozpoznać wklejonego tekstu.');
       talentPasteParsed = null;
