@@ -130,6 +130,18 @@
 *{box-sizing:border-box;}
 body{margin:0;background:var(--chalk);color:var(--ink);}
 .app{display:flex;min-height:600px;}
+/* PASEK „JEST NOWSZA WERSJA".
+   Celowo w barwach marki, nie w czerwieni paska awarii: to nie jest błąd, tylko informacja.
+   Ten sam układ co .save-fail-bar, żeby oba paski zachowywały się tak samo przy zwężaniu okna. */
+#nowa-wersja-banner:empty{display:none;}
+.nowa-wersja-bar{background:var(--pitch);color:var(--on-pitch);position:relative;z-index:10;
+  padding:9px 16px;font-size:13px;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;
+  box-shadow:0 2px 8px rgba(0,0,0,.25);border-bottom:2px solid var(--gold);}
+.nowa-wersja-bar strong{font-weight:700;color:var(--gold);}
+.nowa-wersja-bar button{background:var(--gold);color:var(--pitch);border:none;border-radius:6px;
+  padding:5px 12px;font-weight:700;font-size:12px;cursor:pointer;}
+.nowa-wersja-bar button.pozniej{background:transparent;color:var(--on-pitch);
+  border:1px solid rgba(246,243,234,.45);font-weight:600;}
 #save-failure-banner:empty{display:none;}
 .save-fail-bar{background:var(--clay);color:var(--card);position:relative;z-index:10;
   padding:10px 16px;font-size:13px;display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;

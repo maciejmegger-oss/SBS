@@ -27747,6 +27747,67 @@ function renderKontoScreen(konto){
 // niezależnie od tego przełącznika. Instrukcja: DOSTEP.md.
 const WYMAGAJ_LOGOWANIA = true;
 
+// PASEK „JEST NOWSZA WERSJA" — TAKI SAM JAK W PANELU MOBILNYM.
+//
+// Zgłoszenie (13.10.2026): użytkownik testował świeżo wdrożoną poprawkę w karcie otwartej
+// poprzedniego wieczora i zgłosił „nie działa". Serwer miał wersję 18:42, jego karta — 23:07
+// z dnia poprzedniego. System jest jednostronicowy: klikanie po zakładkach nie pobiera nowego
+// kodu, więc karta zostawiona na noc może pracować na kodie sprzed wielu wdrożeń, a naprawiony
+// błąd wygląda dokładnie tak, jakby poprawki nie było.
+//
+// Znacznik wersji w panelu bocznym już był, ale trzeba było wiedzieć, żeby na niego spojrzeć
+// i z czym porównać. Teraz system pyta serwer sam i mówi, kiedy warto odświeżyć.
+//
+// NIE PRZEŁADOWUJEMY SAMI. Skaut może mieć otwarty niezapisany raport, a przeładowanie bez
+// pytania skasowałoby mu pracę. Pokazujemy pasek, decyzja należy do niego.
+const WERSJA_TEJ_KARTY = typeof __WERSJA__ === 'string' ? __WERSJA__ : '';
+let wersjaNaSerwerze = '';
+let odrzuconaWersja = '';   // pasek schowany ręcznie — do czasu pojawienia się kolejnej wersji
+
+function pokazPasekNowejWersji(){
+  const miejsce = document.getElementById('nowa-wersja-banner');
+  if(!miejsce) return;
+  const jestNowsza = wersjaNaSerwerze && WERSJA_TEJ_KARTY && wersjaNaSerwerze !== WERSJA_TEJ_KARTY;
+  if(!jestNowsza || odrzuconaWersja === wersjaNaSerwerze){ miejsce.innerHTML = ''; return; }
+  miejsce.innerHTML = `<div class="nowa-wersja-bar">
+    <span>Jest nowsza wersja systemu — <strong>${esc(wersjaNaSerwerze)}</strong>.
+      Ta karta pracuje na wersji ${esc(WERSJA_TEJ_KARTY)}.</span>
+    <button data-action="odswiez-wersje">Odśwież teraz</button>
+    <button class="pozniej" data-action="odloz-wersje" title="Pasek wróci, gdy wdrożę kolejną poprawkę">Później</button>
+  </div>`;
+  const odswiez = miejsce.querySelector('[data-action="odswiez-wersje"]');
+  if(odswiez) odswiez.onclick = ()=>window.location.reload();
+  const pozniej = miejsce.querySelector('[data-action="odloz-wersje"]');
+  if(pozniej) pozniej.onclick = ()=>{ odrzuconaWersja = wersjaNaSerwerze; pokazPasekNowejWersji(); };
+}
+
+async function sprawdzWersjeSystemu(){
+  if(!navigator.onLine || !WERSJA_TEJ_KARTY) return;
+  try{
+    // Znacznik czasu w adresie dokłada się do nagłówka no-store: pośrednik po drodze potrafi
+    // zignorować nagłówek, ale nie potrafi zignorować innego adresu.
+    const odp = await fetch('/wersja.json?t=' + Date.now(), { cache: 'no-store' });
+    if(!odp.ok) return;
+    const { wersja } = await odp.json();
+    if(!wersja) return;
+    wersjaNaSerwerze = wersja;
+    pokazPasekNowejWersji();
+    const znacznik = document.getElementById('wersja-znacznik');
+    if(znacznik && wersja !== WERSJA_TEJ_KARTY) znacznik.title = 'Na serwerze stoi już ' + wersja;
+  }catch(e){ /* brak sieci albo chwilowa awaria — pasek po prostu się nie pokaże */ }
+}
+
+// Pytamy przy starcie, co pół godziny, i — to jest tu najważniejsze — przy KAŻDYM powrocie
+// do karty. Właśnie wtedy, wracając rano do karty z wczoraj, człowiek zaczyna pracę na starym
+// kodzie i nie ma o tym pojęcia.
+function uruchomPilnowanieWersji(){
+  void sprawdzWersjeSystemu();
+  window.setInterval(()=>void sprawdzWersjeSystemu(), 30 * 60 * 1000);
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState === 'visible') void sprawdzWersjeSystemu();
+  });
+}
+
 async function startApp(){
   // WEJŚCIE Z LINKU W MAILU. Rozstrzyga rodzaj linku, nie sama obecność tokenu:
   //   * reset hasła  → ekran „Ustawienie nowego hasła" (po to ten link został wysłany),
@@ -27805,3 +27866,4 @@ async function wpuscZalogowanego(){
 // dane, a wtedy nie ma na co czekać — wiadomość przepadłaby, gdyby nikt jej nie słuchał.
 podlaczOdbiorZLnp();
 startApp();
+uruchomPilnowanieWersji();
