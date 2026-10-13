@@ -82,6 +82,9 @@ sprawdz("decyzja zapisana, znacznik „nowe” zdjęty", R.radar().wpisy["1"].de
 console.log("\n5. Superettan i podpięcie");
 const se2 = R.ligaRynku("SE2");
 sprawdz("16 klubów Superettan z numerami Transfermarktu", se2.klubyTM.length === 16 && se2.klubyTM.every((k) => /^\d+$/.test(k.id)));
+sprawdz("Ettan Norra i Ettan Södra: po 16 klubów, bez powtórek",
+  ["SE3N", "SE3S"].every((id) => R.ligaRynku(id).klubyTM.length === 16 && new Set(R.ligaRynku(id).klubyTM.map((k) => k.id)).size === 16));
+sprawdz("domyślnie widać tylko grających w lidze", R.graWLidze({ wystepy: 3 }) && !R.graWLidze({ wystepy: 0 }) && !R.graWLidze({ wystepy: null }));
 sprawdz("monitorowani z Falkenbergu mają numery TM", R.MONITORING_RYNKI.every((x) => /^\d+$/.test(x.tmId || "")));
 const zrodlo = fs.readFileSync("src/main.ts", "utf8");
 sprawdz("radar wczytywany i zapisywany", /czytaj\('scouting:rynki_radar'\)/.test(zrodlo) && /robustStorageSet\('scouting:rynki_radar'/.test(zrodlo));

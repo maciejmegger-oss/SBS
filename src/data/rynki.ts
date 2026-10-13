@@ -51,8 +51,46 @@ export const LIGI_RYNKOW: LigaRynku[] = [
       { id: "8882", nazwa: "Ljungskile SK" }, { id: "50885", nazwa: "Nordic United FC" }, { id: "2843", nazwa: "GIF Sundsvall" },
       { id: "9611", nazwa: "Norrby IF" },
     ] },
-  { id: "SE3N", kraj: "Szwecja", region: "Skandynawia", poziom: 3, nazwa: "Ettan Norra", sezon: "wiosna–jesień", priorytet: 1, zrodla: "svenskfotboll.se, Transfermarkt", uwagi: "Sporo wypożyczeń z Allsvenskan — sprawdzaj klub macierzysty.", aliasy: ["Ettan Norra"] },
-  { id: "SE3S", kraj: "Szwecja", region: "Skandynawia", poziom: 3, nazwa: "Ettan Södra", sezon: "wiosna–jesień", priorytet: 1, zrodla: "svenskfotboll.se, Transfermarkt", uwagi: "Sporo wypożyczeń z Allsvenskan i Superettan — sprawdzaj klub macierzysty.", aliasy: ["Ettan Södra"] },
+  { id: "SE3N", kraj: "Szwecja", region: "Skandynawia", poziom: 3, nazwa: "Ettan Norra", sezon: "wiosna–jesień", priorytet: 1, zrodla: "svenskfotboll.se, Transfermarkt", uwagi: "Sporo wypożyczeń z Allsvenskan — sprawdzaj klub macierzysty.", aliasy: ["Ettan Norra"],
+    // Skład ligi 2026 według Transfermarktu (13.10.2026).
+    klubyTM: [
+      { id: "53393", nazwa: "FBK Karlstad" },
+      { id: "75138", nazwa: "FC Arlanda" },
+      { id: "17938", nazwa: "Hammarby TFF" },
+      { id: "4414", nazwa: "Gefle IF" },
+      { id: "78287", nazwa: "IF Karlstad Fotboll" },
+      { id: "2283", nazwa: "Vasalunds IF" },
+      { id: "8885", nazwa: "Umeå FC" },
+      { id: "53133", nazwa: "FC Stockholm Internazionale" },
+      { id: "87691", nazwa: "FC Järfälla" },
+      { id: "4380", nazwa: "Assyriska FF" },
+      { id: "8877", nazwa: "AFC Eskilstuna" },
+      { id: "1055", nazwa: "Enköpings SK" },
+      { id: "75341", nazwa: "IFK Stocksund" },
+      { id: "50061", nazwa: "Karlbergs BK" },
+      { id: "46170", nazwa: "Piteå IF" },
+      { id: "23224", nazwa: "Sollentuna FK" },
+    ] },
+  { id: "SE3S", kraj: "Szwecja", region: "Skandynawia", poziom: 3, nazwa: "Ettan Södra", sezon: "wiosna–jesień", priorytet: 1, zrodla: "svenskfotboll.se, Transfermarkt", uwagi: "Sporo wypożyczeń z Allsvenskan i Superettan — sprawdzaj klub macierzysty.", aliasy: ["Ettan Södra"],
+    // Skład ligi 2026 według Transfermarktu (13.10.2026).
+    klubyTM: [
+      { id: "39591", nazwa: "Eskilsminne IF" },
+      { id: "75203", nazwa: "AFC Malmö" },
+      { id: "7411", nazwa: "Jönköpings Södra IF" },
+      { id: "62649", nazwa: "Hässleholms IF" },
+      { id: "22162", nazwa: "FC Rosengård" },
+      { id: "45631", nazwa: "BK Olympic" },
+      { id: "701", nazwa: "Trelleborgs FF" },
+      { id: "13653", nazwa: "Utsiktens BK" },
+      { id: "9015", nazwa: "FC Trollhättan" },
+      { id: "17930", nazwa: "Kristianstad FC" },
+      { id: "7949", nazwa: "Laholms FK" },
+      { id: "22970", nazwa: "Lunds BK" },
+      { id: "5965", nazwa: "Skövde AIK" },
+      { id: "48219", nazwa: "Tvååkers IF" },
+      { id: "6139", nazwa: "Åtvidabergs FF" },
+      { id: "3625", nazwa: "Ängelholms FF" },
+    ] },
   { id: "NO2", kraj: "Norwegia", region: "Skandynawia", poziom: 2, nazwa: "OBOS-ligaen", sezon: "wiosna–jesień", priorytet: 1, zrodla: "fotball.no (kampfakta), Transfermarkt", uwagi: "Norwegia w EOG — wyjątek 16–18 ma zastosowanie.", aliasy: ["OBOS-ligaen"] },
   { id: "NO3", kraj: "Norwegia", region: "Skandynawia", poziom: 3, nazwa: "PostNord-ligaen", sezon: "wiosna–jesień", priorytet: 1, zrodla: "fotball.no", uwagi: "Drużyny rezerw klubów Eliteserien — młodzi z minutami w seniorach.", aliasy: ["PostNord-ligaen", "PostNord-ligaen avdeling 1", "PostNord-ligaen avdeling 2"] },
   { id: "DK2", kraj: "Dania", region: "Skandynawia", poziom: 2, nazwa: "1. Division", sezon: "jesień–wiosna", priorytet: 1, zrodla: "dbu.dk, Transfermarkt", uwagi: "Dania gra jesień–wiosna, inaczej niż reszta Skandynawii.", aliasy: ["1.Division", "1. Division"] },
@@ -403,15 +441,19 @@ export function aktualizujRadar(stan: StanRadaru, ligaId: string, wyniki: WynikS
   return { ...stan, wpisy, skany: { ...stan.skany, [ligaId]: new Date().toISOString() } };
 }
 
+/** Zawodnik ma minuty w lidze w bieżącym sezonie — reszta (kadra bez gry) to głównie akademia. */
+export const graWLidze = (w: WpisRadaru): boolean => (w.wystepy || 0) > 0;
+
 export function decyzjaRadaru(tmId: string, decyzja: WpisRadaru["decyzja"]): void {
   const w = RADAR.wpisy[tmId];
   if (!w) return;
   RADAR = { ...RADAR, wpisy: { ...RADAR.wpisy, [tmId]: { ...w, decyzja, nowe: false } } };
 }
 
-/** Kolejność na liście: bez decyzji przed resztą, świeże sygnały, debiutanci, potem udział w minutach. */
+/** Kolejność na liście: bez decyzji przed resztą, świeże sygnały, potem udział w minutach. */
 export function listaRadaru(ligaId: string): WpisRadaru[] {
-  const waga = (w: WpisRadaru) => (w.decyzja ? 0 : 1000) + (w.nowe ? 500 : 0) + (w.debiutLigowy ? 100 : 0) + Math.round((w.udzial || 0) * 100);
+  // Bez decyzji na górze, świeży sygnał przed starym, potem udział w minutach — kto gra najwięcej.
+  const waga = (w: WpisRadaru) => (w.decyzja ? 0 : 1000) + (w.nowe ? 200 : 0) + Math.round((w.udzial || 0) * 100);
   return Object.values(RADAR.wpisy).filter((w) => w.ligaId === ligaId)
     .filter((w) => Number(String(w.dataUr).slice(0, 4)) >= RADAR.odRocznika)
     .sort((a, b) => waga(b) - waga(a) || a.nazwa.localeCompare(b.nazwa, "pl"));

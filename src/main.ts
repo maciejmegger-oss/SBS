@@ -44,7 +44,7 @@ import { LIGI_RYNKOW, REGIONY, krajeRegionu, ligiKraju, ligaRynku, priorytetKraj
   sygnalyRynkow, udzialMinut, OPIS_PRZEDZIALU, PROG_SKOKU, PROG_WZROSTU, STATUSY_RYNKOW, ustawEdycjeRynkow,
   edycjeRynkow, zapiszProfilRynku, profilZKadry, sezonyLigowe, ustawStatystykiTM, statystykiTM, statystykiZawodnikaTM,
   zapiszStatystykiTM, staryStanTM, tmIdZLinku, ustawRadar, radar, aktualizujRadar, decyzjaRadaru, listaRadaru,
-  profilZRadaru, monitorowani, wiekNaDzien } from "./data/rynki";
+  profilZRadaru, monitorowani, wiekNaDzien, graWLidze } from "./data/rynki";
 // Kod zakładek leży w public/zakladki/ — ten sam plik idzie na serwer (skąd zakładka pobiera go
 // przy każdym kliknięciu) i tutaj, jako kopia awaryjna na wypadek braku sieci.
 import LNP_PROTOKOL_KOD from "../public/zakladki/lnp-protokol.js?raw";
@@ -16202,6 +16202,7 @@ function openRynkiModal(klucz){
 // ---------- RADAR MŁODYCH (skan kadr ligi) ----------
 let rynkiSkan = { wTrakcie: '', postep: '', bledy: [] };
 let rynkiPokazOdrzuconych = false;
+let rynkiPokazBezMinut = false;
 
 async function skanujLigeRadarem(ligaId){
   const l = ligaRynku(ligaId);
@@ -16238,19 +16239,24 @@ async function skanujLigeRadarem(ligaId){
   rynkiSkan = { wTrakcie: '', postep: '', bledy };
   odswiez();
   if(!czyKlient() && !nieudaneOdczyty.length){ await saveRynkiRadar(); await saveRynkiTM(); }
-  const nowych = listaRadaru(ligaId).filter(w=> w.nowe && !w.decyzja).length;
-  pokazPotwierdzenie(`Radar ${l.nazwa}: ${wyniki.length} z ${l.klubyTM.length} klubów, nowe sygnały: ${nowych}.`, bledy.length ? 'blad' : 'ok');
+  const nowych = listaRadaru(ligaId).filter(w=> w.nowe && !w.decyzja && graWLidze(w)).length;
+  pokazPotwierdzenie(`Radar ${l.nazwa}: ${wyniki.length} z ${l.klubyTM.length} klubów, nowe sygnały u grających w lidze: ${nowych}.`, bledy.length ? 'blad' : 'ok');
 }
 
 function rynkiPanelRadaru(l){
   if(!l.klubyTM) return '';
   const r = radar();
   const lista = listaRadaru(l.id);
+  // DOMYŚLNIE TYLKO CI, KTÓRZY GRAJĄ. Pierwszy skan Superettan dał 77 nazwisk z rocznika 2006+,
+  // w większości chłopców z akademii zapisanych w kadrze bez minuty w lidze. Ich lista jest pod
+  // przyciskiem; kto zadebiutuje, wskoczy na górę z sygnałem DEBIUT.
   const aktywni = lista.filter(w=> w.decyzja !== 'odrzucony');
   const odrzuceni = lista.filter(w=> w.decyzja === 'odrzucony');
-  const widoczni = rynkiPokazOdrzuconych ? lista : aktywni;
+  const grajacy = aktywni.filter(graWLidze);
+  const bezMinut = aktywni.filter(w=> !graWLidze(w));
+  const widoczni = grajacy.concat(rynkiPokazBezMinut ? bezMinut : []).concat(rynkiPokazOdrzuconych ? odrzuceni : []);
   const ostatni = r.skany[l.id];
-  const nowych = aktywni.filter(w=> w.nowe && !w.decyzja).length;
+  const nowych = aktywni.filter(w=> w.nowe && !w.decyzja && graWLidze(w)).length;
   const wMonitoringu = new Set(monitorowani().map(m=> m.tmId).filter(Boolean));
   const roczniki = [2004, 2005, 2006, 2007, 2008, 2009, 2010];
   const odznaka = (s)=> `<span class="rynki-sygnal-rodzaj rynki-radar-sygnal" title="${esc(s.opis)}">${esc(s.rodzaj)}</span>`;
@@ -16278,6 +16284,7 @@ function rynkiPanelRadaru(l){
     <div class="rynki-radar-gora">
       <div>
         <h3 class="rynki-h3" style="margin:0;">Radar młodych · ${esc(l.nazwa)} ${nowych ? `<span class="rynki-radar-licznik">${nowych} nowych</span>` : ''}</h3>
+        ${lista.length ? `<div class="note" style="font-style:normal;margin-top:2px;">Rocznik ${r.odRocznika}+: ${aktywni.length} w kadrach · <strong>${grajacy.length} z minutami w lidze</strong></div>` : ''}
         <div class="note" style="font-style:normal;margin-top:4px;">Kadry ${l.klubyTM.length} klubów z Transfermarktu · ${ostatni ? 'ostatni skan ' + esc(new Date(ostatni).toLocaleString('pl-PL', {dateStyle:'short', timeStyle:'short'})) : 'jeszcze nie skanowano'}</div>
       </div>
       <div class="rynki-radar-akcje">
@@ -16291,6 +16298,7 @@ function rynkiPanelRadaru(l){
       <thead><tr><th>Zawodnik</th><th>Rocznik</th><th>Pozycja</th><th>Klub</th><th title="Występy / mecze drużyny · minuty · udział (liga, bieżący sezon)">Liga w sezonie</th><th>Debiut w lidze</th><th>Sygnały</th><th></th></tr></thead>
       <tbody>${widoczni.map(wiersz).join('')}</tbody></table></div>`
       : `<div class="empty">${ostatni ? `Brak zawodników z rocznika ${r.odRocznika} i młodszych w kadrach.` : 'Kliknij „Skanuj kadry" — system przejrzy kadry wszystkich klubów i wypisze młodych zawodników z ich statystykami.'}</div>`}
+    ${bezMinut.length ? `<button class="link-btn" data-action="rynki-radar-bezminut">${rynkiPokazBezMinut ? 'Ukryj' : 'Pokaż'} bez minut w lidze (${bezMinut.length})</button>` : ''}
     ${odrzuceni.length ? `<button class="link-btn" data-action="rynki-radar-odrzuceni">${rynkiPokazOdrzuconych ? 'Ukryj' : 'Pokaż'} odrzuconych (${odrzuceni.length})</button>` : ''}
     <p class="note">Sygnały: NOWY — pierwszy raz w kadrze; DEBIUT — pierwszy mecz w lidze; PIERWSZY START — pierwszy mecz od 1. minuty; MINUTY ↑ — udział w minutach wzrósł o ${Math.round(PROG_WZROSTU * 100)} pkt proc. od poprzedniego skanu; ZMIANA KLUBU. Odrzucony wraca tylko z nowym sygnałem.</p>
   </div>`;
@@ -16304,6 +16312,7 @@ function podepnijRadar(main){
     render();
     if(!czyKlient() && !nieudaneOdczyty.length) await saveRynkiRadar();
   };
+  main.querySelectorAll('[data-action="rynki-radar-bezminut"]').forEach(b=> b.onclick = ()=>{ rynkiPokazBezMinut = !rynkiPokazBezMinut; render(); });
   main.querySelectorAll('[data-action="rynki-radar-odrzuceni"]').forEach(b=> b.onclick = ()=>{ rynkiPokazOdrzuconych = !rynkiPokazOdrzuconych; render(); });
   const decyzja = async (tmId, d)=>{ decyzjaRadaru(tmId, d); render(); if(!nieudaneOdczyty.length) await saveRynkiRadar(); };
   main.querySelectorAll('[data-action="rynki-radar-odrzuc"]').forEach(b=> b.onclick = ()=> void decyzja(b.dataset.tm, 'odrzucony'));
