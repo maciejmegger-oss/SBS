@@ -13,24 +13,7 @@
 
 import { zsumujWystepy, profilZTmapi } from "./_tm-wystepy.js";
 
-const API = "https://tmapi.transfermarkt.technology";
-const NAGLOWKI = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
-  "Accept": "application/json",
-  "Accept-Language": "pl-PL,pl;q=0.9",
-  "Origin": "https://www.transfermarkt.pl",
-  "Referer": "https://www.transfermarkt.pl/",
-};
-
-async function pobierz(sciezka) {
-  const odp = await fetch(API + sciezka, { headers: NAGLOWKI, signal: AbortSignal.timeout(15000) });
-  if (!odp.ok) throw new Error(`Transfermarkt odpowiedział ${odp.status} (${sciezka.split("?")[0]})`);
-  const j = await odp.json();
-  if (j && j.success === false) throw new Error(j.message || "Transfermarkt odrzucił zapytanie");
-  return j && j.data;
-}
-
-const lista = (nazwa, ids) => ids.map((x) => `${nazwa}[]=${encodeURIComponent(x)}`).join("&");
+import { pobierz, lista } from "./_tmapi.js";
 
 export default async function handler(req, res) {
   const q = req.query || {};

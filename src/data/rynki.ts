@@ -36,10 +36,21 @@ export type LigaRynku = {
   uwagi: string;
   /** Nazwy, pod którymi liga występuje na Transfermarkcie — po nich łączymy kadry młodzieżowe. */
   aliasy: string[];
+  /** Kluby ligi na Transfermarkcie (numer + nazwa) — lista do skanu kadr. Zmienia się co sezon. */
+  klubyTM?: { id: string; nazwa: string }[];
 };
 
 export const LIGI_RYNKOW: LigaRynku[] = [
-  { id: "SE2", kraj: "Szwecja", region: "Skandynawia", poziom: 2, nazwa: "Superettan", sezon: "wiosna–jesień", priorytet: 1, zrodla: "svenskfotboll.se (protokoły), ligan.se, Transfermarkt", uwagi: "Kontrakty często kończą się 31.12 — wolni zawodnicy na zimowe okno w Polsce.", aliasy: ["Superettan"] },
+  { id: "SE2", kraj: "Szwecja", region: "Skandynawia", poziom: 2, nazwa: "Superettan", sezon: "wiosna–jesień", priorytet: 1, zrodla: "svenskfotboll.se (protokoły), ligan.se, Transfermarkt", uwagi: "Kontrakty często kończą się 31.12 — wolni zawodnicy na zimowe okno w Polsce.", aliasy: ["Superettan"],
+    // Skład ligi 2026 według Transfermarktu (13.10.2026). Po awansach i spadkach — do podmiany.
+    klubyTM: [
+      { id: "2844", nazwa: "IFK Norrköping" }, { id: "10507", nazwa: "Varbergs BoIS" }, { id: "2294", nazwa: "Landskrona BoIS" },
+      { id: "5196", nazwa: "Falkenbergs FF" }, { id: "699", nazwa: "Helsingborgs IF" }, { id: "6018", nazwa: "IK Oddevold" },
+      { id: "1236", nazwa: "Östers IF" }, { id: "1056", nazwa: "Örebro SK" }, { id: "8843", nazwa: "Sandvikens IF" },
+      { id: "9614", nazwa: "Östersunds FK" }, { id: "3622", nazwa: "IFK Värnamo" }, { id: "3362", nazwa: "IK Brage" },
+      { id: "8882", nazwa: "Ljungskile SK" }, { id: "50885", nazwa: "Nordic United FC" }, { id: "2843", nazwa: "GIF Sundsvall" },
+      { id: "9611", nazwa: "Norrby IF" },
+    ] },
   { id: "SE3N", kraj: "Szwecja", region: "Skandynawia", poziom: 3, nazwa: "Ettan Norra", sezon: "wiosna–jesień", priorytet: 1, zrodla: "svenskfotboll.se, Transfermarkt", uwagi: "Sporo wypożyczeń z Allsvenskan — sprawdzaj klub macierzysty.", aliasy: ["Ettan Norra"] },
   { id: "SE3S", kraj: "Szwecja", region: "Skandynawia", poziom: 3, nazwa: "Ettan Södra", sezon: "wiosna–jesień", priorytet: 1, zrodla: "svenskfotboll.se, Transfermarkt", uwagi: "Sporo wypożyczeń z Allsvenskan i Superettan — sprawdzaj klub macierzysty.", aliasy: ["Ettan Södra"] },
   { id: "NO2", kraj: "Norwegia", region: "Skandynawia", poziom: 2, nazwa: "OBOS-ligaen", sezon: "wiosna–jesień", priorytet: 1, zrodla: "fotball.no (kampfakta), Transfermarkt", uwagi: "Norwegia w EOG — wyjątek 16–18 ma zastosowanie.", aliasy: ["OBOS-ligaen"] },
@@ -182,7 +193,7 @@ export const STATUSY_RYNKOW: ZawodnikMonitorowany["status"][] = ["Do sprawdzenia
 
 export const MONITORING_RYNKI: ZawodnikMonitorowany[] = [
   {
-    id: "R001", imie: "Ayo", nazwisko: "Rupia-Ellis", dataUr: "2005-07-18", ligaId: "SE2", klub: "Falkenbergs FF",
+    id: "R001", tmId: "1057798", tmLink: "https://www.transfermarkt.pl/ayo-rupia-ellis/profil/spieler/1057798", imie: "Ayo", nazwisko: "Rupia-Ellis", dataUr: "2005-07-18", ligaId: "SE2", klub: "Falkenbergs FF",
     pozycja: "Prawy obrońca", obywatelstwo: ["Szwecja", "Tanzania"], kontraktDo: "2030-12-31", wypozyczenie: null,
     status: "Obserwacja", wzrost: 182, menedzer: "MD Management", wartoscTM: "100 tys. €", wKlubieOd: "2026-08-03",
     sciezka: [{ kiedy: "do 2024", co: "Akademia AIK Solna" }, { kiedy: "2025", co: "Brak danych — do uzupełnienia" }, { kiedy: "08.2026", co: "Falkenbergs FF (Superettan)" }],
@@ -191,7 +202,7 @@ export const MONITORING_RYNKI: ZawodnikMonitorowany[] = [
     notatka: "Od razu podstawowy w drużynie walczącej o awans (2. miejsce w tabeli).",
   },
   {
-    id: "R002", imie: "Noel", nazwisko: "Lundgren", dataUr: "2005-04-02", ligaId: "SE3S", klub: "Tvååkers IF",
+    id: "R002", tmId: "1363798", tmLink: "https://www.transfermarkt.pl/noel-lundgren/profil/spieler/1363798", imie: "Noel", nazwisko: "Lundgren", dataUr: "2005-04-02", ligaId: "SE3S", klub: "Tvååkers IF",
     pozycja: "Środkowy pomocnik", obywatelstwo: ["Szwecja"], kontraktDo: "", wypozyczenie: { z: "Falkenbergs FF", do: "2026-11-30" },
     status: "Obserwacja", wzrost: null, menedzer: "", wartoscTM: "", wKlubieOd: "2026-05-06",
     sciezka: [{ kiedy: "do 2024", co: "Akademia Falkenbergs FF" }, { kiedy: "05.2026", co: "Wypożyczenie do Tvååkers IF (Ettan Södra)" }],
@@ -200,7 +211,7 @@ export const MONITORING_RYNKI: ZawodnikMonitorowany[] = [
     notatka: "Wypożyczenie kończy się 30.11.2026 — przyszłość w Falkenbergu niepewna.",
   },
   {
-    id: "R003", imie: "Gazton", nazwisko: "Alexandersson", dataUr: "2008-02-24", ligaId: "SE2", klub: "Falkenbergs FF",
+    id: "R003", tmId: "1446048", tmLink: "https://www.transfermarkt.pl/gazton-alexandersson/profil/spieler/1446048", imie: "Gazton", nazwisko: "Alexandersson", dataUr: "2008-02-24", ligaId: "SE2", klub: "Falkenbergs FF",
     pozycja: "Pomocnik", obywatelstwo: ["Szwecja"], kontraktDo: "2028-12-31", wypozyczenie: null,
     status: "Do sprawdzenia", wzrost: null, menedzer: "", wartoscTM: "50 tys. €", wKlubieOd: "2026-01-29",
     sciezka: [{ kiedy: "do 2025", co: "Akademia Falkenbergs FF" }, { kiedy: "01.2026", co: "Pierwsza drużyna Falkenbergs FF" }],
@@ -209,7 +220,7 @@ export const MONITORING_RYNKI: ZawodnikMonitorowany[] = [
     notatka: "",
   },
   {
-    id: "R004", imie: "Wilton", nazwisko: "Ljunggren", dataUr: "2006-04-27", ligaId: "SE2", klub: "Falkenbergs FF",
+    id: "R004", tmId: "1519090", tmLink: "https://www.transfermarkt.pl/wilton-ljunggren/profil/spieler/1519090", imie: "Wilton", nazwisko: "Ljunggren", dataUr: "2006-04-27", ligaId: "SE2", klub: "Falkenbergs FF",
     pozycja: "Obrońca", obywatelstwo: ["Szwecja"], kontraktDo: "", wypozyczenie: null,
     status: "Do sprawdzenia", wzrost: null, menedzer: "Modyr MGMT", wartoscTM: "", wKlubieOd: "",
     sciezka: [],
@@ -218,7 +229,7 @@ export const MONITORING_RYNKI: ZawodnikMonitorowany[] = [
     notatka: "Kontraktu brak w Transfermarkcie.",
   },
   {
-    id: "R005", imie: "Alexander", nazwisko: "Carlsson", dataUr: "2007-08-02", ligaId: "SE2", klub: "Falkenbergs FF",
+    id: "R005", tmId: "1518661", tmLink: "https://www.transfermarkt.pl/alexander-carlsson/profil/spieler/1518661", imie: "Alexander", nazwisko: "Carlsson", dataUr: "2007-08-02", ligaId: "SE2", klub: "Falkenbergs FF",
     pozycja: "Bramkarz", obywatelstwo: ["Szwecja"], kontraktDo: "", wypozyczenie: { z: "klubu Allsvenskan (do potwierdzenia)", do: "2026-11-30" },
     status: "Do sprawdzenia", wzrost: null, menedzer: "", wartoscTM: "", wKlubieOd: "2026-05-25",
     sciezka: [{ kiedy: "25/26", co: "Svenska Cupen w klubie macierzystym: 1 mecz, 28 min" }, { kiedy: "05.2026", co: "Wypożyczenie do Falkenbergs FF" }],
@@ -280,7 +291,8 @@ export type WierszTM = {
   samoboje: number; zolte: number; czerwone: number; ostatniMecz: string;
 };
 export type ProfilTM = { nazwa: string; dataUr: string; wzrost: number | null; noga: string; kontraktDo: string;
-  menedzer: string; wartosc: string; wypozyczony: boolean };
+  menedzer: string; wartosc: string; wypozyczony: boolean;
+  nowyNabytek?: boolean; pozycja?: string; obywatelstwo?: string[]; adres?: string };
 export type StatystykiTM = { pobrano: string; profil: ProfilTM | null; sezony: { sezonId: number; sezon: string; rozgrywki: WierszTM[] }[] };
 
 let STATY_TM: Record<string, StatystykiTM> = {};
@@ -319,6 +331,107 @@ export function sezonyLigowe(d: StatystykiTM | null): SezonLigowy[] {
       gole: suma("gole"), asysty: suma("asysty"), zolte: suma("zolte"), czerwone: suma("czerwone"),
       udzial: mozliwe ? Math.min(1, minuty / mozliwe) : null } as SezonLigowy;
   }).filter((x): x is SezonLigowy => !!x).sort((a, b) => b.sezonId - a.sezonId);
+}
+
+// ---------- RADAR MŁODYCH ----------
+//
+// Zgłoszenie (13.10.2026): „gdyby w 2 lidze szwedzkiej w jakimś zespole pojawił się zawodnik np.
+// 2007, od razu trafia do systemu SBS, przycisk »monitoruj«". Skan kadr (api/rynki-skaner.js)
+// oddaje młodych z każdego klubu; tutaj porównujemy go z poprzednim skanem i zapisujemy SYGNAŁY.
+// Radar nie monitoruje sam — decyzję „Monitoruj / Odrzuć" podejmuje skaut. Odrzucony wraca na
+// radar tylko z nowym, mocniejszym sygnałem (debiut, pierwszy start, skok minut, zmiana klubu).
+
+export type SygnalRadaru = { data: string; rodzaj: "NOWY" | "DEBIUT" | "PIERWSZY START" | "MINUTY ↑" | "ZMIANA KLUBU"; opis: string };
+export type WpisRadaru = {
+  tmId: string; ligaId: string; klubId: string; klub: string; nazwa: string; dataUr: string; pozycja: string;
+  profil: ProfilTM | null; debiutLigowy: string; pierwszyStartLigowy: string;
+  pierwszyRaz: string; ostatnio: string; udzial: number | null; minuty: number | null; wystepy: number | null;
+  meczeDruzyny: number | null; gole: number | null; asysty: number | null;
+  sygnaly: SygnalRadaru[]; decyzja: "" | "odrzucony" | "monitorowany"; nowe: boolean;
+};
+export type StanRadaru = { wpisy: Record<string, WpisRadaru>; skany: Record<string, string>; odRocznika: number };
+export type WynikSkanuKlubu = { klubId: string; klub: string; zawodnicy: {
+  tmId: string; profil: (ProfilTM & { pozycja?: string }) | null; sezony: StatystykiTM["sezony"]; debiutLigowy: string; pierwszyStartLigowy: string;
+}[] };
+
+let RADAR: StanRadaru = { wpisy: {}, skany: {}, odRocznika: 2006 };
+export function ustawRadar(r: Partial<StanRadaru> | null | undefined): void {
+  RADAR = { wpisy: (r && r.wpisy) || {}, skany: (r && r.skany) || {}, odRocznika: Number(r && r.odRocznika) || 2006 };
+}
+export const radar = (): StanRadaru => RADAR;
+
+const WZMACNIAJA = new Set(["DEBIUT", "PIERWSZY START", "MINUTY ↑", "ZMIANA KLUBU"]);
+const dniMiedzy = (a: string, b: string) => Math.round((new Date(b + "T12:00:00").getTime() - new Date(a + "T12:00:00").getTime()) / 86400000);
+const dataPL = (d: string) => d ? d.split("-").reverse().join(".") : "";
+
+/** Nowy stan radaru po skanie ligi. Czysta funkcja — nie dotyka bazy ani sieci. */
+export function aktualizujRadar(stan: StanRadaru, ligaId: string, wyniki: WynikSkanuKlubu[], dzis: string): StanRadaru {
+  const wpisy = { ...stan.wpisy };
+  for (const k of wyniki) {
+    for (const z of k.zawodnicy) {
+      const b = sezonyLigowe({ pobrano: dzis, profil: null, sezony: z.sezony || [] })[0] || null;
+      const stary = wpisy[z.tmId];
+      const nowe: SygnalRadaru[] = [];
+      if (!stary) {
+        nowe.push({ data: dzis, rodzaj: "NOWY", opis: `w kadrze ${k.klub}${b ? ` · ${b.wystepy} wyst., ${b.minuty} min w lidze` : " · bez minut w lidze"}` });
+        if (z.debiutLigowy && dniMiedzy(z.debiutLigowy, dzis) <= 60) nowe.push({ data: dzis, rodzaj: "DEBIUT", opis: `debiut w lidze ${dataPL(z.debiutLigowy)}` });
+      } else {
+        if (stary.klubId && stary.klubId !== k.klubId) nowe.push({ data: dzis, rodzaj: "ZMIANA KLUBU", opis: `${stary.klub} → ${k.klub}` });
+        if (z.debiutLigowy && !stary.debiutLigowy) nowe.push({ data: dzis, rodzaj: "DEBIUT", opis: `debiut w lidze ${dataPL(z.debiutLigowy)}` });
+        if (z.pierwszyStartLigowy && !stary.pierwszyStartLigowy) nowe.push({ data: dzis, rodzaj: "PIERWSZY START", opis: `pierwszy mecz od 1. minuty ${dataPL(z.pierwszyStartLigowy)}` });
+        if (b && b.udzial != null && stary.udzial != null && b.udzial - stary.udzial >= PROG_WZROSTU) {
+          nowe.push({ data: dzis, rodzaj: "MINUTY ↑", opis: `udział ${Math.round(stary.udzial * 100)}% → ${Math.round(b.udzial * 100)}%` });
+        }
+      }
+      const wraca = stary && stary.decyzja === "odrzucony" && nowe.some((x) => WZMACNIAJA.has(x.rodzaj));
+      const p = z.profil;
+      wpisy[z.tmId] = {
+        tmId: z.tmId, ligaId, klubId: k.klubId, klub: k.klub,
+        nazwa: (p && p.nazwa) || (stary && stary.nazwa) || "", dataUr: (p && p.dataUr) || (stary && stary.dataUr) || "",
+        pozycja: (p && p.pozycja) || (stary && stary.pozycja) || "", profil: p || (stary && stary.profil) || null,
+        debiutLigowy: z.debiutLigowy || (stary && stary.debiutLigowy) || "",
+        pierwszyStartLigowy: z.pierwszyStartLigowy || (stary && stary.pierwszyStartLigowy) || "",
+        pierwszyRaz: stary ? stary.pierwszyRaz : dzis, ostatnio: dzis,
+        udzial: b ? b.udzial : null, minuty: b ? b.minuty : null, wystepy: b ? b.wystepy : null,
+        meczeDruzyny: b ? b.meczeDruzyny : null, gole: b ? b.gole : null, asysty: b ? b.asysty : null,
+        sygnaly: (stary ? stary.sygnaly : []).concat(nowe).slice(-20),
+        decyzja: wraca ? "" : (stary ? stary.decyzja : ""),
+        nowe: nowe.length > 0 || !!(stary && stary.nowe && !stary.decyzja),
+      };
+    }
+  }
+  return { ...stan, wpisy, skany: { ...stan.skany, [ligaId]: new Date().toISOString() } };
+}
+
+export function decyzjaRadaru(tmId: string, decyzja: WpisRadaru["decyzja"]): void {
+  const w = RADAR.wpisy[tmId];
+  if (!w) return;
+  RADAR = { ...RADAR, wpisy: { ...RADAR.wpisy, [tmId]: { ...w, decyzja, nowe: false } } };
+}
+
+/** Kolejność na liście: bez decyzji przed resztą, świeże sygnały, debiutanci, potem udział w minutach. */
+export function listaRadaru(ligaId: string): WpisRadaru[] {
+  const waga = (w: WpisRadaru) => (w.decyzja ? 0 : 1000) + (w.nowe ? 500 : 0) + (w.debiutLigowy ? 100 : 0) + Math.round((w.udzial || 0) * 100);
+  return Object.values(RADAR.wpisy).filter((w) => w.ligaId === ligaId)
+    .filter((w) => Number(String(w.dataUr).slice(0, 4)) >= RADAR.odRocznika)
+    .sort((a, b) => waga(b) - waga(a) || a.nazwa.localeCompare(b.nazwa, "pl"));
+}
+
+/** Profil monitorowany z wpisu radaru — „Monitoruj" jednym kliknięciem. */
+export function profilZRadaru(w: WpisRadaru): ZawodnikMonitorowany {
+  const p = w.profil;
+  const czlony = String(w.nazwa || "").trim().split(/\s+/);
+  const nazwisko = czlony.length > 1 ? czlony[czlony.length - 1] : czlony[0] || "";
+  return {
+    id: "T" + w.tmId, imie: czlony.slice(0, -1).join(" "), nazwisko, dataUr: w.dataUr, ligaId: w.ligaId, klub: w.klub,
+    pozycja: w.pozycja, obywatelstwo: (p && p.obywatelstwo) || [], kontraktDo: (p && p.kontraktDo) || "",
+    wypozyczenie: null, status: "Obserwacja", wzrost: (p && p.wzrost) || null, menedzer: (p && p.menedzer) || "",
+    wartoscTM: (p && p.wartosc) || "", wKlubieOd: "", sciezka: [], udzialPoprz: null,
+    obserwacje: w.minuty != null ? [{ data: w.ostatnio, rodzaj: "Dane ligowe", minuty: w.minuty, meczeMozliwe: w.meczeDruzyny,
+      wystepy: w.wystepy, odPierwszej: null, szacunek: false, notatka: "Z radaru (Transfermarkt)." }] : [],
+    notatka: w.sygnaly.map((x) => `${dataPL(x.data)} ${x.rodzaj}: ${x.opis}`).join(" · "),
+    tmId: w.tmId, tmLink: (p && p.adres) || `https://www.transfermarkt.pl/profil/spieler/${w.tmId}`,
+  };
 }
 
 // ---------- JEDNA LISTA DLA ZAKŁADKI ----------

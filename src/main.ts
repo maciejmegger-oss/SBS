@@ -43,7 +43,8 @@ import { statEuropy } from "./data/europa-statystyki";
 import { LIGI_RYNKOW, REGIONY, krajeRegionu, ligiKraju, ligaRynku, priorytetKraju, czyUeEog, zawodnicyRynkow,
   sygnalyRynkow, udzialMinut, OPIS_PRZEDZIALU, PROG_SKOKU, PROG_WZROSTU, STATUSY_RYNKOW, ustawEdycjeRynkow,
   edycjeRynkow, zapiszProfilRynku, profilZKadry, sezonyLigowe, ustawStatystykiTM, statystykiTM, statystykiZawodnikaTM,
-  zapiszStatystykiTM, staryStanTM, tmIdZLinku } from "./data/rynki";
+  zapiszStatystykiTM, staryStanTM, tmIdZLinku, ustawRadar, radar, aktualizujRadar, decyzjaRadaru, listaRadaru,
+  profilZRadaru, monitorowani, wiekNaDzien } from "./data/rynki";
 // Kod zakładek leży w public/zakladki/ — ten sam plik idzie na serwer (skąd zakładka pobiera go
 // przy każdym kliknięciu) i tutaj, jako kopia awaryjna na wypadek braku sieci.
 import LNP_PROTOKOL_KOD from "../public/zakladki/lnp-protokol.js?raw";
@@ -2087,7 +2088,7 @@ async function loadAllInner(){
   };
 
   const [p, c, o, rp, tl, ct, mt, ag, agt, pmaRow, radarRow, systemyRow, tabeleRow, kadryRow, profileRow, s,
-    seedFlag, enrichFlag, enrichAviaFlag, enrichGornikFlag, enrichAviaV2Flag, recoMigrationFlag, statusMigrationFlag, rynkiRow, rynkiTmRow] = await Promise.all([
+    seedFlag, enrichFlag, enrichAviaFlag, enrichGornikFlag, enrichAviaV2Flag, recoMigrationFlag, statusMigrationFlag, rynkiRow, rynkiTmRow, rynkiRadarRow] = await Promise.all([
     czytaj('scouting:players'),
     czytaj('scouting:clubs'),
     czytaj('scouting:observations'),
@@ -2129,6 +2130,8 @@ async function loadAllInner(){
     czytaj('scouting:rynki_zawodnicy'),
     // Statystyki z Transfermarktu dla zawodników z Rynków (pamięć podręczna, odświeżana co dobę).
     czytaj('scouting:rynki_tm'),
+    // Radar młodych: zawodnicy znalezieni w kadrach, ich sygnały i decyzje skauta.
+    czytaj('scouting:rynki_radar'),
   ]);
   try{ DB.players = p ? JSON.parse(p.value) : []; }catch(e){ DB.players = []; }
   try{ DB.clubs = c ? JSON.parse(c.value) : []; }catch(e){ DB.clubs = []; }
@@ -2147,6 +2150,7 @@ async function loadAllInner(){
   try{ profileKompetencji = profileRow ? JSON.parse(profileRow.value) : []; }catch(e){ profileKompetencji = []; }
   try{ ustawEdycjeRynkow(rynkiRow ? JSON.parse(rynkiRow.value) : {}); }catch(e){ ustawEdycjeRynkow({}); }
   try{ ustawStatystykiTM(rynkiTmRow ? JSON.parse(rynkiTmRow.value) : {}); }catch(e){ ustawStatystykiTM({}); }
+  try{ ustawRadar(rynkiRadarRow ? JSON.parse(rynkiRadarRow.value) : null); }catch(e){ ustawRadar(null); }
   // Najpierw kadra z wiersza talentu (źródło główne), potem z zapasowej mapy — mapa uzupełnia
   // wyłącznie talenty, które po pierwszym kroku nadal są bez kadry.
   nalozKadreZPolaZrodla(DB.talents);
@@ -2954,6 +2958,7 @@ async function saveProfileKompetencji(){ return robustStorageSet('scouting:profi
 async function saveTabeleLig(){ return robustStorageSet('scouting:tabele_lig', JSON.stringify(tabeleLig)); }
 async function saveRynki(){ return robustStorageSet('scouting:rynki_zawodnicy', JSON.stringify(edycjeRynkow())); }
 async function saveRynkiTM(){ return robustStorageSet('scouting:rynki_tm', JSON.stringify(statystykiTM())); }
+async function saveRynkiRadar(){ return robustStorageSet('scouting:rynki_radar', JSON.stringify(radar())); }
 
 // POBRANIE TABEL LIGOWYCH Z 90MINUT.
 //
@@ -4299,7 +4304,7 @@ const NAV_ITEMS = [
 const SAVE_FN_BY_KEY = {
   'scouting:players': ()=>savePlayers(), 'scouting:clubs': ()=>saveClubs(), 'scouting:observations': ()=>saveObservations(),
   'scouting:reports': ()=>saveReports(), 'scouting:talents': ()=>saveTalents(), 'scouting:contacts': ()=>saveContacts(),
-  'scouting:settings': ()=>saveSettings(), 'scouting:position_map_assignments': ()=>savePositionMapAssignments(), 'scouting:radar_przejrzane': ()=>saveRadarPrzejrzane(), 'scouting:systemy_klubow': ()=>saveSystemyKlubow(), 'scouting:tabele_lig': ()=>saveTabeleLig(), 'scouting:rynki_zawodnicy': ()=>saveRynki(), 'scouting:rynki_tm': ()=>saveRynkiTM(),
+  'scouting:settings': ()=>saveSettings(), 'scouting:position_map_assignments': ()=>savePositionMapAssignments(), 'scouting:radar_przejrzane': ()=>saveRadarPrzejrzane(), 'scouting:systemy_klubow': ()=>saveSystemyKlubow(), 'scouting:tabele_lig': ()=>saveTabeleLig(), 'scouting:rynki_zawodnicy': ()=>saveRynki(), 'scouting:rynki_tm': ()=>saveRynkiTM(), 'scouting:rynki_radar': ()=>saveRynkiRadar(),
   'scouting:profile_kompetencji': ()=>saveProfileKompetencji(),
   'scouting:agencies': ()=>saveAgencies(), 'scouting:agents': ()=>saveAgents(),
   'scouting:agency_logos': ()=>saveAgencyLogos(),
@@ -15849,6 +15854,8 @@ function viewRynkiLiga(lista){
   <h2 class="view-title">${esc(l.nazwa)}</h2>
   <p class="view-sub">${nationalityFlag(l.kraj)} ${esc(l.kraj)} · ${l.poziom}. poziom · sezon ${esc(l.sezon)} · priorytet ${l.priorytet}${l.uwagi ? ' · ' + esc(l.uwagi) : ''}</p>
   ${kluby.length ? `<div class="rynki-kluby"><span class="rynki-info-lbl">Kluby z zawodnikami w bazie</span>${kluby.map(k=> `<span class="rynki-tag rynki-tag-szary">${esc(k.k)} · ${k.n}</span>`).join('')}</div>` : ''}
+  ${rynkiPanelRadaru(l)}
+  <h3 class="rynki-h3" style="margin-top:6px;">Zawodnicy w bazie</h3>
   <div class="filters" style="align-items:center;">${pig('', 'Wszystkie')}${pig('A', 'A 16–17')}${pig('B', 'B 18–19')}${pig('C', 'C 20–21')}
     <button class="secondary" data-action="rynki-tm-liga" data-liga="${esc(l.id)}" style="margin-left:auto;" ${rynkiHurtem ? 'disabled' : ''}>⟳ Statystyki z Transfermarktu (${wLidze.filter(z=> z.tmId || z.monitorowany).length})</button></div>
   ${widoczni.length ? `<div class="card" style="padding:0;overflow:auto;">
@@ -16190,6 +16197,141 @@ function openRynkiModal(klucz){
     render();
     pokazPotwierdzenie('Zapisano profil: ' + nowy.imie + ' ' + nowy.nazwisko);
   });
+}
+
+// ---------- RADAR MŁODYCH (skan kadr ligi) ----------
+let rynkiSkan = { wTrakcie: '', postep: '', bledy: [] };
+let rynkiPokazOdrzuconych = false;
+
+async function skanujLigeRadarem(ligaId){
+  const l = ligaRynku(ligaId);
+  if(!l || !l.klubyTM || rynkiSkan.wTrakcie) return;
+  rynkiSkan = { wTrakcie: ligaId, postep: `0 z ${l.klubyTM.length}`, bledy: [] };
+  const odswiez = ()=>{ if(currentView === 'rynki' && rynkiStan.liga === ligaId && !rynkiStan.zaw) render(); };
+  odswiez();
+  const wyniki = [];
+  const od = radar().odRocznika;
+  for(let i = 0; i < l.klubyTM.length; i++){
+    const k = l.klubyTM[i];
+    rynkiSkan = { ...rynkiSkan, postep: `${i + 1} z ${l.klubyTM.length} · ${k.nazwa}` };
+    odswiez();
+    try{
+      const odp = await fetch(`/api/rynki-skaner?klub=${encodeURIComponent(k.id)}&od=${od}`);
+      const d = await odp.json().catch(()=>({}));
+      if(!odp.ok || d.error) throw new Error(String(d.error || odp.status));
+      wyniki.push({ klubId: k.id, klub: k.nazwa, zawodnicy: d.zawodnicy || [] });
+      for(const z of d.zawodnicy || []){
+        // Serwis podaje przy meczach tylko numer klubu — nazwę skanowanego klubu znamy z listy ligi.
+        for(const s of z.sezony || []) for(const r of s.rozgrywki || []) if(!r.klub && String(r.klubId) === String(k.id)) r.klub = k.nazwa;
+        if(!z.blad) zapiszStatystykiTM(z.tmId, { pobrano: d.pobrano || new Date().toISOString(), profil: z.profil || null, sezony: z.sezony || [] });
+      }
+    }catch(e){
+      rynkiSkan.bledy.push(`${k.nazwa}: ${String((e && e.message) || e)}`);
+    }
+    await new Promise(r=> setTimeout(r, 300));
+  }
+  ustawRadar(aktualizujRadar(radar(), ligaId, wyniki, dzisiaj()));
+  // Kto już jest w monitoringu, nie czeka na decyzję drugi raz.
+  const juz = new Set(monitorowani().map(m=> m.tmId).filter(Boolean));
+  for(const w of listaRadaru(ligaId)) if(juz.has(w.tmId) && w.decyzja !== 'monitorowany') decyzjaRadaru(w.tmId, 'monitorowany');
+  const bledy = rynkiSkan.bledy;
+  rynkiSkan = { wTrakcie: '', postep: '', bledy };
+  odswiez();
+  if(!czyKlient() && !nieudaneOdczyty.length){ await saveRynkiRadar(); await saveRynkiTM(); }
+  const nowych = listaRadaru(ligaId).filter(w=> w.nowe && !w.decyzja).length;
+  pokazPotwierdzenie(`Radar ${l.nazwa}: ${wyniki.length} z ${l.klubyTM.length} klubów, nowe sygnały: ${nowych}.`, bledy.length ? 'blad' : 'ok');
+}
+
+function rynkiPanelRadaru(l){
+  if(!l.klubyTM) return '';
+  const r = radar();
+  const lista = listaRadaru(l.id);
+  const aktywni = lista.filter(w=> w.decyzja !== 'odrzucony');
+  const odrzuceni = lista.filter(w=> w.decyzja === 'odrzucony');
+  const widoczni = rynkiPokazOdrzuconych ? lista : aktywni;
+  const ostatni = r.skany[l.id];
+  const nowych = aktywni.filter(w=> w.nowe && !w.decyzja).length;
+  const wMonitoringu = new Set(monitorowani().map(m=> m.tmId).filter(Boolean));
+  const roczniki = [2004, 2005, 2006, 2007, 2008, 2009, 2010];
+  const odznaka = (s)=> `<span class="rynki-sygnal-rodzaj rynki-radar-sygnal" title="${esc(s.opis)}">${esc(s.rodzaj)}</span>`;
+  const wiersz = (w)=>{
+    const wiek = wiekNaDzien(w.dataUr, new Date());
+    const ost = w.sygnaly.slice(-2).reverse();
+    const monit = wMonitoringu.has(w.tmId) || w.decyzja === 'monitorowany';
+    return `<tr class="${w.decyzja === 'odrzucony' ? 'rynki-tm-poboczne' : ''}">
+      <td>${w.nowe && !w.decyzja ? '<span class="rynki-kropka-nowe" title="Nowy sygnał"></span>' : ''}<strong>${esc(w.nazwa)}</strong>
+        ${w.profil && w.profil.adres ? `<a class="link-btn" href="${esc(w.profil.adres)}" target="_blank" rel="noopener" title="Profil na Transfermarkcie">↗</a>` : ''}</td>
+      <td>${esc(String(w.dataUr).slice(0, 4))} <span class="note" style="font-style:normal;">(${wiek ?? '—'})</span></td>
+      <td>${esc(w.pozycja)}</td><td>${esc(w.klub)}</td>
+      <td class="rynki-liczby">${w.wystepy != null ? `${w.wystepy}/${w.meczeDruzyny} · ${w.minuty} min${w.udzial != null ? ' · ' + Math.round(w.udzial * 100) + '%' : ''}` : 'bez minut'}</td>
+      <td class="rynki-liczby">${w.debiutLigowy ? dataPl(w.debiutLigowy) : '—'}</td>
+      <td><div class="rynki-tagi">${ost.map(odznaka).join('')}</div></td>
+      <td style="white-space:nowrap;">${monit
+        ? `<button class="link-btn" data-action="rynki-radar-otworz" data-tm="${esc(w.tmId)}">W monitoringu →</button>`
+        : czyKlient() ? '' : `<button class="gold" data-action="rynki-radar-monitoruj" data-tm="${esc(w.tmId)}">Monitoruj</button>
+          ${w.decyzja === 'odrzucony'
+            ? `<button class="link-btn" data-action="rynki-radar-przywroc" data-tm="${esc(w.tmId)}">Przywróć</button>`
+            : `<button class="link-btn" data-action="rynki-radar-odrzuc" data-tm="${esc(w.tmId)}" style="color:var(--ink-soft);">Odrzuć</button>`}`}</td>
+    </tr>`;
+  };
+  return `<div class="card rynki-radar">
+    <div class="rynki-radar-gora">
+      <div>
+        <h3 class="rynki-h3" style="margin:0;">Radar młodych · ${esc(l.nazwa)} ${nowych ? `<span class="rynki-radar-licznik">${nowych} nowych</span>` : ''}</h3>
+        <div class="note" style="font-style:normal;margin-top:4px;">Kadry ${l.klubyTM.length} klubów z Transfermarktu · ${ostatni ? 'ostatni skan ' + esc(new Date(ostatni).toLocaleString('pl-PL', {dateStyle:'short', timeStyle:'short'})) : 'jeszcze nie skanowano'}</div>
+      </div>
+      <div class="rynki-radar-akcje">
+        <label class="note" style="font-style:normal;" for="rynki-rocznik">Rocznik od</label>
+        <select id="rynki-rocznik" ${czyKlient() ? 'disabled' : ''}>${roczniki.map(x=> `<option ${x === r.odRocznika ? 'selected' : ''}>${x}</option>`).join('')}</select>
+        ${czyKlient() ? '' : `<button class="secondary" data-action="rynki-radar-skanuj" data-liga="${esc(l.id)}" ${rynkiSkan.wTrakcie ? 'disabled' : ''}>⟳ ${rynkiSkan.wTrakcie === l.id ? 'Skanuję: ' + esc(rynkiSkan.postep) : 'Skanuj kadry'}</button>`}
+      </div>
+    </div>
+    ${rynkiSkan.bledy.length && !rynkiSkan.wTrakcie ? `<p class="note" style="color:var(--clay-dark);font-style:normal;">Nie udało się sprawdzić: ${esc(rynkiSkan.bledy.join(' · '))}</p>` : ''}
+    ${widoczni.length ? `<div style="overflow:auto;"><table class="rynki-tm-tabela">
+      <thead><tr><th>Zawodnik</th><th>Rocznik</th><th>Pozycja</th><th>Klub</th><th title="Występy / mecze drużyny · minuty · udział (liga, bieżący sezon)">Liga w sezonie</th><th>Debiut w lidze</th><th>Sygnały</th><th></th></tr></thead>
+      <tbody>${widoczni.map(wiersz).join('')}</tbody></table></div>`
+      : `<div class="empty">${ostatni ? `Brak zawodników z rocznika ${r.odRocznika} i młodszych w kadrach.` : 'Kliknij „Skanuj kadry" — system przejrzy kadry wszystkich klubów i wypisze młodych zawodników z ich statystykami.'}</div>`}
+    ${odrzuceni.length ? `<button class="link-btn" data-action="rynki-radar-odrzuceni">${rynkiPokazOdrzuconych ? 'Ukryj' : 'Pokaż'} odrzuconych (${odrzuceni.length})</button>` : ''}
+    <p class="note">Sygnały: NOWY — pierwszy raz w kadrze; DEBIUT — pierwszy mecz w lidze; PIERWSZY START — pierwszy mecz od 1. minuty; MINUTY ↑ — udział w minutach wzrósł o ${Math.round(PROG_WZROSTU * 100)} pkt proc. od poprzedniego skanu; ZMIANA KLUBU. Odrzucony wraca tylko z nowym sygnałem.</p>
+  </div>`;
+}
+
+function podepnijRadar(main){
+  main.querySelectorAll('[data-action="rynki-radar-skanuj"]').forEach(b=> b.onclick = ()=>{ void skanujLigeRadarem(b.dataset.liga); });
+  const rocznik = main.querySelector('#rynki-rocznik') as HTMLSelectElement;
+  if(rocznik) rocznik.onchange = async ()=>{
+    ustawRadar({ ...radar(), odRocznika: Number(rocznik.value) });
+    render();
+    if(!czyKlient() && !nieudaneOdczyty.length) await saveRynkiRadar();
+  };
+  main.querySelectorAll('[data-action="rynki-radar-odrzuceni"]').forEach(b=> b.onclick = ()=>{ rynkiPokazOdrzuconych = !rynkiPokazOdrzuconych; render(); });
+  const decyzja = async (tmId, d)=>{ decyzjaRadaru(tmId, d); render(); if(!nieudaneOdczyty.length) await saveRynkiRadar(); };
+  main.querySelectorAll('[data-action="rynki-radar-odrzuc"]').forEach(b=> b.onclick = ()=> void decyzja(b.dataset.tm, 'odrzucony'));
+  main.querySelectorAll('[data-action="rynki-radar-przywroc"]').forEach(b=> b.onclick = ()=> void decyzja(b.dataset.tm, ''));
+  const otworz = (tmId)=>{
+    const m = monitorowani().find(x=> x.tmId === tmId);
+    if(!m) return;
+    rynkiStan = { ...rynkiStan, kraj: ligaRynku(m.ligaId)?.kraj || rynkiStan.kraj, liga: m.ligaId, zaw: 'm:' + m.id };
+    render();
+  };
+  main.querySelectorAll('[data-action="rynki-radar-otworz"]').forEach(b=> b.onclick = ()=> otworz(b.dataset.tm));
+  // MONITORUJ = PEŁNY PROFIL JEDNYM KLIKNIĘCIEM. Statystyki wszystkich sezonów są już w pamięci
+  // z ostatniego skanu, więc karta otwiera się od razu z liczbami; świeże dociągnie sama.
+  main.querySelectorAll('[data-action="rynki-radar-monitoruj"]').forEach(b=> b.onclick = async ()=>{
+    const w = radar().wpisy[b.dataset.tm];
+    if(!w) return;
+    if(!monitorowani().some(x=> x.tmId === w.tmId)) zapiszProfilRynku(profilZRadaru(w));
+    decyzjaRadaru(w.tmId, 'monitorowany');
+    otworz(w.tmId);
+    pokazPotwierdzenie('Dodano do monitoringu: ' + w.nazwa);
+    if(!czyKlient() && !nieudaneOdczyty.length){ await saveRynki(); await saveRynkiRadar(); }
+  });
+  // Raz w tygodniu skan uruchamia się sam przy wejściu w ligę — „od razu trafia do systemu".
+  if(currentView === 'rynki' && rynkiStan.liga && !rynkiStan.zaw && !rynkiSkan.wTrakcie && !czyKlient() && !nieudaneOdczyty.length){
+    const l = ligaRynku(rynkiStan.liga);
+    const ost = radar().skany[rynkiStan.liga];
+    if(l && l.klubyTM && (!ost || Date.now() - new Date(ost).getTime() > 7 * 86400000)) setTimeout(()=> void skanujLigeRadarem(l.id), 0);
+  }
 }
 
 function viewRynki(){
@@ -16765,6 +16907,7 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="goto-kontakty"]').forEach(b=>b.onclick=()=>{ viewingClubId = null; currentView='contacts'; render(); });
   main.querySelectorAll('[data-action="goto-clubs"]').forEach(b=>b.onclick=()=>{currentView='clubs';viewingClubId=null;render();});
   podepnijRynki(main);
+  podepnijRadar(main);
   // KTO SIEDZI PRZY TEJ PRZEGLĄDARCE. Dotąd system brał po prostu pierwszego scouta z listy
   // w Ustawieniach — a więc każdy członek zespołu podpisywał się tym samym nazwiskiem, i to nie
   // swoim. Wybór trzymamy w pamięci przeglądarki, bo to ustawienie osobiste, nie wspólne dla bazy.
