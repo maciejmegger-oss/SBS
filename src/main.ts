@@ -40,6 +40,8 @@ import { talentyEuropy } from "./data/europa-mlodziez";
 import { talentyCies } from "./data/europa-cies";
 import { talentyPolacyZaGranica } from "./data/polacy-za-granica";
 import { statEuropy } from "./data/europa-statystyki";
+import { LIGI_RYNKOW, REGIONY, krajeRegionu, ligiKraju, ligaRynku, priorytetKraju, czyUeEog, zawodnicyRynkow,
+  sygnalyRynkow, udzialMinut, OPIS_PRZEDZIALU, PROG_SKOKU, PROG_WZROSTU } from "./data/rynki";
 // Kod zakładek leży w public/zakladki/ — ten sam plik idzie na serwer (skąd zakładka pobiera go
 // przy każdym kliknięciu) i tutaj, jako kopia awaryjna na wypadek braku sieci.
 import LNP_PROTOKOL_KOD from "../public/zakladki/lnp-protokol.js?raw";
@@ -118,6 +120,8 @@ let DB: Database = { players: [], clubs: [], observations: [], reports: [], tale
 // z wersji wysyłanej na serwer, więc w działającej aplikacji tego okna nie ma.
 if(import.meta.env && import.meta.env.DEV){ try{ (window as any).__SBS_DB = () => DB; }catch(e){} }
 let currentView = "dashboard";
+// Gdzie jesteśmy na zakładce Rynki: Europa → kraj → liga → zawodnik (klucz z data/rynki.ts).
+let rynkiStan = { kraj: '', liga: '', zaw: '', przedzial: '' };
 // Otwarcie zakładki bez logowania — też tylko na maszynie deweloperskiej. Bez tego test nie ma jak
 // wejść w Kluby: panel boczny rysuje się dopiero po zalogowaniu do bazy, więc nie ma w co kliknąć.
 if(import.meta.env && import.meta.env.DEV){
@@ -4275,6 +4279,7 @@ const NAV_ITEMS = [
   {id:"radar", label:"Radar młodzieży"},
   {id:"ranking", label:"Ranking"},
   {id:"talent", label:"Talent"},
+  {id:"rynki", label:"Rynki"},
   {id:"committee", label:"Scout Transfer"},
   {id:"federacja", label:"Federacja"},
   {id:"agencies", label:"Menedżerowie"},
@@ -4496,6 +4501,7 @@ function renderNav(){
       viewingAgencyId = null;
       compareIds = ['', '', ''];
       dashboardLeagueSelected = null;
+      rynkiStan = { kraj: '', liga: '', zaw: '', przedzial: '' };
       render();
     });
   });
@@ -4611,6 +4617,7 @@ function render(){
   else if(currentView==="ranking") main.innerHTML = viewRanking();
   else if(currentView==="reports") main.innerHTML = viewReports();
   else if(currentView==="talent") main.innerHTML = viewTalent();
+  else if(currentView==="rynki") main.innerHTML = viewRynki();
   else if(currentView==="federacja") main.innerHTML = viewFederacja();
   else if(currentView==="agencies") main.innerHTML = viewAgencies();
   else if(currentView==="contacts") main.innerHTML = viewContacts();
@@ -4651,7 +4658,7 @@ function navSignature(){
   // agencji i rocznika — wejście w agencję nie zmieniało sygnatury, więc do historii nie trafiał
   // żaden wpis, a „wstecz" wracało do ostatniego zapamiętanego widoku, czyli zwykle dashboardu.
   return JSON.stringify({v:currentView, p:viewingPlayerId, c:viewingClubId, a:viewingAgencyId,
-    r:viewingRocznikGroup, ct:clubBrowse.top, cg:clubBrowse.group, cmp:compareIds});
+    r:viewingRocznikGroup, ct:clubBrowse.top, cg:clubBrowse.group, cmp:compareIds, ry:rynkiStan});
 }
 function syncHistory(){
   const sig = navSignature();
@@ -4659,7 +4666,7 @@ function syncHistory(){
   lastNavSig = sig;
   if(restoringFromHistory) return;    // przywracanie z historii nie tworzy nowego wpisu
   const state = {currentView, viewingPlayerId, viewingClubId, viewingAgencyId, viewingRocznikGroup,
-    clubBrowseTop:clubBrowse.top, clubBrowseGroup:clubBrowse.group, compareIds:[...compareIds]};
+    clubBrowseTop:clubBrowse.top, clubBrowseGroup:clubBrowse.group, compareIds:[...compareIds], rynkiStan:{...rynkiStan}};
   if(!historyInited){ navIndex = 0; history.replaceState({...state, navIndex}, ''); historyInited = true; }
   else { navIndex++; history.pushState({...state, navIndex}, ''); }
 }
@@ -4685,6 +4692,7 @@ window.addEventListener('popstate', (e)=>{
   editingPlayerId = null;
   if(clubBrowse){ clubBrowse.top = (s && s.clubBrowseTop) || ''; clubBrowse.group = (s && s.clubBrowseGroup) || ''; }
   if(s && s.compareIds) compareIds = s.compareIds;
+  rynkiStan = (s && s.rynkiStan) ? {...s.rynkiStan} : { kraj: '', liga: '', zaw: '', przedzial: '' };
   try{ render(); }catch(err){ console.error('render() po popstate nie powiódł się:', err); }
   restoringFromHistory = false;
 });
@@ -15690,6 +15698,259 @@ function panelSkanera(){
   </div>`;
 }
 
+// ---------- RYNKI: EUROPA → KRAJ → LIGA → ZAWODNIK ----------
+//
+// Zgłoszenie (13.10.2026): skauting w Skandynawii i Europie Wschodniej — mapa drugich i trzecich lig,
+// zawodnicy 16–21 w przedziałach wiekowych, ich historia i tempo rozwoju. Decyzja: NIE osobna baza
+// „Europa", tylko geograficzne wejście do tych samych danych. Zawodnik ze Szwecji, który trafi do
+// polskiej ligi, nie przeskakuje między dwiema kartotekami; karta, raport i radar są te same.
+//
+// Dane i reguły (przedziały, udział minut, tempo, uwagi transferowe) siedzą w src/data/rynki.ts —
+// czyste funkcje, z własnym testem. Tutaj tylko rysujemy.
+const dataPl = (d)=> d ? String(d).split('-').reverse().join('.') : '—';
+const procent = (x)=> x == null ? '—' : Math.round(x * 100) + '%';
+
+function rynkiOkruszki(){
+  const s = rynkiStan;
+  const czesci = [`<button class="link-btn" data-action="rynki-idz" data-poziom="europa">Europa</button>`];
+  if(s.kraj) czesci.push(`<button class="link-btn" data-action="rynki-idz" data-poziom="kraj">${esc(s.kraj)}</button>`);
+  if(s.liga){ const l = ligaRynku(s.liga); czesci.push(`<button class="link-btn" data-action="rynki-idz" data-poziom="liga">${esc(l ? l.nazwa : s.liga)}</button>`); }
+  if(!s.zaw) czesci[czesci.length - 1] = czesci[czesci.length - 1].replace('class="link-btn"', 'class="link-btn rynki-okruszek-tu" aria-current="page"');
+  return `<nav class="rynki-okruszki" aria-label="Ścieżka">Rynki / ${czesci.join(' / ')}</nav>`;
+}
+
+function rynkiZnacznikUe(ue){
+  if(ue === true) return '<span class="rynki-tag">UE/EOG</span>';
+  if(ue === false) return '<span class="rynki-tag rynki-tag-limit">Spoza UE · limit</span>';
+  return '';
+}
+
+function rynkiPasekUdzialu(z){
+  if(z.udzial != null){
+    return `<div class="rynki-udzial" title="Udział w minutach drużyny od dołączenia do klubu"><div class="stat-bar"><div class="stat-bar-fill" style="width:${Math.round(z.udzial*100)}%;background:var(--gold);"></div></div><span>${procent(z.udzial)}</span></div>`;
+  }
+  if(z.wystepy != null) return `<span class="rynki-liczby">${z.wystepy} wyst. · ${z.minuty || 0} min</span>`;
+  return '—';
+}
+
+function rynkiTempo(t){
+  if(!t) return '—';
+  if(t === 'Brak danych poprz. sezonu') return '<span class="note" style="font-style:normal;" title="Tempo policzymy po wpisaniu udziału w minutach z poprzedniego sezonu">brak porównania</span>';
+  const klasa = t === 'Skok' || t === 'Wzrost' ? 'pill-top' : t === 'Spadek' ? 'pill-urgent' : 'pill-ok';
+  return `<span class="badge ${klasa}">${esc(t)}</span>`;
+}
+
+function rynkiStatus(z){
+  if(z.zrodlo === 'kadra') return `<span class="badge tab-chip">${esc(z.kadra)}</span>`;
+  const klasa = z.status === 'Obserwacja' || z.status === 'Wideo' ? 'watching' : z.status === 'Rekomendacja' ? 'reco' : z.status === 'Odrzucony' ? 'rejected' : 'hold';
+  return `<span class="badge ${klasa}">${esc(z.status)}</span>`;
+}
+
+function viewRynkiEuropa(lista){
+  const dzis = new Date();
+  const kraje = [...new Set(LIGI_RYNKOW.map(l=> l.kraj))];
+  const wPrzedziale = lista.filter(z=> z.przedzial);
+  const wObserwacji = lista.filter(z=> z.zrodlo === 'monitoring' && z.status !== 'Do sprawdzenia' && z.status !== 'Odrzucony');
+  const sygnaly = sygnalyRynkow(lista, dzis);
+  const karta = (kraj)=>{
+    const mon = lista.filter(z=> z.liga.kraj === kraj && z.zrodlo === 'monitoring').length;
+    const kad = lista.filter(z=> z.liga.kraj === kraj && z.zrodlo === 'kadra').length;
+    const ligi = ligiKraju(kraj).length;
+    return `<button class="rynki-kraj" data-action="rynki-kraj" data-kraj="${esc(kraj)}">
+      <span class="rynki-kraj-gora"><span class="rynki-kraj-nazwa">${nationalityFlag(kraj)}${esc(kraj)}</span><span class="rynki-prio">P${priorytetKraju(kraj)}</span></span>
+      <span class="rynki-tagi">${rynkiZnacznikUe(czyUeEog(kraj))}<span class="rynki-tag rynki-tag-szary">${ligi} ${ligi === 1 ? 'liga' : 'ligi'}</span></span>
+      <span class="rynki-kraj-dol">${mon || kad
+        ? `${mon ? `<strong>${mon}</strong> monitorowanych` : ''}${mon && kad ? ' · ' : ''}${kad ? `<strong>${kad}</strong> z kadr młodzieżowych` : ''}`
+        : '<span class="rynki-pusto">Do skanowania</span>'}</span>
+    </button>`;
+  };
+  return `
+  <h2 class="view-title">Rynki — Europa</h2>
+  <p class="view-sub">Ligi 2. i 3. poziomu w Skandynawii i Europie Środkowo-Wschodniej · zawodnicy 16–21. Ta sama baza co polskie ligi — tu tylko wejście od strony geografii.</p>
+  <div class="grid grid-4" style="margin-bottom:18px;">
+    <div class="stat"><div class="num">${kraje.length}</div><div class="lbl">Krajów na mapie</div></div>
+    <div class="stat"><div class="num">${LIGI_RYNKOW.length}</div><div class="lbl">Lig 2. i 3. poziomu</div></div>
+    <div class="stat"><div class="num">${wPrzedziale.length}</div><div class="lbl">Zawodników 16–21</div></div>
+    <div class="stat"><div class="num">${wObserwacji.length}</div><div class="lbl">W obserwacji</div></div>
+  </div>
+  ${sygnaly.length ? `<div class="card rynki-sygnaly">
+    <h3 class="rynki-h3">Sygnały z monitoringu</h3>
+    ${sygnaly.map(g=> `<div class="rynki-sygnal"><span class="rynki-sygnal-rodzaj">${esc(g.rodzaj)}</span>
+      <button class="link-btn" data-action="rynki-zaw" data-klucz="${esc(g.klucz)}">${esc(g.nazwisko)}</button>
+      <span class="rynki-sygnal-tekst">${esc(g.tekst)}</span></div>`).join('')}
+  </div>` : ''}
+  ${REGIONY.map(r=> `<section class="rynki-region">
+    <h3 class="rynki-h3">${esc(r)}</h3>
+    <div class="rynki-kraje">${krajeRegionu(r).map(karta).join('')}</div>
+  </section>`).join('')}
+  <p class="note">P1 = start teraz, P2 = drugi etap, P3 = rozszerzenie. Zawodnicy z kadr U-19/U-18/U-17 pojawiają się tu sami, gdy ich klub gra w lidze z mapy.</p>`;
+}
+
+function viewRynkiKraj(lista){
+  const kraj = rynkiStan.kraj;
+  const ligi = ligiKraju(kraj);
+  const zKraju = lista.filter(z=> z.liga.kraj === kraj);
+  const ue = czyUeEog(kraj);
+  const sezony = [...new Set(ligi.map(l=> l.sezon))].join(' / ');
+  const pasma = ['A','B','C'].map(k=> ({k, n: zKraju.filter(z=> z.przedzial === k).length}));
+  const maks = Math.max(1, ...pasma.map(p=> p.n));
+  return `
+  ${rynkiOkruszki()}
+  <h2 class="view-title" style="display:flex;align-items:center;gap:10px;">${nationalityFlag(kraj)}${esc(kraj)}
+    ${rynkiZnacznikUe(ue)}<span class="rynki-tag rynki-tag-zloty">Priorytet ${priorytetKraju(kraj)}</span></h2>
+  <div class="grid grid-3" style="margin-bottom:18px;">
+    <div class="card rynki-info"><div class="rynki-info-lbl">Format sezonu</div><div class="rynki-info-wart">${esc(sezony)}</div>
+      <div class="rynki-info-opis">${sezony.includes('wiosna') ? 'Sezon kończy się jesienią — kontrakty często do 31.12, czyli wolni zawodnicy na zimowe okno w Polsce.' : 'Sezon jak w Polsce — okna transferowe się pokrywają.'}</div></div>
+    <div class="card rynki-info"><div class="rynki-info-lbl">Transfer do Polski</div><div class="rynki-info-wart">${ue ? 'Bez limitu spoza UE' : 'Limit zawodników spoza UE'}</div>
+      <div class="rynki-info-opis">${ue ? 'Wyjątek 16–18 z art. 19 RSTP FIFA ma zastosowanie.' : 'Transfer zawodnika 16–17 lat zasadniczo niemożliwy (art. 19 RSTP FIFA).'} Do 23 r.ż. ekwiwalent za wyszkolenie.</div></div>
+    <div class="card rynki-info"><div class="rynki-info-lbl">Przedziały wiekowe w bazie</div>
+      ${pasma.map(p=> `<div class="rynki-pasmo"><span>${p.k}: ${OPIS_PRZEDZIALU[p.k]}</span><div class="stat-bar"><div class="stat-bar-fill" style="width:${Math.round(p.n/maks*100)}%;background:var(--gold);"></div></div><strong>${p.n}</strong></div>`).join('')}</div>
+  </div>
+  <div class="card" style="padding:0;overflow:auto;">
+    <table>
+      <thead><tr><th>Liga</th><th>Poziom</th><th>Priorytet</th><th>Monitorowani</th><th>Z kadr młodzieżowych</th><th>Źródła</th><th></th></tr></thead>
+      <tbody>${ligi.map(l=>{
+        const mon = zKraju.filter(z=> z.liga.id === l.id && z.zrodlo === 'monitoring').length;
+        const kad = zKraju.filter(z=> z.liga.id === l.id && z.zrodlo === 'kadra').length;
+        return `<tr class="rynki-wiersz" data-action="rynki-liga" data-liga="${esc(l.id)}">
+          <td><strong>${esc(l.nazwa)}</strong>${l.uwagi ? `<div class="note" style="font-style:normal;">${esc(l.uwagi)}</div>` : ''}</td>
+          <td>${l.poziom}</td><td>P${l.priorytet}</td><td>${mon || '—'}</td><td>${kad || '—'}</td>
+          <td class="note" style="font-style:normal;">${esc(l.zrodla)}</td>
+          <td><button class="link-btn" data-action="rynki-liga" data-liga="${esc(l.id)}">Otwórz →</button></td></tr>`;
+      }).join('')}</tbody>
+    </table>
+  </div>`;
+}
+
+function viewRynkiLiga(lista){
+  const l = ligaRynku(rynkiStan.liga);
+  if(!l){ rynkiStan.liga = ''; return viewRynkiKraj(lista); }
+  const wLidze = lista.filter(z=> z.liga.id === l.id);
+  const p = rynkiStan.przedzial;
+  const widoczni = wLidze.filter(z=> !p || z.przedzial === p).sort((a,b)=>
+    (a.zrodlo === b.zrodlo ? 0 : a.zrodlo === 'monitoring' ? -1 : 1)
+    || ((b.udzial ?? -1) - (a.udzial ?? -1))
+    || ((b.minuty ?? -1) - (a.minuty ?? -1))
+    || a.nazwisko.localeCompare(b.nazwisko, 'pl'));
+  const kluby = [...new Set(wLidze.map(z=> z.klub))].map(k=> ({k, n: wLidze.filter(z=> z.klub === k).length})).sort((a,b)=> b.n - a.n);
+  const pig = (wart, etykieta)=> pill(`${etykieta} (${wart ? wLidze.filter(z=> z.przedzial === wart).length : wLidze.length})`, p === wart, 'rynki-przedzial', {val: wart}, '');
+  return `
+  ${rynkiOkruszki()}
+  <h2 class="view-title">${esc(l.nazwa)}</h2>
+  <p class="view-sub">${nationalityFlag(l.kraj)} ${esc(l.kraj)} · ${l.poziom}. poziom · sezon ${esc(l.sezon)} · priorytet ${l.priorytet}${l.uwagi ? ' · ' + esc(l.uwagi) : ''}</p>
+  ${kluby.length ? `<div class="rynki-kluby"><span class="rynki-info-lbl">Kluby z zawodnikami w bazie</span>${kluby.map(k=> `<span class="rynki-tag rynki-tag-szary">${esc(k.k)} · ${k.n}</span>`).join('')}</div>` : ''}
+  <div class="filters">${pig('', 'Wszystkie')}${pig('A', 'A 16–17')}${pig('B', 'B 18–19')}${pig('C', 'C 20–21')}</div>
+  ${widoczni.length ? `<div class="card" style="padding:0;overflow:auto;">
+    <table>
+      <thead><tr><th>Zawodnik</th><th>Wiek</th><th>Pozycja</th><th>Klub</th><th style="min-width:150px;">Gra w sezonie</th><th>Tempo</th><th>Status</th><th>Transfer do PL</th></tr></thead>
+      <tbody>${widoczni.map(z=> `<tr class="rynki-wiersz" data-action="rynki-zaw" data-klucz="${esc(z.klucz)}">
+        <td><button class="link-btn" data-action="rynki-zaw" data-klucz="${esc(z.klucz)}" style="font-size:13.5px;">${esc(z.nazwisko)} ${esc(z.imie)}</button>
+          ${z.monitorowany && z.monitorowany.wypozyczenie ? `<div class="note" style="font-style:normal;">wypożyczony do ${dataPl(z.monitorowany.wypozyczenie.do)}</div>` : ''}</td>
+        <td>${z.wiek ?? '—'} <span class="note" style="font-style:normal;">${z.przedzial ? z.przedzial : ''}</span></td>
+        <td>${esc(z.pozycja)}</td><td>${esc(z.klub)}</td>
+        <td>${rynkiPasekUdzialu(z)}</td><td>${rynkiTempo(z.tempo)}</td><td>${rynkiStatus(z)}</td>
+        <td class="rynki-transfer">${esc(z.uwagaTransferowa)}</td></tr>`).join('')}</tbody>
+    </table>
+  </div>
+  <p class="note">Udział minut = minuty zawodnika / (mecze możliwe od dołączenia × 90). Tempo rozwoju: skok od +${Math.round(PROG_SKOKU*100)} pkt proc., wzrost od +${Math.round(PROG_WZROSTU*100)} pkt proc. sezon do sezonu. U zawodników z kadr pokazujemy występy i minuty z Transfermarktu.</p>`
+  : `<div class="card"><div class="empty">Brak zawodników ${p ? 'z tego przedziału ' : ''}w tej lidze. Źródło do skanowania: ${esc(l.zrodla)} — kadra klubu na Transfermarkcie, zakładka „Szczegółowo" (mecze i minuty).</div></div>`}`;
+}
+
+function rynkiWykresUdzialu(m){
+  const punkty = m.obserwacje.map(o=> ({d: o.data, u: udzialMinut(o.minuty, o.meczeMozliwe)})).filter(x=> x.u != null);
+  if(!punkty.length) return '<div class="empty">Brak obserwacji z liczbą meczów — udziału w minutach nie da się policzyć.</div>';
+  const W = 640, H = 200, L = 46, P = 20, T = 18, B = 170;
+  const xs = (i)=> punkty.length === 1 ? (L + W - P) / 2 : L + 30 + i * ((W - P - L - 60) / (punkty.length - 1));
+  const ys = (u)=> B - u * (B - T);
+  const opis = punkty.map(x=> `${dataPl(x.d)}: ${procent(x.u)}`).join(', ');
+  return `<svg class="rynki-wykres" viewBox="0 0 ${W} ${H + 14}" role="img" aria-label="Udział w minutach drużyny w kolejnych obserwacjach: ${esc(opis)}">
+    ${[0, 0.5, 1].map(u=> `<line x1="${L}" x2="${W - P}" y1="${ys(u)}" y2="${ys(u)}" style="stroke:var(--border);"/><text x="${L - 8}" y="${ys(u) + 4}" text-anchor="end" style="fill:var(--ink-faint);font-size:11px;">${u * 100}%</text>`).join('')}
+    ${punkty.length > 1 ? `<polyline fill="none" style="stroke:var(--gold);stroke-width:2;" points="${punkty.map((x,i)=> `${xs(i)},${ys(x.u)}`).join(' ')}"/>` : ''}
+    ${punkty.map((x,i)=> `<circle cx="${xs(i)}" cy="${ys(x.u)}" r="6" style="fill:var(--gold);"/><text x="${xs(i)}" y="${ys(x.u) - 12}" text-anchor="middle" style="fill:var(--ink);font-size:12px;font-weight:600;">${procent(x.u)}</text><text x="${xs(i)}" y="${H + 8}" text-anchor="middle" style="fill:var(--ink-faint);font-size:11px;">${dataPl(x.d)}</text>`).join('')}
+  </svg>`;
+}
+
+function viewRynkiZawodnik(lista){
+  const z = lista.find(x=> x.klucz === rynkiStan.zaw);
+  if(!z){ rynkiStan.zaw = ''; return rynkiStan.liga ? viewRynkiLiga(lista) : viewRynkiEuropa(lista); }
+  const m = z.monitorowany;
+  const ost = m && m.obserwacje.length ? m.obserwacje[m.obserwacje.length - 1] : null;
+  const kafel = (num, lbl)=> `<div class="stat"><div class="num">${num}</div><div class="lbl">${lbl}</div></div>`;
+  const wiersz = (lbl, wart)=> wart ? `<div class="rynki-para"><span>${lbl}</span><span>${wart}</span></div>` : '';
+  const flagi = m ? m.obywatelstwo.map(k=> nationalityFlag(k) || `<span class="rynki-tag rynki-tag-szary">${esc(k)}</span>`).join('') : '';
+  return `
+  ${rynkiOkruszki()}
+  <div class="card rynki-naglowek">
+    <div>
+      <h2 class="view-title" style="margin:0;">${esc(z.imie)} ${esc(z.nazwisko)}</h2>
+      <div class="view-sub" style="margin:4px 0 8px;">${esc(z.pozycja)} · ${esc(z.klub)} · ${esc(z.liga.nazwa)} (${esc(z.liga.kraj)}, ${z.liga.poziom}. poziom)</div>
+      <div class="rynki-tagi">${flagi}${rynkiZnacznikUe(z.ueEog)}${z.przedzial ? `<span class="rynki-tag rynki-tag-zloty">Przedział ${z.przedzial} · ${OPIS_PRZEDZIALU[z.przedzial]}</span>` : ''}${rynkiStatus(z)}</div>
+    </div>
+    ${z.tmLink ? `<a class="link-btn" href="${esc(z.tmLink)}" target="_blank" rel="noopener">Profil na Transfermarkcie ↗</a>` : ''}
+  </div>
+  <div class="grid grid-5" style="margin-bottom:18px;">
+    ${kafel(z.wiek ?? '—', 'Wiek · ur. ' + dataPl(z.dataUr))}
+    ${m ? kafel(m.wzrost ? m.wzrost : '—', 'Wzrost (cm)') : kafel(z.kadra ? esc(z.kadra.split(' ').pop()) : '—', 'Kadra')}
+    ${kafel(ost ? `${ost.wystepy ?? '—'}${ost.meczeMozliwe ? '/' + ost.meczeMozliwe : ''}` : (z.wystepy ?? '—'), 'Występy')}
+    ${kafel(ost ? (ost.odPierwszej ?? '—') : (z.minuty ?? '—'), ost ? 'Od 1. minuty' : 'Minuty')}
+    ${kafel(z.udzial != null ? '~' + procent(z.udzial) : '—', 'Udział w minutach')}
+  </div>
+  ${m ? `<div class="grid grid-2">
+    <div class="card"><h3 class="rynki-h3">Tempo rozwoju · udział minut</h3>
+      ${rynkiWykresUdzialu(m)}
+      <p class="note">${m.udzialPoprz == null ? 'Brak danych poprzedniego sezonu — po ich wpisaniu system policzy tempo (skok / wzrost / stabilnie / spadek).' : 'Tempo: ' + esc(z.tempo || '')}</p></div>
+    <div class="card"><h3 class="rynki-h3">Kontrakt i transfer</h3>
+      ${wiersz('W klubie od', m.wKlubieOd ? dataPl(m.wKlubieOd) : '')}
+      ${wiersz('Kontrakt do', m.kontraktDo ? dataPl(m.kontraktDo) : 'brak danych')}
+      ${wiersz('Wypożyczenie', m.wypozyczenie ? `z ${esc(m.wypozyczenie.z)} do ${dataPl(m.wypozyczenie.do)}` : '')}
+      ${wiersz('Menedżer', esc(m.menedzer))}
+      ${wiersz('Wycena TM (orientacyjna)', esc(m.wartoscTM))}
+      ${wiersz('Transfer do Polski', esc(z.uwagaTransferowa))}
+      ${m.notatka ? `<p class="note" style="margin-top:10px;font-style:normal;">${esc(m.notatka)}</p>` : ''}</div>
+  </div>
+  <div class="grid grid-2">
+    <div class="card"><h3 class="rynki-h3">Ścieżka kariery</h3>
+      ${m.sciezka.length ? m.sciezka.map(c=> `<div class="rynki-krok"><span class="rynki-krok-kiedy">${esc(c.kiedy)}</span><span class="rynki-krok-kropka"></span><span>${esc(c.co)}</span></div>`).join('') : '<div class="empty">Do uzupełnienia — ifkdb.com albo zakładka „Kariera" na Transfermarkcie.</div>'}</div>
+    <div class="card"><h3 class="rynki-h3">Obserwacje</h3>
+      ${m.obserwacje.slice().reverse().map(o=> `<div class="rynki-krok"><span class="rynki-krok-kiedy">${dataPl(o.data)}</span><span><strong>${esc(o.rodzaj)}</strong> · ${o.minuty} min${o.szacunek ? ' (szac.)' : ''}${o.wystepy != null ? ` · ${o.wystepy}${o.meczeMozliwe ? '/' + o.meczeMozliwe : ''} meczów` : ''}<div class="note" style="font-style:normal;">${esc(o.notatka)}</div></span></div>`).join('')}</div>
+  </div>`
+  : `<div class="card"><p style="margin:0;">Reprezentant młodzieżowy (${esc(z.kadra)}). W sezonie: ${z.wystepy ?? 0} występów, ${z.minuty ?? 0} minut. ${esc(z.uwagaTransferowa)}.</p>
+    <p class="note">Udział w minutach i tempo rozwoju policzymy, gdy zawodnik trafi do monitoringu z liczbą meczów drużyny.</p></div>`}`;
+}
+
+function viewRynki(){
+  const lista = zawodnicyRynkow(new Date());
+  if(rynkiStan.zaw) return viewRynkiZawodnik(lista);
+  if(rynkiStan.liga) return viewRynkiLiga(lista);
+  if(rynkiStan.kraj) return viewRynkiKraj(lista);
+  return viewRynkiEuropa(lista);
+}
+
+function podepnijRynki(main){
+  main.querySelectorAll('[data-action="rynki-kraj"]').forEach(b=> b.onclick = ()=>{
+    rynkiStan = { kraj: b.dataset.kraj, liga: '', zaw: '', przedzial: '' }; render();
+  });
+  main.querySelectorAll('[data-action="rynki-liga"]').forEach(b=> b.onclick = (e)=>{
+    e.stopPropagation(); rynkiStan = { ...rynkiStan, liga: b.dataset.liga, zaw: '', przedzial: '' }; render();
+  });
+  main.querySelectorAll('[data-action="rynki-zaw"]').forEach(b=> b.onclick = (e)=>{
+    e.stopPropagation();
+    const z = zawodnicyRynkow(new Date()).find(x=> x.klucz === b.dataset.klucz);
+    if(z) rynkiStan = { ...rynkiStan, kraj: z.liga.kraj, liga: z.liga.id, zaw: z.klucz };
+    render();
+  });
+  main.querySelectorAll('[data-action="rynki-przedzial"]').forEach(b=> b.onclick = ()=>{
+    rynkiStan = { ...rynkiStan, przedzial: b.dataset.val || '' }; render();
+  });
+  main.querySelectorAll('[data-action="rynki-idz"]').forEach(b=> b.onclick = ()=>{
+    const poz = b.dataset.poziom;
+    if(poz === 'europa') rynkiStan = { kraj: '', liga: '', zaw: '', przedzial: '' };
+    else if(poz === 'kraj') rynkiStan = { ...rynkiStan, liga: '', zaw: '', przedzial: '' };
+    else rynkiStan = { ...rynkiStan, zaw: '' };
+    render();
+  });
+}
+
 function viewMonitoring(){
   // Pokazuj zawodników dodanych ręcznie ORAZ tych z decyzją statusu z raportu (pierwsze cztery opcje).
   let base = DB.players.filter(p => (p.monitored || p.source==='manual' || MONITORING_STATUSES.includes(p.status)) && !p.watchlistRemoved);
@@ -16215,6 +16476,7 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="goto-monitoring"]').forEach(b=>b.onclick=()=>{currentView='monitoring';render();});
   main.querySelectorAll('[data-action="goto-kontakty"]').forEach(b=>b.onclick=()=>{ viewingClubId = null; currentView='contacts'; render(); });
   main.querySelectorAll('[data-action="goto-clubs"]').forEach(b=>b.onclick=()=>{currentView='clubs';viewingClubId=null;render();});
+  podepnijRynki(main);
   // KTO SIEDZI PRZY TEJ PRZEGLĄDARCE. Dotąd system brał po prostu pierwszego scouta z listy
   // w Ustawieniach — a więc każdy członek zespołu podpisywał się tym samym nazwiskiem, i to nie
   // swoim. Wybór trzymamy w pamięci przeglądarki, bo to ustawienie osobiste, nie wspólne dla bazy.

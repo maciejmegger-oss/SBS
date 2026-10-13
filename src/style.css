@@ -1422,3 +1422,53 @@ body.bez-kasowania #delete-selected-agencies-btn{
 .prognoza-pkt.zero{color:var(--ink-soft);font-weight:600;}
 .prognoza-uzasadnienie{color:var(--ink-soft);line-height:1.4;}
 .prognoza-braki{margin:0 0 10px;padding-left:18px;font-size:13px;line-height:1.6;color:var(--clay-dark);}
+
+/* ---------- RYNKI (Europa → kraj → liga → zawodnik) ----------
+   Tylko zmienne motywu — zakładka wygląda tak samo w jasnym i ciemnym tle jak reszta systemu. */
+.rynki-okruszki{font-size:12.5px;color:var(--ink-soft);margin:0 0 8px;}
+.rynki-okruszki .link-btn{font-size:12.5px;padding:2px;}
+.rynki-okruszek-tu{color:var(--ink) !important;cursor:default;}
+.rynki-h3{font-family:'Barlow Condensed',sans-serif;font-size:20px;letter-spacing:.03em;margin:0 0 10px;color:var(--heading);}
+.rynki-region{margin-bottom:22px;}
+.rynki-kraje{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;}
+.rynki-kraj{display:flex;flex-direction:column;gap:10px;text-align:left;background:var(--card);border:1px solid var(--border);
+  border-radius:var(--radius);padding:14px 16px;cursor:pointer;font:inherit;color:var(--ink);min-height:44px;}
+.rynki-kraj:hover{border-color:var(--gold);}
+.rynki-kraj:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
+.rynki-kraj-gora{display:flex;justify-content:space-between;align-items:center;gap:8px;}
+.rynki-kraj-nazwa{display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:15px;}
+.rynki-kraj-dol{font-size:12.5px;color:var(--ink-soft);border-top:1px solid var(--border);padding-top:9px;}
+.rynki-kraj-dol strong{color:var(--gold-dark);}
+.rynki-pusto{color:var(--ink-faint);}
+.rynki-prio{font-size:11.5px;font-weight:700;color:var(--ink-soft);}
+.rynki-tagi{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+.rynki-tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:5px;border:1px solid var(--line);color:var(--ink-soft);}
+.rynki-tag-limit{border-color:var(--clay);color:var(--clay-dark);}
+.rynki-tag-szary{border-color:transparent;background:var(--chalk-dim);color:var(--ink-soft);}
+.rynki-tag-zloty{border-color:transparent;background:var(--warn-bg);color:var(--warn-ink);font-size:12px;}
+.rynki-sygnaly{padding-bottom:8px;}
+.rynki-sygnal{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--border);font-size:13px;}
+.rynki-sygnal-rodzaj{font-size:10.5px;font-weight:700;letter-spacing:.06em;padding:3px 8px;border-radius:5px;background:var(--warn-bg);color:var(--warn-ink);min-width:96px;text-align:center;}
+.rynki-sygnal-tekst{color:var(--ink-soft);flex:1 1 260px;}
+.rynki-info{margin-bottom:0;}
+.rynki-info-lbl{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint);margin-bottom:4px;}
+.rynki-info-wart{font-weight:600;font-size:15px;margin-bottom:4px;}
+.rynki-info-opis{font-size:12.5px;color:var(--ink-soft);}
+.rynki-pasmo{display:grid;grid-template-columns:78px 1fr 22px;align-items:center;gap:8px;font-size:12px;margin-top:6px;}
+.rynki-pasmo .stat-bar{margin-top:0;}
+.rynki-wiersz{cursor:pointer;}
+.rynki-wiersz:hover td{background:var(--card-warm);}
+.rynki-kluby{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:-8px 0 12px;}
+.rynki-kluby .rynki-info-lbl{margin:0 6px 0 0;}
+.rynki-udzial{display:grid;grid-template-columns:1fr 36px;align-items:center;gap:8px;font-size:12px;font-variant-numeric:tabular-nums;}
+.rynki-udzial .stat-bar{margin-top:0;}
+.rynki-liczby{font-size:12px;color:var(--ink-soft);font-variant-numeric:tabular-nums;}
+.rynki-transfer{font-size:12px;color:var(--ink-soft);}
+.rynki-naglowek{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;}
+.rynki-wykres{width:100%;height:auto;display:block;}
+.rynki-para{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid var(--border);font-size:13px;}
+.rynki-para span:first-child{color:var(--ink-soft);}
+.rynki-para span:last-child{text-align:right;}
+.rynki-krok{display:flex;gap:12px;align-items:flex-start;padding:7px 0;font-size:13px;}
+.rynki-krok-kiedy{flex:0 0 84px;font-size:12px;color:var(--ink-faint);font-variant-numeric:tabular-nums;}
+.rynki-krok-kropka{flex:0 0 9px;width:9px;height:9px;border-radius:50%;background:var(--gold);margin-top:4px;}
