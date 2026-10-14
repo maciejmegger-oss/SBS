@@ -15,8 +15,21 @@
 // KOSZT: jedno zapytanie o filtry, jedno o grupy, po jednym na grupę i po jednym na klub.
 // Przy czterech grupach po osiemnaście klubów to około 80 zapytań raz w tygodniu.
 
-import { pjsFiltry, pjsRozgrywki, pjsTabela, pjsZawodnicyKlubu } from "./pjs.js";
+import {
+  pjsFiltry, pjsRozgrywki, pjsTabela, pjsWojewodztwa, pjsTabelaWojewodztwa, pjsZawodnicyKlubu,
+} from "./pjs.js";
 import { BAZA, KLUCZ_BAZY, naglowkiBazy, PODPOWIEDZ_BRAK_KLUCZA } from "./_baza.js";
+
+// KTÓRE LIGI PRZECHODZIMY CO TYDZIEŃ.
+//
+// Zgłoszenie (14.10.2026): „tylko 3 ligę zrobiłeś? 4 liga też jest potrzebna". Pierwsza wersja
+// brała wyłącznie szczebel, który PJS sam oznacza jako centralny (pole grouping = 1), a tam jest
+// tylko III liga. System powstaje dla klubów III i IV ligi, więc obie muszą być w przeglądzie.
+//
+// Niżej (V liga, klasa okręgowa, A, B) to kolejne 72 grupy i grubo ponad tysiąc klubów — jeden
+// przebieg by tego nie udźwignął, a dla klubu z III ligi wartość takiej listy jest znikoma.
+// Gdyby kiedyś były potrzebne, wystarczy dopisać nazwę tutaj i rozbić przegląd na kilka zadań.
+const LIGI_DO_PRZEGLADU = ["Trzecia liga", "Czwarta liga"];
 
 const norm = (s) =>
   String(s || "")
@@ -72,8 +85,10 @@ export default async function handler(req, res) {
     const biezacy = sezony[0];
     if (!biezacy) throw new Error("PJS nie podał żadnego sezonu");
 
-    const centralne = biezacy.ligi.filter((l) => l.centralna);
-    if (!centralne.length) throw new Error("PJS nie podał żadnej ligi na szczeblu centralnym");
+    const doPrzejscia = biezacy.ligi.filter((l) => LIGI_DO_PRZEGLADU.includes(l.nazwa));
+    if (!doPrzejscia.length) {
+      throw new Error("PJS nie podał żadnej z lig: " + LIGI_DO_PRZEGLADU.join(", "));
+    }
 
     const wBazie = await wczytajZawodnikow();
     const wgNazwiska = new Map();
@@ -83,24 +98,47 @@ export default async function handler(req, res) {
       wgNazwiska.get(k).push(p);
     }
 
-    // Najpierw spis wszystkich klubow do sprawdzenia, potem odpytanie paczkami. Jeden po drugim
-    // to przy 72 klubach 59 sekund niemal samego czekania na siec — za blisko limitu funkcji.
+    // Najpierw spis wszystkich klubów do sprawdzenia, potem odpytanie paczkami. Jeden po drugim
+    // to przy 72 klubach 59 sekund niemal samego czekania na sieć — za blisko limitu funkcji.
+    //
+    // Dwie ścieżki, bo PJS inaczej dzieli oba szczeble: III liga ma cztery grupy ogólnopolskie,
+    // a IV liga szesnaście związków wojewódzkich. To samo zapytanie co dla III ligi oddaje dla
+    // IV pustą tabelę — i właśnie dlatego pierwsza wersja przeglądu jej nie widziała.
     const doSprawdzenia = [];
-    for (const liga of centralne) {
-      const grupy = await pjsRozgrywki(biezacy.sezon.id, liga.id);
-      for (const grupa of grupy) {
-        try {
-          const tabela = await pjsTabela(grupa.id);
-          for (const wiersz of tabela.kluby) {
-            if (wiersz.klub && wiersz.klub.id) doSprawdzenia.push({ grupa, wiersz });
+    const dodajKluby = (tabela, podpis) => {
+      for (const wiersz of tabela.kluby) {
+        if (wiersz.klub && wiersz.klub.id) doSprawdzenia.push({ grupa: { nazwa: podpis }, wiersz });
+      }
+    };
+
+    for (const liga of doPrzejscia) {
+      if (liga.centralna) {
+        const grupy = await pjsRozgrywki(biezacy.sezon.id, liga.id);
+        for (const grupa of grupy) {
+          try {
+            dodajKluby(await pjsTabela(grupa.id), grupa.nazwa);
+          } catch (e) {
+            podsumowanie.bledy.push(`grupa ${grupa.nazwa}: ${e.message}`);
           }
-        } catch (e) {
-          podsumowanie.bledy.push(`grupa ${grupa.nazwa}: ${e.message}`);
+        }
+      } else {
+        const zpny = await pjsWojewodztwa(biezacy.sezon.id, liga.id);
+        for (const zpn of zpny) {
+          try {
+            dodajKluby(
+              await pjsTabelaWojewodztwa(biezacy.sezon.id, liga.id, zpn.id),
+              `${liga.nazwa} — ${zpn.nazwa}`,
+            );
+          } catch (e) {
+            podsumowanie.bledy.push(`${liga.nazwa} ${zpn.nazwa}: ${e.message}`);
+          }
         }
       }
     }
+    podsumowanie.klubowDoSprawdzenia = doSprawdzenia.length;
 
-    const PACZKA = 6;   // tyle rownoleglych zapytan do PZPN — szybko, a serwisu nie zalewamy
+    // Przy 360 klubach (III + IV liga) paczka po sześć dawałaby ponad minutę samego czekania.
+    const PACZKA = 12;
     for (let od = 0; od < doSprawdzenia.length; od += PACZKA) {
       const paczka = doSprawdzenia.slice(od, od + PACZKA);
       const odpowiedzi = await Promise.all(paczka.map(async ({ grupa, wiersz }) => {

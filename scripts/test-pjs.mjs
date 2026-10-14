@@ -103,7 +103,7 @@ console.log("\n6. Cotygodniowy przegląd");
 sprawdz("zadanie uruchamiane raz w tygodniu",
   vercel.crons.some((c) => c.path === "/api/pjs-tydzien" && c.schedule === "0 6 * * 1"),
   JSON.stringify(vercel.crons));
-sprawdz("przechodzi wyłącznie ligi centralne", /biezacy\.ligi\.filter\(\(l\) => l\.centralna\)/.test(cron));
+sprawdz("przechodzi ligi z listy, a nie co popadnie", /biezacy\.ligi\.filter\(\(l\) => LIGI_DO_PRZEGLADU\.includes\(l\.nazwa\)\)/.test(cron));
 sprawdz("nie zakłada kartotek sam z siebie", /nie zakłada kartotek od zera/.test(cron));
 sprawdz("nie zapisuje, gdy nic się nie zmieniło",
   /if \(bylo\.punkty === z\.punkty && bylo\.minuty === z\.minuty && bylo\.mecze === z\.mecze\) continue;/.test(cron));
@@ -115,7 +115,7 @@ sprawdz("Radar czyta ten wynik leniwie, nie przy starcie aplikacji",
   /storage\.get\('pjsPrzeglad', true\)/.test(main) && /pjsWczytajPrzeglad\(\);/.test(main));
 sprawdz("nowi spoza bazy pokazani skautowi do decyzji", /spoza bazy/.test(main));
 sprawdz("kluby odpytywane paczkami, nie jeden po drugim",
-  /const PACZKA = 6;/.test(cron) && /await Promise\.all\(paczka\.map/.test(cron));
+  /const PACZKA = \d+;/.test(cron) && /await Promise\.all\(paczka\.map/.test(cron));
 sprawdz("funkcja ma podniesiony limit czasu — pierwszy przebieg zajal 59 s",
   vercel.functions && vercel.functions["api/pjs-tydzien.js"]
   && vercel.functions["api/pjs-tydzien.js"].maxDuration >= 120,
@@ -135,6 +135,25 @@ sprawdz("zmiana jest zapisywana do bazy", /pjsDodajZawodnika\(z, pjsStan\.zawodn
 sprawdz("zawodnik nieuwzględniony w klasyfikacji jest pokazany, nie ukryty",
   /pjs-nieliczony/.test(main) && /\.pjs-nieliczony td\{/.test(css));
 
+
+console.log("\n9. Szczebel wojewódzki (IV liga i niżej)");
+sprawdz("osobny odczyt listy związków wojewódzkich", /export async function pjsWojewodztwa/.test(api));
+sprawdz("osobny odczyt tabeli województwa", /export async function pjsTabelaWojewodztwa/.test(api));
+sprawdz("obie ścieżki składają tabelę tak samo", /function ksztaltTabeli\(dane\)/.test(api)
+  && /return ksztaltTabeli\(await pjsPobierz\(`\/competitions/.test(api));
+sprawdz("powód rozdzielenia ścieżek zapisany w kodzie",
+  /to samo zapytanie oddaje dla nich\s*\n\/\/ pustą tabelę/.test(api));
+sprawdz("endpoint przyjmuje województwo i je sprawdza", /zlyId\(wojewodztwo\)/.test(api));
+sprawdz("tabela z województwem nie wymaga grupy", /if \(wojewodztwo\) \{/.test(api));
+sprawdz("widok ma pigułki województw", /data-action="pjs-wojewodztwo"/.test(main));
+sprawdz("wybór ligi dobiera właściwą ścieżkę", /if\(liga && !liga\.centralna\)\{/.test(main));
+sprawdz("dorobek podpisany województwem, gdy to IV liga",
+  /zpn \? `\$\{liga \? liga\.nazwa : ''\} — \$\{zpn\.nazwa\}`/.test(main));
+sprawdz("cotygodniowy przegląd bierze III i IV ligę",
+  /const LIGI_DO_PRZEGLADU = \["Trzecia liga", "Czwarta liga"\];/.test(cron));
+sprawdz("przegląd zna obie ścieżki", /pjsWojewodztwa\(biezacy\.sezon\.id, liga\.id\)/.test(cron)
+  && /pjsTabelaWojewodztwa\(biezacy\.sezon\.id, liga\.id, zpn\.id\)/.test(cron));
+sprawdz("większa paczka, bo klubów jest kilka razy więcej", /const PACZKA = 12;/.test(cron));
 if (process.env.PJS_LIVE === "1") {
   console.log("\n8. Żywy serwis PZPN (PJS_LIVE=1)");
   const m = await import("../api/pjs.js");

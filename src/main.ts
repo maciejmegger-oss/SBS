@@ -15506,8 +15506,8 @@ function viewFederacja(){
 // co kolejkę. Dla skauta to lista nazwisk ułożona dokładnie tak, jak trzeba: na górze ten, który
 // gra najwięcej. Odczyt stoi w api/pjs.js, bo przeglądarka nie pobierze danych z obcego serwisu.
 let pjsStan = {
-  sezon: '', liga: '', rozgrywki: '', klub: '',
-  filtry: null, grupy: null, tabela: null, zawodnicy: null,
+  sezon: '', liga: '', rozgrywki: '', wojewodztwo: '', klub: '',
+  filtry: null, grupy: null, wojewodztwa: null, tabela: null, zawodnicy: null,
   laduje: '', blad: '',
 };
 
@@ -15537,9 +15537,19 @@ async function pjsWczytaj(krok, wartosc){
     }
     if(krok === 'liga') await pjsUstawLige(wartosc);
     if(krok === 'rozgrywki'){
-      pjsStan.rozgrywki = wartosc; pjsStan.klub = ''; pjsStan.zawodnicy = null;
+      pjsStan.rozgrywki = wartosc; pjsStan.wojewodztwo = '';
+      pjsStan.klub = ''; pjsStan.zawodnicy = null;
       pjsStan.laduje = 'tabela'; render();
       pjsStan.tabela = await pjsZapytaj({ akcja: 'tabela', rozgrywki: wartosc });
+    }
+    // Szczebel wojewódzki: tabelę wyznacza związek, nie grupa — stąd osobny krok.
+    if(krok === 'wojewodztwo'){
+      pjsStan.wojewodztwo = wartosc; pjsStan.rozgrywki = '';
+      pjsStan.klub = ''; pjsStan.zawodnicy = null;
+      pjsStan.laduje = 'tabela'; render();
+      pjsStan.tabela = await pjsZapytaj({
+        akcja: 'tabela', sezon: pjsStan.sezon, liga: pjsStan.liga, wojewodztwo: wartosc,
+      });
     }
     if(krok === 'klub'){
       pjsStan.klub = wartosc;
@@ -15553,12 +15563,23 @@ async function pjsWczytaj(krok, wartosc){
   render();
 }
 
+// III liga ma cztery grupy ogólnopolskie, IV liga i niżej — szesnaście związków wojewódzkich.
+// To dwie różne ścieżki w PJS i to samo zapytanie oddaje dla niższych lig pustą tabelę.
 async function pjsUstawLige(ligaId){
   pjsStan.liga = ligaId;
-  pjsStan.rozgrywki = ''; pjsStan.klub = ''; pjsStan.tabela = null; pjsStan.zawodnicy = null;
+  pjsStan.rozgrywki = ''; pjsStan.wojewodztwo = '';
+  pjsStan.klub = ''; pjsStan.tabela = null; pjsStan.zawodnicy = null;
+  pjsStan.grupy = null; pjsStan.wojewodztwa = null;
+  const biezacy = (pjsStan.filtry || []).find(x=> x.sezon.id === pjsStan.sezon);
+  const liga = biezacy ? biezacy.ligi.find(l=> l.id === ligaId) : null;
   pjsStan.laduje = 'grupy'; render();
-  const odp = await pjsZapytaj({ akcja: 'rozgrywki', sezon: pjsStan.sezon, liga: ligaId });
-  pjsStan.grupy = odp.rozgrywki || [];
+  if(liga && !liga.centralna){
+    const odp = await pjsZapytaj({ akcja: 'wojewodztwa', sezon: pjsStan.sezon, liga: ligaId });
+    pjsStan.wojewodztwa = odp.wojewodztwa || [];
+  }else{
+    const odp = await pjsZapytaj({ akcja: 'rozgrywki', sezon: pjsStan.sezon, liga: ligaId });
+    pjsStan.grupy = odp.rozgrywki || [];
+  }
 }
 
 // Nazwa grupy z PJS brzmi: Trzecia liga "Betclic 3. Liga gr. 1". W pigułce filtra zostaje z tego
@@ -15653,6 +15674,9 @@ function pjsSekcjaHtml(){
       ${s.grupy && s.grupy.length ? `<div class="filters" style="margin-bottom:6px;">
         ${s.grupy.map(g=> pigulka(pjsKrotkaGrupa(g.nazwa), s.rozgrywki === g.id, 'pjs-grupa', g.id)).join('')}
       </div>` : ''}
+      ${s.wojewodztwa && s.wojewodztwa.length ? `<div class="filters" style="margin-bottom:6px;">
+        ${s.wojewodztwa.map(w=> pigulka(w.nazwa, s.wojewodztwo === w.id, 'pjs-wojewodztwo', w.id)).join('')}
+      </div>` : ''}
       ${s.laduje ? `<p class="note">Czytam dane z PZPN…</p>` : ''}
       ${s.tabela && s.tabela.kluby ? `<div style="max-height:260px;overflow:auto;margin-bottom:10px;">
         <table><thead><tr><th style="width:34px;">#</th><th>Klub</th><th style="width:96px;">Punkty PJS</th><th style="width:80px;">Minuty</th></tr></thead>
@@ -15726,11 +15750,16 @@ function pjsZnajdzWBazie(z, klubPjs){
 function pjsDodajZawodnika(z, dane){
   const klubPjs = dane.klub;
   const klub = klubPjs ? klubPjsWBazie(klubPjs.nazwa) : null;
+  // Podpis rozgrywek: grupa przy III lidze, województwo przy IV i niżej.
   const grupa = (pjsStan.grupy || []).find(g=> g.id === pjsStan.rozgrywki);
+  const zpn = (pjsStan.wojewodztwa || []).find(w=> w.id === pjsStan.wojewodztwo);
+  const biezacy = (pjsStan.filtry || []).find(x=> x.sezon.id === pjsStan.sezon);
+  const liga = biezacy ? biezacy.ligi.find(l=> l.id === pjsStan.liga) : null;
   const dorobek = {
     pjsId: z.pjsId, punkty: z.punkty, minuty: z.minuty, mecze: z.mecze,
     liczonyDoRankingu: z.liczonyDoRankingu,
-    rozgrywki: grupa ? pjsKrotkaGrupa(grupa.nazwa) : '',
+    rozgrywki: grupa ? pjsKrotkaGrupa(grupa.nazwa)
+      : zpn ? `${liga ? liga.nazwa : ''} — ${zpn.nazwa}`.trim() : '',
     sezon: pjsStan.sezon, druzynaPjs: klubPjs ? klubPjs.id : '', zaktualizowano: dzisiaj(),
   };
 
@@ -18510,6 +18539,7 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="pjs-start"]').forEach(b=>b.onclick=()=>void pjsWczytaj('start'));
   main.querySelectorAll('[data-action="pjs-liga"]').forEach(b=>b.onclick=()=>void pjsWczytaj('liga', (b as HTMLElement).dataset.val));
   main.querySelectorAll('[data-action="pjs-grupa"]').forEach(b=>b.onclick=()=>void pjsWczytaj('rozgrywki', (b as HTMLElement).dataset.val));
+  main.querySelectorAll('[data-action="pjs-wojewodztwo"]').forEach(b=>b.onclick=()=>void pjsWczytaj('wojewodztwo', (b as HTMLElement).dataset.val));
   main.querySelectorAll('[data-action="pjs-klub"]').forEach(b=>b.onclick=()=>void pjsWczytaj('klub', (b as HTMLElement).dataset.val));
   main.querySelectorAll('[data-action="pjs-dodaj"]').forEach(b=>b.onclick=()=>{
     const lista = pjsStan.zawodnicy && pjsStan.zawodnicy.zawodnicy;

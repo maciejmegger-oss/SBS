@@ -58,9 +58,8 @@ export async function pjsRozgrywki(sezonId, ligaId) {
   return Object.entries(dane || {}).map(([id, nazwa]) => ({ id, nazwa }));
 }
 
-// Tabela klubów w grupie — razem z identyfikatorami drużyn, po których pytamy o zawodników.
-export async function pjsTabela(rozgrywkiId) {
-  const dane = await pjsPobierz(`/competitions/${rozgrywkiId}/points`);
+// Tabela klubów — ten sam kształt dla obu ścieżek, centralnej i wojewódzkiej.
+function ksztaltTabeli(dane) {
   return {
     liga: dane.league ? { id: dane.league.id, nazwa: dane.league.name } : null,
     kluby: (dane.points || []).map((w) => ({
@@ -73,6 +72,29 @@ export async function pjsTabela(rozgrywkiId) {
       meczeWszystkie: w.league ? w.league.allMatches : 0,
     })),
   };
+}
+
+// Grupa ogólnopolska (III liga) — razem z identyfikatorami drużyn, po których pytamy o zawodników.
+export async function pjsTabela(rozgrywkiId) {
+  return ksztaltTabeli(await pjsPobierz(`/competitions/${rozgrywkiId}/points`));
+}
+
+// SZCZEBEL WOJEWÓDZKI IDZIE INNĄ ŚCIEŻKĄ NIŻ CENTRALNY.
+//
+// III liga ma cztery grupy ogólnopolskie i pyta się o nie przez /competitions/{id}/points.
+// IV liga i niżej są podzielone na wojewódzkie związki (ZPN) — to samo zapytanie oddaje dla nich
+// pustą tabelę, bo grupa bez wskazanego województwa nic nie znaczy. Dlatego osobna para odczytów.
+// Potwierdzone na adresie z IV ligą kujawsko-pomorską: 16 związków, po osiemnaście klubów.
+export async function pjsWojewodztwa(sezonId, ligaId) {
+  const dane = await pjsPobierz(`/seasons/${sezonId}/leagues/${ligaId}/ZPNs`);
+  return (Array.isArray(dane) ? dane : []).map((z) => ({
+    id: z.id, nazwa: z.voivodeship, szczebel: z.grouping,
+  }));
+}
+
+export async function pjsTabelaWojewodztwa(sezonId, ligaId, zpnId) {
+  const dane = await pjsPobierz(`/seasons/${sezonId}/leagues/${ligaId}/ZPNs/${zpnId}/points`);
+  return ksztaltTabeli(dane);
 }
 
 // Zawodnicy punktujący dla klubu. To jest sedno całej tej ścieżki.
@@ -119,9 +141,9 @@ function ladnieImie(s) {
 // ---------- WEJŚCIE HTTP ----------
 
 export default async function handler(req, res) {
-  const { akcja, sezon, liga, rozgrywki, druzyna } = req.query || {};
+  const { akcja, sezon, liga, rozgrywki, druzyna, wojewodztwo } = req.query || {};
   const zlyId = (v) => v && !UUID.test(String(v));
-  if (zlyId(sezon) || zlyId(liga) || zlyId(rozgrywki) || zlyId(druzyna)) {
+  if (zlyId(sezon) || zlyId(liga) || zlyId(rozgrywki) || zlyId(druzyna) || zlyId(wojewodztwo)) {
     return res.status(400).json({ error: "Identyfikator PJS musi być w postaci UUID." });
   }
 
@@ -133,8 +155,19 @@ export default async function handler(req, res) {
       return res.status(200).json({ rozgrywki: await pjsRozgrywki(sezon, liga) });
     }
 
+    if (akcja === "wojewodztwa") {
+      if (!sezon || !liga) return res.status(400).json({ error: "Podaj sezon i ligę." });
+      return res.status(200).json({ wojewodztwa: await pjsWojewodztwa(sezon, liga) });
+    }
+
     if (akcja === "tabela") {
-      if (!rozgrywki) return res.status(400).json({ error: "Podaj identyfikator rozgrywek." });
+      // Szczebel wojewódzki rozpoznajemy po tym, że podano województwo — wtedy grupa nie jest
+      // potrzebna, bo w IV lidze i niżej to związek wojewódzki wyznacza tabelę.
+      if (wojewodztwo) {
+        if (!sezon || !liga) return res.status(400).json({ error: "Przy województwie podaj też sezon i ligę." });
+        return res.status(200).json(await pjsTabelaWojewodztwa(sezon, liga, wojewodztwo));
+      }
+      if (!rozgrywki) return res.status(400).json({ error: "Podaj identyfikator rozgrywek albo województwo." });
       return res.status(200).json(await pjsTabela(rozgrywki));
     }
 
@@ -145,7 +178,7 @@ export default async function handler(req, res) {
 
     return res.status(400).json({
       error: "Nieznana akcja.",
-      podpowiedz: "akcja=filtry | rozgrywki&sezon=&liga= | tabela&rozgrywki= | druzyna&druzyna=",
+      podpowiedz: "akcja=filtry | rozgrywki&sezon=&liga= | wojewodztwa&sezon=&liga= | tabela&rozgrywki= | tabela&sezon=&liga=&wojewodztwo= | druzyna&druzyna=",
     });
   } catch (e) {
     return res.status(502).json({
