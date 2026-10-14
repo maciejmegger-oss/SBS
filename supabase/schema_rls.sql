@@ -1,3 +1,9 @@
+-- !!! NIE URUCHAMIAJ TEGO PLIKU NA PRODUKCJI !!!
+-- Ten skrypt daje roli "anon" PEŁNY odczyt i zapis wszystkich tabel (polityka "Tymczasowy pełny
+-- dostęp"). Zostaje w repozytorium wyłącznie jako ślad historyczny z czasów przed logowaniem.
+-- Właściwe reguły: supabase/migration_2026-08-11_konta_i_zgoda.sql oraz kolejne migracje.
+-- Aby sprawdzić, czy produkcja nie ma takiej polityki: supabase/sprawdz_rls.sql.
+
 -- Reguły dostępu — ten sam wzorzec co poprzednio: tymczasowy pełny dostęp, do czasu
 -- dodania prawdziwego logowania. Patrz uwaga bezpieczeństwa z poprzedniej wiadomości.
 
