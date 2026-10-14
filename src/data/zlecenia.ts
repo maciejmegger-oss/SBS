@@ -72,6 +72,25 @@ export async function zlecAnalize(z: ZlecenieAnalizy): Promise<string | null> {
   }
 }
 
+/** Odwołanie zlecenia. Zwraca komunikat błędu albo null, gdy się udało. */
+export async function odwolajZlecenie(id: string): Promise<string | null> {
+  const { error } = await sb.from(TABELA).update({ status: "odwolane" }).eq("id", id);
+  if (!error) return null;
+  if (!brakTabeli(error.message)) return error.message;
+
+  // Droga zapasowa — tam, gdzie zlecenie wylądowało, gdy tabeli nie ma.
+  const lista = await zapasoweZlecenia();
+  const z = lista.find((x) => x.id === id);
+  if (!z) return "Nie znalazłem tego zlecenia.";
+  z.status = "odwolane";
+  try {
+    await storage.set(KLUCZ_ZAPASOWY, JSON.stringify(lista), true);
+    return null;
+  } catch (e) {
+    return (e as Error).message || String(e);
+  }
+}
+
 /** Zlecenia w toku i czekające — do odznaczenia w profilu zawodnika. */
 export async function pobierzOtwarteZlecenia(): Promise<ZlecenieAnalizy[]> {
   const { data, error } = await sb

@@ -130,5 +130,33 @@ console.log('\n7. Tabela w bazie');
   sprawdz('brak tabeli nie wywraca profilu zawodnika', /Zlecenia analiz z tabeli niedostępne/.test(zlecenia));
 }
 
+
+// CO SIĘ DZIEJE ZE ZLECENIEM — KARTA MUSI TO MÓWIĆ.
+//
+// Zgłoszenie (14.10.2026): „zleciłem analizę zawodnika i nic nie mam, minęło ponad 20 minut,
+// dlaczego tak długo". Nic się nie zacięło — „Zleć analizę wideo" to zamówienie dla analityka,
+// a nie zadanie dla systemu. Karta pokazywała wyłącznie złoty przycisk „Analiza zlecona", co
+// wyglądało jak robota w toku. Te asercje pilnują, żeby mówiła prawdę.
+console.log('\n4. Co karta mówi o złożonym zleceniu');
+{
+  const main = fs.readFileSync('src/main.ts', 'utf8');
+  const zlecenia = fs.readFileSync('src/data/zlecenia.ts', 'utf8');
+
+  sprawdz('karta pokazuje, że zlecenie czeka', /🎬 Analiza wideo zlecona/.test(main));
+  sprawdz('podaje mecz i od kiedy czeka',
+    /czeka \$\{dni\} dni/.test(main) && /esc\(z\.mecz \|\| 'mecz niepodany'\)/.test(main));
+  sprawdz('mówi wprost, że to zamówienie dla człowieka, nie zadanie dla systemu',
+    /To zamówienie dla <strong>analityka<\/strong>, nie zadanie dla systemu/.test(main));
+  sprawdz('kieruje do skrzynki po gotowy raport', /wraca do <strong>skrzynki raportów<\/strong>/.test(main));
+  sprawdz('podpowiada przycisk, który daje ocenę od razu',
+    /„Analiza zawodnika"<\/strong> wyżej — ta wraca w kilkadziesiąt sekund/.test(main));
+
+  sprawdz('zlecenie da się odwołać', /export async function odwolajZlecenie/.test(zlecenia));
+  sprawdz('odwołanie działa też drogą zapasową, gdy tabeli nie ma',
+    /brakTabeli\(error\.message\)\) return error\.message;[\s\S]{0,260}z\.status = "odwolane";/.test(zlecenia));
+  sprawdz('odwołanie pyta o potwierdzenie', /Odwołać to zlecenie analizy wideo\?/.test(main));
+  sprawdz('odwołane zlecenie znika z karty bez przeładowania',
+    /zleceniaOtwarte = zleceniaOtwarte\.filter\(z=> z\.id !==/.test(main));
+}
 console.log(bledy ? `\n${bledy} BŁĘDÓW` : '\nWszystko przeszło.');
 process.exit(bledy ? 1 : 0);

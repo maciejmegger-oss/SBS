@@ -1,7 +1,7 @@
 import "./style.css";
 import { storage } from "./data/storage";
 import { pobierzSkrzynke, oznaczWpisSkrzynki, bladSkrzynki } from "./data/skrzynka";
-import { zlecAnalize, pobierzOtwarteZlecenia } from "./data/zlecenia";
+import { zlecAnalize, pobierzOtwarteZlecenia, odwolajZlecenie } from "./data/zlecenia";
 import { currentUser, signIn, signOut, requestPasswordReset, setNewPassword, isPasswordRecoveryLink,
          mojeKonto, listaKont, ustawStatusKonta, ustawRoleKonta, ustawPakietyKonta,
          zapiszZdarzenie, listaZdarzen, tokenSesji } from "./data/auth";
@@ -6355,6 +6355,34 @@ function viewPlayerDetail(id){
       <button class="danger" data-action="delete-player" data-id="${p.id}">Usuń</button>
     </div>
   </div>
+  ${/* CO SIĘ DZIEJE ZE ZLECENIEM — WPROST NA KARCIE.
+        Zgłoszenie (14.10.2026): „zleciłem analizę zawodnika i nic nie mam, minęło ponad 20 minut,
+        dlaczego tak długo". Nic się nie zacięło: „Zleć analizę wideo" to zamówienie dla CZŁOWIEKA,
+        a nie zadanie dla systemu. Zlecenie czeka w kolejce, analityk odbiera je i odsyła gotowy
+        raport do skrzynki. Żaden automat go nie podejmie — ani po dwudziestu minutach, ani nigdy.
+        Karta pokazywała tylko złoty przycisk „Analiza zlecona", więc wyglądało to jak robota
+        w toku. Teraz mówi, od kiedy zlecenie czeka i na kogo. */''}
+  ${(()=>{
+    const z = zlecenieZawodnika(p.id);
+    if(!z) return '';
+    const odKiedy = String(z.utworzoneAt || '').slice(0, 10);
+    const dni = odKiedy ? Math.floor((Date.now() - new Date(odKiedy).getTime()) / 86400000) : null;
+    const czeka = dni == null ? '' : dni <= 0 ? 'złożone dzisiaj' : dni === 1 ? 'czeka od wczoraj' : `czeka ${dni} dni`;
+    return `<div class="card" style="border-left:3px solid var(--gold);">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+        <div>
+          <strong>🎬 Analiza wideo zlecona</strong>
+          <span class="meta">${esc(z.mecz || 'mecz niepodany')}${czeka ? ' &middot; ' + czeka : ''}
+            &middot; status: ${esc(z.status || 'nowe')}</span>
+        </div>
+        <button class="secondary" data-action="odwolaj-zlecenie" data-id="${esc(z.id)}">Odwołaj zlecenie</button>
+      </div>
+      <p class="note" style="margin:6px 0 0;">To zamówienie dla <strong>analityka</strong>, nie zadanie dla systemu —
+        nic nie policzy się samo. Gotowy raport wraca do <strong>skrzynki raportów</strong>, skąd wczytujesz go
+        do formularza. Jeżeli chodziło Ci o ocenę, którą system wystawia od razu, użyj przycisku
+        <strong>„Analiza zawodnika"</strong> wyżej — ta wraca w kilkadziesiąt sekund.</p>
+    </div>`;
+  })()}
   <div class="grid grid-2">
     <div class="card">
       <h4 style="margin-top:0;color:var(--heading);">Profil ocen ${a && a.overall!=null? '&middot; średnia '+fmt1(a.overall)+' <span class="note" style="font-weight:400;">(z '+a.reportCount+' rap.)</span>' : ''}</h4>
@@ -17324,6 +17352,20 @@ function attachHandlers(){
       if(z.length) render();
     });
   }
+  // Odwołanie zlecenia analizy wideo — prosto z karty zawodnika.
+  main.querySelectorAll('[data-action="odwolaj-zlecenie"]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Odwołać to zlecenie analizy wideo?\n\nZnika z kolejki analityka. Zawodnik i jego dane zostają bez zmian.')) return;
+    const napis = b.textContent;
+    (b as HTMLButtonElement).disabled = true; b.textContent = 'Odwołuję…';
+    const blad = await odwolajZlecenie((b as HTMLElement).dataset.id);
+    if(blad){
+      alert('Nie udało się odwołać zlecenia: ' + blad);
+      (b as HTMLButtonElement).disabled = false; b.textContent = napis;
+      return;
+    }
+    zleceniaOtwarte = zleceniaOtwarte.filter(z=> z.id !== (b as HTMLElement).dataset.id);
+    render();
+  });
   main.querySelectorAll('[data-action="zlec-analize"]').forEach(b=>b.onclick=()=>openZlecAnalizeModal(b.dataset.id));
   // Profil kompetencji: przycisk bez data-profil zakłada nową rundę, z nim otwiera istniejącą ocenę.
   main.querySelectorAll('[data-action="profil-kompetencji"]').forEach(b=>
