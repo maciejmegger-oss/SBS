@@ -63,7 +63,7 @@ sprawdz("lista sortuje się po kolejności wpisania, nie po dacie meczu",
   /const allReports = widoczneRaporty\.slice\(\)\.sort\(\(a,b\)=> ordinalOf\[b\.id\] - ordinalOf\[a\.id\]\);/.test(zrodlo));
 sprawdz("numer porządkowy nadal liczony wśród pokazanych",
   /widoczneRaporty\.forEach\(\(r,i\)=> ordinalOf\[r\.id\] = i\+1\);/.test(zrodlo));
-sprawdz("podpis nad listą mówi to samo, co lista robi", /Wg kolejności utworzenia/.test(zrodlo));
+sprawdz("podpis nad listą mówi to samo, co lista robi", /numer i kolejność idą za datą <strong>dodania<\/strong>/.test(zrodlo) && /nie za datą meczu/.test(zrodlo));
 
 console.log(bledy ? `\n${bledy} BŁĘDÓW` : "\nWszystko przeszło.");
 process.exit(bledy ? 1 : 0);
