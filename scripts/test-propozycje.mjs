@@ -73,5 +73,48 @@ const dane = fs.readFileSync("src/data/propozycje.ts", "utf8");
 sprawdz("brak tabeli daje komunikat z nazwą migracji", /migration_2026-10-14_przeplyw_ai\.sql/.test(dane));
 sprawdz("zapis bez skutku (RLS) nie udaje sukcesu", /Zmiana nie została zapisana/.test(dane));
 
+
+console.log("\n4. Pomiar: co przechodzi przez obieg");
+const prop = (o) => ({ id: 1, playerId: "a", zawodnik: "X", rodzaj: "kandydat", tresc: "t", zrodla: [], pewnosc: "", model: "reguly",
+  stan: "ai_propozycja", skautUwagi: "", skautAt: "", trenerOcena: null, trenerUwagi: "", trenerAt: "", dyrektorDecyzja: null,
+  dyrektorUzasadnienie: "", dyrektorAt: "", odrzucilPowod: "", utworzoneAt: "2026-10-01T00:00:00Z", ...o });
+const lista = [
+  prop({ stan: "decyzja_dyrektora", dyrektorDecyzja: "transfer", dyrektorAt: "2026-10-05T00:00:00Z" }),
+  prop({ stan: "decyzja_dyrektora", dyrektorDecyzja: "odrzucenie", dyrektorAt: "2026-10-03T00:00:00Z" }),
+  prop({ stan: "odrzucone", odrzucilPowod: "zły rocznik" }),
+  prop({ stan: "ai_propozycja" }),
+  prop({ rodzaj: "opinia", model: "claude-sonnet-5", stan: "decyzja_dyrektora", dyrektorDecyzja: "testy", dyrektorAt: "2026-10-02T00:00:00Z" }),
+];
+const st = M.statystykaPropozycji(lista);
+sprawdz("liczy propozycje i etapy", st.razem === 5 && st.poStanie.decyzja_dyrektora === 3 && st.poStanie.odrzucone === 1 && st.poStanie.ai_propozycja === 1);
+const reg = st.wiersze.find((w) => w.zrodlo === "reguly");
+sprawdz("rozdziela źródła: reguły osobno od AI", st.wiersze.length === 2 && reg.razem === 4);
+sprawdz("rozstrzygnięte = decyzje + odrzucone w obiegu", reg.rozstrzygniete === 3 && reg.odrzuconeWObiegu === 1 && reg.otwarte === 1);
+sprawdz("odsetek pozytywnych = (transfer+testy)/rozstrzygnięte", Math.abs(reg.odsetekPozytywnych - 1 / 3) < 1e-9, String(reg.odsetekPozytywnych));
+sprawdz("brak rozstrzygnięć daje null, nie zero",
+  M.statystykaPropozycji([prop({})]).wiersze[0].odsetekPozytywnych === null);
+sprawdz("średni czas do decyzji w dniach", Math.abs(st.sredniDniDoDecyzji - (4 + 2 + 1) / 3) < 1e-9, String(st.sredniDniDoDecyzji));
+sprawdz("pusta lista nie wywraca", M.statystykaPropozycji([]).razem === 0 && M.statystykaPropozycji([]).sredniDniDoDecyzji === null);
+
+console.log("\n5. Karta dla dyrektora");
+const zaw = { imieNazwisko: "Jan Kowalski", rocznik: "2008", pozycja: "Napastnik", klub: "Klub", liga: "III liga", mecze: 20, minuty: 1500, gole: 9, asysty: 2, kontrakt: "do 2027-06-30", agent: "Agencja X" };
+const zTrenerem = prop({ zawodnik: "Jan Kowalski", zrodla: [{ url: "https://example.org/a", opis: "ŁNP" }], pewnosc: "ŚREDNIA", skautAt: "2026-10-02", skautUwagi: "ok",
+  trenerOcena: { dopasowanie: 5, pozycja: "9", komentarz: "pasuje do pressingu" }, stan: "ocena_trenera" });
+sprawdz("komplet danych: brak luk", M.brakiDoDecyzji(zTrenerem, zaw).length === 0, JSON.stringify(M.brakiDoDecyzji(zTrenerem, zaw)));
+const braki = M.brakiDoDecyzji(prop({ pewnosc: "NISKA" }), { ...zaw, minuty: 100, kontrakt: "", agent: "brak informacji" });
+sprawdz("braki liczone z danych: źródła, minuty, kontrakt, agent, trener, pewność", braki.length === 6, JSON.stringify(braki));
+sprawdz("zawodnik usunięty z kartoteki jest nazwany", M.brakiDoDecyzji(zTrenerem, null).some((b) => /nie ma już w kartotece/.test(b)));
+const html = M.kartaDyrektoraHtml(zTrenerem, zaw, "14.10.2026");
+sprawdz("karta ma fakty, ocenę trenera i sekcję braków", /Jan Kowalski/.test(html) && /5\/6/.test(html) && /Czego nie wiemy/.test(html) && /1500/.test(html));
+sprawdz("karta jest jedną stroną A4 do druku", /size:A4/.test(html) && /<!doctype html>/.test(html));
+sprawdz("karta zastrzega, że AI nie rekomenduje transferu", /nie jest oceną ani rekomendacją transferu/.test(html));
+const zly = M.kartaDyrektoraHtml(prop({ zawodnik: "<script>alert(1)</script>", tresc: "<img src=x onerror=alert(1)>", zrodla: [{ url: "javascript:alert(1)", opis: "x" }] }), null, "d");
+sprawdz("treść jest zabezpieczona przed wstrzyknięciem HTML", !/<script>/.test(zly) && !/<img src=x/.test(zly));
+sprawdz("adresy inne niż http(s) nie trafiają do karty", !/javascript:/.test(zly));
+
+console.log("\n6. Minimalizacja danych dla modelu");
+const appSrc = fs.readFileSync("src/main.ts", "utf8");
+sprawdz("druga opinia nie dostaje pełnej daty urodzenia", !/dataUrodzenia: p\.birthDate/.test(appSrc));
+
 console.log(bledy ? `\nBŁĘDÓW: ${bledy}` : "\nWszystko przeszło.");
 process.exit(bledy ? 1 : 0);

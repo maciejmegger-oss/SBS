@@ -148,3 +148,151 @@ export function wybierzKandydatow(
     };
   });
 }
+
+// ---------------------------------------------------------------------------
+// POMIAR: CO Z PROPOZYCJI AI NAPRAWDĘ PRZECHODZI PRZEZ OBIEG
+// ---------------------------------------------------------------------------
+//
+// Bez tego nie wiadomo, czy AI i reguły oszczędzają czas, czy tylko produkują papier. Liczymy
+// wyłącznie to, co jest w bazie: ile propozycji z danego źródła (reguły, opinia AI) dotarło do
+// decyzji dyrektora i jaka to była decyzja, a ile odpadło po drodze. To jest też materiał do
+// późniejszej kalibracji prognozy (src/prognoza.ts) — ona sama przyznaje, że nie ma jeszcze
+// historii trafień.
+
+export interface WierszStatystyki {
+  zrodlo: string;           // „reguly" | nazwa modelu AI | „(brak)"
+  rodzaj: string;
+  razem: number;
+  otwarte: number;
+  transfer: number;
+  testy: number;
+  obserwacja: number;
+  rezygnacja: number;       // decyzja dyrektora „odrzucenie"
+  odrzuconeWObiegu: number; // odrzucone przez skauta/trenera/dyrektora przed decyzją
+  rozstrzygniete: number;   // decyzja dyrektora + odrzucone w obiegu
+  pozytywne: number;        // transfer + testy
+  odsetekPozytywnych: number | null; // pozytywne / rozstrzygnięte; null gdy nic nie rozstrzygnięto
+}
+
+export interface Statystyka {
+  razem: number;
+  poStanie: Record<Stan, number>;
+  wiersze: WierszStatystyki[];
+  sredniDniDoDecyzji: number | null;
+}
+
+export function statystykaPropozycji(lista: Propozycja[]): Statystyka {
+  const poStanie = Object.fromEntries(KOLEJNOSC_STANOW.map((s) => [s, 0])) as Record<Stan, number>;
+  const mapa = new Map<string, WierszStatystyki>();
+  const dni: number[] = [];
+
+  for (const p of lista) {
+    poStanie[p.stan] = (poStanie[p.stan] || 0) + 1;
+    const zrodlo = p.model || "(brak)";
+    const klucz = p.rodzaj + "|" + zrodlo;
+    let w = mapa.get(klucz);
+    if (!w) {
+      w = { zrodlo, rodzaj: p.rodzaj, razem: 0, otwarte: 0, transfer: 0, testy: 0, obserwacja: 0,
+            rezygnacja: 0, odrzuconeWObiegu: 0, rozstrzygniete: 0, pozytywne: 0, odsetekPozytywnych: null };
+      mapa.set(klucz, w);
+    }
+    w.razem++;
+    if (p.stan === "odrzucone") { w.odrzuconeWObiegu++; w.rozstrzygniete++; }
+    else if (p.stan === "decyzja_dyrektora") {
+      w.rozstrzygniete++;
+      if (p.dyrektorDecyzja === "transfer") w.transfer++;
+      else if (p.dyrektorDecyzja === "testy") w.testy++;
+      else if (p.dyrektorDecyzja === "obserwacja") w.obserwacja++;
+      else if (p.dyrektorDecyzja === "odrzucenie") w.rezygnacja++;
+      const od = Date.parse(p.utworzoneAt), do_ = Date.parse(p.dyrektorAt);
+      if (Number.isFinite(od) && Number.isFinite(do_) && do_ >= od) dni.push((do_ - od) / 86400000);
+    } else w.otwarte++;
+  }
+  const wiersze = [...mapa.values()].map((w) => {
+    w.pozytywne = w.transfer + w.testy;
+    w.odsetekPozytywnych = w.rozstrzygniete ? w.pozytywne / w.rozstrzygniete : null;
+    return w;
+  }).sort((a, b) => b.razem - a.razem);
+  return {
+    razem: lista.length, poStanie, wiersze,
+    sredniDniDoDecyzji: dni.length ? dni.reduce((a, b) => a + b, 0) / dni.length : null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// KARTA DLA DYREKTORA — JEDNA STRONA: FAKTY, GŁOSY, BRAKI, DECYZJA
+// ---------------------------------------------------------------------------
+//
+// Dyrektor nie ma czytać trzech zakładek. Karta zbiera w jednym miejscu to, co ustalili skaut
+// i trener, fakty z kartoteki i — osobno — to, CZEGO NIE WIEMY. Lista braków liczona jest z
+// danych, nie wymyślana: brak źródeł, brak kontraktu, mało minut, brak oceny trenera.
+
+export interface DaneZawodnikaKarty {
+  imieNazwisko: string; rocznik?: string; pozycja?: string; klub?: string; liga?: string;
+  mecze?: number | null; minuty?: number | null; gole?: number | null; asysty?: number | null;
+  kontrakt?: string;          // np. „do 2027-06-30", „brak informacji"
+  agent?: string;             // np. „Agencja X", „brak informacji"
+}
+
+export function brakiDoDecyzji(p: Propozycja, z: DaneZawodnikaKarty | null): string[] {
+  const braki: string[] = [];
+  if (!p.zrodla.length) braki.push("Brak osobno podanych źródeł — sprawdź, na czym opiera się opis.");
+  if (!z) braki.push("Zawodnika nie ma już w kartotece — brak aktualnych danych.");
+  else {
+    if ((z.minuty ?? 0) < 500) braki.push(`Mało minut w danych (${z.minuty ?? "brak"}) — liczby niewiele mówią.`);
+    if (!z.kontrakt || /brak/i.test(z.kontrakt)) braki.push("Nieznana sytuacja kontraktowa.");
+    if (!z.agent || /brak/i.test(z.agent)) braki.push("Nieznany agent / reprezentacja zawodnika.");
+  }
+  if (!p.trenerOcena) braki.push("Trener nie wystawił jeszcze oceny dopasowania.");
+  if (p.pewnosc === "NISKA") braki.push("Pewność propozycji oznaczona jako niska.");
+  return braki;
+}
+
+const e = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+
+/** Kompletny dokument HTML jednej strony A4, gotowy do wydruku. */
+export function kartaDyrektoraHtml(p: Propozycja, z: DaneZawodnikaKarty | null, dataWydruku: string): string {
+  const braki = brakiDoDecyzji(p, z);
+  const wiersz = (k: string, v: unknown) => `<tr><th>${e(k)}</th><td>${e(v ?? "—") || "—"}</td></tr>`;
+  const zrodla = p.zrodla.filter((s) => /^https?:\/\//i.test(s.url))
+    .map((s) => `<li>${e(s.opis || s.url)} — ${e(s.url)}</li>`).join("");
+  const oc = p.trenerOcena;
+  return `<!doctype html><html lang="pl"><head><meta charset="utf-8"><title>Karta: ${e(p.zawodnik)}</title>
+<style>
+  @page{size:A4;margin:14mm}
+  body{font:12px/1.4 system-ui,Arial,sans-serif;color:#111}
+  h1{font-size:20px;margin:0 0 2px} h2{font-size:13px;margin:14px 0 4px;border-bottom:1px solid #999;padding-bottom:2px}
+  table{border-collapse:collapse;width:100%} th{text-align:left;width:34%;font-weight:600;padding:2px 6px 2px 0;vertical-align:top}
+  td{padding:2px 0}.tresc{white-space:pre-wrap}.braki li{color:#8a1c1c}.nota{color:#555;font-size:10px}
+</style></head><body>
+<h1>${e(p.zawodnik)}</h1>
+<div class="nota">Karta dla dyrektora sportowego · wygenerowana ${e(dataWydruku)} · etap: ${e(ETYKIETY_STANU[p.stan])}</div>
+
+<h2>Fakty z kartoteki</h2>
+<table>${z ? [wiersz("Rocznik", z.rocznik), wiersz("Pozycja", z.pozycja),
+  wiersz("Klub", [z.klub, z.liga].filter(Boolean).join(", ")),
+  wiersz("Mecze / minuty", `${z.mecze ?? "brak"} / ${z.minuty ?? "brak"}`),
+  wiersz("Gole / asysty", `${z.gole ?? "brak"} / ${z.asysty ?? "brak"}`),
+  wiersz("Kontrakt", z.kontrakt || "brak informacji"), wiersz("Agent", z.agent || "brak informacji")].join("")
+  : wiersz("Dane", "zawodnika nie ma w kartotece")}</table>
+
+<h2>Propozycja (${e(p.rodzaj)}, źródło: ${e(p.model || "—")}${p.pewnosc ? ", pewność: " + e(p.pewnosc) : ""})</h2>
+<div class="tresc">${e(p.tresc)}</div>
+${zrodla ? `<div class="nota">Źródła:</div><ul>${zrodla}</ul>` : ""}
+
+<h2>Głos skauta</h2>
+<div>${p.skautAt ? e(p.skautUwagi || "Fakty potwierdzone, bez uwag.") : "Jeszcze niezweryfikowane."}</div>
+
+<h2>Ocena trenera — dopasowanie sportowe</h2>
+<div>${oc ? `Dopasowanie: <strong>${e(oc.dopasowanie ?? "—")}/6</strong>${oc.pozycja ? " · pozycja: " + e(oc.pozycja) : ""}${oc.komentarz ? "<br>" + e(oc.komentarz) : ""}` : "Brak oceny trenera."}</div>
+
+<h2>Czego nie wiemy</h2>
+${braki.length ? `<ul class="braki">${braki.map((b) => `<li>${e(b)}</li>`).join("")}</ul>` : "<div>Brak oczywistych luk w danych.</div>"}
+
+<h2>Decyzja dyrektora</h2>
+<div>${p.dyrektorDecyzja ? `<strong>${e(ETYKIETY_DECYZJI[p.dyrektorDecyzja])}</strong>${p.dyrektorUzasadnienie ? " — " + e(p.dyrektorUzasadnienie) : ""}`
+  : p.stan === "odrzucone" ? `Propozycja odrzucona: ${e(p.odrzucilPowod)}` : "Czeka na decyzję."}</div>
+<p class="nota">Propozycja AI nie jest oceną ani rekomendacją transferu — to materiał do weryfikacji przez skauta i trenera.</p>
+</body></html>`;
+}

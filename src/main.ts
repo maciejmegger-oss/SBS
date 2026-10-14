@@ -5,7 +5,8 @@ import { zlecAnalize, pobierzOtwarteZlecenia, odwolajZlecenie } from "./data/zle
 import { listaPropozycji, dodajPropozycje, weryfikujPropozycje, ocenPropozycje, zdecydujPropozycje,
          odrzucPropozycje } from "./data/propozycje";
 import { ETYKIETY_STANU, ETYKIETY_DECYZJI, KOLEJNOSC_STANOW, STANY_ZAMKNIETE, coMozeRola, mozeOdrzucic,
-         wybierzKandydatow } from "./domain/propozycje";
+         wybierzKandydatow, statystykaPropozycji, kartaDyrektoraHtml } from "./domain/propozycje";
+import type { DaneZawodnikaKarty } from "./domain/propozycje";
 import type { Propozycja, Decyzja } from "./domain/propozycje";
 import { currentUser, signIn, signOut, requestPasswordReset, setNewPassword, isPasswordRecoveryLink,
          mojeKonto, listaKont, ustawStatusKonta, ustawRoleKonta, ustawPakietyKonta,
@@ -4191,6 +4192,8 @@ function kartaPropozycji(p: Propozycja){
   }
   const odrzuc = mozeOdrzucic(rola, p.stan)
     ? `<button class="secondary" data-prop-act="odrzuc" data-id="${p.id}">Odrzuć…</button>` : '';
+  const przyciskKarty = p.stan !== 'ai_propozycja'
+    ? `<button class="secondary" data-prop-act="karta" data-id="${p.id}">Karta dla dyrektora (druk)</button>` : '';
   const czyja = !STANY_ZAMKNIETE.includes(p.stan) && !akcja
     ? `<div class="note" style="margin-top:6px;">Czeka na: ${p.stan==='ai_propozycja'?'skauta':p.stan==='zweryfikowane_skaut'?'trenera':'dyrektora sportowego'}.</div>` : '';
 
@@ -4203,7 +4206,7 @@ function kartaPropozycji(p: Propozycja){
     ${zrodla ? `<div class="note">Źródła: ${zrodla}</div>` : '<div class="note">Źródła nie zostały podane osobno (jeśli są, to w treści) — sprawdź je przed potwierdzeniem.</div>'}
     ${historia.join('')}
     ${czyja}
-    ${(formularz || odrzuc) ? `<div style="display:grid;gap:6px;margin-top:8px;">${formularz}<div>${odrzuc}</div></div>` : ''}
+    ${(formularz || odrzuc || przyciskKarty) ? `<div style="display:grid;gap:6px;margin-top:8px;">${formularz}<div style="display:flex;gap:8px;flex-wrap:wrap;">${odrzuc}${przyciskKarty}</div></div>` : ''}
   </div>`;
 }
 
@@ -4225,12 +4228,23 @@ function viewPropozycje(){
       + (w.length ? w.map(kartaPropozycji).join('') : '<div class="note">Nic tu nie czeka.</div>');
   }).join('');
 
+  const stat = statystykaPropozycji(lista);
+  const proc = (x: number | null) => x === null ? '—' : Math.round(x * 100) + '%';
+  const statystyki = lista.length ? `<div class="card">
+    <h3 style="margin-top:0;">Pomiar: co przechodzi przez obieg</h3>
+    <div class="note" style="margin-bottom:6px;">„Pozytywne" = decyzja dyrektora: transfer lub testy. Odsetek liczony od propozycji rozstrzygniętych
+      (decyzja albo odrzucenie).${stat.sredniDniDoDecyzji !== null ? ` Średni czas od propozycji do decyzji: ${stat.sredniDniDoDecyzji.toFixed(1)} dnia.` : ''}</div>
+    <table><thead><tr><th>Rodzaj</th><th>Źródło</th><th>Razem</th><th>Otwarte</th><th>Transfer</th><th>Testy</th><th>Obserwacja</th><th>Rezygnacja</th><th>Odrzucone w obiegu</th><th>Pozytywne</th></tr></thead><tbody>
+    ${stat.wiersze.map(w => `<tr><td>${esc(w.rodzaj)}</td><td>${esc(w.zrodlo)}</td><td>${w.razem}</td><td>${w.otwarte}</td><td>${w.transfer}</td><td>${w.testy}</td><td>${w.obserwacja}</td><td>${w.rezygnacja}</td><td>${w.odrzuconeWObiegu}</td><td>${proc(w.odsetekPozytywnych)}</td></tr>`).join('')}
+    </tbody></table></div>` : '';
+
   return `
   <h2 class="view-title">Skrzynka AI</h2>
   <p class="view-sub">Obieg: propozycja (AI lub reguły) → skaut potwierdza fakty → trener ocenia dopasowanie sportowe →
     dyrektor decyduje. Etapów nie da się przeskoczyć, a każda zmiana zostaje w dzienniku.</p>
   ${propozycjeBlad ? `<div class="card" style="border-left:3px solid var(--clay-dark);"><strong>${esc(propozycjeBlad)}</strong></div>` : ''}
   ${propozycjeKomunikat ? `<div class="card"><div class="note">${esc(propozycjeKomunikat)}</div></div>` : ''}
+  ${statystyki}
   <div class="card">
     <h3 style="margin-top:0;">Znajdź kandydatów w kartotece</h3>
     <div class="note" style="margin-bottom:6px;">Zwykłe filtrowanie własnej bazy — bez AI i bez kosztu. Wynik trafia do etapu 1 do sprawdzenia.</div>
@@ -4267,6 +4281,28 @@ function podepnijPropozycje(main: HTMLElement){
       if(!szkice.length){ alert('Nikt w kartotece nie spełnia tych kryteriów (albo już ma otwartą propozycję).'); b.disabled = false; return; }
       if(!confirm(`Dodać ${szkice.length} propozycji do etapu „Do weryfikacji przez skauta"?`)) { b.disabled = false; return; }
       return po(b, await dodajPropozycje(szkice), `Dodano ${szkice.length} propozycji.`);
+    }
+    if(act === 'karta'){
+      b.disabled = false;
+      const prop = (propozycjeLista || []).find(x => x.id === id);
+      if(!prop) return;
+      const gr: any = prop.playerId ? DB.players.find(x => x.id === prop.playerId) : null;
+      const zaw: DaneZawodnikaKarty | null = gr ? {
+        imieNazwisko: `${gr.firstName||''} ${gr.lastName||''}`.trim(), rocznik: gr.birthYear, pozycja: gr.position,
+        klub: clubName(gr.clubId), liga: ligaZawodnika(gr), mecze: gr.matches, minuty: gr.minutes, gole: gr.goals, asysty: gr.assists,
+        kontrakt: gr.hasContract ? (gr.contractUntil ? 'do ' + gr.contractUntil : 'tak, bez daty') : 'brak informacji',
+        agent: gr.hasAgent ? (gr.agencyName || 'tak, bez nazwy agencji') : 'brak informacji',
+      } : null;
+      const html = kartaDyrektoraHtml(prop, zaw, new Date().toLocaleDateString('pl-PL'));
+      const adres = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
+      const okno = window.open(adres, '_blank');
+      if(!okno){
+        // Blokada wyskakujących okien: oddajemy plik do pobrania zamiast gubić kartę.
+        const a = document.createElement('a'); a.href = adres; a.download = `karta-${prop.id}.html`; a.click();
+      } else {
+        okno.addEventListener('load', () => { try{ okno.print(); }catch(e){ /* użytkownik wydrukuje ręcznie */ } });
+      }
+      return;
     }
     if(act === 'weryfikuj') return po(b, await weryfikujPropozycje(id, txt(`#pr-${id}-uwagi`)), 'Fakty potwierdzone — propozycja czeka na trenera.');
     if(act === 'oceniaj'){
@@ -14234,7 +14270,7 @@ async function pobierzOpinieAI(playerId, przycisk, miejsce, poZapisie?){
       body: JSON.stringify({
         zawodnik: {
           imie: p.firstName || '', nazwisko: p.lastName || '',
-          rocznik: p.birthYear || '', dataUrodzenia: p.birthDate || '',
+          rocznik: p.birthYear || '',   // sama data urodzenia nie idzie do modelu — rocznik wystarcza (minimalizacja danych małoletnich)
           klub: clubName(p.clubId) || '', liga: ligaZawodnika(p) || '',
           pozycja: p.position || '', pozycjaNmg: opisPozycjiNmg(p) || '',
           noga: p.foot || '', wzrost: p.height || '', narodowosc: p.nationality || '',
