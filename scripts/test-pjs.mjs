@@ -114,6 +114,12 @@ sprawdz("wynik zapisywany do sbs_kv pod kluczem pjsPrzeglad",
 sprawdz("Radar czyta ten wynik leniwie, nie przy starcie aplikacji",
   /storage\.get\('pjsPrzeglad', true\)/.test(main) && /pjsWczytajPrzeglad\(\);/.test(main));
 sprawdz("nowi spoza bazy pokazani skautowi do decyzji", /spoza bazy/.test(main));
+sprawdz("kluby odpytywane paczkami, nie jeden po drugim",
+  /const PACZKA = 6;/.test(cron) && /await Promise\.all\(paczka\.map/.test(cron));
+sprawdz("funkcja ma podniesiony limit czasu — pierwszy przebieg zajal 59 s",
+  vercel.functions && vercel.functions["api/pjs-tydzien.js"]
+  && vercel.functions["api/pjs-tydzien.js"].maxDuration >= 120,
+  JSON.stringify(vercel.functions));
 
 console.log("\n7. Przeglądanie w aplikacji");
 for (const [akcja, opis] of [

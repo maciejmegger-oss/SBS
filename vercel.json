@@ -102,5 +102,10 @@
         }
       ]
     }
-  ]
+  ],
+  "functions": {
+    "api/pjs-tydzien.js": {
+      "maxDuration": 120
+    }
+  }
 }

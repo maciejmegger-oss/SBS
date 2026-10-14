@@ -83,70 +83,82 @@ export default async function handler(req, res) {
       wgNazwiska.get(k).push(p);
     }
 
+    // Najpierw spis wszystkich klubow do sprawdzenia, potem odpytanie paczkami. Jeden po drugim
+    // to przy 72 klubach 59 sekund niemal samego czekania na siec — za blisko limitu funkcji.
+    const doSprawdzenia = [];
     for (const liga of centralne) {
       const grupy = await pjsRozgrywki(biezacy.sezon.id, liga.id);
       for (const grupa of grupy) {
-        let tabela;
         try {
-          tabela = await pjsTabela(grupa.id);
+          const tabela = await pjsTabela(grupa.id);
+          for (const wiersz of tabela.kluby) {
+            if (wiersz.klub && wiersz.klub.id) doSprawdzenia.push({ grupa, wiersz });
+          }
         } catch (e) {
           podsumowanie.bledy.push(`grupa ${grupa.nazwa}: ${e.message}`);
-          continue;
         }
-        for (const wiersz of tabela.kluby) {
-          const idKlubu = wiersz.klub && wiersz.klub.id;
-          if (!idKlubu) continue;
-          let dane;
-          try {
-            dane = await pjsZawodnicyKlubu(idKlubu);
-          } catch (e) {
-            podsumowanie.bledy.push(`klub ${wiersz.klub.nazwa}: ${e.message}`);
-            continue;
-          }
-          podsumowanie.sprawdzonychKlubow++;
+      }
+    }
 
-          for (const z of dane.zawodnicy) {
-            if (!z.punkty) continue;
-            podsumowanie.punktujacych++;
-            const dorobek = {
-              pjsId: z.pjsId, punkty: z.punkty, minuty: z.minuty, mecze: z.mecze,
-              liczonyDoRankingu: z.liczonyDoRankingu,
-              rozgrywki: grupa.nazwa, sezon: biezacy.sezon.id,
-              druzynaPjs: idKlubu, zaktualizowano: dzis,
-            };
+    const PACZKA = 6;   // tyle rownoleglych zapytan do PZPN — szybko, a serwisu nie zalewamy
+    for (let od = 0; od < doSprawdzenia.length; od += PACZKA) {
+      const paczka = doSprawdzenia.slice(od, od + PACZKA);
+      const odpowiedzi = await Promise.all(paczka.map(async ({ grupa, wiersz }) => {
+        try {
+          return { grupa, wiersz, dane: await pjsZawodnicyKlubu(wiersz.klub.id) };
+        } catch (e) {
+          podsumowanie.bledy.push(`klub ${wiersz.klub.nazwa}: ${e.message}`);
+          return null;
+        }
+      }));
 
-            const kandydaci = wgNazwiska.get(kluczNazwiska(z.imie, z.nazwisko)) || [];
-            // Najpierw ten, którego już stąd zapisaliśmy — identyfikator PJS jest pewniejszy
-            // niż nazwisko. Potem jedyny imiennik. Przy kilku imiennikach nie zgadujemy:
-            // wybranie złodziejskiej kartoteki byłoby gorsze niż jej brak.
-            const poId = kandydaci.find((p) => (p.custom_fields || {}).pjs?.pjsId === z.pjsId);
-            const trafiony = poId || (kandydaci.length === 1 ? kandydaci[0] : null);
+      for (const odpowiedz of odpowiedzi) {
+        if (!odpowiedz) continue;
+        const { grupa, wiersz, dane } = odpowiedz;
+        const idKlubu = wiersz.klub.id;
+        podsumowanie.sprawdzonychKlubow++;
 
-            if (trafiony) {
-              const pola = { ...(trafiony.custom_fields || {}) };
-              const bylo = pola.pjs || {};
-              // Zapisujemy tylko wtedy, gdy coś się zmieniło — inaczej co tydzień
-              // przepisywalibyśmy do bazy tę samą treść.
-              if (bylo.punkty === z.punkty && bylo.minuty === z.minuty && bylo.mecze === z.mecze) continue;
-              pola.pjs = dorobek;
-              pola.monitored = true;
-              pola.mlodziezowiec = true;
-              pola.watchlistRemoved = false;
-              try {
-                await zapiszZawodnika(trafiony.id, pola);
-                podsumowanie.zaktualizowanych++;
-              } catch (e) {
-                podsumowanie.bledy.push(`zapis ${z.imie} ${z.nazwisko}: ${e.message}`);
-              }
-            } else {
-              nowi.push({
-                imie: z.imie, nazwisko: z.nazwisko, klub: dane.klub ? dane.klub.nazwa : "",
-                rozgrywki: grupa.nazwa, punkty: z.punkty, minuty: z.minuty, mecze: z.mecze,
-                pjsId: z.pjsId,
-                // Kilku imienników w bazie — skaut rozstrzygnie, który to, otwierając listę.
-                imiennikow: kandydaci.length,
-              });
+        for (const z of dane.zawodnicy) {
+          if (!z.punkty) continue;
+          podsumowanie.punktujacych++;
+          const dorobek = {
+            pjsId: z.pjsId, punkty: z.punkty, minuty: z.minuty, mecze: z.mecze,
+            liczonyDoRankingu: z.liczonyDoRankingu,
+            rozgrywki: grupa.nazwa, sezon: biezacy.sezon.id,
+            druzynaPjs: idKlubu, zaktualizowano: dzis,
+          };
+
+          const kandydaci = wgNazwiska.get(kluczNazwiska(z.imie, z.nazwisko)) || [];
+          // Najpierw ten, którego już stąd zapisaliśmy — identyfikator PJS jest pewniejszy
+          // niż nazwisko. Potem jedyny imiennik. Przy kilku imiennikach nie zgadujemy:
+          // wybranie złodziejskiej kartoteki byłoby gorsze niż jej brak.
+          const poId = kandydaci.find((p) => (p.custom_fields || {}).pjs?.pjsId === z.pjsId);
+          const trafiony = poId || (kandydaci.length === 1 ? kandydaci[0] : null);
+
+          if (trafiony) {
+            const pola = { ...(trafiony.custom_fields || {}) };
+            const bylo = pola.pjs || {};
+            // Zapisujemy tylko wtedy, gdy coś się zmieniło — inaczej co tydzień
+            // przepisywalibyśmy do bazy tę samą treść.
+            if (bylo.punkty === z.punkty && bylo.minuty === z.minuty && bylo.mecze === z.mecze) continue;
+            pola.pjs = dorobek;
+            pola.monitored = true;
+            pola.mlodziezowiec = true;
+            pola.watchlistRemoved = false;
+            try {
+              await zapiszZawodnika(trafiony.id, pola);
+              podsumowanie.zaktualizowanych++;
+            } catch (e) {
+              podsumowanie.bledy.push(`zapis ${z.imie} ${z.nazwisko}: ${e.message}`);
             }
+          } else {
+            nowi.push({
+              imie: z.imie, nazwisko: z.nazwisko, klub: dane.klub ? dane.klub.nazwa : "",
+              rozgrywki: grupa.nazwa, punkty: z.punkty, minuty: z.minuty, mecze: z.mecze,
+              pjsId: z.pjsId,
+              // Kilku imienników w bazie — skaut rozstrzygnie, który to, otwierając listę.
+              imiennikow: kandydaci.length,
+            });
           }
         }
       }
