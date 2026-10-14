@@ -174,6 +174,11 @@ sprawdz("paczka dobrana pod limit zapytań PZPN, nie pod szybkość",
 sprawdz("kluby odrzucone na limicie wracaja do roboty, nie gina",
   /const zaleglosci = postep\.nieudane\.slice\(\);/.test(cron)
   && /postep\.nieudane\.push\(\{ id: klub\.id/.test(cron));
+sprawdz("kolejka budowana raz na dzien i zapamietana, nie skladana od nowa",
+  /if \(!Array\.isArray\(postep\.kolejka\) \|\| !postep\.kolejka\.length\) \{/.test(cron)
+  && /const kolejka = postep\.kolejka;/.test(cron));
+sprawdz("pusta kolejka to blad, a nie cichy sukces",
+  /if \(!kolejka\.length\) throw new Error/.test(cron));
 sprawdz("zaleglosci ida PRZED dalszym ciagiem kolejki",
   /const zZaleglosci = zaleglosci\.splice\(0, PACZKA\);/.test(cron));
 sprawdz("nieprzerobione zaleglosci wracaja na liste, nic nie ginie",

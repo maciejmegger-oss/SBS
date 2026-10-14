@@ -106,9 +106,12 @@ async function zapiszKv(klucz, dane) {
 
 // ---------- KOLEJKA KLUBÓW ----------
 
-// Spis klubów budujemy od nowa przy każdym uruchomieniu — to tylko dwadzieścia zapytań o tabele,
-// a dzięki temu nie trzeba trzymać w bazie listy na kilkaset pozycji. Kolejność jest stała, więc
-// zapisany indeks wskazuje przy kolejnym przebiegu dokładnie ten sam klub.
+// Spis klubów powstaje RAZ NA DZIEŃ i zostaje zapamiętany razem z postępem.
+//
+// Pierwsza wersja składała go od nowa przy każdym przebiegu. Wtedy jego długość zależy od tego,
+// czy akurat wszystkie tabele się wczytały — a gdy któraś odpadnie na 429, kolejka jest krótsza
+// i zapisany indeks wskazuje inny klub niż poprzednio. Skończyło się to meldunkiem „gotowe”
+// przy 337 z 353 klubów. Zapamiętana kolejka jest stała, więc indeks zawsze znaczy to samo.
 //
 // Dwie ścieżki, bo PJS inaczej dzieli oba szczeble: III liga ma cztery grupy ogólnopolskie,
 // a IV liga szesnaście związków wojewódzkich. Zapytanie o grupę oddaje dla IV ligi PUSTĄ tabelę,
@@ -183,8 +186,13 @@ export default async function handler(req, res) {
     if (!Array.isArray(postep.nieudane)) postep.nieudane = [];
     postep.przebiegow++;
 
-    const kolejka = await zbudujKolejke(sezon, ligi, postep.bledy);
+    // Kolejkę budujemy tylko przy pierwszym przebiegu dnia; kolejne biorą zapamiętaną.
+    if (!Array.isArray(postep.kolejka) || !postep.kolejka.length) {
+      postep.kolejka = await zbudujKolejke(sezon, ligi, postep.bledy);
+    }
+    const kolejka = postep.kolejka;
     postep.klubowRazem = kolejka.length;
+    if (!kolejka.length) throw new Error("nie udało się zbudować kolejki klubów");
     // KLUBY, KTÓRE ODPADŁY NA LIMICIE, PRZERABIAMY NA POCZĄTKU KOLEJNEGO PRZEBIEGU.
     //
     // Pierwsza próba doklejała je za główną kolejką i liczyła na to, że indeks tam dojdzie.
