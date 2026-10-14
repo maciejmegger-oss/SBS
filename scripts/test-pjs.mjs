@@ -171,11 +171,15 @@ sprawdz("przegląd zna obie ścieżki — grupy i województwa",
   && /pjsTabelaWojewodztwa\(sezon\.id, liga\.id, zpn\.id\)/.test(cron));
 sprawdz("paczka dobrana pod limit zapytań PZPN, nie pod szybkość",
   /const PACZKA = 4;/.test(cron) && /pięciu odpadał co czwarty klub/.test(cron));
-sprawdz("kluby odrzucone na limicie wracaja do kolejki, nie gina",
-  /const doPrzejscia = kolejka\.concat\(postep\.nieudane\);/.test(cron)
-  && /nieudaneTegoPrzebiegu\.push\(\{ id: klub\.id/.test(cron));
-sprawdz("przeglad jest gotowy dopiero bez zaleglosci",
-  /postep\.stan = \(postep\.indeks >= doPrzejscia\.length && !postep\.nieudane\.length\) \? "gotowe" : "wTrakcie";/.test(cron));
+sprawdz("kluby odrzucone na limicie wracaja do roboty, nie gina",
+  /const zaleglosci = postep\.nieudane\.slice\(\);/.test(cron)
+  && /postep\.nieudane\.push\(\{ id: klub\.id/.test(cron));
+sprawdz("zaleglosci ida PRZED dalszym ciagiem kolejki",
+  /const zZaleglosci = zaleglosci\.splice\(0, PACZKA\);/.test(cron));
+sprawdz("nieprzerobione zaleglosci wracaja na liste, nic nie ginie",
+  /postep\.nieudane = postep\.nieudane\.concat\(zaleglosci\);/.test(cron));
+sprawdz("indeks kolejki rosnie tylko o kluby z kolejki, nie o ponowienia",
+  /postep\.indeks \+= zKolejki\.length;/.test(cron));
 sprawdz("miedzy paczkami jest przerwa — limit liczy sie na minute",
   /const PRZERWA_MS = 250;/.test(cron) && /setTimeout\(gotowe, PRZERWA_MS\)/.test(cron));
 if (process.env.PJS_LIVE === "1") {

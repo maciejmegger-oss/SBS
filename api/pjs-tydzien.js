@@ -185,12 +185,15 @@ export default async function handler(req, res) {
 
     const kolejka = await zbudujKolejke(sezon, ligi, postep.bledy);
     postep.klubowRazem = kolejka.length;
-    // KLUBY, KTÓRE ODPADŁY NA LIMICIE, WRACAJĄ NA KONIEC KOLEJKI.
+    // KLUBY, KTÓRE ODPADŁY NA LIMICIE, PRZERABIAMY NA POCZĄTKU KOLEJNEGO PRZEBIEGU.
     //
-    // Bez tego przegląd kończył się jako „gotowy" z dziurą: przy pierwszym przebiegu po 429
-    // odpadło trzydzieści kilka klubów i nikt już do nich nie wracał. Dokładamy je za główną
-    // kolejką, więc indeks nadal rośnie liniowo, a kolejny przebieg po prostu idzie dalej.
-    const doPrzejscia = kolejka.concat(postep.nieudane);
+    // Pierwsza próba doklejała je za główną kolejką i liczyła na to, że indeks tam dojdzie.
+    // Nie doszedł — a lista zaległości była przy tym nadpisywana wynikiem bieżącego przebiegu,
+    // więc 23 kluby odrzucone na starcie zniknęły i przegląd zameldował „gotowe" przy 330 z 353.
+    // Teraz zaległości są osobną listą, braną do roboty ZANIM ruszymy z kolejką dalej, i znikają
+    // z niej dopiero wtedy, gdy klub faktycznie się odczytał.
+    const zaleglosci = postep.nieudane.slice();
+    postep.nieudane = [];
 
     const wBazie = await wczytajZawodnikow();
     const wgNazwiska = new Map();
@@ -203,20 +206,28 @@ export default async function handler(req, res) {
     const juzNaLiscie = new Set((postep.nowi || []).map((n) => n.pjsId));
 
     let zabrakloCzasu = false;
-    const nieudaneTegoPrzebiegu = [];
-    while (postep.indeks < doPrzejscia.length) {
+    // Jedna pętla na oba źródła: najpierw zaległości, potem dalszy ciąg kolejki. Dzięki temu
+    // budżet czasu i tempo zapytań obowiązują tak samo dla jednych i drugich.
+    while (zaleglosci.length || postep.indeks < kolejka.length) {
       if ((Date.now() - start) / 1000 > BUDZET_SEKUND) { zabrakloCzasu = true; break; }
 
-      const paczka = doPrzejscia.slice(postep.indeks, postep.indeks + PACZKA);
+      const zZaleglosci = zaleglosci.splice(0, PACZKA);
+      const zKolejki = zZaleglosci.length < PACZKA
+        ? kolejka.slice(postep.indeks, postep.indeks + (PACZKA - zZaleglosci.length))
+        : [];
+      const paczka = zZaleglosci.concat(zKolejki);
+      if (!paczka.length) break;
       const odpowiedzi = await Promise.all(paczka.map(async (klub) => {
         try { return { klub, dane: await pjsZawodnicyKlubu(klub.id) }; }
         catch (e) {
           postep.bledy.push(`klub ${klub.nazwa}: ${e.message}`);
-          nieudaneTegoPrzebiegu.push({ id: klub.id, nazwa: klub.nazwa, rozgrywki: klub.rozgrywki });
+          // Z powrotem na listę zaległości — niezależnie od tego, czy to pierwsze podejście,
+          // czy kolejne. Klub znika z niej dopiero wtedy, gdy się odczyta.
+          postep.nieudane.push({ id: klub.id, nazwa: klub.nazwa, rozgrywki: klub.rozgrywki });
           return null;
         }
       }));
-      postep.indeks += paczka.length;
+      postep.indeks += zKolejki.length;
       await new Promise((gotowe) => setTimeout(gotowe, PRZERWA_MS));
 
       for (const odpowiedz of odpowiedzi) {
@@ -274,13 +285,10 @@ export default async function handler(req, res) {
     // Lista błędów potrafi urosnąć przy kiepskim dniu serwisu PZPN — do bazy idzie początek,
     // bo czyta się ją po to, żeby stwierdzić „coś było nie tak", a nie po kolei.
     postep.bledy = postep.bledy.slice(0, 50);
-    // Nieudane z TEGO przebiegu dokładamy do listy na kolejny. Te, które właśnie ponawialiśmy
-    // i tym razem przeszły, z listy znikają — bo lista jest odtwarzana od zera co przebieg.
-    postep.nieudane = nieudaneTegoPrzebiegu;
-    postep.stan = (postep.indeks >= doPrzejscia.length && !postep.nieudane.length) ? "gotowe" : "wTrakcie";
-    // Po domknięciu głównej kolejki indeks wraca na jej koniec, żeby kolejny przebieg zaczął
-    // od samych ponowień, a nie przechodził wszystkiego raz jeszcze.
-    if (postep.indeks >= doPrzejscia.length && postep.nieudane.length) postep.indeks = kolejka.length;
+    // Zaległości, do których nie starczyło czasu w tym przebiegu, wracają na listę razem
+    // z nowymi niepowodzeniami. Nic się po drodze nie gubi.
+    postep.nieudane = postep.nieudane.concat(zaleglosci);
+    postep.stan = (postep.indeks >= kolejka.length && !postep.nieudane.length) ? "gotowe" : "wTrakcie";
     postep.sekund = Math.round((Date.now() - start) / 10) / 100;
     await zapiszKv(KLUCZ_POSTEPU, postep);
 
@@ -302,7 +310,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       stan: postep.stan,
       przebiegow: postep.przebiegow,
-      klubow: `${postep.indeks}/${doPrzejscia.length}`,
+      klubow: `${postep.indeks}/${kolejka.length}`,
       doPonowienia: postep.nieudane.length,
       sprawdzonychKlubow: postep.sprawdzonychKlubow,
       punktujacych: postep.punktujacych,
