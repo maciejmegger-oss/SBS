@@ -6373,7 +6373,8 @@ function viewPlayerDetail(id){
         <div>
           <strong>🎬 Analiza wideo zlecona</strong>
           <span class="meta">${esc(z.mecz || 'mecz niepodany')}${czeka ? ' &middot; ' + czeka : ''}
-            &middot; status: ${esc(z.status || 'nowe')}</span>
+            &middot; status: ${esc(z.status || 'nowe')}
+            ${z.wykonawca && z.wykonawca !== 'ai' ? '&middot; czeka na: <strong>' + esc(z.wykonawca) + '</strong>' : ''}</span>
         </div>
         <button class="secondary" data-action="odwolaj-zlecenie" data-id="${esc(z.id)}">Odwołaj zlecenie</button>
       </div>
@@ -25954,6 +25955,20 @@ function openZlecAnalizeModal(playerId){
     <div class="modal">
       <h3>Zleć analizę wideo — ${esc(podpis)}</h3>
       ${otwarte.length ? `<p class="note" style="margin-top:0;">W kolejce: ${otwarte.map(z=>esc(z.mecz||'—')+' ('+esc(z.status||'nowe')+')').join(', ')}.</p>` : ''}
+      ${/* KTO WYKONUJE — PIERWSZA DECYZJA W TYM OKNIE.
+            Zgłoszenie (14.10.2026): „po wgraniu zlecenia zrób wybór, kto ma wykonać analizę —
+            scout z listy czy AI". Obie drogi już istniały, ale rozjechane: złoty przycisk na dole
+            wkładał zlecenie do kolejki dla człowieka, a szary obok uruchamiał model — i łatwo było
+            go nie zauważyć. Stąd wcześniejsze „zleciłem i nic nie mam po dwudziestu minutach".
+            Teraz wybór stoi na górze i to on decyduje, co robi przycisk główny. */''}
+      <div class="field-wrap">
+        <label class="field" for="zl-wykonawca">Kto wykonuje analizę</label>
+        <select id="zl-wykonawca">
+          <option value="ai">🤖 Asystent AI — od razu, bez czekania</option>
+          ${(DB.settings.scouts || []).map(sk=>`<option value="${esc(sk)}"${sk === currentScout ? ' selected' : ''}>👤 ${esc(sk)}</option>`).join('')}
+        </select>
+        <p class="note" style="margin:4px 0 0;" id="zl-wykonawca-opis"></p>
+      </div>
       <div class="field-wrap">
         <label class="field">Mecz</label>
         <input id="zl-mecz" placeholder="np. Ruch Chorzów – Miedź Legnica, 02.08.2026">
@@ -25991,7 +26006,7 @@ function openZlecAnalizeModal(playerId){
       <div id="zl-wynik-ai"></div>
       <div class="modal-actions">
         <button class="secondary" id="zl-anuluj">Anuluj</button>
-        <button class="secondary" id="zl-ai" title="Model ułoży szkic raportu z Twoich notatek, wcześniejszych raportów i dorobku zawodnika. Nagrania nie widzi — oceny 1–6 za fazy gry zostają dla Ciebie.">🤖 Przygotuj raport teraz</button>
+        <button class="secondary" id="zl-ai" title="Model ułoży szkic raportu z Twoich notatek, wcześniejszych raportów i dorobku zawodnika. Nagrania nie widzi — oceny 1–6 za fazy gry zostają dla Ciebie." style="display:none;">🤖 Przygotuj raport teraz</button>
         <button class="gold" id="zl-zapisz">Zleć analizę</button>
       </div>
     </div>`;
@@ -25999,6 +26014,26 @@ function openZlecAnalizeModal(playerId){
   const zamknij = ()=> overlay.remove();
   overlay.addEventListener('click', e=>{ if(e.target===overlay) zamknij(); });
   overlay.querySelector('#zl-anuluj').onclick = zamknij;
+
+  // WYBÓR WYKONAWCY RZĄDZI PRZYCISKIEM GŁÓWNYM — żeby nie dało się zamówić czegoś innego,
+  // niż się chciało. Przy skaucie zlecenie ląduje w kolejce i czeka na człowieka; może tam stać
+  // dniami, więc mówimy to wprost. Przy asystencie AI nic nie czeka: raport powstaje od razu,
+  // ale z danych systemu i źródeł piłkarskich, bo nagrania model nie obejrzy. Oceny 1–6 za fazy
+  // gry zostają dla skauta w obu przypadkach.
+  const wyborWykonawcy = overlay.querySelector('#zl-wykonawca') as HTMLSelectElement;
+  const opisWykonawcy = overlay.querySelector('#zl-wykonawca-opis') as HTMLElement;
+  const przyciskAI = overlay.querySelector('#zl-ai') as HTMLButtonElement;
+  const przyciskZlec = overlay.querySelector('#zl-zapisz') as HTMLButtonElement;
+  const odswiezWykonawce = ()=>{
+    const ai = wyborWykonawcy.value === 'ai';
+    opisWykonawcy.textContent = ai
+      ? 'Raport powstanie teraz, z danych systemu i publicznych źródeł piłkarskich. Nagrania model nie obejrzy — oceny 1–6 za fazy gry zostają dla Ciebie.'
+      : 'Zlecenie trafi do kolejki i będzie czekać, aż ten skaut je odbierze. System nie wykona go sam.';
+    przyciskAI.style.display = ai ? '' : 'none';
+    przyciskZlec.style.display = ai ? 'none' : '';
+  };
+  wyborWykonawcy.onchange = odswiezWykonawce;
+  odswiezWykonawce();
 
   // WSKAZANIE PLIKU ZAMIAST PRZEPISYWANIA NAZWY.
   //
@@ -26143,6 +26178,7 @@ function openZlecAnalizeModal(playerId){
       pozycja: Number(wartosc('zl-pozycja')) || null,
       uwagi: (overlay.querySelector('#zl-uwagi') as HTMLTextAreaElement).value.trim(),
       zlecil: currentScout || '',
+      wykonawca: wyborWykonawcy.value,
     });
     if(blad){
       btn.disabled = false; btn.textContent = 'Zleć analizę';

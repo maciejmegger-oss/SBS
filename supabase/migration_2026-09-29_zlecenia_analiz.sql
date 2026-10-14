@@ -40,9 +40,16 @@ create table if not exists public.sbs_analiza_zlecenia (
   pozycja            int,
   uwagi              text,
   zlecil             text,
-  -- 'nowe' czeka, 'w_toku' analityk pracuje, 'gotowe' raport poszedł do skrzynki, 'odrzucone'.
+  -- Kto ma wykonać analizę: imię skauta z listy albo 'ai'. Zlecenie trafiające do kolejki zawsze
+  -- wskazuje człowieka — przy wyborze asystenta AI raport powstaje od razu i nic tu nie czeka.
+  wykonawca          text,
+  -- 'nowe' czeka, 'w_toku' analityk pracuje, 'gotowe' raport poszedł do skrzynki, 'odrzucone',
+  -- 'odwolane' skaut wycofał zlecenie z karty zawodnika.
   status             text not null default 'nowe'
 );
+
+-- Dla baz, w których tabela powstała przed dodaniem wyboru wykonawcy (14.10.2026).
+alter table public.sbs_analiza_zlecenia add column if not exists wykonawca text;
 
 create index if not exists sbs_analiza_zlecenia_status_idx
   on public.sbs_analiza_zlecenia (status, utworzone_at desc);
