@@ -19,7 +19,7 @@
 
 import { zalogowanyZatwierdzony, zaliczWywolanie, limitZEnv, rozmiarWBezpiecznychGranicach } from "./_auth.js";
 
-const MODEL = "claude-sonnet-5";
+import { MODEL, logujZuzycie } from "./_anthropic.js";
 
 const POLECENIE = `Jesteś asystentem skauta w polskim klubie piłkarskim. Przygotowujesz SZKIC raportu
 z obserwacji, który skaut przeczyta, poprawi i dopiero wtedy zapisze.
@@ -143,6 +143,7 @@ Odpowiedz samym obiektem JSON.`;
     }
 
     const wynik = await odp.json();
+    logujZuzycie("raport-ai", konto, wynik);
     const tekst = (wynik.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
     if (!tekst) {
       return res.status(502).json({

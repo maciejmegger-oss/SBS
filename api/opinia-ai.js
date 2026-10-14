@@ -15,7 +15,7 @@
 
 import { zalogowanyZatwierdzony, zaliczWywolanie, limitZEnv, rozmiarWBezpiecznychGranicach } from "./_auth.js";
 
-const MODEL = "claude-sonnet-5";
+import { MODEL, logujZuzycie } from "./_anthropic.js";
 
 // Polecenie systemowe trzymamy TUTAJ, a nie po stronie przeglądarki — inaczej każdy mógłby je
 // podmienić w konsoli i kazać modelowi napisać cokolwiek pod firmą klubu.
@@ -175,6 +175,7 @@ Odpowiedz w strukturze podanej w poleceniu systemowym.`;
       }
 
       const wynik = await odp.json();
+      logujZuzycie("opinia-ai", konto, wynik);
       powodZakonczenia = wynik.stop_reason;
       tekst += (wynik.content || [])
         .filter((b) => b.type === "text")
