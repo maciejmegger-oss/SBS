@@ -2859,7 +2859,14 @@ async function wczytajKariere(p){
   const link = adres90minut(p);
   if(!link) return { ok:false, blad:'brak linku i identyfikatora z 90minut' };
   try{
-    const res = await fetch('/api/kariera?url=' + encodeURIComponent(link));
+    // LIMIT CZASU — BEZ NIEGO PRZYCISK ZOSTAJE „CZYTAM SEZONY…" NA ZAWSZE.
+    //
+    // Zgłoszenie (14.10.2026): „wgrywa coś, ale nic, żadnych informacji potem nie ma". 90minut
+    // potrafi nie odpowiedzieć wcale — wtedy fetch bez limitu wisi, dopóki karta jest otwarta,
+    // a skaut patrzy na klepsydrę i nie wie, czy czekać dalej. Czterdzieści sekund wystarcza
+    // z zapasem na wolną odpowiedź, a po nich mówimy wprost, co się stało.
+    const res = await fetch('/api/kariera?url=' + encodeURIComponent(link),
+      { signal: AbortSignal.timeout(40000) });
     const ctype = res.headers.get('content-type') || '';
     if(!ctype.includes('application/json')) return { ok:false, blad:'działa tylko na wdrożonej stronie' };
     const d = await res.json();
@@ -2878,7 +2885,12 @@ async function wczytajKariere(p){
     p.kariereUpdatedAt = new Date().toISOString();
     return { ok:true, sezony };
   }catch(e){
-    return { ok:false, blad: String((e && e.message) || e) };
+    // Przekroczony limit czasu nazywamy po imieniu — „TimeoutError" nic skautowi nie mówi,
+    // a różnica jest istotna: 90minut nie odpowiedziało, więc warto spróbować za chwilę.
+    const przekroczony = e && (e.name === 'TimeoutError' || e.name === 'AbortError');
+    return { ok:false, blad: przekroczony
+      ? '90minut nie odpowiedziało w czterdzieści sekund. Spróbuj jeszcze raz za chwilę — to zwykle chwilowe.'
+      : String((e && e.message) || e) };
   }
 }
 
@@ -5901,8 +5913,22 @@ function prognozaPanelHtml(p){
     return `<div class="card prognoza-karta prognoza-brak">
       <div class="prognoza-naglowek"><span class="prognoza-tytul">Prognoza rozwoju</span>
         <span class="prognoza-odmowa">niedostępna</span></div>
+      ${/* PO CO TO OKNO W OGÓLE JEST.
+            Zgłoszenie (14.10.2026): „o co chodzi z tą prognozą rozwoju? Uważam, że po kliknięciu
+            powinna być informacja, czy zawodnik jest na wyższy poziom, czy na poziom
+            międzynarodowy". Dokładnie to liczy — tyle że dopóki brakuje składnika, okno pokazywało
+            samą listę braków i nie mówiło ani słowa o tym, co dostaniemy, gdy ich nie będzie.
+            Wyglądało jak usterka, a jest odmową z podaniem powodu. */''}
+      <p class="note" style="margin:6px 0 2px;">Prognoza odpowiada na jedno pytanie: <strong>dokąd ten zawodnik
+        może dojść</strong> — od pierwszej jedenastki U12 (stopień 1), przez Ekstraklasę (13–16),
+        po poziom międzynarodowy: Top 5 lig i Liga Mistrzów (17–20). Podaje przedział, horyzont czasowy
+        i rozpisuje każdy punkt z osobna.</p>
       <p class="note" style="margin:6px 0 8px;">Nie stawiamy pułapu, dopóki nie stoi za nim materiał. Brakuje:</p>
       <ul class="prognoza-braki">${w.braki.map(b=>`<li>${esc(b)}</li>`).join('')}</ul>
+      ${/* Ocena potencjału to jedyny brak, którego nie da się nadrobić pobieraniem danych — musi ją
+            postawić człowiek. Zamiast kazać szukać formularza, prowadzimy wprost do niego. */''}
+      ${w.braki.some(b=> /ocen[aąę] potencja/i.test(b)) ? `<button class="gold" data-action="prognoza-ocen-potencjal" data-id="${p.id}"
+        title="Otwiera nowy raport z tym zawodnikiem — ocenę potencjału 1-6 wystawiasz pod opisem potencjału">★ Wystaw ocenę potencjału</button>` : ''}
       ${maLink ? `<button class="secondary" data-action="pobierz-kariere" data-id="${p.id}"
         title="Pobierze z 90minut sezon po sezonie: klub, poziom rozgrywek, minuty i mecze od pierwszej minuty">⬇ Pobierz historię sezonów</button>`
         : `<p class="note" style="margin:0;">Historię sezonów pobierzemy z 90minut, ale nie wiemy, który to profil. Dwie drogi:
@@ -17381,6 +17407,29 @@ function attachHandlers(){
   // pyta o coś innego: czy zawodnik PRZECHODZI kolejne szczeble. To widać dopiero w kilku sezonach
   // obok siebie, z poziomem rozgrywek i liczbą meczów od pierwszej minuty — a tych 90minut nie
   // podaje na stronie kariery, tylko na stronach występów, sezon po sezonie.
+  // Z prognozy prosto do oceny potencjału — to jedyny brak, którego nie nadrobi żadne pobieranie.
+  main.querySelectorAll('[data-action="prognoza-ocen-potencjal"]').forEach(b=>b.onclick=()=>{
+    const pl = DB.players.find(x=>x.id===(b as HTMLElement).dataset.id);
+    if(!pl) return;
+    // Ten sam mechanizm, którym skrzynka wstawia wczytany raport do formularza.
+    prefillRaportu = {
+      playerId: pl.id,
+      zawodnikNazwa: `${pl.lastName||''} ${pl.firstName||''}`.trim(),
+      scout: currentScout || '',
+      date: dzisiaj(),
+    };
+    editingReportId = null;
+    currentView = 'reports';
+    viewingPlayerId = null;
+    render();
+    // Ocena potencjału stoi na dole formularza — bez przewinięcia wyglądałoby to tak, jakby
+    // kliknięcie przeniosło donikąd.
+    const cel = document.getElementById('rep-potencjal-opis') || document.getElementById('rep-formularz');
+    if(cel){
+      cel.scrollIntoView({behavior:'smooth', block:'center'});
+      pokazPotwierdzenie('Wystaw ocenę potencjału 1-6 pod opisem potencjału — wtedy policzę prognozę.');
+    }
+  });
   main.querySelectorAll('[data-action="pobierz-kariere"]').forEach(b=>b.onclick=async()=>{
     const p = DB.players.find(x=>x.id===b.dataset.id);
     if(!p) return;
