@@ -1,0 +1,23 @@
+# Zakończenia linii: w repozytorium i w kopii roboczej zawsze LF.
+#
+# Zgłoszenie z 14.10.2026: test „zakładka zaraz po Talencie" zaczął nagle przechodzić do błędu,
+# choć kolejność zakładek była poprawna. Powód: core.autocrlf=true zapisuje pliki na dysku
+# z CRLF, repozytorium trzyma LF, a testy czytają KOPIĘ ROBOCZĄ i dopasowują wzorce z `\n`.
+# Część testów przechodziła więc albo nie w zależności od tego, czy plik był akurat po
+# checkoucie, czy po zapisie ze skryptu. Wdrożenie zawsze dostawało wersję z LF, bo buduje się
+# z repozytorium — czyli ten rozjazd mylił wyłącznie u nas na biurku.
+* text=auto eol=lf
+
+# Pliki binarne zostawiamy w spokoju.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.svg text eol=lf
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.ico binary
+*.pdf binary
+*.xlsx binary
+*.pptx binary
+*.docx binary

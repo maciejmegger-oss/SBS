@@ -6338,7 +6338,7 @@ function viewPlayerDetail(id){
       <input type="file" id="player-photo-input" class="player-photo-input" data-player-id="${p.id}" accept="image/png,image/jpeg,image/jpg,.png,.jpg,.jpeg,application/pdf,.pdf" style="display:none;">
       ${crestImg(clubCrest(p.clubId),'lg')}
       <div>
-        <h2 class="view-title" style="margin-bottom:0;">${esc(p.firstName)} ${esc(p.lastName)}</h2>
+        <h2 class="view-title" style="margin-bottom:0;">${esc(p.firstName)} ${esc(p.lastName)}${pjsBadge(p)}</h2>
         <p class="view-sub" style="margin-bottom:0;">${esc(p.birthYear||"")} &middot; ${esc(p.position)} &middot; ${esc(clubName(p.clubId))}${clubSeason(p.clubId)?" ("+esc(clubSeason(p.clubId))+")":""} &middot; ${esc(clubRegion(p.clubId))} / ${esc(p.klubBezLigi ? 'sam klub, bez ligi' : clubLeague(p.clubId))}</p>
       </div>
     </div>
@@ -10201,6 +10201,22 @@ function youthBadge(p){
   return `&nbsp;<span class="youth-badge-3d" title="${esc(opis)}">MŁ</span>`;
 }
 
+
+// ZNACZEK PJS — przy nazwisku zawodnika, którego PZPN liczy klubowi w Pro Junior System.
+//
+// Zgłoszenie (14.10.2026): „zrób też znaczek PJS. Musimy tych chłopaków wyłapywać".
+// Odróżnia się kolorem od złotego „MŁ": młodzieżowcem jest każdy odpowiednio młody zawodnik,
+// a w PJS liczy się tylko ten, który NAPRAWDĘ GRA — punkty idą za minuty na boisku.
+function pjsBadge(p){
+  const d = p && p.pjs;
+  if(!d || !d.punkty) return '';
+  const opis = `Pro Junior System: ${d.punkty} pkt za ${d.minuty} minut w ${d.mecze} ${plMecze(d.mecze)}`
+    + (d.rozgrywki ? ` (${d.rozgrywki})` : '')
+    + (d.zaktualizowano ? `. Odczyt z ${d.zaktualizowano}.` : '.')
+    + (d.liczonyDoRankingu === false ? ' Do klasyfikacji klubu nieuwzględniony.' : '');
+  return `&nbsp;<span class="pjs-badge" title="${esc(opis)}">PJS</span>`;
+}
+const plMecze = (n)=> n === 1 ? 'meczu' : 'meczach';
 // ROCZNIK — JEDNO ŹRÓDŁO PRAWDY DLA WSZYSTKICH LIST.
 //
 // Zawodnik dopisany z protokołu ma pustą datę urodzenia (ŁNP jej nie publikuje), ale bywa i tak,
@@ -15478,6 +15494,272 @@ function viewFederacja(){
   </div>`;
 }
 
+// ---------------------------------------------------------------------------------------------
+// PRO JUNIOR SYSTEM — GOTOWA LISTA OGRANYCH MŁODZIEŻOWCÓW, PROWADZONA PRZEZ ZWIĄZEK.
+//
+// Zgłoszenie (14.10.2026): „jak wejdziesz w dany klub, zobaczysz, kto zdobywa punkty dla danego
+// klubu — od razu go dodać do monitoringu i odznaczyć jako wyróżniającego się (...) musimy tych
+// chłopaków wyłapywać".
+//
+// PJS to jedyne miejsce, w którym PZPN SAM liczy, ile minut rozegrał każdy młodzieżowiec w III
+// lidze i niżej — bo od tego zależą pieniądze dla klubu. Dane są więc pilnowane i aktualizowane
+// co kolejkę. Dla skauta to lista nazwisk ułożona dokładnie tak, jak trzeba: na górze ten, który
+// gra najwięcej. Odczyt stoi w api/pjs.js, bo przeglądarka nie pobierze danych z obcego serwisu.
+let pjsStan = {
+  sezon: '', liga: '', rozgrywki: '', klub: '',
+  filtry: null, grupy: null, tabela: null, zawodnicy: null,
+  laduje: '', blad: '',
+};
+
+async function pjsZapytaj(parametry){
+  const odp = await fetch('/api/pjs?' + new URLSearchParams(parametry).toString());
+  const dane = await odp.json().catch(()=>({}));
+  if(!odp.ok) throw new Error(dane.szczegoly || dane.error || ('serwer odpowiedział ' + odp.status));
+  return dane;
+}
+
+// Każdy krok czyści to, co było niżej — inaczej po zmianie ligi zostałaby na ekranie tabela
+// z poprzedniej, a kliknięcie w klub dopisałoby zawodnika do niewłaściwych rozgrywek.
+async function pjsWczytaj(krok, wartosc){
+  pjsStan.blad = '';
+  try{
+    if(krok === 'start'){
+      if(pjsStan.filtry) return;
+      pjsStan.laduje = 'filtry'; render();
+      const odp = await pjsZapytaj({ akcja: 'filtry' });
+      pjsStan.filtry = odp.sezony || [];
+      const biezacy = pjsStan.filtry[0];
+      if(biezacy){
+        pjsStan.sezon = biezacy.sezon.id;
+        const centralna = biezacy.ligi.find(l=> l.centralna) || biezacy.ligi[0];
+        if(centralna) await pjsUstawLige(centralna.id);
+      }
+    }
+    if(krok === 'liga') await pjsUstawLige(wartosc);
+    if(krok === 'rozgrywki'){
+      pjsStan.rozgrywki = wartosc; pjsStan.klub = ''; pjsStan.zawodnicy = null;
+      pjsStan.laduje = 'tabela'; render();
+      pjsStan.tabela = await pjsZapytaj({ akcja: 'tabela', rozgrywki: wartosc });
+    }
+    if(krok === 'klub'){
+      pjsStan.klub = wartosc;
+      pjsStan.laduje = 'klub'; render();
+      pjsStan.zawodnicy = await pjsZapytaj({ akcja: 'druzyna', druzyna: wartosc });
+    }
+  }catch(e){
+    pjsStan.blad = String((e && e.message) || e);
+  }
+  pjsStan.laduje = '';
+  render();
+}
+
+async function pjsUstawLige(ligaId){
+  pjsStan.liga = ligaId;
+  pjsStan.rozgrywki = ''; pjsStan.klub = ''; pjsStan.tabela = null; pjsStan.zawodnicy = null;
+  pjsStan.laduje = 'grupy'; render();
+  const odp = await pjsZapytaj({ akcja: 'rozgrywki', sezon: pjsStan.sezon, liga: ligaId });
+  pjsStan.grupy = odp.rozgrywki || [];
+}
+
+// Nazwa grupy z PJS brzmi: Trzecia liga "Betclic 3. Liga gr. 1". W pigułce filtra zostaje z tego
+// sama końcówka, bo ligę widać już w rzędzie wyżej.
+const pjsKrotkaGrupa = (nazwa)=> String(nazwa||'').replace(/^[^"]*"(.*)"\s*$/, '$1').replace(/^Betclic\s*/, '');
+
+// PJS pisze nazwy klubów wielkimi literami (KS LECHIA 1923 TOMASZÓW MAZOWIECKI). Obok nazw
+// z naszej bazy wyglądałoby to jak krzyk, więc sprowadzamy do normalnego zapisu — poza skrótami,
+// które wielkimi literami pisze się zawsze.
+const SKROTY_KLUBOWE = new Set(['KS','LKS','MKS','GKS','UKS','MUKS','AP','SKS','RKS','WKS','TS','TKS','ZKS','OKS','PKS','MGKS','MLKS','KP','CLJ']);
+function nazwaKlubuLadnie(nazwa){
+  const t = String(nazwa||'').trim();
+  if(t !== t.toUpperCase()) return t;
+  return t.split(/\s+/).map(w=> SKROTY_KLUBOWE.has(w) ? w
+    : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+}
+const klubPjsWBazie = (nazwa)=> dopasujKlubDoNazwy(nazwaKlubuLadnie(nazwa), '', '');
+
+// COTYGODNIOWY PRZEGLĄD — WYNIK LICZONY PRZEZ SERWER, POKAZANY W RADARZE.
+//
+// Zgłoszenie (14.10.2026): „zautomatyzuj, aby raz w tygodniu system sam prześledził dane PJS
+// i wyłapał zawodników na poziomie centralnym". Robi to api/pjs-tydzien.js w poniedziałki rano,
+// a wynik zapisuje pod kluczem „pjsPrzeglad". Czytamy go dopiero przy wejściu w Radar — dokładanie
+// go do startu aplikacji opóźniałoby otwarcie wszystkim, a interesuje raz w tygodniu.
+let pjsPrzeglad = null;
+let pjsPrzegladWczytywanie = null;
+function pjsWczytajPrzeglad(){
+  if(pjsPrzeglad || pjsPrzegladWczytywanie) return;
+  pjsPrzegladWczytywanie = storage.get('pjsPrzeglad', true)
+    .then(w=>{
+      try{ pjsPrzeglad = w && w.value ? JSON.parse(w.value) : { brak: true }; }
+      catch(e){ pjsPrzeglad = { brak: true }; }
+      render();
+    })
+    .catch(()=>{ pjsPrzeglad = { brak: true }; });
+}
+
+function pjsPrzegladHtml(){
+  if(!pjsPrzeglad) return '<p class="note">Sprawdzam, co przyniósł ostatni cotygodniowy przegląd…</p>';
+  if(pjsPrzeglad.brak) return `<p class="note">Cotygodniowy przegląd jeszcze się nie uruchomił.
+    System przechodzi szczebel centralny w <strong>poniedziałki rano</strong> i zapisuje tu, kogo wyłapał.</p>`;
+  const nowi = pjsPrzeglad.nowi || [];
+  return `
+  <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:10px;">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <strong>Cotygodniowy przegląd szczebla centralnego</strong>
+      <span class="meta">${esc(pjsPrzeglad.data || '—')} &middot; klubów: ${pjsPrzeglad.sprawdzonychKlubow || 0}
+        &middot; punktujących: ${pjsPrzeglad.punktujacych || 0}
+        &middot; dopisanych do kartotek: ${pjsPrzeglad.zaktualizowanych || 0}</span>
+    </div>
+    ${nowi.length ? `
+      <p class="note" style="margin:6px 0;"><strong>${nowi.length} ${plZaw(nowi.length)} spoza bazy.</strong>
+        Kartotek im nie zakładam sam — rocznika i pozycji PJS nie podaje, a kilkaset kartotek bez nich
+        zaśmieciłoby bazę szybciej, niż ktokolwiek zdążyłby je przejrzeć. Decydujesz Ty.</p>
+      <div style="max-height:240px;overflow:auto;">
+        <table><thead><tr><th>Zawodnik</th><th>Klub</th><th style="width:70px;">Minuty</th><th style="width:70px;">Punkty</th></tr></thead>
+        <tbody>${nowi.slice(0, 60).map(n=>`<tr>
+          <td><strong>${esc(n.imie)} ${esc(n.nazwisko)}</strong>${n.imiennikow > 1
+            ? ` <span class="badge" style="background:var(--card-warm);color:var(--gold-dark);" title="W bazie jest kilku zawodników o tym nazwisku — nie zgaduję, który to">${n.imiennikow} imienników</span>` : ''}</td>
+          <td>${esc(nazwaKlubuLadnie(n.klub))}</td>
+          <td><strong>${n.minuty}</strong></td>
+          <td><strong>${n.punkty}</strong></td>
+        </tr>`).join('')}</tbody></table>
+      </div>
+      ${nowi.length > 60 ? `<p class="note">Pokazuję 60 z ${nowi.length} — resztę zobaczysz, wchodząc w konkretny klub wyżej.</p>` : ''}
+    ` : `<p class="note" style="margin:6px 0 0;">Nikogo nowego spoza bazy — wszyscy punktujący mają już kartoteki.</p>`}
+    ${(pjsPrzeglad.bledy || []).length ? `<p class="note" style="color:var(--clay-dark);">Przy ostatnim przeglądzie
+      ${pjsPrzeglad.bledy.length} ${pjsPrzeglad.bledy.length === 1 ? 'klub sprawił kłopot' : 'klubów sprawiło kłopot'}:
+      ${esc(pjsPrzeglad.bledy.slice(0, 3).join(' · '))}</p>` : ''}
+  </div>`;
+}
+
+function pjsSekcjaHtml(){
+  pjsWczytajPrzeglad();   // leniwie: wynik cotygodniowego przegladu czytamy dopiero tutaj
+  const s = pjsStan;
+  const biezacy = (s.filtry || []).find(x=> x.sezon.id === s.sezon);
+  const ligi = biezacy ? biezacy.ligi : [];
+  const pigulka = (etykieta, aktywna, akcja, wartosc)=>
+    `<button class="pill${aktywna ? ' active' : ''}" data-action="${akcja}" data-val="${esc(wartosc)}">${esc(etykieta)}</button>`;
+
+  return `
+  <div class="card">
+    <h4 style="margin-top:0;color:var(--heading);">⚽ Pro Junior System — kto naprawdę gra</h4>
+    <p class="note" style="margin-top:0;">Związek sam liczy klubom minuty młodzieżowców, bo od tego zależą ich
+      pieniądze — więc te dane są pilnowane co kolejkę. Wejdź w klub i zobacz, kto zdobywa dla niego punkty.
+      <strong>Punkty idą za minuty na boisku</strong>, nie za rocznik, więc czoło tej listy to chłopcy, którzy grają.</p>
+    ${s.blad ? `<p class="note" style="color:var(--clay-dark);"><strong>Nie udało się odczytać PJS:</strong> ${esc(s.blad)}</p>` : ''}
+    ${!s.filtry ? `<button class="gold" data-action="pjs-start">${s.laduje ? 'Wczytuję…' : 'Pokaż dane Pro Junior System'}</button>` : `
+      <div class="filters" style="margin-bottom:6px;">
+        ${ligi.map(l=> pigulka(l.nazwa + (l.centralna ? ' · centralna' : ''), s.liga === l.id, 'pjs-liga', l.id)).join('')}
+      </div>
+      ${s.grupy && s.grupy.length ? `<div class="filters" style="margin-bottom:6px;">
+        ${s.grupy.map(g=> pigulka(pjsKrotkaGrupa(g.nazwa), s.rozgrywki === g.id, 'pjs-grupa', g.id)).join('')}
+      </div>` : ''}
+      ${s.laduje ? `<p class="note">Czytam dane z PZPN…</p>` : ''}
+      ${s.tabela && s.tabela.kluby ? `<div style="max-height:260px;overflow:auto;margin-bottom:10px;">
+        <table><thead><tr><th style="width:34px;">#</th><th>Klub</th><th style="width:96px;">Punkty PJS</th><th style="width:80px;">Minuty</th></tr></thead>
+        <tbody>${s.tabela.kluby.map(k=>`<tr data-action="pjs-klub" data-val="${esc(k.klub.id)}" style="cursor:pointer;"
+          title="Pokaż zawodników, którzy zdobywają punkty dla tego klubu">
+          <td>${k.miejsce}</td>
+          <td><strong>${esc(nazwaKlubuLadnie(k.klub.nazwa))}</strong>${klubPjsWBazie(k.klub.nazwa) ? ' <span class="badge" style="background:var(--card-warm);color:var(--gold-dark);">w bazie</span>' : ''}</td>
+          <td><strong>${k.punkty}</strong></td>
+          <td>${k.minuty}</td>
+        </tr>`).join('')}</tbody></table>
+      </div>` : ''}
+      ${s.zawodnicy ? pjsZawodnicyHtml(s.zawodnicy) : ''}
+      ${pjsPrzegladHtml()}
+    `}
+  </div>`;
+}
+
+function pjsZawodnicyHtml(dane){
+  const lista = dane.zawodnicy || [];
+  const nazwaKlubu = esc(nazwaKlubuLadnie(dane.klub ? dane.klub.nazwa : ''));
+  if(!lista.length) return `<div class="empty">${nazwaKlubu}: w tym sezonie żaden młodzieżowiec nie zdobył punktów.</div>`;
+  return `
+  <div style="border-top:1px solid var(--border);padding-top:10px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
+      <strong>${nazwaKlubu}</strong>
+      <span class="meta">${dane.punktyKlubu} pkt &middot; ${dane.minutyKlubu} minut &middot; ${dane.meczeRozegrane}/${dane.meczeWszystkie} kolejek</span>
+      <button class="gold" data-action="pjs-dodaj-wszystkich">+ Dodaj wszystkich do monitoringu (${lista.length})</button>
+    </div>
+    <table><thead><tr><th style="width:30px;">#</th><th>Zawodnik</th><th style="width:60px;">Mecze</th>
+      <th style="width:70px;">Minuty</th><th style="width:70px;">Punkty</th><th style="width:150px;"></th></tr></thead>
+    <tbody>${lista.map((z, i)=>{
+      const juz = pjsZnajdzWBazie(z, dane.klub);
+      return `<tr${z.liczonyDoRankingu ? '' : ' class="pjs-nieliczony" title="Do klasyfikacji klubu nieuwzględniony — ale gra"'}>
+        <td>${z.miejsce}</td>
+        <td><strong>${esc(z.imie)} ${esc(z.nazwisko)}</strong></td>
+        <td>${z.mecze}</td>
+        <td><strong>${z.minuty}</strong></td>
+        <td><strong>${z.punkty}</strong></td>
+        <td>${juz && juz.monitored
+          ? '<span class="meta" style="color:var(--good);">✓ w monitoringu</span>'
+          : `<button class="link-btn" data-action="pjs-dodaj" data-idx="${i}" style="color:var(--gold-dark);">+ Monitoring</button>`}</td>
+      </tr>`;
+    }).join('')}</tbody></table>
+    <p class="note" style="margin:6px 0 0;">Dodanie ustawia monitoring i znacznik młodzieżowca, zapisuje dorobek PJS
+      (znaczek <span class="pjs-badge">PJS</span> przy nazwisku) i dopisuje wyróżnienie ze źródłem „Pro Junior System".
+      Rocznika PZPN w tej tabeli nie podaje — uzupełnij go w kartotece.</p>
+  </div>`;
+}
+
+// Szukamy po imieniu i nazwisku, w pierwszej kolejności w dopasowanym klubie. Ten sam Kowalski
+// bywa w bazie kilka razy (różne kategorie CLJ), więc to klub rozstrzyga, o którego chodzi.
+function pjsZnajdzWBazie(z, klubPjs){
+  const klucz = (a, b)=> importNorm(String(a||'') + String(b||''));
+  const szukany = klucz(z.imie, z.nazwisko);
+  const pasuje = DB.players.filter(p=> klucz(p.firstName, p.lastName) === szukany);
+  if(!pasuje.length) return null;
+  // Identyfikator PJS jest pewniejszy niż nazwisko — jeśli kogoś już stąd dodaliśmy, trafiamy w niego.
+  const poId = pasuje.find(p=> p.pjs && p.pjs.pjsId === z.pjsId);
+  if(poId) return poId;
+  const klub = klubPjs ? klubPjsWBazie(klubPjs.nazwa) : null;
+  if(klub){
+    const wKlubie = pasuje.find(p=> p.clubId === klub.id);
+    if(wKlubie) return wKlubie;
+  }
+  return pasuje[0];
+}
+
+// Dopisanie zawodnika z PJS: do monitoringu, ze znacznikiem młodzieżowca, z dorobkiem PJS
+// i z wyróżnieniem. Istniejącej kartotece NIE nadpisujemy niczego poza dorobkiem PJS — nazwisko,
+// rocznik i pozycja mogły być już poprawione ręcznie i są pewniejsze niż to, co podaje ta tabela.
+function pjsDodajZawodnika(z, dane){
+  const klubPjs = dane.klub;
+  const klub = klubPjs ? klubPjsWBazie(klubPjs.nazwa) : null;
+  const grupa = (pjsStan.grupy || []).find(g=> g.id === pjsStan.rozgrywki);
+  const dorobek = {
+    pjsId: z.pjsId, punkty: z.punkty, minuty: z.minuty, mecze: z.mecze,
+    liczonyDoRankingu: z.liczonyDoRankingu,
+    rozgrywki: grupa ? pjsKrotkaGrupa(grupa.nazwa) : '',
+    sezon: pjsStan.sezon, druzynaPjs: klubPjs ? klubPjs.id : '', zaktualizowano: dzisiaj(),
+  };
+
+  let p = pjsZnajdzWBazie(z, klubPjs);
+  if(!p){
+    p = {
+      id: uid('P'), firstName: z.imie, lastName: z.nazwisko,
+      clubId: klub ? klub.id : null, position: '', birthYear: null,
+      matches: z.mecze, minutes: z.minuty, goals: 0, assists: 0,
+      status: 'Do sprawdzenia', dateAdded: dzisiaj(),
+    };
+    DB.players.push(p);
+  }
+  p.pjs = dorobek;
+  p.monitored = true;
+  p.watchlistRemoved = false;
+  p.mlodziezowiec = true;   // w PJS punktuje wyłącznie młodzieżowiec — to definicja tych rozgrywek
+  // Wyróżnienie ze wskazanym źródłem, żeby na liście wyróżnień było widać, że to nie ocena skauta,
+  // tylko dorobek policzony przez związek. Jedno na sezon — kolejny odczyt podmienia poprzednie.
+  p.wyroznienia = (p.wyroznienia || [])
+    .filter(w=> !(w.scout === 'Pro Junior System' && w.sezon === pjsStan.sezon));
+  p.wyroznienia.push({
+    data: dzisiaj(), scout: 'Pro Junior System', sezon: pjsStan.sezon,
+    mecz: `${z.punkty} pkt PJS za ${z.minuty} minut w ${z.mecze} ${plMecze(z.mecze)}`,
+    klub: klubPjs ? nazwaKlubuLadnie(klubPjs.nazwa) : '',
+  });
+  return p;
+}
+
 function viewRadarMlodziezy(){
   const wszyscy = radarKandydaci();
   const nowi = wszyscy.filter(x=>!radarPrzejrzane[x.p.id]);
@@ -15493,7 +15775,8 @@ function viewRadarMlodziezy(){
   <h2 class="view-title">Radar młodzieży</h2>
   <p class="view-sub">Młodzieżowcy, którzy pojawili się w protokołach od Twojego ostatniego przeglądu.
     Zbieramy protokoły z IV ligi i CLJ — czyli stamtąd, skąd nie ma ich żaden komercyjny serwis.
-    Nazwisko trafia tu <strong>zanim</strong> pojawi się gdziekolwiek indziej.</p>`;
+    Nazwisko trafia tu <strong>zanim</strong> pojawi się gdziekolwiek indziej.</p>
+  ${pjsSekcjaHtml()}`;
 
   if(pierwszeUruchomienie){
     return `${naglowek}
@@ -15547,7 +15830,7 @@ function viewRadarMlodziezy(){
     const wCzolowce = czolowka.has(p.id);
     return `<tr data-action="view-player" data-id="${p.id}" style="cursor:pointer;" class="${ograny?'radar-ograny':''}"${ograny?` title="${x.minuty} minut — ponad trzy pełne mecze"`:''}>
       <td><span class="badge new">${esc(x.poziom)}</span></td>
-      <td><strong>${esc((p.firstName||'') + ' ' + (p.lastName||''))}</strong>${wCzolowce?' <span class="radar-strzalka" title="najwięcej minut na tej liście">▲</span>':''}</td>
+      <td><strong>${esc((p.firstName||'') + ' ' + (p.lastName||''))}</strong>${pjsBadge(p)}${wCzolowce?' <span class="radar-strzalka" title="najwięcej minut na tej liście">▲</span>':''}</td>
       <td>${p.birthYear ? esc(String(p.birthYear)) : '<span class="meta">—</span>'}</td>
       <td>${esc(klub ? klub.name : '—')}</td>
       <td>${esc(p.position || '—')}</td>
@@ -18223,6 +18506,33 @@ function attachHandlers(){
   // rozlicza całą grupę naraz, więc wymaganie, żeby najpierw otworzyć czyjąś kartotekę, było
   // zbędnym krokiem: w CLJ i IV lidze to jedyna droga na statystyki, a stała schowana o klik dalej.
   main.querySelectorAll('[data-action="protokoly-grupy"]').forEach(b=>b.onclick=()=>openProtokolMeczuModal(null));
+  // Pro Junior System — przeglądanie i dopisywanie do monitoringu (patrz pjsSekcjaHtml).
+  main.querySelectorAll('[data-action="pjs-start"]').forEach(b=>b.onclick=()=>void pjsWczytaj('start'));
+  main.querySelectorAll('[data-action="pjs-liga"]').forEach(b=>b.onclick=()=>void pjsWczytaj('liga', (b as HTMLElement).dataset.val));
+  main.querySelectorAll('[data-action="pjs-grupa"]').forEach(b=>b.onclick=()=>void pjsWczytaj('rozgrywki', (b as HTMLElement).dataset.val));
+  main.querySelectorAll('[data-action="pjs-klub"]').forEach(b=>b.onclick=()=>void pjsWczytaj('klub', (b as HTMLElement).dataset.val));
+  main.querySelectorAll('[data-action="pjs-dodaj"]').forEach(b=>b.onclick=()=>{
+    const lista = pjsStan.zawodnicy && pjsStan.zawodnicy.zawodnicy;
+    const z = lista && lista[Number((b as HTMLElement).dataset.idx)];
+    if(!z) return;
+    pjsDodajZawodnika(z, pjsStan.zawodnicy);
+    render();
+    savePlayers();
+  });
+  main.querySelectorAll('[data-action="pjs-dodaj-wszystkich"]').forEach(b=>b.onclick=()=>{
+    const dane = pjsStan.zawodnicy;
+    const lista = (dane && dane.zawodnicy) || [];
+    if(!lista.length) return;
+    // Pytamy, bo to zapis kilku kartotek naraz — część z nich powstanie od zera.
+    const nowych = lista.filter(z=> !pjsZnajdzWBazie(z, dane.klub)).length;
+    const tresc = `Dodać ${lista.length} ${plZaw(lista.length)} do monitoringu?\n\n`
+      + (nowych ? `${nowych} z nich nie ma jeszcze w bazie — powstaną nowe kartoteki ze statusem „Do sprawdzenia".\n` : '')
+      + 'Reszcie dopiszę tylko dorobek PJS, nie ruszając tego, co już wpisałeś.';
+    if(!confirm(tresc)) return;
+    lista.forEach(z=> pjsDodajZawodnika(z, dane));
+    render();
+    savePlayers();
+  });
   // Radar młodzieży: oznaczanie przejrzanych. Datę zapisujemy, bo to ona pozwoli później
   // odpowiedzieć na pytanie „kiedy zobaczyliśmy go po raz pierwszy" — czyli zmierzyć wyprzedzenie.
   main.querySelectorAll('[data-action="radar-przejrzane"], [data-action="radar-punkt-odniesienia"]').forEach(b=>b.onclick=async()=>{

@@ -1192,6 +1192,21 @@ tr.crow-rejected td,tr.crow-watching td{color:var(--row-ink);}
   vertical-align:middle;
 }
 
+/* ZNACZEK PJS — przy nazwisku zawodnika punktującego w Pro Junior System.
+   Celowo zielony, nie złoty: złote „MŁ" mówi „jest młodzieżowcem", zielone „PJS" mówi
+   „i naprawdę gra" — punkty w tych rozgrywkach idą wyłącznie za minuty na boisku. */
+.pjs-badge{
+  display:inline-flex;align-items:center;justify-content:center;margin-left:6px;
+  padding:0 6px;height:18px;border-radius:9px;font-size:9px;font-weight:800;letter-spacing:.4px;
+  color:#EAF5EE;background:linear-gradient(180deg,#2F6B4F 0%,var(--pitch) 100%);
+  box-shadow:0 1px 0 rgba(255,255,255,.18) inset, 0 2px 4px rgba(10,23,18,.28);
+  vertical-align:middle;white-space:nowrap;
+}
+/* Wiersz zawodnika, który gra, ale do klasyfikacji klubu się nie liczy — na stronie PZPN
+   taki wiersz ma pasek z boku i podpis „zawodnik nieuwzględniony w klasyfikacji". Dla skauta
+   jest tak samo ciekawy, więc go nie chowamy; zaznaczamy tylko, że klub punktów za niego nie bierze. */
+.pjs-nieliczony td{opacity:.72;}
+.pjs-nieliczony td:first-child{box-shadow:inset 3px 0 0 var(--gold);}
 /* Kafelki graficzne poziomów rozgrywek (Kluby) — logo (wgrane lub placeholder) + etykieta + liczba klubów. */
 .league-tiles{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:4px;}
 .league-tile{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 16px;min-width:84px;
