@@ -35,8 +35,12 @@ const LIGI_DO_PRZEGLADU = ["Trzecia liga", "Czwarta liga"];
 // Ile sekund jedno uruchomienie poświęca na odpytywanie klubów. Reszta budżetu funkcji
 // (maxDuration 120) zostaje na zbudowanie kolejki, odczyt kartotek i zapis wyniku.
 const BUDZET_SEKUND = 70;
-// Tyle klubów naraz. Przy dwunastu PZPN zaczynał odpowiadać 429 po kilkudziesięciu zapytaniach.
-const PACZKA = 5;
+// Tyle klubów naraz. Przy dwunastu PZPN odpowiadał 429 po kilkudziesięciu zapytaniach, przy
+// pięciu odpadał co czwarty klub. Cztery z przerwą między paczkami trzymają się limitu.
+const PACZKA = 4;
+// Przerwa między paczkami. Limit PZPN jest liczony na minutę, więc chodzi o średnie tempo,
+// a nie o chwilowy szczyt — ćwierć sekundy wystarcza, żeby się w nim zmieścić.
+const PRZERWA_MS = 250;
 const KLUCZ_POSTEPU = "pjsPostep";
 const KLUCZ_WYNIKU = "pjsPrzeglad";
 
@@ -174,12 +178,19 @@ export default async function handler(req, res) {
     const postep = wznawiamy ? zapisany : {
       data: dzis, stan: "wTrakcie", indeks: 0, przebiegow: 0,
       sprawdzonychKlubow: 0, punktujacych: 0, zaktualizowanych: 0,
-      nowi: [], bledy: [],
+      nowi: [], bledy: [], nieudane: [],
     };
+    if (!Array.isArray(postep.nieudane)) postep.nieudane = [];
     postep.przebiegow++;
 
     const kolejka = await zbudujKolejke(sezon, ligi, postep.bledy);
     postep.klubowRazem = kolejka.length;
+    // KLUBY, KTÓRE ODPADŁY NA LIMICIE, WRACAJĄ NA KONIEC KOLEJKI.
+    //
+    // Bez tego przegląd kończył się jako „gotowy" z dziurą: przy pierwszym przebiegu po 429
+    // odpadło trzydzieści kilka klubów i nikt już do nich nie wracał. Dokładamy je za główną
+    // kolejką, więc indeks nadal rośnie liniowo, a kolejny przebieg po prostu idzie dalej.
+    const doPrzejscia = kolejka.concat(postep.nieudane);
 
     const wBazie = await wczytajZawodnikow();
     const wgNazwiska = new Map();
@@ -192,15 +203,21 @@ export default async function handler(req, res) {
     const juzNaLiscie = new Set((postep.nowi || []).map((n) => n.pjsId));
 
     let zabrakloCzasu = false;
-    while (postep.indeks < kolejka.length) {
+    const nieudaneTegoPrzebiegu = [];
+    while (postep.indeks < doPrzejscia.length) {
       if ((Date.now() - start) / 1000 > BUDZET_SEKUND) { zabrakloCzasu = true; break; }
 
-      const paczka = kolejka.slice(postep.indeks, postep.indeks + PACZKA);
+      const paczka = doPrzejscia.slice(postep.indeks, postep.indeks + PACZKA);
       const odpowiedzi = await Promise.all(paczka.map(async (klub) => {
         try { return { klub, dane: await pjsZawodnicyKlubu(klub.id) }; }
-        catch (e) { postep.bledy.push(`klub ${klub.nazwa}: ${e.message}`); return null; }
+        catch (e) {
+          postep.bledy.push(`klub ${klub.nazwa}: ${e.message}`);
+          nieudaneTegoPrzebiegu.push({ id: klub.id, nazwa: klub.nazwa, rozgrywki: klub.rozgrywki });
+          return null;
+        }
       }));
       postep.indeks += paczka.length;
+      await new Promise((gotowe) => setTimeout(gotowe, PRZERWA_MS));
 
       for (const odpowiedz of odpowiedzi) {
         if (!odpowiedz) continue;
@@ -257,7 +274,13 @@ export default async function handler(req, res) {
     // Lista błędów potrafi urosnąć przy kiepskim dniu serwisu PZPN — do bazy idzie początek,
     // bo czyta się ją po to, żeby stwierdzić „coś było nie tak", a nie po kolei.
     postep.bledy = postep.bledy.slice(0, 50);
-    postep.stan = postep.indeks >= kolejka.length ? "gotowe" : "wTrakcie";
+    // Nieudane z TEGO przebiegu dokładamy do listy na kolejny. Te, które właśnie ponawialiśmy
+    // i tym razem przeszły, z listy znikają — bo lista jest odtwarzana od zera co przebieg.
+    postep.nieudane = nieudaneTegoPrzebiegu;
+    postep.stan = (postep.indeks >= doPrzejscia.length && !postep.nieudane.length) ? "gotowe" : "wTrakcie";
+    // Po domknięciu głównej kolejki indeks wraca na jej koniec, żeby kolejny przebieg zaczął
+    // od samych ponowień, a nie przechodził wszystkiego raz jeszcze.
+    if (postep.indeks >= doPrzejscia.length && postep.nieudane.length) postep.indeks = kolejka.length;
     postep.sekund = Math.round((Date.now() - start) / 10) / 100;
     await zapiszKv(KLUCZ_POSTEPU, postep);
 
@@ -279,7 +302,8 @@ export default async function handler(req, res) {
     return res.status(200).json({
       stan: postep.stan,
       przebiegow: postep.przebiegow,
-      klubow: `${postep.indeks}/${kolejka.length}`,
+      klubow: `${postep.indeks}/${doPrzejscia.length}`,
+      doPonowienia: postep.nieudane.length,
       sprawdzonychKlubow: postep.sprawdzonychKlubow,
       punktujacych: postep.punktujacych,
       zaktualizowanych: postep.zaktualizowanych,
