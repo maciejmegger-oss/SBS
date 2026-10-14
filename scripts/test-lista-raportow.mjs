@@ -54,5 +54,24 @@ console.log('\n3. Klub przy zawodniku');
 sprawdz('wiersz raportu zawodnika pokazuje herb i nazwę klubu',
   widok.includes("pl && pl.clubId ? `<span class=\"report-klub\">${crestImg(clubCrest(pl.clubId), 'xs', clubName(pl.clubId))}<span>${esc(clubName(pl.clubId))}</span></span>` : ''"));
 
+
+// WIDOCZNA KOLEJNOSC UTWORZENIA.
+//
+// Zgloszenie (15.10.2026): "posegreguj raporty zgodnie z ich utworzeniem". Lista BYLA tak
+// posortowana od 05.10.2026, ale nie dalo sie tego zobaczyc: w wierszu stala data MECZU
+// (21.08, 05.09, 02.08, 14.09...), wiec z zewnatrz wygladalo to na brak sortowania.
+console.log('\n3. Kolejnosc utworzenia widac w wierszu');
+{
+  sprawdz('wiersz pokazuje date zapisania raportu',
+    /dataUtworzenia\(r\) \? `<span class="report-dodany"/.test(zrodlo));
+  sprawdz('data brana z tego samego zrodla, co sortowanie',
+    /const dataUtworzenia = \(r\)=>\{[\s\S]{0,120}const c = czasUtworzenia\(r\);/.test(zrodlo));
+  sprawdz('data meczu nazwana po imieniu, zeby nie mylic jej z data dodania',
+    /\$\{r\.date \? 'mecz ' \+ esc\(r\.date\) : ''\}/.test(zrodlo));
+  sprawdz('podpis listy mowi, za czym idzie kolejnosc',
+    /numer i kolejność idą za datą <strong>dodania<\/strong>/.test(zrodlo));
+  sprawdz('raport bez rozpoznawalnego identyfikatora nie dostaje zmyslonej daty',
+    /if\(!c\) return '';/.test(zrodlo));
+}
 console.log(bledy ? `\n${bledy} BŁĘDÓW` : '\nWszystko przeszło.');
 process.exit(bledy ? 1 : 0);

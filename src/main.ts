@@ -10684,6 +10684,18 @@ function viewReports(){
     const m = /^R([0-9a-z]{8})[0-9a-z]{4}$/.exec(String(r.id||''));
     return m ? parseInt(m[1], 36) : 0;
   };
+  // DATA UTWORZENIA WPROST W WIERSZU.
+  //
+  // Zgłoszenie (15.10.2026): „posegreguj raporty zgodnie z ich utworzeniem". Lista BYŁA tak
+  // posortowana, ale nie dało się tego zobaczyć: w wierszu stoi data MECZU, a te idą jak popadnie
+  // (21.08, 05.09, 02.08, 14.09…). Z zewnątrz wyglądało to na brak sortowania. Pokazujemy więc
+  // datę, według której faktycznie układamy listę — tę z chwili zapisania raportu.
+  const dataUtworzenia = (r)=>{
+    const c = czasUtworzenia(r);
+    if(!c) return '';
+    const d = new Date(c);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  };
   const widoczneRaporty = DB.reports.filter(czyRaportZawodnika)
     .map((r,i)=>({r, i, c: czasUtworzenia(r)}))
     .sort((a,b)=> a.c - b.c || a.i - b.i)
@@ -10714,7 +10726,9 @@ function viewReports(){
           // Klub zawodnika z herbem obok nazwiska — przy trzydziestu raportach samo nazwisko nie mówi,
           // z której drużyny ktoś jest, a to pierwsze, czego się szuka.
           pl && pl.clubId ? `<span class="report-klub">${crestImg(clubCrest(pl.clubId), 'xs', clubName(pl.clubId))}<span>${esc(clubName(pl.clubId))}</span></span>` : ''}</div>
-        <span class="meta">${esc(r.date||'')}${r.perspektywa?' · '+esc(r.perspektywa):''}</span>
+        <span class="meta">${r.date ? 'mecz ' + esc(r.date) : ''}${r.perspektywa?' · '+esc(r.perspektywa):''}${
+          // Data zapisania raportu — to po niej idzie kolejność listy i numer porządkowy.
+          dataUtworzenia(r) ? `<span class="report-dodany" title="Chwila zapisania raportu — według niej ułożona jest ta lista"> · dodany ${dataUtworzenia(r)}</span>` : ''}</span>
       </div>
       <div class="report-row-actions">
         <button class="secondary" data-action="edit-report" data-id="${r.id}" title="Edytuj">✎</button>
@@ -10731,7 +10745,8 @@ function viewReports(){
 
   <section class="reports-aside">
     <h3 class="reports-aside-title">Zapisane raporty <span class="reports-count"><span id="rep-lista-licznik"></span>${allReports.length}</span></h3>
-    <p class="view-sub" style="margin:0 0 8px;">Wg kolejności utworzenia. „✎" edytuj · „⭳" PDF · „✕" usuń.</p>
+    <p class="view-sub" style="margin:0 0 8px;">Od ostatnio zapisanego — numer i kolejność idą za datą <strong>dodania</strong>,
+      nie za datą meczu. „✎" edytuj · „⭳" PDF · „✕" usuń.</p>
     <input type="search" id="rep-lista-szukaj" class="rep-lista-szukaj" autocomplete="off"
       placeholder="🔍 Szukaj raportu po nazwisku lub klubie…" value="${esc(raportySzukaj)}"
       style="width:100%;margin:0 0 8px;">
@@ -15560,6 +15575,8 @@ function viewFederacja(){
 // lidze i niżej — bo od tego zależą pieniądze dla klubu. Dane są więc pilnowane i aktualizowane
 // co kolejkę. Dla skauta to lista nazwisk ułożona dokładnie tak, jak trzeba: na górze ten, który
 // gra najwięcej. Odczyt stoi w api/pjs.js, bo przeglądarka nie pobierze danych z obcego serwisu.
+// Ligi pokazywane w zakładce PJS — ta sama para, którą co tydzień przechodzi przegląd.
+const LIGI_PJS = ['Trzecia liga', 'Czwarta liga'];
 let pjsStan = {
   sezon: '', liga: '', rozgrywki: '', wojewodztwo: '', klub: '',
   filtry: null, grupy: null, wojewodztwa: null, tabela: null, zawodnicy: null,
@@ -15586,7 +15603,10 @@ async function pjsWczytaj(krok, wartosc){
       const biezacy = pjsStan.filtry[0];
       if(biezacy){
         pjsStan.sezon = biezacy.sezon.id;
-        const centralna = biezacy.ligi.find(l=> l.centralna) || biezacy.ligi[0];
+        // Wybieramy spośród lig, które pokazujemy — inaczej na starcie mogłaby wskoczyć
+        // klasa okręgowa, której i tak nie ma w pigułkach.
+        const pokazywane = biezacy.ligi.filter(l=> LIGI_PJS.includes(l.nazwa));
+        const centralna = pokazywane.find(l=> l.centralna) || pokazywane[0];
         if(centralna) await pjsUstawLige(centralna.id);
       }
     }
@@ -15711,7 +15731,12 @@ function pjsSekcjaHtml(){
   pjsWczytajPrzeglad();   // leniwie: wynik cotygodniowego przegladu czytamy dopiero tutaj
   const s = pjsStan;
   const biezacy = (s.filtry || []).find(x=> x.sezon.id === s.sezon);
-  const ligi = biezacy ? biezacy.ligi : [];
+  // Tylko to, co nas skautingowo obchodzi. Zgłoszenie (15.10.2026): „pozostaw tylko Pro Junior
+  // 3 i 4 ligę, niższe i kobiety usuń". PJS oddaje też V ligę, klasę okręgową, A, B i rozgrywki
+  // kobiet — dla klubu z III ligi to osiem pigułek, w które nikt nigdy nie kliknie, a zasłaniają
+  // te dwie właściwe. Ta sama lista rządzi cotygodniowym przeglądem (LIGI_DO_PRZEGLADU
+  // w api/pjs-tydzien.js); dołożenie poziomu to dopisanie nazwy w obu miejscach.
+  const ligi = (biezacy ? biezacy.ligi : []).filter(l=> LIGI_PJS.includes(l.nazwa));
   const pigulka = (etykieta, aktywna, akcja, wartosc)=>
     `<button class="pill${aktywna ? ' active' : ''}" data-action="${akcja}" data-val="${esc(wartosc)}">${esc(etykieta)}</button>`;
 

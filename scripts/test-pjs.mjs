@@ -136,6 +136,11 @@ sprawdz("funkcja ma podniesiony limit czasu — pierwszy przebieg zajal 59 s",
   && vercel.functions["api/pjs-tydzien.js"].maxDuration >= 120,
   JSON.stringify(vercel.functions));
 
+sprawdz("zakladka PJS pokazuje tylko III i IV lige",
+  /const LIGI_PJS = \['Trzecia liga', 'Czwarta liga'\];/.test(main)
+  && /\.filter\(l=> LIGI_PJS\.includes\(l\.nazwa\)\)/.test(main));
+sprawdz("na starcie wybierana liga z pokazywanych, nie z calej listy PZPN",
+  /const pokazywane = biezacy\.ligi\.filter\(l=> LIGI_PJS\.includes\(l\.nazwa\)\);/.test(main));
 console.log("\n7. Przeglądanie w aplikacji");
 for (const [akcja, opis] of [
   ["pjs-start", "wczytanie danych"],
