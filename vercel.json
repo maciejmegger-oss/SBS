@@ -8,6 +8,10 @@
     {
       "path": "/api/refresh-schedule",
       "schedule": "0 21 * * 5"
+    },
+    {
+      "path": "/api/pjs-tydzien",
+      "schedule": "0,10,20,30,40,50 6 * * 1"
     }
   ],
   "rewrites": [
@@ -98,5 +102,10 @@
         }
       ]
     }
-  ]
+  ],
+  "functions": {
+    "api/pjs-tydzien.js": {
+      "maxDuration": 120
+    }
+  }
 }

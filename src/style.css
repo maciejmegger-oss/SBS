@@ -130,6 +130,18 @@
 *{box-sizing:border-box;}
 body{margin:0;background:var(--chalk);color:var(--ink);}
 .app{display:flex;min-height:600px;}
+/* PASEK „JEST NOWSZA WERSJA".
+   Celowo w barwach marki, nie w czerwieni paska awarii: to nie jest błąd, tylko informacja.
+   Ten sam układ co .save-fail-bar, żeby oba paski zachowywały się tak samo przy zwężaniu okna. */
+#nowa-wersja-banner:empty{display:none;}
+.nowa-wersja-bar{background:var(--pitch);color:var(--on-pitch);position:relative;z-index:10;
+  padding:9px 16px;font-size:13px;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;
+  box-shadow:0 2px 8px rgba(0,0,0,.25);border-bottom:2px solid var(--gold);}
+.nowa-wersja-bar strong{font-weight:700;color:var(--gold);}
+.nowa-wersja-bar button{background:var(--gold);color:var(--pitch);border:none;border-radius:6px;
+  padding:5px 12px;font-weight:700;font-size:12px;cursor:pointer;}
+.nowa-wersja-bar button.pozniej{background:transparent;color:var(--on-pitch);
+  border:1px solid rgba(246,243,234,.45);font-weight:600;}
 #save-failure-banner:empty{display:none;}
 .save-fail-bar{background:var(--clay);color:var(--card);position:relative;z-index:10;
   padding:10px 16px;font-size:13px;display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;
@@ -1180,6 +1192,21 @@ tr.crow-rejected td,tr.crow-watching td{color:var(--row-ink);}
   vertical-align:middle;
 }
 
+/* ZNACZEK PJS — przy nazwisku zawodnika punktującego w Pro Junior System.
+   Celowo zielony, nie złoty: złote „MŁ" mówi „jest młodzieżowcem", zielone „PJS" mówi
+   „i naprawdę gra" — punkty w tych rozgrywkach idą wyłącznie za minuty na boisku. */
+.pjs-badge{
+  display:inline-flex;align-items:center;justify-content:center;margin-left:6px;
+  padding:0 6px;height:18px;border-radius:9px;font-size:9px;font-weight:800;letter-spacing:.4px;
+  color:#EAF5EE;background:linear-gradient(180deg,#2F6B4F 0%,var(--pitch) 100%);
+  box-shadow:0 1px 0 rgba(255,255,255,.18) inset, 0 2px 4px rgba(10,23,18,.28);
+  vertical-align:middle;white-space:nowrap;
+}
+/* Wiersz zawodnika, który gra, ale do klasyfikacji klubu się nie liczy — na stronie PZPN
+   taki wiersz ma pasek z boku i podpis „zawodnik nieuwzględniony w klasyfikacji". Dla skauta
+   jest tak samo ciekawy, więc go nie chowamy; zaznaczamy tylko, że klub punktów za niego nie bierze. */
+.pjs-nieliczony td{opacity:.72;}
+.pjs-nieliczony td:first-child{box-shadow:inset 3px 0 0 var(--gold);}
 /* Kafelki graficzne poziomów rozgrywek (Kluby) — logo (wgrane lub placeholder) + etykieta + liczba klubów. */
 .league-tiles{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:4px;}
 .league-tile{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 16px;min-width:84px;
@@ -1410,3 +1437,65 @@ body.bez-kasowania #delete-selected-agencies-btn{
 .prognoza-pkt.zero{color:var(--ink-soft);font-weight:600;}
 .prognoza-uzasadnienie{color:var(--ink-soft);line-height:1.4;}
 .prognoza-braki{margin:0 0 10px;padding-left:18px;font-size:13px;line-height:1.6;color:var(--clay-dark);}
+
+/* ---------- RYNKI (Europa → kraj → liga → zawodnik) ----------
+   Tylko zmienne motywu — zakładka wygląda tak samo w jasnym i ciemnym tle jak reszta systemu. */
+.rynki-okruszki{font-size:12.5px;color:var(--ink-soft);margin:0 0 8px;}
+.rynki-okruszki .link-btn{font-size:12.5px;padding:2px;}
+.rynki-okruszek-tu{color:var(--ink) !important;cursor:default;}
+.rynki-h3{font-family:'Barlow Condensed',sans-serif;font-size:20px;letter-spacing:.03em;margin:0 0 10px;color:var(--heading);}
+.rynki-region{margin-bottom:22px;}
+.rynki-kraje{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;}
+.rynki-kraj{display:flex;flex-direction:column;gap:10px;text-align:left;background:var(--card);border:1px solid var(--border);
+  border-radius:var(--radius);padding:14px 16px;cursor:pointer;font:inherit;color:var(--ink);min-height:44px;}
+.rynki-kraj:hover{border-color:var(--gold);}
+.rynki-kraj:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
+.rynki-kraj-gora{display:flex;justify-content:space-between;align-items:center;gap:8px;}
+.rynki-kraj-nazwa{display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:15px;}
+.rynki-kraj-dol{font-size:12.5px;color:var(--ink-soft);border-top:1px solid var(--border);padding-top:9px;}
+.rynki-kraj-dol strong{color:var(--gold-dark);}
+.rynki-pusto{color:var(--ink-faint);}
+.rynki-prio{font-size:11.5px;font-weight:700;color:var(--ink-soft);}
+.rynki-tagi{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+.rynki-tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:5px;border:1px solid var(--line);color:var(--ink-soft);}
+.rynki-tag-limit{border-color:var(--clay);color:var(--clay-dark);}
+.rynki-tag-szary{border-color:transparent;background:var(--chalk-dim);color:var(--ink-soft);}
+.rynki-tag-zloty{border-color:transparent;background:var(--warn-bg);color:var(--warn-ink);font-size:12px;}
+.rynki-sygnaly{padding-bottom:8px;}
+.rynki-sygnal{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--border);font-size:13px;}
+.rynki-sygnal-rodzaj{font-size:10.5px;font-weight:700;letter-spacing:.06em;padding:3px 8px;border-radius:5px;background:var(--warn-bg);color:var(--warn-ink);min-width:96px;text-align:center;}
+.rynki-sygnal-tekst{color:var(--ink-soft);flex:1 1 260px;}
+.rynki-info{margin-bottom:0;}
+.rynki-info-lbl{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint);margin-bottom:4px;}
+.rynki-info-wart{font-weight:600;font-size:15px;margin-bottom:4px;}
+.rynki-info-opis{font-size:12.5px;color:var(--ink-soft);}
+.rynki-pasmo{display:grid;grid-template-columns:78px 1fr 22px;align-items:center;gap:8px;font-size:12px;margin-top:6px;}
+.rynki-pasmo .stat-bar{margin-top:0;}
+.rynki-wiersz{cursor:pointer;}
+.rynki-wiersz:hover td{background:var(--card-warm);}
+.rynki-kluby{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:-8px 0 12px;}
+.rynki-kluby .rynki-info-lbl{margin:0 6px 0 0;}
+.rynki-udzial{display:grid;grid-template-columns:1fr 36px;align-items:center;gap:8px;font-size:12px;font-variant-numeric:tabular-nums;}
+.rynki-udzial .stat-bar{margin-top:0;}
+.rynki-liczby{font-size:12px;color:var(--ink-soft);font-variant-numeric:tabular-nums;}
+.rynki-transfer{font-size:12px;color:var(--ink-soft);}
+.rynki-naglowek{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;}
+.rynki-wykres{width:100%;height:auto;display:block;}
+.rynki-para{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid var(--border);font-size:13px;}
+.rynki-para span:first-child{color:var(--ink-soft);}
+.rynki-para span:last-child{text-align:right;}
+.rynki-krok{display:flex;gap:12px;align-items:flex-start;padding:7px 0;font-size:13px;}
+.rynki-krok-kiedy{flex:0 0 84px;font-size:12px;color:var(--ink-faint);font-variant-numeric:tabular-nums;}
+.rynki-krok-kropka{flex:0 0 9px;width:9px;height:9px;border-radius:50%;background:var(--gold);margin-top:4px;}
+.rynki-tm-tabela{font-size:12.5px;font-variant-numeric:tabular-nums;}
+.rynki-tm-tabela th{white-space:nowrap;}
+.rynki-tm-poboczne td{color:var(--ink-faint);}
+.rynki-kandydaci{border-color:var(--gold);}
+.rynki-kandydat{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid var(--border);border-radius:8px;}
+.rynki-radar{border-color:var(--gold);}
+.rynki-radar-gora{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:12px;}
+.rynki-radar-akcje{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.rynki-radar-akcje select{width:auto;}
+.rynki-radar-licznik{font-family:'Inter',sans-serif;font-size:11px;font-weight:700;letter-spacing:.04em;background:var(--gold);color:#3A2C0C;border-radius:10px;padding:2px 8px;vertical-align:middle;margin-left:6px;}
+.rynki-radar-sygnal{min-width:0;font-size:10px;padding:2px 6px;}
+.rynki-kropka-nowe{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--gold);margin-right:6px;vertical-align:middle;}

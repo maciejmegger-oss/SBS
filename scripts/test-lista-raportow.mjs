@@ -31,7 +31,9 @@ sprawdz('pusty wpis — nie', czyRaportZawodnika(null) === false && czyRaportZaw
 
 console.log('\n2. Lista, licznik i numery');
 const widok = wytnij('viewReports', /function viewReports\(\)\{[\s\S]*?\n\}/);
-sprawdz('lista i licznik tylko z raportów zawodników', /const widoczneRaporty = DB\.reports\.filter\(czyRaportZawodnika\);/.test(widok)
+// Po filtrze doszedl lancuch sortujacy po kolejnosci utworzenia, wiec nie wymagamy tu srednika
+// — pilnujemy wylacznie tego, ze lista bierze sie z filtra raportow zawodnikow.
+sprawdz('lista i licznik tylko z raportów zawodników', /const widoczneRaporty = DB\.reports\.filter\(czyRaportZawodnika\)/.test(widok)
   // Licznik może mieć w środku dodatkowy znacznik (np. miejsce na wynik wyszukiwania) — liczy się,
   // że pokazywana liczba bierze się z widoczneRaporty, a nie z całego DB.reports.
   && /const allReports = widoczneRaporty\.slice\(\)/.test(widok)

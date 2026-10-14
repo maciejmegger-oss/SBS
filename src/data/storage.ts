@@ -131,6 +131,11 @@ export const EXT_CONFIG: Record<string, { hostField: string; fields: string[] }>
       // Inne drużyny tego samego sezonu: rezerwy, wypożyczenie. Młodzieżowiec bywa zgłoszony do
       // pierwszego zespołu i do rezerw naraz — bez tego pola jego minuty z drugiej drużyny nie
       // miały gdzie wejść i powstawała druga kartoteka, co rozdzielało raporty od statystyk.
+      // Pro Junior System: punkty, minuty i mecze, za które PZPN płaci klubowi za granie
+      // młodzieżowcem, razem z datą odczytu i rozgrywkami. To jedyne źródło, w którym związek
+      // sam liczy, ile naprawdę gra każdy młody zawodnik w III lidze i niżej — stąd bierze się
+      // znaczek PJS przy nazwisku i cotygodniowy przegląd (api/pjs-tydzien.js).
+      "pjs",
       "druzyny",
     ],
   },

@@ -16,6 +16,7 @@ export const EN: Record<string, string> = {
   'Radar młodzieży': 'Youth Radar',
   'Ranking': 'Ranking',
   'Talent': 'Talent',
+  'Rynki': 'Markets',
   'Scout Transfer': 'Scout Transfer',
   'Menedżerowie': 'Agents',
   'Kontakty': 'Contacts',

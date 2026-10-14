@@ -40,6 +40,8 @@ export interface ZlecenieAnalizy {
   pozycja?: number | null;
   uwagi?: string;
   zlecil?: string;
+  /** Kto ma wykonac analize: imie skauta z listy albo "ai". */
+  wykonawca?: string;
   status?: string;
 }
 
@@ -57,6 +59,7 @@ export async function zlecAnalize(z: ZlecenieAnalizy): Promise<string | null> {
     pozycja: z.pozycja ?? null,
     uwagi: z.uwagi || "",
     zlecil: z.zlecil || "",
+    wykonawca: z.wykonawca || "",
     status: "nowe",
   });
   if (!error) return null;
@@ -64,6 +67,25 @@ export async function zlecAnalize(z: ZlecenieAnalizy): Promise<string | null> {
 
   const lista = await zapasoweZlecenia();
   lista.push({ ...z, status: "nowe", utworzoneAt: new Date().toISOString() });
+  try {
+    await storage.set(KLUCZ_ZAPASOWY, JSON.stringify(lista), true);
+    return null;
+  } catch (e) {
+    return (e as Error).message || String(e);
+  }
+}
+
+/** Odwołanie zlecenia. Zwraca komunikat błędu albo null, gdy się udało. */
+export async function odwolajZlecenie(id: string): Promise<string | null> {
+  const { error } = await sb.from(TABELA).update({ status: "odwolane" }).eq("id", id);
+  if (!error) return null;
+  if (!brakTabeli(error.message)) return error.message;
+
+  // Droga zapasowa — tam, gdzie zlecenie wylądowało, gdy tabeli nie ma.
+  const lista = await zapasoweZlecenia();
+  const z = lista.find((x) => x.id === id);
+  if (!z) return "Nie znalazłem tego zlecenia.";
+  z.status = "odwolane";
   try {
     await storage.set(KLUCZ_ZAPASOWY, JSON.stringify(lista), true);
     return null;
@@ -98,6 +120,7 @@ export async function pobierzOtwarteZlecenia(): Promise<ZlecenieAnalizy[]> {
     pozycja: (r.pozycja as number) ?? null,
     uwagi: r.uwagi as string | undefined,
     zlecil: r.zlecil as string | undefined,
+    wykonawca: r.wykonawca as string | undefined,
     status: r.status as string | undefined,
   }));
 }

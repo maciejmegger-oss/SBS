@@ -130,5 +130,67 @@ console.log('\n7. Tabela w bazie');
   sprawdz('brak tabeli nie wywraca profilu zawodnika', /Zlecenia analiz z tabeli niedostępne/.test(zlecenia));
 }
 
+
+// CO SIĘ DZIEJE ZE ZLECENIEM — KARTA MUSI TO MÓWIĆ.
+//
+// Zgłoszenie (14.10.2026): „zleciłem analizę zawodnika i nic nie mam, minęło ponad 20 minut,
+// dlaczego tak długo". Nic się nie zacięło — „Zleć analizę wideo" to zamówienie dla analityka,
+// a nie zadanie dla systemu. Karta pokazywała wyłącznie złoty przycisk „Analiza zlecona", co
+// wyglądało jak robota w toku. Te asercje pilnują, żeby mówiła prawdę.
+console.log('\n4. Co karta mówi o złożonym zleceniu');
+{
+  const main = fs.readFileSync('src/main.ts', 'utf8');
+  const zlecenia = fs.readFileSync('src/data/zlecenia.ts', 'utf8');
+
+  sprawdz('karta pokazuje, że zlecenie czeka', /🎬 Analiza wideo zlecona/.test(main));
+  sprawdz('podaje mecz i od kiedy czeka',
+    /czeka \$\{dni\} dni/.test(main) && /esc\(z\.mecz \|\| 'mecz niepodany'\)/.test(main));
+  sprawdz('mówi wprost, że to zamówienie dla człowieka, nie zadanie dla systemu',
+    /To zamówienie dla <strong>analityka<\/strong>, nie zadanie dla systemu/.test(main));
+  sprawdz('kieruje do skrzynki po gotowy raport', /wraca do <strong>skrzynki raportów<\/strong>/.test(main));
+  sprawdz('podpowiada przycisk, który daje ocenę od razu',
+    /„Analiza zawodnika"<\/strong> wyżej — ta wraca w kilkadziesiąt sekund/.test(main));
+
+  sprawdz('zlecenie da się odwołać', /export async function odwolajZlecenie/.test(zlecenia));
+  sprawdz('odwołanie działa też drogą zapasową, gdy tabeli nie ma',
+    /brakTabeli\(error\.message\)\) return error\.message;[\s\S]{0,260}z\.status = "odwolane";/.test(zlecenia));
+  sprawdz('odwołanie pyta o potwierdzenie', /Odwołać to zlecenie analizy wideo\?/.test(main));
+  sprawdz('odwołane zlecenie znika z karty bez przeładowania',
+    /zleceniaOtwarte = zleceniaOtwarte\.filter\(z=> z\.id !==/.test(main));
+}
+
+// WYBOR WYKONAWCY — SKAUT Z LISTY ALBO ASYSTENT AI.
+//
+// Zgloszenie (14.10.2026): "po wgraniu zlecenia zrob wybor, kto ma wykonac analize — scout wybor
+// z listy czy AI". Obie drogi istnialy, ale rozjechane po dwoch przyciskach w stopce okna.
+console.log('\n5. Kto wykonuje analize');
+{
+  const main = fs.readFileSync('src/main.ts', 'utf8');
+  const zlecenia = fs.readFileSync('src/data/zlecenia.ts', 'utf8');
+  const sql = fs.readFileSync('supabase/migration_2026-09-29_zlecenia_analiz.sql', 'utf8');
+
+  sprawdz('okno ma pole wyboru wykonawcy', /<select id="zl-wykonawca">/.test(main));
+  sprawdz('do wyboru jest asystent AI', /<option value="ai">/.test(main));
+  sprawdz('i skauci z listy ustawien', /\(DB\.settings\.scouts \|\| \[\]\)\.map\(sk=>/.test(main));
+  sprawdz('domyslnie podswietlony zalogowany skaut', /sk === currentScout \? ' selected' : ''/.test(main));
+
+  sprawdz('wybor rzadzi przyciskiem glownym — nie da sie zamowic czegos innego, niz sie chcialo',
+    /przyciskAI\.style\.display = ai \? '' : 'none';/.test(main)
+    && /przyciskZlec\.style\.display = ai \? 'none' : '';/.test(main));
+  sprawdz('przy skaucie okno mowi, ze zlecenie bedzie czekac',
+    /Zlecenie trafi do kolejki i będzie czekać, aż ten skaut je odbierze\. System nie wykona go sam\./.test(main));
+  sprawdz('przy AI okno mowi, ze nagrania model nie obejrzy',
+    /Nagrania model nie obejrzy — oceny 1–6 za fazy gry zostają dla Ciebie\./.test(main));
+
+  sprawdz('wykonawca zapisywany przy zleceniu', /wykonawca: wyborWykonawcy\.value,/.test(main));
+  sprawdz('pole jest w modelu zlecenia', /wykonawca\?: string;/.test(zlecenia));
+  sprawdz('idzie do bazy i wraca z niej',
+    /wykonawca: z\.wykonawca \|\| ""/.test(zlecenia) && /wykonawca: r\.wykonawca as string/.test(zlecenia));
+  sprawdz('kolumna jest w migracji', /^\s{2}wykonawca\s+text,/m.test(sql));
+  sprawdz('istniejace bazy dostaja kolumne bez przebudowy',
+    /alter table public\.sbs_analiza_zlecenia add column if not exists wykonawca text;/.test(sql));
+  sprawdz('karta zawodnika pokazuje, na kogo zlecenie czeka',
+    /czeka na: <strong>' \+ esc\(z\.wykonawca\)/.test(main));
+}
 console.log(bledy ? `\n${bledy} BŁĘDÓW` : '\nWszystko przeszło.');
 process.exit(bledy ? 1 : 0);

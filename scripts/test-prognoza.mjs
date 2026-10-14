@@ -10,6 +10,7 @@
 // podaniem menedżerowi klubowemu liczby wziętej z powietrza.
 //
 // Uruchomienie:  node scripts/test-prognoza.mjs
+import fs from "node:fs";
 import { buildSync } from "esbuild";
 
 let bledy = 0;
@@ -171,5 +172,44 @@ sprawdz("niska pewność rozszerza przedział",
   (chudy.pulapDo - chudy.pulapOd) >= (ok.pulapDo - ok.pulapOd),
   `chudy ${chudy.pulapOd}-${chudy.pulapDo}, pełny ${ok.pulapOd}-${ok.pulapDo}`);
 
+
+// PROGNOZA ROZWOJU — CO MÓWI I DLACZEGO CZASEM ODMAWIA.
+//
+// Zgłoszenie (14.10.2026): „o co chodzi z tą prognozą rozwoju? Wgrywa coś, ale nic, żadnych
+// informacji potem nie ma. Uważam, że po kliknięciu powinna być informacja, czy zawodnik jest
+// na wyższy poziom, czy na poziom międzynarodowy".
+console.log('\n6. Prognoza rozwoju — okno odmowy');
+{
+  const main = fs.readFileSync('src/main.ts', 'utf8');
+  const drabina = fs.readFileSync('src/data/profil-kompetencji.ts', 'utf8');
+
+  sprawdz('okno tłumaczy, na jakie pytanie prognoza odpowiada',
+    /Prognoza odpowiada na jedno pytanie: <strong>dokąd ten zawodnik\s*\n?\s*może dojść<\/strong>/.test(main));
+  sprawdz('nazywa poziom międzynarodowy wprost',
+    /po poziom międzynarodowy: Top 5 lig i Liga Mistrzów \(17–20\)/.test(main));
+  sprawdz('drabina faktycznie sięga Ligi Mistrzów',
+    /"stopien":20,"opis":"Kluczowy zawodnik na najwyższym poziomie CL"/.test(drabina));
+  sprawdz('i Ekstraklasa stoi tam, gdzie okno mówi',
+    /"stopien":13,"opis":"Pierwsza jedenastka EK miejsca 9-18/.test(drabina));
+
+  sprawdz('brak oceny potencjału da się nadrobić jednym kliknięciem',
+    /data-action="prognoza-ocen-potencjal"/.test(main));
+  sprawdz('skrót pojawia się tylko wtedy, gdy to właśnie tego brakuje',
+    /w\.braki\.some\(b=> \/ocen\[aąę\] potencja\/i\.test\(b\)\)/.test(main));
+  sprawdz('skrót otwiera raport z wpisanym zawodnikiem',
+    /prefillRaportu = \{[\s\S]{0,200}playerId: pl\.id,/.test(main));
+  sprawdz('i przewija do pola oceny potencjału',
+    /getElementById\('rep-potencjal-opis'\)/.test(main));
+}
+
+console.log('\n7. Pobieranie historii sezonów nie wisi w nieskończoność');
+{
+  const main = fs.readFileSync('src/main.ts', 'utf8');
+  sprawdz('zapytanie ma limit czasu', /AbortSignal\.timeout\(40000\)/.test(main));
+  sprawdz('przekroczony limit nazwany po ludzku',
+    /90minut nie odpowiedziało w czterdzieści sekund/.test(main));
+  sprawdz('przycisk wraca do stanu wyjściowego niezależnie od wyniku',
+    /\}finally\{\s*\n\s*b\.disabled = false; b\.textContent = orig;/.test(main));
+}
 console.log(bledy ? `\n${bledy} BŁĘDÓW` : "\nWszystko przeszło.");
 process.exit(bledy ? 1 : 0);
