@@ -149,9 +149,11 @@ export type StatusKonta = "oczekuje" | "zatwierdzone" | "odrzucone";
 // TRZY ROLE, NIE DWIE.
 //   admin  — właściciel systemu: wszystko, łącznie z kasowaniem i ustawieniami.
 //   scout  — pracownia: dopisuje i poprawia, nie kasuje, nie rusza kartoteki menedżerów.
+//   trener, dyrektor — jak skaut w pracy na kartotece, a dodatkowo wystawiają ocenę dopasowania
+//            sportowego (trener) i decyzję biznesową (dyrektor) w skrzynce propozycji AI.
 //   klient — kupuje dostęp do wybranych rozgrywek. Widzi tylko je, kartoteki nie zmienia,
 //            ale prowadzi własne obserwacje, raporty i oceny. Patrz `pakiety` niżej.
-export type RolaKonta = "admin" | "scout" | "klient";
+export type RolaKonta = "admin" | "scout" | "klient" | "trener" | "dyrektor";
 
 export interface Konto {
   userId: string;
@@ -180,7 +182,8 @@ function mapujKonto(r: any): Konto {
     klub: r.klub || "",
     rolaWKlubie: r.rola_w_klubie || "",
     telefon: r.telefon || "",
-    rola: r.rola === "admin" ? "admin" : r.rola === "klient" ? "klient" : "scout",
+    rola: r.rola === "admin" ? "admin" : r.rola === "klient" ? "klient"
+      : r.rola === "trener" ? "trener" : r.rola === "dyrektor" ? "dyrektor" : "scout",
     // Baza sprzed migracji z 22.09 nie ma tej kolumny — pusta lista znaczy „żadnych pakietów",
     // co dla admina i skauta jest bez znaczenia, a nowego klienta i tak trzeba dopiero wyposażyć.
     pakiety: Array.isArray(r.pakiety) ? r.pakiety.filter(Boolean).map(String) : [],

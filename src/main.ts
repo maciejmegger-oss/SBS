@@ -2,6 +2,11 @@ import "./style.css";
 import { storage } from "./data/storage";
 import { pobierzSkrzynke, oznaczWpisSkrzynki, bladSkrzynki } from "./data/skrzynka";
 import { zlecAnalize, pobierzOtwarteZlecenia } from "./data/zlecenia";
+import { listaPropozycji, dodajPropozycje, weryfikujPropozycje, ocenPropozycje, zdecydujPropozycje,
+         odrzucPropozycje } from "./data/propozycje";
+import { ETYKIETY_STANU, ETYKIETY_DECYZJI, KOLEJNOSC_STANOW, STANY_ZAMKNIETE, coMozeRola, mozeOdrzucic,
+         wybierzKandydatow } from "./domain/propozycje";
+import type { Propozycja, Decyzja } from "./domain/propozycje";
 import { currentUser, signIn, signOut, requestPasswordReset, setNewPassword, isPasswordRecoveryLink,
          mojeKonto, listaKont, ustawStatusKonta, ustawRoleKonta, ustawPakietyKonta,
          zapiszZdarzenie, listaZdarzen, tokenSesji } from "./data/auth";
@@ -3934,11 +3939,17 @@ function kontoWiersz(k){
       przyciski.push(`<button class="secondary" data-action="konto-rola" data-id="${esc(k.userId)}" data-rola="klient">Zrób klientem</button>`);
       przyciski.push(`<button class="secondary" data-action="konto-rola" data-id="${esc(k.userId)}" data-rola="admin">Zrób administratorem</button>`);
     }
+    // Trener i dyrektor to role obiegu propozycji AI (zakładka „Skrzynka AI"). Poza nim pracują jak skaut.
+    if(k.rola !== 'admin' && k.rola !== 'klient'){
+      if(k.rola !== 'trener') przyciski.push(`<button class="secondary" data-action="konto-rola" data-id="${esc(k.userId)}" data-rola="trener">Zrób trenerem</button>`);
+      if(k.rola !== 'dyrektor') przyciski.push(`<button class="secondary" data-action="konto-rola" data-id="${esc(k.userId)}" data-rola="dyrektor">Zrób dyrektorem</button>`);
+      if(k.rola === 'trener' || k.rola === 'dyrektor') przyciski.push(`<button class="secondary" data-action="konto-rola" data-id="${esc(k.userId)}" data-rola="scout">Zmień na skauta</button>`);
+    }
   }
   const opis = [k.klub, k.rolaWKlubie].filter(Boolean).map(esc).join(' · ');
   return `<tr>
     <td>
-      <strong>${esc(k.imieNazwisko || '—')}</strong>${k.rola==='admin'?' <span class="badge tab-chip">administrator</span>':''}${k.rola==='klient'?' <span class="badge tab-chip">klient</span>':''}${jaSam?' <span class="badge new">to Ty</span>':''}
+      <strong>${esc(k.imieNazwisko || '—')}</strong>${k.rola==='admin'?' <span class="badge tab-chip">administrator</span>':''}${k.rola==='klient'?' <span class="badge tab-chip">klient</span>':''}${k.rola==='trener'?' <span class="badge tab-chip">trener</span>':''}${k.rola==='dyrektor'?' <span class="badge tab-chip">dyrektor</span>':''}${jaSam?' <span class="badge new">to Ty</span>':''}
       <div class="note" style="margin:2px 0 0;">${esc(k.email)}</div>
       ${k.rola === 'klient' ? `<div class="note" style="margin:3px 0 0;">${opisPakietow(k.pakiety)}</div>` : ''}
       ${k.pakietZadany && k.rola !== 'klient' && k.status === 'zatwierdzone'
@@ -4064,6 +4075,159 @@ function kontaTabela(lista){
 // ile widzę. Bez niego brak jakiejś ligi wygląda jak usterka systemu, a nie jak nieopłacony pakiet.
 // Dlatego pokazujemy WSZYSTKIE rozgrywki, a nie tylko wykupione — te bez dostępu stoją wyszarzone,
 // z informacją, jak je dobrać.
+// ---------- SKRZYNKA PROPOZYCJI AI: AI → skaut → trener → dyrektor ----------
+//
+// Jedno miejsce, w którym widać, na jakim etapie jest każda propozycja i czyja teraz kolej.
+// Ekran pokazuje przyciski tylko tej roli, której baza pozwoli kliknąć (coMozeRola); prawdziwy
+// zamek siedzi w wyzwalaczu bazy (migration_2026-10-14_przeplyw_ai.sql).
+let propozycjeLista: Propozycja[] | null = null;
+let propozycjeWczytywanie = false;
+let propozycjeBlad = '';
+let propozycjeKomunikat = '';
+
+function rolaUi(){ return (kontoUzytkownika ? kontoUzytkownika.rola : 'admin') as 'admin'|'scout'|'trener'|'dyrektor'|'klient'; }
+
+async function odswiezPropozycje(){
+  if(propozycjeWczytywanie) return;
+  propozycjeWczytywanie = true;
+  const r = await listaPropozycji();
+  propozycjeWczytywanie = false;
+  propozycjeBlad = r.error || '';
+  propozycjeLista = r.lista;
+  if(currentView === 'propozycje') render();
+}
+
+const bezpiecznyAdres = (u: string) => /^https?:\/\//i.test(String(u || '').trim());
+const dataKrotka = (iso: string) => iso ? new Date(iso).toLocaleDateString('pl-PL') : '';
+
+function kartaPropozycji(p: Propozycja){
+  const rola = rolaUi();
+  const akcja = coMozeRola(rola, p.stan);
+  const zrodla = p.zrodla.filter(z => bezpiecznyAdres(z.url))
+    .map(z => `<a href="${esc(z.url)}" target="_blank" rel="noopener noreferrer">${esc(z.opis || z.url)}</a>`).join(' · ');
+  const historia: string[] = [];
+  if(p.skautAt) historia.push(`<div class="note"><strong>Skaut</strong> (${dataKrotka(p.skautAt)}): ${esc(p.skautUwagi || 'fakty potwierdzone, bez uwag')}</div>`);
+  if(p.trenerOcena) historia.push(`<div class="note"><strong>Trener</strong> (${dataKrotka(p.trenerAt)}): dopasowanie ${esc(p.trenerOcena.dopasowanie ?? '—')}/6`
+    + `${p.trenerOcena.pozycja ? ', pozycja: ' + esc(p.trenerOcena.pozycja) : ''}${p.trenerOcena.komentarz ? ' — ' + esc(p.trenerOcena.komentarz) : ''}</div>`);
+  if(p.dyrektorDecyzja) historia.push(`<div class="note"><strong>Dyrektor</strong> (${dataKrotka(p.dyrektorAt)}): <strong>${esc(ETYKIETY_DECYZJI[p.dyrektorDecyzja] || p.dyrektorDecyzja)}</strong>${p.dyrektorUzasadnienie ? ' — ' + esc(p.dyrektorUzasadnienie) : ''}</div>`);
+  if(p.stan === 'odrzucone') historia.push(`<div class="note"><strong>Odrzucone:</strong> ${esc(p.odrzucilPowod)}</div>`);
+
+  let formularz = '';
+  if(akcja === 'weryfikuj'){
+    formularz = `<textarea id="pr-${p.id}-uwagi" rows="2" placeholder="Uwagi skauta: co sprawdziłeś, co poprawiasz (opcjonalnie)"></textarea>
+      <button class="gold" data-prop-act="weryfikuj" data-id="${p.id}">Potwierdzam fakty →</button>`;
+  } else if(akcja === 'oceniaj'){
+    formularz = `<div class="row" style="gap:8px;flex-wrap:wrap;">
+        <select id="pr-${p.id}-dop"><option value="">Dopasowanie 1–6…</option>${[6,5,4,3,2,1].map(n=>`<option value="${n}">${n}</option>`).join('')}</select>
+        <input id="pr-${p.id}-poz" placeholder="Pozycja w naszym systemie (np. 9, 6/8)">
+      </div>
+      <textarea id="pr-${p.id}-kom" rows="2" placeholder="Komentarz: dlaczego pasuje albo nie pasuje do naszej gry"></textarea>
+      <button class="gold" data-prop-act="oceniaj" data-id="${p.id}">Zapisz ocenę →</button>`;
+  } else if(akcja === 'decyduj'){
+    formularz = `<select id="pr-${p.id}-dec"><option value="">Decyzja…</option>${(Object.keys(ETYKIETY_DECYZJI) as Decyzja[]).map(d=>`<option value="${d}">${esc(ETYKIETY_DECYZJI[d])}</option>`).join('')}</select>
+      <textarea id="pr-${p.id}-uzas" rows="2" placeholder="Uzasadnienie biznesowe (koszt, kontrakt, ryzyko)"></textarea>
+      <button class="gold" data-prop-act="decyduj" data-id="${p.id}">Zapisz decyzję</button>`;
+  }
+  const odrzuc = mozeOdrzucic(rola, p.stan)
+    ? `<button class="secondary" data-prop-act="odrzuc" data-id="${p.id}">Odrzuć…</button>` : '';
+  const czyja = !STANY_ZAMKNIETE.includes(p.stan) && !akcja
+    ? `<div class="note" style="margin-top:6px;">Czeka na: ${p.stan==='ai_propozycja'?'skauta':p.stan==='zweryfikowane_skaut'?'trenera':'dyrektora sportowego'}.</div>` : '';
+
+  return `<div class="card" style="margin-bottom:10px;">
+    <div class="row" style="justify-content:space-between;gap:8px;">
+      <strong>${esc(p.zawodnik || '—')}</strong>
+      <span class="note">${esc(p.rodzaj)} · ${esc(p.model || '—')}${p.pewnosc ? ' · pewność: ' + esc(p.pewnosc) : ''} · ${dataKrotka(p.utworzoneAt)}</span>
+    </div>
+    <div style="white-space:pre-wrap;margin:6px 0;">${esc(p.tresc)}</div>
+    ${zrodla ? `<div class="note">Źródła: ${zrodla}</div>` : '<div class="note">Źródła nie zostały podane osobno (jeśli są, to w treści) — sprawdź je przed potwierdzeniem.</div>'}
+    ${historia.join('')}
+    ${czyja}
+    ${(formularz || odrzuc) ? `<div style="display:grid;gap:6px;margin-top:8px;">${formularz}<div>${odrzuc}</div></div>` : ''}
+  </div>`;
+}
+
+function viewPropozycje(){
+  const rola = rolaUi();
+  if(rola === 'klient'){
+    return `<h2 class="view-title">Skrzynka AI</h2><div class="card"><div class="empty">Ta zakładka jest dla zespołu klubu.</div></div>`;
+  }
+  if(propozycjeLista === null){
+    if(!propozycjeWczytywanie) odswiezPropozycje();
+    return `<h2 class="view-title">Skrzynka AI</h2><div class="card"><div class="empty">Wczytuję propozycje…</div></div>`;
+  }
+  const lista = propozycjeLista;
+  const wgStanu = (st: string) => lista.filter(p => p.stan === st);
+  const sekcje = KOLEJNOSC_STANOW.map(st => {
+    const w = wgStanu(st);
+    if(!w.length && STANY_ZAMKNIETE.includes(st)) return '';
+    return `<h3 style="margin:16px 0 6px;">${esc(ETYKIETY_STANU[st])} <span class="note">(${w.length})</span></h3>`
+      + (w.length ? w.map(kartaPropozycji).join('') : '<div class="note">Nic tu nie czeka.</div>');
+  }).join('');
+
+  return `
+  <h2 class="view-title">Skrzynka AI</h2>
+  <p class="view-sub">Obieg: propozycja (AI lub reguły) → skaut potwierdza fakty → trener ocenia dopasowanie sportowe →
+    dyrektor decyduje. Etapów nie da się przeskoczyć, a każda zmiana zostaje w dzienniku.</p>
+  ${propozycjeBlad ? `<div class="card" style="border-left:3px solid var(--clay-dark);"><strong>${esc(propozycjeBlad)}</strong></div>` : ''}
+  ${propozycjeKomunikat ? `<div class="card"><div class="note">${esc(propozycjeKomunikat)}</div></div>` : ''}
+  <div class="card">
+    <h3 style="margin-top:0;">Znajdź kandydatów w kartotece</h3>
+    <div class="note" style="margin-bottom:6px;">Zwykłe filtrowanie własnej bazy — bez AI i bez kosztu. Wynik trafia do etapu 1 do sprawdzenia.</div>
+    <div class="row" style="gap:8px;flex-wrap:wrap;">
+      <input id="pk-od" type="number" placeholder="Rocznik od" style="width:110px;">
+      <input id="pk-do" type="number" placeholder="Rocznik do" style="width:110px;">
+      <input id="pk-min" type="number" placeholder="Min. minut" style="width:110px;">
+      <input id="pk-poz" placeholder="Pozycja (fragment)" style="width:160px;">
+      <input id="pk-limit" type="number" placeholder="Ile (max 50)" value="20" style="width:110px;">
+      <button class="gold" data-prop-act="szukaj">Znajdź i dodaj</button>
+    </div>
+  </div>
+  ${sekcje}`;
+}
+
+function podepnijPropozycje(main: HTMLElement){
+  const num = (sel: string) => { const v = parseInt((main.querySelector(sel) as HTMLInputElement)?.value || '', 10); return Number.isFinite(v) ? v : undefined; };
+  const txt = (sel: string) => ((main.querySelector(sel) as HTMLInputElement | HTMLTextAreaElement | null)?.value || '').trim();
+  const po = async (b: HTMLButtonElement, blad: string | null, okKomunikat: string) => {
+    if(blad){ alert(blad); b.disabled = false; return; }
+    propozycjeKomunikat = okKomunikat;
+    propozycjeLista = null;      // przeładuj z bazy — to ona rozstrzyga o stanie
+    render();
+  };
+  main.querySelectorAll<HTMLButtonElement>('[data-prop-act]').forEach(b => b.onclick = async () => {
+    const act = b.dataset.propAct, id = parseInt(b.dataset.id || '', 10);
+    b.disabled = true;
+    if(act === 'szukaj'){
+      const zajete = new Set((propozycjeLista || []).filter(p => !STANY_ZAMKNIETE.includes(p.stan) && p.playerId).map(p => p.playerId as string));
+      const szkice = wybierzKandydatow(DB.players as any, {
+        rocznikOd: num('#pk-od'), rocznikDo: num('#pk-do'), minMinut: num('#pk-min'),
+        pozycja: txt('#pk-poz'), limit: num('#pk-limit'),
+      }, zajete, (clubId) => clubName(clubId as string), (p) => ligaZawodnika(p as any));
+      if(!szkice.length){ alert('Nikt w kartotece nie spełnia tych kryteriów (albo już ma otwartą propozycję).'); b.disabled = false; return; }
+      if(!confirm(`Dodać ${szkice.length} propozycji do etapu „Do weryfikacji przez skauta"?`)) { b.disabled = false; return; }
+      return po(b, await dodajPropozycje(szkice), `Dodano ${szkice.length} propozycji.`);
+    }
+    if(act === 'weryfikuj') return po(b, await weryfikujPropozycje(id, txt(`#pr-${id}-uwagi`)), 'Fakty potwierdzone — propozycja czeka na trenera.');
+    if(act === 'oceniaj'){
+      const dop = num(`#pr-${id}-dop`);
+      if(!dop){ alert('Wybierz dopasowanie 1–6.'); b.disabled = false; return; }
+      return po(b, await ocenPropozycje(id, { dopasowanie: dop, pozycja: txt(`#pr-${id}-poz`), komentarz: txt(`#pr-${id}-kom`) }),
+        'Ocena zapisana — propozycja czeka na dyrektora.');
+    }
+    if(act === 'decyduj'){
+      const dec = txt(`#pr-${id}-dec`) as Decyzja;
+      if(!dec){ alert('Wybierz decyzję.'); b.disabled = false; return; }
+      return po(b, await zdecydujPropozycje(id, dec, txt(`#pr-${id}-uzas`)), 'Decyzja zapisana.');
+    }
+    if(act === 'odrzuc'){
+      const powod = (prompt('Powód odrzucenia (wymagany):') || '').trim();
+      if(!powod){ b.disabled = false; return; }
+      return po(b, await odrzucPropozycje(id, powod), 'Propozycja odrzucona.');
+    }
+    b.disabled = false;
+  });
+}
+
 function viewPakiety(){
   const moje = pakietyKonta();
   const premium = maPremium();
@@ -4246,6 +4410,7 @@ const NAV_ITEMS = [
   {id:"ranking", label:"Ranking"},
   {id:"talent", label:"Talent"},
   {id:"committee", label:"Scout Transfer"},
+  {id:"propozycje", label:"Skrzynka AI"},
   {id:"federacja", label:"Federacja"},
   {id:"agencies", label:"Menedżerowie"},
   {id:"contacts", label:"Kontakty"},
@@ -4443,7 +4608,7 @@ function renderNav(){
   // wszystkim pozostałym. Zamiast Ustawień dostaje „Moje pakiety": co ma wykupione i do kiedy.
   let pozycje = NAV_ITEMS;
   if(czyKlient()){
-    pozycje = NAV_ITEMS.filter(it => it.id !== 'settings')
+    pozycje = NAV_ITEMS.filter(it => it.id !== 'settings' && it.id !== 'propozycje')
       .concat([{id:'pakiety', label:'Moje pakiety'}]);
   } else if(czyAdmin()){
     pozycje = NAV_ITEMS.concat([{id:'access', label:'Dostęp'}]);
@@ -4588,6 +4753,7 @@ function render(){
   else if(currentView==="compare") main.innerHTML = viewCompare();
   else if(currentView==="access") main.innerHTML = viewAccess();
   else if(currentView==="pakiety") main.innerHTML = viewPakiety();
+  else if(currentView==="propozycje") main.innerHTML = viewPropozycje();
   // ILE TO TRWAŁO — żeby „wolno się otwiera" dało się sprawdzić, a nie tylko odczuć.
   // Wpis pojawia się w konsoli przeglądarki (F12) dopiero powyżej ćwierć sekundy, więc przy
   // normalnej pracy nic nie zaśmieca, a przy zacięciu od razu widać, która zakładka i ile.
@@ -13713,6 +13879,13 @@ async function pobierzOpinieAI(playerId, przycisk, miejsce, poZapisie?){
     }
     (p as any).opiniaAI = { tekst: dane.tekst, data: new Date().toISOString(), model: dane.model || '' };
     await savePlayerOne(p);
+    // Druga opinia wchodzi też do obiegu: skaut potwierdza fakty, trener ocenia, dyrektor decyduje
+    // (zakładka „Skrzynka AI"). Zapis jest dodatkiem — gdy migracji jeszcze nie ma albo baza odmówi,
+    // opinia i tak zostaje w profilu zawodnika, więc błąd tylko odnotowujemy w konsoli.
+    dodajPropozycje([{ playerId: p.id, zawodnik: `${p.firstName||''} ${p.lastName||''}`.trim(),
+      rodzaj: 'opinia', tresc: String(dane.tekst), zrodla: [], model: dane.model || '' }])
+      .then(blad => { if(blad) console.info('Opinia AI nie trafiła do skrzynki propozycji:', blad); else propozycjeLista = null; })
+      .catch(()=>{});
     miejsce.innerHTML = opiniaAIHtml(dane.tekst, (p as any).opiniaAI.data);
     if(poZapisie) poZapisie();
   }catch(e){
@@ -15730,6 +15903,7 @@ function openClubModal(id){
 // ---------- EVENT HANDLING ----------
 function attachHandlers(){
   const main = document.getElementById('main');
+  if(currentView==='propozycje') podepnijPropozycje(main);
 
   main.querySelectorAll('[data-action="goto-newobs"]').forEach(b=>b.onclick=()=>{currentView='newobs';render();});
   main.querySelectorAll('[data-action="goto-addplayer"]').forEach(b=>b.onclick=()=>{currentView='players';render();openPlayerModal(null);});
@@ -16381,6 +16555,8 @@ function attachHandlers(){
     const pytania = {
       admin:  `Nadać prawa administratora: ${kto}? Będzie mógł przyznawać i odbierać dostęp innym, kasować dane i zmieniać ustawienia.`,
       klient: `Zmienić ${kto} w konto klienta? Straci możliwość dopisywania i poprawiania kartoteki, a zobaczy wyłącznie wykupione rozgrywki. Pakiety ustawisz zaraz potem przyciskiem „Pakiety…".`,
+      trener:   `Nadać rolę trenera: ${kto}? Wystawia ocenę dopasowania sportowego w skrzynce propozycji AI; poza tym pracuje jak skaut.`,
+      dyrektor: `Nadać rolę dyrektora sportowego: ${kto}? Podejmuje decyzję biznesową w skrzynce propozycji AI; poza tym pracuje jak skaut.`,
       scout:  konto && konto.rola === 'klient'
         ? `Zmienić ${kto} z klienta na skauta? Zobaczy CAŁĄ bazę, niezależnie od pakietów, i będzie mógł dopisywać oraz poprawiać kartotekę.`
         : `Odebrać prawa administratora: ${kto}?`,
@@ -16389,7 +16565,7 @@ function attachHandlers(){
     b.disabled = true;
     const r = await ustawRoleKonta(id, rola);
     if(!r.ok){ alert(r.error); b.disabled=false; return; }
-    const NAZWY_ROL = {admin:'administrator', klient:'klient', scout:'skaut'};
+    const NAZWY_ROL = {admin:'administrator', klient:'klient', scout:'skaut', trener:'trener', dyrektor:'dyrektor sportowy'};
     if(konto) await zapiszZdarzenie(konto, 'rola',
       `Zmiana roli: ${NAZWY_ROL[konto.rola] || konto.rola} → ${NAZWY_ROL[rola] || rola}.`);
     await odswiezKonta();   // sam przerysowuje listę po pobraniu
