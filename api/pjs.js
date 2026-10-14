@@ -26,11 +26,23 @@ const NAGLOWKI = {
 // bez tego parametr z zapytania mógłby wyprowadzić nas poza ten serwis.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export async function pjsPobierz(sciezka) {
+const poczekaj = (ms) => new Promise((gotowe) => setTimeout(gotowe, ms));
+
+// LIMIT ZAPYTAŃ PO STRONIE PZPN.
+//
+// Przy przeglądzie IV ligi (prawie 300 klubów) serwis zaczyna po kilkudziesięciu zapytaniach
+// odpowiadać 429. To nie awaria, tylko proszenie o zwolnienie — więc odczekujemy i próbujemy
+// jeszcze raz, zamiast zapisywać klub jako nieudany. Dwa podejścia wystarczają; przy trzecim
+// 429 pod rząd to już nie chwilowy szczyt i lepiej oddać błąd, niż blokować całą funkcję.
+export async function pjsPobierz(sciezka, podejscie = 0) {
   const odp = await fetch(BAZA + sciezka, {
     headers: NAGLOWKI,
     signal: AbortSignal.timeout(25000),
   });
+  if (odp.status === 429 && podejscie < 2) {
+    await poczekaj(1500 * (podejscie + 1));
+    return pjsPobierz(sciezka, podejscie + 1);
+  }
   if (!odp.ok) throw new Error(`PJS odpowiedział ${odp.status} na ${sciezka}`);
   return odp.json();
 }

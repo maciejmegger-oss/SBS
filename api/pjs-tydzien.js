@@ -1,35 +1,44 @@
-// COTYGODNIOWY PRZEGLĄD PRO JUNIOR SYSTEM NA SZCZEBLU CENTRALNYM.
+// COTYGODNIOWY PRZEGLĄD PRO JUNIOR SYSTEM — III I IV LIGA.
 //
-// Zgłoszenie (14.10.2026): „zautomatyzuj, aby raz w tygodniu system sam prześledził dane PJS
-// i wyłapał zawodników na poziomie centralnym młodzieżowców".
+// Zgłoszenia (14.10.2026): „zautomatyzuj, aby raz w tygodniu system sam prześledził dane PJS
+// i wyłapał zawodników na poziomie centralnym młodzieżowców", a po pierwszej wersji: „tylko
+// 3 ligę zrobiłeś? 4 liga też jest potrzebna".
 //
-// CO ROBI: przechodzi wszystkie grupy ligi oznaczonej w PJS jako centralna (pole `grouping` = 1,
-// dziś to III liga), pyta o każdy klub z osobna i zbiera zawodników, którzy zdobywają punkty.
-// Każdego dopisuje do monitoringu, oznacza jako młodzieżowca i zapisuje dorobek PJS.
+// CO ROBI: przechodzi wszystkie kluby III i IV ligi, pyta o każdy z osobna, kto zdobywa dla niego
+// punkty w PJS, i dopisuje ten dorobek do kartotek. Zawodnik trafia do monitoringu i dostaje
+// znacznik młodzieżowca. Kto nie ma jeszcze kartoteki — ląduje na liście do decyzji skauta.
 //
-// CZEGO NIE ROBI: nie zakłada kartotek od zera. Nowe nazwisko ląduje na liście „do obejrzenia",
-// którą skaut otwiera w Radarze młodzieży i decyduje sam. Automat, który sam dopisuje setki
-// kartotek bez rocznika i pozycji, zaśmieciłby bazę szybciej, niż ktokolwiek zdążyłby to przejrzeć
-// — a duplikaty kartotek to w tym systemie problem, który już raz kosztował sporo pracy.
+// DLACZEGO WZNAWIALNY: klubów jest około 360, a serwis PZPN ma limit zapytań na minutę — przy
+// pierwszym przebiegu obejmującym IV ligę zaczął po kilkudziesięciu klubach odpowiadać 429.
+// Jeden przebieg funkcji tego nie przerobi, choćby dostał najdłuższy dozwolony czas. Dlatego
+// przegląd pracuje z budżetem: robi tyle, ile zdąży, zapisuje, na którym klubie stanął, i kończy
+// się czysto. Kolejne uruchomienie podejmuje od tego miejsca. Zadanie chodzi w poniedziałki co
+// dziesięć minut przez godzinę — pierwsze buduje kolejkę, następne ją domykają, a gdy nie ma już
+// czego robić, kończą się od razu.
 //
-// KOSZT: jedno zapytanie o filtry, jedno o grupy, po jednym na grupę i po jednym na klub.
-// Przy czterech grupach po osiemnaście klubów to około 80 zapytań raz w tygodniu.
+// CZEGO NIE ROBI: nie zakłada kartotek od zera. PJS nie podaje rocznika ani pozycji, a kilkaset
+// pustych kartotek zaśmieciłoby bazę szybciej, niż ktokolwiek zdążyłby je przejrzeć — duplikaty
+// kartotek to w tym systemie problem, który już raz kosztował sporo pracy.
 
 import {
   pjsFiltry, pjsRozgrywki, pjsTabela, pjsWojewodztwa, pjsTabelaWojewodztwa, pjsZawodnicyKlubu,
 } from "./pjs.js";
 import { BAZA, KLUCZ_BAZY, naglowkiBazy, PODPOWIEDZ_BRAK_KLUCZA } from "./_baza.js";
 
-// KTÓRE LIGI PRZECHODZIMY CO TYDZIEŃ.
+// KTÓRE LIGI PRZECHODZIMY.
 //
-// Zgłoszenie (14.10.2026): „tylko 3 ligę zrobiłeś? 4 liga też jest potrzebna". Pierwsza wersja
-// brała wyłącznie szczebel, który PJS sam oznacza jako centralny (pole grouping = 1), a tam jest
-// tylko III liga. System powstaje dla klubów III i IV ligi, więc obie muszą być w przeglądzie.
-//
-// Niżej (V liga, klasa okręgowa, A, B) to kolejne 72 grupy i grubo ponad tysiąc klubów — jeden
-// przebieg by tego nie udźwignął, a dla klubu z III ligi wartość takiej listy jest znikoma.
-// Gdyby kiedyś były potrzebne, wystarczy dopisać nazwę tutaj i rozbić przegląd na kilka zadań.
+// Niżej (V liga, klasa okręgowa, A, B) to kolejne 72 grupy i grubo ponad tysiąc klubów. Dla klubu
+// z III ligi wartość takiej listy jest znikoma, a przegląd ciągnąłby się godzinami. Gdyby były
+// potrzebne, wystarczy dopisać nazwę tutaj — mechanizm wznawiania udźwignie dowolną długość.
 const LIGI_DO_PRZEGLADU = ["Trzecia liga", "Czwarta liga"];
+
+// Ile sekund jedno uruchomienie poświęca na odpytywanie klubów. Reszta budżetu funkcji
+// (maxDuration 120) zostaje na zbudowanie kolejki, odczyt kartotek i zapis wyniku.
+const BUDZET_SEKUND = 70;
+// Tyle klubów naraz. Przy dwunastu PZPN zaczynał odpowiadać 429 po kilkudziesięciu zapytaniach.
+const PACZKA = 5;
+const KLUCZ_POSTEPU = "pjsPostep";
+const KLUCZ_WYNIKU = "pjsPrzeglad";
 
 const norm = (s) =>
   String(s || "")
@@ -43,6 +52,8 @@ const norm = (s) =>
 // więc ZBIÓR słów, tak samo jak przy odświeżaniu statystyk z API-Football.
 const kluczNazwiska = (imie, nazwisko) =>
   [imie, nazwisko].map(norm).filter(Boolean).sort().join(" ");
+
+// ---------- BAZA ----------
 
 async function wczytajZawodnikow() {
   const wszyscy = [];
@@ -68,27 +79,107 @@ async function zapiszZawodnika(id, polaWlasne) {
   if (!r.ok) throw new Error(`baza odpowiedziała ${r.status} przy zapisie zawodnika ${id}`);
 }
 
+async function czytajKv(klucz) {
+  const r = await fetch(`${BAZA}/rest/v1/sbs_kv?select=value&key=eq.${encodeURIComponent(klucz)}`, {
+    headers: naglowkiBazy(),
+  });
+  if (!r.ok) return null;
+  const wiersze = await r.json();
+  if (!Array.isArray(wiersze) || !wiersze.length) return null;
+  try {
+    return typeof wiersze[0].value === "string" ? JSON.parse(wiersze[0].value) : wiersze[0].value;
+  } catch { return null; }
+}
+
+async function zapiszKv(klucz, dane) {
+  const r = await fetch(`${BAZA}/rest/v1/sbs_kv`, {
+    method: "POST",
+    headers: { ...naglowkiBazy(), Prefer: "resolution=merge-duplicates" },
+    body: JSON.stringify({ key: klucz, value: JSON.stringify(dane) }),
+  });
+  if (!r.ok) throw new Error(`baza odpowiedziała ${r.status} przy zapisie ${klucz}`);
+}
+
+// ---------- KOLEJKA KLUBÓW ----------
+
+// Spis klubów budujemy od nowa przy każdym uruchomieniu — to tylko dwadzieścia zapytań o tabele,
+// a dzięki temu nie trzeba trzymać w bazie listy na kilkaset pozycji. Kolejność jest stała, więc
+// zapisany indeks wskazuje przy kolejnym przebiegu dokładnie ten sam klub.
+//
+// Dwie ścieżki, bo PJS inaczej dzieli oba szczeble: III liga ma cztery grupy ogólnopolskie,
+// a IV liga szesnaście związków wojewódzkich. Zapytanie o grupę oddaje dla IV ligi PUSTĄ tabelę,
+// bez błędu — i właśnie dlatego pierwsza wersja przeglądu jej nie widziała.
+async function zbudujKolejke(sezon, ligi, bledy) {
+  const kolejka = [];
+  for (const liga of ligi) {
+    if (liga.centralna) {
+      const grupy = await pjsRozgrywki(sezon.id, liga.id);
+      for (const grupa of grupy) {
+        try {
+          const tabela = await pjsTabela(grupa.id);
+          for (const w of tabela.kluby) {
+            if (w.klub && w.klub.id) {
+              kolejka.push({ id: w.klub.id, nazwa: w.klub.nazwa, rozgrywki: grupa.nazwa });
+            }
+          }
+        } catch (e) { bledy.push(`grupa ${grupa.nazwa}: ${e.message}`); }
+      }
+    } else {
+      const zpny = await pjsWojewodztwa(sezon.id, liga.id);
+      for (const zpn of zpny) {
+        try {
+          const tabela = await pjsTabelaWojewodztwa(sezon.id, liga.id, zpn.id);
+          for (const w of tabela.kluby) {
+            if (w.klub && w.klub.id) {
+              kolejka.push({ id: w.klub.id, nazwa: w.klub.nazwa, rozgrywki: `${liga.nazwa} — ${zpn.nazwa}` });
+            }
+          }
+        } catch (e) { bledy.push(`${liga.nazwa} ${zpn.nazwa}: ${e.message}`); }
+      }
+    }
+  }
+  return kolejka;
+}
+
+// ---------- PRZEBIEG ----------
+
 export default async function handler(req, res) {
   if (!BAZA || !KLUCZ_BAZY) {
     return res.status(503).json({ error: "Brak połączenia z bazą.", jakNaprawic: PODPOWIEDZ_BRAK_KLUCZA });
   }
 
+  const start = Date.now();
   const dzis = new Date().toISOString().slice(0, 10);
-  const podsumowanie = {
-    data: dzis, sprawdzonychKlubow: 0, punktujacych: 0,
-    zaktualizowanych: 0, nowych: 0, bledy: [],
-  };
-  const nowi = [];
+  // Wymuszenie przebiegu od zera, gdyby trzeba było powtórzyć ten sam dzień: ?odNowa=1
+  const odNowa = String((req.query || {}).odNowa || "") === "1";
 
   try {
     const sezony = await pjsFiltry();
-    const biezacy = sezony[0];
-    if (!biezacy) throw new Error("PJS nie podał żadnego sezonu");
+    const sezon = sezony[0] && sezony[0].sezon;
+    if (!sezon) throw new Error("PJS nie podał żadnego sezonu");
+    const ligi = (sezony[0].ligi || []).filter((l) => LIGI_DO_PRZEGLADU.includes(l.nazwa));
+    if (!ligi.length) throw new Error("PJS nie podał żadnej z lig: " + LIGI_DO_PRZEGLADU.join(", "));
 
-    const doPrzejscia = biezacy.ligi.filter((l) => LIGI_DO_PRZEGLADU.includes(l.nazwa));
-    if (!doPrzejscia.length) {
-      throw new Error("PJS nie podał żadnej z lig: " + LIGI_DO_PRZEGLADU.join(", "));
+    // Postęp z poprzedniego uruchomienia — ale tylko z dzisiaj. Wczorajszy jest bez znaczenia:
+    // nowy przegląd zaczyna od początku, bo w międzyczasie rozegrano kolejkę.
+    const zapisany = odNowa ? null : await czytajKv(KLUCZ_POSTEPU);
+    const wznawiamy = !!(zapisany && zapisany.data === dzis && zapisany.stan === "wTrakcie");
+
+    // Nie ma czego robić: dzisiejszy przegląd jest domknięty. Kończymy od razu, żeby kolejne
+    // uruchomienia w poniedziałkowe przedpołudnie nie odpytywały PZPN bez potrzeby.
+    if (!odNowa && zapisany && zapisany.data === dzis && zapisany.stan === "gotowe") {
+      return res.status(200).json({ stan: "gotowe", pominiete: "dzisiejszy przegląd już się domknął" });
     }
+
+    const postep = wznawiamy ? zapisany : {
+      data: dzis, stan: "wTrakcie", indeks: 0, przebiegow: 0,
+      sprawdzonychKlubow: 0, punktujacych: 0, zaktualizowanych: 0,
+      nowi: [], bledy: [],
+    };
+    postep.przebiegow++;
+
+    const kolejka = await zbudujKolejke(sezon, ligi, postep.bledy);
+    postep.klubowRazem = kolejka.length;
 
     const wBazie = await wczytajZawodnikow();
     const wgNazwiska = new Map();
@@ -97,87 +188,47 @@ export default async function handler(req, res) {
       if (!wgNazwiska.has(k)) wgNazwiska.set(k, []);
       wgNazwiska.get(k).push(p);
     }
+    // Nazwiska zebrane w poprzednich przebiegach — żeby ten sam zawodnik nie trafił na listę dwa razy.
+    const juzNaLiscie = new Set((postep.nowi || []).map((n) => n.pjsId));
 
-    // Najpierw spis wszystkich klubów do sprawdzenia, potem odpytanie paczkami. Jeden po drugim
-    // to przy 72 klubach 59 sekund niemal samego czekania na sieć — za blisko limitu funkcji.
-    //
-    // Dwie ścieżki, bo PJS inaczej dzieli oba szczeble: III liga ma cztery grupy ogólnopolskie,
-    // a IV liga szesnaście związków wojewódzkich. To samo zapytanie co dla III ligi oddaje dla
-    // IV pustą tabelę — i właśnie dlatego pierwsza wersja przeglądu jej nie widziała.
-    const doSprawdzenia = [];
-    const dodajKluby = (tabela, podpis) => {
-      for (const wiersz of tabela.kluby) {
-        if (wiersz.klub && wiersz.klub.id) doSprawdzenia.push({ grupa: { nazwa: podpis }, wiersz });
-      }
-    };
+    let zabrakloCzasu = false;
+    while (postep.indeks < kolejka.length) {
+      if ((Date.now() - start) / 1000 > BUDZET_SEKUND) { zabrakloCzasu = true; break; }
 
-    for (const liga of doPrzejscia) {
-      if (liga.centralna) {
-        const grupy = await pjsRozgrywki(biezacy.sezon.id, liga.id);
-        for (const grupa of grupy) {
-          try {
-            dodajKluby(await pjsTabela(grupa.id), grupa.nazwa);
-          } catch (e) {
-            podsumowanie.bledy.push(`grupa ${grupa.nazwa}: ${e.message}`);
-          }
-        }
-      } else {
-        const zpny = await pjsWojewodztwa(biezacy.sezon.id, liga.id);
-        for (const zpn of zpny) {
-          try {
-            dodajKluby(
-              await pjsTabelaWojewodztwa(biezacy.sezon.id, liga.id, zpn.id),
-              `${liga.nazwa} — ${zpn.nazwa}`,
-            );
-          } catch (e) {
-            podsumowanie.bledy.push(`${liga.nazwa} ${zpn.nazwa}: ${e.message}`);
-          }
-        }
-      }
-    }
-    podsumowanie.klubowDoSprawdzenia = doSprawdzenia.length;
-
-    // Przy 360 klubach (III + IV liga) paczka po sześć dawałaby ponad minutę samego czekania.
-    const PACZKA = 12;
-    for (let od = 0; od < doSprawdzenia.length; od += PACZKA) {
-      const paczka = doSprawdzenia.slice(od, od + PACZKA);
-      const odpowiedzi = await Promise.all(paczka.map(async ({ grupa, wiersz }) => {
-        try {
-          return { grupa, wiersz, dane: await pjsZawodnicyKlubu(wiersz.klub.id) };
-        } catch (e) {
-          podsumowanie.bledy.push(`klub ${wiersz.klub.nazwa}: ${e.message}`);
-          return null;
-        }
+      const paczka = kolejka.slice(postep.indeks, postep.indeks + PACZKA);
+      const odpowiedzi = await Promise.all(paczka.map(async (klub) => {
+        try { return { klub, dane: await pjsZawodnicyKlubu(klub.id) }; }
+        catch (e) { postep.bledy.push(`klub ${klub.nazwa}: ${e.message}`); return null; }
       }));
+      postep.indeks += paczka.length;
 
       for (const odpowiedz of odpowiedzi) {
         if (!odpowiedz) continue;
-        const { grupa, wiersz, dane } = odpowiedz;
-        const idKlubu = wiersz.klub.id;
-        podsumowanie.sprawdzonychKlubow++;
+        const { klub, dane } = odpowiedz;
+        postep.sprawdzonychKlubow++;
 
         for (const z of dane.zawodnicy) {
           if (!z.punkty) continue;
-          podsumowanie.punktujacych++;
+          postep.punktujacych++;
           const dorobek = {
             pjsId: z.pjsId, punkty: z.punkty, minuty: z.minuty, mecze: z.mecze,
             liczonyDoRankingu: z.liczonyDoRankingu,
-            rozgrywki: grupa.nazwa, sezon: biezacy.sezon.id,
-            druzynaPjs: idKlubu, zaktualizowano: dzis,
+            rozgrywki: klub.rozgrywki, sezon: sezon.id,
+            druzynaPjs: klub.id, zaktualizowano: dzis,
           };
 
           const kandydaci = wgNazwiska.get(kluczNazwiska(z.imie, z.nazwisko)) || [];
-          // Najpierw ten, którego już stąd zapisaliśmy — identyfikator PJS jest pewniejszy
-          // niż nazwisko. Potem jedyny imiennik. Przy kilku imiennikach nie zgadujemy:
-          // wybranie złodziejskiej kartoteki byłoby gorsze niż jej brak.
+          // Najpierw ten, którego już stąd zapisaliśmy — identyfikator PJS jest pewniejszy niż
+          // nazwisko. Potem jedyny imiennik. Przy kilku imiennikach nie zgadujemy: wpisanie
+          // dorobku do cudzej kartoteki byłoby gorsze niż jego brak.
           const poId = kandydaci.find((p) => (p.custom_fields || {}).pjs?.pjsId === z.pjsId);
           const trafiony = poId || (kandydaci.length === 1 ? kandydaci[0] : null);
 
           if (trafiony) {
             const pola = { ...(trafiony.custom_fields || {}) };
             const bylo = pola.pjs || {};
-            // Zapisujemy tylko wtedy, gdy coś się zmieniło — inaczej co tydzień
-            // przepisywalibyśmy do bazy tę samą treść.
+            // Zapisujemy tylko wtedy, gdy coś się zmieniło — inaczej co tydzień przepisywalibyśmy
+            // do bazy tę samą treść.
             if (bylo.punkty === z.punkty && bylo.minuty === z.minuty && bylo.mecze === z.mecze) continue;
             pola.pjs = dorobek;
             pola.monitored = true;
@@ -185,14 +236,15 @@ export default async function handler(req, res) {
             pola.watchlistRemoved = false;
             try {
               await zapiszZawodnika(trafiony.id, pola);
-              podsumowanie.zaktualizowanych++;
+              postep.zaktualizowanych++;
             } catch (e) {
-              podsumowanie.bledy.push(`zapis ${z.imie} ${z.nazwisko}: ${e.message}`);
+              postep.bledy.push(`zapis ${z.imie} ${z.nazwisko}: ${e.message}`);
             }
-          } else {
-            nowi.push({
-              imie: z.imie, nazwisko: z.nazwisko, klub: dane.klub ? dane.klub.nazwa : "",
-              rozgrywki: grupa.nazwa, punkty: z.punkty, minuty: z.minuty, mecze: z.mecze,
+          } else if (!juzNaLiscie.has(z.pjsId)) {
+            juzNaLiscie.add(z.pjsId);
+            postep.nowi.push({
+              imie: z.imie, nazwisko: z.nazwisko, klub: dane.klub ? dane.klub.nazwa : klub.nazwa,
+              rozgrywki: klub.rozgrywki, punkty: z.punkty, minuty: z.minuty, mecze: z.mecze,
               pjsId: z.pjsId,
               // Kilku imienników w bazie — skaut rozstrzygnie, który to, otwierając listę.
               imiennikow: kandydaci.length,
@@ -202,26 +254,41 @@ export default async function handler(req, res) {
       }
     }
 
-    // Nowi idą do sbs_kv, skąd czyta ich Radar młodzieży. Trzymamy najmocniejszych na górze:
-    // lista ma być do przejrzenia przy kawie, a nie do przewijania.
-    nowi.sort((a, b) => b.punkty - a.punkty);
-    podsumowanie.nowych = nowi.length;
-    await zapiszPrzeglad({ ...podsumowanie, nowi: nowi.slice(0, 200) });
+    // Lista błędów potrafi urosnąć przy kiepskim dniu serwisu PZPN — do bazy idzie początek,
+    // bo czyta się ją po to, żeby stwierdzić „coś było nie tak", a nie po kolei.
+    postep.bledy = postep.bledy.slice(0, 50);
+    postep.stan = postep.indeks >= kolejka.length ? "gotowe" : "wTrakcie";
+    postep.sekund = Math.round((Date.now() - start) / 10) / 100;
+    await zapiszKv(KLUCZ_POSTEPU, postep);
 
-    return res.status(200).json(podsumowanie);
+    // Wynik dla Radaru zapisujemy po KAŻDYM przebiegu, nie dopiero na końcu — skaut, który wejdzie
+    // w trakcie, ma zobaczyć to, co już wiadomo, a nie wynik sprzed tygodnia.
+    const nowi = postep.nowi.slice().sort((a, b) => b.punkty - a.punkty);
+    await zapiszKv(KLUCZ_WYNIKU, {
+      data: dzis,
+      stan: postep.stan,
+      sprawdzonychKlubow: postep.sprawdzonychKlubow,
+      klubowRazem: postep.klubowRazem,
+      punktujacych: postep.punktujacych,
+      zaktualizowanych: postep.zaktualizowanych,
+      nowych: nowi.length,
+      nowi: nowi.slice(0, 200),
+      bledy: postep.bledy,
+    });
+
+    return res.status(200).json({
+      stan: postep.stan,
+      przebiegow: postep.przebiegow,
+      klubow: `${postep.indeks}/${kolejka.length}`,
+      sprawdzonychKlubow: postep.sprawdzonychKlubow,
+      punktujacych: postep.punktujacych,
+      zaktualizowanych: postep.zaktualizowanych,
+      nowych: postep.nowi.length,
+      bledow: postep.bledy.length,
+      sekund: postep.sekund,
+      zabrakloCzasu,
+    });
   } catch (e) {
-    podsumowanie.bledy.push(String((e && e.message) || e));
-    return res.status(502).json(podsumowanie);
+    return res.status(502).json({ error: "Przegląd PJS przerwany.", szczegoly: String((e && e.message) || e) });
   }
-}
-
-// Wynik przeglądu ląduje w sbs_kv pod jednym kluczem — tą samą drogą, którą system zapamiętuje
-// terminarz i inne rzeczy bez własnej tabeli. Radar czyta go razem z resztą ustawień.
-async function zapiszPrzeglad(wynik) {
-  const r = await fetch(`${BAZA}/rest/v1/sbs_kv`, {
-    method: "POST",
-    headers: { ...naglowkiBazy(), Prefer: "resolution=merge-duplicates" },
-    body: JSON.stringify({ key: "pjsPrzeglad", value: JSON.stringify(wynik) }),
-  });
-  if (!r.ok) throw new Error(`baza odpowiedziała ${r.status} przy zapisie przeglądu PJS`);
 }

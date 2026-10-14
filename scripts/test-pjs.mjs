@@ -100,20 +100,35 @@ sprawdz("przy kilku imiennikach automat NIE zgaduje",
   /kandydaci\.length === 1 \? kandydaci\[0\] : null/.test(cron));
 
 console.log("\n6. Cotygodniowy przegląd");
-sprawdz("zadanie uruchamiane raz w tygodniu",
-  vercel.crons.some((c) => c.path === "/api/pjs-tydzien" && c.schedule === "0 6 * * 1"),
+sprawdz("zadanie chodzi w poniedzialki co dziesiec minut przez godzine",
+  vercel.crons.some((c) => c.path === "/api/pjs-tydzien" && c.schedule === "0,10,20,30,40,50 6 * * 1"),
   JSON.stringify(vercel.crons));
-sprawdz("przechodzi ligi z listy, a nie co popadnie", /biezacy\.ligi\.filter\(\(l\) => LIGI_DO_PRZEGLADU\.includes\(l\.nazwa\)\)/.test(cron));
+sprawdz("przechodzi tylko ligi z listy, a nie co popadnie",
+  /\(sezony\[0\]\.ligi \|\| \[\]\)\.filter\(\(l\) => LIGI_DO_PRZEGLADU\.includes\(l\.nazwa\)\)/.test(cron));
 sprawdz("nie zakłada kartotek sam z siebie", /nie zakłada kartotek od zera/.test(cron));
 sprawdz("nie zapisuje, gdy nic się nie zmieniło",
   /if \(bylo\.punkty === z\.punkty && bylo\.minuty === z\.minuty && bylo\.mecze === z\.mecze\) continue;/.test(cron));
 sprawdz("błąd jednego klubu nie przerywa całego przeglądu",
-  /podsumowanie\.bledy\.push\(`klub \$\{wiersz\.klub\.nazwa\}/.test(cron));
+  /postep\.bledy\.push\(`klub \$\{klub\.nazwa\}/.test(cron));
 sprawdz("wynik zapisywany do sbs_kv pod kluczem pjsPrzeglad",
-  /key: "pjsPrzeglad"/.test(cron) && /rest\/v1\/sbs_kv/.test(cron));
+  /const KLUCZ_WYNIKU = "pjsPrzeglad";/.test(cron) && /rest\/v1\/sbs_kv/.test(cron));
 sprawdz("Radar czyta ten wynik leniwie, nie przy starcie aplikacji",
   /storage\.get\('pjsPrzeglad', true\)/.test(main) && /pjsWczytajPrzeglad\(\);/.test(main));
 sprawdz("nowi spoza bazy pokazani skautowi do decyzji", /spoza bazy/.test(main));
+sprawdz("przeglad ma budzet czasu i konczy sie czysto",
+  /const BUDZET_SEKUND = \d+;/.test(cron) && /zabrakloCzasu = true; break;/.test(cron));
+sprawdz("postep zapisywany, zeby kolejny przebieg podjal od tego miejsca",
+  /const KLUCZ_POSTEPU = "pjsPostep";/.test(cron) && /zapiszKv\(KLUCZ_POSTEPU, postep\)/.test(cron));
+sprawdz("wznawiamy tylko dzisiejszy przeglad, nie wczorajszy",
+  /zapisany\.data === dzis && zapisany\.stan === "wTrakcie"/.test(cron));
+sprawdz("gdy dzisiejszy przeglad jest domkniety, kolejne uruchomienie nie meczy PZPN",
+  /zapisany\.stan === "gotowe"\) \{/.test(cron) && /pominiete: "dzisiejszy przegląd już się domknął"/.test(cron));
+sprawdz("ten sam zawodnik nie trafia na liste dwa razy przy kolejnych przebiegach",
+  /const juzNaLiscie = new Set/.test(cron) && /!juzNaLiscie\.has\(z\.pjsId\)/.test(cron));
+sprawdz("wynik dla Radaru zapisywany po kazdym przebiegu, nie dopiero na koncu",
+  /Wynik dla Radaru zapisujemy po KAŻDYM przebiegu/.test(cron));
+sprawdz("limit zapytan PZPN obslugiwany ponowieniem, nie bledem",
+  /odp\.status === 429 && podejscie < 2/.test(api));
 sprawdz("kluby odpytywane paczkami, nie jeden po drugim",
   /const PACZKA = \d+;/.test(cron) && /await Promise\.all\(paczka\.map/.test(cron));
 sprawdz("funkcja ma podniesiony limit czasu — pierwszy przebieg zajal 59 s",
@@ -151,9 +166,11 @@ sprawdz("dorobek podpisany województwem, gdy to IV liga",
   /zpn \? `\$\{liga \? liga\.nazwa : ''\} — \$\{zpn\.nazwa\}`/.test(main));
 sprawdz("cotygodniowy przegląd bierze III i IV ligę",
   /const LIGI_DO_PRZEGLADU = \["Trzecia liga", "Czwarta liga"\];/.test(cron));
-sprawdz("przegląd zna obie ścieżki", /pjsWojewodztwa\(biezacy\.sezon\.id, liga\.id\)/.test(cron)
-  && /pjsTabelaWojewodztwa\(biezacy\.sezon\.id, liga\.id, zpn\.id\)/.test(cron));
-sprawdz("większa paczka, bo klubów jest kilka razy więcej", /const PACZKA = 12;/.test(cron));
+sprawdz("przegląd zna obie ścieżki — grupy i województwa",
+  /pjsWojewodztwa\(sezon\.id, liga\.id\)/.test(cron)
+  && /pjsTabelaWojewodztwa\(sezon\.id, liga\.id, zpn\.id\)/.test(cron));
+sprawdz("paczka dobrana pod limit zapytań PZPN, nie pod szybkość",
+  /const PACZKA = 5;/.test(cron) && /Przy dwunastu PZPN zaczynał odpowiadać 429/.test(cron));
 if (process.env.PJS_LIVE === "1") {
   console.log("\n8. Żywy serwis PZPN (PJS_LIVE=1)");
   const m = await import("../api/pjs.js");
