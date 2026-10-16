@@ -13916,6 +13916,83 @@ function decyzjaKomitetu(p){
   return DAWNE_DECYZJE_KOMITETU[d] || d;
 }
 
+// LISTA DO OBSERWACJI I TRANSFERU — ARKUSZ DO POBRANIA.
+//
+// Zgłoszenie (16.10.2026): „zrób pobieranie w formie listy excel zawodników do obserwacji
+// i transferu, chronologicznie od najstarszego rocznika, a potem w roczniku według alfabetu".
+//
+// Kolejność jest tu treścią, nie ozdobą: rocznik rosnąco stawia na górze najstarszych, czyli tych,
+// przy których decyzja nie może czekać — zawodnik po dwudziestce piątce nie zyska na wartości przez
+// kolejny sezon obserwacji. Wewnątrz rocznika alfabet, żeby dwie osoby czytające tę samą listę
+// trafiały w ten sam wiersz.
+//
+// Bierzemy zawodnika, gdy „do transferu" albo „do obserwacji" wynika ze STATUSU w kartotece ALBO
+// z decyzji komitetu — to dwa różne pola i bywają rozbieżne, a pominięcie któregoś znaczyłoby,
+// że ktoś wypada z listy przez to, w którym miejscu systemu go oznaczono.
+const STATUSY_DO_ARKUSZA = ['Do transferu', 'Do Obserwacji', 'W obserwacji', 'Do Obserwacji '];
+const doArkuszaKomitetu = (p)=>{
+  const norm = (s)=> String(s||'').trim().toLowerCase();
+  const pasuje = (s)=> STATUSY_DO_ARKUSZA.some(x=> norm(x) === norm(s));
+  return pasuje(p.status) || pasuje(decyzjaKomitetu(p));
+};
+
+function pobierzArkuszKomitetu(){
+  if(!XLSX) { alert('Biblioteka do arkuszy nie jest dostępna — odśwież stronę i spróbuj ponownie.'); return; }
+  const lista = DB.players.filter(doArkuszaKomitetu);
+  if(!lista.length){
+    alert('Nikt nie ma statusu „Do transferu" ani „Do obserwacji" — nie ma czego zapisać.\n\n'
+      + 'Status nadaje się w kartotece zawodnika, decyzję komitetu — na tej liście.');
+    return;
+  }
+
+  // Rocznik rosnąco, w roczniku alfabetycznie. Zawodnicy bez rocznika idą na koniec: nie da się ich
+  // ustawić chronologicznie, a wrzuceni między roczniki psuliby porządek, po który ta lista powstała.
+  const posortowani = lista.slice().sort((a,b)=>{
+    const ra = Number(rocznikZawodnika(a)) || null;
+    const rb = Number(rocznikZawodnika(b)) || null;
+    if(ra !== rb){
+      if(ra == null) return 1;
+      if(rb == null) return -1;
+      return ra - rb;
+    }
+    return String(a.lastName||'').localeCompare(String(b.lastName||''), 'pl')
+      || String(a.firstName||'').localeCompare(String(b.firstName||''), 'pl');
+  });
+
+  const naglowki = ['Rocznik', 'Nazwisko', 'Imię', 'Pozycja', 'Klub', 'Liga', 'Status',
+    'Decyzja komitetu', 'Śr. ocena', 'Raportów', 'Kontrakt do', 'Notatka komitetu'];
+  const wiersze = posortowani.map(p=>{
+    const rocznik = Number(rocznikZawodnika(p)) || '';
+    const srednia = playerAvg(p.id);
+    return [
+      rocznik,
+      p.lastName || '',
+      p.firstName || '',
+      p.position || '',
+      clubName(p.clubId) || '',
+      ligaZawodnika(p) || '',
+      p.status || '',
+      decyzjaKomitetu(p) || 'Do rozpatrzenia',
+      // Liczba, nie tekst — żeby w Excelu dało się po niej sortować i filtrować.
+      (srednia && srednia.overall != null) ? Math.round(srednia.overall * 100) / 100 : '',
+      liczbaRaportowKomitetu(p),
+      p.contractUntil || '',
+      p.committeeNotes || '',
+    ];
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet([naglowki, ...wiersze]);
+  ws['!cols'] = [{wch:8},{wch:20},{wch:16},{wch:20},{wch:26},{wch:16},{wch:16},
+    {wch:18},{wch:10},{wch:10},{wch:13},{wch:40}];
+  // Nagłówek przymrożony i filtry — przy liście na kilkadziesiąt nazwisk bez tego nie da się pracować.
+  ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+  ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s:{r:0,c:0}, e:{r:wiersze.length, c:naglowki.length-1} }) };
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Do obserwacji i transferu');
+  XLSX.writeFile(wb, `do-obserwacji-i-transferu_${dzisiaj()}.xlsx`);
+}
+
 function viewTransferCommittee(){
   // Pokazuj wszystkich zawodników z nadanym statusem. „Do transferu" zawsze na górze i alfabetycznie,
   // każdy inny status niżej (też alfabetycznie). Sort działa na każdym renderze, więc po zmianie
@@ -13947,6 +14024,16 @@ function viewTransferCommittee(){
   return `
   <h2 class="view-title">Komitet Transferowy</h2>
   <p class="view-sub">Zawodnicy z nadanym statusem — „Do transferu" (złoto) na górze, reszta niżej; wszystko alfabetycznie. Miejsce na finalną decyzję komitetu.</p>
+  ${/* Arkusz do pobrania — kolejność inna niż na ekranie, bo służy do czego innego: na liście
+        roboczej najpierw najstarsze roczniki, przy których decyzja nie może czekać. */''}
+  <div style="margin:-4px 0 10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+    <button class="secondary" data-action="komitet-arkusz"
+      title="Lista do obserwacji i transferu w pliku Excela — rocznikami od najstarszego, w roczniku alfabetycznie">⭳ Pobierz listę (Excel)</button>
+    <span class="note" style="margin:0;">${(()=>{
+      const ile = DB.players.filter(doArkuszaKomitetu).length;
+      return ile ? `${ile} ${plZaw(ile)} do obserwacji i transferu` : 'nikt nie ma jeszcze takiego statusu';
+    })()}</span>
+  </div>
   <div class="card" style="padding:0;overflow:auto;">
     <table>
       <thead><tr><th>Zawodnik</th><th>Klub</th><th>Pozycja</th><th>Status</th><th>Śr. ocena</th><th>Decyzja komitetu</th><th>Notatka</th><th>Raporty</th><th>Analiza</th></tr></thead>
@@ -18425,6 +18512,7 @@ function attachHandlers(){
   main.querySelectorAll('.committee-notes-input').forEach(inp=>inp.onchange = ()=>{
     updateCommitteeField(inp.dataset.id, 'committeeNotes', inp.value.trim());
   });
+  main.querySelectorAll('[data-action="komitet-arkusz"]').forEach(b=>b.onclick=()=>pobierzArkuszKomitetu());
   main.querySelectorAll('[data-action="open-committee-reports"]').forEach(b=>b.onclick=()=>openCommitteeReportsModal(b.dataset.id));
   main.querySelectorAll('[data-action="manage-transfer-history"]').forEach(b=>b.onclick=()=>openTransferHistoryModal(b.dataset.id));
   main.querySelectorAll('[data-action="import-squad"]').forEach(b=>b.onclick=()=>openSquadImportModal(b.dataset.id));
