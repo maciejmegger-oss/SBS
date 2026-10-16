@@ -224,39 +224,130 @@ function liftExt(table: string, obj: Record<string, unknown>): void {
 // (trzeba go zapisać). Patrz komentarz w setCollection.
 const loadedIds: Record<string, Set<string>> = {};
 
+// Identyfikatory czytamy FALAMI, nie jedna strona po drugiej. Przy 16 837 zawodnikach to
+// siedemnaście żądań — puszczane kolejno dokładały kilka sekund do każdego wczytania I do
+// każdego zapisu, choć żadne z nich nie czeka na wynik poprzedniego.
 async function fetchServerIds(table: string): Promise<Set<string>> {
   const PAGE = 1000;
+  const RÓWNOLEGLE = 4;
   const ids = new Set<string>();
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await sb.from(table).select("id").range(from, from + PAGE - 1);
-    if (error) throw new Error(error.message);
-    const batch = data || [];
-    batch.forEach((r: { id: string }) => ids.add(r.id));
-    if (batch.length < PAGE) break;
+  for (let fala = 0; ; fala += RÓWNOLEGLE) {
+    const strony = await Promise.all(
+      Array.from({ length: RÓWNOLEGLE }, (_, i) => (fala + i) * PAGE).map(async (from) => {
+        const { data, error } = await sb.from(table).select("id").range(from, from + PAGE - 1);
+        if (error) throw new Error(error.message);
+        return data || [];
+      }),
+    );
+    strony.forEach((batch) => batch.forEach((r: { id: string }) => ids.add(r.id)));
+    if (strony.some((batch) => batch.length < PAGE)) break;
   }
   return ids;
 }
 
-async function getCollection(table: string): Promise<string> {
-  const PAGE = 1000;
-  const RÓWNOLEGLE = 4;   // ile stron ciągniemy naraz
+// ---------- PAMIĘĆ PODRĘCZNA KOLEKCJI W PRZEGLĄDARCE ----------
+//
+// Zgłoszenie (16.10.2026): „popraw długie ładowanie się strony, trzyma wszystko na zielono,
+// dopiero po minucie załaduje się" — a dzień wcześniej Supabase odciął projekt za przekroczony
+// limit transferu: 6,5 GB przy bazie ważącej 103 MB, czyli cała jej zawartość poszła przez sieć
+// jakieś sześćdziesiąt razy.
+//
+// Jedna przyczyna obu rzeczy: przy KAŻDYM wejściu ściągaliśmy komplet kolekcji od zera.
+// Samych zawodników jest 16 837 — siedemnaście stron po tysiąc wierszy, z pełnymi polami
+// własnymi (przebieg sezonu mecz po meczu, archiwum statystyk, opinie AI).
+//
+// Teraz komplet pobieramy RAZ i trzymamy w przeglądarce (IndexedDB — localStorage ma kilka
+// megabajtów, czyli stanowczo za mało). Przy kolejnych wejściach pytamy wyłącznie o wiersze
+// zmienione od ostatniej synchronizacji; tabele mają na to kolumnę `updated_at`.
+//
+// CZEGO TU CELOWO NIE ROBIMY: nie okrawamy pobieranych pól. Zapis w tym systemie idzie całymi
+// kolekcjami (savePlayers wysyła wszystkich zawodników naraz), więc pole, którego byśmy nie
+// wczytali, zostałoby przy pierwszym zapisie SKASOWANE w bazie. Pamięć podręczna trzyma pełne
+// obiekty, więc zapis pozostaje dokładnie taki, jaki był.
+const WERSJA_PAMIECI = 1;   // podniesienie unieważnia całą zapamiętaną zawartość
+const PAMIEC_BAZA = "sbs-pamiec-kolekcji";
+const PAMIEC_MAGAZYN = "kolekcje";
 
-  // STRONY POBIERAMY FALAMI, NIE JEDNA PO DRUGIEJ.
-  //
-  // PostgREST oddaje najwyżej tysiąc wierszy na żądanie, więc przy czterech i pół tysiąca
-  // zawodników to pięć zapytań. Puszczane kolejno sumowały się w czasie — każde czekało, aż
-  // skończy się poprzednie, choć nic od niego nie potrzebuje. Fala po cztery skraca to niemal
-  // do czasu jednego zapytania.
-  //
-  // Warunek końca zostaje ten sam: gdy w fali trafi się strona krótsza niż tysiąc wierszy, dalej
-  // nic już nie ma. Puste żądania na końcu (gdy liczba wierszy dzieli się równo przez tysiąc)
-  // są nieszkodliwe i zdarzają się raz.
+interface ZapamietanaKolekcja {
+  wersja: number;
+  odKiedy: string;                        // najnowsze updated_at, jakie widzieliśmy
+  obiekty: Record<string, unknown>[];     // już przemapowane, gotowe do oddania aplikacji
+}
+
+function otworzPamiec(): Promise<IDBDatabase | null> {
+  return new Promise((gotowe) => {
+    try {
+      if (typeof indexedDB === "undefined") return gotowe(null);
+      const zadanie = indexedDB.open(PAMIEC_BAZA, 1);
+      zadanie.onupgradeneeded = () => {
+        const db = zadanie.result;
+        if (!db.objectStoreNames.contains(PAMIEC_MAGAZYN)) db.createObjectStore(PAMIEC_MAGAZYN);
+      };
+      zadanie.onsuccess = () => gotowe(zadanie.result);
+      zadanie.onerror = () => gotowe(null);
+    } catch { gotowe(null); }
+  });
+}
+
+// Każdy odczyt i zapis pamięci jest „miękki": gdy cokolwiek zawiedzie (tryb prywatny, brak
+// miejsca, zablokowane dane witryny), wracamy do pełnego pobrania. Wolniej, ale poprawnie.
+function czytajPamiec(table: string): Promise<ZapamietanaKolekcja | null> {
+  return new Promise(async (gotowe) => {
+    const db = await otworzPamiec();
+    if (!db) return gotowe(null);
+    try {
+      const z = db.transaction(PAMIEC_MAGAZYN, "readonly").objectStore(PAMIEC_MAGAZYN).get(table);
+      z.onsuccess = () => {
+        const w = z.result as ZapamietanaKolekcja | undefined;
+        gotowe(w && w.wersja === WERSJA_PAMIECI && Array.isArray(w.obiekty) ? w : null);
+      };
+      z.onerror = () => gotowe(null);
+    } catch { gotowe(null); }
+  });
+}
+
+function zapiszPamiec(table: string, dane: ZapamietanaKolekcja): Promise<void> {
+  return new Promise(async (gotowe) => {
+    const db = await otworzPamiec();
+    if (!db) return gotowe();
+    try {
+      const t = db.transaction(PAMIEC_MAGAZYN, "readwrite");
+      t.objectStore(PAMIEC_MAGAZYN).put(dane, table);
+      t.oncomplete = () => gotowe();
+      // Przepełniona pamięć nie może wywrócić wczytywania — następnym razem po prostu
+      // pobierzemy komplet od nowa.
+      t.onerror = () => gotowe();
+      t.onabort = () => gotowe();
+    } catch { gotowe(); }
+  });
+}
+
+/** Czyści zapamiętaną zawartość — awaryjnie, gdyby kiedyś rozjechała się z bazą. */
+export async function wyczyscPamiecKolekcji(): Promise<void> {
+  const db = await otworzPamiec();
+  if (!db) return;
+  try { db.transaction(PAMIEC_MAGAZYN, "readwrite").objectStore(PAMIEC_MAGAZYN).clear(); } catch { /* trudno */ }
+}
+
+const najnowszaZmiana = (wiersze: Record<string, unknown>[]): string =>
+  wiersze.reduce((naj, r) => {
+    const u = String(r.updated_at || "");
+    return u > naj ? u : naj;
+  }, "");
+
+// Pobranie stron falami po cztery — PostgREST oddaje najwyżej tysiąc wierszy na żądanie,
+// a puszczane jedna po drugiej sumowałyby się w czasie bez powodu.
+async function pobierzWiersze(table: string, odKiedy?: string): Promise<Record<string, unknown>[]> {
+  const PAGE = 1000;
+  const RÓWNOLEGLE = 4;
   const all: Record<string, unknown>[] = [];
   for (let fala = 0; ; fala += RÓWNOLEGLE) {
     const zakresy = Array.from({ length: RÓWNOLEGLE }, (_, i) => (fala + i) * PAGE);
     const strony = await Promise.all(
       zakresy.map(async (from) => {
-        const { data, error } = await sb.from(table).select("*").range(from, from + PAGE - 1);
+        let q = sb.from(table).select("*");
+        if (odKiedy) q = q.gt("updated_at", odKiedy);
+        const { data, error } = await q.range(from, from + PAGE - 1);
         if (error) throw new Error(error.message);
         return data || [];
       }),
@@ -264,9 +355,45 @@ async function getCollection(table: string): Promise<string> {
     strony.forEach((batch) => all.push(...batch));
     if (strony.some((batch) => batch.length < PAGE)) break;
   }
-  const objs = all.map(objFromRow);
+  return all;
+}
+
+const przemapuj = (table: string, wiersze: Record<string, unknown>[]) => {
+  const objs = wiersze.map(objFromRow);
   objs.forEach((o) => liftExt(table, o));
+  return objs;
+};
+
+async function getCollection(table: string): Promise<string> {
+  const zapamietane = await czytajPamiec(table);
+
+  // PIERWSZE WEJŚCIE (albo pusta pamięć): pełne pobranie, tak jak dotąd.
+  if (!zapamietane || !zapamietane.odKiedy) {
+    const wiersze = await pobierzWiersze(table);
+    const objs = przemapuj(table, wiersze);
+    loadedIds[table] = new Set(objs.map((o) => String(o.id)));
+    await zapiszPamiec(table, { wersja: WERSJA_PAMIECI, odKiedy: najnowszaZmiana(wiersze), obiekty: objs });
+    return JSON.stringify(objs);
+  }
+
+  // KOLEJNE WEJŚCIA: tylko to, co się zmieniło, plus lista identyfikatorów.
+  //
+  // Lista identyfikatorów jest konieczna, bo po `updated_at` nie da się poznać wierszy USUNIĘTYCH
+  // — bez niej skasowany zawodnik zostałby w przeglądarce na zawsze. Same identyfikatory to
+  // ułamek wagi pełnych wierszy.
+  const zmienione = await pobierzWiersze(table, zapamietane.odKiedy);
+  const naSerwerze = await fetchServerIds(table);
+
+  const wgId = new Map<string, Record<string, unknown>>();
+  for (const o of zapamietane.obiekty) wgId.set(String(o.id), o);
+  for (const o of przemapuj(table, zmienione)) wgId.set(String(o.id), o);
+  for (const id of [...wgId.keys()]) if (!naSerwerze.has(id)) wgId.delete(id);
+
+  const objs = [...wgId.values()];
   loadedIds[table] = new Set(objs.map((o) => String(o.id)));
+  const odKiedy = najnowszaZmiana(zmienione) || zapamietane.odKiedy;
+  await zapiszPamiec(table, { wersja: WERSJA_PAMIECI, odKiedy, obiekty: objs });
+  if (zmienione.length) console.info(`${table}: dociągnięto ${zmienione.length} zmienionych wierszy`);
   return JSON.stringify(objs);
 }
 
