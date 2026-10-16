@@ -59,11 +59,22 @@ const kluczNazwiska = (imie, nazwisko) =>
 
 // ---------- BAZA ----------
 
+// CZYTAMY NAZWISKA, NIE CAŁE KARTOTEKI.
+//
+// Pierwsza wersja brała z każdego zawodnika pełne `custom_fields` — a tam siedzi przebieg sezonu
+// mecz po meczu, archiwum statystyk, wyróżnienia i opinia AI. Przy kilku tysiącach kartotek to
+// kilkadziesiąt megabajtów NA KAŻDY przebieg, a przebiegów jest pięć co poniedziałek. Do samego
+// dopasowania nazwiska potrzeba imienia, nazwiska, klubu i dotychczasowego dorobku PJS — i tylko
+// to pobieramy. Pełne pola własne czytamy pojedynczo, wyłącznie dla tych kartotek, które naprawdę
+// aktualizujemy (po pierwszym przebiegu to kilka sztuk).
+//
+// Powód jest dotkliwy: 16.10.2026 Supabase zablokował projekt za przekroczony limit transferu,
+// a wielokrotne uruchamianie tego przeglądu dzień wcześniej dołożyło się do rachunku.
 async function wczytajZawodnikow() {
   const wszyscy = [];
   for (let od = 0; ; od += 1000) {
     const r = await fetch(
-      `${BAZA}/rest/v1/sbs_players?select=id,first_name,last_name,club_id,custom_fields&limit=1000&offset=${od}`,
+      `${BAZA}/rest/v1/sbs_players?select=id,first_name,last_name,club_id,pjs:custom_fields->pjs&limit=1000&offset=${od}`,
       { headers: naglowkiBazy() },
     );
     if (!r.ok) throw new Error(`baza odpowiedziała ${r.status} przy czytaniu zawodników`);
@@ -72,6 +83,18 @@ async function wczytajZawodnikow() {
     if (porcja.length < 1000) break;
   }
   return wszyscy;
+}
+
+// Pełne pola własne JEDNEJ kartoteki — pobierane dopiero wtedy, gdy mamy co w niej zmienić.
+// Bez tego nie da się zapisać dorobku PJS, nie kasując przy okazji przebiegu sezonu i reszty.
+async function polaWlasneZawodnika(id) {
+  const r = await fetch(
+    `${BAZA}/rest/v1/sbs_players?select=custom_fields&id=eq.${encodeURIComponent(id)}`,
+    { headers: naglowkiBazy() },
+  );
+  if (!r.ok) throw new Error(`baza odpowiedziała ${r.status} przy czytaniu pól własnych`);
+  const wiersze = await r.json();
+  return (wiersze[0] && wiersze[0].custom_fields) || {};
 }
 
 async function zapiszZawodnika(id, polaWlasne) {
@@ -257,15 +280,17 @@ export default async function handler(req, res) {
           // Najpierw ten, którego już stąd zapisaliśmy — identyfikator PJS jest pewniejszy niż
           // nazwisko. Potem jedyny imiennik. Przy kilku imiennikach nie zgadujemy: wpisanie
           // dorobku do cudzej kartoteki byłoby gorsze niż jego brak.
-          const poId = kandydaci.find((p) => (p.custom_fields || {}).pjs?.pjsId === z.pjsId);
+          const poId = kandydaci.find((p) => p.pjs?.pjsId === z.pjsId);
           const trafiony = poId || (kandydaci.length === 1 ? kandydaci[0] : null);
 
           if (trafiony) {
-            const pola = { ...(trafiony.custom_fields || {}) };
-            const bylo = pola.pjs || {};
+            const bylo = trafiony.pjs || {};
             // Zapisujemy tylko wtedy, gdy coś się zmieniło — inaczej co tydzień przepisywalibyśmy
-            // do bazy tę samą treść.
+            // do bazy tę samą treść. Sprawdzamy to na chudym odczycie, PRZED sięgnięciem po pełne
+            // pola własne: po pierwszym przebiegu prawie nic się nie zmienia, więc prawie nigdy
+            // nie musimy ściągać tych kilkudziesięciu kilobajtów na kartotekę.
             if (bylo.punkty === z.punkty && bylo.minuty === z.minuty && bylo.mecze === z.mecze) continue;
+            const pola = { ...(await polaWlasneZawodnika(trafiony.id)) };
             pola.pjs = dorobek;
             pola.monitored = true;
             pola.mlodziezowiec = true;

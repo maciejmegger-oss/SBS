@@ -106,6 +106,14 @@ sprawdz("zadanie chodzi w poniedzialki co dziesiec minut przez godzine",
 sprawdz("przechodzi tylko ligi z listy, a nie co popadnie",
   /\(sezony\[0\]\.ligi \|\| \[\]\)\.filter\(\(l\) => LIGI_DO_PRZEGLADU\.includes\(l\.nazwa\)\)/.test(cron));
 sprawdz("nie zakłada kartotek sam z siebie", /nie zakłada kartotek od zera/.test(cron));
+sprawdz("przeglad czyta chudy wycinek kartotek, nie cale pola wlasne",
+  /select=id,first_name,last_name,club_id,pjs:custom_fields->pjs/.test(cron)
+  && !/select=id,first_name,last_name,club_id,custom_fields&/.test(cron));
+sprawdz("pelne pola wlasne tylko dla kartotek, ktore naprawde aktualizujemy",
+  /async function polaWlasneZawodnika/.test(cron)
+  && /const pola = \{ \.\.\.\(await polaWlasneZawodnika\(trafiony\.id\)\) \};/.test(cron));
+sprawdz("sprawdzenie zmiany idzie PRZED siegnieciem po pelne pola",
+  /const bylo = trafiony\.pjs \|\| \{\};[\s\S]{0,400}if \(bylo\.punkty === z\.punkty[\s\S]{0,80}continue;\s*\n\s*const pola = \{ \.\.\.\(await polaWlasneZawodnika/.test(cron));
 sprawdz("nie zapisuje, gdy nic się nie zmieniło",
   /if \(bylo\.punkty === z\.punkty && bylo\.minuty === z\.minuty && bylo\.mecze === z\.mecze\) continue;/.test(cron));
 sprawdz("błąd jednego klubu nie przerywa całego przeglądu",
