@@ -105,7 +105,13 @@ console.log("\n4. Wpięcie w aplikację");
 sprawdz("funkcja eksportu istnieje", /function pobierzArkuszKomitetu\(\)/.test(zrodlo));
 sprawdz("przycisk jest w widoku Komitetu", /data-action="komitet-arkusz"/.test(zrodlo));
 sprawdz("przycisk podpięty", /\[data-action="komitet-arkusz"\]'\)\.forEach\(b=>b\.onclick=\(\)=>pobierzArkuszKomitetu\(\)\)/.test(zrodlo));
-sprawdz("obok przycisku widać, ilu zawodników wejdzie", /do obserwacji i transferu`/.test(zrodlo));
+sprawdz("obok przycisku widać rozbicie, nie samą sumę",
+  /do transferu: \$\{doT\}, do obserwacji: \$\{doO\}/.test(zrodlo));
+sprawdz("do arkusza wchodzą dokładnie dwa statusy, bez „W obserwacji”",
+  /const STATUSY_DO_ARKUSZA = \['Do transferu', 'Do Obserwacji'\];/.test(zrodlo)
+  && !/'W obserwacji'/.test(zrodlo.slice(zrodlo.indexOf("STATUSY_DO_ARKUSZA"), zrodlo.indexOf("STATUSY_DO_ARKUSZA") + 200)));
+sprawdz("eksport melduje w konsoli, ilu zawodników zapisał",
+  /Arkusz komitetu: \$\{posortowani\.length\} z \$\{DB\.players\.length\}/.test(zrodlo));
 sprawdz("pusta lista mówi, co zrobić, zamiast zapisywać pusty plik",
   /Nikt nie ma statusu/.test(zrodlo));
 sprawdz("nazwa pliku z datą", /do-obserwacji-i-transferu_\$\{dzisiaj\(\)\}\.xlsx/.test(zrodlo));

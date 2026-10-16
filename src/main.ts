@@ -13929,7 +13929,13 @@ function decyzjaKomitetu(p){
 // Bierzemy zawodnika, gdy „do transferu" albo „do obserwacji" wynika ze STATUSU w kartotece ALBO
 // z decyzji komitetu — to dwa różne pola i bywają rozbieżne, a pominięcie któregoś znaczyłoby,
 // że ktoś wypada z listy przez to, w którym miejscu systemu go oznaczono.
-const STATUSY_DO_ARKUSZA = ['Do transferu', 'Do Obserwacji', 'W obserwacji', 'Do Obserwacji '];
+// DOKŁADNIE DWA STATUSY, ANI JEDNEGO WIĘCEJ.
+//
+// Pierwsza wersja dobierała też „W obserwacji" — a to trzeci, osobny stan: zawodnik, którego już
+// się ogląda, nie taki, którego dopiero trzeba obejrzeć. Przy 35 zawodnikach z tym statusem lista
+// robocza puchła o ludzi, przy których nie ma nic do zdecydowania. Zgłoszenie (16.10.2026):
+// „zrób tylko do obserwacji i transferu, żeby pobierało listę".
+const STATUSY_DO_ARKUSZA = ['Do transferu', 'Do Obserwacji'];
 const doArkuszaKomitetu = (p)=>{
   const norm = (s)=> String(s||'').trim().toLowerCase();
   const pasuje = (s)=> STATUSY_DO_ARKUSZA.some(x=> norm(x) === norm(s));
@@ -13961,6 +13967,8 @@ function pobierzArkuszKomitetu(){
 
   const naglowki = ['Rocznik', 'Nazwisko', 'Imię', 'Pozycja', 'Klub', 'Liga', 'Status',
     'Decyzja komitetu', 'Śr. ocena', 'Raportów', 'Kontrakt do', 'Notatka komitetu'];
+  // Licznik w konsoli — zeby „pobiera calosc” dalo sie rozstrzygnac liczba, a nie wrazeniem.
+  console.info(`Arkusz komitetu: ${posortowani.length} z ${DB.players.length} zawodnikow w bazie`);
   const wiersze = posortowani.map(p=>{
     const rocznik = Number(rocznikZawodnika(p)) || '';
     const srednia = playerAvg(p.id);
@@ -14030,8 +14038,16 @@ function viewTransferCommittee(){
     <button class="secondary" data-action="komitet-arkusz"
       title="Lista do obserwacji i transferu w pliku Excela — rocznikami od najstarszego, w roczniku alfabetycznie">⭳ Pobierz listę (Excel)</button>
     <span class="note" style="margin:0;">${(()=>{
-      const ile = DB.players.filter(doArkuszaKomitetu).length;
-      return ile ? `${ile} ${plZaw(ile)} do obserwacji i transferu` : 'nikt nie ma jeszcze takiego statusu';
+      // Rozbicie, nie sama suma. „Pobiera całość" (zgłoszenie 16.10.2026) da się rozstrzygnąć
+      // tylko liczbą: widać tu, ilu zawodników wejdzie i z czego — jeśli plik ma więcej wierszy
+      // niż ta liczba, wiadomo, że szukać trzeba w eksporcie, a nie w doborze.
+      const wchodza = DB.players.filter(doArkuszaKomitetu);
+      if(!wchodza.length) return 'nikt nie ma statusu „Do transferu" ani „Do obserwacji"';
+      const ileZe = (nazwa)=> wchodza.filter(p=>
+        String(p.status||'').trim().toLowerCase() === nazwa
+        || String(decyzjaKomitetu(p)||'').trim().toLowerCase() === nazwa).length;
+      const doT = ileZe('do transferu'), doO = ileZe('do obserwacji');
+      return `${wchodza.length} ${plZaw(wchodza.length)} w arkuszu — do transferu: ${doT}, do obserwacji: ${doO}`;
     })()}</span>
   </div>
   <div class="card" style="padding:0;overflow:auto;">
