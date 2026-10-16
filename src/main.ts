@@ -13936,10 +13936,27 @@ function decyzjaKomitetu(p){
 // robocza puchła o ludzi, przy których nie ma nic do zdecydowania. Zgłoszenie (16.10.2026):
 // „zrób tylko do obserwacji i transferu, żeby pobierało listę".
 const STATUSY_DO_ARKUSZA = ['Do transferu', 'Do Obserwacji'];
+// SPRAWA ZAMKNIĘTA ZOSTAJE ZAMKNIĘTA.
+//
+// W pobranym arkuszu (16.10.2026) siedział zawodnik ze statusem „Odrzucony" — wszedł, bo miał
+// starą decyzję komitetu „Do transferu". Decyzja bywa sprzed miesięcy, status jest aktualny:
+// kogoś odrzuconego albo już podpisanego nie wpisuje się na listę do obejrzenia.
+const STATUSY_ZAMKNIETE = ['Odrzucony', 'Podpisany'];
+const normStatus = (s)=> String(s||'').trim().toLowerCase();
+const wStatusach = (lista, s)=> lista.some(x=> normStatus(x) === normStatus(s));
+
 const doArkuszaKomitetu = (p)=>{
-  const norm = (s)=> String(s||'').trim().toLowerCase();
-  const pasuje = (s)=> STATUSY_DO_ARKUSZA.some(x=> norm(x) === norm(s));
-  return pasuje(p.status) || pasuje(decyzjaKomitetu(p));
+  if(wStatusach(STATUSY_ZAMKNIETE, p.status)) return false;
+  return wStatusach(STATUSY_DO_ARKUSZA, p.status) || wStatusach(STATUSY_DO_ARKUSZA, decyzjaKomitetu(p));
+};
+
+// Skąd zawodnik wziął się na liście. Bez tego nie da się odróżnić kogoś oznaczonego świadomie od
+// kogoś, komu status „Do Obserwacji" nadał się sam przy zapisie pierwszej obserwacji — a to przy
+// trzydziestu takich wierszach cała różnica między listą roboczą a spisem wszystkich znajomych.
+const powodNaLiscie = (p)=>{
+  const zeStatusu = wStatusach(STATUSY_DO_ARKUSZA, p.status);
+  const zDecyzji = wStatusach(STATUSY_DO_ARKUSZA, decyzjaKomitetu(p));
+  return zeStatusu && zDecyzji ? 'status + decyzja komitetu' : zeStatusu ? 'status' : 'decyzja komitetu';
 };
 
 function pobierzArkuszKomitetu(){
@@ -13966,7 +13983,7 @@ function pobierzArkuszKomitetu(){
   });
 
   const naglowki = ['Rocznik', 'Nazwisko', 'Imię', 'Pozycja', 'Klub', 'Liga', 'Status',
-    'Decyzja komitetu', 'Śr. ocena', 'Raportów', 'Kontrakt do', 'Notatka komitetu'];
+    'Decyzja komitetu', 'Na liście przez', 'Śr. ocena', 'Raportów', 'Kontrakt do', 'Notatka komitetu'];
   // Licznik w konsoli — zeby „pobiera calosc” dalo sie rozstrzygnac liczba, a nie wrazeniem.
   console.info(`Arkusz komitetu: ${posortowani.length} z ${DB.players.length} zawodnikow w bazie`);
   const wiersze = posortowani.map(p=>{
@@ -13981,6 +13998,7 @@ function pobierzArkuszKomitetu(){
       ligaZawodnika(p) || '',
       p.status || '',
       decyzjaKomitetu(p) || 'Do rozpatrzenia',
+      powodNaLiscie(p),
       // Liczba, nie tekst — żeby w Excelu dało się po niej sortować i filtrować.
       (srednia && srednia.overall != null) ? Math.round(srednia.overall * 100) / 100 : '',
       liczbaRaportowKomitetu(p),
@@ -13991,7 +14009,7 @@ function pobierzArkuszKomitetu(){
 
   const ws = XLSX.utils.aoa_to_sheet([naglowki, ...wiersze]);
   ws['!cols'] = [{wch:8},{wch:20},{wch:16},{wch:20},{wch:26},{wch:16},{wch:16},
-    {wch:18},{wch:10},{wch:10},{wch:13},{wch:40}];
+    {wch:18},{wch:22},{wch:10},{wch:10},{wch:13},{wch:40}];
   // Nagłówek przymrożony i filtry — przy liście na kilkadziesiąt nazwisk bez tego nie da się pracować.
   ws['!freeze'] = { xSplit: 0, ySplit: 1 };
   ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s:{r:0,c:0}, e:{r:wiersze.length, c:naglowki.length-1} }) };

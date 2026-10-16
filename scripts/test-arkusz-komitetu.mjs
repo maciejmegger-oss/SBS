@@ -17,10 +17,12 @@ const sprawdz = (opis, warunek, dodatek = "") => {
 // --- kopia logiki doboru i kolejności z main.ts ---------------------------------------------
 const DAWNE = { "Zatwierdzony": "Do transferu", "Do dalszej analizy": "Do Obserwacji", "Odrzucony przez komitet": "Odrzucony" };
 const decyzjaKomitetu = (p) => DAWNE[String(p.committeeDecision || "")] || String(p.committeeDecision || "");
-const STATUSY = ["Do transferu", "Do Obserwacji", "W obserwacji"];
+const STATUSY = ["Do transferu", "Do Obserwacji"];
 const norm = (s) => String(s || "").trim().toLowerCase();
 const pasuje = (s) => STATUSY.some((x) => norm(x) === norm(s));
-const doArkusza = (p) => pasuje(p.status) || pasuje(decyzjaKomitetu(p));
+const ZAMKNIETE = ["Odrzucony", "Podpisany"];
+const doArkusza = (p) => !ZAMKNIETE.some((x) => norm(x) === norm(p.status))
+  && (pasuje(p.status) || pasuje(decyzjaKomitetu(p)));
 const rocznik = (p) => p.birthYear || null;
 
 const posortuj = (lista) => lista.slice().sort((a, b) => {
@@ -38,11 +40,19 @@ const posortuj = (lista) => lista.slice().sort((a, b) => {
 console.log("\n1. Kto wchodzi na listę");
 sprawdz("status „Do transferu” wchodzi", doArkusza({ status: "Do transferu" }));
 sprawdz("status „Do Obserwacji” wchodzi", doArkusza({ status: "Do Obserwacji" }));
-sprawdz("dawne „W obserwacji” też", doArkusza({ status: "W obserwacji" }));
+// „W obserwacji” to trzeci, osobny stan: zawodnik, którego JUŻ się ogląda. Na liście roboczej
+// nie ma przy nim nic do zdecydowania, a przy 35 takich osobach zasłaniałby tych, przy których jest.
+sprawdz("„W obserwacji” NIE wchodzi — to kto inny niż „Do Obserwacji”",
+  !doArkusza({ status: "W obserwacji" }));
 sprawdz("sama decyzja komitetu wystarczy — to osobne pole od statusu",
   doArkusza({ status: "Nowy typ", committeeDecision: "Do transferu" }));
 sprawdz("dawna nazwa decyzji rozpoznana", doArkusza({ status: "", committeeDecision: "Zatwierdzony" }));
-sprawdz("odrzucony nie wchodzi", !doArkusza({ status: "Odrzucony", committeeDecision: "Odrzucony" }));
+sprawdz("odrzucony nie wchodzi, nawet ze stara decyzja komitetu „Do transferu”",
+  !doArkusza({ status: "Odrzucony", committeeDecision: "Do transferu" }));
+sprawdz("podpisany nie wchodzi, nawet z decyzja „Do Obserwacji”",
+  !doArkusza({ status: "Podpisany", committeeDecision: "Do Obserwacji" }));
+sprawdz("rekomendowany z decyzja „Do Obserwacji” wchodzi — sprawa jest otwarta",
+  doArkusza({ status: "Rekomendowany", committeeDecision: "Do Obserwacji" }));
 sprawdz("podpisany nie wchodzi", !doArkusza({ status: "Podpisany" }));
 sprawdz("bez statusu nie wchodzi", !doArkusza({}));
 
@@ -117,6 +127,13 @@ sprawdz("pusta lista mówi, co zrobić, zamiast zapisywać pusty plik",
 sprawdz("nazwa pliku z datą", /do-obserwacji-i-transferu_\$\{dzisiaj\(\)\}\.xlsx/.test(zrodlo));
 sprawdz("powód kolejności zapisany w kodzie",
   /zawodnik po dwudziestce piątce nie zyska na wartości/.test(zrodlo));
+sprawdz("arkusz mowi, skad zawodnik wzial sie na liscie",
+  /'Na liście przez'/.test(zrodlo) && /const powodNaLiscie = \(p\)=>/.test(zrodlo));
+sprawdz("rozroznia status od decyzji komitetu",
+  /'status \+ decyzja komitetu' : zeStatusu \? 'status' : 'decyzja komitetu'/.test(zrodlo));
+sprawdz("sprawy zamkniete odpadaja z doboru",
+  /const STATUSY_ZAMKNIETE = \['Odrzucony', 'Podpisany'\];/.test(zrodlo)
+  && /if\(wStatusach\(STATUSY_ZAMKNIETE, p\.status\)\) return false;/.test(zrodlo));
 
 console.log(bledy ? `\n${bledy} BŁĘDÓW` : "\nWszystko przeszło.");
 process.exit(bledy ? 1 : 0);
