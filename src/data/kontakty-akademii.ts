@@ -1,8 +1,8 @@
 // KONTAKTY DO AKADEMII I SCOUTINGU W LIGACH ZAGRANICZNYCH — wygenerowane z arkuszy, NIE POPRAWIAJ RĘCZNIE.
 //
-// Źródło: Szwecja_Norwegia_Akademie_Kontakty.xlsx, Szkocja_Kontakty_Akademie_Scouting.xlsx.
+// Źródło: Szwecja_Norwegia_Akademie_Kontakty.xlsx, Szkocja_Kontakty_Akademie_Scouting.xlsx, Anglia_Kontakty_Rekrutacja.xlsx.
 // Po zmianie w arkuszu uruchom: node scripts/wczytaj-kontakty-akademii.mjs [plik.xlsx ...]
-// Stan na dzień przeniesienia: 2026-10-11 · 138 kontaktów, kraje: Szwecja, Norwegia, Szkocja.
+// Stan na dzień przeniesienia: 2026-10-17 · 140 kontaktów, kraje: Szwecja, Norwegia, Szkocja, Anglia.
 
 import type { KontaktEuropa } from "./kontakty-europa";
 
@@ -2078,5 +2078,35 @@ export const KONTAKTY_AKADEMIE: KontaktAkademii[] = [
     "priorytet": null,
     "status": "Częściowo",
     "uwagi": "sekcja młodzieżowa; coach development officer: Stuart Gray, stuart.gray@spartansfcyouth.com"
+  },
+  {
+    "kraj": "Anglia",
+    "liga": "EFL",
+    "klub": "Hull City AFC",
+    "osoba": "Martin Hodge",
+    "stanowisko": "Head of Recruitment (Szef rekrutacji)",
+    "obszar": "Scouting · EFL",
+    "email": "martin.hodge@wearehullcity.co.uk",
+    "emailKlubu": "",
+    "telefon": "+44 (0)1482 504600",
+    "zrodlo": "e-mail od Martina Hodge (stopka), 17.10.2026",
+    "priorytet": null,
+    "status": "Zweryfikowany",
+    "uwagi": "Korespondencja: 17.10.2026 17:28 wysłana aplikacja „Scout Analyst (Polish & Central European market)” (CV EN, portfolio EN, list motywacyjny) do M. Hodge i O. Ozkana; 17.10.2026 20:50 odpowiedź M. Hodge: „as far as I know the position is no longer available” – stanowisko już nieaktualne. Kontakt zachować na przyszłe rekrutacje. Adres: Hull City AFC Training Ground, Millhouse Woods Ln, Cottingham, HU16 4HB."
+  },
+  {
+    "kraj": "Anglia",
+    "liga": "EFL",
+    "klub": "Hull City AFC",
+    "osoba": "Okan Ozkan",
+    "stanowisko": "Dział rekrutacji (adresat aplikacji, w kopii odpowiedzi)",
+    "obszar": "Scouting · EFL",
+    "email": "okan.ozkan@wearehullcity.co.uk",
+    "emailKlubu": "",
+    "telefon": "",
+    "zrodlo": "korespondencja e-mail, 17.10.2026",
+    "priorytet": null,
+    "status": "Częściowo",
+    "uwagi": "Stanowisko niepotwierdzone. Korespondencja: 17.10.2026 17:28 wysłana aplikacja „Scout Analyst (Polish & Central European market)” (CV EN, portfolio EN, list motywacyjny) do M. Hodge i O. Ozkana; 17.10.2026 20:50 odpowiedź M. Hodge: „as far as I know the position is no longer available” – stanowisko już nieaktualne. Kontakt zachować na przyszłe rekrutacje."
   }
 ];

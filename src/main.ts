@@ -12992,7 +12992,9 @@ function viewKontaktyEuropa(){
     })()}${k.telefon ? `<div class="note">tel. <a class="ext-link" href="tel:${esc(k.telefon.replace(/[^\d+]/g,''))}">${esc(k.telefon)}</a></div>` : ''}</td>
     <td><span style="color:${barwaStatusuKontaktu(k.status)};font-weight:700;font-size:12px;">${esc(k.status || '—')}</span>
       ${k.uwagi ? `<div class="note">${esc(k.uwagi)}</div>` : ''}</td>
-    <td>${k.zrodlo ? `<a class="ext-link" href="${esc(k.zrodlo)}" target="_blank" rel="noopener">źródło ↗</a>` : '<span class="meta">—</span>'}</td>
+    <td>${/^https?:\/\//.test(k.zrodlo || '') ? `<a class="ext-link" href="${esc(k.zrodlo)}" target="_blank" rel="noopener">źródło ↗</a>`
+      // Źródłem bywa też korespondencja („e-mail od …, 17.10.2026") — to opis, nie adres, więc bez odnośnika.
+      : k.zrodlo ? `<span class="note">${esc(k.zrodlo)}</span>` : '<span class="meta">—</span>'}</td>
   </tr>`;
 
   const sekcja = (kraj, lista)=>`
@@ -13013,10 +13015,11 @@ function viewKontaktyEuropa(){
     z domeny tu nie ma: każdy wiersz ma odnośnik do strony, z której pochodzi.</p>
   <div class="toolbar" style="margin-top:12px;flex-wrap:wrap;gap:6px;">
     ${pill(`Wszystkie (${KONTAKTY_EUROPA.length})`, !europaTylkoAkademie, 'europa-rodzaj', {val:'wszystkie'}, '🌍')}
-    ${pill(`Akademie – praca: Szwecja, Norwegia, Szkocja (${KONTAKTY_AKADEMIE.length})`, europaTylkoAkademie, 'europa-rodzaj', {val:'akademie'}, '🎓')}
+    ${pill(`Akademie i rekrutacja: Szwecja, Norwegia, Szkocja, Anglia (${KONTAKTY_AKADEMIE.length})`, europaTylkoAkademie, 'europa-rodzaj', {val:'akademie'}, '🎓')}
   </div>
   ${europaTylkoAkademie ? `<p class="note" style="margin-top:8px;">Szefowie i koordynatorzy akademii w Superettan, Ettan Norra/Södra,
-    OBOS-ligaen, PostNord-ligaen i wszystkich ligach SPFL (w Szkocji także szefowie rekrutacji — „Scouting" w opisie). Liczba <span class="badge new">1</span> przy nazwisku = klub właśnie szuka szefa akademii.
+    OBOS-ligaen, PostNord-ligaen i wszystkich ligach SPFL (w Szkocji także szefowie rekrutacji — „Scouting" w opisie)
+    oraz kontakty z własnej korespondencji (Anglia: Hull City — historia w uwagach). Liczba <span class="badge new">1</span> przy nazwisku = klub właśnie szuka szefa akademii.
     Słownik: Akademichef / akademisjef = dyrektor akademii, Ungdomsansvarig = szef piłki młodzieżowej,
     Sportslig leder = dyrektor sportowy, Daglig leder = dyrektor zarządzający, Head of Youth = szef akademii.</p>` : ''}
   <div class="toolbar" style="margin-top:12px;">
