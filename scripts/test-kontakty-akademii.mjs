@@ -27,7 +27,17 @@ const ligi = [...new Set(A.map(k => k.liga))];
 sprawdz(`${A.length} kontaktów`, A.length >= 130, String(A.length));
 sprawdz(`ligi: ${ligi.join(', ')}`, ['Superettan', 'Ettan Norra', 'Ettan Södra', 'OBOS-ligaen'].every(l => ligi.includes(l))
   && ligi.some(l => /PostNord/.test(l)));
-sprawdz('tylko Szwecja, Norwegia i Szkocja', A.every(k => ['Szwecja', 'Norwegia', 'Szkocja'].includes(k.kraj)));
+sprawdz('tylko Szwecja, Norwegia, Szkocja i Anglia', A.every(k => ['Szwecja', 'Norwegia', 'Szkocja', 'Anglia'].includes(k.kraj)));
+{
+  // Zgłoszenie (17.10.2026): „zapisz ten e-mail i dane do systemu, sekcja Anglia" — odpowiedź Hull City
+  // na aplikację Scout Analyst.
+  const hodge = A.find(k => k.osoba === 'Martin Hodge');
+  sprawdz('Anglia: Martin Hodge (Hull City) z mailem i telefonem',
+    hodge && hodge.kraj === 'Anglia' && hodge.email === 'martin.hodge@wearehullcity.co.uk' && hodge.telefon);
+  sprawdz('Anglia: historia korespondencji w uwagach (stanowisko nieaktualne)', hodge && /17\.10\.2026/.test(hodge.uwagi) && /nieaktualne/.test(hodge.uwagi));
+  sprawdz('Anglia: zamknięta rekrutacja nie ma priorytetu „szuka teraz"', hodge && hodge.priorytet !== 1);
+  sprawdz('źródło-opis (korespondencja) nie staje się odnośnikiem', /\^https\?:/.test(zrodlo) && /: k\.zrodlo \? `<span class="note">/.test(zrodlo));
+}
 {
   const sz = A.filter(k => k.kraj === 'Szkocja');
   const klubySz = new Set(sz.map(k => k.klub));

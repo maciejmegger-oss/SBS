@@ -14,7 +14,7 @@ import fs from "node:fs";
 import * as XLSX from "xlsx";
 
 const pliki = process.argv.length > 2 ? process.argv.slice(2)
-  : ["Szwecja_Norwegia_Akademie_Kontakty.xlsx", "Szkocja_Kontakty_Akademie_Scouting.xlsx"];
+  : ["Szwecja_Norwegia_Akademie_Kontakty.xlsx", "Szkocja_Kontakty_Akademie_Scouting.xlsx", "Anglia_Kontakty_Rekrutacja.xlsx"];
 const tekst = (v) => String(v ?? "").replace(/\s+/g, " ").trim();
 
 const wpisy = pliki.flatMap((plik) => {
