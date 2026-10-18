@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+jobs:
+  build-i-testy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # PGlite = Postgres w WebAssembly, tylko do testu migracji SQL; nie jest zależnością projektu.
+      - run: npm i --no-save @electric-sql/pglite
+      - name: Build
+        run: npx vite build
+      - name: Testy (scripts/test-*.mjs)
+        run: |
+          fail=0
+          for f in scripts/test-*.mjs; do
+            # test-dopasowanie-klubow potrzebuje klucza do żywej bazy (SBS_KLUCZ) — poza CI.
+            [ "$f" = "scripts/test-dopasowanie-klubow.mjs" ] && continue
+            if ! node "$f" > /tmp/test.log 2>&1; then
+              echo "::error::$f nie przeszedl"; tail -n 15 /tmp/test.log; fail=1
+            fi
+          done
+          exit $fail
+      - name: Typy (tsc) — informacyjnie, repo ma jeszcze błędy typów
+        run: npx tsc --noEmit | tail -n 5 || true
+        continue-on-error: true
