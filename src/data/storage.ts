@@ -224,6 +224,37 @@ function liftExt(table: string, obj: Record<string, unknown>): void {
 // (trzeba go zapisać). Patrz komentarz w setCollection.
 const loadedIds: Record<string, Set<string>> = {};
 
+// ZAPISUJEMY TO, CO SIĘ ZMIENIŁO — NIE CAŁĄ KOLEKCJĘ.
+//
+// Zgłoszenie (18.10.2026): „wiesza się, nie reaguje, próbuję zrobić obserwację i nie chce
+// zapisać". Powód: setCollection wysyłał do bazy CAŁĄ tablicę z pamięci. Zapis jednej obserwacji
+// dotyka zawodnika (ustawia mu monitored i status), więc pociągał za sobą savePlayers() — czyli
+// upsert sześciu tysięcy... a dziś 16 837 kartotek, każdej z pełnymi polami własnymi. Do tego
+// przed każdym zapisem leciało siedemnaście zapytań o liste identyfikatorow.
+//
+// Trzymamy więc odcisk każdego wiersza z chwili wczytania i przy zapisie wysyłamy tylko te,
+// które naprawdę się różnią. Odcisk, nie kopia: przy 16 837 wierszach druga kopia danych
+// w pamięci przeglądarki kosztowałaby tyle samo co pierwsza.
+const odciski: Record<string, Map<string, string>> = {};
+
+// FNV-1a i długość — dwie niezależne wielkości w jednym kluczu. Samo FNV-1a ma znikome, ale
+// niezerowe ryzyko kolizji, a kolizja oznaczałaby wiersz, który nie zapisze się nigdy.
+function odcisk(obj: unknown): string {
+  const s = JSON.stringify(obj) || "";
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return s.length.toString(36) + ":" + h.toString(36);
+}
+
+const zapamietajOdciski = (table: string, objs: Record<string, unknown>[]): void => {
+  const m = new Map<string, string>();
+  for (const o of objs) m.set(String(o.id), odcisk(o));
+  odciski[table] = m;
+};
+
 // Identyfikatory czytamy FALAMI, nie jedna strona po drugiej. Przy 16 837 zawodnikach to
 // siedemnaście żądań — puszczane kolejno dokładały kilka sekund do każdego wczytania I do
 // każdego zapisu, choć żadne z nich nie czeka na wynik poprzedniego.
@@ -372,6 +403,7 @@ async function getCollection(table: string): Promise<string> {
     const wiersze = await pobierzWiersze(table);
     const objs = przemapuj(table, wiersze);
     loadedIds[table] = new Set(objs.map((o) => String(o.id)));
+    zapamietajOdciski(table, objs);
     await zapiszPamiec(table, { wersja: WERSJA_PAMIECI, odKiedy: najnowszaZmiana(wiersze), obiekty: objs });
     return JSON.stringify(objs);
   }
@@ -387,18 +419,29 @@ async function getCollection(table: string): Promise<string> {
   const wgId = new Map<string, Record<string, unknown>>();
   for (const o of zapamietane.obiekty) wgId.set(String(o.id), o);
   for (const o of przemapuj(table, zmienione)) wgId.set(String(o.id), o);
-  for (const id of [...wgId.keys()]) if (!naSerwerze.has(id)) wgId.delete(id);
+  let usunietych = 0;
+  for (const id of [...wgId.keys()]) if (!naSerwerze.has(id)) { wgId.delete(id); usunietych++; }
 
   const objs = [...wgId.values()];
   loadedIds[table] = new Set(objs.map((o) => String(o.id)));
-  const odKiedy = najnowszaZmiana(zmienione) || zapamietane.odKiedy;
-  await zapiszPamiec(table, { wersja: WERSJA_PAMIECI, odKiedy, obiekty: objs });
+  zapamietajOdciski(table, objs);
+
+  // PRZEPISUJEMY PAMIĘĆ TYLKO WTEDY, GDY JEST CO PRZEPISAĆ.
+  //
+  // Pierwsza wersja zapisywała całą kolekcję do IndexedDB przy KAŻDYM wejściu — przy 16 837
+  // zawodnikach to kopiowanie kilkudziesięciu megabajtów na wątku, od którego zależy rysowanie
+  // strony. Wyglądało dokładnie jak zawieszenie. Gdy nic się nie zmieniło i nic nie zniknęło,
+  // zapamiętana zawartość jest już poprawna.
+  if (zmienione.length || usunietych) {
+    const odKiedy = najnowszaZmiana(zmienione) || zapamietane.odKiedy;
+    await zapiszPamiec(table, { wersja: WERSJA_PAMIECI, odKiedy, obiekty: objs });
+  }
   if (zmienione.length) console.info(`${table}: dociągnięto ${zmienione.length} zmienionych wierszy`);
   return JSON.stringify(objs);
 }
 
 async function setCollection(table: string, jsonValue: string): Promise<void> {
-  const wszystkie: Record<string, unknown>[] = JSON.parse(jsonValue || "[]");
+  let wszystkie: Record<string, unknown>[] = JSON.parse(jsonValue || "[]");
 
   // NIE WSKRZESZAMY rekordów usuniętych w międzyczasie.
   //
@@ -410,6 +453,24 @@ async function setCollection(table: string, jsonValue: string): Promise<void> {
   // Rozróżnienie jest proste: rekord, który BYŁ wczytany z serwera, a teraz go tam nie ma, został
   // usunięty celowo — pomijamy go. Rekord, którego nie było przy wczytaniu, powstał w tej sesji —
   // zapisujemy normalnie.
+  // NAJPIERW ODSIEWAMY TO, CO SIĘ NIE ZMIENIŁO.
+  //
+  // Bez tego zapis jednej obserwacji wysyłał do bazy wszystkie 16 837 kartotek zawodników —
+  // stąd „wiesza się i nie chce zapisać". Gdy nie zmieniło się nic, nie ma po co ani liczyć
+  // identyfikatorów, ani wołać bazy.
+  const znaneOdciski = odciski[table];
+  if (znaneOdciski) {
+    const zmienione = wszystkie.filter((it) => {
+      const byl = znaneOdciski.get(String(it.id));
+      return byl === undefined || byl !== odcisk(it);
+    });
+    if (!zmienione.length) return;
+    if (zmienione.length < wszystkie.length) {
+      console.info(`${table}: zapisuję ${zmienione.length} z ${wszystkie.length} wierszy — resztę pomijam, bo się nie zmieniła.`);
+    }
+    wszystkie = zmienione;
+  }
+
   let items = wszystkie;
   const znaneZWczytania = loadedIds[table];
   if (znaneZWczytania && znaneZWczytania.size) {
@@ -426,6 +487,9 @@ async function setCollection(table: string, jsonValue: string): Promise<void> {
   }
 
   await upsertWsadami(table, items);
+  // Zapisane wiersze mają od teraz nowy odcisk — inaczej przy następnym zapisie poszłyby znowu.
+  const m = odciski[table];
+  if (m) for (const it of items) m.set(String(it.id), odcisk(it));
 }
 
 // UPSERT PACZKI REKORDÓW — wspólny dla „zapisz całą kolekcję" i „zapisz tych kilkuset".

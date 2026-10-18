@@ -40,7 +40,7 @@ sprawdz("kolejne wejścia pytają tylko o zmienione wiersze",
 sprawdz("znacznik liczony z najnowszego updated_at, jaki widzieliśmy",
   /const najnowszaZmiana = \(wiersze/.test(st) && /const odKiedy = najnowszaZmiana\(zmienione\) \|\| zapamietane\.odKiedy;/.test(st));
 sprawdz("usunięte wiersze znikają — po samym updated_at nie da się ich poznać",
-  /for \(const id of \[\.\.\.wgId\.keys\(\)\]\) if \(!naSerwerze\.has\(id\)\) wgId\.delete\(id\);/.test(st));
+  /for \(const id of \[\.\.\.wgId\.keys\(\)\]\) if \(!naSerwerze\.has\(id\)\) \{ wgId\.delete\(id\); usunietych\+\+; \}/.test(st));
 sprawdz("zmienione nadpisują zapamiętane, a nie dublują się",
   /for \(const o of przemapuj\(table, zmienione\)\) wgId\.set\(String\(o\.id\), o\);/.test(st));
 
@@ -57,5 +57,28 @@ sprawdz("wiersze falami po cztery", /async function pobierzWiersze[\s\S]{0,400}c
 sprawdz("identyfikatory też — przy 17 stronach sekwencja dokładała sekundy",
   /async function fetchServerIds[\s\S]{0,300}const RÓWNOLEGLE = 4;[\s\S]{0,400}Promise\.all/.test(st));
 
+
+console.log("\n6. Zapis wysyła tylko to, co się zmieniło");
+sprawdz("przy wczytaniu zapamiętujemy odcisk każdego wiersza",
+  /const odciski: Record<string, Map<string, string>> = \{\};/.test(st)
+  && /zapamietajOdciski\(table, objs\);/.test(st));
+sprawdz("odcisk liczony z długości i FNV-1a, nie z samego skrótu",
+  /return s\.length\.toString\(36\) \+ ":" \+ h\.toString\(36\);/.test(st));
+sprawdz("zapis odsiewa wiersze bez zmian",
+  /const zmienione = wszystkie\.filter\(\(it\) => \{[\s\S]{0,160}byl !== odcisk\(it\)/.test(st));
+sprawdz("gdy nic się nie zmieniło, nie wołamy bazy w ogóle",
+  /if \(!zmienione\.length\) return;/.test(st));
+sprawdz("po zapisie odciski są odświeżane — inaczej te same wiersze poszłyby znowu",
+  /if \(m\) for \(const it of items\) m\.set\(String\(it\.id\), odcisk\(it\)\);/.test(st));
+sprawdz("powód zapisany w kodzie — zapis obserwacji pociągał całą kartotekę zawodników",
+  /upsert sześciu tysięcy\.\.\. a dziś 16 837 kartotek/.test(st));
+
+console.log("\n7. Pamięć przepisywana tylko wtedy, gdy jest co przepisać");
+sprawdz("brak zmian = brak zapisu do IndexedDB",
+  /if \(zmienione\.length \|\| usunietych\) \{/.test(st));
+sprawdz("usunięcia liczone przy przycinaniu, bez drugiego mapowania",
+  /\{ wgId\.delete\(id\); usunietych\+\+; \}/.test(st));
+sprawdz("powód zapisany — kopiowanie dziesiątek MB na wątku rysowania",
+  /kopiowanie kilkudziesięciu megabajtów na wątku/.test(st));
 console.log(bledy ? `\n${bledy} BŁĘDÓW` : "\nWszystko przeszło.");
 process.exit(bledy ? 1 : 0);
