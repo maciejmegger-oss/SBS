@@ -8828,16 +8828,23 @@ function mapaZespoluHtml(klub, squad){
   });
 
   POSITION_NUMBERS.forEach(pn=>{
+    // ROZDZIAŁ LICZYMY RAZ NA NAZWĘ POZYCJI, NIE RAZ NA POLE.
+    //
+    // Pierwsza wersja liczyła go osobno dla każdego pola, a pulę za każdym razem budowała na
+    // nowo z pominięciem już wziętych. Przy pięciu bocznych obrońcach pole 3 brało indeksy
+    // 0, 2, 4, po czym pole 2 dostawało pulę DWÓCH i brało z niej znów tylko indeks nieparzysty
+    // — jeden zawodnik zostawał bez pola i trafiał na listę „nie rozpoznałem pozycji", choć
+    // jego pozycja była rozpoznana jak najbardziej. Stąd Kopasek i Ziółkowski (Obrońca boczny)
+    // oraz Mavraj (Obrońca środkowy) poza boiskiem przy obsadzonych polach.
+    const pary = POSITION_NUMBERS.filter(x=>x.posName === pn.posName);
+    const pierwszeZPary = pary[0] && pary[0].number === pn.number;
+    if(!pierwszeZPary) return;   // całą grupę obsługujemy przy pierwszym jej polu
     const pasujacy = zPozycja.filter(p=>!wziete.has(p.id) && kluczPoz(p.position) === kluczPoz(pn.posName));
     if(!pasujacy.length) return;
-    const pary = POSITION_NUMBERS.filter(x=>x.posName === pn.posName);
-    // Przy sparowanych polach (lewe/prawe) dzielimy pulę na pół — inaczej wszyscy boczni obrońcy
-    // staliby po jednej stronie, a druga świeciła pustką, choć klub ma tam kogo wystawić.
-    const ilePar = Math.max(1, pary.length);
-    const indeks = pary.findIndex(x=>x.number === pn.number);
+    // Po kolei, na zmianę: pierwszy na lewo, drugi na prawo, trzeci znów na lewo. Nikt nie wypada.
     pasujacy.forEach((p, i)=>{
-      if(i % ilePar !== indeks) return;
-      wPolu.get(pn.number).push({ p, pewny: false });
+      const pole = pary[i % pary.length];
+      wPolu.get(pole.number).push({ p, pewny: false });
       wziete.add(p.id);
     });
   });

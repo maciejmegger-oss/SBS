@@ -49,12 +49,17 @@ function rozstaw(squad) {
     wPolu.get(pn.number).push(p); wziete.add(p.id);
   }));
   POLA.forEach((pn) => {
+    // Rozdział liczony RAZ na nazwę pozycji — patrz komentarz w main.ts. Liczenie go osobno dla
+    // każdego pola gubiło zawodników: pole 3 brało co drugiego z pełnej puli, a pole 2 znów co
+    // drugiego z tego, co zostało.
+    const pary = POLA.filter((x) => x.posName === pn.posName);
+    if (!(pary[0] && pary[0].number === pn.number)) return;
     const pasujacy = squad.filter((p) => !wziete.has(p.id) && kluczPoz(p.position) === kluczPoz(pn.posName));
     if (!pasujacy.length) return;
-    const pary = POLA.filter((x) => x.posName === pn.posName);
-    const ilePar = Math.max(1, pary.length);
-    const idx = pary.findIndex((x) => x.number === pn.number);
-    pasujacy.forEach((p, i) => { if (i % ilePar === idx) { wPolu.get(pn.number).push(p); wziete.add(p.id); } });
+    pasujacy.forEach((p, i) => {
+      const pole = pary[i % pary.length];
+      wPolu.get(pole.number).push(p); wziete.add(p.id);
+    });
   });
   return { wPolu, nierozpoznani: squad.filter((p) => !wziete.has(p.id)) };
 }
@@ -120,7 +125,10 @@ sprawdz("licznik mówi, ilu POSTAWIONO, nie ilu ma wpisaną pozycję",
 sprawdz("nierozpoznani wypisani z nazwiska i z tym, co mają wpisane",
   /Nie rozpoznałem pozycji:/.test(zrodlo));
 sprawdz("postawieni przez nazwę ogólną są odnotowani jako wzięci",
-  /wPolu\.get\(pn\.number\)\.push\(\{ p, pewny: false \}\);\s*\n\s*wziete\.add\(p\.id\);/.test(zrodlo));
+  /wPolu\.get\(pole\.number\)\.push\(\{ p, pewny: false \}\);\s*\n\s*wziete\.add\(p\.id\);/.test(zrodlo));
+sprawdz("rozdział liczony raz na nazwę pozycji, nie raz na pole",
+  /const pierwszeZPary = pary\[0\] && pary\[0\]\.number === pn\.number;/.test(zrodlo)
+  && /const pole = pary\[i % pary\.length\];/.test(zrodlo));
 
 
 console.log("\n5. Lawka — wszyscy sa na mapie");
@@ -147,5 +155,32 @@ sprawdz("roznica nie opiera sie na samym kolorze — grubosc paska i tlo",
   && /\.pmr-rezerwowy\{box-shadow:inset 2px/.test(css));
 sprawdz("powod zapisany w arkuszu — zlota i zielen dziela 1,92:1 jasnosci",
   /sam kolor nie wystarczyłby, żeby je rozróżnić/.test(css));
+
+console.log("\n7. Rozdzial na lewa i prawa strone nikogo nie gubi");
+{
+  // Przypadek z Lechii i Gornika: nieparzysta liczba bocznych obroncow. Pierwsza wersja liczyla
+  // rozdzial osobno dla kazdego pola i zostawiala jednego bez miejsca — ladowal na liscie
+  // "nie rozpoznalem pozycji", choc jego pozycja byla rozpoznana jak najbardziej.
+  const squad = [
+    { id: "1", lastName: "Jaunzems", position: "Obrońca boczny" },
+    { id: "2", lastName: "Kopasek", position: "Obrońca boczny" },
+    { id: "3", lastName: "Malov", position: "Obrońca boczny" },
+    { id: "4", lastName: "Ziolkowski A", position: "Obrońca boczny" },
+    { id: "5", lastName: "Ziolkowski M", position: "Obrońca boczny" },
+    { id: "6", lastName: "Janicki", position: "Obrońca środkowy" },
+    { id: "7", lastName: "Mavraj", position: "Obrońca środkowy" },
+    { id: "8", lastName: "Pllana", position: "Obrońca środkowy" },
+  ];
+  const { wPolu, nierozpoznani } = rozstaw(squad);
+  const na = (n) => (wPolu.get(n) || []).map((p) => p.lastName);
+  sprawdz("nikt nie zostaje bez pola przy nieparzystej liczbie", nierozpoznani.length === 0,
+    nierozpoznani.map((p) => p.lastName + " (" + p.position + ")").join(", "));
+  sprawdz("obie strony obsadzone, nie jedna", na(3).length > 0 && na(2).length > 0,
+    `3:${na(3).length} 2:${na(2).length}`);
+  sprawdz("pieciu bocznych rozchodzi sie 3 i 2", na(3).length + na(2).length === 5,
+    `3:${na(3).join(",")} | 2:${na(2).join(",")}`);
+  sprawdz("stoperzy tak samo — nikt nie wypada", na(4).length + na(5).length === 3,
+    `4:${na(4).join(",")} | 5:${na(5).join(",")}`);
+}
 console.log(bledy ? `\n${bledy} BŁĘDÓW` : "\nWszystko przeszło.");
 process.exit(bledy ? 1 : 0);
