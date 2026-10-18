@@ -7297,6 +7297,11 @@ function viewClubs(){
       <button class="secondary" data-action="systemy-gry" title="Ustaw systemy gry wszystkich klubów tej grupy naraz">📐 Systemy gry</button>
       <button class="secondary" data-action="sklady-meczowe" title="Rozstaw zawodników na mapach według ustawienia z ostatniej kolejki">👥 Pozycje ze składów</button>
       <button class="secondary" data-action="pozycje-z-tm" title="Uzupełnia puste pozycje zawodników danymi z Transfermarktu">🧭 Pozycje z Transfermarktu</button>
+      ${/* Osobny przycisk, bo robi co innego niż ten obok: tamten UZUPEŁNIA puste pola jeden
+            profil po drugim, ten pobiera CAŁE SKŁADY i NADPISUJE pozycje precyzyjnymi
+            (lewy/prawy/środkowy), żeby czternastu napastników rozeszło się po skrzydłach. */''}
+      <button class="gold" data-action="pozycje-ze-skladow-tm"
+        title="Czyta całe składy z Transfermarktu i nadpisuje pozycje precyzyjnymi: lewy/prawy obrońca, lewe/prawe skrzydło, środkowy napastnik">⚑ Precyzyjne pozycje: Ekstraklasa – II liga</button>
       <button class="secondary" data-action="pobierz-tabele" title="Pobiera z 90minut tabele Ekstraklasy, I, II i III ligi — układ, punkty i liczbę rozegranych kolejek">⭳ Tabele z 90minut</button>
       <button class="secondary" data-action="merge-duplicates" title="Znajdź kluby wpisane dwa razy pod różnymi nazwami i połącz je w jeden">🧹 Scal duplikaty</button>
       ${list.some(c=>!clubCrest(c.id)) ? `<button class="secondary" data-action="herby-z-pierwszych" title="Skopiuj herby z kartotek seniorskich tych samych klubów">🛡️ Herby z pierwszych drużyn (${list.filter(c=>!clubCrest(c.id)).length})</button>` : ''}
@@ -15189,6 +15194,195 @@ function openSkladyModal(kluby){
   document.body.appendChild(overlay);
 }
 
+// ---------------------------------------------------------------------------------------------
+// POZYCJE ZE SKŁADÓW TRANSFERMARKTU — DLA CAŁYCH LIG NARAZ.
+//
+// Zgłoszenie (18.10.2026): „tu masz napisane pozycje, pobierz do wszystkich klubów od ekstraklasy
+// do 2 ligi i umieść ich na mapie pozycji".
+//
+// Problem, od którego się zaczęło: nasze kartoteki mają pozycję OGÓLNĄ. Czternastu zawodników
+// z wpisem „Napastnik" staje na jednym polu mapy, bo nic nie mówi, który gra z lewej, który
+// z prawej, a który w środku. Transfermarkt rozróżnia to dokładnie — i to jest dokładnie ta
+// informacja, której mapie brakowało.
+//
+// Czytamy STRONY SKŁADÓW, nie profile: jeden zespół to jedno zapytanie zamiast trzydziestu.
+// Przy Ekstraklasie, I i II lidze to kilkadziesiąt żądań zamiast kilku tysięcy.
+
+// Nazwa z Transfermarktu → numer pola wg Narodowego Modelu Gry + nasza nazwa pozycji.
+// Numer 0 znaczy „wiemy jaka formacja, nie wiemy która strona" — wtedy zostawiamy sam opis.
+const POZYCJE_TM = {
+  'bramkarz':            { numer: 1,  nazwa: 'Bramkarz' },
+  'srodkowy obronca':    { numer: 0,  nazwa: 'Obrońca środkowy' },   // lewy/prawy stoper rozdzielamy niżej
+  'lewy obronca':        { numer: 3,  nazwa: 'Obrońca boczny' },
+  'prawy obronca':       { numer: 2,  nazwa: 'Obrońca boczny' },
+  'obronca':             { numer: 0,  nazwa: 'Obrońca środkowy' },
+  'defensywny pomocnik': { numer: 6,  nazwa: 'Pomocnik defensywny' },
+  'srodkowy pomocnik':   { numer: 8,  nazwa: 'Pomocnik środkowy' },
+  'ofensywny pomocnik':  { numer: 10, nazwa: 'Pomocnik ofensywny' },
+  'pomocnik':            { numer: 8,  nazwa: 'Pomocnik środkowy' },
+  // Skrzydła: Transfermarkt nazywa je raz pomocnikiem, raz napastnikiem — u nas to jedno pole.
+  'lewy pomocnik':       { numer: 11, nazwa: 'Skrzydłowy' },
+  'prawy pomocnik':      { numer: 7,  nazwa: 'Skrzydłowy' },
+  'lewe skrzydlo':       { numer: 11, nazwa: 'Skrzydłowy' },
+  'prawe skrzydlo':      { numer: 7,  nazwa: 'Skrzydłowy' },
+  'lewy napastnik':      { numer: 11, nazwa: 'Skrzydłowy' },
+  'prawy napastnik':     { numer: 7,  nazwa: 'Skrzydłowy' },
+  'srodkowy napastnik':  { numer: 9,  nazwa: 'Napastnik' },
+  'napastnik':           { numer: 9,  nazwa: 'Napastnik' },
+};
+
+const kluczTm = (s)=> String(s||'').toLowerCase()
+  .normalize('NFD').replace(/\p{M}/gu,'').replace(/[^a-z]+/g,' ').trim();
+
+// Identyfikator zawodnika na Transfermarkcie z zapisanego u nas adresu profilu.
+const tmIdZawodnika = (p)=> (String(p && p.profileTm || '').match(/\/spieler\/(\d+)/) || [])[1] || '';
+
+// Nazwisko do porównań: bez ogonków, bez znaków przestankowych, słowa posortowane — bo „Jan
+// Kowalski" i „Kowalski Jan" to ta sama osoba, a Transfermarkt podaje imię przed nazwiskiem.
+const kluczOsoby = (a, b)=> [a, b].map(x=> String(x||'').toLowerCase()
+  .normalize('NFD').replace(/\p{M}/gu,'').replace(/[^a-z]+/g,' ').trim())
+  .join(' ').split(' ').filter(Boolean).sort().join(' ');
+
+// Rozstawienie JEDNEGO klubu na podstawie odczytanego składu. Oddaje listę zmian — niczego nie
+// zapisuje, żeby dało się to policzyć i pokazać przed zatwierdzeniem.
+function zmianyPozycjiZeSkladu(klub, zawodnicyTm){
+  const nasi = zawodnicyKlubu(klub.id);
+  const wgTmId = new Map();
+  const wgNazwiska = new Map();
+  nasi.forEach(p=>{
+    const t = tmIdZawodnika(p);
+    if(t) wgTmId.set(t, p);
+    const k = kluczOsoby(p.firstName, p.lastName);
+    if(k && !wgNazwiska.has(k)) wgNazwiska.set(k, p);
+  });
+
+  // Dwaj stoperzy dzielą się na lewego i prawego po kolei — Transfermarkt nie podaje strony,
+  // a zostawienie obu na jednym polu odtwarzałoby dokładnie ten problem, od którego zaczęliśmy.
+  let licznikStoperow = 0;
+  const zmiany = [];
+  for(const z of zawodnicyTm){
+    const wpis = POZYCJE_TM[kluczTm(z.pozycja)];
+    if(!wpis) continue;
+    // Identyfikator z Transfermarktu jest pewny; nazwisko to już domysł, więc dopiero w drugiej
+    // kolejności i tylko w obrębie tego klubu.
+    const p = wgTmId.get(String(z.tmId)) || wgNazwiska.get(kluczOsoby(z.nazwa, ''));
+    if(!p) continue;
+
+    let numer = wpis.numer;
+    if(kluczTm(z.pozycja) === 'srodkowy obronca'){ numer = (licznikStoperow++ % 2) ? 5 : 4; }
+    if(!numer) continue;
+
+    if(Number(p.pozycjaNmg) === numer && p.position === wpis.nazwa) continue;
+    zmiany.push({ p, numer, nazwa: wpis.nazwa, zTm: z.pozycja });
+  }
+  return zmiany;
+}
+
+// Adres klubu na Transfermarkcie. Raz ustalony zapisujemy przy klubie, żeby przy kolejnym
+// przebiegu nie szukać go od nowa — szukanie po nazwie jest najwolniejszą i najbardziej
+// zawodną częścią całej operacji.
+async function adresKlubuTm(klub){
+  const zapisany = String(klub.tmUrl || '').trim();
+  if(zapisany) return zapisany;
+  const odp = await fetch('/api/tm-kluby?klub=' + encodeURIComponent(klub.name || ''));
+  const dane = await odp.json().catch(()=>({}));
+  if(!odp.ok) throw new Error(dane.error || ('serwer odpowiedział ' + odp.status));
+  const kandydaci = dane.kandydaci || [];
+  if(!kandydaci.length) throw new Error('Transfermarkt nie zna klubu o tej nazwie');
+  // Nie bierzemy pierwszego z brzegu: „Warszawa" pasuje do pięciu klubów. Musi zgadzać się nazwa.
+  const trafiony = kandydaci.find(k=> klubyToSamo(k.nazwa, klub.name)) || null;
+  if(!trafiony) throw new Error('żaden z kandydatów nie pasuje nazwą (' + kandydaci.slice(0,3).map(k=>k.nazwa).join(', ') + ')');
+  klub.tmUrl = trafiony.url;
+  return trafiony.url;
+}
+
+// POBRANIE POZYCJI DLA WSKAZANYCH LIG.
+//
+// Zgłoszenie (18.10.2026): „pobierz do wszystkich klubów od ekstraklasy do 2 ligi i umieść ich
+// na mapie pozycji", z wyraźną decyzją: nadpisujemy to, co jest. Dlatego każdemu dopasowanemu
+// zawodnikowi wpisujemy numer pola i nazwę pozycji prosto z Transfermarktu.
+async function pobierzPozycjeZeSkladowTm(ligi){
+  const kluby = DB.clubs.filter(c=> ligi.includes(c.league));
+  if(!kluby.length){ alert('W tych ligach nie ma u Ciebie żadnego klubu.'); return; }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  let przerwij = false;
+  const rysuj = (tresc)=>{ overlay.innerHTML = `<div class="modal" style="max-width:640px;">
+    <h3>Pozycje ze składów Transfermarktu</h3>${tresc}</div>`; };
+
+  rysuj(`<p class="note" style="margin-top:-6px;">Przechodzę ${kluby.length} ${kluby.length===1?'klub':'klubów'}
+      z lig: ${ligi.map(esc).join(', ')}. Jedno zapytanie na klub — cały skład naraz.</p>
+    <p class="note"><strong>Nadpisuję pozycje, które już są w kartotekach</strong>, bo po to to robimy:
+      pozycja ogólna („Napastnik") ustawia czternastu ludzi na jednym polu, a Transfermarkt
+      rozróżnia lewe skrzydło, prawe i środek.</p>
+    <div class="modal-actions">
+      <button class="secondary" id="tmp-anuluj">Anuluj</button>
+      <button class="gold" id="tmp-start">Pobierz i ustaw pozycje</button>
+    </div>`);
+  document.body.appendChild(overlay);
+  const zamknij = ()=> overlay.remove();
+  overlay.addEventListener('click', e=>{ if(e.target===overlay && !przerwij) zamknij(); });
+  (overlay.querySelector('#tmp-anuluj') as HTMLElement).onclick = zamknij;
+
+  (overlay.querySelector('#tmp-start') as HTMLElement).onclick = async()=>{
+    const log = [];
+    let zmienionych = 0, sprawdzonych = 0;
+    const doZapisu = new Map();
+    const postep = ()=> rysuj(`
+      <p class="note" style="margin-top:-6px;">Klub ${sprawdzonych} z ${kluby.length} &middot;
+        ustawionych pozycji: <strong>${zmienionych}</strong></p>
+      <div class="obs-item" style="max-height:260px;overflow:auto;font-size:12px;">
+        ${log.slice(-40).map(l=>`<div>${l}</div>`).join('') || '<div class="note">Zaczynam…</div>'}
+      </div>
+      <div class="modal-actions"><button class="secondary" id="tmp-stop">Przerwij</button></div>`);
+    postep();
+    overlay.addEventListener('click', (e)=>{
+      if((e.target as HTMLElement).id === 'tmp-stop') przerwij = true;
+    });
+
+    for(const klub of kluby){
+      if(przerwij){ log.push('<strong>Przerwano.</strong>'); break; }
+      sprawdzonych++;
+      try{
+        const url = await adresKlubuTm(klub);
+        const odp = await fetch('/api/tm-sklad?url=' + encodeURIComponent(url));
+        const dane = await odp.json().catch(()=>({}));
+        if(!odp.ok) throw new Error(dane.szczegoly || dane.error || ('serwer odpowiedział ' + odp.status));
+        const zmiany = zmianyPozycjiZeSkladu(klub, dane.zawodnicy || []);
+        zmiany.forEach(({p, numer, nazwa})=>{
+          p.pozycjaNmg = numer;
+          p.position = nazwa;
+          doZapisu.set(p.id, p);
+        });
+        zmienionych += zmiany.length;
+        log.push(`${esc(klub.name)}: skład ${(dane.zawodnicy||[]).length}, ustawiono ${zmiany.length}`);
+      }catch(e){
+        log.push(`<span style="color:var(--clay-dark);">${esc(klub.name)}: ${esc(String(e.message || e))}</span>`);
+      }
+      postep();
+      // Przerwa między klubami — Transfermarkt nie lubi serii żądań bez oddechu.
+      await new Promise(g=>setTimeout(g, 400));
+    }
+
+    const lista = [...doZapisu.values()];
+    if(lista.length){
+      const ok = await savePlayersSome(lista);
+      log.push(ok === false
+        ? `<strong style="color:var(--clay-dark);">Nie udało się zapisać.</strong>${powodNieudanegoZapisu()}`
+        : `<strong>Zapisane: ${lista.length} ${plZaw(lista.length)}.</strong>`);
+      // Adresu TM klubu NIE zapisujemy do bazy: tabela klubów nie ma na to kolumny, więc zapis
+      // i tak by go wyciął. Zostaje w pamięci na czas sesji — drugi przebieg tego samego dnia
+      // pominie szukanie po nazwie.
+    }else{
+      log.push('<strong>Nic do zapisania — wszyscy mieli już te pozycje.</strong>');
+    }
+    rysuj(`<p class="note" style="margin-top:-6px;">Gotowe. Klubów: ${sprawdzonych}, ustawionych pozycji: <strong>${zmienionych}</strong>.</p>
+      <div class="obs-item" style="max-height:300px;overflow:auto;font-size:12px;">${log.map(l=>`<div>${l}</div>`).join('')}</div>
+      <div class="modal-actions"><button class="gold" id="tmp-ok">Zamknij</button></div>`);
+    (overlay.querySelector('#tmp-ok') as HTMLElement).onclick = ()=>{ zamknij(); render(); };
+  };
+}
 function openPozycjeZTmModal(kluby){
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -19361,6 +19555,8 @@ function attachHandlers(){
       b.disabled = false; b.textContent = napis;
     }
   });
+  main.querySelectorAll('[data-action="pozycje-ze-skladow-tm"]').forEach(b=>b.onclick=()=>
+    void pobierzPozycjeZeSkladowTm(['Ekstraklasa', 'I liga', 'II liga']));
   main.querySelectorAll('[data-action="pozycje-z-tm"]').forEach(b=>b.onclick=()=>openPozycjeZTmModal(widoczneKluby()));
   main.querySelectorAll('[data-action="systemy-gry"]').forEach(b=>b.onclick=()=>openSystemyModal(widoczneKluby()));
   main.querySelectorAll('[data-action="sklady-meczowe"]').forEach(b=>b.onclick=()=>openSkladyModal(widoczneKluby()));

@@ -700,6 +700,9 @@ export const storage = {
     if (!table) throw new Error("saveSome obsługuje tylko kolekcje tabelowe, nie " + key);
     if (!items || !items.length) return true;
     await upsertWsadami(table, items);
+    // Pamięć podręczna musi od razu znać nową wersję tych wierszy — z tego samego powodu
+    // co w saveOne i set: inaczej przy następnym wejściu wróciłyby w starej postaci.
+    await odswiezWPamieci(table, ...items);
     return true;
   },
 
