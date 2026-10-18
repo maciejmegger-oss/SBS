@@ -8771,12 +8771,14 @@ function mapaZespoluHtml(klub, squad){
   const system = String(systemyKlubow[klub.id] || '');
   const wsp = FORMATION_COORDS[system] || FORMATION_COORDS[''];
   const zPozycja = squad.filter(p=>String(p.position||'').trim());
-  if(zPozycja.length < 5){
+  // Nawet przy jednej wpisanej pozycji rysujemy boisko — reszta składu czeka na ławce pod nim
+  // i da się ją tam rozstawić przeciąganiem. Wcześniej przy mniej niż pięciu pozycjach cała mapa
+  // znikała i nie było jak zacząć: żeby zobaczyć zawodników, trzeba było najpierw wpisać im
+  // pozycje ręcznie w kartotekach, choć mapa jest właśnie od tego, żeby to robić.
+  if(!squad.length){
     return `<div class="card mapa-zespolu">
       <h4 style="margin-top:0;color:var(--heading);">Mapa zespołu</h4>
-      <p class="note" style="margin:0;">Za mało zawodników z wpisaną pozycją (${zPozycja.length} z ${squad.length}),
-        żeby ustawić skład. Uzupełnij pozycje — w widoku Klubów jest przycisk
-        <strong>🧭 Pozycje z Transfermarktu</strong>, który robi to dla całej ligi naraz.</p>
+      <p class="note" style="margin:0;">Ten klub nie ma jeszcze nikogo w kartotece.</p>
     </div>`;
   }
 
@@ -8880,6 +8882,26 @@ function mapaZespoluHtml(klub, squad){
 
   const bezPozycji = squad.length - zPozycja.length;
   const puste = POSITION_NUMBERS.filter(pn=>wsp[pn.number] && !(wPolu.get(pn.number)||[]).length);
+
+  // ŁAWKA — WSZYSCY, KTÓRZY NIE STANĘLI NA BOISKU.
+  //
+  // Zgłoszenie (18.10.2026): „na mapie muszą być wszyscy zawodnicy, ja potem mogę ich przesuwać
+  // na pozycjach". Dotąd zawodnik bez pozycji albo z nazwą, której nie rozpoznaliśmy, po prostu
+  // nie istniał na tym ekranie — a to właśnie jego trzeba było gdzieś postawić. Teraz siedzi na
+  // ławce pod boiskiem, przeciągalny na dowolne pole tak samo jak ci z murawy. Upuszczenie
+  // wpisuje mu numer wg NMG i pozycję, więc po jednym ruchu jest już na stałe tam, gdzie trzeba.
+  const naLawce = squad.filter(p=>!wziete.has(p.id));
+  const lawkaHtml = naLawce.length ? `
+    <div class="mapa-lawka">
+      <div class="mapa-lawka-naglowek">Ławka — ${naLawce.length} ${naLawce.length===1?'zawodnik':'zawodników'} poza boiskiem
+        <span class="note" style="margin:0;font-weight:400;">przeciągnij na pole, żeby ustawić pozycję na stałe</span></div>
+      <div class="mapa-lawka-lista">${naLawce.map(p=>`<span class="pos-marker-row lawka-chip" draggable="true"
+        data-zawodnik="${esc(p.id)}" title="${esc((p.lastName||'') + ' ' + (p.firstName||''))}${
+          p.position ? ' — ' + esc(p.position) + ' (nie rozpoznałem tej nazwy)' : ' — brak wpisanej pozycji'} · przeciągnij na pole">
+        <span class="pmr-name">${esc(p.lastName || p.firstName || '—')}</span>
+        ${p.birthYear?`<span class="pmr-year">${esc(String(p.birthYear))}</span>`:''}
+      </span>`).join('')}</div>
+    </div>` : '';
   return `<div class="card mapa-zespolu">
     <div class="toolbar" style="margin-bottom:4px;">
       <h4 style="margin:0;color:var(--heading);">Mapa zespołu</h4>
@@ -8897,6 +8919,7 @@ function mapaZespoluHtml(klub, squad){
       </div>
       <div class="position-map-content">${POSITION_NUMBERS.map(znacznik).join('')}</div>
     </div></div>
+    ${lawkaHtml}
     <p class="note" style="margin-top:8px;">Liczone z pozycji w kartotekach — nic tu nie zapisujemy, obraz zmienia się sam wraz z danymi.
       ${!system ? 'Ustaw <strong>System gry zespołu</strong> w edycji klubu, żeby pola stanęły w tym układzie, którym klub gra. ' : ''}
       ${puste.length ? `<strong>Puste pola:</strong> ${puste.map(pn=>esc(pn.label)).join(', ')} — tam nie masz nikogo z taką pozycją. ` : ''}
@@ -13836,12 +13859,20 @@ function viewRankingNumbersMode(){
     const key = positionMapKey(rankingLeague, rankingFormationFilter, posDef.number);
     const ids = positionMapAssignments[key] || [];
     const isGk = posDef.number === 1;
-    const playerRowsHtml = ids.map(id=>{
+    const playerRowsHtml = ids.map((id, i)=>{
       const pl = DB.players.find(p=>p.id===id);
       if(!pl) return '';
       // Kolor wg statusu: „Do transferu" = złoto; „Na Testy" i pozostałe = bez koloru (neutralnie).
       const statusCls = pl.status==='Do transferu' ? ' pmr-transfer' : '';
-      return `<span class="pos-marker-row${statusCls}" draggable="true" data-id="${esc(pl.id)}" data-zrodlo="${posDef.number}" title="${esc(pl.status||'')} — przeciągnij na inną pozycję">${crestImg(clubCrest(pl.clubId),'xs',clubName(pl.clubId))}<span class="pmr-name">${esc(pl.lastName || pl.firstName || '—')}</span>${pl.birthYear?`<span class="pmr-year">${esc(pl.birthYear)}</span>`:''}</span>`;
+      // DWA PIERWSZE MIEJSCA WIDAĆ NA PIERWSZY RZUT OKA.
+      //
+      // Zgłoszenie (18.10.2026): „w rankingu odznaczmy dwa pierwsze pola na pozycji różnymi
+      // kolorami, aby było widać zawodnika z podstawowego składu i tego rezerwowego". Kolejność
+      // na pozycji niosła tę informację od zawsze, ale trzeba było ją wyczytać z układu wierszy —
+      // a przy sześciu nazwiskach jedno pod drugim nikt tego nie robi.
+      const miejsce = i === 0 ? ' pmr-podstawowy' : i === 1 ? ' pmr-rezerwowy' : '';
+      const rola = i === 0 ? 'pierwszy wybór' : i === 1 ? 'zmiennik' : `${i + 1}. w kolejce`;
+      return `<span class="pos-marker-row${statusCls}${miejsce}" draggable="true" data-id="${esc(pl.id)}" data-zrodlo="${posDef.number}" title="${esc(rola)}${pl.status?' · '+esc(pl.status):''} — przeciągnij na inną pozycję">${crestImg(clubCrest(pl.clubId),'xs',clubName(pl.clubId))}<span class="pmr-name">${esc(pl.lastName || pl.firstName || '—')}</span>${pl.birthYear?`<span class="pmr-year">${esc(pl.birthYear)}</span>`:''}</span>`;
     }).join('');
     // Plakietki przy krawędziach uciekały poza boisko i nazwiska się urywały — przy skrajnych
     // polach kotwiczymy je bokiem zamiast środkiem. Po obrocie bramkarz dotyka LEWEJ krawędzi,
@@ -13874,7 +13905,8 @@ function viewRankingNumbersMode(){
     </div>
   </div>
   </div>
-  <p class="note" style="margin-top:10px;"><strong>Złap nazwisko myszą i przeciągnij na inne pole</strong>, żeby zmienić zawodnikowi pozycję — pole docelowe podświetli się na złoto. Kliknij pozycję, aby dodać, usunąć lub zmienić kolejność (do 6 na pozycję, dwa pierwsze miejsca = priorytetowi).
+  <p class="note" style="margin-top:10px;"><strong>Złap nazwisko myszą i przeciągnij na inne pole</strong>, żeby zmienić zawodnikowi pozycję — pole docelowe podświetli się na złoto. Kliknij pozycję, aby dodać, usunąć lub zmienić kolejność (do 6 na pozycję).
+  Pierwsze miejsce na pozycji ma <span class="pmr-legenda pmr-podstawowy">złoty</span> pasek — to pierwszy wybór; drugie <span class="pmr-legenda pmr-rezerwowy">zielony</span> — zmiennik. Dalsi są bez paska, bo to już głębia kadry.
   ${rankingFormationFilter? ` Układ pól odzwierciedla kształt systemu ${esc(rankingFormationFilter)}.` : ''}
   ${!anyRealCandidatesFound? ' Mapa jest pusta, bo w tej lidze nikt nie jest ani w Monitoringu, ani ze statusem „Do transferu" / „Na Testy" — to oni wypełniają mapę. Dodaj kogoś do Monitoringu albo nadaj status w profilu zawodnika.' : ''}
   ${bezSystemu? ` <strong>Poza tym systemem:</strong> ${bezSystemu} zawodnik(ów) tej ligi ma status kwalifikujący, ale w profilu nie ma wpisanego systemu gry — zobaczysz ich pod „Wszystkie systemy" albo po uzupełnieniu systemu w profilu.` : ''}</p>`;

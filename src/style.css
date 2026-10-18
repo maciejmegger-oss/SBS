@@ -1211,6 +1211,34 @@ tr.crow-rejected td,tr.crow-watching td{color:var(--row-ink);}
    jest tak samo ciekawy, więc go nie chowamy; zaznaczamy tylko, że klub punktów za niego nie bierze. */
 .pjs-nieliczony td{opacity:.72;}
 .pjs-nieliczony td:first-child{box-shadow:inset 3px 0 0 var(--gold);}
+/* ŁAWKA POD BOISKIEM — zawodnicy, którzy nie stanęli na murawie.
+   Zgłoszenie (18.10.2026): „na mapie muszą być wszyscy zawodnicy, ja potem mogę ich przesuwać".
+   Kto nie ma pozycji albo ma wpisaną taką, której nie rozpoznajemy, siedzi tutaj i da się go
+   przeciągnąć na dowolne pole — upuszczenie zapisuje mu numer wg NMG na stałe. */
+.mapa-lawka{margin-top:10px;padding:10px 12px;background:var(--card-warm);
+  border:1px solid var(--border);border-radius:10px;}
+.mapa-lawka-naglowek{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+  font-size:12.5px;font-weight:700;color:var(--heading);margin-bottom:8px;}
+.mapa-lawka-lista{display:flex;flex-wrap:wrap;gap:6px;}
+.lawka-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;
+  background:var(--card);border:1px solid var(--border);border-radius:14px;
+  font-size:12px;cursor:grab;transition:border-color .12s, box-shadow .12s, transform .12s;}
+.lawka-chip:hover{border-color:var(--gold);box-shadow:0 2px 6px rgba(10,23,18,.12);transform:translateY(-1px);}
+.lawka-chip:active{cursor:grabbing;}
+.lawka-chip .pmr-year{opacity:.6;font-size:11px;}
+
+/* PIERWSZE DWA MIEJSCA NA POZYCJI — podstawowy i rezerwowy.
+   Zgłoszenie (18.10.2026): „w rankingu odznaczmy dwa pierwsze pola na pozycji różnymi kolorami,
+   aby było widać zawodnika z podstawowego składu i tego rezerwowego". Pierwszy dostaje złoto,
+   drugi zieleń murawy — trzeci i dalsi zostają bez wyróżnienia, bo to już głębia kadry. */
+/* Różnią się nie tylko barwą: pierwszy wybór ma grubszy pasek, cieplejsze tło i grubszą czcionkę,
+   zmiennik sam cienki pasek. Złoto i zieleń dzieli zaledwie 1,92:1 jasności — przy daltonizmie
+   sam kolor nie wystarczyłby, żeby je rozróżnić. */
+.pmr-podstawowy{box-shadow:inset 4px 0 0 var(--gold);padding-left:7px;border-radius:3px;
+  background:var(--card-warm);font-weight:700;}
+.pmr-rezerwowy{box-shadow:inset 2px 0 0 var(--good);padding-left:7px;border-radius:3px;}
+/* Próbka koloru w legendzie pod mapą rankingową — ten sam pasek, co przy nazwisku. */
+.pmr-legenda{display:inline-block;padding:0 6px;border-radius:3px;background:var(--card-warm);font-weight:700;}
 /* Kafelki graficzne poziomów rozgrywek (Kluby) — logo (wgrane lub placeholder) + etykieta + liczba klubów. */
 .league-tiles{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:4px;}
 .league-tile{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 16px;min-width:84px;

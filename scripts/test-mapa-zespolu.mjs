@@ -10,6 +10,7 @@
 import fs from "node:fs";
 
 const zrodlo = fs.readFileSync("src/main.ts", "utf8");
+const css = fs.readFileSync("src/style.css", "utf8");
 let bledy = 0;
 const sprawdz = (opis, warunek, dodatek = "") => {
   console.log(`${warunek ? "  OK  " : " BŁĄD "} ${opis}${warunek ? "" : "   " + dodatek}`);
@@ -121,5 +122,30 @@ sprawdz("nierozpoznani wypisani z nazwiska i z tym, co mają wpisane",
 sprawdz("postawieni przez nazwę ogólną są odnotowani jako wzięci",
   /wPolu\.get\(pn\.number\)\.push\(\{ p, pewny: false \}\);\s*\n\s*wziete\.add\(p\.id\);/.test(zrodlo));
 
+
+console.log("\n5. Lawka — wszyscy sa na mapie");
+sprawdz("kto nie stanal na boisku, siedzi na lawce",
+  /const naLawce = squad\.filter\(p=>!wziete\.has\(p\.id\)\);/.test(zrodlo));
+sprawdz("lawka jest przeciagalna tak samo jak murawa",
+  /class="pos-marker-row lawka-chip" draggable="true"/.test(zrodlo));
+sprawdz("lawka niesie identyfikator, ktorego szuka obsluga upuszczenia",
+  /lawka-chip[\s\S]{0,120}data-zawodnik="\$\{esc\(p\.id\)\}"/.test(zrodlo));
+sprawdz("mapa nie znika juz przy malej liczbie wpisanych pozycji",
+  /if\(!squad\.length\)\{/.test(zrodlo) && !/if\(zPozycja\.length < 5\)\{/.test(zrodlo));
+sprawdz("lawka wpieta pod boisko", /\$\{lawkaHtml\}/.test(zrodlo));
+sprawdz("styl lawki jest w arkuszu", /\.mapa-lawka\{/.test(css) && /\.lawka-chip\{/.test(css));
+
+console.log("\n6. Ranking — pierwszy wybor i zmiennik");
+sprawdz("dwa pierwsze miejsca dostaja osobne klasy",
+  /const miejsce = i === 0 \? ' pmr-podstawowy' : i === 1 \? ' pmr-rezerwowy' : '';/.test(zrodlo));
+sprawdz("podpowiedz mowi, ktore to miejsce",
+  /const rola = i === 0 \? 'pierwszy wybór' : i === 1 \? 'zmiennik'/.test(zrodlo));
+sprawdz("pod mapa jest legenda kolorow", /pmr-legenda pmr-podstawowy/.test(zrodlo)
+  && /pmr-legenda pmr-rezerwowy/.test(zrodlo));
+sprawdz("roznica nie opiera sie na samym kolorze — grubosc paska i tlo",
+  /\.pmr-podstawowy\{box-shadow:inset 4px[\s\S]{0,120}background:var\(--card-warm\);font-weight:700;\}/.test(css)
+  && /\.pmr-rezerwowy\{box-shadow:inset 2px/.test(css));
+sprawdz("powod zapisany w arkuszu — zlota i zielen dziela 1,92:1 jasnosci",
+  /sam kolor nie wystarczyłby, żeby je rozróżnić/.test(css));
 console.log(bledy ? `\n${bledy} BŁĘDÓW` : "\nWszystko przeszło.");
 process.exit(bledy ? 1 : 0);
