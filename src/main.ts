@@ -8780,23 +8780,61 @@ function mapaZespoluHtml(klub, squad){
     </div>`;
   }
 
-  // Rozdział zawodników na pola: najpierw ci ze wskazanym numerem, potem reszta wg nazwy pozycji.
+  // Rozdział zawodników na pola: najpierw ci ze wskazanym numerem, potem ci, u których sama
+  // nazwa pozycji wskazuje stronę boiska, a na końcu reszta wg ogólnej nazwy pozycji.
   const wPolu = new Map(POSITION_NUMBERS.map(pn=>[pn.number, []]));
   const wziete = new Set();
   zPozycja.forEach(p=>{
     const numer = Number(p.pozycjaNmg) || 0;
     if(numer && wPolu.has(numer)){ wPolu.get(numer).push({ p, pewny: true }); wziete.add(p.id); }
   });
+
+  // NAZWY POZYCJI PORÓWNUJEMY PO ZNACZENIU, NIE ZNAK W ZNAK.
+  //
+  // Zgłoszenie (18.10.2026): „nie ma na mapie wszystkich zawodników z listy, zawodnicy są na
+  // złych pozycjach". Dopasowanie szło przez dokładną równość napisów (p.position === posName),
+  // więc wystarczyła inna kolejność słów, żeby zawodnik wypadł z boiska BEZ SŁOWA — a licznik
+  // u góry i tak liczył go jako stojącego na murawie. W kartotekach mamy obok siebie
+  // „Pomocnik defensywny" i „Defensywny pomocnik", „Obrońca boczny" i „Lewy obrońca”.
+  const normPoz = (s)=> String(s||'').toLowerCase()
+    .normalize('NFD').replace(/\p{M}/gu,'').replace(/[^a-z]+/g,' ').trim();
+  // Ten sam zestaw słów w innej kolejności to ta sama pozycja: „pomocnik defensywny" =
+  // „defensywny pomocnik". Stąd klucz ze słów posortowanych alfabetycznie.
+  const kluczPoz = (s)=> normPoz(s).split(' ').filter(Boolean).sort().join(' ');
+
+  // Nazwa wskazująca KONKRETNE pole (etykieta wg NMG: „Lewy obrońca", „Stoper (prawy)",
+  // „Defensywny pomocnik"). Tu strona boiska nie jest zgadywana — stoi w samej nazwie.
   POSITION_NUMBERS.forEach(pn=>{
-    const pasujacy = zPozycja.filter(p=>!wziete.has(p.id) && p.position === pn.posName);
+    zPozycja.forEach(p=>{
+      if(wziete.has(p.id)) return;
+      if(kluczPoz(p.position) !== kluczPoz(pn.label)) return;
+      wPolu.get(pn.number).push({ p, pewny: true });
+      wziete.add(p.id);
+    });
+  });
+
+  POSITION_NUMBERS.forEach(pn=>{
+    const pasujacy = zPozycja.filter(p=>!wziete.has(p.id) && kluczPoz(p.position) === kluczPoz(pn.posName));
     if(!pasujacy.length) return;
     const pary = POSITION_NUMBERS.filter(x=>x.posName === pn.posName);
     // Przy sparowanych polach (lewe/prawe) dzielimy pulę na pół — inaczej wszyscy boczni obrońcy
     // staliby po jednej stronie, a druga świeciła pustką, choć klub ma tam kogo wystawić.
     const ilePar = Math.max(1, pary.length);
     const indeks = pary.findIndex(x=>x.number === pn.number);
-    pasujacy.forEach((p, i)=>{ if(i % ilePar === indeks) wPolu.get(pn.number).push({ p, pewny: false }); });
+    pasujacy.forEach((p, i)=>{
+      if(i % ilePar !== indeks) return;
+      wPolu.get(pn.number).push({ p, pewny: false });
+      wziete.add(p.id);
+    });
   });
+
+  // KTO NIE WSZEDŁ NA BOISKO — I DLACZEGO.
+  //
+  // Zawodnik z pozycją, której nie ma na mapie (albo wpisaną inaczej niż gdziekolwiek indziej),
+  // znikał bez śladu, a licznik u góry twierdził, że stoi. Teraz liczymy postawionych, a tych
+  // z nierozpoznaną nazwą wypisujemy z nazwiska — bo to jedyne, co pozwala poprawić kartotekę.
+  const nierozpoznani = zPozycja.filter(p=>!wziete.has(p.id));
+  const naBoisku = zPozycja.length - nierozpoznani.length;
 
   // BOISKO W POZIOMIE — atak w prawo, własna bramka po lewej.
   //
@@ -8846,7 +8884,7 @@ function mapaZespoluHtml(klub, squad){
     <div class="toolbar" style="margin-bottom:4px;">
       <h4 style="margin:0;color:var(--heading);">Mapa zespołu</h4>
       <span class="note">${system ? `system ${esc(etykietaSystemu(system))}` : 'bez wpisanego systemu — układ domyślny'}
-        &middot; ${zPozycja.length} ${zPozycja.length===1?'zawodnik':'zawodników'} na boisku</span>
+        &middot; ${naBoisku} z ${squad.length} ${squad.length===1?'zawodnika':'zawodników'} na boisku</span>
     </div>
     <div class="pitch-wrap-outer"><div class="position-map-pitch">
       <!-- Linie rysowane pod boisko POZIOME: linia środkowa pionowo, pola karne po bokach.
@@ -8863,6 +8901,9 @@ function mapaZespoluHtml(klub, squad){
       ${!system ? 'Ustaw <strong>System gry zespołu</strong> w edycji klubu, żeby pola stanęły w tym układzie, którym klub gra. ' : ''}
       ${puste.length ? `<strong>Puste pola:</strong> ${puste.map(pn=>esc(pn.label)).join(', ')} — tam nie masz nikogo z taką pozycją. ` : ''}
       ${bezPozycji ? `${bezPozycji} ${bezPozycji===1?'zawodnik nie ma':'zawodników nie ma'} wpisanej pozycji i nie wchodzi na boisko. ` : ''}
+      ${nierozpoznani.length ? `<strong style="color:var(--clay-dark);">Nie rozpoznałem pozycji:</strong> ${
+        nierozpoznani.slice(0, 8).map(p=>`${esc(p.lastName || p.firstName || '—')} (${esc(p.position || '—')})`).join(', ')
+      }${nierozpoznani.length > 8 ? ` i ${nierozpoznani.length - 8} więcej` : ''} — wpisz im pozycję z listy w kartotece albo przeciągnij na właściwe pole. ` : ''}
       Kropka przy nazwisku znaczy, że stronę boiska dobrałem z pozycji ogólnej — wpisz <strong>Pozycję wg NMG</strong> w profilu, żeby ustawić ją na pewno.</p>
   </div>`;
 }
