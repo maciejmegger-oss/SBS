@@ -8854,6 +8854,21 @@ function mapaZespoluHtml(klub, squad){
   // Zawodnik z pozycją, której nie ma na mapie (albo wpisaną inaczej niż gdziekolwiek indziej),
   // znikał bez śladu, a licznik u góry twierdził, że stoi. Teraz liczymy postawionych, a tych
   // z nierozpoznaną nazwą wypisujemy z nazwiska — bo to jedyne, co pozwala poprawić kartotekę.
+  // KOLEJNOŚĆ NA POLU WEDŁUG ROZEGRANYCH MINUT.
+  //
+  // Zgłoszenie (19.10.2026): „zawodnicy, którzy mają najwięcej minut rozegranych, powinni być
+  // w danym klubie na pozycji numer jeden, wyróżnionym kolorem (...) środkowy obrońca prawy ma
+  // 1000 minut — pierwsze miejsce, drugi ma 600 — drugie miejsce, trzeci ma 100 — trzecie".
+  //
+  // Minuty są tu najuczciwszym miernikiem: nie mówią, kto jest lepszy w opinii skauta, tylko
+  // komu trener faktycznie ufa. Przy równych minutach rozstrzyga liczba meczów, a na końcu
+  // nazwisko — żeby kolejność nie skakała przy każdym przerysowaniu.
+  const minutyZawodnika = (p)=> Number(p.minutes) || 0;
+  wPolu.forEach((lista)=> lista.sort((a, b)=>
+    minutyZawodnika(b.p) - minutyZawodnika(a.p)
+    || (Number(b.p.matches) || 0) - (Number(a.p.matches) || 0)
+    || String(a.p.lastName||'').localeCompare(String(b.p.lastName||''), 'pl')));
+
   const nierozpoznani = zPozycja.filter(p=>!wziete.has(p.id));
   const naBoisku = zPozycja.length - nierozpoznani.length;
 
@@ -8894,9 +8909,16 @@ function mapaZespoluHtml(klub, squad){
     const brzeg = (coord.x < 14 ? ' pm-lewy' : coord.x > 86 ? ' pm-prawy' : '')
       + (coord.y > 78 ? ' pm-dol' : '');
     const tresc = lista.length
-      ? pokazane.map(({p, pewny})=>`<span class="pos-marker-row" draggable="true" data-zawodnik="${esc(p.id)}" title="${esc((p.lastName||'') + ' ' + (p.firstName||''))} — ${esc(p.position||'')}${pewny?', pozycja wskazana numerem wg NMG':', strona boiska dobrana z pozycji ogólnej'} · przeciągnij, aby zmienić pozycję">
+      ? pokazane.map(({p, pewny}, i)=>{
+          // Pierwszy i drugi w kolejce wyróżnieni — tak samo jak na mapie rankingowej.
+          // Kolejność bierze się z minut, więc pierwszy to ten, któremu trener ufa najbardziej.
+          const miejsce = i === 0 ? ' pmr-podstawowy' : i === 1 ? ' pmr-rezerwowy' : '';
+          const rola = i === 0 ? 'pierwszy wybór' : i === 1 ? 'zmiennik' : `${i + 1}. w kolejce`;
+          const min = Number(p.minutes) || 0;
+          return `<span class="pos-marker-row${miejsce}" draggable="true" data-zawodnik="${esc(p.id)}" title="${esc((p.lastName||'') + ' ' + (p.firstName||''))} — ${esc(p.position||'')} · ${esc(rola)} (${min} min)${pewny?', pozycja wskazana numerem wg NMG':', strona boiska dobrana z pozycji ogólnej'} · przeciągnij, aby zmienić pozycję">
           <span class="pmr-name">${esc(p.lastName || p.firstName || '—')}</span>
-          ${p.birthYear?`<span class="pmr-year">${esc(String(p.birthYear))}</span>`:''}${pewny?'':'<span class="pmr-kropka" title="Strona boiska dobrana z pozycji ogólnej">•</span>'}</span>`).join('')
+          ${p.birthYear?`<span class="pmr-year">${esc(String(p.birthYear))}</span>`:''}${pewny?'':'<span class="pmr-kropka" title="Strona boiska dobrana z pozycji ogólnej">•</span>'}</span>`;
+        }).join('')
         + (reszta>0 ? `<span class="pos-marker-row pmr-wiecej">+${reszta}</span>` : '')
       : '<span class="pos-marker-row pmr-empty">—</span>';
     return `<div class="pos-marker${brzeg}" data-pole="${pn.number}" style="left:${coord.x}%;top:${coord.y}%;" title="${esc(pn.label)} — ${lista.length} ${lista.length===1?'zawodnik':'zawodników'}">
@@ -8952,6 +8974,9 @@ function mapaZespoluHtml(klub, squad){
       ${nierozpoznani.length ? `<strong style="color:var(--clay-dark);">Nie rozpoznałem pozycji:</strong> ${
         nierozpoznani.slice(0, 8).map(p=>`${esc(p.lastName || p.firstName || '—')} (${esc(p.position || '—')})`).join(', ')
       }${nierozpoznani.length > 8 ? ` i ${nierozpoznani.length - 8} więcej` : ''} — wpisz im pozycję z listy w kartotece albo przeciągnij na właściwe pole. ` : ''}
+      Na każdym polu kolejność idzie <strong>od największej liczby rozegranych minut</strong>:
+      pierwszy ma <span class="pmr-legenda pmr-podstawowy">złoty</span> pasek, drugi
+      <span class="pmr-legenda pmr-rezerwowy">zielony</span>, dalsi bez paska.
       Kropka przy nazwisku znaczy, że stronę boiska dobrałem z pozycji ogólnej — wpisz <strong>Pozycję wg NMG</strong> w profilu, żeby ustawić ją na pewno.</p>
   </div>`;
 }

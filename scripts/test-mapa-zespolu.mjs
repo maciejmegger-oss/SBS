@@ -182,5 +182,35 @@ console.log("\n7. Rozdzial na lewa i prawa strone nikogo nie gubi");
   sprawdz("stoperzy tak samo — nikt nie wypada", na(4).length + na(5).length === 3,
     `4:${na(4).join(",")} | 5:${na(5).join(",")}`);
 }
+
+console.log("\n8. Kolejnosc na polu wedlug rozegranych minut");
+{
+  // Przyklad podany wprost w zgloszeniu (19.10.2026): 1000 minut -> pierwszy, 600 -> drugi,
+  // 100 -> trzeci.
+  const squad = [
+    { id: "a", lastName: "Stu", position: "Obrońca środkowy", minutes: 100, pozycjaNmg: 5 },
+    { id: "b", lastName: "Tysiac", position: "Obrońca środkowy", minutes: 1000, pozycjaNmg: 5 },
+    { id: "c", lastName: "Szescset", position: "Obrońca środkowy", minutes: 600, pozycjaNmg: 5 },
+  ];
+  const { wPolu } = rozstaw(squad);
+  const lista = (wPolu.get(5) || []).slice().sort((x, y) =>
+    (Number(y.minutes) || 0) - (Number(x.minutes) || 0)
+    || (Number(y.matches) || 0) - (Number(x.matches) || 0)
+    || String(x.lastName || "").localeCompare(String(y.lastName || ""), "pl"));
+  sprawdz("najwiecej minut na pierwszym miejscu", lista[0].lastName === "Tysiac", lista.map(p=>p.lastName).join(","));
+  sprawdz("600 minut na drugim", lista[1].lastName === "Szescset");
+  sprawdz("100 minut na trzecim", lista[2].lastName === "Stu");
+}
+sprawdz("aplikacja sortuje pola po minutach",
+  /wPolu\.forEach\(\(lista\)=> lista\.sort\(\(a, b\)=>\s*\n\s*minutyZawodnika\(b\.p\) - minutyZawodnika\(a\.p\)/.test(zrodlo));
+sprawdz("przy rownych minutach rozstrzyga liczba meczow, potem nazwisko",
+  /\(Number\(b\.p\.matches\) \|\| 0\) - \(Number\(a\.p\.matches\) \|\| 0\)/.test(zrodlo)
+  && /localeCompare\(String\(b\.p\.lastName\|\|''\), 'pl'\)/.test(zrodlo));
+sprawdz("pierwszy i drugi wyroznieni takze na mapie klubu",
+  /const miejsce = i === 0 \? ' pmr-podstawowy' : i === 1 \? ' pmr-rezerwowy' : '';[\s\S]{0,400}data-zawodnik=/.test(zrodlo));
+sprawdz("podpowiedz mowi, ile minut i ktore to miejsce",
+  /\$\{esc\(rola\)\} \(\$\{min\} min\)/.test(zrodlo));
+sprawdz("podpis pod mapa tlumaczy kolejnosc",
+  /od największej liczby rozegranych minut/.test(zrodlo));
 console.log(bledy ? `\n${bledy} BŁĘDÓW` : "\nWszystko przeszło.");
 process.exit(bledy ? 1 : 0);
