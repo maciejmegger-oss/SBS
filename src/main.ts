@@ -8770,7 +8770,14 @@ function miniTabelaKlubuHtml(c){
 function mapaZespoluHtml(klub, squad){
   const system = String(systemyKlubow[klub.id] || '');
   const wsp = FORMATION_COORDS[system] || FORMATION_COORDS[''];
-  const zPozycja = squad.filter(p=>String(p.position||'').trim());
+  // NUMER WG NMG WYSTARCZY — POZYCJA OGÓLNA NIE JEST DO TEGO POTRZEBNA.
+  //
+  // Zgłoszenie (18.10.2026): „nie ma dalej wszystkich na mapie" — przy 35 z 45. Do boiska
+  // dopuszczaliśmy tylko tych z wypełnioną rubryką „pozycja", a zawodnik z samym numerem wg NMG
+  // (np. Dodaj Kevin, 11 — lewe skrzydło) wypadał, choć o nim wiemy NAJWIĘCEJ ze wszystkich:
+  // numer wskazuje konkretne pole, a nie ogólną formację. Stąd puste skrzydła przy obsadzonym
+  // składzie. Teraz liczy się jedno albo drugie.
+  const zPozycja = squad.filter(p=>String(p.position||'').trim() || Number(p.pozycjaNmg) > 0);
   // Nawet przy jednej wpisanej pozycji rysujemy boisko — reszta składu czeka na ławce pod nim
   // i da się ją tam rozstawić przeciąganiem. Wcześniej przy mniej niż pięciu pozycjach cała mapa
   // znikała i nie było jak zacząć: żeby zobaczyć zawodników, trzeba było najpierw wpisać im

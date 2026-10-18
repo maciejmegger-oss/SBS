@@ -424,7 +424,13 @@ tr:hover td{background:var(--card-soft);}
    zamiast rosnąć w nieskończoność i zachodzić na sąsiednie pola. */
 .pos-marker-tag{background:rgba(10,18,15,.86);border:1px solid rgba(255,255,255,.16);border-radius:7px;
   padding:3px;box-shadow:0 6px 18px rgba(0,0,0,.55);min-width:150px;backdrop-filter:blur(2px);
-  display:block;max-height:216px;overflow-y:auto;overscroll-behavior:contain;}
+  /* Cztery wiersze na raz, reszta pod przewinięciem. Pokazanie CAŁEJ listy naraz (18.10.2026)
+     dało na dziewiątce słup czternastu nazwisk, który zasłonił dziesiątkę i pół boiska —
+     „teraz jest całkiem bałagan". Pudełko musi zostać wielkości plakietki, nie kolumny. */
+  display:block;max-height:104px;overflow-y:auto;overscroll-behavior:contain;}
+/* Pole, w którym właśnie szukasz nazwiska, wychodzi na wierzch — inaczej przewijana lista
+   chowa się pod sąsiednim polem. Bazowy z-index pola stoi wyżej, przy .pos-marker. */
+.pos-marker:hover,.pos-marker:focus-within{z-index:9;}
 /* Pasek przewijania w ciemnej plakietce — domyślny, jasny, wyglądał jak usterka. */
 .pos-marker-tag::-webkit-scrollbar{width:6px;}
 .pos-marker-tag::-webkit-scrollbar-thumb{background:rgba(255,255,255,.28);border-radius:3px;}
