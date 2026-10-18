@@ -8859,9 +8859,15 @@ function mapaZespoluHtml(klub, squad){
     // Przy sześciu plakietka rosła w pionie tak, że zachodziła na sąsiednie pola i mapa
     // przestawała być mapą. Cztery nazwiska mieszczą się między liniami, a „+3" mówi, że jest
     // ich więcej — pełną listę i tak masz w tabeli obok.
-    const WIDOCZNYCH = 4;
-    const pokazane = lista.slice(0, WIDOCZNYCH);
-    const reszta = lista.length - pokazane.length;
+    // WSZYSCY WIDOCZNI, BEZ „+10".
+    //
+    // Zgłoszenie (18.10.2026): „wszyscy muszą być na mapie". Lista ucinała się na czterech
+    // nazwiskach, a reszta znikała pod licznikiem — przy czternastu napastnikach na dziewiątce
+    // widać było czterech i nie dało się przeciągnąć pozostałych tam, gdzie powinni stać.
+    // Plakietka rośnie teraz do pełnej listy, a gdy jest bardzo długa, przewija się w środku
+    // (max-height w .pos-marker-tag) — zamiast zachodzić na sąsiednie pola.
+    const pokazane = lista;
+    const reszta = 0;
     // Plakietki przy krawędziach uciekały poza boisko i nazwiska się urywały. Przy skrajnych
     // polach kotwiczymy je bokiem zamiast środkiem.
     // Po obrocie krawędzie są inne: bramkarz dotyka LEWEJ, napastnicy PRAWEJ, a skrzydłowi
@@ -8872,7 +8878,7 @@ function mapaZespoluHtml(klub, squad){
       ? pokazane.map(({p, pewny})=>`<span class="pos-marker-row" draggable="true" data-zawodnik="${esc(p.id)}" title="${esc((p.lastName||'') + ' ' + (p.firstName||''))} — ${esc(p.position||'')}${pewny?', pozycja wskazana numerem wg NMG':', strona boiska dobrana z pozycji ogólnej'} · przeciągnij, aby zmienić pozycję">
           <span class="pmr-name">${esc(p.lastName || p.firstName || '—')}</span>
           ${p.birthYear?`<span class="pmr-year">${esc(String(p.birthYear))}</span>`:''}${pewny?'':'<span class="pmr-kropka" title="Strona boiska dobrana z pozycji ogólnej">•</span>'}</span>`).join('')
-        + (reszta>0 ? `<span class="pos-marker-row pmr-wiecej" title="${esc(lista.slice(WIDOCZNYCH).map(x=>x.p.lastName||x.p.firstName||'').join(', '))}">+${reszta}</span>` : '')
+        + (reszta>0 ? `<span class="pos-marker-row pmr-wiecej">+${reszta}</span>` : '')
       : '<span class="pos-marker-row pmr-empty">—</span>';
     return `<div class="pos-marker${brzeg}" data-pole="${pn.number}" style="left:${coord.x}%;top:${coord.y}%;" title="${esc(pn.label)} — ${lista.length} ${lista.length===1?'zawodnik':'zawodników'}">
       <span class="pos-marker-dot ${pn.number===1?'gk':''}">${pn.number}</span>

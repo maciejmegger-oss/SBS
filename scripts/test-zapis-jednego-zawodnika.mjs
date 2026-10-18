@@ -46,8 +46,11 @@ sprawdz("zespoły zawodnika i opis końcowy",
 console.log("\n3. Zapis pojedynczy musi zapisywać TO SAMO co pełny");
 sprawdz("ta sama droga pakowania pól ukrytych w jsonb (packExt)",
   /async function upsertWsadami[\s\S]{0,200}items\.map\(\(it\) => packExt\(table, it\)\)/.test(magazyn));
+// Oba zapisy nadal idą przez rowFromObj; doszedł tylko znacznik updated_at, bo baza go sama
+// nie ustawia przy aktualizacji (patrz komentarz w upsertWsadami).
 sprawdz("ta sama zamiana nazw pól na kolumny (rowFromObj)",
-  /async function upsertWsadami[\s\S]{0,260}prepared\.map\(rowFromObj\)/.test(magazyn));
+  /async function upsertWsadami[\s\S]{0,900}prepared\.map\(\(o\) => \(\{ \.\.\.rowFromObj\(o\), updated_at: teraz \}\)\)/.test(magazyn)
+  && /rowFromObj\(packExt\(table, item\)\), updated_at:/.test(magazyn));
 sprawdz("saveSome działa tylko na kolekcjach z tabelą — inaczej zgłasza błąd",
   /saveSome obsługuje tylko kolekcje tabelowe/.test(magazyn));
 sprawdz("pusta lista nie wywołuje zapytania", /if \(!items \|\| !items\.length\) return true;/.test(magazyn));

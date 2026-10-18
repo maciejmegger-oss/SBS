@@ -353,6 +353,20 @@ function zapiszPamiec(table: string, dane: ZapamietanaKolekcja): Promise<void> {
   });
 }
 
+// Podmiana POJEDYNCZYCH wierszy w zapamiętanej kolekcji, zaraz po udanym zapisie.
+//
+// Bez tego poprawność zależałaby wyłącznie od `updated_at`, a ten ustawia przeglądarka — przy
+// zegarze spóźnionym względem bazy wiersz nie zostałby przy następnym wejściu dociągnięty
+// i wróciłby w starej postaci. Tu nie ma na co liczyć: wpisujemy to, co właśnie zapisaliśmy.
+async function odswiezWPamieci(table: string, ...zmienione: Record<string, unknown>[]): Promise<void> {
+  if (!zmienione.length) return;
+  const zapamietane = await czytajPamiec(table);
+  if (!zapamietane) return;   // nie ma pamięci — nie ma czego poprawiać
+  const wgId = new Map(zapamietane.obiekty.map((o) => [String(o.id), o]));
+  for (const o of zmienione) wgId.set(String(o.id), o);
+  await zapiszPamiec(table, { ...zapamietane, obiekty: [...wgId.values()] });
+}
+
 /** Czyści zapamiętaną zawartość — awaryjnie, gdyby kiedyś rozjechała się z bazą. */
 export async function wyczyscPamiecKolekcji(): Promise<void> {
   const db = await otworzPamiec();
@@ -490,6 +504,8 @@ async function setCollection(table: string, jsonValue: string): Promise<void> {
   // Zapisane wiersze mają od teraz nowy odcisk — inaczej przy następnym zapisie poszłyby znowu.
   const m = odciski[table];
   if (m) for (const it of items) m.set(String(it.id), odcisk(it));
+  // ...i ta sama poprawka w zapamiętanej kopii, z tego samego powodu co w saveOne.
+  await odswiezWPamieci(table, ...items);
 }
 
 // UPSERT PACZKI REKORDÓW — wspólny dla „zapisz całą kolekcję" i „zapisz tych kilkuset".
@@ -499,7 +515,16 @@ async function setCollection(table: string, jsonValue: string): Promise<void> {
 // żeby poprawić pozycje jednej ligi, jest tym samym, co przepisanie książki dla jednej literówki.
 async function upsertWsadami(table: string, items: Record<string, unknown>[]): Promise<void> {
   const prepared = items.map((it) => packExt(table, it));
-  const rows = prepared.map(rowFromObj);
+  // ZNACZNIK ZMIANY USTAWIAMY SAMI — BAZA TEGO NIE ROBI.
+  //
+  // `updated_at` ma w schemacie tylko `default now()`, czyli wypełnia się przy WSTAWIANIU wiersza.
+  // Przy aktualizacji zostaje stara wartość, bo wyzwalacza nie ma. Dopóki wczytywaliśmy za każdym
+  // razem całą tabelę, nikomu to nie przeszkadzało. Od kiedy dociągamy „zmienione od ostatniego
+  // razu" (16.10.2026), poprawiony wiersz był dla nas niewidoczny — zgłoszenie z 18.10.2026:
+  // „jak odświeżę stronę, nie zapisuje zawodników na tych pozycjach, co ustaliłem". Zapis
+  // dochodził do bazy, ale przeglądarka po odświeżeniu podawała swoją starą kopię.
+  const teraz = new Date().toISOString();
+  const rows = prepared.map((o) => ({ ...rowFromObj(o), updated_at: teraz }));
 
   // Jeden wsad. Wydzielone z pętli, żeby wsady mogły lecieć RÓWNOLEGLE — obsługa braku kolumny
   // musi zostać per wsad, bo dotyczy konkretnego zestawu wierszy.
@@ -642,10 +667,17 @@ export const storage = {
   async saveOne(key: string, item: Record<string, unknown>): Promise<boolean> {
     const table = COLLECTION_TABLES[key];
     if (!table) throw new Error("saveOne obsługuje tylko kolekcje tabelowe, nie " + key);
-    const row = rowFromObj(packExt(table, item));
+    // Znacznik zmiany ustawiamy sami — w bazie nie ma wyzwalacza, patrz upsertWsadami.
+    const row = { ...rowFromObj(packExt(table, item)), updated_at: new Date().toISOString() };
     for (;;) {
       const { error } = await sb.from(table).upsert(row, { onConflict: "id" });
-      if (!error) return true;
+      if (!error) {
+        // Pamięć podręczna tej przeglądarki musi od razu wiedzieć o zmianie. Gdyby polegać tylko
+        // na `updated_at`, wystarczyłby zegar przeglądarki spóźniony względem bazy, żeby przy
+        // następnym wejściu wiersz nie został dociągnięty i wrócił w starej postaci.
+        await odswiezWPamieci(table, item);
+        return true;
+      }
       const missing =
         error.message.match(/column [\w".]*\.(\w+) does not exist/) ||
         error.message.match(/Could not find the '(\w+)' column/);

@@ -419,8 +419,16 @@ tr:hover td{background:var(--card-soft);}
 /* Plakietka z nazwiskami w stylu paska transmisyjnego: ciemne, półprzezroczyste tło i biały
    tekst. Na trawie czyta się to znacznie lepiej niż jasny prostokąt, bo nie konkuruje jasnością
    z murawą, tylko się od niej odcina. */
+/* Plakietka pokazuje CAŁĄ obsadę pola — zgłoszenie (18.10.2026): „wszyscy muszą być na mapie".
+   Przy bardzo długiej liście (czternastu napastników na dziewiątce) przewija się w środku,
+   zamiast rosnąć w nieskończoność i zachodzić na sąsiednie pola. */
 .pos-marker-tag{background:rgba(10,18,15,.86);border:1px solid rgba(255,255,255,.16);border-radius:7px;
-  padding:3px;box-shadow:0 6px 18px rgba(0,0,0,.55);min-width:150px;backdrop-filter:blur(2px);}
+  padding:3px;box-shadow:0 6px 18px rgba(0,0,0,.55);min-width:150px;backdrop-filter:blur(2px);
+  display:block;max-height:216px;overflow-y:auto;overscroll-behavior:contain;}
+/* Pasek przewijania w ciemnej plakietce — domyślny, jasny, wyglądał jak usterka. */
+.pos-marker-tag::-webkit-scrollbar{width:6px;}
+.pos-marker-tag::-webkit-scrollbar-thumb{background:rgba(255,255,255,.28);border-radius:3px;}
+.pos-marker-tag::-webkit-scrollbar-track{background:transparent;}
 .pos-marker-row{display:flex;align-items:center;gap:6px;padding:3px 6px;white-space:nowrap;border-radius:4px;}
 .pos-marker-row + .pos-marker-row{border-top:1px solid rgba(255,255,255,.1);}
 .pos-marker-row .crest-xs{width:16px;height:16px;object-fit:contain;border-radius:3px;background:rgba(255,255,255,.9);flex-shrink:0;}

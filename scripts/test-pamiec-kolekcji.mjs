@@ -80,5 +80,26 @@ sprawdz("usunięcia liczone przy przycinaniu, bez drugiego mapowania",
   /\{ wgId\.delete\(id\); usunietych\+\+; \}/.test(st));
 sprawdz("powód zapisany — kopiowanie dziesiątek MB na wątku rysowania",
   /kopiowanie kilkudziesięciu megabajtów na wątku/.test(st));
+
+console.log("\n8. Znacznik zmiany — baza go sama nie ustawia");
+sprawdz("schemat ma tylko default now(), bez wyzwalacza",
+  /updated_at timestamptz not null default now\(\)/.test(fs.readFileSync("supabase/schema.sql", "utf8"))
+  && !/create trigger[\s\S]{0,200}updated_at/i.test(fs.readFileSync("supabase/schema.sql", "utf8")));
+sprawdz("zapis wsadowy ustawia updated_at sam",
+  /const teraz = new Date\(\)\.toISOString\(\);/.test(st)
+  && /\.\.\.rowFromObj\(o\), updated_at: teraz/.test(st));
+sprawdz("zapis pojedynczego wiersza też",
+  /\.\.\.rowFromObj\(packExt\(table, item\)\), updated_at: new Date\(\)\.toISOString\(\)/.test(st));
+sprawdz("powód zapisany w kodzie — inaczej poprawiony wiersz jest dla nas niewidoczny",
+  /Przy aktualizacji zostaje stara wartość, bo wyzwalacza nie ma\./.test(st));
+
+console.log("\n9. Pamięć poprawiana od razu po zapisie");
+sprawdz("jest podmiana pojedynczych wierszy w pamięci",
+  /async function odswiezWPamieci\(table: string, \.\.\.zmienione/.test(st));
+sprawdz("saveOne poprawia pamięć po udanym zapisie",
+  /await odswiezWPamieci\(table, item\);/.test(st));
+sprawdz("zapis całej kolekcji tak samo", /await odswiezWPamieci\(table, \.\.\.items\);/.test(st));
+sprawdz("nie polegamy na samym zegarze przeglądarki",
+  /zegarze spóźnionym względem bazy wiersz nie zostałby przy następnym wejściu dociągnięty/.test(st));
 console.log(bledy ? `\n${bledy} BŁĘDÓW` : "\nWszystko przeszło.");
 process.exit(bledy ? 1 : 0);
