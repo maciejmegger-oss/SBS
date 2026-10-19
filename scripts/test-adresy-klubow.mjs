@@ -51,7 +51,8 @@ sprawdz('polska zakładka pokazuje zestawienie klubów', /\$\{viewKontaktyKlubyP
 sprawdz('grupowanie po ligach, I liga przed IV ligą i CLJ', /const KOLEJNOSC_LIG_PL = \['I liga', 'II liga', 'III liga', 'IV liga', 'CLJ'\];/.test(zrodlo));
 sprawdz('adres do skopiowania, e-mail jako mailto, źródło przy wierszu',
   /function viewKontaktyKlubyPL\(\)\{[\s\S]*data-action="kopiuj-adres"[\s\S]*href="mailto:\$\{esc\(a\.email\)\}"[\s\S]*źródło ↗/.test(zrodlo));
-sprawdz('lista pokazuje też kluby bez danych (widać, czego brakuje)', ADRESY_KLUBOW.some(a => !a.adres && !a.email));
+// Po uzupełnieniu arkusza (10.2026) każdy klub ma adres albo e-mail — sprawdzamy więc kluby bez adresu.
+sprawdz('lista pokazuje też kluby bez adresu (widać, czego brakuje)', ADRESY_KLUBOW.some(a => !a.adres));
 sprawdz('każdy wpis ma ligę', ADRESY_KLUBOW.every(a => a.liga), ADRESY_KLUBOW.filter(a => !a.liga).map(a => a.klub).join(', '));
 
 console.log('\n4. Uzupełnia tylko puste pola');
