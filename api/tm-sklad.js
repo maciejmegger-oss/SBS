@@ -27,14 +27,25 @@ const DOZWOLONE_HOSTY = /(^|\.)transfermarkt\.[a-z.]+$/i;
 const RE_ZAWODNIK =
   /<table class="inline-table">[\s\S]*?\/profil\/spieler\/(\d+)">\s*([^<]+?)\s*<\/a>[\s\S]*?<tr>\s*<td>\s*([^<]+?)\s*<\/td>/g;
 
+// ENCJE LICZBOWE TEŻ TRZEBA ROZWINĄĆ.
+//
+// Zgłoszenie (18.10.2026): na ławce stały nazwiska „H&#229;kans" i „W&#229;lemark" zamiast
+// „Håkans" i „Wålemark". Rozwijaliśmy tylko encje nazwane (&amp;, &quot;), a Transfermarkt
+// zapisuje znaki skandynawskie i południowe liczbowo: &#229; to å, &#243; to ó. Takie nazwisko
+// nie dość, że wygląda jak usterka, to jeszcze nie dopasuje się do naszej kartoteki — po
+// odrzuceniu znaków spoza alfabetu zostaje z niego „w 229 lemark".
 const odsloniec = (s) =>
   String(s || "")
     .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
     .replace(/&quot;/g, '"')
-    .replace(/&#0?39;|&apos;/g, "'")
+    .replace(/&apos;/g, "'")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(Number(dec)))
+    // &amp; na końcu: inaczej „&amp;#229;" rozwinęłoby się w dwóch krokach do litery,
+    // zamiast zostać tekstem „&#229;", którym naprawdę jest.
+    .replace(/&amp;/g, "&")
     .replace(/\s+/g, " ")
     .trim();
 

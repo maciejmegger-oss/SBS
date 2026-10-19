@@ -62,8 +62,11 @@ sprawdz("dopasowanie szuka tylko w obrębie tego klubu",
   /const nasi = zawodnicyKlubu\(klub\.id\);/.test(zrodlo));
 sprawdz("klub dobierany po nazwie, a nie pierwszy z brzegu",
   /kandydaci\.find\(k=> klubyToSamo\(k\.nazwa, klub\.name\)\)/.test(zrodlo));
+// Warunek ma teraz trzy powody zapisu: pozycja, brakujący link do TM i nazwisko z nierozwiniętą
+// encją. Bez żadnego z nich zawodnik nie trafia na listę.
 sprawdz("bez zmiany nic nie trafia na listę do zapisu",
-  /if\(Number\(p\.pozycjaNmg\) === numer && p\.position === wpis\.nazwa\) continue;/.test(zrodlo));
+  /const pozycjaDoZmiany = numer && !\(Number\(p\.pozycjaNmg\) === numer && p\.position === wpis\.nazwa\);/.test(zrodlo)
+  && /if\(!pozycjaDoZmiany && !brakujeLinku && !prostujNazwisko\) continue;/.test(zrodlo));
 
 console.log("\n4. Przebieg po ligach");
 sprawdz("przycisk obejmuje Ekstraklasę, I i II ligę",
@@ -86,6 +89,36 @@ sprawdz("adres sprawdzany, czy na pewno z Transfermarktu",
 sprawdz("ten sam zawodnik liczony raz, nawet gdy jest na stronie dwa razy",
   /if \(widziane\.has\(tmId\)\) continue;/.test(api));
 
+
+console.log("\n7. Encje HTML w nazwiskach");
+{
+  const odsl = (s) => String(s || "")
+    .replace(/&nbsp;/g, " ").replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+    .replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+  sprawdz("encja liczbowa rozwija sie w litere", odsl("W&#229;lemark") === "Wålemark", odsl("W&#229;lemark"));
+  sprawdz("tak samo szesnastkowa", odsl("H&#xE5;kans") === "Håkans", odsl("H&#xE5;kans"));
+  sprawdz("&amp; rozwijane na koncu, zeby nie zjesc wlasnego tekstu",
+    odsl("Tekst &amp;#229; dalej") === "Tekst &#229; dalej", odsl("Tekst &amp;#229; dalej"));
+  sprawdz("odczyt z TM rozwija encje liczbowe",
+    /String\.fromCodePoint\(Number\(dec\)\)/.test(api));
+  sprawdz("aplikacja tez je rozwija przy dopasowaniu",
+    /const rozwinEncje = \(s\)=> String\(s\|\|''\)/.test(zrodlo));
+  sprawdz("nazwisko z encja prostujemy tylko przy trafieniu po identyfikatorze TM",
+    /const trafionyPoId = wgTmId\.get\(String\(z\.tmId\)\) === p;/.test(zrodlo)
+    && /const prostujNazwisko = trafionyPoId && maEncje && slowa\.length >= 2;/.test(zrodlo));
+}
+
+console.log("\n8. Pobieranie statystyk z 90minut");
+sprawdz("adres skladany tak samo, jak sprawdzane jest jego istnienie",
+  /const adres = adres90minut\(player\);/.test(zrodlo)
+  && /fetch\('\/api\/stats\?url=' \+ encodeURIComponent\(adres\)\)/.test(zrodlo));
+sprawdz("brak adresu konczy sie zrozumialym komunikatem, nie bledem serwera",
+  /ten zawodnik nie ma ani adresu profilu na 90minut, ani identyfikatora stamtąd/.test(zrodlo));
+sprawdz("nigdzie nie wysylamy juz surowego lnpLink",
+  !/encodeURIComponent\(player\.lnpLink\)/.test(zrodlo));
 if (process.env.TM_LIVE === "1") {
   console.log("\n6. Żywy Transfermarkt (TM_LIVE=1)");
   const m = await import("../api/tm-sklad.js");

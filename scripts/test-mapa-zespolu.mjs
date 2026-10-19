@@ -119,9 +119,10 @@ sprawdz("etykieta NMG wskazująca stronę ma pierwszeństwo przed nazwą ogóln�
   /kluczPoz\(p\.position\) !== kluczPoz\(pn\.label\)/.test(zrodlo));
 sprawdz("reszta dobierana po nazwie ogólnej",
   /kluczPoz\(p\.position\) === kluczPoz\(pn\.posName\)/.test(zrodlo));
+// Nagłówek wypisuje teraz całe równanie: na boisku + na ławce = razem z całego składu.
 sprawdz("licznik mówi, ilu POSTAWIONO, nie ilu ma wpisaną pozycję",
   /const naBoisku = zPozycja\.length - nierozpoznani\.length;/.test(zrodlo)
-  && /\$\{naBoisku\} z \$\{squad\.length\}/.test(zrodlo));
+  && /\$\{naBoisku\} na boisku \+ \$\{naLawce\.length\} na ławce =/.test(zrodlo));
 sprawdz("nierozpoznani wypisani z nazwiska i z tym, co mają wpisane",
   /Nie rozpoznałem pozycji:/.test(zrodlo));
 sprawdz("postawieni przez nazwę ogólną są odnotowani jako wzięci",

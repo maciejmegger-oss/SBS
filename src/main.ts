@@ -2911,7 +2911,19 @@ function statsAreStale(p){
 
 // Zwraca true, jeśli którakolwiek liczba faktycznie się zmieniła (żeby nie zapisywać bez potrzeby).
 async function fetchStatsFor(player){
-  const res = await fetch('/api/stats?url=' + encodeURIComponent(player.lnpLink));
+  // ADRES SKŁADAMY TAK SAMO, JAK SPRAWDZAMY JEGO ISTNIENIE.
+  //
+  // Zgłoszenie (18.10.2026): „nie wgrywa statystyk zawodnikowi — Nie udało się pobrać statystyk:
+  // Brak parametru `url`". Przycisk pokazuje się, gdy adres90minut() cokolwiek zwróci — a ta
+  // funkcja umie złożyć adres z samego identyfikatora m90Id. Pobieranie czytało natomiast surowe
+  // pole lnpLink, które u takiego zawodnika jest puste, i wysyłało do serwera `url=`. Jedno
+  // miejsce mówiło „jest link", drugie wysyłało pustkę.
+  const adres = adres90minut(player);
+  if(!adres){
+    throw new Error('ten zawodnik nie ma ani adresu profilu na 90minut, ani identyfikatora stamtąd. '
+      + 'Dopisz adres w „Edytuj" albo odśwież statystyki całego klubu — wtedy identyfikator zapisze się sam.');
+  }
+  const res = await fetch('/api/stats?url=' + encodeURIComponent(adres));
   // Poza wdrożeniem /api nie istnieje — serwer deweloperski oddaje wtedy HTML aplikacji, a nie JSON.
   const ctype = res.headers.get('content-type') || '';
   if(!ctype.includes('application/json')){
@@ -8953,7 +8965,15 @@ function mapaZespoluHtml(klub, squad){
     <div class="toolbar" style="margin-bottom:4px;">
       <h4 style="margin:0;color:var(--heading);">Mapa zespołu</h4>
       <span class="note">${system ? `system ${esc(etykietaSystemu(system))}` : 'bez wpisanego systemu — układ domyślny'}
-        &middot; ${naBoisku} z ${squad.length} ${squad.length===1?'zawodnika':'zawodników'} na boisku</span>
+        ${/* ROZLICZENIE MUSI SIĘ ZGADZAĆ CO DO OSOBY.
+              Zgłoszenie (19.10.2026): „sprawdź, czy na liście jeśli jest 25 zawodników
+              zgłoszonych, to czy na mapie pozycji jest 25 zawodników — musi się wszystko zgadzać
+              idealnie". Sama liczba „na boisku" tego nie pokazuje, bo reszta siedzi na ławce.
+              Wypisujemy więc całe równanie i krzyczymy, gdyby się nie spięło. */''}
+        &middot; ${naBoisku} na boisku + ${naLawce.length} na ławce =
+        <strong>${naBoisku + naLawce.length}</strong> z ${squad.length}
+        ${naBoisku + naLawce.length !== squad.length
+          ? '<strong style="color:var(--clay-dark);"> — nie zgadza się, zgłoś to</strong>' : ''}</span>
     </div>
     <div class="pitch-wrap-outer"><div class="position-map-pitch">
       <!-- Linie rysowane pod boisko POZIOME: linia środkowa pionowo, pola karne po bokach.
@@ -15271,7 +15291,13 @@ const tmIdZawodnika = (p)=> (String(p && p.profileTm || '').match(/\/spieler\/(\
 
 // Nazwisko do porównań: bez ogonków, bez znaków przestankowych, słowa posortowane — bo „Jan
 // Kowalski" i „Kowalski Jan" to ta sama osoba, a Transfermarkt podaje imię przed nazwiskiem.
-const kluczOsoby = (a, b)=> [a, b].map(x=> String(x||'').toLowerCase()
+// Encje HTML rozwijamy TAKŻE po naszej stronie: część kartotek ma w nazwisku zapisane
+// „W&#229;lemark" zamiast „Wålemark" (ślad po dawnym imporcie). Bez tego takie nazwisko nie
+// dopasuje się nigdy — po odrzuceniu znaków spoza alfabetu zostaje z niego „w 229 lemark".
+const rozwinEncje = (s)=> String(s||'')
+  .replace(/&#x([0-9a-f]+);/gi, (_, hex)=> String.fromCodePoint(parseInt(hex, 16)))
+  .replace(/&#(\d+);/g, (_, dec)=> String.fromCodePoint(Number(dec)));
+const kluczOsoby = (a, b)=> [a, b].map(x=> rozwinEncje(x).toLowerCase()
   .normalize('NFD').replace(/\p{M}/gu,'').replace(/[^a-z]+/g,' ').trim())
   .join(' ').split(' ').filter(Boolean).sort().join(' ');
 
@@ -15302,10 +15328,39 @@ function zmianyPozycjiZeSkladu(klub, zawodnicyTm){
 
     let numer = wpis.numer;
     if(kluczTm(z.pozycja) === 'srodkowy obronca'){ numer = (licznikStoperow++ % 2) ? 5 : 4; }
-    if(!numer) continue;
 
-    if(Number(p.pozycjaNmg) === numer && p.position === wpis.nazwa) continue;
-    zmiany.push({ p, numer, nazwa: wpis.nazwa, zTm: z.pozycja });
+    // ADRES PROFILU BIERZEMY PRZY OKAZJI — I TAK GO MAMY.
+    //
+    // Zgłoszenie (19.10.2026): „czy ty możesz wszystkim zawodnikom wgrać do profilu linki do ich
+    // profilu Transfermarktu". Strona składu podaje identyfikator każdego zawodnika, więc adres
+    // składamy bez ani jednego dodatkowego zapytania. Slug w adresie nie musi być prawdziwy —
+    // Transfermarkt przekierowuje „/zawodnik/profil/spieler/123" na właściwą stronę, sprawdzone.
+    // Uzupełniamy tylko PUSTE: adres wpisany ręcznie mógł zostać poprawiony po tym, jak
+    // automatyczne dopasowanie trafiło w imiennika.
+    const adresTm = z.tmId ? `https://www.transfermarkt.pl/zawodnik/profil/spieler/${z.tmId}` : '';
+    const brakujeLinku = !!adresTm && !String(p.profileTm||'').trim();
+
+    // NAZWISKO Z NIEROZWINIĘTĄ ENCJĄ PROSTUJEMY, ALE TYLKO PRZY PEWNYM TRAFIENIU.
+    //
+    // „W&#229;lemark" w kartotece to nie nazwisko, tylko ślad po dawnym imporcie. Poprawiamy je
+    // WYŁĄCZNIE wtedy, gdy zawodnika rozpoznaliśmy po identyfikatorze z Transfermarktu — przy
+    // dopasowaniu po nazwisku nie wolno nadpisywać nazwiska tym, czym się właśnie dopasowaliśmy.
+    const trafionyPoId = wgTmId.get(String(z.tmId)) === p;
+    const maEncje = /&#\d+;|&#x[0-9a-f]+;/i.test(`${p.firstName || ''} ${p.lastName || ''}`);
+    const slowa = String(z.nazwa || '').trim().split(/\s+/).filter(Boolean);
+    const prostujNazwisko = trafionyPoId && maEncje && slowa.length >= 2;
+
+    const pozycjaDoZmiany = numer && !(Number(p.pozycjaNmg) === numer && p.position === wpis.nazwa);
+    if(!pozycjaDoZmiany && !brakujeLinku && !prostujNazwisko) continue;
+    zmiany.push({
+      p,
+      numer: pozycjaDoZmiany ? numer : 0,
+      nazwa: pozycjaDoZmiany ? wpis.nazwa : '',
+      adresTm: brakujeLinku ? adresTm : '',
+      imie: prostujNazwisko ? slowa.slice(0, -1).join(' ') : '',
+      nazwiskoTm: prostujNazwisko ? slowa[slowa.length - 1] : '',
+      zTm: z.pozycja,
+    });
   }
   return zmiany;
 }
@@ -15382,13 +15437,17 @@ async function pobierzPozycjeZeSkladowTm(ligi){
         const dane = await odp.json().catch(()=>({}));
         if(!odp.ok) throw new Error(dane.szczegoly || dane.error || ('serwer odpowiedział ' + odp.status));
         const zmiany = zmianyPozycjiZeSkladu(klub, dane.zawodnicy || []);
-        zmiany.forEach(({p, numer, nazwa})=>{
-          p.pozycjaNmg = numer;
-          p.position = nazwa;
+        let pozycji = 0, linkow = 0, nazwisk = 0;
+        zmiany.forEach(({p, numer, nazwa, adresTm, imie, nazwiskoTm})=>{
+          if(numer){ p.pozycjaNmg = numer; p.position = nazwa; pozycji++; }
+          if(adresTm){ p.profileTm = adresTm; linkow++; }
+          if(nazwiskoTm){ p.firstName = imie; p.lastName = nazwiskoTm; nazwisk++; }
           doZapisu.set(p.id, p);
         });
-        zmienionych += zmiany.length;
-        log.push(`${esc(klub.name)}: skład ${(dane.zawodnicy||[]).length}, ustawiono ${zmiany.length}`);
+        zmienionych += pozycji;
+        log.push(`${esc(klub.name)}: skład ${(dane.zawodnicy||[]).length}, pozycji ${pozycji}`
+          + (linkow ? `, linków do TM ${linkow}` : '')
+          + (nazwisk ? `, poprawionych nazwisk ${nazwisk}` : ''));
       }catch(e){
         log.push(`<span style="color:var(--clay-dark);">${esc(klub.name)}: ${esc(String(e.message || e))}</span>`);
       }
@@ -17427,10 +17486,22 @@ function openPlayerModal(id, presetClubId, prefillData){
     </div>
     <div class="grid grid-2">
       <div class="field-wrap">
+        ${/* SYSTEM Z KLUBU JEST JUŻ ZAZNACZONY, NIE PUSTY.
+              Zgłoszenie (19.10.2026): „w Cracovii u każdego jest już automatycznie wgrany system,
+              ale jak się otwiera profil i robi edycję, to nic nie jest zaznaczone, jest puste".
+              Profil POKAZYWAŁ system odziedziczony z klubu, a formularz zaczynał od pustej
+              kreski — więc zapis po byle jakiej poprawce kasował to, co widać było o linijkę
+              wyżej. Teraz formularz startuje od tego samego, co profil. */''}
         <label class="field">System gry (formacja)</label>
         <select id="pm-formation">
           <option value="">— nie określono —</option>
-          ${FORMATIONS.map(f=>`<option value="${esc(f)}" ${p&&p.formation===f?'selected':''}>${esc(etykietaSystemu(f))}</option>`).join('')}
+          ${(()=>{
+            const wlasny = String((p && p.formation) || '');
+            const zKlubu = String(systemyKlubow[(p && p.clubId) || presetClubId] || '');
+            const wybrany = wlasny || zKlubu;
+            return FORMATIONS.map(f=>`<option value="${esc(f)}" ${f === wybrany ? 'selected' : ''}>${esc(etykietaSystemu(f))}${
+              !wlasny && f === zKlubu ? ' — system klubu' : ''}</option>`).join('');
+          })()}
         </select>
       </div>
       <div class="field-wrap">
