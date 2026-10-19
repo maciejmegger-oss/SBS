@@ -2,7 +2,7 @@
 //
 // Źródło: Kluby_Polska_Adresy.xlsx (arkusz „Adresy").
 // Po zmianie w arkuszu uruchom: node scripts/wczytaj-adresy-klubow.mjs "<ścieżka do pliku>"
-// Stan na dzień przeniesienia: 2026-09-28 · 270 klubów.
+// Stan na dzień przeniesienia: 2026-10-19 · 305 klubów.
 
 export type AdresKlubu = {
   liga: string;    // rozgrywki, w których klub jest w bazie SBS (pierwsze, jeśli jest w dwóch)
@@ -134,7 +134,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "email": "mksmlawa@gmail.com",
     "zrodlo": "http://mksmlawa.futbolowo.pl/menu,2,14,adres-i-kontakt-do-klubu.html",
     "status": "Zweryfikowany",
-    "uwagi": ""
+    "uwagi": "na liście kontaktów jako „MKS Mława” (ten sam e-mail mksmlawa@gmail.com)"
   },
   {
     "liga": "III liga, gr. I",
@@ -161,10 +161,10 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "klub": "KS CK Troszyn",
     "miasto": "Troszyn",
     "adres": "Stadion gminny, 07-405 Troszyn",
-    "email": "",
+    "email": "kscktroszyn1@gmail.com",
     "zrodlo": "https://www.facebook.com/KSTROSZYN/",
     "status": "Do potwierdzenia",
-    "uwagi": "ulicy i e-maila nie znalazłem; kontakt przez FB"
+    "uwagi": "ulicy i e-maila nie znalazłem; kontakt przez FB; e-mail kscktroszyn1@gmail.com z profilu klubu na FB; na liście kontaktów jako „KSC Krotoszyn” – to ten klub (nie Krotoszyn); boisko przy ul. Wesołej/Słowackiego – do potwierdzenia"
   },
   {
     "liga": "III liga, gr. I",
@@ -1874,7 +1874,7 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "email": "",
     "zrodlo": "https://wisla-plock.pl/klub/stadion/",
     "status": "Do potwierdzenia",
-    "uwagi": "akademia – boisko treningowe i e-mail do uzupełnienia"
+    "uwagi": "akademia – boisko treningowe i e-mail do uzupełnienia; na liście kontaktów jako „Wisła Płock Akademia” (akademia.plock@gmail.com – nie znalazłem tego adresu w źródłach klubu); sekretariat klubu: poczta@wisla-plock.pl, tel. 24 367 65 20 (wisla-plock.pl/klub/kontakt/)"
   },
   {
     "liga": "CLJ U15",
@@ -1890,11 +1890,11 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "liga": "CLJ U15",
     "klub": "MUKS STAL NIEWIADÓW",
     "miasto": "Niewiadów",
-    "adres": "",
-    "email": "",
-    "zrodlo": "",
-    "status": "Do uzupełnienia",
-    "uwagi": "Do uzupełnienia"
+    "adres": "Gminny Stadion Sportowy w Niewiadowie, Osiedle Niewiadów 40, 97-225 Ujazd",
+    "email": "stal@stalniewiadow.pl",
+    "zrodlo": "https://stalniewiadow.pl/kontakt/",
+    "status": "Zweryfikowany",
+    "uwagi": "siedziba klubu: Osiedle Niewiadów 27; obiekt prowadzi MCS Ujazd"
   },
   {
     "liga": "CLJ U15",
@@ -1910,11 +1910,11 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "liga": "CLJ U15",
     "klub": "AP TALENT BIAŁYSTOK",
     "miasto": "Białystok",
-    "adres": "",
-    "email": "",
-    "zrodlo": "",
-    "status": "Do uzupełnienia",
-    "uwagi": "Do uzupełnienia"
+    "adres": "siedziba: ul. Kościelna 3, 15-087 Białystok",
+    "email": "talent@aptalent.pl",
+    "zrodlo": "https://www.aptalent.pl/kontakt/",
+    "status": "Do potwierdzenia",
+    "uwagi": "znaleziona tylko siedziba; akademia trenuje m.in. na kompleksie boisk Stadionu Miejskiego (ul. Słoneczna 1) – boisko meczowe U15 do potwierdzenia; tel. 690 913 999"
   },
   {
     "liga": "CLJ U15",
@@ -1930,11 +1930,11 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "liga": "CLJ U15",
     "klub": "UKS VARSOVIA",
     "miasto": "Warszawa",
-    "adres": "",
-    "email": "",
-    "zrodlo": "",
-    "status": "Do uzupełnienia",
-    "uwagi": "Do uzupełnienia"
+    "adres": "Boisko Varsovii, ul. Międzyparkowa 4, 00-208 Warszawa",
+    "email": "varsovia@varsovia.waw.pl",
+    "zrodlo": "https://varsovia.waw.pl/kontakt/",
+    "status": "Do potwierdzenia",
+    "uwagi": "adres klubu; mecze grane też na obiekcie Hutnika (Aktywna Warszawa) i przy ul. Fleminga 2 – obiekt meczowy U15 do potwierdzenia; tel. 22 831 17 66"
   },
   {
     "liga": "CLJ U15",
@@ -1950,11 +1950,11 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "liga": "CLJ U15",
     "klub": "FASE Szczecin",
     "miasto": "Szczecin",
-    "adres": "",
-    "email": "",
-    "zrodlo": "",
-    "status": "Do uzupełnienia",
-    "uwagi": "Do uzupełnienia"
+    "adres": "Football Park Szczecin, ul. Klonowica 3, 71-241 Szczecin",
+    "email": "szczecin@footballacademy.pl",
+    "zrodlo": "https://www.fase.com.pl/infrastruktura/obiekty-treningowe",
+    "status": "Zweryfikowany",
+    "uwagi": "własne centrum piłkarskie FASE; korzysta też z Centrum Piłkarskiego MOSRiR (ul. Kresowa 42); sekretariat szkoły: sekretariat@fase.com.pl, tel. 735 631 783; e-mail biura FA Szczecin z footballacademy.pl"
   },
   {
     "liga": "CLJ U15",
@@ -1990,11 +1990,11 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "liga": "CLJ U15",
     "klub": "WARTA POZNAŃ SA",
     "miasto": "Poznań",
-    "adres": "",
-    "email": "",
-    "zrodlo": "",
-    "status": "Do uzupełnienia",
-    "uwagi": "Do uzupełnienia"
+    "adres": "Stadion Warty „Ogródek”, ul. Droga Dębińska 12, 61-001 Poznań",
+    "email": "akademia@wartapoznan.pl",
+    "zrodlo": "https://wartapoznan.pl/",
+    "status": "Do potwierdzenia",
+    "uwagi": "adres stadionu pierwszej drużyny – boisko meczowe U15 do potwierdzenia; ogólny e-mail klubu: info@wartapoznan.pl"
   },
   {
     "liga": "CLJ U15",
@@ -2040,31 +2040,31 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "liga": "CLJ U15",
     "klub": "Salos Szczecin",
     "miasto": "Szczecin",
-    "adres": "",
-    "email": "",
-    "zrodlo": "",
-    "status": "Do uzupełnienia",
-    "uwagi": "Do uzupełnienia"
+    "adres": "siedziba: ul. Witkiewicza 64, 71-215 Szczecin",
+    "email": "salos@salesianum.pl",
+    "zrodlo": "https://bip.um.szczecin.pl/files/7897A68FBB9E4E3C8746E2900D3A641C/153_md_2023_01_szkolenie_dziec.pdf",
+    "status": "Do potwierdzenia",
+    "uwagi": "dane SL Salos z ofert w BIP UM Szczecin (2022–2023); boisko meczowe do potwierdzenia na salos.szczecin.pl; tel. 512 328 460"
   },
   {
     "liga": "CLJ U15",
     "klub": "APR Lampart Poznań",
     "miasto": "Poznań",
-    "adres": "",
-    "email": "",
-    "zrodlo": "",
-    "status": "Do uzupełnienia",
-    "uwagi": "Do uzupełnienia"
+    "adres": "siedziba: ul. Źródlana 19/1, 60-642 Poznań",
+    "email": "info@aprlampart.pl",
+    "zrodlo": "https://www.poznan.pl/mim/main/kluby-i-stowarzyszenia-sportowe,poi,82/akademia-pilkarskiego-rozwoju-lampart,78290.html",
+    "status": "Do potwierdzenia",
+    "uwagi": "do 06.2025 Akademia Piłkarska Reissa (na liście kontaktów jako „Akademia Reissa”, t.karkoszka@akademiareissa.pl); znaleziona tylko siedziba – boisko meczowe U15 do potwierdzenia; tel. 502 741 749; strona aprlampart.pl"
   },
   {
     "liga": "CLJ U15",
     "klub": "FOOTBALL ARENA Szczecin",
     "miasto": "Szczecin",
-    "adres": "",
-    "email": "",
-    "zrodlo": "",
-    "status": "Do uzupełnienia",
-    "uwagi": "Do uzupełnienia"
+    "adres": "Football Arena, al. Wojska Polskiego 246, 71-256 Szczecin",
+    "email": "akademia@footballarena.pl",
+    "zrodlo": "https://bip.um.szczecin.pl/files/B996EE3F2B5645208F970738893C89D0/430_md_2025_01_wsparcie_pilki_anon.pdf",
+    "status": "Zweryfikowany",
+    "uwagi": "dane Stowarzyszenia Football Arena z ofert w BIP UM Szczecin (2021–2025): 2 boiska pod balonem + 1 odkryte; tel. 696 046 000"
   },
   {
     "liga": "CLJ U15",
@@ -2090,21 +2090,21 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "liga": "CLJ U15",
     "klub": "GKS GIEKSA KATOWICE S.A.",
     "miasto": "Katowice",
-    "adres": "",
-    "email": "",
-    "zrodlo": "",
-    "status": "Do uzupełnienia",
-    "uwagi": "Do uzupełnienia"
+    "adres": "Akademia GKS Katowice, ul. Bukowa 1A, 40-108 Katowice",
+    "email": "biuro@gkskatowice.eu",
+    "zrodlo": "https://akademia.gkskatowice.eu/kontakt",
+    "status": "Do potwierdzenia",
+    "uwagi": "adres akademii (siedziba) – boisko meczowe U15 do potwierdzenia; e-mail akademii zamaskowany na stronie, podany ogólny e-mail spółki (bip.gkskatowice.eu); tel. akademii 725 250 897"
   },
   {
     "liga": "CLJ U15",
     "klub": "FC Wrocław Academy U.K.S.",
     "miasto": "Wrocław",
-    "adres": "",
-    "email": "",
-    "zrodlo": "",
-    "status": "Do uzupełnienia",
-    "uwagi": "Do uzupełnienia"
+    "adres": "Kompleks Piłkarski „Oławka”, ul. Na Niskich Łąkach 8, Wrocław",
+    "email": "b.mazur@fcwroclaw.pl",
+    "zrodlo": "https://www.fcwroclaw.pl/obiekty/",
+    "status": "Do potwierdzenia",
+    "uwagi": "trampkarze i juniorzy trenują na „Oławce” oraz na Polach Marsowych (al. Paderewskiego 35) – boisko meczowe U15 i kod pocztowy do potwierdzenia; biuro: ul. Kwidzyńska 33, 51-415 Wrocław, tel. 881 001 156; b.mazur = koordynator sportowy (rozgrywki); ogólnego e-maila brak"
   },
   {
     "liga": "CLJ U15",
@@ -2160,11 +2160,11 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "liga": "CLJ U15",
     "klub": "OKS ODRA OPOLE",
     "miasto": "Opole",
-    "adres": "",
-    "email": "",
-    "zrodlo": "",
-    "status": "Do uzupełnienia",
-    "uwagi": "Do uzupełnienia"
+    "adres": "Itaka Arena (Stadion Miejski), ul. Leonarda Olejnika 1, 45-839 Opole",
+    "email": "klub@odraopole.pl",
+    "zrodlo": "https://odraopole.pl/en/kontakt",
+    "status": "Do potwierdzenia",
+    "uwagi": "adres stadionu pierwszej drużyny – boisko meczowe U15 do potwierdzenia; e-mail ogólny klubu"
   },
   {
     "liga": "CLJ U15",
@@ -2230,11 +2230,11 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "liga": "CLJ U15",
     "klub": "Beniaminek PROFBUD Krosno",
     "miasto": "Krosno",
-    "adres": "",
-    "email": "",
-    "zrodlo": "",
-    "status": "Do uzupełnienia",
-    "uwagi": "Do uzupełnienia"
+    "adres": "Profbud Arena, ul. Bohaterów Westerplatte 20, 38-400 Krosno",
+    "email": "kontakt@beniaminek.org",
+    "zrodlo": "https://beniaminek.org/kontakt/",
+    "status": "Zweryfikowany",
+    "uwagi": "pełnowymiarowe boisko ze sztuczną murawą; tel. 668 835 779; siedziba rejestrowa ul. Hallera 8/15"
   },
   {
     "liga": "CLJ U15",
@@ -2250,11 +2250,11 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "liga": "CLJ U15",
     "klub": "Garbarnia Kraków",
     "miasto": "Kraków",
-    "adres": "",
-    "email": "",
-    "zrodlo": "",
-    "status": "Do uzupełnienia",
-    "uwagi": "Do uzupełnienia"
+    "adres": "Stadion Garbarni, ul. Rydlówka 21G, 30-363 Kraków",
+    "email": "sekretariat@garbarnia.krakow.pl",
+    "zrodlo": "https://garbarnia.krakow.pl/kontakt/",
+    "status": "Zweryfikowany",
+    "uwagi": "akademia: akademia@garbarnia.krakow.pl, tel. 736 665 563 (biuro akademii ul. Rydlówka 23)"
   },
   {
     "liga": "CLJ U15",
@@ -2290,31 +2290,31 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "liga": "CLJ U15",
     "klub": "MKS Limanovia w Limanowej",
     "miasto": "Limanowa",
-    "adres": "",
+    "adres": "Stadion im. Romana Szumilasa, ul. Józefa Marka 34, 34-600 Limanowa",
     "email": "",
-    "zrodlo": "",
-    "status": "Do uzupełnienia",
-    "uwagi": "Do uzupełnienia"
+    "zrodlo": "https://www.limanovia.net/klub/kontakt.html",
+    "status": "Częściowo",
+    "uwagi": "kierownik klubu Mateusz Wroński tel. 537 303 258; ogólnego e-maila nie znalazłem"
   },
   {
     "liga": "CLJ U15",
     "klub": "DAP Dębica",
     "miasto": "Dębica",
-    "adres": "",
-    "email": "",
-    "zrodlo": "",
-    "status": "Do uzupełnienia",
-    "uwagi": "Do uzupełnienia"
+    "adres": "siedziba: ul. Świętosława 89, 39-200 Dębica",
+    "email": "biuro@dapdebica.pl",
+    "zrodlo": "http://dapdebica.pl/kontakt/",
+    "status": "Do potwierdzenia",
+    "uwagi": "znaleziona tylko siedziba (adres rejestrowy) – boisko meczowe do potwierdzenia"
   },
   {
     "liga": "CLJ U15",
     "klub": "LKS ORLĘTA Kielce",
     "miasto": "Kielce",
-    "adres": "",
-    "email": "",
-    "zrodlo": "",
-    "status": "Do uzupełnienia",
-    "uwagi": "Do uzupełnienia"
+    "adres": "Stadion Orląt, ul. Warszawska 338, 25-414 Kielce",
+    "email": "info@orletakielce.pl",
+    "zrodlo": "https://orletakielce.pl/kontakt/",
+    "status": "Zweryfikowany",
+    "uwagi": "tel. 888 615 855"
   },
   {
     "liga": "CLJ U15",
@@ -2340,11 +2340,11 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "liga": "CLJ U15",
     "klub": "KKP KORONA Kielce",
     "miasto": "Kielce",
-    "adres": "",
+    "adres": "Exbud Arena / boisko boczne, ul. Ściegiennego 8, 25-033 Kielce",
     "email": "",
-    "zrodlo": "",
-    "status": "Do uzupełnienia",
-    "uwagi": "Do uzupełnienia"
+    "zrodlo": "https://www.korona-kielce.pl/kontakt-akademia",
+    "status": "Do potwierdzenia",
+    "uwagi": "adres klubu i stadionu – boisko meczowe U15 do potwierdzenia; e-maile akademii zamaskowane na stronie; sekretariat tel. 41 340 34 00"
   },
   {
     "liga": "IV liga (łódzka)",
@@ -2579,22 +2579,22 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
   {
     "liga": "I liga",
     "klub": "Odra Opole",
-    "miasto": "",
-    "adres": "",
-    "email": "",
-    "zrodlo": "",
-    "status": "Do uzupełnienia",
-    "uwagi": "Do uzupełnienia"
+    "miasto": "Opole",
+    "adres": "Itaka Arena (Stadion Miejski), ul. Leonarda Olejnika 1, 45-839 Opole",
+    "email": "klub@odraopole.pl",
+    "zrodlo": "https://odraopole.pl/en/kontakt",
+    "status": "Zweryfikowany",
+    "uwagi": "sekretariat tel. 575 875 432; stary stadion ul. Oleska 51 już nieużywany"
   },
   {
     "liga": "I liga",
     "klub": "Bruk-Bet Termalica Nieciecza",
-    "miasto": "",
-    "adres": "",
-    "email": "",
-    "zrodlo": "",
-    "status": "Do uzupełnienia",
-    "uwagi": "Do uzupełnienia"
+    "miasto": "Nieciecza",
+    "adres": "Stadion Bruk-Bet Termalica, Nieciecza 199, 33-240 Żabno",
+    "email": "termalica@brukbet.com",
+    "zrodlo": "https://termalica.brukbet.com/index.php/kontakt/",
+    "status": "Zweryfikowany",
+    "uwagi": "tel. 14 644 44 44; akademia: dawid.krupa@bruk-bet.pl"
   },
   {
     "liga": "I liga",
@@ -2609,12 +2609,12 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
   {
     "liga": "I liga",
     "klub": "Puszcza Niepołomice",
-    "miasto": "",
-    "adres": "",
-    "email": "",
-    "zrodlo": "",
-    "status": "Do uzupełnienia",
-    "uwagi": "Do uzupełnienia"
+    "miasto": "Niepołomice",
+    "adres": "Stadion Miejski, ul. Kusocińskiego 2, 32-005 Niepołomice",
+    "email": "biuro@puszcza-niepolomice.pl",
+    "zrodlo": "https://www.niepolomice.eu/informator/miejski-klub-sportowy-puszcza-niepolomice/",
+    "status": "Zweryfikowany",
+    "uwagi": "dane z informatora Gminy Niepołomice (Niepołomicki Sport S.A.); tel. 12 281 21 20"
   },
   {
     "liga": "I liga",
@@ -2629,12 +2629,12 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
   {
     "liga": "I liga",
     "klub": "Pogoń Grodzisk Mazowiecki",
-    "miasto": "",
-    "adres": "",
-    "email": "",
-    "zrodlo": "",
-    "status": "Do uzupełnienia",
-    "uwagi": "Do uzupełnienia"
+    "miasto": "Grodzisk Mazowiecki",
+    "adres": "Stadion Pogoni, al. Mokronoskich 4, 05-825 Grodzisk Mazowiecki",
+    "email": "sekretariat@pogongrodzisk.pl",
+    "zrodlo": "https://pogongrodzisk.pl/kontakt",
+    "status": "Zweryfikowany",
+    "uwagi": "tel. 22 120 29 07; akademia: koordynator@pogongrodzisk.pl"
   },
   {
     "liga": "I liga",
@@ -2659,12 +2659,12 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
   {
     "liga": "I liga",
     "klub": "Pogoń Siedlce",
-    "miasto": "",
-    "adres": "",
-    "email": "",
-    "zrodlo": "",
-    "status": "Do uzupełnienia",
-    "uwagi": "Do uzupełnienia"
+    "miasto": "Siedlce",
+    "adres": "Stadion ARMS (ROSRRiT), ul. Jana Pawła II 6, 08-110 Siedlce",
+    "email": "biuro@mkppogonsiedlce.pl",
+    "zrodlo": "https://mkppogonsiedlce.pl/?page_id=94",
+    "status": "Zweryfikowany",
+    "uwagi": "biuro klubu ul. Prusa 6; tel. 25 633 36 47"
   },
   {
     "liga": "I liga",
@@ -2679,12 +2679,12 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
   {
     "liga": "I liga",
     "klub": "Warta Poznań",
-    "miasto": "",
-    "adres": "",
-    "email": "",
-    "zrodlo": "",
-    "status": "Do uzupełnienia",
-    "uwagi": "Do uzupełnienia"
+    "miasto": "Poznań",
+    "adres": "Stadion Warty „Ogródek”, ul. Droga Dębińska 12, 61-001 Poznań",
+    "email": "info@wartapoznan.pl",
+    "zrodlo": "https://wartapoznan.pl/",
+    "status": "Zweryfikowany",
+    "uwagi": "siedziba spółki ul. Spychalskiego 34; akademia: akademia@wartapoznan.pl"
   },
   {
     "liga": "I liga",
@@ -2699,12 +2699,12 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
   {
     "liga": "I liga",
     "klub": "Unia Skierniewice",
-    "miasto": "",
-    "adres": "",
-    "email": "",
-    "zrodlo": "",
-    "status": "Do uzupełnienia",
-    "uwagi": "Do uzupełnienia"
+    "miasto": "Skierniewice",
+    "adres": "Stadion Miejski, ul. Pomologiczna 8, 96-100 Skierniewice",
+    "email": "biuro@uniaskierniewice.pl",
+    "zrodlo": "https://uniaskierniewice.pl/contact",
+    "status": "Zweryfikowany",
+    "uwagi": "e-mail biura z bilety.uniaskierniewice.pl; kierownik klubu Kamil Kaczyński tel. 667 658 195 (kamil.kaczynski@uniaskierniewice.pl z listy kontaktów)"
   },
   {
     "liga": "—",
@@ -2715,5 +2715,355 @@ export const ADRESY_KLUBOW: AdresKlubu[] = [
     "zrodlo": "https://piast-gliwice.eu/kontakt",
     "status": "Zweryfikowany",
     "uwagi": ""
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "Amator Kiełpino",
+    "miasto": "Kiełpino",
+    "adres": "Stadion w Kiełpinie, ul. Długa 78A, 83-307 Kiełpino",
+    "email": "amator.kielpino@pomorski-zpn.pl",
+    "zrodlo": "https://www.kartuzy.pl/strona/informacje-dla-mieszkancow-obiekty-sportowe-harmonogram-korzystania/873-boisko-pilkarskie-na",
+    "status": "Częściowo",
+    "uwagi": "adres boiska ze strony Gminy Kartuzy (obiekt w zarządzie KS Amator); e-mail z listy kontaktów (konto klubu w Pomorskim ZPN) – nie potwierdzony w źródle"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "Akademia Piłkarska Karol Piątek",
+    "miasto": "Luzino",
+    "adres": "Stadion Gminny w Luzinie, ul. Mickiewicza 22, 84-242 Luzino",
+    "email": "akademia.piatek@pomorski-zpn.pl",
+    "zrodlo": "https://lzs-pomorski.pl/klub/akademia-pilkarska-karol-piatek/",
+    "status": "Do potwierdzenia",
+    "uwagi": "na liście kontaktów jako „Akademia Piątek”; klub działa przy GOSRiT Luzino – stadion gminny wg gosrit.luzino.pl/stadion-gminny-w-luzinie/, boisko meczowe akademii do potwierdzenia; e-mail z listy kontaktów; w Pomorskim LZS: k.piatek@gosrit.luzino.pl, tel. 501 425 426"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "APK Jedynka Kartuzy",
+    "miasto": "Kartuzy",
+    "adres": "",
+    "email": "apkartuzy10@gmail.com",
+    "zrodlo": "https://apkjedynka.pl/",
+    "status": "Do uzupełnienia",
+    "uwagi": "Akademia Piłkarska Kartuzy (KRS 752774), na liście kontaktów jako „AP Kartuzy”; e-mail ze strony klubu; adresu boiska strona nie podaje (treningi na obiektach w Kartuzach); tel. 793 091 111"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "AS Piłeczka Pruszcz Gdański",
+    "miasto": "Pruszcz Gdański",
+    "adres": "siedziba: ul. Jacka Soplicy 10/12, 83-000 Pruszcz Gdański",
+    "email": "as.pileczka@tlen.pl",
+    "zrodlo": "https://aspileczka.pl/kontakt/",
+    "status": "Do potwierdzenia",
+    "uwagi": "Akademia Sportu Piłeczka; znaleziona tylko siedziba – obiekty treningowe klub podaje po zapisie; na stronie e-mail @tlen.pl, na liście kontaktów as.pileczka@o2.pl – sprawdź, który aktualny; tel. 504 189 453"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "Brda Przechlewo",
+    "miasto": "Przechlewo",
+    "adres": "Stadion OSiR, ul. Szkolna 23, 77-320 Przechlewo",
+    "email": "brda.przechlewo@pomorski-zpn.pl",
+    "zrodlo": "https://www.osir.przechlewo.pl/stadiony-pilkarskie.html",
+    "status": "Do potwierdzenia",
+    "uwagi": "stadion gminnego OSiR Przechlewo – że Brda gra tam mecze, nie potwierdziłem w źródle klubu/związku; e-mail z listy kontaktów"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "Broń Radom",
+    "miasto": "Radom",
+    "adres": "Stadion MOSiR, ul. Narutowicza 9, 26-600 Radom",
+    "email": "klub@bronradom.pl",
+    "zrodlo": "https://bronradom.pl/informacje-o-klubie/",
+    "status": "Zweryfikowany",
+    "uwagi": "siedziba pod trybuną A; tel. 721 866 320"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "Bałtyk Sztutowo",
+    "miasto": "Sztutowo",
+    "adres": "Stadion Gminny, ul. Obozowa 16, 82-110 Sztutowo",
+    "email": "baltyk.sztutowo@pomorski-zpn.pl",
+    "zrodlo": "https://www.sztutowo.pl/zajecia-gimnastyczne-dla-seniorow/",
+    "status": "Częściowo",
+    "uwagi": "adres stadionu gminnego ze strony Urzędu Gminy Sztutowo; e-mail z listy kontaktów (konto klubu w Pomorskim ZPN) – nie potwierdzony w źródle"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "Czarni Przemysław",
+    "miasto": "Przemysław",
+    "adres": "SportPlac, Przemysław 1, 82-103 Stegna",
+    "email": "czarni.przemyslaw@pomorski-zpn.pl",
+    "zrodlo": "https://www.laczynaspilka.pl/rozgrywki/mecz/ks-mady-ostaszewo,st-drewnica-czarni-przemyslaw,2306657.html",
+    "status": "Częściowo",
+    "uwagi": "obiekt z terminarza Łączy Nas Piłka; kod pocztowy wg adresu klubu (Przemysław 52, 82-103 Stegna); e-mail z listy kontaktów"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "GKS Wikielec",
+    "miasto": "Wikielec",
+    "adres": "Stadion Gminny w Wikielcu, ul. Bukowa 80, 14-200 Iława",
+    "email": "gkswikielec@wmzpn.pl",
+    "zrodlo": "https://gkswikielec.pl/kontakt",
+    "status": "Zweryfikowany",
+    "uwagi": "dawny adres Wikielec 65B (zmiana po nadaniu nazw ulic); tel. 509 424 466"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "Iskra Malbork",
+    "miasto": "Malbork",
+    "adres": "",
+    "email": "iskra.malbork@gmail.com",
+    "zrodlo": "",
+    "status": "Do uzupełnienia",
+    "uwagi": "prawdopodobnie Gminna Akademia Sportowa Iskra Malbork (KRS 0000933634, siedziba rejestrowa Lasowice Wielkie 65A, 82-200 Malbork) – boiska nie znalazłem na stronie klubu/związku/gminy; e-mail z listy kontaktów"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "Chełminianka Chełmno",
+    "miasto": "Chełmno",
+    "adres": "siedziba: ul. Polna 11, 86-200 Chełmno",
+    "email": "chelminiankachelmno@gazeta.pl",
+    "zrodlo": "https://chelmno.pl/organizacje-pozarzadowe/",
+    "status": "Do potwierdzenia",
+    "uwagi": "dane z wykazu organizacji na stronie Miasta Chełmno – możliwe, że to biuro, nie boisko; tel. 506 822 675; UWAGA: e-mail z listy kontaktów sekretariat@chelmianka.pl to domena Chełmianki Chełm (inny klub, jest w bazie) – sprawdź, o który klub chodzi"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "KS Pszczółki",
+    "miasto": "Pszczółki",
+    "adres": "Stadion im. 700-lecia Pszczółek, ul. Sportowa 27, 83-032 Pszczółki",
+    "email": "ks.pszczolki@pomorski-zpn.pl",
+    "zrodlo": "https://pszczolki.pl/obiekty-sportowe.html",
+    "status": "Częściowo",
+    "uwagi": "stadion gminny ze strony Gminy Pszczółki (strona nie wymienia klubu wprost); e-mail z listy kontaktów"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "UKS Skarszewy",
+    "miasto": "Skarszewy",
+    "adres": "Stadion Miejski, ul. Wybickiego 10, 83-250 Skarszewy",
+    "email": "biuro@uksskarszewy.pl",
+    "zrodlo": "http://uksskarszewy.pl/contact",
+    "status": "Do potwierdzenia",
+    "uwagi": "na liście kontaktów jako „KS Skarszewy”; e-mail ze strony klubu; adres stadionu miejskiego (GOSiR) ze strony Gminy Skarszewy – że UKS gra tam mecze, nie potwierdziłem; tel. 691 844 123"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "Skra Częstochowa",
+    "miasto": "Częstochowa",
+    "adres": "Stadion Skry, ul. Loretańska 20, 42-200 Częstochowa",
+    "email": "sekretariat@ks-skra.pl",
+    "zrodlo": "https://ks-skra.pl/kontakt/",
+    "status": "Zweryfikowany",
+    "uwagi": "sekretariat: aleksandra.kmiec@ks-skra.pl, tel. 608 21 41 91"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "KS Wasilków",
+    "miasto": "Wasilków",
+    "adres": "Stadion Miejski, ul. Supraślska 21, 16-010 Wasilków",
+    "email": "poczta@kswasilkow.pl",
+    "zrodlo": "https://kswasilkow.pl/kontakt/",
+    "status": "Zweryfikowany",
+    "uwagi": "biuro: ul. Białostocka 7; tel. 85 718 52 03; akademia tel. 512 570 511"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "Noteć Gębice",
+    "miasto": "Gębice",
+    "adres": "Boisko w Gębicach, ul. Wolności, 88-330 Gębice",
+    "email": "",
+    "zrodlo": "https://mogilnosport.pl/obiekty/obiekty-sportowe-i-rekreacyjne/gebice/",
+    "status": "Do potwierdzenia",
+    "uwagi": "pełnowymiarowe boisko trawiaste przy ul. Wolności (obiekty sportowe gminy Mogilno), po południu korzystają sekcje klubu; numer posesji i kod pocztowy do potwierdzenia; e-maila nie znalazłem"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "Ogniwo Sopot",
+    "miasto": "Sopot",
+    "adres": "Stadion Miejski im. Edwarda Hodury, ul. Jana z Kolna 18, 81-741 Sopot",
+    "email": "ogniwo@ogniwosopot.pl",
+    "zrodlo": "https://ogniwosopot.pl/kontakt/",
+    "status": "Zweryfikowany",
+    "uwagi": "dyrektor klubu tel. 795 944 441; koordynator grup U15: k.szymanski@ogniwosopot.pl"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "UKS Orły Tczew",
+    "miasto": "Tczew",
+    "adres": "siedziba: ul. Podmurna 11, 83-110 Tczew",
+    "email": "klub@orlytczew.pl",
+    "zrodlo": "http://orlytczew.pl/",
+    "status": "Do potwierdzenia",
+    "uwagi": "dane ze strony klubu (wpisy do 2016 r.); mecze grane na stadionie przy ul. Bałdowskiej – numer i aktualność do potwierdzenia; na liście kontaktów gwolski@orlytczew.pl"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "Pogoń Prabuty",
+    "miasto": "Prabuty",
+    "adres": "Stadion MKS Pogoń, ul. Jagiełły, 82-550 Prabuty",
+    "email": "pogon.prabuty@pomorski-zpn.pl",
+    "zrodlo": "https://www.prabuty.pl/stadion-mks-pogon/",
+    "status": "Częściowo",
+    "uwagi": "ze strony Gminy Prabuty: na stadionie trenują i grają mecze ligowe seniorzy i juniorzy klubu; obiekt prowadzi Prabuckie Centrum Kultury i Sportu; numer posesji do potwierdzenia; e-mail z listy kontaktów"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "Pokolenia Lechii Gdańsk",
+    "miasto": "Gdańsk",
+    "adres": "ul. Zielonogórska 4, Gdańsk",
+    "email": "pokolenia.lechii.gda@wp.pl",
+    "zrodlo": "https://www.gdansk.pl/urzad-miejski/biuro-prezydenta-ds-sportu/gdanskie-kluby-zapraszaja-dzieci-i-mlodziez,a,43554",
+    "status": "Do potwierdzenia",
+    "uwagi": "szkółka piłkarska (nie Akademia Lechii); adres z listy klubów na stronie Miasta Gdańsk (ok. 2015) – nowsze katalogi podają ul. Traugutta 29, 80-034 Gdańsk; kod pocztowy i boisko do potwierdzenia; e-mail z listy kontaktów"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "Sławek Borzechowo",
+    "miasto": "Borzechowo",
+    "adres": "Boisko sportowe, ul. Szkolna 3, 83-224 Borzechowo",
+    "email": "slawekborzechowo1@gmail.com",
+    "zrodlo": "http://slawekborzechowo.5v.pl/",
+    "status": "Do potwierdzenia",
+    "uwagi": "e-mail ze strony klubu, adres ul. Szkolna 3 z profilu klubu na FB – czy to boisko, do potwierdzenia; na liście kontaktów slawek.borzechowo@pomorski-zpn.pl"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "Sokół Zblewo",
+    "miasto": "Zblewo",
+    "adres": "Stadion w Zblewie, ul. Sportowa 7, 83-210 Zblewo",
+    "email": "sokol.zblewo@pomorski-zpn.pl",
+    "zrodlo": "https://powiatstarogard.pl/organizacje/klub-sportowy-sokol-zblewo/",
+    "status": "Do potwierdzenia",
+    "uwagi": "adres klubu z wykazu organizacji Powiatu Starogardzkiego (inne katalogi: Sportowa 27); stadion gminny przy ul. Sportowej – numer do potwierdzenia; e-mail z listy kontaktów"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "Stomil Olsztyn",
+    "miasto": "Olsztyn",
+    "adres": "Stadion OSiR, al. Piłsudskiego 69a, 10-449 Olsztyn",
+    "email": "biuro@stomilolsztyn.com",
+    "zrodlo": "https://www.stomilolsztyn.com/kontakt/",
+    "status": "Zweryfikowany",
+    "uwagi": "tel. 89 534 12 38; akademia: stomilolsztyn.com/kontakt-2/"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "Supra Kwidzyn",
+    "miasto": "Kwidzyn",
+    "adres": "siedziba: ul. Sportowa 6, 82-500 Kwidzyn",
+    "email": "supra.kwidzyn@pomorski-zpn.pl",
+    "zrodlo": "https://www.facebook.com/profile.php?id=100063858990742",
+    "status": "Do potwierdzenia",
+    "uwagi": "Stowarzyszenie Rozwoju Sportu Supra; adres z profilu klubu na FB (ten sam w KRS) – czy to boisko meczowe, do potwierdzenia; e-mail z listy kontaktów"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "Świdniczanka Świdnik",
+    "miasto": "Świdnik",
+    "adres": "siedziba: ul. Kosynierów 17B, 21-040 Świdnik",
+    "email": "kontakt@ksswidniczanka.pl",
+    "zrodlo": "https://www.ksswidniczanka.pl/kontakt.html",
+    "status": "Do potwierdzenia",
+    "uwagi": "znaleziona tylko siedziba; obiekt meczowy (dawniej boisko przy ul. Turystycznej) do potwierdzenia w terminarzu; tel. 570 716 873"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "Stal Kraśnik",
+    "miasto": "Kraśnik",
+    "adres": "Stadion MOSiR, ul. Żwirki i Wigury 2, 23-204 Kraśnik",
+    "email": "fksstal@krasnik.info",
+    "zrodlo": "https://www.stalkrasnik.com/",
+    "status": "Częściowo",
+    "uwagi": "FKS Stal; siedziba al. Niepodległości 44, 23-210 Kraśnik (krasnik.eu); stadion MOSiR wg stalkrasnik.com; e-mail z listy kontaktów (domena dawnej strony stal.krasnik.info) – portal miasta podaje kontakt czelejmagda@gmail.com, tel. 601 988 984"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "Tłuchovia Tłuchowo",
+    "miasto": "Tłuchowo",
+    "adres": "Stadion Gminny, ul. Sportowa 3, 87-605 Tłuchowo",
+    "email": "d.mocki@tluchovia.pl",
+    "zrodlo": "https://tluchovia.pl/index.php/contact-page/",
+    "status": "Częściowo",
+    "uwagi": "GZS Tłuchovia; adres i stadion gminny ze strony klubu (nr posesji stadionu nie jest podany osobno); ogólnego e-maila brak – na stronie e-maile działaczy (m.in. d.mocki@, s.kucinski@tluchovia.pl); tel. 691 416 904"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "TOP 54 Biała Podlaska",
+    "miasto": "Biała Podlaska",
+    "adres": "siedziba: ul. Piłsudskiego 38, 21-500 Biała Podlaska",
+    "email": "appodlasie@gmail.com",
+    "zrodlo": "https://mkspodlasie1957.pl/kontakt",
+    "status": "Do potwierdzenia",
+    "uwagi": "Akademia Piłkarska TOP 54 działa obecnie przy MKS Podlasie (strona mkspodlasie1957.pl); boiska akademii przy ul. Zdanowskiego – numer do potwierdzenia; na liście kontaktów stary e-mail aptop54@o2.pl; biuro tel. 83 343 22 46"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "Unia Klawkowo",
+    "miasto": "Klawkowo",
+    "adres": "siedziba: ul. Dębowa 3, Klawkowo, 89-620 Chojnice",
+    "email": "unia.klawkowo@pomorski-zpn.pl",
+    "zrodlo": "https://www.powiat.chojnice.pl/asp/pliki/aktualnosci_2021/baza_danych_organizacji_pozarzadowych_powiat_chojnicki_05.07.pdf",
+    "status": "Do potwierdzenia",
+    "uwagi": "Wiejski Klub Sportowy; adres z bazy NGO Powiatu Chojnickiego (2021) – klub gra na własnym boisku w Klawkowie, adres boiska do potwierdzenia; e-mail z listy kontaktów"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "Unia Solec Kujawski",
+    "miasto": "Solec Kujawski",
+    "adres": "Stadion OSiR, ul. Sportowa 1, 86-050 Solec Kujawski",
+    "email": "ksunia.soleckujawski@o2.pl",
+    "zrodlo": "https://uniasoleckuj.futbolowo.pl/kontakt",
+    "status": "Zweryfikowany",
+    "uwagi": "adres klubu = stadion OSiR; strona kontaktowa klubu sprzed ok. 4 lat – e-mail warto potwierdzić; obiekt prowadzi OSiR Solec Kujawski"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "Znicz Biała Piska",
+    "miasto": "Biała Piska",
+    "adres": "Stadion Miejski, ul. Sportowa 1, 12-230 Biała Piska",
+    "email": "zniczbialapiska@wmzpn.pl",
+    "zrodlo": "https://zniczbialapiska.pl/stadion/",
+    "status": "Zweryfikowany",
+    "uwagi": "biuro: Plac Mickiewicza 25; tel. 87 424 13 51"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "MUKS Żaki Szczecin",
+    "miasto": "Szczecin",
+    "adres": "siedziba: ul. Pomorska 150, 70-812 Szczecin",
+    "email": "muks@zaki.szczecin.pl",
+    "zrodlo": "https://mukszaki.pl/kontakt",
+    "status": "Do potwierdzenia",
+    "uwagi": "znaleziona tylko siedziba – boisko meczowe do potwierdzenia; na liście kontaktów mukszaki@gmail.com; osobne stowarzyszenie Akademia Piłkarska Żaki: ul. Portowa 21, akademia@zaki.szczecin.pl"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "Wisła Puławy",
+    "miasto": "Puławy",
+    "adres": "Stadion MOSiR, ul. Hauke-Bosaka 1, 24-100 Puławy",
+    "email": "sekretariat@kswislapulawy.pl",
+    "zrodlo": "https://mosir.pulawy.pl/",
+    "status": "Zweryfikowany",
+    "uwagi": "adres klubu i stadionu wg kswislapulawy.pl; mecze Wisły na stadionie potwierdzone w zapowiedziach MOSiR Puławy (2026, klasa A); tel. 81 470 49 09"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "Kaszubia Kościerzyna",
+    "miasto": "Kościerzyna",
+    "adres": "ul. Kamienna 7, 83-400 Kościerzyna",
+    "email": "sekretariat@kskaszubia.pl",
+    "zrodlo": "https://akademia.kskaszubia.pl/kontakt/",
+    "status": "Do potwierdzenia",
+    "uwagi": "na liście kontaktów jako „AP Kaszubia Kościerzyna” (ap.koscierzyna@pomorski-zpn.pl, akademia@kskaszubia.pl); adres kontaktowy klubu – czy to stadion, do potwierdzenia; akademia tel. 733 302 000"
+  },
+  {
+    "liga": "Kontakty (spoza bazy)",
+    "klub": "Start Pruszcz",
+    "miasto": "Pruszcz",
+    "adres": "Stadion Gminny, ul. Sportowa, 86-120 Pruszcz",
+    "email": "",
+    "zrodlo": "https://pruszcz.pl/strona/216-kluby-sportowe",
+    "status": "Częściowo",
+    "uwagi": "LKS Start; ze strony Gminy Pruszcz: adres klubu ul. Sportowa 8, stadion przy ul. Sportowej prowadzi GOKSiR (ul. Sportowa 10A) – numer posesji boiska do potwierdzenia; e-maila nie znalazłem"
   }
 ];
