@@ -36,6 +36,7 @@ import { KONTAKTY_AKADEMIE } from "./data/kontakty-akademii";
 // swój plik od nowa; w widoku są jedną listą, a pigułka „Akademie" zawęża ją do drugiej bazy.
 const KONTAKTY_EUROPA: any[] = [...KONTAKTY_EUROPA_SCOUTING, ...KONTAKTY_AKADEMIE];
 import { ADRESY_KLUBOW } from "./data/adresy-klubow";
+import { JEDENASTKI_KOLEJEK, KOLEJKI_W_ZESTAWIENIU } from "./data/jedenastki-kolejki";
 import { talentyEuropy } from "./data/europa-mlodziez";
 import { talentyCies } from "./data/europa-cies";
 import { talentyPolacyZaGranica } from "./data/polacy-za-granica";
@@ -8785,6 +8786,72 @@ function miniTabelaKlubuHtml(c){
 // a przy pozycjach parzystych (lewy/prawy obrońca, oba skrzydła) rozdziela się po połowie —
 // nie mamy skąd wiedzieć, na której stronie gra, więc nie udajemy, że wiemy: pole podpisane jest
 // „wg pozycji ogólnej".
+// JEDENASTKA KOLEJKI — KTO POWTARZA SIĘ W WYRÓŻNIENIACH.
+//
+// Zgłoszenie (20.10.2026): „sprawdź jedenastki kolejek na poziomie 2 ligi i wprowadź tych
+// zawodników na mapę pozycji; wyróżnij na złoto, jeśli zawodnik był 3 x w jedenastce kolejki".
+//
+// Jednorazowe wyróżnienie to często jeden dobry mecz. Trzecie z rzędu znaczy już formę, którą
+// widzi ktoś oglądający całą ligę co tydzień — i to jest sygnał wart tego, żeby rzucał się
+// w oczy przy nazwisku, bez wchodzenia w statystyki.
+//
+// Dopasowanie po NAZWISKU I KLUBIE, nie po samym nazwisku: w zestawieniu jest i Dariusz Kamiński
+// ze Stali, i Wiktor Kamiński ze Śląska II. Imię bierzemy pod uwagę tylko wtedy, gdy obie strony
+// je mają — wydawca podaje czasem sam pseudonim („Marcinho”).
+const kluczNazwiska = (s)=> String(s||'').toLowerCase()
+  .replace(/[łøđ]/g, c=>({'ł':'l','ø':'o','đ':'d'}[c]))
+  .normalize('NFD').replace(/\p{M}/gu,'').replace(/[^a-z]/g,'');
+
+let indeksJedenastek = null;
+function wyroznieniaWgKlubu(){
+  if(indeksJedenastek) return indeksJedenastek;
+  indeksJedenastek = new Map();      // znormalizowana nazwa klubu → lista wpisów
+  JEDENASTKI_KOLEJEK.forEach(w=>{
+    const k = kluczNazwiska(w.klub);
+    if(!indeksJedenastek.has(k)) indeksJedenastek.set(k, []);
+    indeksJedenastek.get(k).push(w);
+  });
+  return indeksJedenastek;
+}
+
+/** Ile razy zawodnik trafił do jedenastki kolejki — i w których kolejkach. */
+function jedenastkiZawodnika(p){
+  if(!p) return { ile: 0, kolejki: [], zrodlo: '' };
+  const nazwaKlubu = clubName(p.clubId);
+  if(!nazwaKlubu) return { ile: 0, kolejki: [], zrodlo: '' };
+  const wszystkie = wyroznieniaWgKlubu();
+  // Najpierw po dokładnej nazwie, a gdy w bazie klub nazywa się nieco inaczej — po dopasowaniu
+  // nazw, tym samym, którym łączymy kluby przy imporcie.
+  let wpisy = wszystkie.get(kluczNazwiska(nazwaKlubu));
+  if(!wpisy){
+    for(const [klucz, lista] of wszystkie){
+      if(klubyToSamo(lista[0].klub, nazwaKlubu)){ wpisy = lista; break; }
+    }
+  }
+  if(!wpisy) return { ile: 0, kolejki: [], zrodlo: '' };
+  const nazwisko = kluczNazwiska(p.lastName);
+  if(!nazwisko) return { ile: 0, kolejki: [], zrodlo: '' };
+  const imie = kluczNazwiska(p.firstName);
+  const moje = wpisy.filter(w=> kluczNazwiska(w.nazwisko) === nazwisko
+    && (!imie || !w.imie || kluczNazwiska(w.imie) === imie));
+  return {
+    ile: moje.length,
+    kolejki: moje.map(w=>w.kolejka).sort((a, b)=>a - b),
+    zrodlo: moje.length ? moje[moje.length - 1].zrodlo : '',
+  };
+}
+
+/** Gwiazdka przy nazwisku: od trzech wyróżnień złota i pełna, niżej przygaszona. */
+function jedenastkaBadge(p){
+  const w = jedenastkiZawodnika(p);
+  if(!w.ile) return '';
+  const mocny = w.ile >= 3;
+  const ile = KOLEJKI_W_ZESTAWIENIU.length;
+  return `<span class="jk-badge${mocny ? ' jk-mocny' : ''}" title="${w.ile} ${
+    w.ile === 1 ? 'raz' : 'razy'} w jedenastce kolejki Betclic 2 Ligi (kolejki ${w.kolejki.join(', ')}) — na ${ile} zestawień opublikowanych w rundzie jesiennej${
+    mocny ? '. Trzy wyróżnienia i więcej to już forma, nie pojedynczy mecz.' : ''}">★${w.ile}</span>`;
+}
+
 function mapaZespoluHtml(klub, squad){
   const system = String(systemyKlubow[klub.id] || '');
   const wsp = FORMATION_COORDS[system] || FORMATION_COORDS[''];
@@ -8929,7 +8996,7 @@ function mapaZespoluHtml(klub, squad){
           const rola = i === 0 ? 'pierwszy wybór' : i === 1 ? 'zmiennik' : `${i + 1}. w kolejce`;
           const min = Number(p.minutes) || 0;
           return `<span class="pos-marker-row${miejsce}" draggable="true" data-zawodnik="${esc(p.id)}" title="${esc((p.lastName||'') + ' ' + (p.firstName||''))} — ${esc(p.position||'')} · ${esc(rola)} (${min} min)${pewny?', pozycja wskazana numerem wg NMG':', strona boiska dobrana z pozycji ogólnej'} · przeciągnij, aby zmienić pozycję">
-          <span class="pmr-name">${esc(p.lastName || p.firstName || '—')}</span>
+          <span class="pmr-name">${esc(p.lastName || p.firstName || '—')}</span>${jedenastkaBadge(p)}
           ${p.birthYear?`<span class="pmr-year">${esc(String(p.birthYear))}</span>`:''}${pewny?'':'<span class="pmr-kropka" title="Strona boiska dobrana z pozycji ogólnej">•</span>'}</span>`;
         }).join('')
         + (reszta>0 ? `<span class="pos-marker-row pmr-wiecej">+${reszta}</span>` : '')
@@ -8998,7 +9065,16 @@ function mapaZespoluHtml(klub, squad){
       Na każdym polu kolejność idzie <strong>od największej liczby rozegranych minut</strong>:
       pierwszy ma <span class="pmr-legenda pmr-podstawowy">złoty</span> pasek, drugi
       <span class="pmr-legenda pmr-rezerwowy">zielony</span>, dalsi bez paska.
-      Kropka przy nazwisku znaczy, że stronę boiska dobrałem z pozycji ogólnej — wpisz <strong>Pozycję wg NMG</strong> w profilu, żeby ustawić ją na pewno.</p>
+      Kropka przy nazwisku znaczy, że stronę boiska dobrałem z pozycji ogólnej — wpisz <strong>Pozycję wg NMG</strong> w profilu, żeby ustawić ją na pewno.
+      ${(()=>{
+        const wyroznieni = squad.filter(p=>jedenastkiZawodnika(p).ile).length;
+        const mocni = squad.filter(p=>jedenastkiZawodnika(p).ile >= 3).length;
+        if(!wyroznieni) return '';
+        return `<br><span class="jk-badge jk-mocny">★3</span> przy nazwisku to <strong>jedenastka kolejki Betclic 2 Ligi</strong> — liczba mówi, ile razy.
+          Od trzech wyróżnień gwiazdka jest złota, bo to już forma, a nie jeden dobry mecz. W tym klubie:
+          <strong>${wyroznieni}</strong> ${wyroznieni === 1 ? 'wyróżniony' : 'wyróżnionych'}${mocni ? `, w tym ${mocni} ze złotą gwiazdką` : ''}.
+          Liczone z ${KOLEJKI_W_ZESTAWIENIU.length} zestawień rundy jesiennej (kolejki ${KOLEJKI_W_ZESTAWIENIU.join(', ')}) — źródło: pilkanozna.pl.`;
+      })()}</p>
   </div>`;
 }
 

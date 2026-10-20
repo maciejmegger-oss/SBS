@@ -1251,6 +1251,23 @@ tr.crow-rejected td,tr.crow-watching td{color:var(--row-ink);}
 .pmr-podstawowy{box-shadow:inset 4px 0 0 var(--gold);padding-left:7px;border-radius:3px;
   background:var(--card-warm);font-weight:700;}
 .pmr-rezerwowy{box-shadow:inset 2px 0 0 var(--good);padding-left:7px;border-radius:3px;}
+/* JEDENASTKA KOLEJKI — gwiazdka z licznikiem przy nazwisku.
+   Plakietka na mapie ma stałe białe tło w obu motywach, a legenda pod mapą tło zmienne.
+   Dlatego odznaka niesie WŁASNE tło i własny kolor tekstu, zamiast dziedziczyć po motywie:
+   inaczej w ciemnym motywie złoto (#C69B3C) stanęłoby na bieli i zrobiłoby się nieczytelne.
+   Od trzech wyróżnień gwiazdka jest wypełniona — to próg, po którym uznajemy, że to forma. */
+.jk-badge{display:inline-flex;align-items:center;gap:1px;flex:0 0 auto;
+  margin-left:3px;padding:0 4px;border-radius:999px;
+  font-size:9.5px;line-height:15px;font-weight:800;letter-spacing:.02em;white-space:nowrap;
+  background:#FBF3DF;color:#7A5C14;border:1px solid #E6D6A8;}
+.jk-badge.jk-mocny{background:#C69B3C;color:#2A1F05;border-color:#8C6C21;
+  box-shadow:0 0 0 1px rgba(198,155,60,.35);}
+/* W legendzie i poza mapą jest więcej miejsca, więc odznaka może być odrobinę większa. */
+.note .jk-badge, .view-sub .jk-badge{font-size:11px;line-height:17px;padding:0 6px;}
+/* Wiersz zawodnika z trzema wyróżnieniami dostaje delikatną złotą obwódkę — widać go
+   z odległości, a nie konkuruje z paskiem pierwszego wyboru, bo ten jest z lewej strony. */
+:is(.mapa-zespolu,.mapa-rankingowa) .pos-marker-row:has(.jk-mocny){
+  background:#FFFBF0;box-shadow:inset 0 0 0 1px rgba(198,155,60,.55);border-radius:4px;}
 /* Próbka koloru w legendzie pod mapą rankingową — ten sam pasek, co przy nazwisku. */
 .pmr-legenda{display:inline-block;padding:0 6px;border-radius:3px;background:var(--card-warm);font-weight:700;}
 /* Kafelki graficzne poziomów rozgrywek (Kluby) — logo (wgrane lub placeholder) + etykieta + liczba klubów. */
