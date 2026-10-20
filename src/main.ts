@@ -7307,6 +7307,7 @@ function viewClubs(){
           }">⏱ Odśwież statystyki — cały widok (${list.length})</button>`
         : ''}
       <button class="secondary" data-action="systemy-gry" title="Ustaw systemy gry wszystkich klubów tej grupy naraz">📐 Systemy gry</button>
+      <button class="secondary" data-action="systemy-do-profili" title="Wpisuje system gry klubu do profilu każdego jego zawodnika — żeby pole „System gry" w edycji nie było puste i żeby system wychodził w eksportach">🧩 System klubu do profili</button>
       <button class="secondary" data-action="sklady-meczowe" title="Rozstaw zawodników na mapach według ustawienia z ostatniej kolejki">👥 Pozycje ze składów</button>
       <button class="secondary" data-action="pozycje-z-tm" title="Uzupełnia puste pozycje zawodników danymi z Transfermarktu">🧭 Pozycje z Transfermarktu</button>
       ${/* Osobny przycisk, bo robi co innego niż ten obok: tamten UZUPEŁNIA puste pola jeden
@@ -9018,6 +9019,7 @@ function viewClubDetail(id){
       <td>${rocznikHtml(p)}</td>
       <td>${chipPozycji(p)}</td>
       <td>${p.status? `<span class="badge ${STATUS_CLASS[p.status]||'new'}">${esc(p.status)}</span>` : '—'}</td>
+      <td onclick="event.stopPropagation()" style="text-align:center;">${agentToggleHtml(p)}</td>
       <td style="text-align:right;">${p.matches!=null?p.matches:'—'}</td>
       <td style="text-align:right;">${p.minutes!=null?p.minutes:'—'}${minutyWazone(p)!=null && minutyWazone(p)!==Number(p.minutes) ? `<div class="note" style="font-size:10.5px;white-space:nowrap;" title="Minuty ważone poziomem rozgrywek (waga umowna, zmienisz w Ustawieniach)">≈${minutyWazone(p)} waż.</div>` : ''}</td>
       <td style="text-align:right;">${p.goals!=null?p.goals:'—'}</td>
@@ -9095,8 +9097,8 @@ function viewClubDetail(id){
       </div>
     </div>
     <table>
-      <thead><tr><th style="width:24px;"><input type="checkbox" id="squad-select-all" title="Zaznacz wszystkich"></th><th>Zawodnik</th><th>Rocznik</th><th>Pozycja</th><th>Status</th><th style="text-align:right;" title="Rozegrane mecze w sezonie">Mecze</th><th style="text-align:right;" title="Rozegrane minuty w sezonie">Min</th><th style="text-align:right;" title="Gole w sezonie">Gole</th><th style="text-align:right;" title="Kartki żółte / czerwone">Kartki</th><th>Śr. ocena</th><th></th></tr></thead>
-      <tbody>${squadRows || `<tr><td colspan="11"><div class="empty">Jeszcze nikogo tu nie scoutujecie — pełny skład sprawdzisz w linkach powyżej.</div></td></tr>`}</tbody>
+      <thead><tr><th style="width:24px;"><input type="checkbox" id="squad-select-all" title="Zaznacz wszystkich"></th><th>Zawodnik</th><th>Rocznik</th><th>Pozycja</th><th>Status</th><th style="text-align:center;" title="Czy zawodnik ma menedżera — kliknij, aby przełączyć Tak/Nie">Agent</th><th style="text-align:right;" title="Rozegrane mecze w sezonie">Mecze</th><th style="text-align:right;" title="Rozegrane minuty w sezonie">Min</th><th style="text-align:right;" title="Gole w sezonie">Gole</th><th style="text-align:right;" title="Kartki żółte / czerwone">Kartki</th><th>Śr. ocena</th><th></th></tr></thead>
+      <tbody>${squadRows || `<tr><td colspan="12"><div class="empty">Jeszcze nikogo tu nie scoutujecie — pełny skład sprawdzisz w linkach powyżej.</div></td></tr>`}</tbody>
     </table>
   </div>
   </div>`;
@@ -15109,6 +15111,59 @@ function openSystemyModal(kluby){
   document.body.appendChild(overlay);
 }
 
+// SYSTEM KLUBU WPISANY DO KAŻDEGO PROFILU.
+//
+// Zgłoszenie (20.10.2026): „jeśli klub gra np. 1-3-4-3, to każdy zawodnik tego klubu powinien mieć
+// w swoim profilu taki system". Dotąd system stał wyłącznie przy KLUBIE, a profil dziedziczył go
+// w locie. Na ekranie wyglądało to poprawnie, ale pole w kartotece było puste — więc po otwarciu
+// edycji nie było zaznaczone nic, a zawodnik wyeksportowany do arkusza czy do PDF-a szedł bez
+// systemu, choć w aplikacji system „było widać".
+//
+// DLACZEGO TO BEZPIECZNE: systemZawodnika() nadal stawia system KLUBU przed wpisem zawodnika
+// (patrz wyżej). Wpisana kopia nie może więc zacząć żyć własnym życiem — gdy klub zmieni
+// ustawienie, wygra nowe, a nie to sprzed miesiąca. Zapis uzupełnia kartotekę, nie przejmuje
+// nad nią władzy.
+async function wgrajSystemyDoProfili(){
+  const kluby = DB.clubs.filter(c=>String(systemyKlubow[c.id] || '').trim());
+  if(!kluby.length){
+    pokazPotwierdzenie('Żaden klub nie ma jeszcze wpisanego systemu gry — ustaw je najpierw przyciskiem „📐 Systemy gry".', 'blad');
+    return;
+  }
+  // Liczymy NA SUCHO, zanim cokolwiek ruszymy. Inaczej po anulowaniu okna kartoteka byłaby już
+  // zmieniona w pamięci i rozjechałaby się z bazą aż do najbliższego przeładowania.
+  const plan = [];
+  const wgKlubu = [];
+  kluby.forEach(c=>{
+    const system = String(systemyKlubow[c.id]).trim();
+    const zmieniani = zawodnicyKlubu(c.id).filter(p=> String(p.formation || '') !== system);
+    if(!zmieniani.length) return;
+    wgKlubu.push({ nazwa: c.name, system, ile: zmieniani.length });
+    zmieniani.forEach(p=> plan.push({ p, system }));
+  });
+  const zawodnikow = kluby.reduce((s, c)=> s + zawodnicyKlubu(c.id).length, 0);
+  if(!plan.length){
+    pokazPotwierdzenie(`Nie ma czego uzupełniać — wszyscy zawodnicy (${zawodnikow}) z ${kluby.length} ${
+      kluby.length===1?'klubu':'klubów'} mają już w profilu system swojego klubu.`);
+    return;
+  }
+  wgKlubu.sort((a, b)=> b.ile - a.ile);
+  const pokaz = wgKlubu.slice(0, 12).map(x=>`  • ${x.nazwa} — ${etykietaSystemu(x.system)} (${x.ile})`).join('\n');
+  const reszta = wgKlubu.length - 12;
+  if(!confirm('Wpisać system gry klubu do profilu każdego jego zawodnika?' + '\n\n'
+    + `Klubów z ustawionym systemem: ${kluby.length}\nProfili do uzupełnienia: ${plan.length} z ${zawodnikow}\n\n`
+    + pokaz
+    + (reszta > 0 ? `\n  …oraz ${reszta} ${reszta===1?'klub':'klubów'} więcej` : '')
+    + '\n\nWpis w profilu zostanie NADPISANY systemem klubu. Mapa pozycji i tak liczy się z systemu klubu, więc nic na niej nie drgnie.')) return;
+
+  plan.forEach(({p, system})=>{ p.formation = system; });
+  const ok = await savePlayersSome(plan.map(x=>x.p));
+  render();
+  pokazPotwierdzenie(ok === false
+    ? ('Nie udało się zapisać.' + powodNieudanegoZapisu())
+    : `Wpisałem system gry do ${plan.length} ${plan.length===1?'profilu':'profili'} w ${wgKlubu.length} ${
+        wgKlubu.length===1?'klubie':'klubach'}.`, ok === false ? 'blad' : 'ok');
+}
+
 // ---- Pozycje ze składów meczowych --------------------------------------------------------
 //
 // Zapis składu (src/data/sklady-meczowe.ts) mówi, KTO gdzie stał. Tu chodzi o połączenie tego
@@ -16466,6 +16521,25 @@ function viewRadarMlodziezy(){
 }
 
 const MONITORING_STATUSES = ['Do Obserwacji','Na Testy','Do transferu','Z polecenia'];
+
+// CZEGO DOTYCZY MONITORING PRZY TYM NAZWISKU.
+//
+// Zgłoszenie (20.10.2026): „zmień monitoring młodzieżowców, aby było widać, czego dotyczy
+// monitoring". Znacznik mówił dotąd tylko tyle, że ktoś na liście jest. Przy młodzieżowcu to za
+// mało: obserwacja przed testami, transfer i polecenie to trzy różne sprawy, trzy różne terminy
+// i trzy różne rozmowy — a z samego „✓" nie dało się rozstrzygnąć, po co ten chłopak tam trafił.
+//
+// Osobno traktujemy monitoring BEZ POWODU. To nie jest czwarty rodzaj, tylko brak decyzji, więc
+// nie udajemy, że wiemy: wiersz mówi wprost, że powodu nie ma, i podpowiada, gdzie go wpisać.
+function etykietaMonitoringu(p){
+  if(!p || !p.monitored) return { tekst:'+ Monitoring', tytul:'Dodaj do Monitoringu', kolor:'var(--gold-dark)' };
+  const powod = MONITORING_STATUSES.includes(p.status) ? String(p.status) : '';
+  if(powod) return { tekst:'✓ '+powod, kolor:'var(--good)',
+    tytul:`W Monitoringu — ${powod}. Kliknij, aby usunąć z Monitoringu.` };
+  return { tekst:'✓ Monitoring · bez powodu', kolor:'var(--gold-dark)',
+    tytul:'W Monitoringu, ale nikt nie zapisał po co. Ustaw status w profilu zawodnika ('
+      + MONITORING_STATUSES.join(', ') + '), a powód pokaże się tutaj. Kliknij, aby usunąć z Monitoringu.' };
+}
 // SKANER KATEGORII — FUNDAMENT MONITOROWANIA MŁODZIEŻY.
 //
 // Monitoring pokazuje tych, których ktoś już wskazał. W CLJ U15 to za mało: cztery grupy to blisko
@@ -16546,7 +16620,7 @@ function panelSkanera(){
     `<option value="${m}" ${m===skanerMinMinut?'selected':''}>${m===0?'bez progu':'od '+m+' minut'}</option>`).join('');
 
   const trs = wiersze.slice(0, 40).map((w,i)=>{
-    const wMonitoringu = w.p.monitored;
+    const mon = etykietaMonitoringu(w.p);
     return `<tr class="${klasaMlodszego(w.p).trim()}">
       <td style="text-align:right;color:var(--ink-soft);">${i+1}</td>
       <td><strong>${esc(w.p.lastName)}</strong> ${esc(w.p.firstName)}${
@@ -16563,7 +16637,7 @@ function panelSkanera(){
         : `${Math.round(w.udzial*100)}%${w.udzial >= 0.4 ? ' <span title="Strzela ponad 40% bramek zespołu — niesie drużynę" style="color:var(--gold);">★</span>' : ''}`}</td>
       <td style="white-space:nowrap;">
         <button class="link-btn" data-action="view-player" data-id="${esc(w.p.id)}">Zobacz</button>
-        <button class="link-btn" data-action="add-to-monitoring" data-id="${esc(w.p.id)}" style="margin-left:8px;color:${wMonitoringu?'var(--good)':'var(--gold-dark)'};">${wMonitoringu?'✓ W monitoringu':'+ Monitoring'}</button>
+        <button class="link-btn" data-action="add-to-monitoring" data-id="${esc(w.p.id)}" title="${esc(mon.tytul)}" style="margin-left:8px;color:${mon.kolor};">${esc(mon.tekst)}</button>
       </td>
     </tr>`;
   }).join('');
@@ -18261,7 +18335,7 @@ function attachHandlers(){
     pl.monitored = !pl.monitored;
     if(pl.monitored) pl.watchlistRemoved = false;  // ponowne dodanie cofa wcześniejsze "Usuń"
     render();                 // natychmiastowy feedback (etykieta ✓/+), zapis leci w tle
-    savePlayers();
+    savePlayersSome([pl]);    // jeden wiersz do bazy, nie cała kartoteka
   });
   // Usunięcie zawodnika z listy Monitoring (nie kasuje zawodnika z bazy — tylko z watchlisty).
   main.querySelectorAll('[data-action="monitoring-remove"]').forEach(b=>b.onclick=async()=>{
@@ -19662,6 +19736,7 @@ function attachHandlers(){
     void pobierzPozycjeZeSkladowTm(['Ekstraklasa', 'I liga', 'II liga']));
   main.querySelectorAll('[data-action="pozycje-z-tm"]').forEach(b=>b.onclick=()=>openPozycjeZTmModal(widoczneKluby()));
   main.querySelectorAll('[data-action="systemy-gry"]').forEach(b=>b.onclick=()=>openSystemyModal(widoczneKluby()));
+  main.querySelectorAll('[data-action="systemy-do-profili"]').forEach(b=>b.onclick=()=>wgrajSystemyDoProfili());
   main.querySelectorAll('[data-action="sklady-meczowe"]').forEach(b=>b.onclick=()=>openSkladyModal(widoczneKluby()));
   // SORTOWANIE KLIKNIĘCIEM W NAGŁÓWEK.
   //
@@ -29189,7 +29264,7 @@ const AKCJE_BEZ_KLIENTA = new Set([
   'import-znicz-roster','protokoly-grupy','start-grupa','ponow-grupe','przerwij-grupe','zamknij-grupe',
   'lnp-link-grupy','show-bookmarklet','fetch-schedule','fetch-from-link','schedule-url',
   'squad-parse','squad-apply','squad-import-confirm','squad-diag','staff-parse','staff-apply',
-  'sklady-meczowe','systemy-gry','pozycje-z-tm','herby-z-pierwszych','herby-do-plikow','tm-odswiez','tm-zakladka',
+  'sklady-meczowe','systemy-gry','systemy-do-profili','pozycje-z-tm','herby-z-pierwszych','herby-do-plikow','tm-odswiez','tm-zakladka',
   'agencies-import','agencies-parse','agencies-apply','agent-import','agent-parse','agent-apply','agenci-hurt',
   'agency-add-players','agency-squad','agency-staff','do-import','get-template',
   // 3. Narzędzia pracowni
