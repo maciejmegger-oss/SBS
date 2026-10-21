@@ -13603,7 +13603,7 @@ function downloadContactsPdf(){
 
 
 // Klasyczny układ 11 numerowanych pozycji (na wzór przesłanego wzoru) — niezależny od formacji.
-// Na każdej pozycji można ręcznie przypisać do 6 zawodników wybranych z bazy; lista wypełnia się
+// Na każdej pozycji można ręcznie przypisać do LIMIT_NA_POZYCJI zawodników z bazy; lista wypełnia się
 // automatycznie najwyżej ocenionymi zawodnikami przy pierwszym wyświetleniu (patrz buildAutoPositionCandidates).
 const POSITION_NUMBERS = [
   {number:1,  label:'Bramkarz',            posName:'Bramkarz',            rankOffset:0},
@@ -13759,7 +13759,10 @@ async function przeniesNaInnaPozycje(league, formation, zNumeru, naNumer, player
   const zrodlo = (positionMapAssignments[kluczZ] || []).slice();
   const cel = (positionMapAssignments[kluczNa] || []).slice();
   if(cel.includes(playerId)) return { ok:false, powod:'juz-tam' };
-  if(cel.length >= 6) return { ok:false, powod:'komplet' };
+  // Zgłoszenie (21.10.2026): „jak na jedną pozycję przesunę np. 8 zawodników…". Przy limicie
+  // sześciu siódmy po prostu się nie wpuszczał, bez widocznego powodu. Dziesięć mieści całą
+  // konkurencję na pozycji i nadal nie jest workiem bez dna.
+  if(cel.length >= LIMIT_NA_POZYCJI) return { ok:false, powod:'komplet' };
   const i = zrodlo.indexOf(playerId);
   if(i >= 0) zrodlo.splice(i, 1);
   cel.push(playerId);
@@ -13899,6 +13902,9 @@ function wyroznieniZMeczow(liga, system){
   return wg;
 }
 
+// Ilu zawodników mieści się na jednym polu mapy rankingowej.
+const LIMIT_NA_POZYCJI = 10;
+
 function viewRankingNumbersMode(){
   // Zbierz WSZYSTKIE automatyczne uzupełnienia w jednym przebiegu i zapisz JEDEN raz — wywoływanie zapisu
   // osobno dla każdej z 11 pozycji powodowało równoczesne zapisy do tego samego klucza i błędy magazynu.
@@ -13969,7 +13975,7 @@ function viewRankingNumbersMode(){
         }
       }
       auto.forEach(id=>{
-        if(cur.includes(id) || cur.length >= 6) return;
+        if(cur.includes(id) || cur.length >= LIMIT_NA_POZYCJI) return;
         // Kto stoi już na innym polu tej samej mapy, nie wchodzi na drugie.
         if(gdzieJuzStoi.has(id) && gdzieJuzStoi.get(id) !== posDef.number) return;
         const pl = DB.players.find(p=>p.id===id);
@@ -14020,7 +14026,7 @@ function viewRankingNumbersMode(){
       // a przy sześciu nazwiskach jedno pod drugim nikt tego nie robi.
       const miejsce = i === 0 ? ' pmr-podstawowy' : i === 1 ? ' pmr-rezerwowy' : '';
       const rola = i === 0 ? 'pierwszy wybór' : i === 1 ? 'zmiennik' : `${i + 1}. w kolejce`;
-      return `<span class="pos-marker-row${statusCls}${miejsce}" draggable="true" data-id="${esc(pl.id)}" data-zrodlo="${posDef.number}" title="${esc(rola)}${pl.status?' · '+esc(pl.status):''} — przeciągnij na inną pozycję">${crestImg(clubCrest(pl.clubId),'xs',clubName(pl.clubId))}<span class="pmr-name">${esc(pl.lastName || pl.firstName || '—')}</span>${pl.birthYear?`<span class="pmr-year">${esc(pl.birthYear)}</span>`:''}</span>`;
+      return `<span class="pos-marker-row${statusCls}${miejsce}" draggable="true" data-id="${esc(pl.id)}" data-zrodlo="${posDef.number}" title="${esc(rola)}${pl.status?' · '+esc(pl.status):''} — przeciągnij na inną pozycję">${crestImg(clubCrest(pl.clubId),'xs',clubName(pl.clubId))}<span class="pmr-name">${esc(pl.lastName || pl.firstName || '—')}</span>${jedenastkaBadge(pl)}${pl.birthYear?`<span class="pmr-year">${esc(pl.birthYear)}</span>`:''}</span>`;
     }).join('');
     // Plakietki przy krawędziach uciekały poza boisko i nazwiska się urywały — przy skrajnych
     // polach kotwiczymy je bokiem zamiast środkiem. Po obrocie bramkarz dotyka LEWEJ krawędzi,
@@ -14028,7 +14034,7 @@ function viewRankingNumbersMode(){
     const brzeg = (coord.x < 14 ? ' pm-lewy' : coord.x > 86 ? ' pm-prawy' : '')
       + (coord.y > 78 ? ' pm-dol' : '');
     return `
-    <div class="pos-marker${brzeg}" style="left:${coord.x}%;top:${coord.y}%;" data-action="position-slot-click" data-number="${posDef.number}" title="${esc(posDef.label)} — kliknij, aby zarządzać (do 6 zawodników)">
+    <div class="pos-marker${brzeg}" style="left:${coord.x}%;top:${coord.y}%;" data-action="position-slot-click" data-number="${posDef.number}" title="${esc(posDef.label)} — kliknij, aby zarządzać (do ${LIMIT_NA_POZYCJI} zawodników)">
       <span class="pos-marker-dot ${isGk?'gk':''}">${posDef.number}</span>
       <span class="pos-marker-tag">${ids.length ? playerRowsHtml : '<span class="pos-marker-row pmr-empty">—</span>'}</span>
     </div>`;
@@ -14053,11 +14059,106 @@ function viewRankingNumbersMode(){
     </div>
   </div>
   </div>
-  <p class="note" style="margin-top:10px;"><strong>Złap nazwisko myszą i przeciągnij na inne pole</strong>, żeby zmienić zawodnikowi pozycję — pole docelowe podświetli się na złoto. Kliknij pozycję, aby dodać, usunąć lub zmienić kolejność (do 6 na pozycję).
+  <p class="note" style="margin-top:10px;"><strong>Złap nazwisko myszą i przeciągnij na inne pole</strong>, żeby zmienić zawodnikowi pozycję — pole docelowe podświetli się na złoto. Kliknij pozycję, aby dodać, usunąć lub zmienić kolejność (do ${LIMIT_NA_POZYCJI} na pozycję).
   Pierwsze miejsce na pozycji ma <span class="pmr-legenda pmr-podstawowy">złoty</span> pasek — to pierwszy wybór; drugie <span class="pmr-legenda pmr-rezerwowy">zielony</span> — zmiennik. Dalsi są bez paska, bo to już głębia kadry.
   ${rankingFormationFilter? ` Układ pól odzwierciedla kształt systemu ${esc(rankingFormationFilter)}.` : ''}
   ${!anyRealCandidatesFound? ' Mapa jest pusta, bo w tej lidze nikt nie jest ani w Monitoringu, ani ze statusem „Do transferu" / „Na Testy" — to oni wypełniają mapę. Dodaj kogoś do Monitoringu albo nadaj status w profilu zawodnika.' : ''}
   ${bezSystemu? ` <strong>Poza tym systemem:</strong> ${bezSystemu} zawodnik(ów) tej ligi ma status kwalifikujący, ale w profilu nie ma wpisanego systemu gry — zobaczysz ich pod „Wszystkie systemy" albo po uzupełnieniu systemu w profilu.` : ''}</p>`;
+}
+
+
+// KTO Z JEDENASTEK KOLEJKI JEST W KARTOTECE, A KOGO BRAK.
+//
+// Zgłoszenie (21.10.2026): „nie widzę nikogo z gwiazdką, są sami młodzieżowcy". Gwiazdka może
+// stanąć wyłącznie przy zawodniku, KTÓRY JEST W BAZIE — a mapa rankingowa wypełnia się tymi
+// najwyżej ocenionymi, czyli u nas młodzieżowcami z protokołów. Wyróżniani w jedenastkach
+// kolejki to w większości seniorzy, których w kartotece może po prostu nie być.
+//
+// Zamiast kazać się tego domyślać z pustej mapy, panel mówi wprost: tylu znalazłem, tylu nie ma
+// i oto ich nazwiska. Dopiero to jest odpowiedź na pytanie „dlaczego nie widzę gwiazdek".
+function wyroznieniJedenastek(){
+  const wg = new Map();     // nazwisko|klub → { nazwisko, imie, klub, kolejki[], zrodlo }
+  JEDENASTKI_KOLEJEK.forEach(w=>{
+    const k = kluczNazwiska(w.nazwisko) + '|' + kluczNazwiska(w.klub);
+    if(!wg.has(k)) wg.set(k, { nazwisko: w.nazwisko, imie: w.imie, klub: w.klub, kolejki: [], zrodlo: w.zrodlo });
+    const x = wg.get(k);
+    x.kolejki.push(w.kolejka);
+    x.zrodlo = w.zrodlo;
+    if(!x.imie && w.imie) x.imie = w.imie;
+  });
+  return [...wg.values()].sort((a, b)=> b.kolejki.length - a.kolejki.length
+    || a.nazwisko.localeCompare(b.nazwisko, 'pl'));
+}
+
+// Szukanie przez DB.players.find() dla każdego z 75 nazwisk to przy kilkunastu tysiącach
+// kartotek ponad milion porównań na jedno przerysowanie ekranu — dokładnie ten rodzaj roboty,
+// przez który Ranking potrafił się zawiesić. Raz budujemy indeks po nazwisku i z niego czytamy.
+function indeksPoNazwisku(){
+  const idx = new Map();
+  (DB.players || []).forEach(p=>{
+    const k = kluczNazwiska(p.lastName);
+    if(!k) return;
+    if(!idx.has(k)) idx.set(k, []);
+    idx.get(k).push(p);
+  });
+  return idx;
+}
+
+/** Szuka wyróżnionego w kartotece — po nazwisku i klubie, tak samo jak liczy się gwiazdka. */
+function zawodnikZJedenastki(w, idx){
+  const kandydaci = idx.get(kluczNazwiska(w.nazwisko));
+  if(!kandydaci || !kandydaci.length) return null;
+  const imie = kluczNazwiska(w.imie);
+  return kandydaci.find(p=>{
+    if(imie && kluczNazwiska(p.firstName) && kluczNazwiska(p.firstName) !== imie) return false;
+    const klub = clubName(p.clubId);
+    return !!klub && (kluczNazwiska(klub) === kluczNazwiska(w.klub) || klubyToSamo(klub, w.klub));
+  }) || null;
+}
+
+function panelJedenastekHtml(){
+  const lista = wyroznieniJedenastek();
+  if(!lista.length) return '';
+  const idx = indeksPoNazwisku();
+  const zBaza = lista.map(w=>({ w, p: zawodnikZJedenastki(w, idx) }));
+  const sa = zBaza.filter(x=>x.p);
+  const brak = zBaza.filter(x=>!x.p);
+  const trzy = zBaza.filter(x=>x.w.kolejki.length >= 3);
+  const trzyWBazie = trzy.filter(x=>x.p).length;
+
+  const wiersz = (x)=>`<tr${x.p ? '' : ' style="opacity:.72;"'}>
+    <td style="text-align:center;font-variant-numeric:tabular-nums;">${x.w.kolejki.length >= 3
+      ? `<span class="jk-badge jk-mocny">★${x.w.kolejki.length}</span>`
+      : `<span class="jk-badge">★${x.w.kolejki.length}</span>`}</td>
+    <td>${x.p
+      ? `<a class="link-btn" data-action="view-player" data-id="${esc(x.p.id)}">${esc(x.w.imie ? x.w.imie + ' ' : '')}<strong>${esc(x.w.nazwisko)}</strong></a>`
+      : `${esc(x.w.imie ? x.w.imie + ' ' : '')}<strong>${esc(x.w.nazwisko)}</strong>`}</td>
+    <td>${esc(x.w.klub)}</td>
+    <td class="note">kolejki ${x.w.kolejki.join(', ')}</td>
+    <td>${x.p
+      ? '<span class="agent-yes">w bazie</span>'
+      : '<span class="meta">brak w kartotece</span>'}</td>
+    <td><a class="ext-link" href="${esc(x.w.zrodlo)}" target="_blank" rel="noopener">źródło ↗</a></td>
+  </tr>`;
+
+  return `
+  <div class="card" style="margin-top:16px;">
+    <h3 style="font-family:'Barlow Condensed',sans-serif;font-size:22px;margin:0 0 2px;color:var(--heading);">
+      Jedenastki kolejki — Betclic 2 Liga</h3>
+    <p class="view-sub" style="margin:0 0 10px;">
+      ${lista.length} wyróżnionych zawodników z <strong>${KOLEJKI_W_ZESTAWIENIU.length}</strong> zestawień rundy jesiennej
+      (kolejki ${KOLEJKI_W_ZESTAWIENIU.join(', ')}) &middot; źródło: pilkanozna.pl.
+      <strong>${sa.length}</strong> ${sa.length === 1 ? 'jest' : 'jest'} w Twojej kartotece, <strong>${brak.length}</strong> nie ma.
+      Gwiazdka na mapie staje tylko przy tych pierwszych — kogo nie ma w bazie, tego mapa nie pokaże.
+      Z ${trzy.length} zawodników ze złotą gwiazdką w bazie ${trzyWBazie === 1 ? 'jest' : 'jest'} <strong>${trzyWBazie}</strong>.</p>
+    <div style="overflow:auto;max-height:420px;">
+      <table>
+        <thead><tr><th style="text-align:center;" title="Ile razy w jedenastce kolejki">Wyr.</th>
+          <th>Zawodnik</th><th>Klub</th><th>Kiedy</th><th>Kartoteka</th><th></th></tr></thead>
+        <tbody>${zBaza.map(wiersz).join('')}</tbody>
+      </table>
+    </div>
+  </div>`;
 }
 
 function viewRanking(){
@@ -14084,7 +14185,8 @@ function viewRanking(){
       </div>
     </div>
   </div>
-  ${viewRankingNumbersMode()}`;
+  ${viewRankingNumbersMode()}
+  ${panelJedenastekHtml()}`;
 }
 
 // ---------- MONITORING ----------

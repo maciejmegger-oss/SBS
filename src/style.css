@@ -424,10 +424,14 @@ tr:hover td{background:var(--card-soft);}
    zamiast rosnąć w nieskończoność i zachodzić na sąsiednie pola. */
 .pos-marker-tag{background:rgba(10,18,15,.86);border:1px solid rgba(255,255,255,.16);border-radius:7px;
   padding:3px;box-shadow:0 6px 18px rgba(0,0,0,.55);min-width:150px;backdrop-filter:blur(2px);
-  /* Cztery wiersze na raz, reszta pod przewinięciem. Pokazanie CAŁEJ listy naraz (18.10.2026)
-     dało na dziewiątce słup czternastu nazwisk, który zasłonił dziesiątkę i pół boiska —
-     „teraz jest całkiem bałagan". Pudełko musi zostać wielkości plakietki, nie kolumny. */
-  display:block;max-height:104px;overflow-y:auto;overscroll-behavior:contain;}
+  /* CAŁA LISTA, BEZ PRZEWIJANIA.
+     18.10.2026 lista była przewijana, bo automat wrzucał czternastu napastników na jedno pole
+     i słup nazwisk zasłaniał pół boiska. Zgłoszenie z 21.10.2026 jest inne i późniejsze:
+     „chcę całe listy, żeby się pojawiały bez tych przesuwaków — jak na jedną pozycję przesunę
+     np. 8 zawodników, to żeby oni byli widoczni". To są zawodnicy ustawieni RĘCZNIE, więc słup
+     jest zamierzony, a nie przypadkiem. Plakietki mogą teraz na siebie zachodzić; pole pod
+     kursorem wychodzi na wierzch (z-index niżej), więc da się je rozdzielić wzrokiem. */
+  display:block;max-height:none;overflow:visible;}
 /* Pole, w którym właśnie szukasz nazwiska, wychodzi na wierzch — inaczej przewijana lista
    chowa się pod sąsiednim polem. Bazowy z-index pola stoi wyżej, przy .pos-marker. */
 .pos-marker:hover,.pos-marker:focus-within{z-index:9;}
@@ -509,14 +513,16 @@ tr:hover td{background:var(--card-soft);}
    zawodnikach o podobnym nazwisku nie wiadomo, na którego się patrzy. Górna granica zostaje, bo
    pojedyncze bardzo długie nazwisko nie może rozepchnąć pola na sąsiednie. */
 :is(.mapa-zespolu,.mapa-rankingowa) .pos-marker-tag{
-  min-width:104px; width:auto; max-width:168px; padding:2px; border-radius:7px;
+  min-width:104px; width:max-content; max-width:240px; padding:2px; border-radius:7px;
   background:#FFFFFF; border:1px solid #D5DFD3; backdrop-filter:none;
   box-shadow:0 2px 6px rgba(31,54,36,.16);
 }
 :is(.mapa-zespolu,.mapa-rankingowa) .pos-marker-row{gap:3px;padding:1px 5px;border-radius:4px;}
 :is(.mapa-zespolu,.mapa-rankingowa) .pos-marker-row + .pos-marker-row{border-top:1px solid #EDF1EC;}
+/* Nazwisko w całości. Ucięte („Kalinow…”, „W…”) jest gorsze niż szersza plakietka: przy dwóch
+   podobnych nazwiskach nie wiadomo, na którego się patrzy, a po to ta mapa jest. */
 :is(.mapa-zespolu,.mapa-rankingowa) .pmr-name{font-size:10.5px;font-weight:700;color:#1B2420;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:116px;}
+  overflow:visible;text-overflow:clip;white-space:nowrap;max-width:none;}
 :is(.mapa-zespolu,.mapa-rankingowa) .pmr-year{font-size:9px;color:#7A867C;padding-left:2px;margin-left:auto;}
 :is(.mapa-zespolu,.mapa-rankingowa) .pmr-kropka{color:#C69B3C;font-size:12px;line-height:1;padding-left:2px;}
 :is(.mapa-zespolu,.mapa-rankingowa) .pmr-empty{color:#9AA79B;font-size:11px;padding:3px;justify-content:center;}
@@ -545,8 +551,8 @@ tr:hover td{background:var(--card-soft);}
    ma taką samą wagę co `.pitch-wrap-outer.mapa-rankingowa .position-map-pitch`, więc o wyniku
    rozstrzyga kolejność. Postawione wyżej — przegrywały bez śladu w narzędziach. */
 .pitch-wrap-outer.mapa-rankingowa .position-map-pitch{max-width:1240px;aspect-ratio:1.78/1;}
-.pitch-wrap-outer.mapa-rankingowa .pos-marker-tag{min-width:124px;max-width:184px;}
-.pitch-wrap-outer.mapa-rankingowa .pmr-name{font-size:11.5px;max-width:128px;}
+.pitch-wrap-outer.mapa-rankingowa .pos-marker-tag{min-width:124px;max-width:250px;}
+.pitch-wrap-outer.mapa-rankingowa .pmr-name{font-size:11.5px;max-width:none;}
 .pitch-wrap-outer.mapa-rankingowa .pmr-year{font-size:9.5px;}
 .pitch-wrap-outer.mapa-rankingowa .pos-marker-dot{width:23px;height:23px;font-size:12.5px;line-height:23px;}
 /* Poniżej 1500 px kolumny nie mają sensu: po odjęciu bocznego menu mapie zostawało tyle, że

@@ -6,7 +6,11 @@ import fs from "node:fs";
 const zrodlo = fs.readFileSync("src/main.ts", "utf8");
 const ciało = zrodlo.match(/async function przeniesNaInnaPozycje\([\s\S]*?\n\}/);
 const kluczFn = zrodlo.match(/function positionMapKey\([^\n]*\n?/);
-if (!ciało || !kluczFn) { console.error("Nie znalazłem funkcji w src/main.ts — test i kod się rozjechały."); process.exit(1); }
+// Limit zawodników na jednym polu czytamy Z KODU, a nie przepisujemy tutaj liczbą: inaczej
+// podniesienie go w aplikacji (21.10.2026: z 6 na 10) wywracało ten test bez żadnej usterki.
+const limitFn = zrodlo.match(/const LIMIT_NA_POZYCJI = \d+;/);
+if (!ciało || !kluczFn || !limitFn) { console.error("Nie znalazłem funkcji w src/main.ts — test i kod się rozjechały."); process.exit(1); }
+const LIMIT = Number(/\d+/.exec(limitFn[0])[0]);
 
 let bledy = 0;
 const sprawdz = (opis, warunek, dodatek = '') => {
@@ -18,6 +22,7 @@ async function scena(mapa) {
   let positionMapAssignments = JSON.parse(JSON.stringify(mapa));
   let zapisow = 0;
   const f = new Function('positionMapAssignments', 'savePositionMapAssignments', 'licznik', `
+    ${limitFn[0]}
     ${kluczFn[0]}
     ${ciało[0]}
     return przeniesNaInnaPozycje;
@@ -41,9 +46,9 @@ async function scena(mapa) {
     !s.mapa['II liga|||wszystkie|||4|||wykluczeni']);
 }
 
-// 2. Pole docelowe pełne — sześciu to komplet.
+// 2. Pole docelowe pełne — komplet to tyle, ile mówi LIMIT_NA_POZYCJI.
 {
-  const pelne = ['a', 'b', 'c', 'd', 'e', 'f'];
+  const pelne = Array.from({ length: LIMIT }, (_, i) => 'z' + i);
   const s = await scena({ 'II liga|||wszystkie|||4': ['madej'], 'II liga|||wszystkie|||5': pelne });
   const w = await s.przenies('II liga', '', 4, 5, 'madej');
   console.log('\n2. Pole docelowe pełne');

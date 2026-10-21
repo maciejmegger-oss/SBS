@@ -95,5 +95,23 @@ sprawdz("plik jest generowany skryptem, nie pisany ręcznie",
 sprawdz("brakujące kolejki są wypisane wprost, a nie przemilczane",
   /kolejek 3, 8 i 9 sezonu 2026\/27 — wydawca ich nie opublikował/.test(dane));
 
+console.log("\n7. Mapa rankingowa i panel kontrolny");
+// Zgłoszenie (21.10.2026): „nie widzę nikogo z gwiazdką, są sami młodzieżowcy". Gwiazdka była
+// wpięta tylko w mapę ZESPOŁU klubu, a Maciej patrzył na mapę RANKINGOWĄ — to inny widok
+// i inny kod rysujący wiersz. Dlatego test pilnuje obu miejsc naraz, nie jednego.
+sprawdz("gwiazdka jest na mapie rankingowej", /jedenastkaBadge\(pl\)/.test(zrodlo));
+sprawdz("gwiazdka nadal jest na mapie zespołu klubu", /jedenastkaBadge\(p\)/.test(zrodlo));
+sprawdz("jest panel mówiący, kogo z wyróżnionych nie ma w kartotece",
+  /function panelJedenastekHtml\(\)\{/.test(zrodlo) && /panelJedenastekHtml\(\)\}/.test(zrodlo));
+sprawdz("panel liczy osobno tych w bazie i brakujących",
+  /const brak = zBaza\.filter\(x=>!x\.p\);/.test(zrodlo) && /brak w kartotece/.test(zrodlo));
+sprawdz("panel tłumaczy, dlaczego mapa może nie pokazywać gwiazdek",
+  /Gwiazdka na mapie staje tylko przy tych pierwszych/.test(zrodlo));
+// Szukanie przez DB.players.find() osobno dla każdego z 75 nazwisk to przy kilkunastu tysiącach
+// kartotek ponad milion porównań na jedno przerysowanie — Ranking by się o to zaciął.
+sprawdz("wyszukiwanie idzie po indeksie, nie przez find() na każde nazwisko",
+  /function indeksPoNazwisku\(\)\{/.test(zrodlo)
+  && /const kandydaci = idx\.get\(kluczNazwiska\(w\.nazwisko\)\);/.test(zrodlo));
+
 console.log(bledy ? `\n${bledy} BŁĘDÓW` : "\nWszystko przeszło.");
 process.exit(bledy ? 1 : 0);
