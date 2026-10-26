@@ -6475,7 +6475,7 @@ function viewPlayerDetail(id){
     </div>
     ${p.attachments && p.attachments.length? `
       <div class="attach-grid">
-        ${p.attachments.map(a=>`<div class="attach-card" data-action="manage-attachments" data-id="${p.id}" title="${esc(a.name)}">
+        ${p.attachments.map((a, i)=>`<div class="attach-card" data-action="podglad-zalacznika" data-id="${p.id}" data-i="${i}" title="${esc(a.name)} — kliknij, aby otworzyć w powiększeniu">
           <div class="attach-thumb">${attachmentThumbInner(a)}</div>
           <div class="attach-card-name">📎 ${esc(a.name)}</div>
         </div>`).join('')}
@@ -18729,6 +18729,7 @@ function attachHandlers(){
 
   main.querySelectorAll('[data-action="manage-tabs"]').forEach(b=>b.onclick=()=>openPlayerTabsModal(b.dataset.id));
   main.querySelectorAll('[data-action="manage-attachments"]').forEach(b=>b.onclick=()=>openPlayerAttachmentsModal(b.dataset.id));
+  main.querySelectorAll('[data-action="podglad-zalacznika"]').forEach(b=>b.onclick=()=>otworzPodgladZalacznika(b.dataset.id, b.dataset.i));
 
   main.querySelectorAll('[data-action="print-player"]').forEach(b=>b.onclick=async()=>{
     const originalText = b.textContent;
@@ -28877,6 +28878,60 @@ function attachmentThumbInner(a){
   if(mime.startsWith('image/')) return `<img src="${a.dataUrl}" alt="${esc(a.name)}">`;
   if(mime === 'application/pdf') return `<embed src="${a.dataUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH" type="application/pdf">`;
   return `<span class="attach-thumb-icon">📄</span>`;
+}
+
+// PODGLĄD ZAŁĄCZNIKA NA PEŁNYM EKRANIE.
+//
+// Zgłoszenie (26.10.2026): „przy kliknięciu w załącznik niech powiększa zdjęcie i przycisk
+// pobrania lub zamknięcia, ale żeby powiększało do czytelnego obrazka". Dotąd klik w kafelek
+// otwierał okno „Zarządzaj załącznikami", więc jedyną drogą do obejrzenia screena było
+// pobranie go na dysk — a miniatura 150×120 px z tabelą statystyk jest nie do odczytania.
+//
+// DWA TRYBY, BO JEDEN NIE WYSTARCZA: zrzut ekranu z gęstą tabelą bywa szerszy niż okno, więc
+// samo „zmieść w ekranie" nadal zostawia tekst za mały. Dlatego jest przełącznik na skalę 1:1
+// — wtedy obraz idzie w pełnej rozdzielczości, a podgląd się przewija.
+function otworzPodgladZalacznika(playerId, idx){
+  const p = DB.players.find(x=>x.id === playerId);
+  const a = p && (p.attachments || [])[Number(idx)];
+  if(!a) return;
+  const mime = String(a.mime || '');
+  const obraz = mime.startsWith('image/');
+  const pdf = mime === 'application/pdf';
+  const rozmiar = a.size < 1024*1024 ? Math.round(a.size/1024) + ' KB' : (a.size/1024/1024).toFixed(1) + ' MB';
+
+  const ov = document.createElement('div');
+  ov.className = 'lightbox';
+  ov.innerHTML = `
+    <div class="lightbox-pasek">
+      <span class="lightbox-nazwa" title="${esc(a.name)}">📎 ${esc(a.name)}</span>
+      <span class="lightbox-meta">${esc(rozmiar)}${a.uploadedAt ? ' &middot; dodano ' + esc(a.uploadedAt) : ''}</span>
+      <span style="flex:1;"></span>
+      ${obraz ? `<button class="secondary lb-skala" type="button">🔍 Skala 1:1</button>` : ''}
+      <a class="gold lb-pobierz" href="${a.dataUrl}" download="${esc(a.name)}">⭳ Pobierz</a>
+      <button class="secondary lb-zamknij" type="button">✕ Zamknij</button>
+    </div>
+    <div class="lightbox-tresc">
+      ${obraz ? `<img class="lb-obraz" src="${a.dataUrl}" alt="${esc(a.name)}">`
+        : pdf ? `<embed class="lb-pdf" src="${a.dataUrl}#view=FitH" type="application/pdf">`
+        : `<div class="lightbox-brak"><div style="font-size:48px;line-height:1;">📄</div>
+             <p>Tego rodzaju pliku przeglądarka nie pokaże w podglądzie — pobierz go, żeby otworzyć.</p></div>`}
+    </div>`;
+
+  const zamknij = ()=>{ document.removeEventListener('keydown', naKlawisz); ov.remove(); };
+  // Esc zamyka, bo tak zamyka się każde pełnoekranowe okno — i bo przy podglądzie na cały
+  // ekran przycisk „Zamknij" bywa poza zasięgiem wzroku, gdy obraz jest przewinięty.
+  const naKlawisz = (e)=>{ if(e.key === 'Escape') zamknij(); };
+  document.addEventListener('keydown', naKlawisz);
+  ov.querySelector('.lb-zamknij').onclick = zamknij;
+  // Klik w tło zamyka, klik w sam obraz albo w pasek — nie. Inaczej próba przewinięcia
+  // powiększonego zrzutu kończyłaby się zamknięciem podglądu.
+  ov.addEventListener('click', e=>{ if(e.target === ov || e.target.classList.contains('lightbox-tresc')) zamknij(); });
+  const skala = ov.querySelector('.lb-skala');
+  if(skala) skala.onclick = ()=>{
+    const pelna = ov.classList.toggle('lb-pelna-skala');
+    skala.textContent = pelna ? '🔍 Zmieść w ekranie' : '🔍 Skala 1:1';
+  };
+  document.body.appendChild(ov);
 }
 
 function openTmProfileFromModal(){
