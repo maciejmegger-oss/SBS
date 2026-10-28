@@ -27985,6 +27985,12 @@ function openPlayerAttachmentsModal(playerId){
         <input type="file" id="attach-new-file" accept="application/pdf,.pdf,image/jpeg,image/jpg,image/png,.jpg,.jpeg,.png">
         <div id="attach-status" class="note" style="margin-top:4px;"></div>
       </div>
+      <p class="note" style="margin:10px 0 0;padding:9px 12px;border-left:3px solid var(--clay);background:var(--bad-bg);line-height:1.55;">
+        <strong>Nie wgrywaj tutaj:</strong> dokumentów tożsamości, numerów PESEL, zaświadczeń
+        i orzeczeń lekarskich ani niczego o stanie zdrowia. Kartoteka służy do oceny piłkarskiej.
+        Dane o zdrowiu i dokumenty tożsamości podlegają osobnym, znacznie ostrzejszym przepisom —
+        a znaczna część zawodników w bazie to osoby niepełnoletnie.
+      </p>
       <div class="modal-actions">
         <button class="secondary" data-action="close-modal">Zamknij</button>
       </div>
@@ -29473,8 +29479,32 @@ function maWykupioneRozgrywki(){
 // Odpowiednik tej funkcji po stronie bazy to sbs_ma_lige(). Obie muszą liczyć poziom rozgrywek
 // tak samo, inaczej klient zapłaciłby za ligę, której nie widzi: tu topLevelOf(), tam
 // sbs_poziom_ligi(). Zmieniasz jedno — zmień drugie.
+// NAJMŁODSZE ROCZNIKI NIE WYCHODZĄ POZA PRACOWNIĘ.
+//
+// Decyzja właściciela z 28.10.2026: roczniki 2012, 2013 i 2014 zostają w bazie i są dalej
+// zbierane, ale ŻADEN KLIENT ich nie zobaczy — niezależnie od wykupionych pakietów, łącznie
+// z Premium. To dane dwunasto-, trzynasto- i czternastolatków.
+//
+// Powód nie jest techniczny, tylko taki: sprzedawanie dostępu do ocen dzieci w tym wieku
+// to zupełnie inna sprawa niż sprzedawanie danych o piłkarzach seniorskich. Ograniczenie
+// zdejmuje z oferty handlowej całą tę grupę, zanim ktokolwiek zdąży o nią zapytać.
+//
+// Rocznik 2011 zostaje dostępny — piętnastolatkowie grają już w rozgrywkach, w których
+// skauting jest normą, a wielu z nich wchodzi do zespołów seniorskich.
+//
+// Bliźniak tej reguły siedzi w bazie: sbs_rocznik_zastrzezony() w migracji z 28.10.2026.
+// Zmieniasz tutaj — zmień i tam, inaczej klient zobaczy przez API to, czego nie widzi w panelu.
+const ROCZNIKI_BEZ_KLIENTA = ['Rocznik 2012', 'Rocznik 2013', 'Rocznik 2014'];
+
+function rocznikZastrzezony(liga){
+  return ROCZNIKI_BEZ_KLIENTA.includes(String(liga || '').trim());
+}
+
 function maDostepDoLigi(liga){
   if(!czyKlient()) return true;
+  // Warunek stoi PRZED sprawdzeniem Premium — inaczej pakiet „wszystkie rozgrywki"
+  // otwierałby również to, co ma pozostać wyłącznie w pracowni.
+  if(rocznikZastrzezony(liga)) return false;
   if(maPremium()) return true;
   return pakietyKonta().includes(topLevelOf(liga));
 }

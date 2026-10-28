@@ -201,8 +201,10 @@ export const STRONA: Record<string, Przeklad> = {
   },
   'pk6-h3': { en: 'Youth competitions', de: 'Nachwuchswettbewerbe' },
   'pk6-p': {
-    en: 'The Central Youth League and the remaining youth competitions.',
-    de: 'Die Zentrale Juniorenliga und die übrigen Nachwuchswettbewerbe.',
+    en: 'The Central Youth League and other youth competitions. Excluding the youngest age groups — '
+      + 'we do not share data on players under 15.',
+    de: 'Die Zentrale Juniorenliga und weitere Nachwuchswettbewerbe. Ohne die jüngsten Jahrgänge — '
+      + 'Daten von Spielern unter 15 Jahren geben wir nicht weiter.',
   },
   'pk7-h3': { en: 'Premium', de: 'Premium' },
   'pk7-p': {
