@@ -34,6 +34,7 @@ export const STRONA: Record<string, Przeklad> = {
   'nav-moduly': { en: 'Modules', de: 'Module' },
   'nav-jak': { en: 'How it works', de: 'Ablauf' },
   'nav-bezpieczenstwo': { en: 'Security', de: 'Sicherheit' },
+  'nav-analiza': { en: 'Analysis', de: 'Analyse' },
   'nav-pakiety': { en: 'Packages', de: 'Pakete' },
   'nav-kontakt': { en: 'Contact', de: 'Kontakt' },
   'cta-pakiety': { en: 'Packages', de: 'Pakete' },
@@ -180,6 +181,82 @@ export const STRONA: Record<string, Przeklad> = {
     en: 'One package is one competition. You take as many as you need — <strong>access adds up</strong>. Each package gives you all the data of those competitions: clubs, players, statistics, and the whole working panel: observations, reports and ratings.',
     de: 'Ein Paket ist ein Wettbewerb. Sie nehmen so viele, wie Sie brauchen — <strong>die Zugänge summieren sich</strong>. Jedes Paket enthält sämtliche Daten dieser Wettbewerbe: Vereine, Spieler, Statistiken und das gesamte Arbeitspanel: Beobachtungen, Berichte und Bewertungen.',
   },
+  // ---- Analiza indywidualna zawodnika ----
+  // Drugi, osobny rynek: nie klub kupujący bazę, a zawodnik albo rodzic kupujący ocenę
+  // jednego chłopaka. Dlatego język jest tu inny — bezpośredni zwrot do czytającego,
+  // a nie opis możliwości systemu.
+  'an-h2': { en: 'Individual player analysis', de: 'Individuelle Spieleranalyse' },
+  'an-sub': {
+    en: 'For players, parents and individual coaches. We watch the footage, create a player '
+      + 'profile in the system, assess potential and — if you wish — follow the player through '
+      + 'the season. <strong>You do not have to be a club to apply.</strong>',
+    de: 'Für Spieler, Eltern und Individualtrainer. Wir sehen uns das Videomaterial an, legen '
+      + 'ein Spielerprofil im System an, bewerten das Potenzial und begleiten den Spieler — '
+      + 'auf Wunsch — durch die Saison. <strong>Sie müssen kein Verein sein, um sich zu '
+      + 'melden.</strong>',
+  },
+  'an1-h3': { en: 'Basic analysis', de: 'Basisanalyse' },
+  'an1-p': {
+    en: 'One match. A player profile in the system, strengths and weaknesses, position on the '
+      + 'pitch and a concrete recommendation for the coming months.',
+    de: 'Ein Spiel. Ein Spielerprofil im System, Stärken und Schwächen, Position auf dem Platz '
+      + 'und eine konkrete Empfehlung für die kommenden Monate.',
+  },
+  'an2-h3': { en: 'Full analysis', de: 'Vollanalyse' },
+  'an2-p': {
+    en: 'Three matches. A complete profile, a potential assessment and a comparison with other '
+      + 'players of the same age group from our database.',
+    de: 'Drei Spiele. Ein vollständiges Profil, eine Potenzialbewertung und ein Vergleich mit '
+      + 'anderen Spielern desselben Jahrgangs aus unserer Datenbank.',
+  },
+  'an3-h3': { en: 'Development monitoring', de: 'Entwicklungsbegleitung' },
+  'an3-p': {
+    en: 'We follow the player through the season: minutes after every round, a workload chart '
+      + 'and a report every quarter. You can see whether the development is going the right way.',
+    de: 'Wir begleiten den Spieler durch die Saison: Einsatzminuten nach jedem Spieltag, eine '
+      + 'Belastungskurve und ein Bericht pro Quartal. Sie sehen, ob die Entwicklung in die '
+      + 'richtige Richtung geht.',
+  },
+  'an-dodatki-h': { en: 'Add-ons to the analysis', de: 'Zusatzleistungen zur Analyse' },
+  'an4-h3': { en: 'Mental analysis', de: 'Mentale Analyse' },
+  'an4-p': {
+    en: 'An assessment of attitude, resilience under pressure and behaviour in the difficult '
+      + 'moments of a match. Carried out by a specialist.',
+    de: 'Eine Bewertung der Einstellung, der Belastbarkeit unter Druck und des Verhaltens in '
+      + 'schwierigen Spielphasen. Durchgeführt von einem Fachmann.',
+  },
+  'an5-h3': { en: 'Physical analysis', de: 'Athletikanalyse' },
+  'an5-p': {
+    en: 'An assessment of physical condition based on the course of the match: dynamics, '
+      + 'endurance and any drop-off in the second half.',
+    de: 'Eine Bewertung der körperlichen Verfassung anhand des Spielverlaufs: Dynamik, '
+      + 'Ausdauer und Leistungsabfall in der zweiten Halbzeit.',
+  },
+  'an6-h3': { en: 'Physical training plan', de: 'Athletikplan' },
+  'an6-p': {
+    en: 'An individual physical training plan, drawn up by a fitness coach on the basis of the '
+      + 'analysis.',
+    de: 'Ein individueller Trainingsplan für die körperliche Vorbereitung, erstellt von einem '
+      + 'Athletiktrainer auf Grundlage der Analyse.',
+  },
+  'an-btn': { en: 'Order an analysis', de: 'Analyse bestellen' },
+  'an-jak': {
+    en: '<strong>How to order:</strong> write to us saying who the analysis is for (first name, '
+      + 'surname, year of birth, club) and which service you are choosing. We will reply telling '
+      + 'you what footage we need and when you will receive the report.',
+    de: '<strong>So bestellen Sie:</strong> Schreiben Sie uns, für wen die Analyse ist (Vorname, '
+      + 'Nachname, Geburtsjahr, Verein) und welche Leistung Sie wählen. Wir antworten Ihnen, '
+      + 'welches Videomaterial wir benötigen und wann Sie den Bericht erhalten.',
+  },
+  'an-maloletni': {
+    en: '<strong>Players under 18:</strong> the request must come from a parent or legal '
+      + 'guardian. Without their consent we do not accept the order and do not create a profile.',
+    de: '<strong>Minderjährige Spieler:</strong> Die Anfrage stellt ein Elternteil oder der '
+      + 'gesetzliche Vertreter. Ohne dessen Einwilligung nehmen wir den Auftrag nicht an und '
+      + 'legen kein Profil an.',
+  },
+  'an-btn-mail': { en: 'Write to us', de: 'Schreiben Sie uns' },
+
   'pk1-h3': { en: 'Ekstraklasa', de: 'Ekstraklasa' },
   'pk1-p': {
     en: 'Clubs, players and statistics of the top division.',

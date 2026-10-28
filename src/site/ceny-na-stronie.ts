@@ -9,7 +9,7 @@
 // sezon, a zapomniał o kwartale, i klient zobaczyłby dwie różne prawdy. Tak jest jedno miejsce
 // do zmiany i zero okazji do pomyłki.
 
-import { OKRESY, policzCene, nazwaOkresu, type Okres } from './cennik';
+import { OKRESY, policzCene, nazwaOkresu, cenaUslugi, type Okres } from './cennik';
 
 const KLUCZ = 'sbs-okres-cennika';
 // Wybór odtwarzamy JUŻ PRZY WCZYTANIU pliku, a nie osobnym uruchomieniem. Ceny rysuje
@@ -35,6 +35,13 @@ export function odswiezCennik(jezyk: string): void {
     if (!cena) { el.innerHTML = ''; return; }
     el.innerHTML = `<span class="pak-kwota-glowna">${cena.glowna}</span>`
       + `<span class="pak-kwota-mies">${cena.miesiecznie}</span>`;
+  });
+
+  // ANALIZA INDYWIDUALNA. Te kwoty NIE przechodzą przez przełącznik okresu — to usługa
+  // jednorazowa, nie abonament — ale waluta zależy od języka tak samo jak w pakietach,
+  // dlatego rysują się tutaj, a nie osobnym mechanizmem.
+  document.querySelectorAll<HTMLElement>('[data-usluga]').forEach((el) => {
+    el.textContent = cenaUslugi(el.dataset.usluga || '', jezyk);
   });
 
   const host = document.querySelector('.okresy');

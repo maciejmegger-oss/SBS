@@ -93,3 +93,47 @@ export function policzCene(pakiet: string, okres: Okres, jezyk: string): CenaDoP
 
 export const nazwaOkresu = (okres: Okres, jezyk: string): string =>
   (NAPISY[jezyk] || NAPISY.pl)[okres];
+
+// ---------------------------------------------------------------------------
+// ANALIZA INDYWIDUALNA — oferta dla zawodnika, nie dla klubu
+// ---------------------------------------------------------------------------
+//
+// To jest DRUGI, osobny rynek. Klub kupuje dostęp do bazy na sezon; zawodnik albo jego rodzic
+// kupuje jedną rzecz: ocenę konkretnego chłopaka. Dlatego ceny są jednorazowe, a nie
+// abonamentowe, i nie przechodzą przez przełącznik Sezon / Półrocze / Kwartał.
+//
+// DLACZEGO TA OFERTA MA NAJCZYSTSZĄ PODSTAWĘ PRAWNĄ W CAŁYM SYSTEMIE
+// Przy bazie klubowej dane zawodników zbieramy bez ich udziału — ze źródeł publicznych
+// i z obserwacji. Tutaj jest odwrotnie: zawodnik albo rodzic SAM SIĘ ZGŁASZA i podpisuje
+// zgodę. Żadnego uzasadnionego interesu, żadnego obowiązku z art. 14, żadnych wątpliwości
+// przy małoletnich — o ile zgłoszenie składa opiekun prawny.
+//
+// Jedyne pole minowe to dodatki: analizę mentalną i motoryczną wykonuje specjalista, nie my.
+// Marża to różnica między ceną tutaj a jego stawką — i to trzeba znać PRZED sprzedażą.
+
+export interface UslugaIndywidualna {
+  klucz: string;
+  cena: Record<Waluta, number>;
+  cykliczna?: boolean;   // monitoring rozlicza się miesięcznie, reszta jednorazowo
+  dodatek?: boolean;     // dopłata do analizy, nie usługa samodzielna
+}
+
+export const USLUGI_INDYWIDUALNE: UslugaIndywidualna[] = [
+  { klucz: 'analiza-podstawowa', cena: { pln: 490, eur: 149 } },
+  { klucz: 'analiza-pelna',      cena: { pln: 890, eur: 269 } },
+  { klucz: 'monitoring',         cena: { pln: 290, eur:  89 }, cykliczna: true },
+  { klucz: 'dod-mentalna',       cena: { pln: 390, eur: 119 }, dodatek: true },
+  { klucz: 'dod-motoryczna',     cena: { pln: 490, eur: 149 }, dodatek: true },
+  { klucz: 'dod-plan',           cena: { pln: 590, eur: 179 }, dodatek: true },
+];
+
+// Kwota do pokazania na karcie: „490 zł", „290 zł / mies.", „+390 zł".
+export function cenaUslugi(klucz: string, jezyk: string): string {
+  const u = USLUGI_INDYWIDUALNE.find((x) => x.klucz === klucz);
+  if (!u) return '';
+  const n = NAPISY[jezyk] || NAPISY.pl;
+  const kwotaTekst = kwota(u.cena[walutaDlaJezyka(jezyk)], walutaDlaJezyka(jezyk), jezyk);
+  if (u.cykliczna) return `${kwotaTekst} / ${n.mies}`;
+  // Plus przy dodatku nie jest ozdobą: mówi, że to DOPŁATA do analizy, a nie jej zamiennik.
+  return u.dodatek ? `+ ${kwotaTekst}` : kwotaTekst;
+}

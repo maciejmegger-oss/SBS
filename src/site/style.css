@@ -490,3 +490,63 @@ section[id]{scroll-margin-top:80px;}
 }
 /* Pasek na jasnym tle — inaczej biały napis na białym. */
 .strona-prawna .topbar{background:var(--pitch);}
+
+/* ---- ANALIZA INDYWIDUALNA ZAWODNIKA ----
+   Sekcja stoi na jasnym tle (band muted), a karty .pakiet były rysowane dla ciemnej wstęgi:
+   kreda na przezroczystej zieleni. Nie powielamy więc układu siatki ani wyrównania ceny —
+   bierzemy je z .pakiet i nadpisujemy WYŁĄCZNIE barwy. Dzięki temu poprawka w wyrównaniu
+   kwot w cenniku klubowym nadal dotyczy obu sekcji, a nie jednej z nich. */
+.band.muted .pakiet{
+  background:#fff;
+  border-color:var(--border);
+}
+.band.muted .pakiet h3{color:var(--pitch);}
+.band.muted .pakiet p{color:var(--ink-soft);}
+.band.muted .pakiet:hover{border-color:var(--gold);}
+
+/* KWOTA W TEJ SEKCJI jest jedna i wpisywana wprost w akapit — nie ma w środku
+   .pak-kwota-glowna, bo nie ma czego przeliczać na miesiąc. Styl musi więc stać na samym
+   akapicie, a selektor musi przebić `.band.muted .pakiet p` (klasa+klasa+element). Dlatego
+   identyfikator sekcji, a nie kolejna klasa: #analiza wygrywa bez liczenia na kolejność w pliku.
+   Ciemniejsze złoto niż na wstędze — --gold-soft na bieli jest nieczytelny. */
+#analiza .pak-kwota{
+  font-family:'Barlow Condensed',sans-serif;font-weight:700;
+  letter-spacing:.5px;line-height:1;color:#8C6A1E;font-size:30px;
+}
+
+/* .btn.ghost to kreda na przezroczystym tle — pomyślany dla ciemnej wstęgi. Na białej karcie
+   wychodziła biel na bieli: przycisk był fizycznie na stronie i praktycznie niewidoczny.
+   W jasnej sekcji przestawiamy go na atrament i obrys z koloru ramek. */
+#analiza .btn.ghost{color:var(--pitch);border-color:var(--border);}
+#analiza .btn.ghost:hover{border-color:var(--gold);color:#8C6A1E;background:rgba(198,155,60,.08);}
+
+.an-dodatki-h{
+  margin:34px 0 14px;font-size:17px;text-transform:uppercase;
+  letter-spacing:1px;color:var(--ink-soft);
+}
+/* Dodatki są WĘŻSZE i niższe od kart głównych — bo to dopłaty, nie równorzędne usługi.
+   Gdyby wyglądały tak samo, człowiek musiałby czytać, żeby się dowiedzieć, co jest czym. */
+.an-dodatki{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));}
+.an-dodatek{
+  background:#fff;border:1px solid var(--border);border-radius:12px;
+  padding:16px 18px 14px;
+}
+.an-dodatek h4{margin:0 0 8px;font-size:16px;color:var(--pitch);}
+.an-dodatek p{margin:0 0 10px;font-size:13.5px;line-height:1.5;color:var(--ink-soft);}
+/* Dodatek ma kwotę mniejszą od usługi głównej — ta sama informacja, inna waga. */
+#analiza .an-dodatek .pak-kwota{font-size:22px;margin:0;}
+
+.an-zamow{
+  margin-top:30px;padding:20px 22px;
+  background:#fff;border:1px solid var(--border);border-radius:14px;
+  max-width:70ch;
+}
+.an-zamow p{font-size:14.5px;}
+/* Zdanie o małoletnim jest wyróżnione, bo to nie uprzejmość, a warunek przyjęcia zamówienia:
+   bez zgody opiekuna nie zakładamy profilu i nie ma o czym rozmawiać. */
+.an-maloletni{
+  padding:12px 14px;margin:14px 0 16px;
+  background:rgba(198,155,60,.12);
+  border-left:3px solid var(--gold);
+  border-radius:0 8px 8px 0;
+}
