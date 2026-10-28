@@ -466,3 +466,27 @@ section[id]{scroll-margin-top:80px;}
   .pak-kwota-glowna{font-size:26px;}
   .pakiet.premium .pak-kwota-glowna{font-size:32px;}
 }
+
+/* ---- STRONA Z DOKUMENTEM PRAWNYM ----
+   Polityka prywatności i wszystko, co kiedyś do niej dołączy: regulamin, umowa licencyjna.
+   Wąska kolumna i jasne tło, bo to się CZYTA, a nie przegląda — ciemne tło strony sprzedażowej
+   przy dwóch stronach tekstu męczy wzrok. */
+.strona-prawna{background:var(--paper);}
+.prawna-tresc{max-width:min(760px, 100%);margin:0 auto;padding-top:clamp(28px,5vw,56px);}
+.prawna-tresc h1{color:var(--pitch);margin-bottom:10px;}
+.prawna-tresc section{margin:0 0 30px;}
+.prawna-tresc h2{
+  font-size:21px;color:var(--pitch);margin:0 0 10px;
+  padding-bottom:6px;border-bottom:1px solid var(--border);
+}
+.prawna-tresc p{color:var(--ink);font-size:15.5px;line-height:1.7;margin:0 0 10px;}
+.prawna-tresc ul{margin:0 0 12px;padding-left:22px;color:var(--ink);font-size:15.5px;line-height:1.7;}
+.prawna-tresc li{margin-bottom:5px;}
+.prawna-tresc strong{color:var(--pitch);}
+.prawna-tresc a{color:var(--gold);font-weight:600;}
+.prawna-data{
+  margin-top:34px;padding-top:14px;border-top:1px solid var(--border);
+  font-size:13.5px;color:var(--ink-soft);
+}
+/* Pasek na jasnym tle — inaczej biały napis na białym. */
+.strona-prawna .topbar{background:var(--pitch);}

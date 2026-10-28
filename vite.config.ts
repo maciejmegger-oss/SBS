@@ -136,6 +136,9 @@ export default defineConfig({
         site: "index.html",
         main: "app.html",
         mobile: "mobile.html",
+        // Polityka prywatności stoi osobno: to dokument prawny, nie część strony sprzedażowej.
+        // Własne wejście znaczy, że nie wciąga ze sobą obsługi formularza ani klienta bazy.
+        prywatnosc: "prywatnosc.html",
       },
     },
   },

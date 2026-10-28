@@ -253,8 +253,12 @@ export const STRONA: Record<string, Przeklad> = {
     de: 'Mindestens 8 Zeichen. Sie legen es selbst fest — niemand sonst sieht es.',
   },
   'f-zgoda': {
-    en: 'I agree to my contact details being processed in order to consider this application and to maintain an account in the system.',
-    de: 'Ich stimme der Verarbeitung meiner Kontaktdaten zur Prüfung dieser Anmeldung und zur Führung eines Kontos im System zu.',
+    en: 'I agree to my contact details being processed in order to consider this application and to maintain '
+      + 'an account in the system. I have read the '
+      + '<a href="/prywatnosc.html" target="_blank" rel="noopener">privacy notice</a>.',
+    de: 'Ich stimme der Verarbeitung meiner Kontaktdaten zur Prüfung dieser Anmeldung und zur Führung eines '
+      + 'Kontos im System zu. Ich habe die '
+      + '<a href="/prywatnosc.html" target="_blank" rel="noopener">Datenschutzerklärung</a> gelesen.',
   },
   'f-wyslij': { en: 'Send application', de: 'Anmeldung senden' },
 
@@ -264,8 +268,156 @@ export const STRONA: Record<string, Przeklad> = {
   'foot-logowanie': { en: 'Sign in to the system', de: 'Anmeldung im System' },
   'foot-mobilny': { en: 'Mobile panel (SBS Live)', de: 'Mobiles Panel (SBS Live)' },
   'foot-zgloszenie': { en: 'Access application', de: 'Zugangsanfrage' },
+  'foot-prywatnosc': { en: 'Privacy notice', de: 'Datenschutzerklärung' },
   'foot-legal': {
     en: 'Scout Base System. Access to the system is restricted to users approved by the administrator.',
     de: 'Scout Base System. Der Zugang zum System ist auf vom Administrator freigegebene Nutzer beschränkt.',
   },
+
+  // ---- POLITYKA PRYWATNOŚCI (prywatnosc.html) ----
+  // Całe sekcje, nie pojedyncze zdania: dokument prawny czyta się w całości, a tłumaczenie
+  // kawałkami rozsypałoby zdania złożone, w których w środku stoi pogrubienie.
+  'pp-powrot': { en: '← Home', de: '← Startseite' },
+  'pp-h1': { en: 'Privacy notice', de: 'Datenschutzerklärung' },
+  'pp-wstep': {
+    en: 'This document explains who processes personal data in Scout Base System, for what purpose, '
+      + 'on what legal basis, and what rights the people concerned have.',
+    de: 'Dieses Dokument erklärt, wer im Scout Base System personenbezogene Daten verarbeitet, zu welchem '
+      + 'Zweck, auf welcher Rechtsgrundlage und welche Rechte die betroffenen Personen haben.',
+  },
+  'pp-1': {
+    en: '<h2>1. Who is the data controller</h2>'
+      + '<p>The controller of personal data is <strong>Ellite-Sports</strong>, the operator of Scout Base System.</p>'
+      + '<p>Contact for data protection matters: <a href="mailto:kontakt@ellite-sports.pl">kontakt@ellite-sports.pl</a>.</p>',
+    de: '<h2>1. Wer ist der Verantwortliche</h2>'
+      + '<p>Verantwortlicher für die Verarbeitung personenbezogener Daten ist <strong>Ellite-Sports</strong>, Betreiber des Scout Base System.</p>'
+      + '<p>Kontakt in Datenschutzfragen: <a href="mailto:kontakt@ellite-sports.pl">kontakt@ellite-sports.pl</a>.</p>',
+  },
+  'pp-2': {
+    en: '<h2>2. Data of people requesting access</h2>'
+      + '<p>When you fill in the request form, you provide:</p>'
+      + '<ul><li>first and last name,</li><li>club or organisation,</li><li>your role,</li>'
+      + '<li>phone number,</li><li>e-mail address,</li><li>the package selected (if any).</li></ul>'
+      + '<p><strong>Purpose:</strong> reviewing your request, contacting you about it and, once access is granted, '
+      + 'running your account in the system.</p>'
+      + '<p><strong>Legal basis:</strong> your consent (Art. 6(1)(a) GDPR) at the request stage and performance '
+      + 'of a contract (Art. 6(1)(b) GDPR) once access is open.</p>'
+      + '<p>Providing the data is voluntary, but without it we cannot review the request or run an account.</p>',
+    de: '<h2>2. Daten der Personen, die Zugang beantragen</h2>'
+      + '<p>Mit dem Antragsformular geben Sie an:</p>'
+      + '<ul><li>Vor- und Nachname,</li><li>Verein oder Organisation,</li><li>Ihre Funktion,</li>'
+      + '<li>Telefonnummer,</li><li>E-Mail-Adresse,</li><li>gewähltes Paket (falls angegeben).</li></ul>'
+      + '<p><strong>Zweck:</strong> Prüfung des Antrags, Kontaktaufnahme dazu und — nach Freigabe des Zugangs — '
+      + 'Führung Ihres Kontos im System.</p>'
+      + '<p><strong>Rechtsgrundlage:</strong> Ihre Einwilligung (Art. 6 Abs. 1 lit. a DSGVO) im Antragsstadium '
+      + 'sowie Vertragserfüllung (Art. 6 Abs. 1 lit. b DSGVO) nach Freigabe des Zugangs.</p>'
+      + '<p>Die Angabe der Daten ist freiwillig, ohne sie können wir den Antrag jedoch nicht prüfen und kein Konto führen.</p>',
+  },
+  'pp-3': {
+    en: '<h2>3. Player data in the system</h2>'
+      + '<p>The system holds data on football players for scouting purposes: name, year of birth, club, position, '
+      + 'competition appearances, and observations and assessments made by scouts.</p>'
+      + '<p><strong>Where it comes from:</strong> publicly available sources — services publishing football '
+      + 'competition statistics — and from observations made by scouts at matches.</p>'
+      + '<p><strong>We do not collect</strong> health data, national identification numbers, identity document '
+      + 'data, or data on ethnic origin, religion or beliefs.</p>'
+      + '<p><strong>Data on players under 15 is not made available to clients of the system.</strong> '
+      + 'It remains accessible to the administrator only.</p>',
+    de: '<h2>3. Spielerdaten im System</h2>'
+      + '<p>Das System speichert Daten von Fußballspielern für die Scouting-Arbeit: Name, Geburtsjahr, Verein, '
+      + 'Position, Einsätze im Wettbewerb sowie Beobachtungen und Bewertungen der Scouts.</p>'
+      + '<p><strong>Herkunft:</strong> öffentlich zugängliche Quellen — Dienste mit Wettbewerbsstatistiken — '
+      + 'sowie Beobachtungen der Scouts bei Spielen.</p>'
+      + '<p><strong>Nicht erhoben werden</strong> Gesundheitsdaten, nationale Kennnummern, Ausweisdaten sowie '
+      + 'Daten zu ethnischer Herkunft, Religion oder Weltanschauung.</p>'
+      + '<p><strong>Daten von Spielern unter 15 Jahren werden Kunden des Systems nicht zugänglich gemacht.</strong> '
+      + 'Sie bleiben ausschließlich dem Administrator vorbehalten.</p>',
+  },
+  'pp-4': {
+    en: '<h2>4. Who we entrust data to</h2>'
+      + '<p>We use external providers to run the system:</p>'
+      + '<ul><li><strong>Supabase</strong> — database hosting,</li>'
+      + '<li><strong>Vercel</strong> — website and application hosting,</li>'
+      + '<li><strong>Zoho</strong> — e-mail.</li></ul>'
+      + '<p>These providers process data solely on our instructions and only as far as the service requires.</p>'
+      + '<p>Client data is never sold or shared with third parties for marketing purposes.</p>',
+    de: '<h2>4. An wen wir Daten weitergeben</h2>'
+      + '<p>Für den Betrieb des Systems nutzen wir externe Dienstleister:</p>'
+      + '<ul><li><strong>Supabase</strong> — Datenbank-Hosting,</li>'
+      + '<li><strong>Vercel</strong> — Hosting von Website und Anwendung,</li>'
+      + '<li><strong>Zoho</strong> — E-Mail.</li></ul>'
+      + '<p>Diese Dienstleister verarbeiten Daten ausschließlich auf unsere Weisung und nur im erforderlichen Umfang.</p>'
+      + '<p>Kundendaten werden nicht verkauft und nicht zu Marketingzwecken an Dritte weitergegeben.</p>',
+  },
+  'pp-5': {
+    en: '<h2>5. How long we keep data</h2>'
+      + '<ul><li><strong>Requests not granted</strong> — deleted within 12 months of the decision.</li>'
+      + '<li><strong>Account data</strong> — for the duration of use and 12 months afterwards; billing records '
+      + 'for the period required by tax law.</li>'
+      + '<li><strong>Player data</strong> — for as long as scouting work continues, with periodic review and '
+      + 'removal of entries no longer current.</li></ul>',
+    de: '<h2>5. Wie lange wir Daten speichern</h2>'
+      + '<ul><li><strong>Nicht bewilligte Anträge</strong> — Löschung innerhalb von 12 Monaten nach der Entscheidung.</li>'
+      + '<li><strong>Kontodaten</strong> — für die Dauer der Nutzung und 12 Monate danach; Abrechnungsunterlagen '
+      + 'für den steuerrechtlich vorgeschriebenen Zeitraum.</li>'
+      + '<li><strong>Spielerdaten</strong> — solange die Scouting-Arbeit andauert, mit regelmäßiger Prüfung und '
+      + 'Löschung nicht mehr aktueller Einträge.</li></ul>',
+  },
+  'pp-6': {
+    en: '<h2>6. Your rights</h2>'
+      + '<p>You have the right to:</p>'
+      + '<ul><li>access your data and receive a copy,</li><li>have inaccurate data corrected,</li>'
+      + '<li>have your data erased,</li><li>restrict processing,</li><li>data portability,</li>'
+      + '<li>object to processing,</li>'
+      + '<li>withdraw consent at any time — without affecting the lawfulness of processing carried out beforehand.</li></ul>'
+      + '<p>Simply write to <a href="mailto:kontakt@ellite-sports.pl">kontakt@ellite-sports.pl</a>. '
+      + 'We respond within one month.</p>'
+      + '<p><strong>This applies to players and their guardians too.</strong> If you are a player, or the parent '
+      + 'of a player held in our database, and want to know what data we keep or ask for its deletion — write to '
+      + 'the same address.</p>'
+      + '<p>You also have the right to lodge a complaint with the <strong>President of the Personal Data Protection '
+      + 'Office</strong> in Poland (ul. Stawki 2, 00-193 Warsaw).</p>',
+    de: '<h2>6. Ihre Rechte</h2>'
+      + '<p>Sie haben das Recht auf:</p>'
+      + '<ul><li>Auskunft über Ihre Daten und eine Kopie davon,</li><li>Berichtigung unrichtiger Daten,</li>'
+      + '<li>Löschung Ihrer Daten,</li><li>Einschränkung der Verarbeitung,</li><li>Datenübertragbarkeit,</li>'
+      + '<li>Widerspruch gegen die Verarbeitung,</li>'
+      + '<li>jederzeitigen Widerruf der Einwilligung — unbeschadet der Rechtmäßigkeit der zuvor erfolgten Verarbeitung.</li></ul>'
+      + '<p>Eine Nachricht an <a href="mailto:kontakt@ellite-sports.pl">kontakt@ellite-sports.pl</a> genügt. '
+      + 'Wir antworten innerhalb eines Monats.</p>'
+      + '<p><strong>Das gilt auch für Spieler und deren Erziehungsberechtigte.</strong> Wenn Sie Spieler oder '
+      + 'Elternteil eines in unserer Datenbank geführten Spielers sind und wissen möchten, welche Daten wir '
+      + 'speichern, oder deren Löschung verlangen — schreiben Sie an dieselbe Adresse.</p>'
+      + '<p>Zudem steht Ihnen das Beschwerderecht bei der <strong>polnischen Datenschutzaufsichtsbehörde</strong> '
+      + '(Prezes UODO, ul. Stawki 2, 00-193 Warschau) zu.</p>',
+  },
+  'pp-7': {
+    en: '<h2>7. Security</h2>'
+      + '<p>Access is granted only to accounts approved by the administrator. Permissions are separated: a client '
+      + 'sees only the competitions they have purchased and cannot download the database. Changes to passwords, '
+      + 'access and permissions are logged. Connections to the site and the application are encrypted.</p>',
+    de: '<h2>7. Sicherheit</h2>'
+      + '<p>Zugang erhalten ausschließlich vom Administrator freigegebene Konten. Die Berechtigungen sind getrennt: '
+      + 'Ein Kunde sieht nur die gebuchten Wettbewerbe und kann die Datenbank nicht herunterladen. Änderungen an '
+      + 'Passwörtern, Zugängen und Berechtigungen werden protokolliert. Die Verbindung zu Website und Anwendung '
+      + 'ist verschlüsselt.</p>',
+  },
+  'pp-8': {
+    en: '<h2>8. Cookies</h2>'
+      + '<p>The website uses no cookies for analytics or advertising. After you sign in, the application stores '
+      + 'session data and minor preferences in your browser (chosen language, light or dark theme) — solely so '
+      + 'that the system works correctly.</p>',
+    de: '<h2>8. Cookies</h2>'
+      + '<p>Die Website verwendet keine Cookies zu Analyse- oder Werbezwecken. Nach der Anmeldung speichert die '
+      + 'Anwendung Sitzungsdaten und kleine Einstellungen im Browser (gewählte Sprache, helles oder dunkles '
+      + 'Design) — ausschließlich damit das System korrekt funktioniert.</p>',
+  },
+  'pp-9': {
+    en: '<h2>9. Changes to this notice</h2>'
+      + '<p>We inform account holders of significant changes by e-mail. The date of the latest update is shown below.</p>',
+    de: '<h2>9. Änderungen dieser Erklärung</h2>'
+      + '<p>Über wesentliche Änderungen informieren wir Kontoinhaber per E-Mail. Das Datum der letzten '
+      + 'Aktualisierung steht unten.</p>',
+  },
+  'pp-data': { en: 'Last updated: 28 October 2026.', de: 'Letzte Aktualisierung: 28. Oktober 2026.' },
 };
