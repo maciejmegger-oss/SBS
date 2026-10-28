@@ -415,14 +415,18 @@ export const STRONA: Record<string, Przeklad> = {
       + '<p>We use external providers to run the system:</p>'
       + '<ul><li><strong>Supabase</strong> — database hosting,</li>'
       + '<li><strong>Vercel</strong> — website and application hosting,</li>'
-      + '<li><strong>Zoho</strong> — e-mail.</li></ul>'
+      + '<li><strong>Zoho</strong> — e-mail on the ellite-sports.pl domain,</li>'
+      + '<li><strong>Namecheap</strong> — domain registration and e-mail on the '
+      + 'scoutbasesystem.com domain.</li></ul>'
       + '<p>These providers process data solely on our instructions and only as far as the service requires.</p>'
       + '<p>Client data is never sold or shared with third parties for marketing purposes.</p>',
     de: '<h2>4. An wen wir Daten weitergeben</h2>'
       + '<p>Für den Betrieb des Systems nutzen wir externe Dienstleister:</p>'
       + '<ul><li><strong>Supabase</strong> — Datenbank-Hosting,</li>'
       + '<li><strong>Vercel</strong> — Hosting von Website und Anwendung,</li>'
-      + '<li><strong>Zoho</strong> — E-Mail.</li></ul>'
+      + '<li><strong>Zoho</strong> — E-Mail in der Domain ellite-sports.pl,</li>'
+      + '<li><strong>Namecheap</strong> — Domainregistrierung und E-Mail in der '
+      + 'Domain scoutbasesystem.com.</li></ul>'
       + '<p>Diese Dienstleister verarbeiten Daten ausschließlich auf unsere Weisung und nur im erforderlichen Umfang.</p>'
       + '<p>Kundendaten werden nicht verkauft und nicht zu Marketingzwecken an Dritte weitergegeben.</p>',
   },
