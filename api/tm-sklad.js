@@ -27,6 +27,39 @@ const DOZWOLONE_HOSTY = /(^|\.)transfermarkt\.[a-z.]+$/i;
 const RE_ZAWODNIK =
   /<table class="inline-table">[\s\S]*?\/profil\/spieler\/(\d+)">\s*([^<]+?)\s*<\/a>[\s\S]*?<tr>\s*<td>\s*([^<]+?)\s*<\/td>/g;
 
+// DATA URODZENIA — PO CO NAM DOKŁADNY DZIEŃ, SKORO MAMY ROCZNIK.
+//
+// Bo efekt wieku względnego mierzy się KWARTAŁEM urodzenia, a nie rocznikiem. Chłopak z 3 stycznia
+// i z 28 grudnia mają ten sam rocznik, a dzieli ich prawie rok rozwoju — i to wystarcza, żeby
+// pierwszy przez całą młodzież wyglądał na lepszego. Bez dnia i miesiąca tej różnicy nie widać.
+//
+// Strona składu podaje datę w kolumnie obok pozycji, w formacie „13.04.2007 (19)".
+const RE_DATA_PL = /\b(\d{2})\.(\d{2})\.(\d{4})\b/;
+
+// OKNO SZUKANIA, A NIE WOLNE PRZESZUKIWANIE RESZTY STRONY.
+//
+// Gdyby wiersz zawodnika nie miał daty, zachłanne szukanie „gdzieś dalej" znalazłoby datę
+// NASTĘPNEGO zawodnika i przypisało ją temu. Zła data urodzenia jest gorsza niż jej brak:
+// braku nikt nie użyje, a błędna po cichu przekłamie ocenę wieku względnego. Dlatego patrzymy
+// tylko do początku następnego profilu.
+function oknoZaWierszem(html, odIndeksu) {
+  const nastepny = html.indexOf("/profil/spieler/", odIndeksu);
+  const koniec = nastepny === -1 ? Math.min(html.length, odIndeksu + 1500) : nastepny;
+  return html.slice(odIndeksu, koniec);
+}
+
+// Data z okna, przepisana na zapis ISO (RRRR-MM-DD) — tak trzyma ją nasza kartoteka.
+// Wartość niemożliwa (miesiąc 13, rok 1812) nie jest „prawie dobra": odrzucamy ją w całości.
+function dataUrodzeniaZOkna(okno) {
+  const m = String(okno || "").match(RE_DATA_PL);
+  if (!m) return "";
+  const dzien = Number(m[1]), miesiac = Number(m[2]), rok = Number(m[3]);
+  if (miesiac < 1 || miesiac > 12) return "";
+  if (dzien < 1 || dzien > 31) return "";
+  if (rok < 1940 || rok > new Date().getFullYear()) return "";
+  return `${m[3]}-${m[2]}-${m[1]}`;
+}
+
 // ENCJE LICZBOWE TEŻ TRZEBA ROZWINĄĆ.
 //
 // Zgłoszenie (18.10.2026): na ławce stały nazwiska „H&#229;kans" i „W&#229;lemark" zamiast
@@ -67,11 +100,21 @@ export async function tmSklad(adres) {
     // Ten sam zawodnik bywa na stronie dwa razy (tabela główna i blok wypożyczeń) — bierzemy raz.
     if (widziane.has(tmId)) continue;
     widziane.add(tmId);
-    zawodnicy.push({ tmId, nazwa: odsloniec(m[2]), pozycja: odsloniec(m[3]) });
+    const dataUrodzenia = dataUrodzeniaZOkna(oknoZaWierszem(html, m.index + m[0].length));
+    zawodnicy.push({ tmId, nazwa: odsloniec(m[2]), pozycja: odsloniec(m[3]), dataUrodzenia });
   }
 
   const nazwaKlubu = (html.match(/<meta property="og:title" content="([^"]+)"/) || [])[1] || "";
-  return { klub: odsloniec(nazwaKlubu).replace(/\s*-\s*Transfermarkt.*$/i, ""), zawodnicy };
+  // ILE DAT UDAŁO SIĘ ODCZYTAĆ — liczba podana wprost, a nie do wywnioskowania.
+  //
+  // Układ strony Transfermarktu zmienia się bez zapowiedzi. Gdyby kolumna z datą przestała się
+  // dopasowywać, bez tego licznika import po prostu uzupełniałby zero dat i nikt by nie wiedział,
+  // że coś się zepsuło — wyglądałoby to jak „ten klub nie ma dat w serwisie".
+  return {
+    klub: odsloniec(nazwaKlubu).replace(/\s*-\s*Transfermarkt.*$/i, ""),
+    zawodnicy,
+    zDataUrodzenia: zawodnicy.filter((z) => z.dataUrodzenia).length,
+  };
 }
 
 export default async function handler(req, res) {
