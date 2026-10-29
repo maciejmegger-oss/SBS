@@ -1901,6 +1901,11 @@ function dzisiaj(){
   return `${d.getFullYear()}-${mies}-${dzien}`;
 }
 function fmt1(n){ return (Math.round(n*10)/10).toFixed(1); }
+// To samo z przecinkiem — polski zapis dziesiętny. Używane w dokumentach, które wychodzą
+// poza system (raport jednostronicowy): „4.3" w piśmie do klubu wygląda jak eksport z arkusza,
+// a nie jak ocena skauta. W samej aplikacji zostaje kropka, żeby nie przerabiać trzydziestu
+// dziewięciu miejsc naraz i nie rozjechać testów, które na niej stoją.
+function fmt1Pl(n){ return fmt1(n).replace('.', ','); }
 
 async function enrichZniczRoster(){
   const club = DB.clubs.find(c => c.name === 'Znicz Pruszków');
@@ -3508,6 +3513,223 @@ function porownanieNaPozycjiHtml(p){
     <div class="note" style="margin-top:4px;">Liczone ze średnich z Waszych raportów. Różni skauci oceniają
       różnie surowo, więc przy małych grupach traktuj miejsce jako wskazówkę, nie werdykt.</div>
   </div>`;
+}
+
+// ---- RAPORT JEDNOSTRONICOWY -------------------------------------------------------------------
+//
+// PO CO TO JEST
+// Profil zawodnika w systemie jest długi i przewijany — dobry do pracy, nieużyteczny do wysłania.
+// Klub albo rodzic ma dostać JEDNĄ stronę, którą drukuje się do PDF i czyta w minutę. Ten sam
+// dokument jest produktem w ofercie analizy indywidualnej, więc musi wyglądać na skończony.
+//
+// SKĄD BIORĄ SIĘ LICZBY
+// Wyłącznie z tego, co SBS naprawdę ma: oceny z raportów skautów (1–6), średnia pozycji jako punkt
+// odniesienia, miejsce w grupie, statystyki sezonu i prognoza rozwoju. Żadnego xG ani percentyli
+// z cudzych baz. Raport podający liczbę bez pokrycia jest gorszy niż raport mówiący „brak danych" —
+// bo pierwszy ktoś weźmie za dobrą monetę i podejmie na niej decyzję transferową.
+
+// Ile raportów wystarczy, żeby zdanie o zawodniku nie było zgadywaniem. Jeden raport to opinia
+// jednego człowieka z jednego meczu — pokazujemy ją, ale nazywamy po imieniu.
+const RJS_RAPORTOW_NA_WNIOSKI = 3;
+
+// Mocne strony i obszary do rozwoju liczone PRZEZ PORÓWNANIE, nie przez próg.
+//
+// Ocena 4,2 jest mocną stroną stopera IV ligi i słabą stroną stopera Ekstraklasy. Dlatego oś idzie
+// do „mocnych", gdy wyraźnie przewyższa średnią pozycji, a nie gdy przekroczy wpisaną na sztywno
+// liczbę. Gdy odniesienia brak (za mało ocenionych rywali), wracamy do progów bezwzględnych
+// i mówimy o tym w stopce — zamiast udawać porównanie, którego nie było.
+const RJS_ODSTEP = 0.35;   // o ile trzeba odstawać od średniej pozycji, żeby to coś znaczyło
+function rjsStronyZawodnika(metryki, odniesienie){
+  const mocne = [], slabe = [];
+  (metryki || []).forEach(m=>{
+    const o = odniesienie && odniesienie.osie ? odniesienie.osie[m.key] : null;
+    if(o){
+      const roznica = m.wartosc - o.srednia;
+      if(roznica >= RJS_ODSTEP) mocne.push({ ...m, roznica, srednia: o.srednia });
+      else if(roznica <= -RJS_ODSTEP) slabe.push({ ...m, roznica, srednia: o.srednia });
+    } else {
+      if(m.wartosc >= 4.5) mocne.push({ ...m, roznica: null, srednia: null });
+      else if(m.wartosc <= 3.0) slabe.push({ ...m, roznica: null, srednia: null });
+    }
+  });
+  const wgSily = (a,b)=> Math.abs(b.roznica ?? (b.wartosc-3.5)) - Math.abs(a.roznica ?? (a.wartosc-3.5));
+  return { mocne: mocne.sort(wgSily).slice(0,4), slabe: slabe.sort(wgSily).slice(0,4) };
+}
+
+// Słupek oceny ze znacznikiem średniej pozycji. Skala zaczyna się od 1, bo 1 to najniższa możliwa
+// ocena, a nie zero — pusty słupek przy jedynce sugerowałby, że zawodnik nie istnieje.
+function rjsSlupek(wartosc, srednia){
+  const pozycjaNa = (v)=> Math.max(0, Math.min(100, ((Number(v) - 1) / 5) * 100));
+  const szer = pozycjaNa(wartosc);
+  const znak = srednia != null ? pozycjaNa(srednia) : null;
+  return `<span class="rjs-slupek">
+    <span class="rjs-slupek-wypel" style="width:${szer.toFixed(1)}%;"></span>
+    ${znak != null ? `<span class="rjs-slupek-srednia" style="left:${znak.toFixed(1)}%;" title="średnia pozycji"></span>` : ''}
+  </span>`;
+}
+
+function raportJednostronicowyHtml(p){
+  const reps = raportyGracza(p.id);
+  const s = sredniaZRaportow(reps);
+  const metryki = metrykiZRaportow(reps);
+  const odn = sredniaPozycjiNaOsiach(p);
+  const por = porownanieNaPozycji(p, ocenyZRaportow());
+  const strony = rjsStronyZawodnika(metryki, odn);
+
+  const rok = Number(rocznikZawodnika(p)) || null;
+  const wiek = rok ? new Date().getFullYear() - rok : null;
+  const herb = clubCrest(p.clubId);
+  const inicjaly = (((p.firstName||'')[0]||'') + ((p.lastName||'')[0]||'')).toUpperCase();
+  const liga = ligaZawodnika(p);
+
+  // Na czym raport stoi: ile raportów, czyich i z jakiego okresu. To pierwsze, o co pyta
+  // każdy, kto dostaje taki dokument od obcej firmy.
+  const daty = reps.map(r=>String(r.date||'').slice(0,10)).filter(Boolean).sort();
+  const okres = daty.length ? (daty[0] === daty[daty.length-1] ? daty[0] : `${daty[0]} – ${daty[daty.length-1]}`) : '';
+  const skauci = autorzyRaportu(p);
+
+  const wiersz = (etykieta, wartosc)=>
+    `<tr><td>${esc(etykieta)}</td><td>${wartosc || '—'}</td></tr>`;
+
+  const osieHtml = metryki.length ? metryki.map(m=>{
+    const o = odn && odn.osie ? odn.osie[m.key] : null;
+    return `<tr>
+      <td class="rjs-os-nazwa">${esc(m.label)}</td>
+      <td class="rjs-os-slupek">${rjsSlupek(m.wartosc, o ? o.srednia : null)}</td>
+      <td class="rjs-os-liczba">${fmt1Pl(m.wartosc)}</td>
+    </tr>`;
+  }).join('') : '';
+
+  const listaStron = (lista, pusto)=> lista.length
+    ? `<ul class="rjs-lista">${lista.map(m=>`<li><strong>${esc(m.label)}</strong> ${fmt1Pl(m.wartosc)}${
+        m.srednia != null ? ` <span class="rjs-vs">(średnia pozycji ${fmt1Pl(m.srednia)})</span>` : ''}</li>`).join('')}</ul>`
+    : `<p class="rjs-brak">${esc(pusto)}</p>`;
+
+  const miejsce = (wynik, gdzie)=> wynik && wynik.wystarczy
+    ? `<div class="rjs-miejsce"><strong>${wynik.miejsce}.</strong> z ${wynik.ilu} ocenionych — ${esc(gdzie)}</div>`
+    : '';
+
+  return `<article class="rjs">
+  <header class="rjs-naglowek">
+    <div class="rjs-naglowek-tresc">
+      <h1>${esc([p.firstName, p.lastName].filter(Boolean).join(' ')) || 'Zawodnik'}</h1>
+      <p class="rjs-podtytul">${[skrotPozycji(p.position), clubName(p.clubId), liga].filter(Boolean).map(esc).join(' &middot; ')}</p>
+      <p class="rjs-zrodlo">Raport skautingowy &middot; ${reps.length
+        ? `na podstawie ${reps.length} ${reps.length === 1 ? 'raportu' : 'raportów'}${okres ? ', ' + esc(okres) : ''}`
+        : 'brak raportów w systemie'}</p>
+    </div>
+    <div class="rjs-ocena">
+      <div class="rjs-ocena-liczba">${s.overall != null ? fmt1Pl(s.overall) : '—'}</div>
+      <div class="rjs-ocena-skala">/ 6</div>
+    </div>
+  </header>
+
+  <div class="rjs-siatka">
+    <section class="rjs-blok">
+      <h2>Profil zawodnika</h2>
+      <table class="rjs-tabela">
+        ${wiersz('Pozycja', esc(p.position || '') || (opisPozycjiNmg(p) ? esc(opisPozycjiNmg(p)) : ''))}
+        ${wiersz('Klub', [clubName(p.clubId), liga].filter(Boolean).map(esc).join(' &middot; '))}
+        ${wiersz('Rocznik', rok ? `${rok}${wiek != null ? ` (${wiek} l.)` : ''}` : '')}
+        ${wiersz('Narodowość', p.nationality ? nationalityFlag(p.nationality) + ' ' + esc(p.nationality) : '')}
+        ${wiersz('Noga', esc(p.foot || ''))}
+        ${wiersz('Wzrost', p.height ? esc(p.height) + ' cm' : '')}
+        ${wiersz('Skauci', esc(skauci))}
+      </table>
+    </section>
+
+    <section class="rjs-blok">
+      <h2>Ocena na tle pozycji</h2>
+      ${s.overall != null ? `
+        <p class="rjs-duza">${fmt1Pl(s.overall)} <span class="rjs-duza-opis">średnia z ${s.ratedReports}
+          ${s.ratedReports === 1 ? 'raportu' : 'raportów'}</span></p>
+        ${por ? miejsce(por.wPoziomie, por.poziom) + miejsce(por.wGrupie, por.liga) : ''}
+        ${por && !((por.wPoziomie && por.wPoziomie.wystarczy) || (por.wGrupie && por.wGrupie.wystarczy))
+          ? `<p class="rjs-brak">Za mało ocenionych zawodników na tej pozycji, żeby porównywać.</p>` : ''}
+      ` : `<p class="rjs-brak">Zawodnik nie ma jeszcze ani jednego wypełnionego raportu, więc nie wystawiamy oceny.</p>`}
+      ${herb ? `<img class="rjs-herb" src="${esc(herb)}" alt="">` : `<div class="rjs-herb rjs-herb-brak">${esc(inicjaly)}</div>`}
+    </section>
+  </div>
+
+  <div class="rjs-siatka">
+    <section class="rjs-blok">
+      <h2>Profil gry</h2>
+      ${metryki.length >= 3
+        ? `<div class="rjs-radar">${radarRaportow(metryki, { r: 74, etykiety: true, liczba: fmt1Pl })}</div>`
+        : `<p class="rjs-brak">Za mało ocenionych obszarów, żeby narysować profil (potrzebne co najmniej trzy).</p>`}
+    </section>
+
+    <section class="rjs-blok">
+      <h2>Oceny obszarów</h2>
+      ${osieHtml
+        ? `<table class="rjs-osie">${osieHtml}</table>
+           ${odn && odn.rywali ? `<p class="rjs-nota">Kreska na słupku to średnia pozycji
+             (${esc(odn.pozycja)}, ${esc(odn.etykieta)}, ${odn.rywali} ocenionych).</p>` : ''}`
+        : `<p class="rjs-brak">Brak ocenionych obszarów.</p>`}
+    </section>
+  </div>
+
+  <div class="rjs-siatka">
+    <section class="rjs-blok rjs-mocne">
+      <h2>Mocne strony</h2>
+      ${listaStron(strony.mocne, 'Nic nie odstaje wyraźnie w górę.')}
+    </section>
+    <section class="rjs-blok rjs-slabe">
+      <h2>Obszary do rozwoju</h2>
+      ${listaStron(strony.slabe, 'Nic nie odstaje wyraźnie w dół.')}
+    </section>
+  </div>
+
+  <section class="rjs-blok rjs-staty">
+    <h2>Sezon</h2>
+    <div class="rjs-staty-rzad">
+      <div><span class="rjs-staty-l">${p.matches != null ? esc(p.matches) : '—'}</span><span class="rjs-staty-o">mecze</span></div>
+      <div><span class="rjs-staty-l">${p.minutes != null ? esc(p.minutes) : '—'}</span><span class="rjs-staty-o">minuty</span></div>
+      <div><span class="rjs-staty-l">${p.goals != null ? esc(p.goals) : '—'}</span><span class="rjs-staty-o">gole</span></div>
+      <div><span class="rjs-staty-l">${p.assists != null ? esc(p.assists) : '—'}</span><span class="rjs-staty-o">asysty</span></div>
+      ${minutyWazone(p) != null ? `<div><span class="rjs-staty-l">≈${minutyWazone(p)}</span><span class="rjs-staty-o">min ważonych poziomem</span></div>` : ''}
+    </div>
+    ${p.statsUpdatedAt ? `<p class="rjs-nota">Mecze i bramki z ${esc(p.statsSource || '90minut.pl')}${
+      p.statsSeason ? ' (sezon ' + esc(p.statsSeason) + ')' : ''}, odświeżone ${esc(String(p.statsUpdatedAt).slice(0,10))}.</p>` : ''}
+  </section>
+
+  <footer class="rjs-stopka">
+    <p><strong>Na czym stoi ten raport.</strong> Oceny pochodzą z raportów skautów Scout Base System
+      w skali 1–6 i są średnią ocenionych rubryk. ${reps.length < RJS_RAPORTOW_NA_WNIOSKI
+        ? `Raport opiera się na ${reps.length === 0 ? 'zerowej liczbie raportów' : reps.length === 1
+            ? 'jednym raporcie' : reps.length + ' raportach'} — to za mało na wnioski rozstrzygające,
+            traktuj go jako wskazówkę do dalszej obserwacji.`
+        : `Średnia pozycji liczona jest z raportów innych zawodników na tej samej pozycji i poziomie
+            rozgrywek; różni skauci oceniają różnie surowo, więc miejsce w grupie jest wskazówką,
+            nie werdyktem.`}
+      Nie korzystamy z danych xG ani percentyli z zewnętrznych serwisów — wszystko powyżej
+      pochodzi z własnych obserwacji.</p>
+    <p class="rjs-stopka-marka">Scout Base System &middot; Ellite-Sports &middot; wygenerowano ${
+      esc(new Date().toISOString().slice(0,10))}</p>
+  </footer>
+</article>`;
+}
+
+// Okno raportu. Osobny element nad całym systemem, a nie modal — raport ma 190 mm szerokości
+// i własną stopkę; wciśnięty w okienko z przewijaniem przestałby wyglądać jak dokument.
+function otworzRaportJednostronicowy(playerId){
+  const p = DB.players.find(x=>x.id===playerId);
+  if(!p) return;
+  document.querySelectorAll('.rjs-okno').forEach(x=>x.remove());
+  const okno = document.createElement('div');
+  okno.className = 'rjs-okno';
+  okno.innerHTML = `
+    <div class="rjs-okno-pasek">
+      <button class="secondary" data-rjs="zamknij">← Wróć</button>
+      <button class="gold" data-rjs="drukuj">🖨️ Drukuj / zapisz PDF</button>
+    </div>
+    ${raportJednostronicowyHtml(p)}`;
+  document.body.appendChild(okno);
+  const zamknij = ()=>{ okno.remove(); document.removeEventListener('keydown', naKlawisz); };
+  function naKlawisz(e){ if(e.key === 'Escape') zamknij(); }
+  document.addEventListener('keydown', naKlawisz);
+  (okno.querySelector('[data-rjs="zamknij"]') as HTMLElement).onclick = zamknij;
+  (okno.querySelector('[data-rjs="drukuj"]') as HTMLElement).onclick = ()=> window.print();
 }
 
 function playerAvg(playerId){
@@ -6387,6 +6609,7 @@ function viewPlayerDetail(id){
       ${talentZawodnika(p) ? '' : `<button class="secondary" data-action="dodaj-do-talentow" data-id="${p.id}" title="Dopisz tego zawodnika do listy Talent — z rocznikiem, klubem i pozycją z kartoteki">⭐ Dodaj do listy Talent</button>`}
       ${has90minutLink(p) ? `<button class="secondary" data-action="refresh-stats" data-id="${p.id}" title="Pobierz mecze i bramki z 90minut.pl">🔄 Odśwież statystyki</button>` : ''}
       ${/transfermarkt\./i.test(String(p.profileTm||'')) ? `<button class="gold" data-action="tm-odswiez" data-id="${p.id}" title="Pobiera z Transfermarktu wzrost, nogę, pozycję, narodowość, agenta, datę końca umowy, wartość rynkową i zdjęcie">⟳ Aktualizuj dane</button>` : ''}
+      <button class="secondary" data-action="raport-jednostronicowy" data-id="${p.id}" title="Jedna strona do wydruku albo PDF: ocena, profil gry, mocne strony i na czym to stoi">📄 Raport na jedną stronę</button>
       <button class="gold" data-action="paste-stats" data-id="${p.id}">📊 Wklej statystyki</button>
       <button class="${zlecenieZawodnika(p.id) ? 'gold' : 'secondary'}" data-action="zlec-analize" data-id="${p.id}" title="Zamów obserwację z nagrania: wskaż mecz i źródło wideo, gotowy raport wróci do skrzynki">${
         zlecenieZawodnika(p.id) ? '🎬 Analiza zlecona' : '🎬 Zleć analizę wideo'}</button>
@@ -6682,6 +6905,9 @@ function radarChart(avgs){
 // renderuje wycinek strony przez html2canvas, który nie zna zmiennych CSS spoza wstrzykniętej palety.
 function radarRaportow(metryki, opcje){
   const o = opcje || {};
+  // Zapis liczby podajemy z zewnątrz. Domyślnie kropka, jak w całej aplikacji; raport
+  // jednostronicowy podmienia to na przecinek, żeby wykres i słupki mówiły tym samym językiem.
+  const licz = o.liczba || fmt1;
   const R = o.r || 92;                 // promień „szóstki" (maksimum skali)
   // Podpis osi to dwie linijki (nazwa + wartość) ustawione NA ZEWNĄTRZ wykresu, więc ramka SVG
   // musi być wyraźnie większa od samego koła — inaczej „Atak" u góry i „Rożny obr." u dołu
@@ -6735,7 +6961,7 @@ function radarRaportow(metryki, opcje){
     if(!odn || odn[i] == null) return '';
     const d = wartosc - odn[i];
     if(Math.abs(d) < 0.05) return ` <tspan fill="var(--ink-soft)" font-weight="600">(=)</tspan>`;
-    return ` <tspan fill="${d > 0 ? 'var(--good)' : 'var(--clay-dark)'}" font-weight="700">(${d > 0 ? '+' : '−'}${fmt1(Math.abs(d))})</tspan>`;
+    return ` <tspan fill="${d > 0 ? 'var(--good)' : 'var(--clay-dark)'}" font-weight="700">(${d > 0 ? '+' : '−'}${licz(Math.abs(d))})</tspan>`;
   };
   const podpisy = o.etykiety === false ? '' : metryki.map((m,i)=>{
     const a = kat(i);
@@ -6746,7 +6972,7 @@ function radarRaportow(metryki, opcje){
     const anchor = cosA > 0.25 ? 'start' : cosA < -0.25 ? 'end' : 'middle';
     const dy = Math.sin(a) > 0.6 ? 10 : Math.sin(a) < -0.6 ? -3 : 4;
     return `<text x="${lx.toFixed(1)}" y="${(ly+dy).toFixed(1)}" font-size="10.5" font-weight="600" fill="${kolorPodpis}" text-anchor="${anchor}" font-family="Inter,Arial,sans-serif">${esc(m.label)}</text>
-      <text x="${lx.toFixed(1)}" y="${(ly+dy+12).toFixed(1)}" font-size="10" fill="${kolorLinia}" text-anchor="${anchor}" font-family="Inter,Arial,sans-serif" font-weight="700">${fmt1(m.wartosc)}${roznicaOsi(i, m.wartosc)}</text>`;
+      <text x="${lx.toFixed(1)}" y="${(ly+dy+12).toFixed(1)}" font-size="10" fill="${kolorLinia}" text-anchor="${anchor}" font-family="Inter,Arial,sans-serif" font-weight="700">${licz(m.wartosc)}${roznicaOsi(i, m.wartosc)}</text>`;
   }).join('');
 
   return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="Profil ocen zawodnika w skali 1-6${odn ? ' na tle średniej pozycji' : ''}">
@@ -18161,6 +18387,7 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="edit-player"]').forEach(b=>b.onclick=()=>openPlayerModal(b.dataset.id));
   // Pełna analiza jednym kliknięciem — razem z opinią AI (patrz openPlayerAnalysisModal).
   main.querySelectorAll('[data-action="analiza-zawodnika"]').forEach(b=>b.onclick=()=>openPlayerAnalysisModal((b as HTMLElement).dataset.id, { automatycznieAI: true }));
+  main.querySelectorAll<HTMLElement>('[data-action="raport-jednostronicowy"]').forEach(b=>b.onclick=()=>otworzRaportJednostronicowy(b.dataset.id));
   main.querySelectorAll('[data-action="dodaj-do-talentow"]').forEach(b=>b.onclick=async()=>{
     const p = DB.players.find(x=>x.id===(b as HTMLElement).dataset.id);
     if(!p) return;

@@ -1607,3 +1607,139 @@ body.bez-kasowania #delete-selected-agencies-btn{
 .rynki-radar-licznik{font-family:'Inter',sans-serif;font-size:11px;font-weight:700;letter-spacing:.04em;background:var(--gold);color:#3A2C0C;border-radius:10px;padding:2px 8px;vertical-align:middle;margin-left:6px;}
 .rynki-radar-sygnal{min-width:0;font-size:10px;padding:2px 6px;}
 .rynki-kropka-nowe{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--gold);margin-right:6px;vertical-align:middle;}
+
+/* ---- RAPORT JEDNOSTRONICOWY ----
+   Dokument do wysłania klubowi albo rodzicowi, nie kolejny ekran roboczy. Stąd kilka decyzji,
+   które w pozostałych widokach byłyby zbędne:
+
+   1. STAŁA SZEROKOŚĆ 190 mm, a nie procent okna. Raport ma wyglądać tak samo na ekranie i na
+      kartce — inaczej człowiek układa go na monitorze, drukuje i dostaje coś innego.
+   2. BIAŁE TŁO NA SZTYWNO, również w trybie ciemnym. Dokument wychodzi poza system; ciemny
+      raport wydrukowany na białym papierze to albo kostka tuszu, albo biały tekst na bieli.
+   3. PRZY DRUKU znika wszystko poza samym raportem — patrz @media print na końcu bloku. */
+.rjs{
+  width:190mm;max-width:100%;margin:0 auto;
+  background:#fff;color:#1B2420;
+  font-size:11.5px;line-height:1.45;
+}
+.rjs h1,.rjs h2{font-family:'Barlow Condensed','Inter',system-ui,sans-serif;margin:0;}
+
+.rjs-naglowek{
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+  background:#16302A;color:#F6F3EA;
+  padding:14px 18px;border-radius:10px 10px 0 0;
+}
+.rjs-naglowek h1{font-size:27px;letter-spacing:.4px;text-transform:uppercase;line-height:1.05;}
+.rjs-podtytul{margin:3px 0 0;font-size:12px;color:#C9D6CF;}
+.rjs-zrodlo{margin:2px 0 0;font-size:10.5px;color:#9FB3AA;text-transform:uppercase;letter-spacing:.6px;}
+/* Ocena w nagłówku jest POD nazwiskiem co do ważności, ale pierwsza do oka — dlatego duża
+   i złota, a skala „/ 6" obok niej. Sama liczba bez skali bywała czytana jako procent. */
+.rjs-ocena{display:flex;align-items:baseline;gap:4px;flex:0 0 auto;}
+.rjs-ocena-liczba{font-family:'Barlow Condensed',sans-serif;font-size:46px;font-weight:700;line-height:1;color:#E2C071;}
+.rjs-ocena-skala{font-size:13px;color:#9FB3AA;}
+
+.rjs-siatka{display:grid;grid-template-columns:1fr 1fr;gap:0;}
+.rjs-blok{
+  border:1px solid #E3DECE;border-top:0;padding:11px 14px 12px;
+  position:relative;min-width:0;
+}
+.rjs-siatka .rjs-blok + .rjs-blok{border-left:0;}
+.rjs-blok h2{
+  font-size:13px;text-transform:uppercase;letter-spacing:1px;
+  color:#16302A;margin-bottom:7px;
+}
+.rjs-blok h2::after{content:'';display:block;width:26px;height:2px;background:#C69B3C;margin-top:4px;}
+
+.rjs-tabela{width:100%;border-collapse:collapse;}
+.rjs-tabela td{padding:2.5px 0;vertical-align:top;}
+.rjs-tabela td:first-child{color:#5B6560;width:38%;}
+
+.rjs-duza{margin:0 0 6px;font-family:'Barlow Condensed',sans-serif;font-size:34px;font-weight:700;line-height:1;color:#16302A;}
+.rjs-duza-opis{font-family:'Inter',sans-serif;font-size:11px;font-weight:400;color:#5B6560;}
+.rjs-miejsce{font-size:12px;margin-top:3px;}
+.rjs-miejsce strong{font-size:15px;color:#16302A;}
+
+/* Herb klubu w rogu bloku z oceną — znak rozpoznawczy, nie element treści, więc blado
+   i poza strumieniem tekstu, żeby nie odbierał miejsca liczbom. */
+.rjs-herb{position:absolute;right:12px;bottom:10px;width:40px;height:40px;object-fit:contain;opacity:.9;}
+.rjs-herb-brak{
+  display:flex;align-items:center;justify-content:center;border-radius:50%;
+  background:#F2EFE6;color:#8C6A1E;font-weight:700;font-size:15px;
+}
+
+.rjs-radar{display:flex;justify-content:center;}
+.rjs-radar svg{max-width:100%;height:auto;}
+
+.rjs-osie{width:100%;border-collapse:collapse;}
+.rjs-osie td{padding:2px 0;}
+.rjs-os-nazwa{width:44%;color:#1B2420;padding-right:6px !important;}
+.rjs-os-slupek{width:40%;}
+.rjs-os-liczba{width:16%;text-align:right;font-weight:600;}
+.rjs-slupek{position:relative;display:block;height:8px;border-radius:4px;background:#EFECE2;overflow:visible;}
+.rjs-slupek-wypel{position:absolute;left:0;top:0;height:100%;border-radius:4px;background:#C69B3C;}
+/* Znacznik średniej pozycji musi być WIDOCZNY NA I OBOK słupka, także gdy zawodnik jest poniżej
+   średniej — dlatego kreska wystaje nad i pod pasek, zamiast być w nim schowana. */
+.rjs-slupek-srednia{position:absolute;top:-3px;width:2px;height:14px;background:#16302A;}
+
+.rjs-lista{margin:0;padding-left:15px;}
+.rjs-lista li{margin-bottom:2px;}
+.rjs-vs{color:#5B6560;}
+.rjs-mocne .rjs-lista li::marker{color:#2E7D52;}
+.rjs-slabe .rjs-lista li::marker{color:#B4472F;}
+.rjs-brak{margin:0;color:#5B6560;font-style:italic;}
+.rjs-nota{margin:5px 0 0;font-size:10px;color:#8A857A;line-height:1.35;}
+
+.rjs-staty{border-top:0;}
+.rjs-staty-rzad{display:flex;gap:18px;flex-wrap:wrap;}
+.rjs-staty-rzad > div{display:flex;flex-direction:column;}
+.rjs-staty-l{font-family:'Barlow Condensed',sans-serif;font-size:24px;font-weight:700;line-height:1;color:#16302A;}
+.rjs-staty-o{font-size:10px;color:#5B6560;text-transform:uppercase;letter-spacing:.5px;}
+
+/* Stopka metodologiczna nie jest drobnym drukiem do odhaczenia. Mówi, na ilu raportach stoi
+   dokument i czego w nim NIE MA — to jedyne, co odróżnia raport skautingowy od ulotki. */
+.rjs-stopka{
+  border:1px solid #E3DECE;border-top:0;border-radius:0 0 10px 10px;
+  padding:9px 14px 11px;background:#FBF9F3;
+}
+.rjs-stopka p{margin:0;font-size:10px;color:#5B6560;line-height:1.45;}
+.rjs-stopka-marka{margin-top:5px !important;color:#8A857A !important;letter-spacing:.4px;}
+
+@media (max-width:760px){
+  .rjs{width:100%;}
+  .rjs-siatka{grid-template-columns:1fr;}
+  .rjs-siatka .rjs-blok + .rjs-blok{border-left:1px solid #E3DECE;}
+}
+
+/* DRUK: na kartce ma zostać wyłącznie raport. Przyciski, pasek systemu i tło znikają, marginesy
+   bierze na siebie strona, a bloki nie mogą się łamać w połowie — przerwa w środku tabeli ocen
+   psuje dokument bardziej niż druga strona. */
+@media print{
+  @page{size:A4;margin:12mm;}
+  body{background:#fff !important;}
+  /* Dopuszczamy OBA warianty: raport w oknie systemu i raport sam na stronie (podgląd, eksport).
+     Reguła wymieniająca tylko okno dawała przy drugim wariancie pustą kartkę — a to błąd, który
+     widać dopiero po wydrukowaniu, czyli u klienta. */
+  body > *:not(.rjs-okno):not(.rjs){display:none !important;}
+  .rjs-okno{position:static !important;background:#fff !important;padding:0 !important;display:block !important;}
+  .rjs-okno-pasek{display:none !important;}
+  .rjs{width:auto;box-shadow:none;}
+  /* Kartka A4 bez marginesów ma około 700 px szerokości, czyli MNIEJ niż próg układu telefonowego
+     (760 px). Bez tej reguły raport drukował się w jednej kolumnie i rozlewał na dwie strony —
+     przeglądarka traktowała kartkę jak wąski ekran. Tu przywracamy dwie kolumny na sztywno. */
+  .rjs-siatka{grid-template-columns:1fr 1fr !important;}
+  .rjs-siatka .rjs-blok + .rjs-blok{border-left:0 !important;}
+  .rjs-blok,.rjs-stopka,.rjs-naglowek{break-inside:avoid;page-break-inside:avoid;}
+}
+
+/* Okno raportu: pełny ekran nad systemem, szare tło wokół kartki — tak jak w podglądzie wydruku,
+   żeby od razu było widać, gdzie kończy się strona. */
+.rjs-okno{
+  position:fixed;inset:0;z-index:900;overflow:auto;
+  background:#E8E9EB;padding:16px 16px 40px;
+}
+.rjs-okno-pasek{
+  display:flex;gap:8px;justify-content:flex-end;
+  width:190mm;max-width:100%;margin:0 auto 12px;
+}
+.rjs-okno .rjs{box-shadow:0 6px 24px rgba(0,0,0,.14);}
+@media (max-width:760px){ .rjs-okno-pasek{width:100%;} }
