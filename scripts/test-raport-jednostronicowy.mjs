@@ -42,8 +42,11 @@ const kod = [
   wytnij('RJS_ODSTEP', /const RJS_ODSTEP = [\d.]+;[^\n]*/),
   wytnij('rjsStronyZawodnika', /function rjsStronyZawodnika\(metryki, odniesienie\)\{[\s\S]*?\n\}/),
   wytnij('rjsSlupek', /function rjsSlupek\(wartosc, srednia\)\{[\s\S]*?\n\}/),
+  wytnij('RJS_PIZZA_WYROZNIONE', /const RJS_PIZZA_WYROZNIONE = \d+;/),
+  wytnij('rjsWycinek', /function rjsWycinek\(cx, cy, r0, r1, a0, a1\)\{[\s\S]*?\n\}/),
+  wytnij('rjsPizzaHtml', /function rjsPizzaHtml\(metryki, opcje: any = \{\}\)\{[\s\S]*?\n\}/),
   wytnij('raportJednostronicowyHtml', /function raportJednostronicowyHtml\(p\)\{[\s\S]*?\n\}/),
-].join('\n').replace(/: \[RegExp, string\]\[\]/, '');
+].join('\n').replace(/: \[RegExp, string\]\[\]/, '').replace(/, opcje: any = \{\}/g, ', opcje = {}');
 
 // Zaślepki za bazę. Każda wartość wstrzykiwana osobno, żeby dało się zbudować sytuację
 // „zawodnik bez raportów" bez dotykania reszty.
@@ -66,7 +69,7 @@ function zbuduj(nadpisz = {}) {
     'esc', 'clubCrest', 'clubName', 'ligaZawodnika', 'nationalityFlag', 'rocznikZawodnika',
     'raportyGracza', 'sredniaZRaportow', 'metrykiZRaportow', 'sredniaPozycjiNaOsiach',
     'porownanieNaPozycji', 'ocenyZRaportow', 'autorzyRaportu', 'opisPozycjiNmg', 'minutyWazone',
-    `${kod}\n return { raportJednostronicowyHtml, rjsStronyZawodnika, rjsSlupek, fmt1Pl };`)(
+    `${kod}\n return { raportJednostronicowyHtml, rjsStronyZawodnika, rjsSlupek, fmt1Pl, rjsPizzaHtml, RJS_PIZZA_WYROZNIONE };`)(
     (s) => String(s ?? ''), () => '', () => 'Lech Poznań', () => 'Ekstraklasa',
     () => '🇪🇸', (p) => p.birthYear || '',
     () => d.reps, () => d.srednia, () => d.metryki, () => d.odn,
@@ -182,6 +185,63 @@ console.log('\n8. Wejście do raportu z profilu zawodnika');
   sprawdz('przycisk podpięty', /\[data-action="raport-jednostronicowy"\][\s\S]{0,120}otworzRaportJednostronicowy/.test(zrodlo));
   sprawdz('okno ma przycisk druku', /data-rjs="drukuj"/.test(zrodlo));
   sprawdz('Escape zamyka okno', /e\.key === 'Escape'/.test(zrodlo.slice(zrodlo.indexOf('function otworzRaportJednostronicowy'))));
+}
+
+console.log('\n9. Wykres kołowy — najwyższe parametry wyróżnione');
+{
+  const ZLOTO = '#C69B3C', BLADY = '#E4D4AC';
+  const m = (k, v) => ({ key: k, label: k.toUpperCase(), wartosc: v });
+  const szesc = [m('a',5.1), m('b',4.8), m('c',4.6), m('d',4.2), m('e',3.4), m('f',3.1)];
+  const svg = R.rjsPizzaHtml(szesc, { liczba: R.fmt1Pl });
+
+  // Sedno zgłoszenia: najwyższe mają rzucać się w oczy. Trzy na złoto, reszta blado.
+  const zlotych = (svg.match(new RegExp('fill="' + ZLOTO + '"', 'g')) || []).length;
+  const bladych = (svg.match(new RegExp('fill="' + BLADY + '"', 'g')) || []).length;
+  sprawdz(`${R.RJS_PIZZA_WYROZNIONE} wycinki na złoto`, zlotych === R.RJS_PIZZA_WYROZNIONE, String(zlotych));
+  sprawdz('pozostałe blade', bladych === szesc.length - R.RJS_PIZZA_WYROZNIONE, String(bladych));
+  // Sam kolor to za mało — przy druku w odcieniach szarości zostaje obrys i pogrubiony podpis.
+  sprawdz('wyróżnione mają obrys', (svg.match(/stroke="#8C6C21"/g) || []).length === R.RJS_PIZZA_WYROZNIONE);
+  sprawdz('wyróżnione mają pogrubiony podpis', (svg.match(/font-weight="700"[^>]*>A</) || []).length === 1, svg.slice(0,0));
+  sprawdz('podpisy po polsku', /5,1/.test(svg) && !/5\.1/.test(svg));
+
+  // Remis na progu: obaj zostają wyróżnieni. Odcięcie „bo już trzy" promowałoby kolejność
+  // wpisu do bazy, a nie ocenę zawodnika.
+  const remis = R.rjsPizzaHtml([m('a',5.0), m('b',4.6), m('c',4.6), m('d',4.6), m('e',2.0)], {});
+  sprawdz('remis na progu wyróżnia wszystkich remisujących',
+    (remis.match(new RegExp('fill="' + ZLOTO + '"', 'g')) || []).length === 4,
+    String((remis.match(new RegExp('fill="' + ZLOTO + '"', 'g')) || []).length));
+
+  // Mniej niż trzy osie to nie wykres, tylko dwa paski — lepiej nic niż coś, co wygląda
+  // na pełny profil zawodnika.
+  sprawdz('poniżej trzech osi nie rysujemy', R.rjsPizzaHtml([m('a',5), m('b',4)], {}) === '');
+
+  // Skala od 1, jak na słupkach obok. Gdyby zaczynała się od zera, ocena 1 dałaby pełny
+  // wycinek o zerowej długości i zawodnik zniknąłby z wykresu.
+  sprawdz('środek koła pusty na podpis skali', /r="18"/.test(svg) && /1–6/.test(svg));
+
+  // Ta sama miara co na słupkach: łuk w poprzek wycinka to średnia pozycji.
+  const zOdn = R.rjsPizzaHtml(szesc, { odniesienie: { osie: { a:{srednia:4.3}, b:{srednia:4.1} } } });
+  sprawdz('łuk średniej tylko tam, gdzie średnia jest',
+    (zOdn.match(/stroke="#16302A"/g) || []).length === 2,
+    String((zOdn.match(/stroke="#16302A"/g) || []).length));
+  sprawdz('bez odniesienia nie ma łuków', !/stroke="#16302A"/.test(svg));
+
+  // Ramka NIE może być kwadratowa. Kwadratowa, puszczona na szerokość kolumny, była równie
+  // wysoka — i to ona zepchnęła stopkę raportu na drugą stronę.
+  const vb = (svg.match(/viewBox="([^"]+)"/) || [])[1].split(/\s+/).map(Number);
+  sprawdz('ramka szersza niż wyższa', vb[3] < vb[2], JSON.stringify(vb));
+  sprawdz('koło mieści się w ramce w pionie', vb[3] >= 2 * 66, JSON.stringify(vb));
+}
+
+console.log('\n10. Wykres w raporcie zastępuje radar');
+{
+  const html = R.raportJednostronicowyHtml(ZAWODNIK);
+  sprawdz('raport używa pizzy', /rjs-pizza/.test(html));
+  sprawdz('legenda tłumaczy wyróżnienie', /najwyższe/.test(html));
+  // Sufit szerokości jest tym, co trzyma raport na jednej kartce — bez niego wykres
+  // kwadratowy rośnie w pionie razem z kolumną.
+  sprawdz('wykres ma sufit szerokości', /\.rjs-pizza svg\{[^}]*max-width:\d+mm/.test(style),
+    (style.match(/\.rjs-pizza svg\{[^}]*\}/) || [])[0]);
 }
 
 console.log(bledy ? `\nBŁĘDÓW: ${bledy}\n` : '\nWszystko w porządku.\n');

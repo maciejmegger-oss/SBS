@@ -1669,6 +1669,11 @@ body.bez-kasowania #delete-selected-agencies-btn{
 
 .rjs-radar{display:flex;justify-content:center;}
 .rjs-radar svg{max-width:100%;height:auto;}
+/* Wykres kołowy jest kwadratowy, więc puszczony na całą szerokość kolumny byłby też tak samo
+   WYSOKI — i to on, a nie treść, decydowałby o tym, czy raport mieści się na jednej kartce.
+   Dlatego dostaje sufit w milimetrach: tyle, ile potrzeba, żeby podpisy były czytelne. */
+.rjs-pizza{display:flex;justify-content:center;}
+.rjs-pizza svg{width:100%;max-width:84mm;height:auto;}
 
 .rjs-osie{width:100%;border-collapse:collapse;}
 .rjs-osie td{padding:2px 0;}

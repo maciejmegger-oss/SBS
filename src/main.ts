@@ -3568,6 +3568,107 @@ function rjsSlupek(wartosc, srednia){
   </span>`;
 }
 
+// ---- WYKRES KOŁOWY OCEN („pizza") -------------------------------------------------------------
+//
+// DLACZEGO NIE RADAR, SKORO RADAR JUŻ JEST
+// Radar rysuje jeden wielokąt: żeby odczytać pojedynczą oś, trzeba wodzić wzrokiem po wierzchołku
+// i zgadywać, jak daleko leży od środka. Pizza daje każdej ocenie własny wycinek o własnej
+// długości — porównuje się je tak jak słupki, tylko ułożone w koło. I, co tu najważniejsze,
+// pozwala WYRÓŻNIĆ KOLOREM to, co najwyższe, czego na jednolitym wielokącie zrobić się nie da.
+//
+// Radar zostaje w aplikacji bez zmian — tam pokazuje KSZTAŁT zawodnika i tak jest dobrze.
+// Tutaj, w dokumencie dla klubu, liczy się co innego: które trzy rzeczy ten chłopak robi dobrze.
+
+// Ile wycinków uznajemy za „najwyższe". Trzy, bo jeden to przypadek jednego raportu, a pięć
+// z sześciu osi nie jest już wyróżnieniem, tylko pokolorowaniem całego wykresu.
+const RJS_PIZZA_WYROZNIONE = 3;
+
+// Wycinek pierścienia. Liczony wprost ze współrzędnych, bez biblioteki — jeden wzór i pewność,
+// że nic się nie rozjedzie przy druku.
+function rjsWycinek(cx, cy, r0, r1, a0, a1){
+  const pt = (r, a)=> [cx + r*Math.cos(a), cy + r*Math.sin(a)];
+  const [x0,y0] = pt(r1,a0), [x1,y1] = pt(r1,a1), [x2,y2] = pt(r0,a1), [x3,y3] = pt(r0,a0);
+  const duzy = (a1 - a0) > Math.PI ? 1 : 0;
+  return `M${x0.toFixed(1)} ${y0.toFixed(1)} A${r1} ${r1} 0 ${duzy} 1 ${x1.toFixed(1)} ${y1.toFixed(1)}`
+       + ` L${x2.toFixed(1)} ${y2.toFixed(1)} A${r0} ${r0} 0 ${duzy} 0 ${x3.toFixed(1)} ${y3.toFixed(1)} Z`;
+}
+
+function rjsPizzaHtml(metryki, opcje: any = {}){
+  const lista = (metryki || []).filter(m=> Number.isFinite(Number(m.wartosc)));
+  if(lista.length < 3) return '';
+  const odn = opcje.odniesienie && opcje.odniesienie.osie ? opcje.odniesienie.osie : null;
+  const licz = opcje.liczba || fmt1;
+
+  const R = 66, R0 = 20;            // pierścień: dziura w środku na podpis skali
+  const MARG = 70;                  // miejsce na podpisy osi — po bokach stoją najdłuższe nazwy
+  const W = (R + MARG) * 2, C = W / 2;
+  // RAMKA NIE JEST KWADRATOWA, I to jest tu celowe. Na boki potrzeba miejsca na całe nazwy
+  // obszarów, w pionie tylko na dwie linijki podpisu nad kołem i pod nim. Kwadratowa ramka
+  // puszczona na szerokość kolumny była równie WYSOKA — i to ona, a nie treść, zdecydowała,
+  // że raport przestał się mieścić na jednej kartce. Tu przycinamy sam pusty margines.
+  const H = R * 2 + 64;
+  const MIN = 1, MAX = 6;
+  const promien = (v)=> R0 + ((Math.max(MIN, Math.min(MAX, Number(v))) - MIN) / (MAX - MIN)) * (R - R0);
+
+  // Próg wyróżnienia: wartość trzeciego co do wielkości wyniku. Remisy na tym progu zostają
+  // wyróżnione razem — odcinanie „bo już trzy" promowałoby kolejność wpisu, a nie ocenę.
+  const posortowane = lista.map(m=>Number(m.wartosc)).sort((a,b)=>b-a);
+  const prog = posortowane[Math.min(RJS_PIZZA_WYROZNIONE, posortowane.length) - 1];
+
+  const krok = (Math.PI * 2) / lista.length;
+  const SZCZELINA = 0.035;          // przerwa między wycinkami, żeby dało się je policzyć wzrokiem
+
+  const wycinki = lista.map((m, i)=>{
+    const a0 = -Math.PI/2 + i*krok + SZCZELINA;
+    const a1 = -Math.PI/2 + (i+1)*krok - SZCZELINA;
+    const v = Number(m.wartosc);
+    const wyrozniony = v >= prog - 1e-9;
+    const sr = odn && odn[m.key] ? Number(odn[m.key].srednia) : null;
+
+    // Tło wycinka — pełna skala w bardzo jasnym odcieniu. Bez niego nie widać, ile BRAKUJE
+    // do szóstki, a wykres bez skali pokazuje kształt zamiast poziomu.
+    const tlo = `<path d="${rjsWycinek(C, C, R0, R, a0, a1)}" fill="#F1EEE4"/>`;
+    const slupek = `<path d="${rjsWycinek(C, C, R0, promien(v), a0, a1)}"
+      fill="${wyrozniony ? '#C69B3C' : '#E4D4AC'}"
+      stroke="${wyrozniony ? '#8C6C21' : 'none'}" stroke-width="${wyrozniony ? 1.2 : 0}"/>`;
+
+    // Średnia pozycji jako łuk w poprzek wycinka — ten sam punkt odniesienia co kreska na słupkach
+    // obok. Dwa wykresy obok siebie muszą mierzyć tą samą miarą.
+    const luk = sr != null ? (()=>{
+      const r = promien(sr);
+      const p0 = [C + r*Math.cos(a0), C + r*Math.sin(a0)], p1 = [C + r*Math.cos(a1), C + r*Math.sin(a1)];
+      return `<path d="M${p0[0].toFixed(1)} ${p0[1].toFixed(1)} A${r} ${r} 0 0 1 ${p1[0].toFixed(1)} ${p1[1].toFixed(1)}"
+        fill="none" stroke="#16302A" stroke-width="1.4"/>`;
+    })() : '';
+
+    // Podpis na zewnątrz koła, obrócony do pionu po lewej stronie byłby nieczytelny — dlatego
+    // podpisy stoją poziomo, a stroną wyrównania decyduje połowa wykresu.
+    const aSr = (a0 + a1) / 2;
+    const lx = C + (R + 8) * Math.cos(aSr), ly = C + (R + 8) * Math.sin(aSr);
+    const kotwica = Math.abs(Math.cos(aSr)) < 0.3 ? 'middle' : (Math.cos(aSr) > 0 ? 'start' : 'end');
+    const dy = Math.sin(aSr) > 0.6 ? 10 : (Math.sin(aSr) < -0.6 ? -6 : 3);
+    const etykieta = `<text x="${lx.toFixed(1)}" y="${(ly+dy).toFixed(1)}" text-anchor="${kotwica}"
+        font-size="9.5" font-family="Inter,Arial,sans-serif"
+        fill="${wyrozniony ? '#16302A' : '#5B6560'}" font-weight="${wyrozniony ? '700' : '400'}"
+        >${esc(m.label)}</text>
+      <text x="${lx.toFixed(1)}" y="${(ly+dy+11).toFixed(1)}" text-anchor="${kotwica}"
+        font-size="10.5" font-family="Inter,Arial,sans-serif" font-weight="700"
+        fill="${wyrozniony ? '#8C6A1E' : '#8A857A'}">${licz(v)}</text>`;
+
+    return tlo + slupek + luk + etykieta;
+  }).join('');
+
+  return `<svg viewBox="0 ${(C - H/2).toFixed(1)} ${W} ${H}" width="100%" role="img"
+      aria-label="Wykres ocen obszarów gry w skali od 1 do 6; najwyższe wyróżnione">
+    ${wycinki}
+    <circle cx="${C}" cy="${C}" r="${R0 - 2}" fill="#fff" stroke="#E3DECE"/>
+    <text x="${C}" y="${C - 1}" text-anchor="middle" font-size="8"
+      font-family="Inter,Arial,sans-serif" fill="#8A857A">skala</text>
+    <text x="${C}" y="${C + 9}" text-anchor="middle" font-size="9.5" font-weight="700"
+      font-family="Inter,Arial,sans-serif" fill="#5B6560">1–6</text>
+  </svg>`;
+}
+
 function raportJednostronicowyHtml(p){
   const reps = raportyGracza(p.id);
   const s = sredniaZRaportow(reps);
@@ -3655,7 +3756,10 @@ function raportJednostronicowyHtml(p){
     <section class="rjs-blok">
       <h2>Profil gry</h2>
       ${metryki.length >= 3
-        ? `<div class="rjs-radar">${radarRaportow(metryki, { r: 74, etykiety: true, liczba: fmt1Pl })}</div>`
+        ? `<div class="rjs-pizza">${rjsPizzaHtml(metryki, { odniesienie: odn, liczba: fmt1Pl })}</div>
+           <p class="rjs-nota">Długość wycinka to ocena obszaru. Na złoto i pogrubieniem
+             wyróżnione ${RJS_PIZZA_WYROZNIONE} najwyższe${odn && odn.rywali
+               ? '; ciemny łuk w poprzek wycinka to średnia pozycji' : ''}.</p>`
         : `<p class="rjs-brak">Za mało ocenionych obszarów, żeby narysować profil (potrzebne co najmniej trzy).</p>`}
     </section>
 
