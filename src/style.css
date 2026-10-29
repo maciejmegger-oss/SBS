@@ -1640,7 +1640,7 @@ body.bez-kasowania #delete-selected-agencies-btn{
 
 .rjs-siatka{display:grid;grid-template-columns:1fr 1fr;gap:0;}
 .rjs-blok{
-  border:1px solid #E3DECE;border-top:0;padding:11px 14px 12px;
+  border:1px solid #E3DECE;border-top:0;padding:9px 14px 10px;
   position:relative;min-width:0;
 }
 .rjs-siatka .rjs-blok + .rjs-blok{border-left:0;}
@@ -1673,7 +1673,7 @@ body.bez-kasowania #delete-selected-agencies-btn{
    WYSOKI — i to on, a nie treść, decydowałby o tym, czy raport mieści się na jednej kartce.
    Dlatego dostaje sufit w milimetrach: tyle, ile potrzeba, żeby podpisy były czytelne. */
 .rjs-pizza{display:flex;justify-content:center;}
-.rjs-pizza svg{width:100%;max-width:84mm;height:auto;}
+.rjs-pizza svg{width:100%;max-width:66mm;height:auto;}
 
 .rjs-osie{width:100%;border-collapse:collapse;}
 .rjs-osie td{padding:2px 0;}
@@ -1748,3 +1748,35 @@ body.bez-kasowania #delete-selected-agencies-btn{
 }
 .rjs-okno .rjs{box-shadow:0 6px 24px rgba(0,0,0,.14);}
 @media (max-width:760px){ .rjs-okno-pasek{width:100%;} }
+
+/* Zdjęcie w nagłówku, nie w tabeli danych. Twarz jest pierwszą rzeczą, po której skaut
+   rozpoznaje zawodnika, a nagłówek i tak ma trzy linijki wysokości — zdjęcie wchodzi w miejsce,
+   które już jest, zamiast przesuwać cokolwiek w dół. */
+.rjs-foto{
+  width:54px;height:54px;flex:0 0 auto;border-radius:50%;object-fit:cover;
+  border:2px solid rgba(226,192,113,.55);background:#1E4237;
+}
+.rjs-foto-brak{
+  display:flex;align-items:center;justify-content:center;
+  font-family:'Barlow Condensed',sans-serif;font-size:21px;font-weight:700;color:#E2C071;
+}
+.rjs-naglowek-tresc{flex:1 1 auto;min-width:0;}
+
+.rjs-prognoza{margin-top:9px;padding-top:8px;border-top:1px solid #E3DECE;}
+.rjs-prognoza-tytul{font-size:10px;text-transform:uppercase;letter-spacing:.8px;color:#5B6560;margin-bottom:3px;}
+.rjs-prognoza-rzad{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;font-size:11.5px;}
+.rjs-prognoza-rzad em{font-style:normal;color:#5B6560;font-size:10px;text-transform:uppercase;letter-spacing:.4px;}
+.rjs-prognoza-rzad strong{font-family:'Barlow Condensed',sans-serif;font-size:19px;color:#16302A;}
+.rjs-strzalka{color:#C69B3C;font-weight:700;}
+
+/* Werdykt: zdanie SKŁADANE z liczb i osobno SŁOWA SKAUTA. Dwa różne źródła prawdy nie mogą
+   wyglądać tak samo — stąd etykieta nad jednym i cudzysłów ze złotą kreską przy drugim. */
+.rjs-werdykt-tekst{margin:0 0 6px;}
+.rjs-zrodlo-zdania{color:#8A857A;font-size:10px;text-transform:uppercase;letter-spacing:.5px;}
+.rjs-perspektywa{margin:0 0 5px;font-size:11px;color:#5B6560;}
+.rjs-perspektywa strong{color:#16302A;letter-spacing:.5px;}
+.rjs-cytat{
+  margin:0;padding:6px 0 2px 9px;border-left:2px solid #C69B3C;
+  font-style:italic;color:#1B2420;
+}
+.rjs-cytat-autor{display:block;font-style:normal;font-size:10px;color:#8A857A;margin-top:2px;}

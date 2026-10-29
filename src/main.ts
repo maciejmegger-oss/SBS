@@ -3669,6 +3669,82 @@ function rjsPizzaHtml(metryki, opcje: any = {}){
   </svg>`;
 }
 
+// WERDYKT: podsumowanie SKŁADANE Z LICZB, a nie opinia wymyślona przez system.
+//
+// Raport, który Pan pokazał jako wzór, ma pole „Werdykt" napisane ręcznie przez analityka.
+// System nie umie napisać takiego zdania i nie będzie udawał, że umie. Robi natomiast coś,
+// co jest uczciwe i równie użyteczne: streszcza w jednym zdaniu to, co stoi wyżej na kartce,
+// a resztę miejsca oddaje SŁOWOM SKAUTA z najnowszego raportu — bo to one są oceną.
+//
+// Dlatego „Na podstawie ocen" nad zdaniem składanym i cudzysłów przy cytacie: czytający
+// ma od razu wiedzieć, co napisał człowiek, a co policzyła maszyna.
+function rjsWerdyktHtml(p, reps, strony, por){
+  const czesci = [];
+
+  // Zdanie składane: profil z najmocniejszych i najsłabszych obszarów.
+  const nazwy = (lista)=> lista.map(m=>String(m.label || '').toLowerCase()).join(', ');
+  if(strony.mocne.length){
+    czesci.push(`Wyróżnia się w obszarach: <strong>${esc(nazwy(strony.mocne))}</strong>.`);
+  }
+  if(strony.slabe.length){
+    czesci.push(`Słabiej wypada w: ${esc(nazwy(strony.slabe))}.`);
+  }
+  const miejsce = por && por.wPoziomie && por.wPoziomie.wystarczy ? por.wPoziomie
+    : (por && por.wGrupie && por.wGrupie.wystarczy ? por.wGrupie : null);
+  if(miejsce){
+    czesci.push(`W swojej grupie zajmuje ${miejsce.miejsce}. miejsce z ${miejsce.ilu} ocenionych.`);
+  }
+
+  // Słowa skauta: najnowszy raport, w którym w ogóle coś napisano. Pusty cudzysłów byłby
+  // gorszy od braku cytatu, więc bierzemy pierwszy raport od końca, który ma treść.
+  const chronologicznie = (reps || []).slice()
+    .sort((a,b)=> String(a.date||'').localeCompare(String(b.date||'')));
+  const zTekstem = chronologicznie.filter(r=>
+    String((r && r.mocne) || '').trim() || String((r && r.description) || '').trim()).pop();
+  const cytat = zTekstem
+    ? (punktyZTekstu(zTekstem.mocne).join('; ') || String(zTekstem.description || '').trim())
+    : '';
+  const perspektywy = (reps || []).map(r=>String((r && r.perspektywa) || '').toUpperCase())
+    .filter(x=> x === 'WYSOKA' || x === 'ŚREDNIA' || x === 'NISKA');
+  const perspektywa = perspektywy.length ? perspektywy[perspektywy.length - 1] : '';
+
+  if(!czesci.length && !cytat) return '';
+  return `<section class="rjs-blok rjs-werdykt">
+    <h2>Werdykt</h2>
+    ${perspektywa ? `<p class="rjs-perspektywa">Perspektywa wg skauta:
+      <strong>${esc(perspektywa)}</strong></p>` : ''}
+    ${czesci.length ? `<p class="rjs-werdykt-tekst"><span class="rjs-zrodlo-zdania">Na podstawie ocen:</span>
+      ${czesci.join(' ')}</p>` : ''}
+    ${cytat ? `<p class="rjs-cytat">„${esc(cytat.slice(0, 320))}${cytat.length > 320 ? '…' : ''}"
+      <span class="rjs-cytat-autor">— ${esc(zTekstem.scout || 'skaut')}${
+        zTekstem.date ? ', ' + esc(String(zTekstem.date).slice(0,10)) : ''}</span></p>` : ''}
+  </section>`;
+}
+
+// PROGNOZA W JEDNEJ LINII. Pełny panel prognozy ma tabelę składników i akapit wyjaśnień —
+// w dokumencie dla klubu to za dużo. Zostaje to, co można podać bez ściany tekstu: skąd
+// dokąd, w jakim czasie i jak bardzo jesteśmy tego pewni. Prognoza niemożliwa nie pokazuje
+// się wcale; „prognoza: brak danych" zajmowałaby miejsce, nie niosąc niczego.
+function rjsPrognozaHtml(p){
+  let w;
+  try { w = prognozaZawodnika(danePrognozy(p)); } catch(e){ return ''; }
+  if(!w || !w.mozliwa || w.stopienTeraz == null) return '';
+  const zakres = w.pulapOd == null ? '—'
+    : (w.pulapOd === w.pulapDo ? String(w.pulapOd) : `${w.pulapOd}–${w.pulapDo}`);
+  return `<div class="rjs-prognoza">
+    <div class="rjs-prognoza-tytul">Prognoza rozwoju</div>
+    <div class="rjs-prognoza-rzad">
+      <span><em>dziś</em> <strong>${w.stopienTeraz}</strong></span>
+      <span class="rjs-strzalka">→</span>
+      <span><em>pułap</em> <strong>${esc(zakres)}</strong></span>
+      ${w.horyzont ? `<span><em>horyzont</em> ${esc(w.horyzont)}</span>` : ''}
+      ${w.pewnosc ? `<span><em>pewność</em> ${esc(w.pewnosc)}</span>` : ''}
+    </div>
+    <p class="rjs-nota">Stopnie według drabiny notowania 1–21${
+      w.rolaTeraz ? `; dziś: ${esc(w.rolaTeraz)}` : ''}.</p>
+  </div>`;
+}
+
 function raportJednostronicowyHtml(p){
   const reps = raportyGracza(p.id);
   const s = sredniaZRaportow(reps);
@@ -3712,6 +3788,9 @@ function raportJednostronicowyHtml(p){
 
   return `<article class="rjs">
   <header class="rjs-naglowek">
+    ${p.photoUrl
+      ? `<img class="rjs-foto" src="${esc(p.photoUrl)}" alt="">`
+      : `<div class="rjs-foto rjs-foto-brak">${esc(inicjaly)}</div>`}
     <div class="rjs-naglowek-tresc">
       <h1>${esc([p.firstName, p.lastName].filter(Boolean).join(' ')) || 'Zawodnik'}</h1>
       <p class="rjs-podtytul">${[skrotPozycji(p.position), clubName(p.clubId), liga].filter(Boolean).map(esc).join(' &middot; ')}</p>
@@ -3748,7 +3827,8 @@ function raportJednostronicowyHtml(p){
         ${por && !((por.wPoziomie && por.wPoziomie.wystarczy) || (por.wGrupie && por.wGrupie.wystarczy))
           ? `<p class="rjs-brak">Za mało ocenionych zawodników na tej pozycji, żeby porównywać.</p>` : ''}
       ` : `<p class="rjs-brak">Zawodnik nie ma jeszcze ani jednego wypełnionego raportu, więc nie wystawiamy oceny.</p>`}
-      ${herb ? `<img class="rjs-herb" src="${esc(herb)}" alt="">` : `<div class="rjs-herb rjs-herb-brak">${esc(inicjaly)}</div>`}
+      ${rjsPrognozaHtml(p)}
+      ${herb ? `<img class="rjs-herb" src="${esc(herb)}" alt="">` : ''}
     </section>
   </div>
 
@@ -3784,6 +3864,7 @@ function raportJednostronicowyHtml(p){
     </section>
   </div>
 
+  <div class="rjs-siatka">
   <section class="rjs-blok rjs-staty">
     <h2>Sezon</h2>
     <div class="rjs-staty-rzad">
@@ -3796,6 +3877,8 @@ function raportJednostronicowyHtml(p){
     ${p.statsUpdatedAt ? `<p class="rjs-nota">Mecze i bramki z ${esc(p.statsSource || '90minut.pl')}${
       p.statsSeason ? ' (sezon ' + esc(p.statsSeason) + ')' : ''}, odświeżone ${esc(String(p.statsUpdatedAt).slice(0,10))}.</p>` : ''}
   </section>
+  ${rjsWerdyktHtml(p, reps, strony, por) || '<section class="rjs-blok"></section>'}
+  </div>
 
   <footer class="rjs-stopka">
     <p><strong>Na czym stoi ten raport.</strong> Oceny pochodzą z raportów skautów Scout Base System

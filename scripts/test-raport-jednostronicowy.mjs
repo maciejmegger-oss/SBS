@@ -43,6 +43,8 @@ const kod = [
   wytnij('rjsStronyZawodnika', /function rjsStronyZawodnika\(metryki, odniesienie\)\{[\s\S]*?\n\}/),
   wytnij('rjsSlupek', /function rjsSlupek\(wartosc, srednia\)\{[\s\S]*?\n\}/),
   wytnij('RJS_PIZZA_WYROZNIONE', /const RJS_PIZZA_WYROZNIONE = \d+;/),
+  wytnij('rjsWerdyktHtml', /function rjsWerdyktHtml\(p, reps, strony, por\)\{[\s\S]*?\n\}/),
+  wytnij('rjsPrognozaHtml', /function rjsPrognozaHtml\(p\)\{[\s\S]*?\n\}/),
   wytnij('rjsWycinek', /function rjsWycinek\(cx, cy, r0, r1, a0, a1\)\{[\s\S]*?\n\}/),
   wytnij('rjsPizzaHtml', /function rjsPizzaHtml\(metryki, opcje: any = \{\}\)\{[\s\S]*?\n\}/),
   wytnij('raportJednostronicowyHtml', /function raportJednostronicowyHtml\(p\)\{[\s\S]*?\n\}/),
@@ -52,7 +54,9 @@ const kod = [
 // „zawodnik bez raportów" bez dotykania reszty.
 function zbuduj(nadpisz = {}) {
   const d = {
-    reps: [{ date: '2026-09-14' }, { date: '2026-10-05' }, { date: '2026-10-22' }],
+    reps: [{ date: '2026-09-14', scout: 'M. Megger' }, { date: '2026-10-05', scout: 'P. Nowak' },
+      { date: '2026-10-22', scout: 'M. Megger', perspektywa: 'WYSOKA',
+        mocne: 'Przyjęcie kierunkowe pod presją\nPodanie przełamujące linię' }],
     srednia: { overall: 4.3, ratedReports: 3 },
     metryki: [
       { key: 'atak', label: 'Faza ataku', wartosc: 4.8, zIlu: 3 },
@@ -61,6 +65,8 @@ function zbuduj(nadpisz = {}) {
     ],
     odn: { pozycja: 'Pomocnik ofensywny', etykieta: 'Ekstraklasa', rywali: 11, osie: {
       atak: { srednia: 4.1, ilu: 11 }, obrona: { srednia: 3.9, ilu: 11 }, tech: { srednia: 4.3, ilu: 11 } } },
+    prognoza: { mozliwa: true, braki: [], stopienTeraz: 12, rolaTeraz: 'podstawowy zawodnik Ekstraklasy',
+      pulapOd: 14, pulapDo: 16, horyzont: '2–3 sezony', pewnosc: 'ŚREDNIA', skladniki: [] },
     por: { pozycja: 'Pomocnik ofensywny', liga: 'Ekstraklasa', poziom: 'Ekstraklasa', ocena: 4.3, raportow: 3,
       wPoziomie: { miejsce: 3, ilu: 11, wystarczy: true, lepsi: [] }, wGrupie: null },
     ...nadpisz,
@@ -69,11 +75,15 @@ function zbuduj(nadpisz = {}) {
     'esc', 'clubCrest', 'clubName', 'ligaZawodnika', 'nationalityFlag', 'rocznikZawodnika',
     'raportyGracza', 'sredniaZRaportow', 'metrykiZRaportow', 'sredniaPozycjiNaOsiach',
     'porownanieNaPozycji', 'ocenyZRaportow', 'autorzyRaportu', 'opisPozycjiNmg', 'minutyWazone',
-    `${kod}\n return { raportJednostronicowyHtml, rjsStronyZawodnika, rjsSlupek, fmt1Pl, rjsPizzaHtml, RJS_PIZZA_WYROZNIONE };`)(
+    'punktyZTekstu', 'prognozaZawodnika', 'danePrognozy',
+    `${kod}\n return { raportJednostronicowyHtml, rjsStronyZawodnika, rjsSlupek, fmt1Pl, rjsPizzaHtml,
+   RJS_PIZZA_WYROZNIONE, rjsWerdyktHtml, rjsPrognozaHtml };`)(
     (s) => String(s ?? ''), () => '', () => 'Lech Poznań', () => 'Ekstraklasa',
     () => '🇪🇸', (p) => p.birthYear || '',
     () => d.reps, () => d.srednia, () => d.metryki, () => d.odn,
-    () => d.por, () => new Map(), () => 'M. Megger', () => '', () => null);
+    () => d.por, () => new Map(), () => 'M. Megger', () => '', () => null,
+    (s) => String(s||'').split(/\n+/).map(x=>x.replace(/^[-–—•*]\s*/,'').trim()).filter(Boolean),
+    () => d.prognoza, (x) => x);
 }
 
 const ZAWODNIK = { id: 'Z1', firstName: 'Pablo', lastName: 'Rodríguez', birthYear: 2001,
@@ -242,6 +252,35 @@ console.log('\n10. Wykres w raporcie zastępuje radar');
   // kwadratowy rośnie w pionie razem z kolumną.
   sprawdz('wykres ma sufit szerokości', /\.rjs-pizza svg\{[^}]*max-width:\d+mm/.test(style),
     (style.match(/\.rjs-pizza svg\{[^}]*\}/) || [])[0]);
+}
+
+console.log('\n11. Zdjęcie, prognoza i werdykt');
+{
+  const zeZdjeciem = R.raportJednostronicowyHtml({ ...ZAWODNIK, photoUrl: 'https://x/foto.jpg' });
+  sprawdz('zdjęcie w nagłówku', /rjs-foto" src="https:\/\/x\/foto\.jpg/.test(zeZdjeciem));
+  // Pusty krążek wyglądałby na błąd wczytywania. Inicjały mówią, że zdjęcia po prostu nie ma.
+  const bezZdjecia = R.raportJednostronicowyHtml(ZAWODNIK);
+  sprawdz('bez zdjęcia — inicjały', /rjs-foto rjs-foto-brak">PR</.test(bezZdjecia));
+
+  sprawdz('prognoza: dziś i pułap', /dziś<\/em> <strong>12/.test(bezZdjecia) && /14–16/.test(bezZdjecia));
+  sprawdz('prognoza: horyzont i pewność', /2–3 sezony/.test(bezZdjecia) && /ŚREDNIA/.test(bezZdjecia));
+  // „Prognoza: brak danych" zajmowałaby miejsce na kartce, nie niosąc niczego.
+  const bezPrognozy = zbuduj({ prognoza: { mozliwa: false, braki: ['brak ocen'], stopienTeraz: null } });
+  sprawdz('prognoza niemożliwa znika zamiast zajmować miejsce',
+    !/rjs-prognoza/.test(bezPrognozy.raportJednostronicowyHtml(ZAWODNIK)));
+
+  sprawdz('werdykt jest', /rjs-werdykt/.test(bezZdjecia));
+  sprawdz('perspektywa skauta', /Perspektywa wg skauta[\s\S]{0,60}WYSOKA/.test(bezZdjecia));
+  // Zdanie składane z liczb i słowa skauta to DWA różne źródła prawdy. Czytający musi wiedzieć,
+  // co napisał człowiek, a co policzyła maszyna — stąd etykieta nad jednym i cytat przy drugim.
+  sprawdz('zdanie składane oznaczone źródłem', /Na podstawie ocen:/.test(bezZdjecia));
+  sprawdz('słowa skauta w cudzysłowie', /rjs-cytat[\s\S]{0,200}Przyjęcie kierunkowe/.test(bezZdjecia));
+  sprawdz('cytat podpisany nazwiskiem i datą', /— M\. Megger, 2026-10-22/.test(bezZdjecia));
+
+  // Bez raportów nie ma ani zdania składanego, ani cytatu — i bloku też nie ma.
+  const pusty = zbuduj({ reps: [], srednia: { overall: null, ratedReports: 0 }, metryki: [], odn: null, por: null,
+    prognoza: { mozliwa: false, braki: [], stopienTeraz: null } });
+  sprawdz('bez danych nie wymyślamy werdyktu', !/rjs-cytat|Na podstawie ocen/.test(pusty.raportJednostronicowyHtml(ZAWODNIK)));
 }
 
 console.log(bledy ? `\nBŁĘDÓW: ${bledy}\n` : '\nWszystko w porządku.\n');
