@@ -34,7 +34,23 @@ const RE_ZAWODNIK =
 // pierwszy przez całą młodzież wyglądał na lepszego. Bez dnia i miesiąca tej różnicy nie widać.
 //
 // Strona składu podaje datę w kolumnie obok pozycji, w formacie „13.04.2007 (19)".
-const RE_DATA_PL = /\b(\d{2})\.(\d{2})\.(\d{4})\b/;
+// Transfermarkt zapisuje daty różnie w zależności od widoku i języka serwisu, więc nie opieramy
+// się na jednym kształcie. Kolejność ma znaczenie: najpierw zapisy jednoznaczne.
+const WZORCE_DATY = [
+  // 13.04.2007 — polski zapis z kropkami
+  { re: /\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b/, ulozenie: "dmr" },
+  // 13/04/2007
+  { re: /\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/, ulozenie: "dmr" },
+  // 2007-04-13 — zapis ISO
+  { re: /\b(\d{4})-(\d{1,2})-(\d{1,2})\b/, ulozenie: "rmd" },
+  // Apr 13, 2007 — tak bywa na wersji angielskiej serwisu
+  { re: /\b([A-Za-z]{3})\s+(\d{1,2}),\s*(\d{4})\b/, ulozenie: "Mdr" },
+];
+
+const MIESIACE_EN = {
+  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+  jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+};
 
 // OKNO SZUKANIA, A NIE WOLNE PRZESZUKIWANIE RESZTY STRONY.
 //
@@ -51,13 +67,21 @@ function oknoZaWierszem(html, odIndeksu) {
 // Data z okna, przepisana na zapis ISO (RRRR-MM-DD) — tak trzyma ją nasza kartoteka.
 // Wartość niemożliwa (miesiąc 13, rok 1812) nie jest „prawie dobra": odrzucamy ją w całości.
 function dataUrodzeniaZOkna(okno) {
-  const m = String(okno || "").match(RE_DATA_PL);
-  if (!m) return "";
-  const dzien = Number(m[1]), miesiac = Number(m[2]), rok = Number(m[3]);
-  if (miesiac < 1 || miesiac > 12) return "";
-  if (dzien < 1 || dzien > 31) return "";
-  if (rok < 1940 || rok > new Date().getFullYear()) return "";
-  return `${m[3]}-${m[2]}-${m[1]}`;
+  const tekst = String(okno || "");
+  for (const { re, ulozenie } of WZORCE_DATY) {
+    const m = tekst.match(re);
+    if (!m) continue;
+    let dzien, miesiac, rok;
+    if (ulozenie === "dmr") { dzien = Number(m[1]); miesiac = Number(m[2]); rok = Number(m[3]); }
+    else if (ulozenie === "rmd") { rok = Number(m[1]); miesiac = Number(m[2]); dzien = Number(m[3]); }
+    else { miesiac = MIESIACE_EN[m[1].toLowerCase()]; dzien = Number(m[2]); rok = Number(m[3]); }
+    if (!miesiac || miesiac < 1 || miesiac > 12) continue;
+    if (!dzien || dzien < 1 || dzien > 31) continue;
+    if (!rok || rok < 1940 || rok > new Date().getFullYear()) continue;
+    const dwie = (n) => String(n).padStart(2, "0");
+    return `${rok}-${dwie(miesiac)}-${dwie(dzien)}`;
+  }
+  return "";
 }
 
 // ENCJE LICZBOWE TEŻ TRZEBA ROZWINĄĆ.
@@ -83,7 +107,7 @@ const odsloniec = (s) =>
     .trim();
 
 /** Czyta skład z podanego adresu klubu na Transfermarkcie. */
-export async function tmSklad(adres) {
+export async function tmSklad(adres, opcje = {}) {
   const u = new URL(adres);
   if (!DOZWOLONE_HOSTY.test(u.hostname)) throw new Error("To nie jest adres Transfermarktu.");
 
@@ -92,6 +116,7 @@ export async function tmSklad(adres) {
   const html = await odp.text();
 
   const zawodnicy = [];
+  const probki = [];
   const widziane = new Set();
   let m;
   RE_ZAWODNIK.lastIndex = 0;
@@ -100,8 +125,15 @@ export async function tmSklad(adres) {
     // Ten sam zawodnik bywa na stronie dwa razy (tabela główna i blok wypożyczeń) — bierzemy raz.
     if (widziane.has(tmId)) continue;
     widziane.add(tmId);
-    const dataUrodzenia = dataUrodzeniaZOkna(oknoZaWierszem(html, m.index + m[0].length));
+    const okno = oknoZaWierszem(html, m.index + m[0].length);
+    const dataUrodzenia = dataUrodzeniaZOkna(okno);
     zawodnicy.push({ tmId, nazwa: odsloniec(m[2]), pozycja: odsloniec(m[3]), dataUrodzenia });
+    // PODGLĄD SUROWEGO FRAGMENTU — włączany tylko na żądanie.
+    //
+    // Gdy wzorzec daty przestaje trafiać, zgadywanie kolejnego kosztuje wdrożenie za próbę.
+    // Jedno spojrzenie na prawdziwy kawałek strony kończy sprawę od razu. Bierzemy dwa pierwsze
+    // wiersze, przycięte — tyle wystarczy, żeby zobaczyć, gdzie naprawdę stoi data.
+    if (opcje.podglad && probki.length < 2) probki.push(okno.slice(0, 700));
   }
 
   const nazwaKlubu = (html.match(/<meta property="og:title" content="([^"]+)"/) || [])[1] || "";
@@ -114,6 +146,7 @@ export async function tmSklad(adres) {
     klub: odsloniec(nazwaKlubu).replace(/\s*-\s*Transfermarkt.*$/i, ""),
     zawodnicy,
     zDataUrodzenia: zawodnicy.filter((z) => z.dataUrodzenia).length,
+    ...(opcje.podglad ? { probki } : {}),
   };
 }
 
@@ -126,7 +159,8 @@ export default async function handler(req, res) {
     });
   }
   try {
-    const dane = await tmSklad(adres);
+    const podglad = /^(1|true|tak)$/i.test(String((req.query && req.query.podglad) || ""));
+    const dane = await tmSklad(adres, { podglad });
     if (!dane.zawodnicy.length) {
       return res.status(404).json({ error: "Na tej stronie nie znalazłem składu.", klub: dane.klub });
     }

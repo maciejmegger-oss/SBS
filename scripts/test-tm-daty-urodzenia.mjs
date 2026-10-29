@@ -112,5 +112,42 @@ console.log("\n4. Reszta składu działa jak wcześniej");
   sprawdz("nazwa klubu bez dopisku serwisu", d.klub === "Zawisza Bydgoszcz - Skład", d.klub);
 }
 
+console.log("\n5. Inne zapisy daty niż polski");
+{
+  // Transfermarkt podaje datę inaczej zależnie od widoku i języka serwisu. Pierwszy wzorzec,
+  // napisany z pamięci o układzie strony, nie trafił w ogóle — stąd kilka kształtów zamiast
+  // jednego. Pamięć o cudzym HTML-u nie jest źródłem, na którym można budować import.
+  for (const [opis, zapis, oczekiwana] of [
+    ["z kropkami", "13.04.2007 (19)", "2007-04-13"],
+    ["z ukośnikami", "13/04/2007 (19)", "2007-04-13"],
+    ["ISO", "2007-04-13 (19)", "2007-04-13"],
+    ["angielski", "Apr 13, 2007 (19)", "2007-04-13"],
+    ["jednocyfrowy dzień", "3.4.2007 (19)", "2007-04-03"],
+  ]) {
+    const d = await czytaj(strona([wiersz("111", "Ktoś", "Obrońca", zapis)]));
+    sprawdz(opis, d.zawodnicy[0].dataUrodzenia === oczekiwana, d.zawodnicy[0]);
+  }
+}
+
+console.log("\n6. Podgląd surowego fragmentu strony");
+{
+  // Bez tego każda nieudana próba wzorca kosztuje wdrożenie i pytanie do właściciela.
+  // Z tym — jedno kliknięcie pokazuje, gdzie data naprawdę stoi.
+  const html = strona([
+    wiersz("111", "Pierwszy", "Obrońca", "13.04.2007 (19)"),
+    wiersz("222", "Drugi", "Napastnik", "05.09.2006 (20)"),
+    wiersz("333", "Trzeci", "Napastnik", "01.01.2005 (21)"),
+  ]);
+  const zPodgladem = await zPodstawionaStrona(html, () =>
+    tmSklad("https://www.transfermarkt.pl/klub/startseite/verein/1", { podglad: true }));
+  sprawdz("próbki są", Array.isArray(zPodgladem.probki) && zPodgladem.probki.length === 2,
+    zPodgladem.probki && zPodgladem.probki.length);
+  sprawdz("próbka zawiera komórkę z datą", /13\.04\.2007/.test(zPodgladem.probki[0]), zPodgladem.probki[0]);
+  sprawdz("próbka przycięta", zPodgladem.probki[0].length <= 700, zPodgladem.probki[0].length);
+  // Domyślnie podglądu nie ma — odpowiedź dla aplikacji ma być czysta.
+  const bez = await czytaj(html);
+  sprawdz("bez żądania nie ma próbek", bez.probki === undefined, bez.probki);
+}
+
 console.log(bledy ? `\nBŁĘDÓW: ${bledy}\n` : "\nWszystko w porządku.\n");
 process.exit(bledy ? 1 : 0);
