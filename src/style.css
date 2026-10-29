@@ -1617,102 +1617,102 @@ body.bez-kasowania #delete-selected-agencies-btn{
    2. BIAŁE TŁO NA SZTYWNO, również w trybie ciemnym. Dokument wychodzi poza system; ciemny
       raport wydrukowany na białym papierze to albo kostka tuszu, albo biały tekst na bieli.
    3. PRZY DRUKU znika wszystko poza samym raportem — patrz @media print na końcu bloku. */
-.rjs{
+.pzj{
   width:190mm;max-width:100%;margin:0 auto;
   background:#fff;color:#1B2420;
   font-size:11.5px;line-height:1.45;
 }
-.rjs h1,.rjs h2{font-family:'Barlow Condensed','Inter',system-ui,sans-serif;margin:0;}
+.pzj h1,.pzj h2{font-family:'Barlow Condensed','Inter',system-ui,sans-serif;margin:0;}
 
-.rjs-naglowek{
+.pzj-naglowek{
   display:flex;align-items:center;justify-content:space-between;gap:16px;
   background:#16302A;color:#F6F3EA;
   padding:14px 18px;border-radius:10px 10px 0 0;
 }
-.rjs-naglowek h1{font-size:27px;letter-spacing:.4px;text-transform:uppercase;line-height:1.05;}
-.rjs-podtytul{margin:3px 0 0;font-size:12px;color:#C9D6CF;}
-.rjs-zrodlo{margin:2px 0 0;font-size:10.5px;color:#9FB3AA;text-transform:uppercase;letter-spacing:.6px;}
+.pzj-naglowek h1{font-size:27px;letter-spacing:.4px;text-transform:uppercase;line-height:1.05;}
+.pzj-podtytul{margin:3px 0 0;font-size:12px;color:#C9D6CF;}
+.pzj-zrodlo{margin:2px 0 0;font-size:10.5px;color:#9FB3AA;text-transform:uppercase;letter-spacing:.6px;}
 /* Ocena w nagłówku jest POD nazwiskiem co do ważności, ale pierwsza do oka — dlatego duża
    i złota, a skala „/ 6" obok niej. Sama liczba bez skali bywała czytana jako procent. */
-.rjs-ocena{display:flex;align-items:baseline;gap:4px;flex:0 0 auto;}
-.rjs-ocena-liczba{font-family:'Barlow Condensed',sans-serif;font-size:46px;font-weight:700;line-height:1;color:#E2C071;}
-.rjs-ocena-skala{font-size:13px;color:#9FB3AA;}
+.pzj-ocena{display:flex;align-items:baseline;gap:4px;flex:0 0 auto;}
+.pzj-ocena-liczba{font-family:'Barlow Condensed',sans-serif;font-size:46px;font-weight:700;line-height:1;color:#E2C071;}
+.pzj-ocena-skala{font-size:13px;color:#9FB3AA;}
 
-.rjs-siatka{display:grid;grid-template-columns:1fr 1fr;gap:0;}
-.rjs-blok{
+.pzj-siatka{display:grid;grid-template-columns:1fr 1fr;gap:0;}
+.pzj-blok{
   border:1px solid #E3DECE;border-top:0;padding:9px 14px 10px;
   position:relative;min-width:0;
 }
-.rjs-siatka .rjs-blok + .rjs-blok{border-left:0;}
-.rjs-blok h2{
+.pzj-siatka .pzj-blok + .pzj-blok{border-left:0;}
+.pzj-blok h2{
   font-size:13px;text-transform:uppercase;letter-spacing:1px;
   color:#16302A;margin-bottom:7px;
 }
-.rjs-blok h2::after{content:'';display:block;width:26px;height:2px;background:#C69B3C;margin-top:4px;}
+.pzj-blok h2::after{content:'';display:block;width:26px;height:2px;background:#C69B3C;margin-top:4px;}
 
-.rjs-tabela{width:100%;border-collapse:collapse;}
-.rjs-tabela td{padding:2.5px 0;vertical-align:top;}
-.rjs-tabela td:first-child{color:#5B6560;width:38%;}
+.pzj-tabela{width:100%;border-collapse:collapse;}
+.pzj-tabela td{padding:2.5px 0;vertical-align:top;}
+.pzj-tabela td:first-child{color:#5B6560;width:38%;}
 
-.rjs-duza{margin:0 0 6px;font-family:'Barlow Condensed',sans-serif;font-size:34px;font-weight:700;line-height:1;color:#16302A;}
-.rjs-duza-opis{font-family:'Inter',sans-serif;font-size:11px;font-weight:400;color:#5B6560;}
-.rjs-miejsce{font-size:12px;margin-top:3px;}
-.rjs-miejsce strong{font-size:15px;color:#16302A;}
+.pzj-duza{margin:0 0 6px;font-family:'Barlow Condensed',sans-serif;font-size:34px;font-weight:700;line-height:1;color:#16302A;}
+.pzj-duza-opis{font-family:'Inter',sans-serif;font-size:11px;font-weight:400;color:#5B6560;}
+.pzj-miejsce{font-size:12px;margin-top:3px;}
+.pzj-miejsce strong{font-size:15px;color:#16302A;}
 
 /* Herb klubu w rogu bloku z oceną — znak rozpoznawczy, nie element treści, więc blado
    i poza strumieniem tekstu, żeby nie odbierał miejsca liczbom. */
-.rjs-herb{position:absolute;right:12px;bottom:10px;width:40px;height:40px;object-fit:contain;opacity:.9;}
-.rjs-herb-brak{
+.pzj-herb{position:absolute;right:12px;bottom:10px;width:40px;height:40px;object-fit:contain;opacity:.9;}
+.pzj-herb-brak{
   display:flex;align-items:center;justify-content:center;border-radius:50%;
   background:#F2EFE6;color:#8C6A1E;font-weight:700;font-size:15px;
 }
 
-.rjs-radar{display:flex;justify-content:center;}
-.rjs-radar svg{max-width:100%;height:auto;}
+.pzj-radar{display:flex;justify-content:center;}
+.pzj-radar svg{max-width:100%;height:auto;}
 /* Wykres kołowy jest kwadratowy, więc puszczony na całą szerokość kolumny byłby też tak samo
    WYSOKI — i to on, a nie treść, decydowałby o tym, czy raport mieści się na jednej kartce.
    Dlatego dostaje sufit w milimetrach: tyle, ile potrzeba, żeby podpisy były czytelne. */
-.rjs-pizza{display:flex;justify-content:center;}
-.rjs-pizza svg{width:100%;max-width:66mm;height:auto;}
+.pzj-pizza{display:flex;justify-content:center;}
+.pzj-pizza svg{width:100%;max-width:66mm;height:auto;}
 
-.rjs-osie{width:100%;border-collapse:collapse;}
-.rjs-osie td{padding:2px 0;}
-.rjs-os-nazwa{width:44%;color:#1B2420;padding-right:6px !important;}
-.rjs-os-slupek{width:40%;}
-.rjs-os-liczba{width:16%;text-align:right;font-weight:600;}
-.rjs-slupek{position:relative;display:block;height:8px;border-radius:4px;background:#EFECE2;overflow:visible;}
-.rjs-slupek-wypel{position:absolute;left:0;top:0;height:100%;border-radius:4px;background:#C69B3C;}
+.pzj-osie{width:100%;border-collapse:collapse;}
+.pzj-osie td{padding:2px 0;}
+.pzj-os-nazwa{width:44%;color:#1B2420;padding-right:6px !important;}
+.pzj-os-slupek{width:40%;}
+.pzj-os-liczba{width:16%;text-align:right;font-weight:600;}
+.pzj-slupek{position:relative;display:block;height:8px;border-radius:4px;background:#EFECE2;overflow:visible;}
+.pzj-slupek-wypel{position:absolute;left:0;top:0;height:100%;border-radius:4px;background:#C69B3C;}
 /* Znacznik średniej pozycji musi być WIDOCZNY NA I OBOK słupka, także gdy zawodnik jest poniżej
    średniej — dlatego kreska wystaje nad i pod pasek, zamiast być w nim schowana. */
-.rjs-slupek-srednia{position:absolute;top:-3px;width:2px;height:14px;background:#16302A;}
+.pzj-slupek-srednia{position:absolute;top:-3px;width:2px;height:14px;background:#16302A;}
 
-.rjs-lista{margin:0;padding-left:15px;}
-.rjs-lista li{margin-bottom:2px;}
-.rjs-vs{color:#5B6560;}
-.rjs-mocne .rjs-lista li::marker{color:#2E7D52;}
-.rjs-slabe .rjs-lista li::marker{color:#B4472F;}
-.rjs-brak{margin:0;color:#5B6560;font-style:italic;}
-.rjs-nota{margin:5px 0 0;font-size:10px;color:#8A857A;line-height:1.35;}
+.pzj-lista{margin:0;padding-left:15px;}
+.pzj-lista li{margin-bottom:2px;}
+.pzj-vs{color:#5B6560;}
+.pzj-mocne .pzj-lista li::marker{color:#2E7D52;}
+.pzj-slabe .pzj-lista li::marker{color:#B4472F;}
+.pzj-brak{margin:0;color:#5B6560;font-style:italic;}
+.pzj-nota{margin:5px 0 0;font-size:10px;color:#8A857A;line-height:1.35;}
 
-.rjs-staty{border-top:0;}
-.rjs-staty-rzad{display:flex;gap:18px;flex-wrap:wrap;}
-.rjs-staty-rzad > div{display:flex;flex-direction:column;}
-.rjs-staty-l{font-family:'Barlow Condensed',sans-serif;font-size:24px;font-weight:700;line-height:1;color:#16302A;}
-.rjs-staty-o{font-size:10px;color:#5B6560;text-transform:uppercase;letter-spacing:.5px;}
+.pzj-staty{border-top:0;}
+.pzj-staty-rzad{display:flex;gap:18px;flex-wrap:wrap;}
+.pzj-staty-rzad > div{display:flex;flex-direction:column;}
+.pzj-staty-l{font-family:'Barlow Condensed',sans-serif;font-size:24px;font-weight:700;line-height:1;color:#16302A;}
+.pzj-staty-o{font-size:10px;color:#5B6560;text-transform:uppercase;letter-spacing:.5px;}
 
 /* Stopka metodologiczna nie jest drobnym drukiem do odhaczenia. Mówi, na ilu raportach stoi
    dokument i czego w nim NIE MA — to jedyne, co odróżnia raport skautingowy od ulotki. */
-.rjs-stopka{
+.pzj-stopka{
   border:1px solid #E3DECE;border-top:0;border-radius:0 0 10px 10px;
   padding:9px 14px 11px;background:#FBF9F3;
 }
-.rjs-stopka p{margin:0;font-size:10px;color:#5B6560;line-height:1.45;}
-.rjs-stopka-marka{margin-top:5px !important;color:#8A857A !important;letter-spacing:.4px;}
+.pzj-stopka p{margin:0;font-size:10px;color:#5B6560;line-height:1.45;}
+.pzj-stopka-marka{margin-top:5px !important;color:#8A857A !important;letter-spacing:.4px;}
 
 @media (max-width:760px){
-  .rjs{width:100%;}
-  .rjs-siatka{grid-template-columns:1fr;}
-  .rjs-siatka .rjs-blok + .rjs-blok{border-left:1px solid #E3DECE;}
+  .pzj{width:100%;}
+  .pzj-siatka{grid-template-columns:1fr;}
+  .pzj-siatka .pzj-blok + .pzj-blok{border-left:1px solid #E3DECE;}
 }
 
 /* DRUK: na kartce ma zostać wyłącznie raport. Przyciski, pasek systemu i tło znikają, marginesy
@@ -1724,59 +1724,70 @@ body.bez-kasowania #delete-selected-agencies-btn{
   /* Dopuszczamy OBA warianty: raport w oknie systemu i raport sam na stronie (podgląd, eksport).
      Reguła wymieniająca tylko okno dawała przy drugim wariancie pustą kartkę — a to błąd, który
      widać dopiero po wydrukowaniu, czyli u klienta. */
-  body > *:not(.rjs-okno):not(.rjs){display:none !important;}
-  .rjs-okno{position:static !important;background:#fff !important;padding:0 !important;display:block !important;}
-  .rjs-okno-pasek{display:none !important;}
-  .rjs{width:auto;box-shadow:none;}
+  body > *:not(.pzj-okno):not(.pzj){display:none !important;}
+  .pzj-okno{position:static !important;background:#fff !important;padding:0 !important;display:block !important;}
+  .pzj-okno-pasek{display:none !important;}
+  .pzj{width:auto;box-shadow:none;}
   /* Kartka A4 bez marginesów ma około 700 px szerokości, czyli MNIEJ niż próg układu telefonowego
      (760 px). Bez tej reguły raport drukował się w jednej kolumnie i rozlewał na dwie strony —
      przeglądarka traktowała kartkę jak wąski ekran. Tu przywracamy dwie kolumny na sztywno. */
-  .rjs-siatka{grid-template-columns:1fr 1fr !important;}
-  .rjs-siatka .rjs-blok + .rjs-blok{border-left:0 !important;}
-  .rjs-blok,.rjs-stopka,.rjs-naglowek{break-inside:avoid;page-break-inside:avoid;}
+  .pzj-siatka{grid-template-columns:1fr 1fr !important;}
+  .pzj-siatka .pzj-blok + .pzj-blok{border-left:0 !important;}
+  .pzj-blok,.pzj-stopka,.pzj-naglowek{break-inside:avoid;page-break-inside:avoid;}
 }
 
 /* Okno raportu: pełny ekran nad systemem, szare tło wokół kartki — tak jak w podglądzie wydruku,
    żeby od razu było widać, gdzie kończy się strona. */
-.rjs-okno{
+.pzj-okno{
   position:fixed;inset:0;z-index:900;overflow:auto;
   background:#E8E9EB;padding:16px 16px 40px;
 }
-.rjs-okno-pasek{
+.pzj-okno-pasek{
   display:flex;gap:8px;justify-content:flex-end;
   width:190mm;max-width:100%;margin:0 auto 12px;
 }
-.rjs-okno .rjs{box-shadow:0 6px 24px rgba(0,0,0,.14);}
-@media (max-width:760px){ .rjs-okno-pasek{width:100%;} }
+.pzj-okno .pzj{box-shadow:0 6px 24px rgba(0,0,0,.14);}
+@media (max-width:760px){ .pzj-okno-pasek{width:100%;} }
 
 /* Zdjęcie w nagłówku, nie w tabeli danych. Twarz jest pierwszą rzeczą, po której skaut
    rozpoznaje zawodnika, a nagłówek i tak ma trzy linijki wysokości — zdjęcie wchodzi w miejsce,
    które już jest, zamiast przesuwać cokolwiek w dół. */
-.rjs-foto{
+.pzj-foto{
   width:54px;height:54px;flex:0 0 auto;border-radius:50%;object-fit:cover;
   border:2px solid rgba(226,192,113,.55);background:#1E4237;
 }
-.rjs-foto-brak{
+.pzj-foto-brak{
   display:flex;align-items:center;justify-content:center;
   font-family:'Barlow Condensed',sans-serif;font-size:21px;font-weight:700;color:#E2C071;
 }
-.rjs-naglowek-tresc{flex:1 1 auto;min-width:0;}
+.pzj-naglowek-tresc{flex:1 1 auto;min-width:0;}
 
-.rjs-prognoza{margin-top:9px;padding-top:8px;border-top:1px solid #E3DECE;}
-.rjs-prognoza-tytul{font-size:10px;text-transform:uppercase;letter-spacing:.8px;color:#5B6560;margin-bottom:3px;}
-.rjs-prognoza-rzad{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;font-size:11.5px;}
-.rjs-prognoza-rzad em{font-style:normal;color:#5B6560;font-size:10px;text-transform:uppercase;letter-spacing:.4px;}
-.rjs-prognoza-rzad strong{font-family:'Barlow Condensed',sans-serif;font-size:19px;color:#16302A;}
-.rjs-strzalka{color:#C69B3C;font-weight:700;}
+.pzj-prognoza{margin-top:9px;padding-top:8px;border-top:1px solid #E3DECE;}
+.pzj-prognoza-tytul{font-size:10px;text-transform:uppercase;letter-spacing:.8px;color:#5B6560;margin-bottom:3px;}
+.pzj-prognoza-rzad{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;font-size:11.5px;}
+.pzj-prognoza-rzad em{font-style:normal;color:#5B6560;font-size:10px;text-transform:uppercase;letter-spacing:.4px;}
+.pzj-prognoza-rzad strong{font-family:'Barlow Condensed',sans-serif;font-size:19px;color:#16302A;}
+.pzj-strzalka{color:#C69B3C;font-weight:700;}
 
 /* Werdykt: zdanie SKŁADANE z liczb i osobno SŁOWA SKAUTA. Dwa różne źródła prawdy nie mogą
    wyglądać tak samo — stąd etykieta nad jednym i cudzysłów ze złotą kreską przy drugim. */
-.rjs-werdykt-tekst{margin:0 0 6px;}
-.rjs-zrodlo-zdania{color:#8A857A;font-size:10px;text-transform:uppercase;letter-spacing:.5px;}
-.rjs-perspektywa{margin:0 0 5px;font-size:11px;color:#5B6560;}
-.rjs-perspektywa strong{color:#16302A;letter-spacing:.5px;}
-.rjs-cytat{
+.pzj-werdykt-tekst{margin:0 0 6px;}
+.pzj-zrodlo-zdania{color:#8A857A;font-size:10px;text-transform:uppercase;letter-spacing:.5px;}
+.pzj-perspektywa{margin:0 0 5px;font-size:11px;color:#5B6560;}
+.pzj-perspektywa strong{color:#16302A;letter-spacing:.5px;}
+.pzj-cytat{
   margin:0;padding:6px 0 2px 9px;border-left:2px solid #C69B3C;
   font-style:italic;color:#1B2420;
 }
-.rjs-cytat-autor{display:block;font-style:normal;font-size:10px;color:#8A857A;margin-top:2px;}
+.pzj-cytat-autor{display:block;font-style:normal;font-size:10px;color:#8A857A;margin-top:2px;}
+
+/* Zawodnik bez ani jednego raportu. Nie pokazujemy sześciu półpustych kratek z napisem
+   „nic nie odstaje" — bo to sugeruje, że patrzyliśmy i nic nie znaleźliśmy, a my nie
+   patrzyliśmy wcale. Zamiast tego jedno jasne zdanie: co jest, czego nie ma i co zrobić. */
+.pzj-nieutworzony{border-left:3px solid #C69B3C;background:#FBF9F3;}
+.pzj-nieutworzony p{margin:0 0 6px;}
+.pzj-nieutworzony .pzj-co-dalej{margin:0;color:#5B6560;}
+/* Rząd z jednym blokiem: bierze całą szerokość. Pusta druga kratka obok „Sezonu" wyglądała
+   jak usterka wydruku, a nie jak świadomy układ. */
+.pzj-siatka-jedna{grid-template-columns:1fr;}
+@media print{ .pzj-siatka-jedna{grid-template-columns:1fr !important;} }

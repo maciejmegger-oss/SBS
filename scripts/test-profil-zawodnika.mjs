@@ -16,7 +16,7 @@
 //      pusta strona, raz dokument rozlał się na dwie w jednej kolumnie — bo kartka A4 jest
 //      w pikselach węższa niż próg układu telefonowego.
 //
-// Uruchomienie:  node scripts/test-raport-jednostronicowy.mjs
+// Uruchomienie:  node scripts/test-profil-zawodnika.mjs
 import fs from "node:fs";
 
 const zrodlo = fs.readFileSync("src/main.ts", "utf8");
@@ -38,16 +38,16 @@ const kod = [
   wytnij('SKROTY_POZYCJI', /const SKROTY_POZYCJI: \[RegExp, string\]\[\] = \[[\s\S]*?\n\];/),
   wytnij('skrotPozycji', /function skrotPozycji\(pozycja\)\{[\s\S]*?\n\}/),
   wytnij('radarRaportow', /function radarRaportow\(metryki, opcje\)\{[\s\S]*?\n\}/),
-  wytnij('RJS_RAPORTOW_NA_WNIOSKI', /const RJS_RAPORTOW_NA_WNIOSKI = \d+;/),
-  wytnij('RJS_ODSTEP', /const RJS_ODSTEP = [\d.]+;[^\n]*/),
-  wytnij('rjsStronyZawodnika', /function rjsStronyZawodnika\(metryki, odniesienie\)\{[\s\S]*?\n\}/),
-  wytnij('rjsSlupek', /function rjsSlupek\(wartosc, srednia\)\{[\s\S]*?\n\}/),
-  wytnij('RJS_PIZZA_WYROZNIONE', /const RJS_PIZZA_WYROZNIONE = \d+;/),
-  wytnij('rjsWerdyktHtml', /function rjsWerdyktHtml\(p, reps, strony, por\)\{[\s\S]*?\n\}/),
-  wytnij('rjsPrognozaHtml', /function rjsPrognozaHtml\(p\)\{[\s\S]*?\n\}/),
-  wytnij('rjsWycinek', /function rjsWycinek\(cx, cy, r0, r1, a0, a1\)\{[\s\S]*?\n\}/),
-  wytnij('rjsPizzaHtml', /function rjsPizzaHtml\(metryki, opcje: any = \{\}\)\{[\s\S]*?\n\}/),
-  wytnij('raportJednostronicowyHtml', /function raportJednostronicowyHtml\(p\)\{[\s\S]*?\n\}/),
+  wytnij('PZJ_RAPORTOW_NA_WNIOSKI', /const PZJ_RAPORTOW_NA_WNIOSKI = \d+;/),
+  wytnij('PZJ_ODSTEP', /const PZJ_ODSTEP = [\d.]+;[^\n]*/),
+  wytnij('pzjStronyZawodnika', /function pzjStronyZawodnika\(metryki, odniesienie\)\{[\s\S]*?\n\}/),
+  wytnij('pzjSlupek', /function pzjSlupek\(wartosc, srednia\)\{[\s\S]*?\n\}/),
+  wytnij('PZJ_PIZZA_WYROZNIONE', /const PZJ_PIZZA_WYROZNIONE = \d+;/),
+  wytnij('pzjWerdyktHtml', /function pzjWerdyktHtml\(p, reps, strony, por\)\{[\s\S]*?\n\}/),
+  wytnij('pzjPrognozaHtml', /function pzjPrognozaHtml\(p\)\{[\s\S]*?\n\}/),
+  wytnij('pzjWycinek', /function pzjWycinek\(cx, cy, r0, r1, a0, a1\)\{[\s\S]*?\n\}/),
+  wytnij('pzjPizzaHtml', /function pzjPizzaHtml\(metryki, opcje: any = \{\}\)\{[\s\S]*?\n\}/),
+  wytnij('profilZawodnikaHtml', /function profilZawodnikaHtml\(p\)\{[\s\S]*?\n\}/),
 ].join('\n').replace(/: \[RegExp, string\]\[\]/, '').replace(/, opcje: any = \{\}/g, ', opcje = {}');
 
 // Zaślepki za bazę. Każda wartość wstrzykiwana osobno, żeby dało się zbudować sytuację
@@ -76,8 +76,8 @@ function zbuduj(nadpisz = {}) {
     'raportyGracza', 'sredniaZRaportow', 'metrykiZRaportow', 'sredniaPozycjiNaOsiach',
     'porownanieNaPozycji', 'ocenyZRaportow', 'autorzyRaportu', 'opisPozycjiNmg', 'minutyWazone',
     'punktyZTekstu', 'prognozaZawodnika', 'danePrognozy',
-    `${kod}\n return { raportJednostronicowyHtml, rjsStronyZawodnika, rjsSlupek, fmt1Pl, rjsPizzaHtml,
-   RJS_PIZZA_WYROZNIONE, rjsWerdyktHtml, rjsPrognozaHtml };`)(
+    `${kod}\n return { profilZawodnikaHtml, pzjStronyZawodnika, pzjSlupek, fmt1Pl, pzjPizzaHtml,
+   PZJ_PIZZA_WYROZNIONE, pzjWerdyktHtml, pzjPrognozaHtml };`)(
     (s) => String(s ?? ''), () => '', () => 'Lech Poznań', () => 'Ekstraklasa',
     () => '🇪🇸', (p) => p.birthYear || '',
     () => d.reps, () => d.srednia, () => d.metryki, () => d.odn,
@@ -95,7 +95,7 @@ const R = zbuduj();
 console.log('\n1. Polski zapis liczb — dokument idzie do polskiego klubu');
 {
   sprawdz('4,3 a nie 4.3', R.fmt1Pl(4.3) === '4,3', R.fmt1Pl(4.3));
-  const html = R.raportJednostronicowyHtml(ZAWODNIK);
+  const html = R.profilZawodnikaHtml(ZAWODNIK);
   sprawdz('w raporcie nie ma kropki dziesiętnej', !/>\s*\d+\.\d\s*</.test(html.replace(/<svg[\s\S]*?<\/svg>/g, '')),
     (html.match(/>\s*\d+\.\d\s*</) || [])[0]);
   // Wykres i słupki muszą mówić jednym językiem — wcześniej radar pisał „4.8" obok słupka „4,8".
@@ -106,72 +106,87 @@ console.log('\n2. Mocne strony przez porównanie, nie przez próg');
 {
   const metryki = [{ key: 'a', label: 'A', wartosc: 4.2 }, { key: 'b', label: 'B', wartosc: 4.2 }];
   // Ta sama ocena 4,2 wobec dwóch różnych poziomów pozycji: raz mocna strona, raz słaba.
-  const niska = R.rjsStronyZawodnika(metryki, { osie: { a: { srednia: 3.5 }, b: { srednia: 3.5 } } });
+  const niska = R.pzjStronyZawodnika(metryki, { osie: { a: { srednia: 3.5 }, b: { srednia: 3.5 } } });
   sprawdz('4,2 przy średniej 3,5 to mocna strona', niska.mocne.length === 2 && !niska.slabe.length,
     JSON.stringify([niska.mocne.length, niska.slabe.length]));
-  const wysoka = R.rjsStronyZawodnika(metryki, { osie: { a: { srednia: 4.9 }, b: { srednia: 4.9 } } });
+  const wysoka = R.pzjStronyZawodnika(metryki, { osie: { a: { srednia: 4.9 }, b: { srednia: 4.9 } } });
   sprawdz('4,2 przy średniej 4,9 to obszar do rozwoju', wysoka.slabe.length === 2 && !wysoka.mocne.length,
     JSON.stringify([wysoka.mocne.length, wysoka.slabe.length]));
   // Drobna różnica nie jest różnicą — inaczej każda oś lądowałaby po którejś stronie.
-  const rowno = R.rjsStronyZawodnika(metryki, { osie: { a: { srednia: 4.1 }, b: { srednia: 4.3 } } });
+  const rowno = R.pzjStronyZawodnika(metryki, { osie: { a: { srednia: 4.1 }, b: { srednia: 4.3 } } });
   sprawdz('różnica poniżej progu nie trafia nigdzie', !rowno.mocne.length && !rowno.slabe.length,
     JSON.stringify([rowno.mocne.length, rowno.slabe.length]));
   // Bez odniesienia wracamy do progów bezwzględnych — ale nadal coś pokazujemy.
-  const bezOdn = R.rjsStronyZawodnika([{ key: 'a', label: 'A', wartosc: 5.2 }, { key: 'b', label: 'B', wartosc: 2.4 }], null);
+  const bezOdn = R.pzjStronyZawodnika([{ key: 'a', label: 'A', wartosc: 5.2 }, { key: 'b', label: 'B', wartosc: 2.4 }], null);
   sprawdz('bez średniej pozycji działają progi', bezOdn.mocne.length === 1 && bezOdn.slabe.length === 1);
   sprawdz('najwyżej cztery pozycje na liście',
-    R.rjsStronyZawodnika(Array.from({length:9},(_,i)=>({key:'k'+i,label:'K'+i,wartosc:5.5})), null).mocne.length === 4);
+    R.pzjStronyZawodnika(Array.from({length:9},(_,i)=>({key:'k'+i,label:'K'+i,wartosc:5.5})), null).mocne.length === 4);
 }
 
 console.log('\n3. Skala słupka zaczyna się od 1, nie od zera');
 {
   // Ocena 1 to najniższa możliwa, a nie brak zawodnika — pusty słupek sugerowałby to drugie.
-  sprawdz('1 daje 0%', /width:0\.0%/.test(R.rjsSlupek(1, null)), R.rjsSlupek(1, null));
-  sprawdz('6 daje 100%', /width:100\.0%/.test(R.rjsSlupek(6, null)));
-  sprawdz('3,5 daje 50%', /width:50\.0%/.test(R.rjsSlupek(3.5, null)));
+  sprawdz('1 daje 0%', /width:0\.0%/.test(R.pzjSlupek(1, null)), R.pzjSlupek(1, null));
+  sprawdz('6 daje 100%', /width:100\.0%/.test(R.pzjSlupek(6, null)));
+  sprawdz('3,5 daje 50%', /width:50\.0%/.test(R.pzjSlupek(3.5, null)));
   sprawdz('znacznik średniej tylko gdy średnia jest',
-    R.rjsSlupek(4, 3.5).includes('rjs-slupek-srednia') && !R.rjsSlupek(4, null).includes('rjs-slupek-srednia'));
-  sprawdz('wartość poza skalą nie wyjeżdża poza słupek', /width:100\.0%/.test(R.rjsSlupek(9, null)));
+    R.pzjSlupek(4, 3.5).includes('pzj-slupek-srednia') && !R.pzjSlupek(4, null).includes('pzj-slupek-srednia'));
+  sprawdz('wartość poza skalą nie wyjeżdża poza słupek', /width:100\.0%/.test(R.pzjSlupek(9, null)));
 }
 
 console.log('\n4. Raport nie wymyśla liczb');
 {
   const pusty = zbuduj({ reps: [], srednia: { overall: null, ratedReports: 0 }, metryki: [], odn: null, por: null });
-  const html = pusty.raportJednostronicowyHtml(ZAWODNIK);
-  sprawdz('bez raportów nie ma oceny', !/rjs-ocena-liczba">\d/.test(html), (html.match(/rjs-ocena-liczba">[^<]*/) || [])[0]);
-  sprawdz('i jest napisane dlaczego', /ani jednego wypełnionego raportu/.test(html));
-  sprawdz('nagłówek mówi „brak raportów"', /brak raportów w systemie/.test(html));
+  const html = pusty.profilZawodnikaHtml(ZAWODNIK);
+  sprawdz('bez raportów nie ma oceny', !/pzj-ocena-liczba">\d/.test(html), (html.match(/pzj-ocena-liczba">[^<]*/) || [])[0]);
+  // Kluczowe rozróżnienie, na które zwrócił uwagę właściciel: RAPORT powstaje z obserwacji
+  // albo analizy meczu, a PROFIL dopiero z raportów. Zawodnik może istnieć w systemie, grać
+  // w Ekstraklasie i mieć statystyki, a profilu nie mieć wcale — i dokument musi to powiedzieć
+  // wprost, zamiast pokazywać puste kratki po ocenach, których nikt nie wystawił.
+  sprawdz('nagłówek mówi, że profilu nie ma', /Profil nieutworzony &middot; brak raportów/.test(html));
+  sprawdz('panel wyjaśnia, dlaczego', /nie był jeszcze obserwowany/.test(html));
+  sprawdz('panel mówi, co zrobić', /po wprowadzeniu pierwszego raportu/.test(html));
   sprawdz('bez osi nie rysujemy wykresu', !/<svg/.test(html));
-  sprawdz('statystyki sezonu mimo to są', /rjs-staty/.test(html));
+  sprawdz('statystyki sezonu mimo to są', /pzj-staty/.test(html) && /1026/.test(html));
+  // „Nic nie odstaje wyraźnie w górę" sugerowałoby, że patrzyliśmy i nie znaleźliśmy.
+  // Nie patrzyliśmy wcale — i te kratki mają w tym przypadku nie istnieć.
+  sprawdz('bez pustych kratek po mocnych stronach', !/Mocne strony/.test(html));
+  sprawdz('bez bloku oceny na tle pozycji', !/Ocena na tle pozycji/.test(html));
+  // Stopka nie może twierdzić, że dokument stoi na ocenach skautów, skoro żadnej nie ma.
+  // Wzorzec musi tolerować łamanie wiersza w szablonie — treść jest jedna, zapis bywa w dwóch
+  // linijkach, a test ma sprawdzać treść, nie formatowanie kodu.
+  sprawdz('stopka mówi, że to same statystyki',
+    /Wyłącznie na statystykach\s+rozgrywkowych/.test(html));
+  sprawdz('stopka nie obiecuje ocen', !/Oceny pochodzą z raportów/.test(html));
 }
 
 console.log('\n5. Stopka metodologiczna');
 {
-  const html = R.raportJednostronicowyHtml(ZAWODNIK);
-  sprawdz('stopka jest', /Na czym stoi ten raport/.test(html));
+  const html = R.profilZawodnikaHtml(ZAWODNIK);
+  sprawdz('stopka jest', /Na czym stoi ten profil/.test(html));
   sprawdz('mówi o skali 1–6', /skali 1–6/.test(html));
   sprawdz('mówi, czego NIE ma', /xG/.test(html) && /percentyl/.test(html));
-  sprawdz('liczba raportów w nagłówku', /na podstawie 3 raportów/.test(html));
+  sprawdz('liczba raportów w nagłówku', /Profil zawodnika &middot; z 3 raportów/.test(html));
   sprawdz('okres obserwacji', /2026-09-14 – 2026-10-22/.test(html));
   sprawdz('nazwiska skautów', /M\. Megger/.test(html));
   // Przy jednym raporcie dokument musi sam siebie ostrzec — inaczej opinia jednego człowieka
   // z jednego meczu wygląda jak ustalony fakt.
   const jeden = zbuduj({ reps: [{ date: '2026-10-22' }], srednia: { overall: 4.3, ratedReports: 1 } });
-  const h1 = jeden.raportJednostronicowyHtml(ZAWODNIK);
+  const h1 = jeden.profilZawodnikaHtml(ZAWODNIK);
   sprawdz('jeden raport = ostrzeżenie w stopce', /za mało na wnioski rozstrzygające/.test(h1));
   sprawdz('trzy raporty = bez tego ostrzeżenia', !/za mało na wnioski rozstrzygające/.test(html));
 }
 
 console.log('\n6. Miejsce na tle pozycji');
 {
-  const html = R.raportJednostronicowyHtml(ZAWODNIK);
-  sprawdz('miejsce w grupie', /3\.<\/strong> z 11 ocenionych/.test(html), (html.match(/rjs-miejsce[\s\S]{0,80}/) || [])[0]);
+  const html = R.profilZawodnikaHtml(ZAWODNIK);
+  sprawdz('miejsce w grupie', /3\.<\/strong> z 11 ocenionych/.test(html), (html.match(/pzj-miejsce[\s\S]{0,80}/) || [])[0]);
   // Przy dwóch ocenionych „pierwszy z dwóch" brzmi jak wyróżnienie, a znaczy tylko tyle,
   // że drugi raport wypadł gorzej.
   const malo = zbuduj({ por: { pozycja: 'x', liga: 'IV liga', poziom: 'IV liga', ocena: 4.3, raportow: 3,
     wPoziomie: { miejsce: 1, ilu: 2, wystarczy: false, lepsi: [] }, wGrupie: null } });
-  const h = malo.raportJednostronicowyHtml(ZAWODNIK);
-  sprawdz('za mała grupa — nie podajemy miejsca', !/rjs-miejsce/.test(h));
+  const h = malo.profilZawodnikaHtml(ZAWODNIK);
+  sprawdz('za mała grupa — nie podajemy miejsca', !/pzj-miejsce/.test(h));
   sprawdz('i mówimy dlaczego', /Za mało ocenionych/.test(h));
 }
 
@@ -182,19 +197,19 @@ console.log('\n7. Arkusz do druku');
   sprawdz('A4', /size:\s*A4/.test(druk));
   // Oba warianty: raport w oknie systemu i raport sam na stronie. Reguła wymieniająca tylko
   // okno dawała pustą kartkę przy podglądzie i eksporcie.
-  sprawdz('raport poza oknem systemu też się drukuje', /:not\(\.rjs-okno\):not\(\.rjs\)/.test(druk), druk.slice(0, 400));
+  sprawdz('raport poza oknem systemu też się drukuje', /:not\(\.pzj-okno\):not\(\.pzj\)/.test(druk), druk.slice(0, 400));
   // Kartka A4 ma w pikselach mniej niż próg układu telefonowego — bez tego raport drukował się
   // w jednej kolumnie i zajmował dwie strony.
-  sprawdz('dwie kolumny wymuszone na druku', /\.rjs-siatka\{grid-template-columns:1fr 1fr !important/.test(druk));
+  sprawdz('dwie kolumny wymuszone na druku', /\.pzj-siatka\{grid-template-columns:1fr 1fr !important/.test(druk));
   sprawdz('bloki nie łamią się w pół', /break-inside:avoid/.test(druk));
 }
 
 console.log('\n8. Wejście do raportu z profilu zawodnika');
 {
-  sprawdz('przycisk w pasku', /data-action="raport-jednostronicowy"/.test(zrodlo));
-  sprawdz('przycisk podpięty', /\[data-action="raport-jednostronicowy"\][\s\S]{0,120}otworzRaportJednostronicowy/.test(zrodlo));
-  sprawdz('okno ma przycisk druku', /data-rjs="drukuj"/.test(zrodlo));
-  sprawdz('Escape zamyka okno', /e\.key === 'Escape'/.test(zrodlo.slice(zrodlo.indexOf('function otworzRaportJednostronicowy'))));
+  sprawdz('przycisk w pasku', /data-action="profil-zawodnika"/.test(zrodlo));
+  sprawdz('przycisk podpięty', /\[data-action="profil-zawodnika"\][\s\S]{0,120}otworzProfilZawodnika/.test(zrodlo));
+  sprawdz('okno ma przycisk druku', /data-pzj="drukuj"/.test(zrodlo));
+  sprawdz('Escape zamyka okno', /e\.key === 'Escape'/.test(zrodlo.slice(zrodlo.indexOf('function otworzProfilZawodnika'))));
 }
 
 console.log('\n9. Wykres kołowy — najwyższe parametry wyróżnione');
@@ -202,35 +217,35 @@ console.log('\n9. Wykres kołowy — najwyższe parametry wyróżnione');
   const ZLOTO = '#C69B3C', BLADY = '#E4D4AC';
   const m = (k, v) => ({ key: k, label: k.toUpperCase(), wartosc: v });
   const szesc = [m('a',5.1), m('b',4.8), m('c',4.6), m('d',4.2), m('e',3.4), m('f',3.1)];
-  const svg = R.rjsPizzaHtml(szesc, { liczba: R.fmt1Pl });
+  const svg = R.pzjPizzaHtml(szesc, { liczba: R.fmt1Pl });
 
   // Sedno zgłoszenia: najwyższe mają rzucać się w oczy. Trzy na złoto, reszta blado.
   const zlotych = (svg.match(new RegExp('fill="' + ZLOTO + '"', 'g')) || []).length;
   const bladych = (svg.match(new RegExp('fill="' + BLADY + '"', 'g')) || []).length;
-  sprawdz(`${R.RJS_PIZZA_WYROZNIONE} wycinki na złoto`, zlotych === R.RJS_PIZZA_WYROZNIONE, String(zlotych));
-  sprawdz('pozostałe blade', bladych === szesc.length - R.RJS_PIZZA_WYROZNIONE, String(bladych));
+  sprawdz(`${R.PZJ_PIZZA_WYROZNIONE} wycinki na złoto`, zlotych === R.PZJ_PIZZA_WYROZNIONE, String(zlotych));
+  sprawdz('pozostałe blade', bladych === szesc.length - R.PZJ_PIZZA_WYROZNIONE, String(bladych));
   // Sam kolor to za mało — przy druku w odcieniach szarości zostaje obrys i pogrubiony podpis.
-  sprawdz('wyróżnione mają obrys', (svg.match(/stroke="#8C6C21"/g) || []).length === R.RJS_PIZZA_WYROZNIONE);
+  sprawdz('wyróżnione mają obrys', (svg.match(/stroke="#8C6C21"/g) || []).length === R.PZJ_PIZZA_WYROZNIONE);
   sprawdz('wyróżnione mają pogrubiony podpis', (svg.match(/font-weight="700"[^>]*>A</) || []).length === 1, svg.slice(0,0));
   sprawdz('podpisy po polsku', /5,1/.test(svg) && !/5\.1/.test(svg));
 
   // Remis na progu: obaj zostają wyróżnieni. Odcięcie „bo już trzy" promowałoby kolejność
   // wpisu do bazy, a nie ocenę zawodnika.
-  const remis = R.rjsPizzaHtml([m('a',5.0), m('b',4.6), m('c',4.6), m('d',4.6), m('e',2.0)], {});
+  const remis = R.pzjPizzaHtml([m('a',5.0), m('b',4.6), m('c',4.6), m('d',4.6), m('e',2.0)], {});
   sprawdz('remis na progu wyróżnia wszystkich remisujących',
     (remis.match(new RegExp('fill="' + ZLOTO + '"', 'g')) || []).length === 4,
     String((remis.match(new RegExp('fill="' + ZLOTO + '"', 'g')) || []).length));
 
   // Mniej niż trzy osie to nie wykres, tylko dwa paski — lepiej nic niż coś, co wygląda
   // na pełny profil zawodnika.
-  sprawdz('poniżej trzech osi nie rysujemy', R.rjsPizzaHtml([m('a',5), m('b',4)], {}) === '');
+  sprawdz('poniżej trzech osi nie rysujemy', R.pzjPizzaHtml([m('a',5), m('b',4)], {}) === '');
 
   // Skala od 1, jak na słupkach obok. Gdyby zaczynała się od zera, ocena 1 dałaby pełny
   // wycinek o zerowej długości i zawodnik zniknąłby z wykresu.
   sprawdz('środek koła pusty na podpis skali', /r="18"/.test(svg) && /1–6/.test(svg));
 
   // Ta sama miara co na słupkach: łuk w poprzek wycinka to średnia pozycji.
-  const zOdn = R.rjsPizzaHtml(szesc, { odniesienie: { osie: { a:{srednia:4.3}, b:{srednia:4.1} } } });
+  const zOdn = R.pzjPizzaHtml(szesc, { odniesienie: { osie: { a:{srednia:4.3}, b:{srednia:4.1} } } });
   sprawdz('łuk średniej tylko tam, gdzie średnia jest',
     (zOdn.match(/stroke="#16302A"/g) || []).length === 2,
     String((zOdn.match(/stroke="#16302A"/g) || []).length));
@@ -245,42 +260,56 @@ console.log('\n9. Wykres kołowy — najwyższe parametry wyróżnione');
 
 console.log('\n10. Wykres w raporcie zastępuje radar');
 {
-  const html = R.raportJednostronicowyHtml(ZAWODNIK);
-  sprawdz('raport używa pizzy', /rjs-pizza/.test(html));
+  const html = R.profilZawodnikaHtml(ZAWODNIK);
+  sprawdz('raport używa pizzy', /pzj-pizza/.test(html));
   sprawdz('legenda tłumaczy wyróżnienie', /najwyższe/.test(html));
   // Sufit szerokości jest tym, co trzyma raport na jednej kartce — bez niego wykres
   // kwadratowy rośnie w pionie razem z kolumną.
-  sprawdz('wykres ma sufit szerokości', /\.rjs-pizza svg\{[^}]*max-width:\d+mm/.test(style),
-    (style.match(/\.rjs-pizza svg\{[^}]*\}/) || [])[0]);
+  sprawdz('wykres ma sufit szerokości', /\.pzj-pizza svg\{[^}]*max-width:\d+mm/.test(style),
+    (style.match(/\.pzj-pizza svg\{[^}]*\}/) || [])[0]);
 }
 
 console.log('\n11. Zdjęcie, prognoza i werdykt');
 {
-  const zeZdjeciem = R.raportJednostronicowyHtml({ ...ZAWODNIK, photoUrl: 'https://x/foto.jpg' });
-  sprawdz('zdjęcie w nagłówku', /rjs-foto" src="https:\/\/x\/foto\.jpg/.test(zeZdjeciem));
+  const zeZdjeciem = R.profilZawodnikaHtml({ ...ZAWODNIK, photoUrl: 'https://x/foto.jpg' });
+  sprawdz('zdjęcie w nagłówku', /pzj-foto" src="https:\/\/x\/foto\.jpg/.test(zeZdjeciem));
   // Pusty krążek wyglądałby na błąd wczytywania. Inicjały mówią, że zdjęcia po prostu nie ma.
-  const bezZdjecia = R.raportJednostronicowyHtml(ZAWODNIK);
-  sprawdz('bez zdjęcia — inicjały', /rjs-foto rjs-foto-brak">PR</.test(bezZdjecia));
+  const bezZdjecia = R.profilZawodnikaHtml(ZAWODNIK);
+  sprawdz('bez zdjęcia — inicjały', /pzj-foto pzj-foto-brak">PR</.test(bezZdjecia));
 
   sprawdz('prognoza: dziś i pułap', /dziś<\/em> <strong>12/.test(bezZdjecia) && /14–16/.test(bezZdjecia));
   sprawdz('prognoza: horyzont i pewność', /2–3 sezony/.test(bezZdjecia) && /ŚREDNIA/.test(bezZdjecia));
   // „Prognoza: brak danych" zajmowałaby miejsce na kartce, nie niosąc niczego.
   const bezPrognozy = zbuduj({ prognoza: { mozliwa: false, braki: ['brak ocen'], stopienTeraz: null } });
   sprawdz('prognoza niemożliwa znika zamiast zajmować miejsce',
-    !/rjs-prognoza/.test(bezPrognozy.raportJednostronicowyHtml(ZAWODNIK)));
+    !/pzj-prognoza/.test(bezPrognozy.profilZawodnikaHtml(ZAWODNIK)));
 
-  sprawdz('werdykt jest', /rjs-werdykt/.test(bezZdjecia));
+  sprawdz('werdykt jest', /pzj-werdykt/.test(bezZdjecia));
   sprawdz('perspektywa skauta', /Perspektywa wg skauta[\s\S]{0,60}WYSOKA/.test(bezZdjecia));
   // Zdanie składane z liczb i słowa skauta to DWA różne źródła prawdy. Czytający musi wiedzieć,
   // co napisał człowiek, a co policzyła maszyna — stąd etykieta nad jednym i cytat przy drugim.
   sprawdz('zdanie składane oznaczone źródłem', /Na podstawie ocen:/.test(bezZdjecia));
-  sprawdz('słowa skauta w cudzysłowie', /rjs-cytat[\s\S]{0,200}Przyjęcie kierunkowe/.test(bezZdjecia));
+  sprawdz('słowa skauta w cudzysłowie', /pzj-cytat[\s\S]{0,200}Przyjęcie kierunkowe/.test(bezZdjecia));
   sprawdz('cytat podpisany nazwiskiem i datą', /— M\. Megger, 2026-10-22/.test(bezZdjecia));
 
   // Bez raportów nie ma ani zdania składanego, ani cytatu — i bloku też nie ma.
   const pusty = zbuduj({ reps: [], srednia: { overall: null, ratedReports: 0 }, metryki: [], odn: null, por: null,
     prognoza: { mozliwa: false, braki: [], stopienTeraz: null } });
-  sprawdz('bez danych nie wymyślamy werdyktu', !/rjs-cytat|Na podstawie ocen/.test(pusty.raportJednostronicowyHtml(ZAWODNIK)));
+  sprawdz('bez danych nie wymyślamy werdyktu', !/pzj-cytat|Na podstawie ocen/.test(pusty.profilZawodnikaHtml(ZAWODNIK)));
+}
+
+console.log('\n12. Raport a profil to dwie różne rzeczy');
+{
+  // RAPORT jest wejściem: powstaje z obserwacji albo analizy meczu, przez tagowanie.
+  // PROFIL jest wynikiem: składa się z raportów. Dokument, który generujemy, to PROFIL —
+  // nazwanie go „raportem skautingowym" było pomyłką i nie może wrócić.
+  const html = R.profilZawodnikaHtml(ZAWODNIK);
+  sprawdz('dokument nazywa się profilem', /Profil zawodnika/.test(html));
+  sprawdz('nie nazywa się raportem skautingowym', !/Raport skautingowy/i.test(html));
+  // Wewnętrzna sekcja z danymi nie może nazywać się tak samo jak cały dokument.
+  sprawdz('sekcja z danymi to „Metryczka"', /<h2>Metryczka<\/h2>/.test(html));
+  sprawdz('przycisk w aplikacji też mówi o profilu',
+    /data-action="profil-zawodnika"/.test(zrodlo) && !/data-action="raport-jednostronicowy"/.test(zrodlo));
 }
 
 console.log(bledy ? `\nBŁĘDÓW: ${bledy}\n` : '\nWszystko w porządku.\n');
