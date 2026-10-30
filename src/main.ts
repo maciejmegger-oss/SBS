@@ -6864,6 +6864,7 @@ function viewPlayerDetail(id){
       ${miniMapaPozycji(p)}
       <table>
         <tr><td style="color:var(--ink-soft);">Status</td><td>${p.status? `<span class="badge ${STATUS_CLASS[p.status]||'new'}">${esc(p.status)}</span>` : '—'}</td></tr>
+        <tr><td style="color:var(--ink-soft);">Data urodzenia</td><td>${dataUrodzeniaHtml(p)}</td></tr>
         <tr><td style="color:var(--ink-soft);">Narodowość</td><td>${p.nationality? nationalityFlag(p.nationality)+' '+esc(p.nationality) : "—"}</td></tr>
         <tr><td style="color:var(--ink-soft);">Noga</td><td>${esc(p.foot||"—")}</td></tr>
         <tr><td style="color:var(--ink-soft);">Wzrost</td><td>${p.height? p.height+" cm":"—"}</td></tr>
@@ -7741,6 +7742,7 @@ function viewClubs(){
       <button class="secondary" data-action="systemy-do-profili" title="Wpisuje system gry klubu do profilu każdego jego zawodnika — żeby pole „System gry" w edycji nie było puste i żeby system wychodził w eksportach">🧩 System klubu do profili</button>
       <button class="secondary" data-action="sklady-meczowe" title="Rozstaw zawodników na mapach według ustawienia z ostatniej kolejki">👥 Pozycje ze składów</button>
       <button class="secondary" data-action="pozycje-z-tm" title="Uzupełnia puste pozycje zawodników danymi z Transfermarktu">🧭 Pozycje z Transfermarktu</button>
+      <button class="gold" data-action="metryczki-z-tm" title="Pobiera kadry klubów z Transfermarktu i uzupełnia brakujące daty urodzenia — potrzebne do oceny efektu wieku względnego">🎂 Metryczki z Transfermarktu</button>
       ${/* Osobny przycisk, bo robi co innego niż ten obok: tamten UZUPEŁNIA puste pola jeden
             profil po drugim, ten pobiera CAŁE SKŁADY i NADPISUJE pozycje precyzyjnymi
             (lewy/prawy/środkowy), żeby czternastu napastników rozeszło się po skrzydłach. */''}
@@ -10999,6 +11001,32 @@ function chipPozycji(p){
   return `<span class="poz-chip" title="${esc(def.number + ' · ' + def.label)} (wg Narodowego Modelu Gry)">
     <span class="poz-nr">${def.number}</span><span class="poz-txt">${esc(def.label)}</span></span>`;
 }
+
+// KWARTAŁ URODZENIA — PODSTAWA OCENY EFEKTU WIEKU WZGLĘDNEGO.
+//
+// Zawodnik z 3 stycznia i z 28 grudnia mają ten sam rocznik, a dzieli ich prawie rok rozwoju.
+// Przez całą młodzież pierwszy wygląda na lepszego, bo po prostu jest starszy — i to on częściej
+// przechodzi selekcję. Bez dnia i miesiąca tej różnicy nie widać, dlatego kwartał pokazujemy
+// przy dacie, a nie liczymy go dopiero w raporcie.
+function kwartalUrodzenia(p){
+  const d = String((p && p.birthDate) || '').trim();
+  const m = d.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m) return null;
+  const miesiac = Number(m[2]);
+  if(!(miesiac >= 1 && miesiac <= 12)) return null;
+  return Math.floor((miesiac - 1) / 3) + 1;
+}
+
+// Data w polskim zapisie, z kwartałem obok. Bez daty — kreska, a nie zgadywany kwartał z rocznika.
+function dataUrodzeniaHtml(p){
+  const d = String((p && p.birthDate) || '').trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(d)) return '—';
+  const kw = kwartalUrodzenia(p);
+  const rzymskie = ['', 'I', 'II', 'III', 'IV'][kw] || '';
+  return `<strong>${esc(d.split('-').reverse().join('.'))}</strong>`
+    + (kw ? ` <span class="note" title="Kwartał urodzenia — podstawa oceny efektu wieku względnego">&middot; ${rzymskie} kwartał</span>` : '');
+}
+
 
 function rocznikHtml(p){
   const rok = rocznikZawodnika(p);
@@ -16161,6 +16189,169 @@ async function pobierzPozycjeZeSkladowTm(ligi){
     (overlay.querySelector('#tmp-ok') as HTMLElement).onclick = ()=>{ zamknij(); render(); };
   };
 }
+// ---- METRYCZKI Z TRANSFERMARKTU: DOKŁADNE DATY URODZENIA DLA CAŁYCH LIG -----------------------
+//
+// PO CO
+// Efekt wieku względnego mierzy się KWARTAŁEM urodzenia. Zawodnik z 3 stycznia i z 28 grudnia mają
+// ten sam rocznik, a dzieli ich prawie rok rozwoju — i przez całą młodzież pierwszy wygląda na
+// lepszego, bo po prostu jest starszy. Bez dnia i miesiąca tej różnicy nie widać wcale, a w naszej
+// kartotece dat najczęściej nie ma.
+//
+// DLACZEGO KLUB PO KLUBIE, A NIE ZAWODNIK PO ZAWODNIKU
+// Profil po profilu to kilka tysięcy żądań do cudzego serwisu. Kadra klubu przychodzi w jednym —
+// przy wszystkim do III ligi włącznie mówimy o rzędzie stu trzydziestu zapytań, nie kilku tysięcy.
+const POZIOMY_METRYCZEK = ['Ekstraklasa', 'I liga', 'II liga', 'III liga'];
+
+// DOPASOWANIE PO NAZWISKU, ODPORNE NA ZAPIS.
+//
+// Transfermarkt pisze „Svyatoslav Vanivskyi", nasza kartoteka trzyma imię i nazwisko osobno
+// i bywa, że w odwrotnej kolejności. Porównujemy więc ZBIÓR SŁÓW, bez znaków diakrytycznych —
+// „Sokół Mateusz" i „Mateusz Sokol" to ten sam człowiek.
+function kluczMetryczki(tekst){
+  return String(tekst || '')
+    .toLowerCase()
+    .replace(/ł/g, 'l')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .split(/\s+/).filter(Boolean).sort().join(' ');
+}
+
+// Numer klubu z adresu na Transfermarkcie: .../verein/9510/... → „9510".
+function numerKlubuZAdresu(adres){
+  const m = String(adres || '').match(/\/verein\/(\d+)/);
+  return m ? m[1] : '';
+}
+
+// JEDNO DOPASOWANIE ALBO ŻADNE.
+//
+// Przy dwóch zawodnikach o tym samym nazwisku w jednym klubie nie zgadujemy. Zła data urodzenia
+// jest GORSZA niż jej brak: braku nikt nie użyje, a błędna po cichu przekłama ocenę wieku
+// względnego i nikt tego nigdy nie sprawdzi.
+function dopasujJednoznacznie(nasiZKlubu, nazwaZTm){
+  const klucz = kluczMetryczki(nazwaZTm);
+  const trafienia = nasiZKlubu.filter(p => kluczMetryczki(`${p.firstName || ''} ${p.lastName || ''}`) === klucz);
+  return trafienia.length === 1 ? trafienia[0] : null;
+}
+
+function openMetryczkiZTmModal(kluby: any[]){
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+
+  const wZakresie = (kluby || []).filter(c => POZIOMY_METRYCZEK.includes(String(topLevelOf(clubLeague(c.id)))));
+  const zLinkiem = wZakresie.filter(c => numerKlubuZAdresu(c.profileTm));
+  const bezLinku = wZakresie.filter(c => !numerKlubuZAdresu(c.profileTm));
+  const idy = new Set(wZakresie.map(c => c.id));
+  const zawodnicy = DB.players.filter(p => idy.has(p.clubId));
+  const bezDaty = zawodnicy.filter(p => !String(p.birthDate || '').trim());
+  let przerwij = false;
+
+  overlay.innerHTML = `<div class="modal" style="max-width:660px;">
+    <h3>Metryczki z Transfermarktu</h3>
+    <p class="note" style="margin-top:-6px;">Uzupełniam <strong>wyłącznie brakujące</strong> daty urodzenia
+      i odnośniki do profili. Nic wpisanego wcześniej nie jest nadpisywane.</p>
+    <div class="obs-item">
+      <div>Kluby od Ekstraklasy do III ligi w tym widoku: <strong>${wZakresie.length}</strong></div>
+      <div>Z odnośnikiem do Transfermarktu: <strong>${zLinkiem.length}</strong></div>
+      <div>Bez odnośnika: <strong>${bezLinku.length}</strong>
+        ${bezLinku.length ? '<span class="note"> — tych nie ruszę, bo nie ma skąd wziąć kadry</span>' : ''}</div>
+      <div style="margin-top:6px;">Zawodników bez daty urodzenia: <strong>${bezDaty.length}</strong>
+        z ${zawodnicy.length}</div>
+    </div>
+    ${/* NAJPIERW JEDEN KLUB. Dwa poprzednie podejścia do czytania daty wywróciły się na założeniu
+          o cudzym serwisie, którego nikt nie sprawdził. Próba na jednym klubie kosztuje sekundę
+          i rozstrzyga, czy w ogóle warto puszczać sto trzydzieści zapytań. */''}
+    <p class="note">Zacznij od jednego klubu. Jeśli wróci z datami — puszczaj całość.</p>
+    <div id="met-postep" style="margin-top:10px;"></div>
+    <div class="modal-actions">
+      <button class="secondary" id="met-zamknij">Zamknij</button>
+      ${zLinkiem.length ? `<button class="secondary" id="met-proba">Sprawdź jeden klub</button>
+        <button class="gold" id="met-start">Uruchom dla ${zLinkiem.length} klubów</button>` : ''}
+    </div></div>`;
+
+  const postep = overlay.querySelector('#met-postep');
+  const zamknij = ()=>{ przerwij = true; overlay.remove(); render(); };
+  overlay.querySelector('#met-zamknij').addEventListener('click', zamknij);
+  overlay.addEventListener('click', e=>{ if(e.target === overlay) zamknij(); });
+
+  // Jeden klub: pobiera kadrę, dopasowuje, uzupełnia. Oddaje liczby, nie rysuje nic.
+  async function zrobKlub(c, raport){
+    const numer = numerKlubuZAdresu(c.profileTm);
+    const odp = await fetch('/api/tm-metryki?klub=' + encodeURIComponent(numer));
+    const d = await odp.json().catch(()=>({}));
+    if(!odp.ok || d.error){ raport.bledy.push(`${c.name}: ${d.error || 'kod ' + odp.status}`); return; }
+    raport.kadrZTm++;
+    raport.datWSerwisie += Number(d.zDataUrodzenia) || 0;
+
+    const nasi = DB.players.filter(p => p.clubId === c.id);
+    for(const z of (d.zawodnicy || [])){
+      if(!z.dataUrodzenia) continue;
+      const nasz = dopasujJednoznacznie(nasi, z.nazwa);
+      if(!nasz){ raport.bezDopasowania.push(`${z.nazwa} (${c.name})`); continue; }
+      let zmiana = false;
+      if(!String(nasz.birthDate || '').trim()){ nasz.birthDate = z.dataUrodzenia; zmiana = true; }
+      else { raport.juzMialy++; }
+      // Rocznik wyrównujemy do daty tylko wtedy, gdy był pusty — wpisany ręcznie zostaje,
+      // nawet jeśli się różni. Rozbieżność to sygnał do sprawdzenia, a nie do cichej poprawki.
+      if(!String(nasz.birthYear || '').trim()){ nasz.birthYear = z.dataUrodzenia.slice(0, 4); zmiana = true; }
+      if(!String(nasz.tmLink || '').trim() && z.adres){ nasz.tmLink = z.adres; zmiana = true; }
+      if(zmiana){
+        raport.uzupelnione++;
+        // Zapisujemy pojedynczo: przy setkach zawodników jeden nieudany zapis całej kolekcji
+        // cofnąłby całą pracę, a tak traci się najwyżej jedno nazwisko.
+        await savePlayerOne(nasz);
+      }
+    }
+  }
+
+  const pustyRaport = ()=> ({ uzupelnione: 0, juzMialy: 0, bezDopasowania: [], bledy: [], kadrZTm: 0, datWSerwisie: 0 });
+
+  function podsumowanie(r, naglowek){
+    return `<div class="obs-item"><strong>${naglowek}</strong>
+      <div style="margin-top:4px;">Uzupełnionych metryczek: <strong>${r.uzupelnione}</strong></div>
+      <div>Kadr pobranych z serwisu: ${r.kadrZTm} &middot; dat w serwisie: ${r.datWSerwisie}</div>
+      ${r.juzMialy ? `<div class="note">Miało już datę i zostało nietknięte: ${r.juzMialy}</div>` : ''}
+      ${r.bezDopasowania.length ? `<div class="note" style="margin-top:4px;">Bez jednoznacznego
+        dopasowania w kartotece: ${r.bezDopasowania.length} — te zostawiam do ręcznego sprawdzenia:
+        ${esc(r.bezDopasowania.slice(0, 8).join(', '))}${r.bezDopasowania.length > 8 ? '…' : ''}</div>` : ''}
+      ${r.bledy.length ? `<div class="note" style="color:var(--clay-dark);margin-top:4px;">Nieudane:
+        ${esc(r.bledy.slice(0, 5).join('; '))}${r.bledy.length > 5 ? '…' : ''}</div>` : ''}
+    </div>`;
+  }
+
+  const proba = overlay.querySelector('#met-proba');
+  if(proba) (proba as HTMLButtonElement).onclick = async()=>{
+    (proba as HTMLButtonElement).disabled = true;
+    const c = zLinkiem[0];
+    postep.innerHTML = `<div class="note">Sprawdzam: ${esc(c.name)}…</div>`;
+    const r = pustyRaport();
+    try{ await zrobKlub(c, r); }catch(e){ r.bledy.push(String((e && (e as any).message) || e)); }
+    postep.innerHTML = podsumowanie(r, `Próba: ${c.name}`)
+      + (r.datWSerwisie ? '<p class="note">Serwis oddaje daty — możesz puszczać całość.</p>'
+        : '<p class="note" style="color:var(--clay-dark);">Serwis nie oddał żadnej daty. Nie puszczaj całości, zgłoś to.</p>');
+    (proba as HTMLButtonElement).disabled = false;
+  };
+
+  const start = overlay.querySelector('#met-start');
+  if(start) (start as HTMLButtonElement).onclick = async()=>{
+    (start as HTMLButtonElement).disabled = true;
+    const r = pustyRaport();
+    for(let i = 0; i < zLinkiem.length; i++){
+      if(przerwij) break;
+      const c = zLinkiem[i];
+      postep.innerHTML = `<div class="note">${i + 1} z ${zLinkiem.length} &middot; ${esc(c.name)}
+        &middot; uzupełnionych: <strong>${r.uzupelnione}</strong></div>`;
+      try{ await zrobKlub(c, r); }catch(e){ r.bledy.push(`${c.name}: ${String((e && (e as any).message) || e)}`); }
+      // Przerwa między klubami — nie zasypujemy cudzego serwisu.
+      await new Promise(res=>setTimeout(res, 700));
+    }
+    postep.innerHTML = podsumowanie(r, przerwij ? 'Przerwane' : 'Gotowe');
+    (start as HTMLButtonElement).disabled = false;
+    start.textContent = 'Powtórz dla pozostałych';
+  };
+
+  document.body.appendChild(overlay);
+}
+
 function openPozycjeZTmModal(kluby){
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -20369,6 +20560,7 @@ function attachHandlers(){
   main.querySelectorAll('[data-action="pozycje-ze-skladow-tm"]').forEach(b=>b.onclick=()=>
     void pobierzPozycjeZeSkladowTm(['Ekstraklasa', 'I liga', 'II liga']));
   main.querySelectorAll('[data-action="pozycje-z-tm"]').forEach(b=>b.onclick=()=>openPozycjeZTmModal(widoczneKluby()));
+  main.querySelectorAll<HTMLElement>('[data-action="metryczki-z-tm"]').forEach(b=>b.onclick=()=>openMetryczkiZTmModal(widoczneKluby()));
   main.querySelectorAll('[data-action="systemy-gry"]').forEach(b=>b.onclick=()=>openSystemyModal(widoczneKluby()));
   main.querySelectorAll('[data-action="systemy-do-profili"]').forEach(b=>b.onclick=()=>wgrajSystemyDoProfili());
   main.querySelectorAll('[data-action="sklady-meczowe"]').forEach(b=>b.onclick=()=>openSkladyModal(widoczneKluby()));
@@ -30075,7 +30267,7 @@ const AKCJE_BEZ_KLIENTA = new Set([
   'import-znicz-roster','protokoly-grupy','start-grupa','ponow-grupe','przerwij-grupe','zamknij-grupe',
   'lnp-link-grupy','show-bookmarklet','fetch-schedule','fetch-from-link','schedule-url',
   'squad-parse','squad-apply','squad-import-confirm','squad-diag','staff-parse','staff-apply',
-  'sklady-meczowe','systemy-gry','systemy-do-profili','pozycje-z-tm','herby-z-pierwszych','herby-do-plikow','tm-odswiez','tm-zakladka',
+  'sklady-meczowe','systemy-gry','systemy-do-profili','pozycje-z-tm','metryczki-z-tm','herby-z-pierwszych','herby-do-plikow','tm-odswiez','tm-zakladka',
   'agencies-import','agencies-parse','agencies-apply','agent-import','agent-parse','agent-apply','agenci-hurt',
   'agency-add-players','agency-squad','agency-staff','do-import','get-template',
   // 3. Narzędzia pracowni

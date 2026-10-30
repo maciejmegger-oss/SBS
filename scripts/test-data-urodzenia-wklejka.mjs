@@ -107,5 +107,33 @@ console.log("\n5. Data dochodzi aż do kartoteki");
   sprawdz("rocznik z daty, gdy data jest", /birthYear = birthDate \? birthDate\.slice\(0, 4\)/.test(zrodlo));
 }
 
+console.log("\n6. Datę widać w profilu — i widać kwartał");
+{
+  // Zgłoszenie (30.10.2026): „wgrałem, ale nie ma dat urodzenia". Import zapisywał datę, ale
+  // w tabeli „Informacje" nie było wiersza, który by ją pokazywał — więc nie dało się sprawdzić,
+  // czy cokolwiek weszło. Dane niewidoczne to z punktu widzenia użytkownika dane, których nie ma.
+  const kod2 = [
+    wytnij("kwartalUrodzenia", /function kwartalUrodzenia\(p\)\{[\s\S]*?\n\}/),
+    wytnij("dataUrodzeniaHtml", /function dataUrodzeniaHtml\(p\)\{[\s\S]*?\n\}/),
+  ].join("\n");
+  const { kwartalUrodzenia, dataUrodzeniaHtml } =
+    new Function("esc", `${kod2}\n return { kwartalUrodzenia, dataUrodzeniaHtml };`)((s) => String(s ?? ""));
+
+  sprawdz("styczeń to I kwartał", kwartalUrodzenia({ birthDate: "2007-01-03" }) === 1);
+  sprawdz("marzec to I kwartał", kwartalUrodzenia({ birthDate: "2007-03-31" }) === 1);
+  sprawdz("kwiecień to II kwartał", kwartalUrodzenia({ birthDate: "2007-04-01" }) === 2);
+  sprawdz("lipiec to III kwartał", kwartalUrodzenia({ birthDate: "2009-07-19" }) === 3);
+  sprawdz("grudzień to IV kwartał", kwartalUrodzenia({ birthDate: "2007-12-28" }) === 4);
+  // Z samego rocznika kwartału nie da się policzyć i nie udajemy, że się da.
+  sprawdz("sam rocznik nie daje kwartału", kwartalUrodzenia({ birthYear: "2007" }) === null);
+  sprawdz("bez daty kreska", dataUrodzeniaHtml({ birthYear: "2007" }) === "—",
+    dataUrodzeniaHtml({ birthYear: "2007" }));
+
+  const html = dataUrodzeniaHtml({ birthDate: "2005-02-27" });
+  sprawdz("data po polsku", /27\.02\.2005/.test(html), html);
+  sprawdz("kwartał obok daty", /I kwartał/.test(html), html);
+  sprawdz("wiersz jest w tabeli Informacje", /Data urodzenia<\/td><td>\$\{dataUrodzeniaHtml\(p\)\}/.test(zrodlo));
+}
+
 console.log(bledy ? `\nBŁĘDÓW: ${bledy}\n` : "\nWszystko w porządku.\n");
 process.exit(bledy ? 1 : 0);
