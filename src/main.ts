@@ -21040,6 +21040,89 @@ function mapSquadPosition(raw){
 // Zakres roczników: od 1970 (weterani w niższych ligach) po 2020 (drużyny młodzieżowe i rocznikowe).
 // Wcześniejsze ograniczenie do 2015 ucinało najmłodszych, a rocznik zostawał pusty bez żadnego sygnału.
 const BIRTH_YEAR_RE = /\b(19[7-9]\d|20[01]\d|2020)\b/;
+// DATA URODZENIA Z WKLEJKI — NIE SAM ROCZNIK.
+//
+// Zgłoszenie (30.10.2026): „system wyłapuje tylko rocznik, a na Transfermarkcie jest dokładna data".
+// Dokładnie tak było: wklejka brała cztery cyfry roku i resztę wyrzucała, choć pełna data stała
+// w tej samej linijce.
+//
+// DLACZEGO ROCZNIK NIE WYSTARCZA
+// Zawodnik z 3 stycznia i z 28 grudnia mają ten sam rocznik, a dzieli ich prawie rok rozwoju.
+// Przez całą młodzież pierwszy wygląda na lepszego, bo po prostu jest starszy. Bez dnia i miesiąca
+// tej różnicy nie widać wcale — a to na niej stoi ocena efektu wieku względnego.
+//
+// DLACZEGO POPRZEDNI WZORZEC NIE TRAFIAŁ
+// Polska wersja Transfermarktu pisze „27 lut 2005", skrótem miesiąca i bez kropek. Wzorzec szukający
+// „27.02.2005" nie miał tam czego znaleźć. Przyjmujemy więc kilka zapisów naraz.
+const MIESIACE_SKROTY = {
+  sty: 1, lut: 2, mar: 3, kwi: 4, maj: 5, cze: 6, lip: 7, sie: 8, wrz: 9, paź: 10, paz: 10, lis: 11, gru: 12,
+  // Wersja angielska serwisu — ta sama strona bywa otwierana na transfermarkt.com.
+  jan: 1, feb: 2, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+};
+
+// Zapisy, które spotykamy. Kolejność nieprzypadkowa: najpierw te jednoznaczne.
+const WZORCE_DATY_URODZENIA: [RegExp, string][] = [
+  [/\b(\d{1,2})\s+([A-Za-ząćęłńóśźżĄĆĘŁŃÓŚŹŻ]{3,4})\.?\s+(\d{4})\b/g, 'dMr'],  // 27 lut 2005
+  [/\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b/g, 'dmr'],                                 // 27.02.2005
+  [/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/g, 'rmd'],                                   // 2005-02-27
+];
+
+function zlozDate(rok, miesiac, dzien){
+  if(!(miesiac >= 1 && miesiac <= 12)) return '';
+  if(!(dzien >= 1 && dzien <= 31)) return '';
+  if(!(rok >= 1940 && rok <= new Date().getFullYear())) return '';
+  const dwie = (n)=> String(n).padStart(2, '0');
+  return `${rok}-${dwie(miesiac)}-${dwie(dzien)}`;
+}
+
+// WIEK W NAWIASIE ROZSTRZYGA, KTÓRA DATA JEST DATĄ URODZENIA.
+//
+// W jednym bloku zawodnika potrafi stać kilka dat: urodzenia, „w klubie od", koniec umowy.
+// Wzięcie „pierwszej z brzegu" wpisałoby komuś jako datę urodzenia dzień podpisania kontraktu —
+// a zła data urodzenia jest gorsza niż jej brak, bo po cichu przekłamie ocenę wieku względnego.
+// Transfermarkt pisze wiek zaraz za datą urodzenia i tylko za nią: „27 lut 2005 (21)".
+function dataUrodzeniaZTekstu(tekst){
+  const t = String(tekst || '');
+  const kandydaci = [];
+  for(const [re, ulozenie] of WZORCE_DATY_URODZENIA){
+    re.lastIndex = 0;
+    let m;
+    while((m = re.exec(t)) !== null){
+      let rok, miesiac, dzien;
+      if(ulozenie === 'dMr'){
+        dzien = Number(m[1]);
+        miesiac = MIESIACE_SKROTY[m[2].toLowerCase().slice(0, 3)] || MIESIACE_SKROTY[m[2].toLowerCase()];
+        rok = Number(m[3]);
+      } else if(ulozenie === 'dmr'){
+        dzien = Number(m[1]); miesiac = Number(m[2]); rok = Number(m[3]);
+      } else {
+        rok = Number(m[1]); miesiac = Number(m[2]); dzien = Number(m[3]);
+      }
+      const data = zlozDate(rok, miesiac, dzien);
+      if(!data) continue;
+      // Czy zaraz za datą stoi wiek w nawiasie — i czy ten wiek zgadza się z datą.
+      const ogon = t.slice(m.index + m[0].length, m.index + m[0].length + 8);
+      const wiek = (ogon.match(/^\s*\((\d{1,2})\)/) || [])[1];
+      const zWiekiem = wiek != null && Math.abs(wiekZDaty(data) - Number(wiek)) <= 1;
+      kandydaci.push({ data, zWiekiem });
+    }
+  }
+  if(!kandydaci.length) return '';
+  const zWiekiem = kandydaci.find(k=>k.zWiekiem);
+  return zWiekiem ? zWiekiem.data : kandydaci[0].data;
+}
+
+function wiekZDaty(data){
+  const d = new Date(data + 'T00:00:00Z');
+  if(isNaN(d.getTime())) return -1;
+  const dzis = new Date();
+  let w = dzis.getFullYear() - d.getUTCFullYear();
+  const poUrodzinach = (dzis.getMonth() + 1) > d.getUTCMonth() + 1
+    || ((dzis.getMonth() + 1) === d.getUTCMonth() + 1 && dzis.getDate() >= d.getUTCDate());
+  if(!poUrodzinach) w--;
+  return w;
+}
+
 
 // Część widoków Transfermarktu podaje sam WIEK, bez daty urodzenia ("Zawodnik / Wiek / Narodowość").
 // Gdy roku nie ma, wyliczamy go z wieku. To wartość przybliżona — zależnie od tego, czy zawodnik
@@ -21071,12 +21154,15 @@ function parseSquadLine(line){
   // Rok urodzenia szukamy w CAŁEJ linii, nie tylko po nazwie pozycji — w części wklejeń data stoi
   // przed pozycją i wtedy przepadała.
   const rest = text.slice(posMatch.index + positionRaw.length) + ' ' + namePart;
+  const birthDate = dataUrodzeniaZTekstu(rest);
   const yearMatch = rest.match(BIRTH_YEAR_RE);
   const zWieku = yearMatch ? null : birthYearFromAgeText(text.slice(posMatch.index + positionRaw.length));
-  const birthYear = yearMatch ? yearMatch[0] : (zWieku || '');
+  // Rocznik z PEŁNEJ daty jest pewniejszy niż cztery cyfry wyłuskane z linii: tam trafia się też
+  // rok podpisania umowy albo wejścia do klubu.
+  const birthYear = birthDate ? birthDate.slice(0, 4) : (yearMatch ? yearMatch[0] : (zWieku || ''));
   const nationality = detectNationality(rest);
-  return { ok:true, firstName, lastName, position, birthYear,
-    birthYearFromAge: !yearMatch && !!zWieku, nationality, raw: line.trim() };
+  return { ok:true, firstName, lastName, position, birthYear, birthDate,
+    birthYearFromAge: !birthDate && !yearMatch && !!zWieku, nationality, raw: line.trim() };
 }
 // Wykrywa, czy pozycja to nazwa pozycji (krótka linia pasująca do słownika) — punkt orientacyjny do
 // wykrywania bloków w formacie wieloliniowym (patrz parseSquadBlocks).
@@ -21106,13 +21192,15 @@ function parseSquadBlocks(rawText){
     // Rocznika szukamy w CAŁYM bloku poza linią nazwiska, a nie dopiero od trzeciej linii —
     // w niektórych układach data stoi tuż przy pozycji i wcześniej wypadała poza zakresem.
     const rest = block.slice(1).join(' ');
+    const birthDate = dataUrodzeniaZTekstu(rest);
     const yearMatch = rest.match(BIRTH_YEAR_RE);
     // Bez daty urodzenia próbujemy wyliczyć rocznik z wieku (widok „Zawodnik / Wiek / Narodowość").
     const zWieku = yearMatch ? null : birthYearFromAgeText(rest.replace(block[1]||'', ''));
     return {
       ok:true, firstName: words[0], lastName: words.length>1 ? words.slice(1).join(' ') : '',
-      position, birthYear: yearMatch ? yearMatch[0] : (zWieku || ''),
-      birthYearFromAge: !yearMatch && !!zWieku,
+      position, birthDate,
+      birthYear: birthDate ? birthDate.slice(0, 4) : (yearMatch ? yearMatch[0] : (zWieku || '')),
+      birthYearFromAge: !birthDate && !yearMatch && !!zWieku,
       nationality: detectNationality(rest),
       raw: block.join(' | ').slice(0,140)
     };
@@ -21660,7 +21748,9 @@ function openSquadImportModal(clubId){
                 <td style="width:24px;"><input type="checkbox" class="squad-row-check" data-idx="${i}" checked></td>
                 <td><strong>${esc(p.lastName)}</strong> ${esc(p.firstName)}</td>
                 <td>${esc(p.position||'—')}</td>
-                <td>${rocznikHtml(p)}</td>
+                <td>${p.birthDate
+                  ? `<strong>${esc(p.birthDate.split('-').reverse().join('.'))}</strong>`
+                  : rocznikHtml(p)}</td>
                 <td>${p.nationality? nationalityFlag(p.nationality)+' '+esc(p.nationality) : '—'}</td>
                 <td style="white-space:nowrap;">${agentPreviewHtml(p)}</td>
               </tr>` : `
@@ -21754,6 +21844,9 @@ function openSquadImportModal(clubId){
           if(p.mlodziezowiec === true && !istniejacy.mlodziezowiec){ istniejacy.mlodziezowiec = true; zmienione = true; }
           if(p.position && !istniejacy.position){ istniejacy.position = p.position; zmienione = true; }
           if(p.birthYear && !istniejacy.birthYear){ istniejacy.birthYear = p.birthYear; zmienione = true; }
+          // Data urodzenia uzupełnia się nawet wtedy, gdy rocznik już był — to ona niesie
+          // informację, której rocznik nie ma, a bez niej nie policzymy wieku względnego.
+          if(p.birthDate && !istniejacy.birthDate){ istniejacy.birthDate = p.birthDate; zmienione = true; }
           if(p.nationality && !istniejacy.nationality){ istniejacy.nationality = p.nationality; zmienione = true; }
           if(zmienione) uzupelnieni++; else skipped++;
           return;
@@ -21762,7 +21855,7 @@ function openSquadImportModal(clubId){
         else if(p.birthYearFromAge) zWieku++;
         DB.players.push({
           id: uid('Z'), firstName: p.firstName, lastName: p.lastName,
-          birthDate: '', birthYear: p.birthYear || '', nationality: p.nationality || '',
+          birthDate: p.birthDate || '', birthYear: p.birthYear || '', nationality: p.nationality || '',
           position: p.position || '', foot: '', height: null,   // brak pozycji w źródle = puste (uzupełnisz później), nie "Bramkarz"
           // Bez statusu przy imporcie — status "Do Obserwacji" pojawia się dopiero, gdy dla
           // zawodnika faktycznie zaplanujemy obserwację (patrz saveNewObservation()).
