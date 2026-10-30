@@ -161,5 +161,13 @@ console.log("\n7. Na listach widać datę, nie sam rocznik");
     rocznikHtml({ birthDate: "2005-02", birthYear: "2005" }));
 }
 
+console.log("\n8. Widok klubu mówi, ilu zawodników ma datę");
+{
+  // Po imporcie pierwsze pytanie brzmi „weszło czy nie weszło", a przy kilkudziesięciu
+  // zawodnikach odpowiedź wymagała otwierania profilu po profilu.
+  sprawdz("licznik dat w podsumowaniu klubu", /z datą urodzenia <strong>\$\{zData\}/.test(zrodlo));
+  sprawdz("liczy tylko pełne daty", /zData = gracze\.filter\(p=>\/\^\\d\{4\}-\\d\{2\}-\\d\{2\}\$\//.test(zrodlo));
+}
+
 console.log(bledy ? `\nBŁĘDÓW: ${bledy}\n` : "\nWszystko w porządku.\n");
 process.exit(bledy ? 1 : 0);

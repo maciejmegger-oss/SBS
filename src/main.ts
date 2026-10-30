@@ -9707,7 +9707,18 @@ function daneKlubuHtml(c){
         const mlodzi = gracze.filter(p=>isYouthPlayer(p)).length;
         const monit = gracze.filter(p=>p.monitored).length;
         const rap = gracze.filter(p=>raportyGracza(p.id).length).length;
-        return `<strong>${gracze.length}</strong> &middot; młodzieżowców ${mlodzi} &middot; w Monitoringu ${monit} &middot; z raportem ${rap}`;
+        // POKRYCIE DATAMI URODZENIA — podane wprost, obok pozostałych liczb.
+        //
+        // Po imporcie z Transfermarktu pierwsze pytanie brzmi „weszło czy nie weszło", a przy
+        // kilkudziesięciu zawodnikach w klubie odpowiedź wymagała otwierania profilu po profilu.
+        // Jedna liczba tutaj rozstrzyga to od razu. Nie będzie nigdy równa liczbie zawodników:
+        // kartoteka ma też wpisy z protokołów meczowych, których na Transfermarkcie nie ma
+        // w ogóle — i oni daty nie dostaną żadnym importem.
+        const zData = gracze.filter(p=>/^\d{4}-\d{2}-\d{2}$/.test(String(p.birthDate||'').trim())).length;
+        return `<strong>${gracze.length}</strong> &middot; młodzieżowców ${mlodzi} &middot; w Monitoringu ${monit}`
+          + ` &middot; z raportem ${rap}`
+          + ` &middot; <span title="Zawodnicy z dokładną datą urodzenia — potrzebną do oceny efektu wieku względnego">`
+          + `z datą urodzenia <strong>${zData}</strong></span>`;
       })())}
       ${wiersz('Miasto / region', [c.city, c.region].filter(Boolean).map(esc).join(' · '))}
       ${wiersz('Strony', [c.profileLnp ? '<a href="' + esc(c.profileLnp) + '" target="_blank" rel="noopener">90minut / ŁNP</a>' : '', c.profileTm ? '<a href="' + esc(c.profileTm) + '" target="_blank" rel="noopener">Transfermarkt</a>' : ''].filter(Boolean).join(' · '))}
