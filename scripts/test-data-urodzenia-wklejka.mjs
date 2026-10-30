@@ -135,5 +135,31 @@ console.log("\n6. Datę widać w profilu — i widać kwartał");
   sprawdz("wiersz jest w tabeli Informacje", /Data urodzenia<\/td><td>\$\{dataUrodzeniaHtml\(p\)\}/.test(zrodlo));
 }
 
+console.log("\n7. Na listach widać datę, nie sam rocznik");
+{
+  // Zgłoszenie (30.10.2026): „nadal nie ma daty, a wgrałem". Data była zapisana, ale listy
+  // pokazywały dalej sam rok — więc po imporcie nie dało się jednym spojrzeniem sprawdzić,
+  // komu metryczka weszła. Przy 68 zawodnikach w klubie to różnica między widzeniem pokrycia
+  // a otwieraniem profilu po profilu.
+  const kod3 = [
+    wytnij("kwartalUrodzenia", /function kwartalUrodzenia\(p\)\{[\s\S]*?\n\}/),
+    wytnij("rocznikHtml", /function rocznikHtml\(p\)\{[\s\S]*?\n\}/),
+  ].join("\n");
+  const { rocznikHtml } = new Function(
+    "esc", "rocznikZawodnika", "odznakaMlodszego", "isYouthPlayer", "youthBadge", "limitRocznikaKategorii",
+    `${kod3}\n return { rocznikHtml };`)(
+    (s) => String(s ?? ""), (p) => String(p.birthYear || ""), () => "", () => false, () => "", () => null);
+
+  const zData = rocznikHtml({ birthDate: "2005-02-27", birthYear: "2005" });
+  sprawdz("data zamiast rocznika", /27\.02\.2005/.test(zData), zData);
+  sprawdz("kwartał w podpowiedzi", /I kwartał/.test(zData), zData);
+  // Bez daty nic się nie zmienia — rocznik działa jak dotąd.
+  sprawdz("sam rocznik zostaje rocznikiem", rocznikHtml({ birthYear: "2005" }) === "2005",
+    rocznikHtml({ birthYear: "2005" }));
+  // Połowiczna data to nie data. Lepiej pokazać rocznik niż „2005-02-".
+  sprawdz("ucięta data nie przechodzi", rocznikHtml({ birthDate: "2005-02", birthYear: "2005" }) === "2005",
+    rocznikHtml({ birthDate: "2005-02", birthYear: "2005" }));
+}
+
 console.log(bledy ? `\nBŁĘDÓW: ${bledy}\n` : "\nWszystko w porządku.\n");
 process.exit(bledy ? 1 : 0);

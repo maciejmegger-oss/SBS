@@ -11029,6 +11029,21 @@ function dataUrodzeniaHtml(p){
 
 
 function rocznikHtml(p){
+  // DOKŁADNA DATA WYPIERA ROCZNIK WSZĘDZIE, GDZIE JĄ ZNAMY.
+  //
+  // Zgłoszenie (30.10.2026): „nadal nie ma daty, a wgrałem". Data była zapisana, ale na listach
+  // widniał dalej sam rok — czyli po imporcie nie dało się jednym spojrzeniem sprawdzić, komu
+  // metryczka weszła, a komu nie. Przy 68 zawodnikach w klubie to różnica między „widzę pokrycie"
+  // a „otwieram profil po profilu".
+  //
+  // Data niesie też to, czego rocznik nie ma: kwartał urodzenia. Zawodnik z 3 stycznia i z 28
+  // grudnia mają ten sam rocznik, a dzieli ich prawie rok rozwoju.
+  const dokladna = String((p && p.birthDate) || '').trim();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(dokladna)){
+    return `<span title="Dokładna data urodzenia — ${esc(['','I','II','III','IV'][kwartalUrodzenia(p)] || '')} kwartał">`
+      + `${esc(dokladna.split('-').reverse().join('.'))}</span>`
+      + `${odznakaMlodszego(p)}${isYouthPlayer(p)?youthBadge(p):''}`;
+  }
   const rok = rocznikZawodnika(p);
   if(rok) return `${esc(rok)}${odznakaMlodszego(p)}${isYouthPlayer(p)?youthBadge(p):''}`;
   // GÓRNA GRANICA WIEKU BIERZE SIĘ Z ROZGRYWEK, GDY SĄ ROCZNIKOWE.
