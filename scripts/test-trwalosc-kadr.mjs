@@ -110,11 +110,20 @@ console.log('\n6. Dwóch imienników z RÓŻNYCH klubów to dwie osoby');
   sprawdz('wpis z Wdy został bez kadry', !lista[0].reprezentacja);
 }
 
-console.log('\n7. Import z arkusza (bez kadry) działa jak dotąd');
+console.log('\n7. Import bez kadry też nie tworzy duplikatów');
 {
+  // ZMIANA ZASADY (03.11.2026, na polecenie właściciela: „jak się powielają, to nie dopisuje").
+  // Wcześniej wpis BEZ nazwy kadry szedł na listę bez żadnego sprawdzenia duplikatu — i każde
+  // ponowne wklejenie tej samej listy zakładało komplet nowych wpisów. Teraz duplikat
+  // rozpoznajemy zawsze, niezależnie od tego, czy wklejka niesie nazwę kadry.
+  //
+  // Cena tej zmiany: dwaj naprawdę różni zawodnicy o tym samym imieniu, nazwisku I klubie
+  // zostaną uznani za jedną osobę. Zdarza się to rzadko, a codzienne zasypywanie listy
+  // duplikatami przy każdej powtórnej wklejce zdarzało się zawsze.
   const lista = [{ id: 'T1', firstName: 'Jan', lastName: 'Nowak', club: 'Wda' }];
   const w = api.scalPowolanychZIstniejacymi(lista, [{ firstName: 'Jan', lastName: 'Nowak', club: 'Wda' }]);
-  sprawdz('wpis bez kadry idzie do dodania, nic nie jest scalane', w.doDodania.length === 1 && w.uzupelnieni === 0);
+  sprawdz('ten sam wpis nie wchodzi drugi raz', w.doDodania.length === 0 && w.uzupelnieni === 1, JSON.stringify(w));
+  sprawdz('lista nadal jednoosobowa', lista.length === 1, lista.length);
 }
 
 console.log('\n8. Zapis i odczyt są podpięte w aplikacji');

@@ -12983,17 +12983,33 @@ function tenSamTalent(t, n){
   return !t.club || !n.club || klubyToSamo(t.club, n.club) || nazwiskoNorm(t.club) === nazwiskoNorm(n.club);
 }
 
+// SCALANIE POWOŁANYCH Z LISTĄ, KTÓRA JUŻ JEST.
+//
+// Zgłoszenie (03.11.2026): „nie zapisuje zawodników do danej reprezentacji… jak się powielają,
+// to nie dopisuje". Były tu dwa osobne błędy.
+//
+// PIERWSZY: zawodnik BEZ nazwy kadry w treści wklejki szedł prosto na listę, bez żadnego
+// sprawdzenia duplikatu. Każde ponowne wklejenie tej samej listy zakładało komplet nowych wpisów.
+// Teraz duplikat rozpoznajemy ZAWSZE, niezależnie od tego, czy wklejka niesie nazwę kadry.
+//
+// DRUGI: porównywaliśmy tylko z tym, co już było na liście — nie z tym, co właśnie dodaliśmy
+// w tym samym przebiegu. Ta sama osoba wymieniona dwa razy w jednym komunikacie wchodziła dwa razy.
 function scalPowolanychZIstniejacymi(istniejace, nowe){
   const doDodania = [];
   let uzupelnieni = 0;
   (nowe || []).forEach(n=>{
-    if(!n.reprezentacja){ doDodania.push(n); return; }
-    const pasujacy = (istniejace || []).filter(t=> tenSamTalent(t, n));
-    const ten = pasujacy.find(t=>t.reprezentacja === n.reprezentacja) || pasujacy[0];
-    if(!ten){ doDodania.push(n); return; }
-    ten.reprezentacja = n.reprezentacja;
+    // Także wśród dopiero co dodanych — inaczej dublet wewnątrz jednej wklejki przechodzi.
+    const pasujacy = (istniejace || []).filter(t=> tenSamTalent(t, n))
+      .concat(doDodania.filter(t=> tenSamTalent(t, n)));
+    if(!pasujacy.length){ doDodania.push(n); return; }
+    // Gdy ktoś ma już wpis w TEJ kadrze, uzupełniamy właśnie jego; inaczej pierwszy pasujący.
+    const ten = (n.reprezentacja && pasujacy.find(t=>t.reprezentacja === n.reprezentacja)) || pasujacy[0];
+    // Kadra z wklejki jest nadrzędna: powołanie to fakt, a nie podpowiedź. Pozostałe pola
+    // uzupełniamy tylko wtedy, gdy ich nie ma — nic wpisanego ręcznie nie ginie.
+    if(n.reprezentacja) ten.reprezentacja = n.reprezentacja;
     if(n.krajKlubu && !ten.krajKlubu) ten.krajKlubu = n.krajKlubu;
     if(n.club && !ten.club) ten.club = n.club;
+    if(n.europa) ten.europa = true;
     uzupelnieni++;
   });
   return { doDodania, uzupelnieni };
@@ -19798,13 +19814,28 @@ function attachHandlers(){
     // Powołany, który JUŻ jest na liście, dostaje kadrę dopisaną do swojego wpisu — nie drugi wpis.
     // Tak też odzyskuje się kadrę, którą wcześniej wyciął zapis: wystarczy wkleić komunikat ponownie.
     if(talentKadra === 'europa') toAdd.forEach(x=>{ x.europa = true; });
+    // OTWARTA ZAKŁADKA KADRY WYZNACZA KADRĘ.
+    //
+    // Komunikat PZPN niesie nazwę kadry w treści i stamtąd ją czytaliśmy. Ale zwykła lista
+    // nazwisk — a taką najczęściej się wkleja — nie mówi o kadrze nic, więc zawodnicy lądowali
+    // bez przypisania, czyli w „Talencie klubowym", choć dodawano ich stojąc na zakładce U-17.
+    // Skoro ktoś otworzył zakładkę kadry i wkleja listę, to jest lista TEJ kadry.
+    if(KADRY_MLODZIEZOWE.includes(talentKadra)){
+      toAdd.forEach(x=>{ if(!x.reprezentacja) x.reprezentacja = talentKadra; });
+    }
     const { doDodania, uzupelnieni } = scalPowolanychZIstniejacymi(DB.talents, toAdd);
     DB.talents.push(...doDodania);
     const ok = await saveTalents();
     if(!ok){ alert(('Nie udało się zapisać.' + powodNieudanegoZapisu())); return; }
     talentPasteText = ''; talentPasteParsed = null;
     render();
-    if(uzupelnieni) pokazPotwierdzenie(`Dodano ${doDodania.length}. ${uzupelnieni} ${uzupelnieni===1?'zawodnik już był':'zawodników już było'} na liście — dopisałem kadrę do istniejących wpisów zamiast tworzyć duplikaty.`, 'ok');
+    // Komunikat mówi, DOKĄD trafili — bez tego nie wiadomo, czy powołanie się zapisało.
+    const gdzie = KADRY_MLODZIEZOWE.includes(talentKadra) ? ` do kadry ${talentKadra}` : '';
+    pokazPotwierdzenie(
+      `Dodano ${doDodania.length}${gdzie}.`
+      + (uzupelnieni ? ` ${uzupelnieni} ${uzupelnieni===1?'zawodnik już był':'zawodników już było'} na liście`
+        + `${gdzie ? ' — przypisałem im tę kadrę' : ' — nie tworzę duplikatów'}.` : ''),
+      'ok');
   });
   main.querySelectorAll('.contact-remove-btn').forEach(b=>b.onclick=async()=>{
     const ok = await deleteContactRecord(b.dataset.id);
