@@ -13431,6 +13431,16 @@ function viewTalent(){
   // ZAKŁADKI KADR. Liczba przy każdej mówi, ilu mamy — a zero jest tu równie ważne jak dwadzieścia
   // dwa: pokazuje, której kadry brakuje, zamiast ukrywać ją przed oczami.
   const iluWKadrze = (k)=> DB.talents.filter(t=>wKadrze(t, k)).length;
+  // KADRY SPOZA STAŁEJ LISTY — ŻEBY NIKT NIE ZOSTAŁ NIEWIDOCZNY.
+  //
+  // Zakładki pokazywały wyłącznie U-21…U-15 i „Talent klubowy" (ci BEZ kadry). Zawodnik
+  // z jakąkolwiek inną nazwą kadry — a parser wklejki wpisuje „kadra Polski", gdy w treści nie
+  // znajdzie rocznika — nie mieścił się w żadnej z nich i przepadał z widoku, choć siedział
+  // w bazie. Zakładka buduje się więc z tego, co NAPRAWDĘ jest na liście, a nie z nazw znanych
+  // z góry: każda nowa nazwa kadry dostaje własny przycisk, zamiast chować ludzi.
+  const kadryInne = [...new Set(DB.talents
+    .map((t: any)=> String((t && t.reprezentacja) || ''))
+    .filter(k=> k && !KADRY_MLODZIEZOWE.includes(k)))].sort((a,b)=> a.localeCompare(b, 'pl'));
   const pigulkaKadry = (wartosc, etykieta, ile, ikona = '')=> pill(
     ile != null ? `${etykieta} (${ile})` : etykieta,
     talentKadra === wartosc, 'talent-kadra', {val: wartosc}, ikona);
@@ -13439,7 +13449,7 @@ function viewTalent(){
   // ZNAK PZPN PRZY KADRACH — to PZPN powołuje, więc jego logo mówi o tych przyciskach więcej niż
   // biało-czerwone kółko z liczbą. Wiek i tak stoi w etykiecie obok („U-17"), nic więc nie ginie.
   const znaczekKadry = (k)=> `<img src="/logo-pzpn.png" alt="" class="znaczek-kadry-pzpn${talentKadra === k ? ' na-ciemnym' : ''}"
-    title="Kadra ${esc(String(k))} — powołania PZPN">`;
+    title="${esc(/kadra/i.test(String(k)) ? String(k) : 'Kadra ' + String(k))} — powołania PZPN">`;
   const tarczaTalentu = `<svg aria-hidden="true" class="znaczek-klubowy" viewBox="0 0 44 44" width="20" height="22">
       <path d="M22 3 L38 8 L38 21 C38 30.5 31 37.5 22 40.5 C13 37.5 6 30.5 6 21 L6 8 Z" fill="var(--pitch)" stroke="var(--gold)" stroke-width="2.6"/>
       <path d="M22 11.5 l3.1 6.3 6.9 1 -5 4.9 1.2 6.9 -6.2 -3.3 -6.2 3.3 1.2 -6.9 -5 -4.9 6.9 -1 z" fill="var(--gold)"/>
@@ -13457,7 +13467,7 @@ function viewTalent(){
     <div class="filters" style="margin-bottom:0;">${pigulkaKadry('', 'Wszyscy', DB.talents.length)}</div>
     <div class="talent-sekcja talent-sekcja-repr">
       ${naglowekSekcji('Reprezentanci')}
-      <div class="filters" style="margin-bottom:0;">${KADRY_MLODZIEZOWE.map(k=>pigulkaKadry(k, k, iluWKadrze(k), znaczekKadry(k))).join('')}</div>
+      <div class="filters" style="margin-bottom:0;">${KADRY_MLODZIEZOWE.map(k=>pigulkaKadry(k, k, iluWKadrze(k), znaczekKadry(k))).join('')}${kadryInne.map(k=>pigulkaKadry(k, k, iluWKadrze(k), znaczekKadry(k))).join('')}</div>
     </div>
     <div class="talent-sekcja talent-sekcja-klub">
       <div class="filters" style="margin-bottom:0;">${pigulkaKadry('inni', 'Talent klubowy', iluWKadrze('inni'), tarczaTalentu)}${pigulkaKadry('europa', 'Europa', iluWKadrze('europa'), '🌍')}</div>
@@ -19814,14 +19824,19 @@ function attachHandlers(){
     // Powołany, który JUŻ jest na liście, dostaje kadrę dopisaną do swojego wpisu — nie drugi wpis.
     // Tak też odzyskuje się kadrę, którą wcześniej wyciął zapis: wystarczy wkleić komunikat ponownie.
     if(talentKadra === 'europa') toAdd.forEach(x=>{ x.europa = true; });
-    // OTWARTA ZAKŁADKA KADRY WYZNACZA KADRĘ.
+    // OTWARTA ZAKŁADKA KADRY WYZNACZA KADRĘ — I BIJE DOMYSŁ PARSERA.
     //
-    // Komunikat PZPN niesie nazwę kadry w treści i stamtąd ją czytaliśmy. Ale zwykła lista
-    // nazwisk — a taką najczęściej się wkleja — nie mówi o kadrze nic, więc zawodnicy lądowali
-    // bez przypisania, czyli w „Talencie klubowym", choć dodawano ich stojąc na zakładce U-17.
-    // Skoro ktoś otworzył zakładkę kadry i wkleja listę, to jest lista TEJ kadry.
-    if(KADRY_MLODZIEZOWE.includes(talentKadra)){
-      toAdd.forEach(x=>{ if(!x.reprezentacja) x.reprezentacja = talentKadra; });
+    // Zgłoszenie (03.11.2026): „wkleiłem 21, a w U-17 dalej jest 4". Lista w postaci
+    // „1. Adam Garwoliński (FASE Szczecin)" idzie ścieżką powołań PZPN, a ta — gdy w treści nie
+    // ma nazwy rocznika — wpisywała z rozpędu „kadra Polski". Taki zawodnik nie pasował POTEM
+    // do ŻADNEJ zakładki: ani do U-…, ani do „Talentu klubowego" (ten bierze tylko tych BEZ
+    // kadry). Dwudziestu jeden zapisało się poprawnie i zniknęło z oczu.
+    //
+    // Pierwszeństwo jest więc takie: nazwa kadry WYCZYTANA Z TREŚCI (fakt) → otwarta zakładka
+    // (świadomy wybór) → „kadra Polski" (domysł). Domysł nie może wygrywać z wyborem.
+    const kadraZWklejki = kadraZTekstu(talentPasteText);
+    if(KADRY_MLODZIEZOWE.includes(talentKadra) && !kadraZWklejki){
+      toAdd.forEach(x=>{ x.reprezentacja = talentKadra; });
     }
     const { doDodania, uzupelnieni } = scalPowolanychZIstniejacymi(DB.talents, toAdd);
     DB.talents.push(...doDodania);

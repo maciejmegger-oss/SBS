@@ -111,10 +111,50 @@ console.log("\n7. Zakładka kadry wyznacza kadrę przy imporcie");
 {
   // Bez tego dwadzieścia jeden nazwisk wklejonych na zakładce U-17 trafiało do „Talentu klubowego".
   sprawdz("import przypisuje otwartą kadrę",
-    /KADRY_MLODZIEZOWE\.includes\(talentKadra\)\)\{[\s\S]{0,160}x\.reprezentacja = talentKadra/.test(zrodlo));
+    /KADRY_MLODZIEZOWE\.includes\(talentKadra\)[\s\S]{0,200}x\.reprezentacja = talentKadra/.test(zrodlo));
   // Nazwa kadry z treści komunikatu ma pierwszeństwo — PZPN wie lepiej niż otwarta zakładka.
-  sprawdz("ale nie nadpisuje kadry z treści", /if\(!x\.reprezentacja\) x\.reprezentacja = talentKadra/.test(zrodlo));
+  // (Jak dokładnie to rozstrzygamy, sprawdza punkt 8.)
   sprawdz("potwierdzenie mówi, do której kadry", /Dodano \$\{doDodania\.length\}\$\{gdzie\}/.test(zrodlo));
+}
+
+console.log("\n8. Lista „1. Nazwisko (Klub)” bez rocznika w treści");
+{
+  // DRUGIE ZGŁOSZENIE tego samego dnia: „dalej jest 4, wkleiłem 21". Poprawka z punktu 7
+  // nie wystarczyła, bo przypisywała kadrę tylko tym BEZ kadry — a parser zdążył już wpisać
+  // „kadra Polski". Taki zawodnik nie pasował do ŻADNEJ zakładki: ani do U-…, ani do „Talentu
+  // klubowego" (ten bierze wyłącznie tych bez kadry). Zapisywali się poprawnie i znikali z oczu.
+  const { kadraZTekstu, osobyZPowolaniaPzpn } = new Function(
+    `${wytnij("kadraZTekstu", /function kadraZTekstu\(tekst\)\{[\s\S]*?\n\}/)}
+     ${wytnij("osobyZPowolaniaPzpn", /function osobyZPowolaniaPzpn\(tekst\)\{[\s\S]*?\n\}/)}
+     return { kadraZTekstu, osobyZPowolaniaPzpn };`)();
+
+  const lista = `1. Adam Garwoliński (FASE Szczecin)
+2. Dawid Świątek (Górnik Zabrze)
+3. Kornel Brzózka (Jagiellonia Białystok)
+4. Aleks Olsztyn (Lech Poznań)
+5. Łukasz Zajączkowski (Śląsk Wrocław)`;
+  sprawdz("lista idzie ścieżką powołań PZPN", osobyZPowolaniaPzpn(lista).length === 5,
+    osobyZPowolaniaPzpn(lista).length);
+  // Sedno: w tej treści NIE MA nazwy kadry, więc parser wstawiał domysł „kadra Polski".
+  sprawdz("w treści nie ma nazwy kadry", kadraZTekstu(lista) === "", kadraZTekstu(lista));
+  sprawdz("komunikat PZPN nazwę kadry niesie", kadraZTekstu("Powołania do kadry U-17 na zgrupowanie") === "U-17");
+
+  // Pierwszeństwo: treść (fakt) → otwarta zakładka (wybór) → „kadra Polski" (domysł).
+  sprawdz("zakładka bije domysł parsera",
+    /const kadraZWklejki = kadraZTekstu\(talentPasteText\);[\s\S]{0,220}!kadraZWklejki\)\{[\s\S]{0,120}x\.reprezentacja = talentKadra/.test(zrodlo));
+  sprawdz("ale nie bije nazwy z treści komunikatu",
+    !/if\(KADRY_MLODZIEZOWE\.includes\(talentKadra\)\)\{\s*\n\s*toAdd\.forEach\(x=>\{ x\.reprezentacja = talentKadra/.test(zrodlo));
+}
+
+console.log("\n9. Żadna kadra nie chowa zawodnika przed zakładkami");
+{
+  // Zakładki budują się z tego, co NAPRAWDĘ jest na liście. Bez tego każda nazwa kadry spoza
+  // stałej siódemki (choćby „kadra Polski") czyniła zawodnika niewidocznym we wszystkich widokach
+  // poza „Wszyscy" — a tak właśnie zniknęło dwudziestu jeden powołanych.
+  sprawdz("zakładki dla kadr spoza stałej listy powstają z danych",
+    /const kadryInne = \[\.\.\.new Set\(DB\.talents[\s\S]{0,260}!KADRY_MLODZIEZOWE\.includes\(k\)\)\)\]/.test(zrodlo));
+  sprawdz("i trafiają do paska Reprezentanci",
+    /kadryInne\.map\(k=>pigulkaKadry\(k, k, iluWKadrze\(k\)/.test(zrodlo));
 }
 
 console.log(bledy ? `\nBŁĘDÓW: ${bledy}\n` : "\nWszystko w porządku.\n");
