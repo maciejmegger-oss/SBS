@@ -1,5 +1,5 @@
 import "./style.css";
-import { storage } from "./data/storage";
+import { storage, podejrzaniePustaOdpowiedz, wyczyscPamiecKolekcji } from "./data/storage";
 import { pobierzSkrzynke, oznaczWpisSkrzynki, bladSkrzynki } from "./data/skrzynka";
 import { zlecAnalize, pobierzOtwarteZlecenia, odwolajZlecenie } from "./data/zlecenia";
 import { currentUser, signIn, signOut, requestPasswordReset, setNewPassword, isPasswordRecoveryLink,
@@ -4991,6 +4991,27 @@ function renderNav(){
       const btn = banner.querySelector('[data-action="ponow-wczytanie"]');
       if(btn) btn.onclick = ()=>window.location.reload();
       document.body.classList.add('baner-zapisu');
+    } else if(podejrzaniePustaOdpowiedz()){
+      // PUSTE LICZNIKI MAJĄ SIĘ SAME TŁUMACZYĆ.
+      //
+      // Zgłoszenie (09.11.2026): „nie ładuje się strona po logowaniu". Strona ładowała się
+      // poprawnie, tylko wszystko pokazywało zero. Serwer oddał pustą listę rekordów — co przy
+      // PostgREST znaczy albo „nie masz dostępu", albo „tabela jest pusta", i jedno od drugiego
+      // nie różni się ani statusem, ani treścią. Zamiast zostawić użytkownika z zerami bez słowa
+      // wyjaśnienia, mówimy wprost, co widzimy, i dajemy dwa wyjścia.
+      banner.innerHTML = `<div class="save-fail-bar">
+        ⚠️ <strong>Baza nie zwróciła żadnych rekordów</strong> (${esc(podejrzaniePustaOdpowiedz())}), choć w pamięci przeglądarki coś jest.
+        Najczęściej znaczy to, że sesja wygasła albo konto nie ma uprawnień do danych — a nie, że dane zniknęły.
+        Pamięci nie wyczyściłem, więc nic nie przepadło.
+        <button data-action="odswiez-od-zera">Pobierz dane od nowa</button>
+        <button data-action="wyloguj-i-zaloguj">Wyloguj się</button>
+      </div>`;
+      const odNowa = banner.querySelector('[data-action="odswiez-od-zera"]');
+      if(odNowa) odNowa.onclick = async ()=>{ await wyczyscPamiecKolekcji(); window.location.reload(); };
+      const wyloguj = banner.querySelector('[data-action="wyloguj-i-zaloguj"]');
+      if(wyloguj) wyloguj.onclick = ()=>{ const b = document.querySelector('[data-action="logout"]') as HTMLElement | null;
+        if(b) b.click(); else window.location.reload(); };
+      document.body.classList.add('baner-zapisu');
     } else if(lastSaveFailure){
       banner.innerHTML = `<div class="save-fail-bar">
         ⚠️ <strong>Nie udało się zapisać ostatniej zmiany</strong> (${esc(lastSaveFailure.time)}) — dane mogą się nie zachować po zamknięciu strony.
@@ -5003,7 +5024,8 @@ function renderNav(){
     }
     // Przycisk sesji stoi w prawym górnym rogu, czyli dokładnie tam, gdzie baner. Klasa na <body>
     // przesuwa go pod baner na czas, gdy baner jest widoczny.
-    document.body.classList.toggle('baner-zapisu', !!lastSaveFailure || nieudaneOdczyty.length > 0);
+    document.body.classList.toggle('baner-zapisu',
+      !!lastSaveFailure || nieudaneOdczyty.length > 0 || !!podejrzaniePustaOdpowiedz());
   }
 }
 
@@ -18383,6 +18405,16 @@ function viewSettings(){
     </div>
   </div>
   <div class="card">
+    <h4 style="margin-top:0;">Dane nie zgadzają się z bazą?</h4>
+    <p class="note" style="margin-bottom:10px;">Aplikacja trzyma kopię kartoteki w przeglądarce, żeby nie pobierać
+    kilkunastu tysięcy rekordów przy każdym wejściu. Jeśli widzisz <strong>zera zamiast danych</strong>, braki
+    albo rekordy, które powinny już zniknąć — skasuj tę kopię i pobierz wszystko od nowa.
+    Nic nie tracisz: dane są w bazie, kasujesz wyłącznie kopię roboczą w przeglądarce.</p>
+    <button class="secondary" data-action="odswiez-dane-od-zera">↺ Pobierz dane od nowa</button>
+    <p class="note" style="margin:10px 0 0;font-size:11.5px;">Pierwsze wejście po wyczyszczeniu potrwa dłużej —
+    pobiera się komplet danych.</p>
+  </div>
+  <div class="card">
     <h4 style="margin-top:0;">Kopia zapasowa</h4>
     <p class="note" style="margin-bottom:10px;">Zapisuje <strong>wszystkie</strong> dane do jednego pliku na Twoim dysku:
     zawodników, kluby, obserwacje, raporty, talenty, kontakty, agencje, menedżerów, terminarz, herby i ustawienia.
@@ -19421,6 +19453,12 @@ function attachHandlers(){
   });
 
   document.querySelectorAll('[data-action="logout"]').forEach(b=>b.onclick=()=>performLogout());
+  main.querySelectorAll('[data-action="odswiez-dane-od-zera"]').forEach(b=>b.onclick=async ()=>{
+    if(!confirm('Skasować kopię danych trzymaną w przeglądarce i pobrać wszystko od nowa?\n\n'
+      + 'Dane w bazie zostają nietknięte — kasujesz tylko kopię roboczą. Następne wczytanie potrwa dłużej.')) return;
+    await wyczyscPamiecKolekcji();
+    window.location.reload();
+  });
   document.querySelectorAll('[data-action="login-screen"]').forEach(b=>b.onclick=()=>renderLoginScreen());
 
   // Zakładka „Dostęp": decyzje administratora o kontach.

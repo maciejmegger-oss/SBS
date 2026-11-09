@@ -409,6 +409,12 @@ const przemapuj = (table: string, wiersze: Record<string, unknown>[]) => {
   return objs;
 };
 
+// Nazwa ostatniej tabeli, dla której serwer oddał pustkę mimo niepustej pamięci. Aplikacja czyta
+// to po wczytaniu danych i mówi o tym wprost — milczenie było tu najgorszym rozwiązaniem, bo
+// użytkownik widział puste liczniki i nie miał jak się domyślić, że to sprawa dostępu.
+let ostatniaPustaOdpowiedz = "";
+export function podejrzaniePustaOdpowiedz(): string { return ostatniaPustaOdpowiedz; }
+
 async function getCollection(table: string): Promise<string> {
   const zapamietane = await czytajPamiec(table);
 
@@ -433,8 +439,31 @@ async function getCollection(table: string): Promise<string> {
   const wgId = new Map<string, Record<string, unknown>>();
   for (const o of zapamietane.obiekty) wgId.set(String(o.id), o);
   for (const o of przemapuj(table, zmienione)) wgId.set(String(o.id), o);
+
+  // PUSTA ODPOWIEDŹ SERWERA TO NIE JEST POLECENIE „SKASUJ WSZYSTKO".
+  //
+  // Zgłoszenie (09.11.2026): „nie ładuje się strona po logowaniu" — strona się ładowała, tylko
+  // każdy licznik pokazywał zero, łącznie z ustawieniami. Przyczyna siedziała dokładnie tutaj.
+  //
+  // Czyszczenie rekordów usuniętych opiera się na liście identyfikatorów z serwera: czego na niej
+  // nie ma, to wypada z pamięci. Kłopot w tym, że PostgREST przy odmowie dostępu (RLS, wygasła
+  // albo niedołączona sesja) nie zwraca błędu — zwraca 200 i pustą tablicę. Dla tego kodu
+  // wyglądało to identycznie jak „na serwerze nie ma już ani jednego wiersza", więc kasował całą
+  // kartotekę, zapisywał tę pustkę w IndexedDB i od tej pory pustka wracała przy każdym wejściu.
+  // Bez wejścia w narzędzia deweloperskie nie dało się z tego wyjść.
+  //
+  // Dlatego: gdy w pamięci COŚ jest, a serwer nie oddał ani jednego identyfikatora, nie ruszamy
+  // niczego. Nieaktualny rekord na ekranie jest kłopotem drobnym i sam zniknie przy następnej
+  // prawdziwej zmianie; wyczyszczona kartoteka wygląda jak utrata danych.
   let usunietych = 0;
-  for (const id of [...wgId.keys()]) if (!naSerwerze.has(id)) { wgId.delete(id); usunietych++; }
+  const podejrzanaPustka = naSerwerze.size === 0 && wgId.size > 0;
+  if (podejrzanaPustka) {
+    console.warn(`${table}: serwer nie zwrócił ani jednego rekordu, a w pamięci jest ${wgId.size}. `
+      + "Nie czyszczę pamięci — to wygląda na brak dostępu (sesja albo RLS), a nie na pustą tabelę.");
+    ostatniaPustaOdpowiedz = table;
+  } else {
+    for (const id of [...wgId.keys()]) if (!naSerwerze.has(id)) { wgId.delete(id); usunietych++; }
+  }
 
   const objs = [...wgId.values()];
   loadedIds[table] = new Set(objs.map((o) => String(o.id)));
