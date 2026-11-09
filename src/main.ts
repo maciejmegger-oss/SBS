@@ -13283,6 +13283,101 @@ async function dociagnijHerbyZewnetrzne(nazwy){
   if(zmienione) await zapiszHerbyZewnetrzne();
 }
 
+// KTÓRE TALENTY SĄ TERAZ NA EKRANIE.
+//
+// Jedno miejsce dla widoku i dla pobierania do Excela. Przy arkuszu komitetu ten sam rozjazd
+// kosztował trzy podejścia („pobiera całość”), bo eksport miał własny warunek i brał z bazy
+// więcej, niż pokazywała lista. Tutaj obie drogi pytają o to samo.
+function talentyWidoczne(){
+  const wKadrze = (t, k)=> k === 'europa' ? !!t.europa
+    : k === 'inni' ? (!t.reprezentacja && !t.europa) : String(t.reprezentacja||'') === k;
+  return (talentKadra ? DB.talents.filter(t=>wKadrze(t, talentKadra)) : DB.talents)
+    .filter(t=> talentKadra !== 'inni' || wRocznikuTalentu(t, talentRocznik))
+    .filter(t=> talentKadra !== 'europa' || !talentKraj || krajEuropy(t) === talentKraj)
+    .filter(t=> talentPasuje(t, talentSzukaj));
+}
+
+/** Nazwa zakładki, w której stoisz — do nagłówka arkusza i do nazwy pliku. */
+function opisZakladkiTalentow(){
+  if(talentKadra === 'europa') return 'Europa' + (talentKraj ? ' — ' + talentKraj : '');
+  if(talentKadra === 'inni') return 'Talent klubowy'
+    + (talentRocznik === 'brak' ? ' — bez rocznika' : talentRocznik ? ' — rocznik ' + talentRocznik : '');
+  if(talentKadra) return talentKadra;
+  return 'Wszyscy';
+}
+
+// POBIERANIE LISTY TALENTÓW DO EXCELA.
+//
+// Zgłoszenie (09.11.2026): „zrób przycisk pobierania listy w zakładkach talent, Excel".
+// Pobiera DOKŁADNIE to, co widać: wybraną zakładkę, rocznik albo kraj i wpisane szukanie.
+// Dzięki temu nie trzeba tłumaczyć, czemu w pliku jest co innego niż na ekranie — a przy
+// arkuszu komitetu właśnie to było źródłem nieporozumienia.
+function pobierzArkuszTalentow(){
+  if(!XLSX) { alert('Biblioteka do arkuszy nie jest dostępna — odśwież stronę i spróbuj ponownie.'); return; }
+  const lista = talentyWidoczne();
+  if(!lista.length){
+    alert('W tej zakładce nie ma nikogo do zapisania.\n\nZmień zakładkę albo wyczyść wyszukiwanie.');
+    return;
+  }
+  const zakladka = opisZakladkiTalentow();
+  const poNazwisku = indeksZawodnikowPoNazwisku();
+
+  // Rocznik rosnąco (najstarsi pierwsi), w roczniku alfabetycznie. Bez rocznika — na koniec,
+  // bo nie da się ich ustawić chronologicznie, a wtrąceni w środek psują porządek listy.
+  const posortowani = lista.slice().sort((a: any, b: any)=>{
+    const ra = Number(a.birthYear) || null, rb = Number(b.birthYear) || null;
+    if(ra !== rb){
+      if(ra == null) return 1;
+      if(rb == null) return -1;
+      return ra - rb;
+    }
+    return String(a.lastName||'').localeCompare(String(b.lastName||''), 'pl')
+      || String(a.firstName||'').localeCompare(String(b.firstName||''), 'pl');
+  });
+
+  const naglowki = ['Rocznik', 'Nazwisko', 'Imię', 'Pozycja', 'Klub', 'Liga', 'Kraj',
+    'Kadra', 'Minuty', 'Mecze', 'Gole', 'Asysty', 'W bazie', 'Transfermarkt'];
+  console.info(`Arkusz talentów [${zakladka}]: ${posortowani.length} z ${DB.talents.length} wpisów na liście`);
+
+  const wiersze = posortowani.map((t: any)=>{
+    const klub = klubTalentu(t);
+    const karta = kartotekaDlaTalentu(t, klub, poNazwisku);
+    const s = statTalentu(t);
+    const nmg = (t.pozycjeNmg || [])[0];
+    const defPozycji = nmg ? POSITION_NUMBERS.find(x=>x.number === nmg) : null;
+    return [
+      Number(t.birthYear) || '',
+      t.lastName || '',
+      t.firstName || '',
+      t.pozycja || (defPozycji ? defPozycji.posName : ''),
+      (klub && klub.name) || t.club || '',
+      (klub && klub.league) || (s && s.liga) || '',
+      t.krajKlubu || '',
+      t.reprezentacja || '',
+      s && s.min ? s.min : '',
+      s && s.wyst ? s.wyst : '',
+      s && s.gole ? s.gole : '',
+      s && s.asysty ? s.asysty : '',
+      karta ? 'tak' : 'nie',
+      t.tmLink || '',
+    ];
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet([naglowki, ...wiersze]);
+  ws['!cols'] = [{wch:8},{wch:20},{wch:16},{wch:20},{wch:26},{wch:18},{wch:14},
+    {wch:12},{wch:9},{wch:8},{wch:7},{wch:8},{wch:9},{wch:38}];
+  ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+  ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s:{r:0,c:0}, e:{r:wiersze.length, c:naglowki.length-1} }) };
+
+  const wb = XLSX.utils.book_new();
+  // Nazwa arkusza w Excelu ma limit 31 znaków i nie przyjmuje części znaków — stąd przycięcie.
+  XLSX.utils.book_append_sheet(wb, ws, zakladka.replace(/[\\/?*[\]:]/g, ' ').slice(0, 31) || 'Talenty');
+  const doNazwy = (s)=> String(s).toLowerCase()
+    .replace(/[łøđ]/g, c=>({'ł':'l','ø':'o','đ':'d'}[c]))
+    .normalize('NFD').replace(/\p{M}/gu,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+  XLSX.writeFile(wb, `talenty_${doNazwy(zakladka) || 'lista'}_${dzisiaj()}.xlsx`);
+}
+
 function viewTalent(){
   // SEGREGACJA WEDŁUG ROCZNIKÓW.
   //
@@ -13303,10 +13398,10 @@ function viewTalent(){
   const wKadrze = (t, k)=> k === 'europa' ? !!t.europa
     : k === 'inni' ? (!t.reprezentacja && !t.europa) : String(t.reprezentacja||'') === k;
   // „Talent klubowy" (dawniej „Poza kadrą") zawęża się dodatkowo do wybranego rocznika.
-  const widoczne = (talentKadra ? DB.talents.filter(t=>wKadrze(t, talentKadra)) : DB.talents)
-    .filter(t=> talentKadra !== 'inni' || wRocznikuTalentu(t, talentRocznik))
-    .filter(t=> talentKadra !== 'europa' || !talentKraj || krajEuropy(t) === talentKraj)
-    .filter(t=> talentPasuje(t, talentSzukaj));
+  // Sam dobór siedzi w talentyWidoczne() — poza widokiem, bo korzysta z niego także pobieranie
+  // listy do Excela. Gdyby każde miało własną kopię warunków, prędzej czy później arkusz
+  // zawierałby co innego niż to, na co patrzysz na ekranie.
+  const widoczne = talentyWidoczne();
   // Ilu pasuje w CAŁEJ liście talentów — przy 1838 wpisach łatwo szukać kogoś w zakładce U-15,
   // kiedy on siedzi w talencie klubowym. Zamiast pustej listy mówimy, gdzie jest.
   const trafieniaWszedzie = talentSzukaj.trim()
@@ -13532,6 +13627,13 @@ function viewTalent(){
       placeholder="Szukaj: nazwisko, klub, pozycja, rocznik…" aria-label="Szukaj w liście talentów">
     ${talentSzukaj.trim() ? `<button class="secondary" data-action="talent-szukaj-wyczysc">Wyczyść</button>
       <span class="note" style="margin:0;">${rows.length === 1 ? 'jedno trafienie' : 'trafień: ' + rows.length}</span>` : ''}
+    ${/* Pobieranie bierze dokładnie tę listę, którą widać — zakładkę, rocznik, kraj i szukanie.
+          Dlatego liczba stoi wprost na przycisku: widać, ile wierszy będzie w pliku, zanim się
+          go otworzy. */''}
+    <button class="secondary" data-action="talent-arkusz" style="margin-left:auto;"
+      title="Zapisuje do pliku .xlsx dokładnie tę listę, którą teraz widzisz — zakładkę „${esc(opisZakladkiTalentow())}”${
+        talentSzukaj.trim() ? ' zawężoną wyszukiwaniem' : ''}"
+      ${rows.length ? '' : 'disabled'}>⭳ Pobierz listę (${rows.length})</button>
   </div>
   ${talentSzukaj.trim() && !rows.length && trafieniaWszedzie ? `<div class="empty" style="margin-bottom:10px;">
     W tej zakładce nic nie pasuje, ale w całej liście talentów
@@ -19802,6 +19904,7 @@ function attachHandlers(){
     };
   }
   main.querySelectorAll('[data-action="talent-szukaj-wyczysc"]').forEach(b=>b.onclick=()=>{ talentSzukaj = ''; render(); });
+  main.querySelectorAll('[data-action="talent-arkusz"]').forEach(b=>b.onclick=()=>pobierzArkuszTalentow());
   main.querySelectorAll('[data-action="talent-szukaj-wszedzie"]').forEach(b=>b.onclick=()=>{
     talentKadra = ''; talentRocznik = ''; talentKraj = ''; render();
   });
