@@ -13283,6 +13283,34 @@ async function dociagnijHerbyZewnetrzne(nazwy){
   if(zmienione) await zapiszHerbyZewnetrzne();
 }
 
+// KLUB WPISANY PRZY TALENCIE, DOPASOWANY DO KARTOTEKI KLUBÓW.
+//
+// Funkcja stała przedtem WEWNĄTRZ viewTalent. Dopóki korzystał z niej sam widok, nikomu to nie
+// przeszkadzało — ale pobieranie listy do Excela woła ją spoza widoku i dostawało
+// „klubTalentu is not defined”. Klik w przycisk kończył się wtedy wyjątkiem w konsoli i niczym
+// więcej: plik się nie pobierał i nic tego nie tłumaczyło. Nazwy klubów powtarzają się na liście
+// setki razy, więc wynik dopasowania zapamiętujemy.
+//
+// Przedtem mapa powstawała od nowa przy każdym przerysowaniu i przez to nie mogła się zestarzeć.
+// Teraz żyje dłużej, więc sama pilnuje, czy kartoteka klubów się nie zmieniła — inaczej po
+// imporcie nowych klubów talent dalej pokazywałby „klubu nie ma w bazie”.
+const pamiecKlubowTalentu = new Map();
+let pamiecKlubowDlaIlu = -1;
+function klubTalentu(t){
+  if(pamiecKlubowDlaIlu !== (DB.clubs || []).length){
+    pamiecKlubowTalentu.clear();
+    pamiecKlubowDlaIlu = (DB.clubs || []).length;
+  }
+  const nazwa = String((t && t.club) || '').split(' / ')[0].trim();
+  if(!nazwa) return null;
+  if(!pamiecKlubowTalentu.has(nazwa)){
+    let k = null;
+    try{ k = dopasujKlubDoNazwy(nazwa); }catch(e){ k = null; }
+    pamiecKlubowTalentu.set(nazwa, k);
+  }
+  return pamiecKlubowTalentu.get(nazwa);
+}
+
 // KTÓRE TALENTY SĄ TERAZ NA EKRANIE.
 //
 // Jedno miejsce dla widoku i dla pobierania do Excela. Przy arkuszu komitetu ten sam rozjazd
@@ -13434,17 +13462,6 @@ function viewTalent(){
   //
   // Klub i kartotekę dopasowujemy raz na przerysowanie, z pamięcią po nazwie klubu: te same kluby
   // powtarzają się w dziesiątkach wpisów, a dopasowanie nazwy do bazy klubów nie jest darmowe.
-  const klubPoNazwie = new Map();
-  const klubTalentu = (t)=>{
-    const nazwa = String(t.club || '').split(' / ')[0].trim();
-    if(!nazwa) return null;
-    if(!klubPoNazwie.has(nazwa)){
-      let k = null;
-      try{ k = dopasujKlubDoNazwy(nazwa); }catch(e){ k = null; }
-      klubPoNazwie.set(nazwa, k);
-    }
-    return klubPoNazwie.get(nazwa);
-  };
   // Kartoteka tego talentu — patrz kartotekaDlaTalentu: imię i nazwisko (także odwrócone), klub
   // rozstrzyga między imiennikami. Link do cudzego profilu jest gorszy niż brak linku.
   const zawodnicyPoNazwisku = indeksZawodnikowPoNazwisku();
