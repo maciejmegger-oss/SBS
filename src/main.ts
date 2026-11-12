@@ -3909,7 +3909,10 @@ function profilZawodnikaHtml(p){
       Nie korzystamy z danych xG ani percentyli z zewnętrznych serwisów — wszystko powyżej
       pochodzi z własnych obserwacji.`}</p>
     <p class="pzj-stopka-marka">Scout Base System &middot; Ellite-Sports &middot; wygenerowano ${
-      esc(new Date().toISOString().slice(0,10))}</p>
+      // dzisiaj(), a nie toISOString(): po 22:00 czasu polskiego ten drugi wpisuje dzień
+      // wczorajszy, bo liczy w strefie UTC. Na dokumencie wychodzącym do klubu to wygląda
+      // jak wczorajszy raport.
+      esc(dzisiaj())}</p>
   </footer>
 </article>`;
 }
@@ -13060,7 +13063,10 @@ const statTalentu = (t)=>{
   return id ? statEuropy(id) : null;
 };
 const ligaTalentu = (t)=>{ const s = statTalentu(t); return s && s.liga ? s.liga : ''; };
-const krajEuropy = (t)=> String((t && t.krajKlubu) || '').split(/ · | U-\d/)[0].trim() || 'Inne';
+// Kraj zawodnika z zagranicznego klubu. Komunikat PZPN na pzpn.pl podaje sam klub, bez kraju,
+// więc „nie wiem" jest tu stanem częstym — i musi się tak nazywać. Dawne „Inne" sugerowało kraj
+// spoza listy, a chodzi o brak danej: kraj dopisuje się ręcznie albo przychodzi z Transfermarktu.
+const krajEuropy = (t)=> String((t && t.krajKlubu) || '').split(/ · | U-\d/)[0].trim() || 'Kraj nieznany';
 // Rocznik w „Talencie klubowym": '' = wszystkie, 'brak' = bez rocznika, inaczej rok („2013").
 let talentRocznik = '';
 function wRocznikuTalentu(t, rocznik){
@@ -13317,17 +13323,74 @@ function klubTalentu(t){
 // Zgłoszenie (12.11.2026): „jak zaznaczę kluby polskie, to wyświetlą mi się zawodnicy grający
 // w polskich klubach, a jak zagraniczne — to z zagranicznych. A ogólny, to wszyscy".
 //
-// Rozstrzygamy po dopisku kraju, bo taka jest konwencja źródła: PZPN w komunikacie o powołaniach
-// podaje kraj WYŁĄCZNIE przy klubie zagranicznym (patrz komentarz przy wczytywaniu powołań —
-// „brak dopisku znaczy klub polski"). Dla zawodnika z zakładki Europa kraj jest zawsze, więc
-// trafia tam, gdzie powinien. Nazwa kraju bywa sklejona z kategorią („Szwecja · U-19"), stąd
-// obcięcie — to ta sama zasada, z której korzysta podział na kraje w zakładce Europa.
+// DRUGIE ZGŁOSZENIE tego samego dnia: „zawodnik gra w zagranicznym klubie, a po zaznaczeniu
+// selekcji zagraniczne on zostaje w klubach polskich".
+//
+// Pierwsza wersja pytała WYŁĄCZNIE o dopisek kraju, bo taka jest konwencja komunikatu PZPN
+// z 90minut: kraj stoi tam tylko przy klubie zagranicznym. Ale strona pzpn.pl, z której wczytano
+// kadry od U-15 do U-21, podaje sam klub — „Bartosz Kowalski (RCD Espanyol)", bez kraju. Dla tych
+// dwustu zawodników reguła „brak dopisku znaczy klub polski" odpowiadała więc zawsze „Polska",
+// a Espanyol, Chelsea i Porto lądowały wśród polskich klubów.
+//
+// Jedyna dana, która jest ZAWSZE, to nazwa klubu — a bazę polskich klubów mamy kompletną.
+// Pytamy po kolei, od najpewniejszego:
+//   1. ręczny znacznik Europa — ktoś tak postanowił,
+//   2. kraj podany przez źródło — fakt z komunikatu,
+//   3. dopasowanie nazwy klubu do bazy klubów — klub, którego w niej nie ma, jest zagraniczny,
+//   4. brak klubu — NIE zgadujemy: „nie wiem" to nie to samo co „zagranica".
+//
+// Nazwa kraju bywa sklejona z kategorią („Szwecja · U-19"), stąd obcięcie — ta sama zasada,
+// z której korzysta podział na kraje w zakładce Europa.
+//
+// CENA PUNKTU 3: polski klub, którego nie ma w bazie (akademia, niższa liga), zostanie uznany
+// za zagraniczny. Dlatego zakładka Europa wypisuje z nazwy kluby, które tak rozpoznała — błąd
+// widać od razu, a naprawia się go dodaniem klubu do bazy, nie poprawką w kodzie.
 const krajKlubuTalentu = (t)=> String((t && t.krajKlubu) || '').split(/ · | U-\d/)[0].trim();
 const talentWKlubieZagranicznym = (t)=>{
+  if(!t) return false;
+  if(t.europa) return true;
   const kraj = krajKlubuTalentu(t);
-  if(!kraj) return false;
-  return !/^(polska|poland|pol)$/i.test(kraj);
+  if(kraj) return !/^(polska|poland|pol)$/i.test(kraj);
+  if(!String(t.club || '').trim()) return false;
+  return !klubTalentu(t);
 };
+
+// ZAWĘŻENIE DO JEDNEJ ZAKŁADKI — JEDNA DEFINICJA NA CAŁY PLIK.
+//
+// Widok i pobieranie do Excela liczyły to przedtem osobno. Przy dwóch kopiach tego warunku
+// wystarczy poprawić jedną, żeby arkusz zawierał co innego niż ekran — dokładnie tak powstał
+// rozjazd przy arkuszu komitetu.
+//
+// Zakładka Europa = kluby spoza Polski. „Talent klubowy" to jej dopełnienie: bez powołania
+// i w polskim klubie. Powołany grający za granicą jest w OBU miejscach — w swojej kadrze
+// i w Europie — bo jedno nie wyklucza drugiego.
+function wKadrzeTalentu(t, k){
+  if(k === 'europa') return talentWKlubieZagranicznym(t);
+  if(k === 'inni') return !t.reprezentacja && !talentWKlubieZagranicznym(t);
+  return String(t.reprezentacja || '') === k;
+}
+
+// GÓRNY ROCZNIK KADRY MŁODZIEŻOWEJ.
+//
+// Sezon reprezentacyjny zaczyna się latem, więc od lipca liczy się rok bieżący, a wcześniej
+// poprzedni. PZPN pisze to w każdym komunikacie wprost („U-17, górny rocznik 2010", „U-18,
+// górny rocznik 2009") i zgadza się to z prostym rachunkiem: sezon − numer kadry + 1.
+function sezonReprezentacyjny(dzis = new Date()){
+  return dzis.getMonth() + 1 >= 7 ? dzis.getFullYear() : dzis.getFullYear() - 1;
+}
+function gornyRocznikKadry(kadra, rok = sezonReprezentacyjny()){
+  const m = String(kadra || '').match(/^U-(\d{1,2})$/);
+  return m ? rok - Number(m[1]) + 1 : null;
+}
+// MŁODSZY ROCZNIK W STARSZEJ KADRZE TO NIE BŁĄD, TYLKO WYRÓŻNIENIE — zgłaszamy wyłącznie
+// zawodnika STARSZEGO, niż kadra dopuszcza. Taki wpis znaczy albo zły rocznik, albo powołanie
+// sprzed lat, które zostało przy zawodniku jako ostatnie.
+function rocznikPozaKadra(t, kadra, rok = sezonReprezentacyjny()){
+  const gorny = gornyRocznikKadry(kadra, rok);
+  if(!gorny || !t || !t.birthYear) return false;
+  const r = Number(t.birthYear);
+  return Number.isFinite(r) && r < gorny;
+}
 
 // KTÓRE TALENTY SĄ TERAZ NA EKRANIE.
 //
@@ -13337,9 +13400,7 @@ const talentWKlubieZagranicznym = (t)=>{
 // `bezPodzialuKlubow` pomija ostatni filtr — po to, żeby policzyć, ilu zawodników kryje się pod
 // każdą opcją przełącznika, zanim ten przełącznik cokolwiek zawęzi.
 function talentyWidoczne(bezPodzialuKlubow?: boolean){
-  const wKadrze = (t, k)=> k === 'europa' ? !!t.europa
-    : k === 'inni' ? (!t.reprezentacja && !t.europa) : String(t.reprezentacja||'') === k;
-  const baza = (talentKadra ? DB.talents.filter(t=>wKadrze(t, talentKadra)) : DB.talents)
+  const baza = (talentKadra ? DB.talents.filter(t=>wKadrzeTalentu(t, talentKadra)) : DB.talents)
     .filter(t=> talentKadra !== 'inni' || wRocznikuTalentu(t, talentRocznik))
     .filter(t=> talentKadra !== 'europa' || !talentKraj || krajEuropy(t) === talentKraj)
     .filter(t=> talentPasuje(t, talentSzukaj));
@@ -13449,8 +13510,7 @@ function viewTalent(){
   const rangaGrupy = (t)=> t.reprezentacja ? 0 : 1;
   // Zawężenie do jednej kadry. „Pozostali" to wszyscy bez powołania — talenty z arkuszy
   // i wklejek, czyli dotychczasowa zawartość tej zakładki.
-  const wKadrze = (t, k)=> k === 'europa' ? !!t.europa
-    : k === 'inni' ? (!t.reprezentacja && !t.europa) : String(t.reprezentacja||'') === k;
+  const wKadrze = wKadrzeTalentu;
   // „Talent klubowy" (dawniej „Poza kadrą") zawęża się dodatkowo do wybranego rocznika.
   // Sam dobór siedzi w talentyWidoczne() — poza widokiem, bo korzysta z niego także pobieranie
   // listy do Excela. Gdyby każde miało własną kopię warunków, prędzej czy później arkusz
@@ -13519,10 +13579,13 @@ function viewTalent(){
         <span class="zaw-meta">${isYouthPlayer(jakZawodnik) ? youthBadge(jakZawodnik) : ''}${odznakaMlodszego(jakZawodnik)}</span>
       </div></td>
       <td><span class="talent-rocznik-wrap">
-        <input type="number" inputmode="numeric" class="talent-rocznik${t.birthYear ? '' : ' brak'}" data-id="${t.id}"
+        <input type="number" inputmode="numeric" class="talent-rocznik${t.birthYear ? '' : ' brak'}${
+            rocznikPozaKadra(t, t.reprezentacja) ? ' poza-kadra' : ''}" data-id="${t.id}"
           min="${NAJSTARSZY_ROCZNIK_TALENTU}" max="${new Date().getFullYear()}" placeholder="rocznik"
           value="${t.birthYear ? esc(String(t.birthYear)) : ''}"
-          title="Wpisz rocznik i naciśnij Enter — zapisze się i przejdziesz do następnego wiersza"
+          title="${rocznikPozaKadra(t, t.reprezentacja)
+            ? `Rocznik ${esc(String(t.birthYear))} jest starszy, niż dopuszcza kadra ${esc(String(t.reprezentacja))} (górny rocznik ${gornyRocznikKadry(t.reprezentacja)}). Sprawdź datę albo kadrę — to może też być powołanie sprzed lat.`
+            : 'Wpisz rocznik i naciśnij Enter — zapisze się i przejdziesz do następnego wiersza'}"
           aria-label="Rocznik: ${esc(t.firstName)} ${esc(t.lastName)}">
         <span class="talent-rocznik-stan" aria-live="polite"></span>
       </span></td>
@@ -13537,7 +13600,10 @@ function viewTalent(){
           crestImg(herbKartoteki, null, nazwaKlubu)}</span>`;
       })()}<span>
         <span class="club-name" title="${esc(t.club || (klub && klub.name) || '')}">${esc(((!klubZNazwy && klub) ? klub.name : t.club) || 'klub nieznany')}</span>
-        <span class="club-sub">${klub ? esc(String(klub.league || '')) : (t.club ? 'klubu nie ma w bazie' : '')}${
+        <span class="club-sub">${klub ? esc(String(klub.league || ''))
+          // „Nie ma go w bazie" samo w sobie nic nie mówiło. Skoro bazę polskich klubów mamy
+          // kompletną, brak dopasowania znaczy klub zagraniczny — i tak to nazywamy wprost.
+          : (t.club ? (talentWKlubieZagranicznym(t) ? 'klub zagraniczny' : 'klubu nie ma w bazie') : '')}${
           // Kraj pokazujemy TYLKO gdy podało go źródło — przy klubie zagranicznym to najważniejsza
           // informacja w wierszu, bo mówi, że kartoteki nie zbudujemy z polskich protokołów.
           t.krajKlubu ? ` &middot; <strong>${esc(t.krajKlubu)}</strong>` : ''}</span>
@@ -13619,7 +13685,7 @@ function viewTalent(){
   // powołania, dawniej „Poza kadrą"). Po jego kliknięciu pod spodem otwierają się roczniki — od
   // najmłodszego, z liczbą zawodników — i lista zawęża się do wybranego rocznika.
   const naglowekSekcji = (tekst)=> `<div class="note" style="margin:0 0 5px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;opacity:.75;">${esc(tekst)}</div>`;
-  const klubowi = DB.talents.filter(t=> !t.reprezentacja && !t.europa);
+  const klubowi = DB.talents.filter(t=> wKadrze(t, 'inni'));
   const rocznikiKlubowe = [...new Set(klubowi.map(t=> Number(t.birthYear)).filter(Boolean))].sort((a,b)=> b - a);
   const bezRocznika = klubowi.filter(t=> !t.birthYear).length;
   const pigulkaRocznika = (wartosc, etykieta, ile, ikona = '')=> pill(`${etykieta} (${ile})`, talentRocznik === wartosc, 'talent-rocznik-filtr', {val: wartosc}, ikona);
@@ -13632,7 +13698,8 @@ function viewTalent(){
     <div class="talent-sekcja talent-sekcja-klub">
       <div class="filters" style="margin-bottom:0;">${pigulkaKadry('inni', 'Talent klubowy', iluWKadrze('inni'), tarczaTalentu)}${pigulkaKadry('europa', 'Europa', iluWKadrze('europa'), '🌍')}</div>
       ${talentKadra === 'europa' ? (()=>{
-        const eu = DB.talents.filter(t=> t.europa);
+        // Ta sama reguła co w zakładce — inaczej liczba przy kraju nie zgadzałaby się z listą.
+        const eu = DB.talents.filter(t=> talentWKlubieZagranicznym(t));
         const kraje = [...new Set(eu.map(krajEuropy))].map(k=>({k, n: eu.filter(t=> krajEuropy(t) === k).length})).sort((a,b)=> b.n - a.n || a.k.localeCompare(b.k, 'pl'));
         const pk = (wartosc, etykieta, ile, ikona = '')=> pill(`${etykieta} (${ile})`, talentKraj === wartosc, 'talent-kraj', {val: wartosc}, ikona);
         return `<div class="filters talent-roczniki" style="margin:8px 0 0;">${pk('', 'Wszystkie kraje', eu.length)}${kraje.map(x=> pk(x.k, x.k, x.n, nationalityFlag(x.k))).join('')}</div>`;
@@ -13707,6 +13774,41 @@ function viewTalent(){
       <button class="secondary" data-action="talent-porzadkuj" title="Rozdziela kilku zawodników z jednego wpisu i wyciąga z nazwiska rocznik, klub i pozycję">✂ Rozdziel i uporządkuj wpisy (${ile})</button>
     </div>` : '';
   })()}
+  ${(()=>{
+    // SPRAWDZENIE ROCZNIKÓW W KADRZE.
+    //
+    // Powołanie nie niesie daty urodzenia, więc świeżo wklejona kadra to dwadzieścia parę nazwisk
+    // bez rocznika — a bez rocznika nie policzymy ani efektu wieku względnego, ani nawet tego,
+    // czy zawodnik w ogóle mieści się w kategorii. Mówimy to wprost, zamiast kazać przeglądać listę.
+    const gorny = gornyRocznikKadry(talentKadra);
+    if(!gorny || !rows.length) return '';
+    const bez = rows.filter(t=> !t.birthYear).length;
+    const starsi = rows.filter(t=> rocznikPozaKadra(t, talentKadra));
+    if(!bez && !starsi.length) return `<p class="note" style="margin:-4px 0 10px;">Roczniki w kadrze
+      ${esc(String(talentKadra))} sprawdzone — wszyscy w górnym roczniku <strong>${gorny}</strong> lub młodsi.</p>`;
+    return `<div class="empty" style="margin-bottom:10px;text-align:left;">
+      <strong>Roczniki w kadrze ${esc(String(talentKadra))}</strong> — górny rocznik tej kategorii to <strong>${gorny}</strong>.<br>
+      ${bez ? `Bez rocznika: <strong>${bez}</strong> ${plZaw(bez)}. Komunikat PZPN daty urodzenia nie podaje — uzupełnij w kolumnie „Rocznik" albo pobierz metryczki z Transfermarktu w widoku klubu.` : ''}
+      ${starsi.length ? `${bez ? '<br>' : ''}Starszych, niż kadra dopuszcza: <strong>${starsi.length}</strong> —
+        ${starsi.slice(0, 8).map(t=> esc(t.lastName || '') + ' ' + esc(t.firstName || '') + ' (' + esc(String(t.birthYear)) + ')').join(', ')}${
+        starsi.length > 8 ? ` … i ${starsi.length - 8} więcej` : ''}.
+        To albo zły rocznik, albo powołanie sprzed lat, które zostało przy zawodniku jako ostatnie.` : ''}
+    </div>`;
+  })()}
+  ${talentKadra === 'europa' ? (()=>{
+    // KTÓRE KLUBY UZNALIŚMY ZA ZAGRANICZNE, CHOĆ NIKT TEGO NIE POTWIERDZIŁ.
+    //
+    // Reguła „nie ma go w bazie, więc jest zagraniczny" myli się dokładnie tam, gdzie baza jest
+    // niepełna — przy akademiach i niższych ligach. Wypisanie tych klubów z nazwy zamienia cichy
+    // błąd w rzecz widoczną na pierwszy rzut oka.
+    const zgadniete = [...new Set(rows
+      .filter(t=> !t.europa && !krajKlubuTalentu(t) && t.club)
+      .map(t=> String(t.club).split(' / ')[0].trim()))].sort((a,b)=> a.localeCompare(b, 'pl'));
+    if(!zgadniete.length) return '';
+    return `<p class="note" style="margin:-4px 0 10px;">Rozpoznane po klubie spoza bazy
+      (<strong>${zgadniete.length}</strong>): ${zgadniete.map(esc).join(', ')}.
+      Jeśli któryś z nich to polski klub, dodaj go do bazy klubów — wtedy zawodnik wróci na polskie listy.</p>`;
+  })() : ''}
   ${rows.length ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
     <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:13px;">
       <input type="checkbox" id="talent-select-all"><span>Zaznacz wszystkie</span>

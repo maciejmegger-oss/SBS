@@ -901,6 +901,8 @@ tr.player-row.prow-okazja.prow-mlodszy td:first-child{box-shadow:inset 4px 0 0 v
 .talent-rocznik{width:100%;padding:4px 6px;font-size:13px;text-align:center;}
 .talent-rocznik.brak{border-style:dashed;}
 .talent-rocznik.blad{border-color:var(--clay);box-shadow:0 0 0 2px rgba(182,80,63,.18);}
+/* Rocznik starszy, niż dopuszcza kadra — ostrzeżenie, nie błąd zapisu: stąd złoto, a nie glina. */
+.talent-rocznik.poza-kadra{border-color:var(--gold);box-shadow:0 0 0 2px rgba(198,160,74,.22);}
 .talent-rocznik-stan{flex:none;width:12px;font-size:11px;font-weight:800;color:var(--good);text-align:center;}
 /* LISTA TALENTÓW JAKO TABELA — ta sama co w Zawodnikach (players-table), plus nagłówki grup. */
 .talent-tabela .talent-check{width:auto;margin:0;}

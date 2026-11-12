@@ -7,9 +7,11 @@
 // Po co: w powołanej kadrze część chłopaków gra już za granicą, a to zupełnie inna praca skauta —
 // takiego meczu nie obejrzy się z trybun.
 //
-// Skąd wiemy, czy klub jest zagraniczny: z dopisku kraju. PZPN podaje go w komunikacie
-// o powołaniach WYŁĄCZNIE przy klubie zagranicznym — brak dopisku znaczy klub polski. Ta sama
-// zasada jest już zapisana przy wczytywaniu powołań, tu tylko z niej korzystamy.
+// Skąd wiemy, czy klub jest zagraniczny: rozstrzyga o tym talentWKlubieZagranicznym w main.ts,
+// a pilnuje go scripts/test-klub-zagraniczny.mjs. Pierwotnie czytaliśmy wyłącznie dopisek kraju
+// („brak dopisku znaczy klub polski"), ale komunikaty ze strony pzpn.pl kraju nie podają wcale,
+// więc Espanyol i Chelsea lądowały wśród polskich klubów. Teraz, gdy kraju nie ma, pyta się bazy
+// klubów. TEN test sprawdza sam PRZEŁĄCZNIK: trzy stany, liczby przy opcjach i pobieranie listy.
 //
 // Uruchomienie:  node scripts/test-talent-kluby-pl-zagr.mjs
 import fs from "node:fs";
@@ -22,17 +24,33 @@ const sprawdz = (opis, warunek, dodatek = "") => {
   if (!warunek) bledy++;
 };
 
-// Kopia reguły z main.ts — sprawdzamy ZACHOWANIE, nie tylko obecność kodu.
-const krajKlubuTalentu = (t) => String((t && t.krajKlubu) || "").split(/ · | U-\d/)[0].trim();
-const zagraniczny = (t) => {
-  const kraj = krajKlubuTalentu(t);
-  if (!kraj) return false;
-  return !/^(polska|poland|pol)$/i.test(kraj);
+// PRAWDZIWA reguła, wycięta z main.ts — nie jej kopia.
+//
+// Kopia przeszła niezauważona zmianę reguły w kodzie: test dalej świecił na zielono, choć
+// sprawdzał zasadę, której aplikacja już nie stosowała. Wycinamy więc funkcję ze źródła,
+// a bazę klubów podstawiamy — tak samo jak w scripts/test-klub-zagraniczny.mjs.
+const wytnij = (nazwa, wzor) => {
+  const m = zrodlo.match(wzor);
+  if (!m) { console.error(`Nie znalazłem ${nazwa} w src/main.ts — test i kod się rozjechały.`); process.exit(1); }
+  return m[0];
 };
+const POLSKIE = ["Legia Warszawa", "Lech Poznań", "Widzew Łódź"];
+const { krajKlubuTalentu, talentWKlubieZagranicznym: zagraniczny } = new Function("DB", "dopasujKlubDoNazwy",
+  `${[
+    wytnij("klubTalentu", /const pamiecKlubowTalentu = new Map\(\);[\s\S]*?\nfunction klubTalentu\(t\)\{[\s\S]*?\n\}/),
+    wytnij("krajKlubuTalentu", /const krajKlubuTalentu = \(t\)=>[^\n]*\n/),
+    wytnij("talentWKlubieZagranicznym", /const talentWKlubieZagranicznym = \(t\)=>\{[\s\S]*?\n\};/),
+  ].join("\n")}\n return { krajKlubuTalentu, talentWKlubieZagranicznym };`)(
+    { clubs: POLSKIE.map((name, i) => ({ id: "K" + i, name })) },
+    (nazwa) => POLSKIE.find((k) => k.toLowerCase() === String(nazwa).trim().toLowerCase()) || null,
+  );
 
 console.log("\n1. Rozpoznawanie klubu");
-sprawdz("bez dopisku kraju — klub polski (tak czyta się komunikat PZPN)",
+sprawdz("klub z bazy — polski, choć kraju nikt nie dopisał",
   zagraniczny({ club: "Lech Poznań" }) === false);
+// To jest poprawka z 12.11.2026: przedtem brak dopisku kraju sam w sobie znaczył „Polska".
+sprawdz("klub spoza bazy — zagraniczny, choć kraju nikt nie dopisał",
+  zagraniczny({ club: "RCD Espanyol" }) === true);
 sprawdz("kraj podany — klub zagraniczny", zagraniczny({ club: "Hertha", krajKlubu: "Niemcy" }) === true);
 // Nazwa kraju bywa sklejona z kategorią rozgrywek — bez obcięcia „Szwecja · U-19” nie zrównałoby
 // się z „Szwecja” i podział by się posypał.

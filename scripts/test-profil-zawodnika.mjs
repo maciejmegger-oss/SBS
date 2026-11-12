@@ -75,7 +75,7 @@ function zbuduj(nadpisz = {}) {
     'esc', 'clubCrest', 'clubName', 'ligaZawodnika', 'nationalityFlag', 'rocznikZawodnika',
     'raportyGracza', 'sredniaZRaportow', 'metrykiZRaportow', 'sredniaPozycjiNaOsiach',
     'porownanieNaPozycji', 'ocenyZRaportow', 'autorzyRaportu', 'opisPozycjiNmg', 'minutyWazone',
-    'punktyZTekstu', 'prognozaZawodnika', 'danePrognozy',
+    'punktyZTekstu', 'prognozaZawodnika', 'danePrognozy', 'dzisiaj',
     `${kod}\n return { profilZawodnikaHtml, pzjStronyZawodnika, pzjSlupek, fmt1Pl, pzjPizzaHtml,
    PZJ_PIZZA_WYROZNIONE, pzjWerdyktHtml, pzjPrognozaHtml };`)(
     (s) => String(s ?? ''), () => '', () => 'Lech Poznań', () => 'Ekstraklasa',
@@ -83,7 +83,9 @@ function zbuduj(nadpisz = {}) {
     () => d.reps, () => d.srednia, () => d.metryki, () => d.odn,
     () => d.por, () => new Map(), () => 'M. Megger', () => '', () => null,
     (s) => String(s||'').split(/\n+/).map(x=>x.replace(/^[-–—•*]\s*/,'').trim()).filter(Boolean),
-    () => d.prognoza, (x) => x);
+    () => d.prognoza, (x) => x,
+    // Data w stopce liczona z zegara użytkownika, nie z UTC — patrz test-dzisiejsza-data.mjs.
+    () => '2026-11-12');
 }
 
 const ZAWODNIK = { id: 'Z1', firstName: 'Pablo', lastName: 'Rodríguez', birthYear: 2001,
