@@ -13038,6 +13038,7 @@ function scalPowolanychZIstniejacymi(istniejace, nowe){
 }
 let talentKadra = '';
 let talentKraj = '';   // zakładka Europa: wybrany kraj (pusty = wszystkie)
+let talentKluby = '';  // '' = wszyscy, 'pl' = kluby polskie, 'zagr' = kluby zagraniczne
 let talentSzukaj = '';  // wyszukiwarka listy talentów — wpisywana fraza
 // Tekst do porównywania: małe litery, bez ogonków, bez znaków przestankowych. Dzięki temu
 // „zielinski" znajduje Zielińskiego, a „lech poznan" — Lecha Poznań.
@@ -13311,27 +13312,52 @@ function klubTalentu(t){
   return pamiecKlubowTalentu.get(nazwa);
 }
 
+// KLUB POLSKI CZY ZAGRANICZNY.
+//
+// Zgłoszenie (12.11.2026): „jak zaznaczę kluby polskie, to wyświetlą mi się zawodnicy grający
+// w polskich klubach, a jak zagraniczne — to z zagranicznych. A ogólny, to wszyscy".
+//
+// Rozstrzygamy po dopisku kraju, bo taka jest konwencja źródła: PZPN w komunikacie o powołaniach
+// podaje kraj WYŁĄCZNIE przy klubie zagranicznym (patrz komentarz przy wczytywaniu powołań —
+// „brak dopisku znaczy klub polski"). Dla zawodnika z zakładki Europa kraj jest zawsze, więc
+// trafia tam, gdzie powinien. Nazwa kraju bywa sklejona z kategorią („Szwecja · U-19"), stąd
+// obcięcie — to ta sama zasada, z której korzysta podział na kraje w zakładce Europa.
+const krajKlubuTalentu = (t)=> String((t && t.krajKlubu) || '').split(/ · | U-\d/)[0].trim();
+const talentWKlubieZagranicznym = (t)=>{
+  const kraj = krajKlubuTalentu(t);
+  if(!kraj) return false;
+  return !/^(polska|poland|pol)$/i.test(kraj);
+};
+
 // KTÓRE TALENTY SĄ TERAZ NA EKRANIE.
 //
 // Jedno miejsce dla widoku i dla pobierania do Excela. Przy arkuszu komitetu ten sam rozjazd
 // kosztował trzy podejścia („pobiera całość”), bo eksport miał własny warunek i brał z bazy
 // więcej, niż pokazywała lista. Tutaj obie drogi pytają o to samo.
-function talentyWidoczne(){
+// `bezPodzialuKlubow` pomija ostatni filtr — po to, żeby policzyć, ilu zawodników kryje się pod
+// każdą opcją przełącznika, zanim ten przełącznik cokolwiek zawęzi.
+function talentyWidoczne(bezPodzialuKlubow?: boolean){
   const wKadrze = (t, k)=> k === 'europa' ? !!t.europa
     : k === 'inni' ? (!t.reprezentacja && !t.europa) : String(t.reprezentacja||'') === k;
-  return (talentKadra ? DB.talents.filter(t=>wKadrze(t, talentKadra)) : DB.talents)
+  const baza = (talentKadra ? DB.talents.filter(t=>wKadrze(t, talentKadra)) : DB.talents)
     .filter(t=> talentKadra !== 'inni' || wRocznikuTalentu(t, talentRocznik))
     .filter(t=> talentKadra !== 'europa' || !talentKraj || krajEuropy(t) === talentKraj)
     .filter(t=> talentPasuje(t, talentSzukaj));
+  if(bezPodzialuKlubow || !talentKluby) return baza;
+  return baza.filter(t=> (talentKluby === 'zagr') === talentWKlubieZagranicznym(t));
 }
 
 /** Nazwa zakładki, w której stoisz — do nagłówka arkusza i do nazwy pliku. */
 function opisZakladkiTalentow(){
-  if(talentKadra === 'europa') return 'Europa' + (talentKraj ? ' — ' + talentKraj : '');
+  // Podział na kluby dopisujemy do nazwy, bo wpływa na zawartość — plik „kadra U-18” i plik
+  // „kadra U-18, kluby zagraniczne” to dwie różne listy i nie mogą się nazywać tak samo.
+  const kluby = talentKluby === 'pl' ? ' — kluby polskie'
+    : talentKluby === 'zagr' ? ' — kluby zagraniczne' : '';
+  if(talentKadra === 'europa') return 'Europa' + (talentKraj ? ' — ' + talentKraj : '') + kluby;
   if(talentKadra === 'inni') return 'Talent klubowy'
-    + (talentRocznik === 'brak' ? ' — bez rocznika' : talentRocznik ? ' — rocznik ' + talentRocznik : '');
-  if(talentKadra) return talentKadra;
-  return 'Wszyscy';
+    + (talentRocznik === 'brak' ? ' — bez rocznika' : talentRocznik ? ' — rocznik ' + talentRocznik : '') + kluby;
+  if(talentKadra) return talentKadra + kluby;
+  return 'Wszyscy' + kluby;
 }
 
 // POBIERANIE LISTY TALENTÓW DO EXCELA.
@@ -13644,6 +13670,24 @@ function viewTalent(){
       placeholder="Szukaj: nazwisko, klub, pozycja, rocznik…" aria-label="Szukaj w liście talentów">
     ${talentSzukaj.trim() ? `<button class="secondary" data-action="talent-szukaj-wyczysc">Wyczyść</button>
       <span class="note" style="margin:0;">${rows.length === 1 ? 'jedno trafienie' : 'trafień: ' + rows.length}</span>` : ''}
+    ${/* PODZIAŁ NA KLUBY POLSKIE I ZAGRANICZNE.
+          Zgłoszenie (12.11.2026): w powołanej kadrze część chłopaków gra już za granicą — a to
+          zupełnie inna praca skauta (innych meczów się nie obejrzy z trybun). Liczby stoją przy
+          każdej opcji, żeby podział było widać JESZCZE PRZED wybraniem: przy U-18 od razu
+          wiadomo, ilu wyjechało, bez przełączania tam i z powrotem. */''}
+    ${(()=>{
+      const bez = talentyWidoczne(true);
+      const zagr = bez.filter(talentWKlubieZagranicznym).length;
+      const opcja = (wart, etykieta, ile)=>
+        `<option value="${wart}" ${talentKluby === wart ? 'selected' : ''}>${etykieta} (${ile})</option>`;
+      return `<select id="talent-kluby" aria-label="Podział na kluby polskie i zagraniczne"
+        title="Zawęża listę do zawodników grających w klubach polskich albo zagranicznych. Kraj bierzemy z komunikatu o powołaniu — PZPN dopisuje go tylko przy klubie zagranicznym."
+        style="max-width:220px;">
+        ${opcja('', 'Wszystkie kluby', bez.length)}
+        ${opcja('pl', 'Kluby polskie', bez.length - zagr)}
+        ${opcja('zagr', 'Kluby zagraniczne', zagr)}
+      </select>`;
+    })()}
     ${/* Pobieranie bierze dokładnie tę listę, którą widać — zakładkę, rocznik, kraj i szukanie.
           Dlatego liczba stoi wprost na przycisku: widać, ile wierszy będzie w pliku, zanim się
           go otworzy. */''}
@@ -19922,6 +19966,10 @@ function attachHandlers(){
   }
   main.querySelectorAll('[data-action="talent-szukaj-wyczysc"]').forEach(b=>b.onclick=()=>{ talentSzukaj = ''; render(); });
   main.querySelectorAll('[data-action="talent-arkusz"]').forEach(b=>b.onclick=()=>pobierzArkuszTalentow());
+  {
+    const wyborKlubow = main.querySelector('#talent-kluby') as HTMLSelectElement | null;
+    if(wyborKlubow) wyborKlubow.onchange = ()=>{ talentKluby = wyborKlubow.value; render(); };
+  }
   main.querySelectorAll('[data-action="talent-szukaj-wszedzie"]').forEach(b=>b.onclick=()=>{
     talentKadra = ''; talentRocznik = ''; talentKraj = ''; render();
   });

@@ -20,7 +20,9 @@ const sprawdz = (opis, warunek, dodatek = "") => {
 };
 
 console.log("\n1. Arkusz zawiera to, co widać na ekranie");
-sprawdz("dobór talentów siedzi w jednej funkcji", /function talentyWidoczne\(\)\{/.test(zrodlo));
+// Podpis przyjmuje teraz flagę pomijającą podział na kluby polskie/zagraniczne — stąd luźniejszy
+// wzorzec. Liczy się to, że dobór jest W JEDNYM miejscu, a nie jak dokładnie go wywołujemy.
+sprawdz("dobór talentów siedzi w jednej funkcji", /function talentyWidoczne\(/.test(zrodlo));
 sprawdz("widok z niej korzysta", /const widoczne = talentyWidoczne\(\);/.test(zrodlo));
 sprawdz("pobieranie korzysta z tej samej funkcji",
   /function pobierzArkuszTalentow\(\)\{[\s\S]{0,400}?const lista = talentyWidoczne\(\);/.test(zrodlo));
